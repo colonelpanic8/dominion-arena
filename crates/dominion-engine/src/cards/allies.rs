@@ -1825,7 +1825,6 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 => {
             for c in input.cards() {
                 f.s.cards.retain(|&x| x != c);
-                g.show(c);
                 g.put_in_hand(c, p);
             }
             f.s.i += 1;

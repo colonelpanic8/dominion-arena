@@ -12,7 +12,8 @@ pub enum Trace {
     /// starting cards, a pile) came in together.
     Created { card: CardId, is: Card, zone: Zone },
     /// A card moved. `top` says it was the top card of `from` (the last one, for a deck,
-    /// discard pile or pile).
+    /// discard pile or pile). Cards set aside face down one after the other are set aside
+    /// together.
     Moved {
         card: CardId,
         from: Zone,
@@ -22,7 +23,9 @@ pub enum Trace {
     /// These cards were rearranged where no one could follow them (a shuffle, or cards put
     /// back in an order their owner chose).
     Mixed { cards: Vec<CardId> },
-    /// `card` was shown to everyone (`to: None`) or to one player (`Some`).
+    /// `card` was shown to everyone (`to: None`) or to one player (`Some`). A card shown
+    /// to everyone just before it is set aside is set aside face up; cards of a deck or
+    /// discard pile their owner looks at one after the other are looked at together.
     Shown { card: CardId, to: Option<PlayerId> },
     /// A turn began: `player`'s.
     Turn { player: PlayerId },

@@ -242,6 +242,187 @@ fn a_passed_card_is_known_to_both_players() {
     assert_eq!(p1.zone(Zone::Hand(P1)).known.get(&Card::Gold), Some(&1));
 }
 
+/// Two worlds that differ only in which of two cards the deciding player privately picks.
+fn worlds(g: &Game, k: &Knowledge, a: CardId, b: CardId) -> [(Game, Knowledge); 2] {
+    [a, b].map(|c| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &[c]);
+        k.update(&mut g);
+        (g, k)
+    })
+}
+
+/// P0 knows one Estate in P1's hand. P1 discards an Estate from a hand holding two: P0
+/// can't tell which one, so can no longer place an Estate in that hand.
+#[test]
+fn a_card_seen_leaving_a_hidden_hand_could_be_any_copy_of_it() {
+    let mut g = setup(&[Card::Bureaucrat, Card::Village, Card::Cellar]);
+    hand(&mut g, P0, &[Card::Bureaucrat]);
+    let p1 = hand(
+        &mut g,
+        P1,
+        &[
+            Card::Estate,
+            Card::Estate,
+            Card::Village,
+            Card::Cellar,
+            Card::Copper,
+        ],
+    );
+    deck(&mut g, P1, &[Card::Copper; 5]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Bureaucrat);
+    k.update(&mut g);
+    let seen = *g.player(P1).deck.last().unwrap();
+    let unseen = if seen == p1[0] { p1[1] } else { p1[0] };
+    next_turn(&mut g);
+    k.update(&mut g);
+    play_from(&mut g, P1, Card::Village);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::Hand(P1)).known,
+        count(&[(Card::Estate, 1)])
+    );
+    play_from(&mut g, P1, Card::Cellar);
+    k.update(&mut g);
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, unseen, seen);
+    let a = ka.known(&ga, P0).zone(Zone::Hand(P1));
+    assert_eq!(a, kb.known(&gb, P0).zone(Zone::Hand(P1)));
+    assert_eq!(a.known.get(&Card::Estate), None);
+}
+
+/// A hand discarded whole in Clean-up takes its known cards to the discard pile.
+#[test]
+fn a_known_card_is_followed_when_its_whole_hand_is_discarded() {
+    let mut g = setup(&[Card::Bureaucrat]);
+    hand(&mut g, P0, &[Card::Bureaucrat]);
+    hand(&mut g, P1, &[Card::Duchy, Card::Copper]);
+    deck(&mut g, P1, &[Card::Silver; 12]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Bureaucrat);
+    k.update(&mut g);
+    // P1 draws the Duchy, then discards it with the rest of that hand a turn later.
+    for _ in 0..4 {
+        next_turn(&mut g);
+        k.update(&mut g);
+    }
+    assert_eq!(
+        k.known(&g, P0)
+            .zone(Zone::Discard(P1))
+            .known
+            .get(&Card::Duchy),
+        Some(&1)
+    );
+}
+
+/// Rabble: P1 puts the three revealed Victory cards back in an order of their own. P0
+/// doesn't know the order, but knows they are on that deck, and in the hand once drawn.
+#[test]
+fn revealed_cards_put_back_on_a_deck_stay_known() {
+    let mut g = setup(&[Card::Rabble]);
+    hand(&mut g, P0, &[Card::Rabble]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    deck(
+        &mut g,
+        P1,
+        &[
+            Card::Estate,
+            Card::Duchy,
+            Card::Province,
+            Card::Silver,
+            Card::Silver,
+            Card::Gold,
+            Card::Gold,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Rabble);
+    k.update(&mut g);
+    let revealed = candidates(&g);
+    choose(&mut g, &[revealed[1], revealed[2], revealed[0]]);
+    k.update(&mut g);
+    let top3 = count(&[(Card::Estate, 1), (Card::Duchy, 1), (Card::Province, 1)]);
+    assert_eq!(k.known(&g, P0).zone(Zone::Deck(P1)).known, top3);
+    next_turn(&mut g);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    assert_eq!(k.known(&g, P0).zone(Zone::Hand(P1)).known, top3);
+}
+
+/// Navigator: P1 puts five cards back in an order P0 can't see, even when they are five
+/// Estates and there is no order to ask for.
+#[test]
+fn cards_put_back_in_a_forced_order_are_mixed_too() {
+    let mut g = setup(&[Card::Bureaucrat, Card::Navigator]);
+    hand(&mut g, P0, &[Card::Bureaucrat]);
+    hand(
+        &mut g,
+        P1,
+        &[Card::Navigator, Card::Estate, Card::Copper, Card::Copper],
+    );
+    deck(
+        &mut g,
+        P1,
+        &[
+            Card::Estate,
+            Card::Estate,
+            Card::Estate,
+            Card::Estate,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Bureaucrat);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::Deck(P1)).known,
+        count(&[(Card::Estate, 1)])
+    );
+    play_from(&mut g, P1, Card::Navigator);
+    k.update(&mut g);
+    respond(&mut g, Response::option(Opt::Mode(1)));
+    k.update(&mut g);
+    assert_eq!(k.known(&g, P0).zone(Zone::Deck(P1)).known, count(&[]));
+}
+
+/// Sleigh is discarded onto the card just gained, which then moves in everyone's view.
+#[test]
+fn everyone_follows_a_gained_card_moved_from_under_the_top_of_a_discard_pile() {
+    for (mode, zone) in [(0, Zone::Hand(P0)), (1, Zone::Deck(P0))] {
+        let mut g = setup(&[Card::Sleigh]);
+        hand(&mut g, P0, &[Card::Sleigh, Card::Gold]);
+        deck(&mut g, P0, &[Card::Copper; 5]);
+        discard(&mut g, P0, &[]);
+        let (mut g, mut k) = start(g);
+        g.turn.buys = 3;
+        end_phase(&mut g);
+        play(&mut g, Card::Gold);
+        buy(&mut g, Card::Copper);
+        k.update(&mut g);
+        no(&mut g);
+        k.update(&mut g);
+        buy(&mut g, Card::Silver);
+        k.update(&mut g);
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+        k.update(&mut g);
+        respond(&mut g, Response::option(Opt::Mode(mode)));
+        k.update(&mut g);
+        for viewer in [P0, P1] {
+            let known = k.known(&g, viewer);
+            assert_eq!(known.zone(zone).known.get(&Card::Silver), Some(&1));
+            assert_eq!(
+                known.zone(Zone::Discard(P0)).known,
+                count(&[(Card::Copper, 1), (Card::Sleigh, 1)])
+            );
+        }
+    }
+}
+
 /// Hermit offers only the non-Treasures of the discard pile, but its player looks through
 /// all of it.
 #[test]
@@ -262,6 +443,82 @@ fn looking_through_a_discard_pile_shows_all_of_it() {
         })
         .collect();
     assert_eq!(looked, pile);
+}
+
+/// Harbinger: its player knows the card they took from their discard pile. The others
+/// saw a card leave a pile its owner was looking through, not which.
+#[test]
+fn only_its_owner_follows_a_card_picked_out_of_a_discard_pile() {
+    let mut g = setup(&[Card::Harbinger]);
+    hand(&mut g, P0, &[Card::Harbinger]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    discard(&mut g, P0, &[]);
+    let (mut g, mut k) = start(g);
+    // Everyone saw these gained.
+    let pile: Vec<CardId> = [Card::Gold, Card::Estate, Card::Curse]
+        .into_iter()
+        .map(|card| g.create(card, Zone::Discard(P0)))
+        .collect();
+    k.update(&mut g);
+    play(&mut g, Card::Harbinger);
+    k.update(&mut g);
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, pile[0], pile[1]);
+    let mine = ka.known(&ga, P0);
+    assert_eq!(
+        mine.zone(Zone::Deck(P0)).known,
+        count(&[(Card::Gold, 1), (Card::Copper, 4)])
+    );
+    assert_eq!(
+        mine.zone(Zone::Discard(P0)).known,
+        count(&[(Card::Estate, 1), (Card::Curse, 1)])
+    );
+    let theirs = ka.known(&ga, P1);
+    assert_eq!(theirs, kb.known(&gb, P1));
+    assert_eq!(theirs.zone(Zone::Deck(P0)).known.get(&Card::Gold), None);
+    // The Curse is still on top of the pile.
+    assert_eq!(
+        theirs.zone(Zone::Discard(P0)).known,
+        count(&[(Card::Curse, 1)])
+    );
+}
+
+/// Avoid: its player knows which of the cards being shuffled they kept out.
+#[test]
+fn a_player_knows_the_cards_avoid_kept_out_of_the_shuffle() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Avoid],
+        ..GameConfig::new(2, vec![Card::Village, Card::Smithy], 7)
+    });
+    hand(&mut g, P0, &[Card::Copper; 3]);
+    deck(&mut g, P0, &[]);
+    let pile = discard(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Silver,
+            Card::Estate,
+            Card::Duchy,
+            Card::Province,
+            Card::Curse,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    for _ in 0..3 {
+        play(&mut g, Card::Copper);
+    }
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Avoid)));
+    end_phase(&mut g);
+    k.update(&mut g);
+    assert_eq!(g.pending().unwrap().source, Some(Card::Avoid));
+    choose(&mut g, &[pile[5], pile[2]]);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::Discard(P0)).known,
+        count(&[(Card::Curse, 1), (Card::Estate, 1)])
+    );
 }
 
 /// Bad Omens leaves two Coppers as the deck, as everyone knows.
@@ -292,6 +549,151 @@ fn everyone_knows_the_coppers_bad_omens_leaves_on_the_deck() {
             count(&[(Card::Copper, 2)])
         );
     }
+}
+
+/// Crypt's Treasures are face down: the others saw them go under it, not which one comes
+/// back.
+#[test]
+fn only_its_owner_follows_a_card_taken_from_under_a_crypt() {
+    let mut g = setup(&[Card::Crypt]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper, Card::Crypt]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    end_phase(&mut g);
+    play(&mut g, Card::Crypt);
+    let under = candidates(&g);
+    choose(&mut g, &under);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::SetAside(P0)).known,
+        count(&[(Card::Gold, 1), (Card::Copper, 1)])
+    );
+    while g.pending().unwrap().source != Some(Card::Crypt) {
+        end_phase(&mut g);
+        k.update(&mut g);
+    }
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, under[0], under[1]);
+    let theirs = ka.known(&ga, P1);
+    assert_eq!(theirs, kb.known(&gb, P1));
+    assert_eq!(theirs.zone(Zone::Hand(P0)).known, count(&[]));
+    assert_eq!(
+        uncertain_over(&theirs, &[Zone::Hand(P0), Zone::SetAside(P0)]),
+        Some(count(&[(Card::Gold, 1), (Card::Copper, 1)]))
+    );
+    assert_eq!(
+        ka.known(&ga, P0)
+            .zone(Zone::Hand(P0))
+            .known
+            .get(&Card::Gold),
+        Some(&1)
+    );
+}
+
+/// Archive: P0 knows the Duchy on top of P1's deck goes under the Archive, but not which
+/// of the three cards P1 takes.
+#[test]
+fn a_known_card_set_aside_face_down_with_others_is_lost_when_one_is_taken() {
+    let mut g = setup(&[Card::Archive, Card::Bureaucrat]);
+    hand(&mut g, P0, &[Card::Bureaucrat]);
+    hand(&mut g, P1, &[Card::Archive, Card::Duchy]);
+    deck(&mut g, P1, &[Card::Copper; 6]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Bureaucrat);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    play_from(&mut g, P1, Card::Archive);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::SetAside(P1)).known,
+        count(&[(Card::Duchy, 1)])
+    );
+    let aside = candidates(&g);
+    let duchy = *aside.iter().find(|&&c| g.card(c) == Card::Duchy).unwrap();
+    let copper = *aside.iter().find(|&&c| g.card(c) == Card::Copper).unwrap();
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, duchy, copper);
+    let theirs = ka.known(&ga, P0);
+    assert_eq!(theirs, kb.known(&gb, P0));
+    for zone in [Zone::Hand(P1), Zone::SetAside(P1)] {
+        assert_eq!(theirs.zone(zone).known.get(&Card::Duchy), None);
+    }
+}
+
+/// Annex: nobody else sees which cards stay in the discard pile, even if one of them was
+/// its top card.
+#[test]
+fn only_its_owner_knows_which_discards_annex_kept() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Annex],
+        ..GameConfig::new(2, vec![Card::Village], 7)
+    });
+    hand(&mut g, P0, &[Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper; 6]);
+    let pile = discard(&mut g, P0, &[Card::Gold, Card::Silver, Card::Curse]);
+    let (mut g, mut k) = start(g);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Annex)));
+    k.update(&mut g);
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, pile[2], pile[0]);
+    // The kept card, the Duchy, and the Estate discarded in Clean-up.
+    let theirs = ka.known(&ga, P1);
+    assert_eq!(theirs, kb.known(&gb, P1));
+    assert_eq!(
+        theirs.zone(Zone::Discard(P0)),
+        ZoneKnowledge {
+            count: 3,
+            known: count(&[(Card::Duchy, 1), (Card::Estate, 1)]),
+            unknown: 1
+        }
+    );
+    assert_eq!(
+        ka.known(&ga, P0)
+            .zone(Zone::Discard(P0))
+            .known
+            .get(&Card::Curse),
+        Some(&1)
+    );
+}
+
+/// Mapmaker: P0 knows the Duchy on top of P1's deck and sees which two of the four cards
+/// P1 looked at are discarded, so the Duchy went to the hand.
+#[test]
+fn a_known_card_not_among_the_discards_went_to_the_hand() {
+    let mut g = setup(&[Card::Mapmaker, Card::Bureaucrat]);
+    hand(&mut g, P0, &[Card::Bureaucrat]);
+    hand(&mut g, P1, &[Card::Mapmaker, Card::Duchy]);
+    deck(
+        &mut g,
+        P1,
+        &[
+            Card::Silver,
+            Card::Gold,
+            Card::Estate,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Bureaucrat);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    play_from(&mut g, P1, Card::Mapmaker);
+    k.update(&mut g);
+    choose_kinds(&mut g, &[Card::Duchy, Card::Silver]);
+    k.update(&mut g);
+    let theirs = k.known(&g, P0);
+    assert_eq!(
+        theirs.zone(Zone::Hand(P1)).known,
+        count(&[(Card::Duchy, 1)])
+    );
+    assert_eq!(
+        theirs.zone(Zone::Discard(P1)).known,
+        count(&[(Card::Gold, 1), (Card::Estate, 1)])
+    );
 }
 
 /// Shadow cards go to the bottom when shuffled, and each shows what it is from its back.

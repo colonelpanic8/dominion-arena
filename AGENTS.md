@@ -202,6 +202,10 @@ them.
   reveals and looks, `g.look_through_discard(p)` before a player picks from their
   discard pile. Cards that change zones must go through `move_card` (or record a
   `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
+  Only its owner follows a card that leaves cards they hold out of sight: a hand,
+  cards set aside face down together (move them one after the other), the cards of a
+  deck or discard pile they looked through. `g.show` such a card first when everyone
+  knows which it is; other cards of a deck or discard pile are followed by everyone.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The

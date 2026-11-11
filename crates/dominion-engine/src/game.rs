@@ -21,7 +21,7 @@ pub enum Mat {
 }
 
 /// Where a card currently is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Zone {
     Deck(PlayerId),
     Hand(PlayerId),
@@ -959,13 +959,6 @@ impl Game {
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
         let player = decision.player;
-        if let (DecisionKind::Cards { ordered: true, .. }, Response::Cards(cards)) =
-            (&decision.kind, &response)
-            && cards.len() > 1
-        {
-            let cards = cards.clone();
-            self.record(|| crate::Trace::Mixed { cards });
-        }
         if let Response::Name(card) = response {
             self.emit(Event::Named { player, card });
         }
@@ -993,6 +986,18 @@ impl Game {
                         cards::modify_decision(self, f, &mut decision);
                     }
                     self.stack.push(frame);
+                    // Whatever the answer, the others can't follow the order.
+                    if let DecisionKind::Cards {
+                        candidates,
+                        ordered: true,
+                        ..
+                    } = &decision.kind
+                        && candidates.len() > 1
+                    {
+                        self.record(|| crate::Trace::Mixed {
+                            cards: candidates.clone(),
+                        });
+                    }
                     if let Some(response) = decision.forced(self) {
                         input = Input::Response(response);
                     } else {

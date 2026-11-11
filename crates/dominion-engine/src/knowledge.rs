@@ -3,11 +3,19 @@
 //! For each viewer, every card belongs to a group of cards the viewer can't tell apart;
 //! the viewer knows each group's cards (where each one is: card movements are public)
 //! and, unless it is unknown, the multiset of their identities. A card the viewer sees
-//! becomes a group of its own. Shuffles and other rearrangements no one can follow merge
-//! groups, and so does a card leaving a place where the viewer couldn't tell which card
-//! it was (an opponent's hand, the middle of a deck or discard pile). Deck order is never
-//! tracked. Stash and the Shadow cards have their own backs, so everyone always knows
-//! which card each of them is.
+//! becomes a group of its own. Deck order is never tracked.
+//!
+//! Groups merge when the viewer loses track of which card is which: in a shuffle, when
+//! cards are put back in an order someone else chose, and when a card leaves a set of
+//! cards its owner holds out of the viewer's sight. Such a set is a hand, a Native Village
+//! mat, cards set aside face down together, or the cards of a deck or discard pile their
+//! owner last looked through. A card leaving it unseen could be any of the set, unless
+//! the whole set goes the same way; a card seen leaving it (or revealed from it) tells the
+//! viewer its name and no more, so it could be any card of the set that may have that
+//! name. Everything else can be followed: cards are taken from known places in a deck,
+//! and a card everyone saw reach a discard pile is still that card when an effect moves
+//! it on. Stash and the Shadow cards have their own backs, so everyone always knows which
+//! card each of them is.
 //!
 //! [`Knowledge`] consumes a traced game's [`Trace`]; build it before the game's first
 //! [`Game::take_trace`] and call [`Knowledge::update`] after every response.
@@ -30,6 +38,20 @@ pub struct Knowledge {
     minds: Vec<Mind>,
     /// Where the last `Created` card went, and that card, to group cards created together.
     created_in: Option<(Container, CardId)>,
+    /// Per card, the set it is held in out of the other players' sight (0: none): the
+    /// cards of a deck or discard pile their owner looked at together, or cards set aside
+    /// face down together. It lasts while the card stays there unrevealed.
+    #[serde(default)]
+    held: Vec<u32>,
+    #[serde(default)]
+    sets: u32,
+    /// The set the last entry put a card in, and where: a card the next entry looks at
+    /// or sets aside there joins it.
+    #[serde(default)]
+    joining: Option<(Zone, u32)>,
+    /// The card the last entry showed to everyone.
+    #[serde(default)]
+    shown: Option<CardId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,8 +64,23 @@ enum Container {
 struct Mind {
     group_of: Vec<usize>,
     groups: Vec<Group>,
-    /// Cards this viewer identified since the last decision: they can follow them.
+    /// Cards shown to this viewer since the last decision that haven't moved since: they
+    /// can follow them.
     recent: HashSet<CardId>,
+    #[serde(default)]
+    leaving: Option<Leaving>,
+}
+
+/// Cards a viewer watched leave a held set for one place without seeing which they were.
+/// Until the viewer knows where the rest of the set goes, the groups stay as they were.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Leaving {
+    to: Zone,
+    left: Vec<CardId>,
+    /// The cards still in the set.
+    rest: Vec<CardId>,
+    /// Cards of the set the viewer has seen since.
+    seen: Vec<CardId>,
 }
 
 /// Zones aren't valid JSON object keys, so the map is stored as pairs.
@@ -173,6 +210,87 @@ impl Mind {
         self.new_group(vec![card], Some(CardCount::from([(is, 1)])));
     }
 
+    /// The viewer sees that one of `among` is an `is`: `card`, but any of them that may be
+    /// an `is` could be the one.
+    fn identify_among(&mut self, card: CardId, is: Card, among: &[CardId]) {
+        let may_be = |c: &CardId| {
+            let ids = &self.groups[self.group_of[c.index()]].ids;
+            ids.as_ref().is_none_or(|ids| ids.contains_key(&is))
+        };
+        let same: Vec<CardId> = among.iter().copied().filter(may_be).chain([card]).collect();
+        self.merge(same);
+        self.identify(card, is);
+    }
+
+    /// The viewer sees `card`, an `is`, in or leaving `zone`. `held` is the set it is
+    /// held in out of their sight, if any.
+    fn see(&mut self, card: CardId, is: Card, zone: Zone, held: Option<&[CardId]>) {
+        let Some(held) = held else {
+            self.disturb(card, zone);
+            self.identify(card, is);
+            return;
+        };
+        let mut among = held.to_vec();
+        match &mut self.leaving {
+            // Cards of this set left unseen: this one could as well be one of those.
+            Some(l) if l.rest.contains(&card) && among.iter().all(|c| l.rest.contains(c)) => {
+                l.rest.retain(|&c| c != card);
+                l.seen.push(card);
+                among.extend(&l.left);
+            }
+            _ => self.settle(),
+        }
+        self.identify_among(card, is, &among);
+    }
+
+    /// `card` leaves `from` for `to` and the viewer doesn't see what it is. `held` is the
+    /// set it was held in out of their sight, if any.
+    fn lose(&mut self, card: CardId, from: Zone, to: Zone, held: Option<&[CardId]>) {
+        let Some(held) = held else {
+            self.disturb(card, from);
+            return;
+        };
+        let rest: Vec<CardId> = held.iter().copied().filter(|&c| c != card).collect();
+        match &mut self.leaving {
+            Some(l)
+                if l.to == to
+                    && l.rest.contains(&card)
+                    && rest.iter().all(|c| l.rest.contains(c)) =>
+            {
+                l.rest.retain(|&c| c != card);
+                l.left.push(card);
+            }
+            _ => {
+                self.settle();
+                self.leaving = Some(Leaving {
+                    to,
+                    left: vec![card],
+                    rest,
+                    seen: vec![],
+                });
+            }
+        }
+    }
+
+    /// A card the viewer can follow is in `zone`, or leaving it: if that touches the
+    /// cards that just left a held set, the viewer stops waiting for the rest of it.
+    fn disturb(&mut self, card: CardId, zone: Zone) {
+        let touched =
+            |l: &Leaving| !l.seen.contains(&card) && (l.to == zone || l.left.contains(&card));
+        if self.leaving.as_ref().is_some_and(touched) {
+            self.settle();
+        }
+    }
+
+    /// The cards that left a held set unseen could be any of it, unless all of it left.
+    fn settle(&mut self) {
+        if let Some(l) = self.leaving.take()
+            && !l.rest.is_empty()
+        {
+            self.merge(l.left.into_iter().chain(l.rest));
+        }
+    }
+
     /// The viewer can no longer tell `cards` apart.
     fn merge(&mut self, cards: impl IntoIterator<Item = CardId>) {
         let mut groups: Vec<usize> = cards
@@ -241,6 +359,10 @@ impl Knowledge {
             members: HashMap::new(),
             minds: vec![Mind::default(); players],
             created_in: None,
+            held: vec![],
+            sets: 0,
+            joining: None,
+            shown: None,
         }
     }
 
@@ -249,44 +371,79 @@ impl Knowledge {
         for entry in game.take_trace() {
             self.apply(game, entry);
         }
+        self.settle();
         self.observe(game);
     }
 
+    fn settle(&mut self) {
+        self.minds.iter_mut().for_each(Mind::settle);
+    }
+
     fn apply(&mut self, game: &Game, entry: Trace) {
+        let shown = self.shown.take();
+        let joining = self.joining.take();
+        if !matches!(entry, Trace::Created { .. }) {
+            self.created_in = None;
+        }
         match entry {
-            Trace::Created { card, is, zone } => self.created(game, card, is, zone),
-            Trace::Moved {
-                card,
-                from,
-                to,
-                top,
-            } => {
-                self.created_in = None;
-                self.moved(game, card, from, to, top);
+            Trace::Created { card, is, zone } => {
+                self.settle();
+                self.created(game, card, is, zone);
+            }
+            // Cards rearranged in place: `Mixed` says who can't follow that.
+            Trace::Moved { from, to, .. } if from == to => {}
+            Trace::Moved { card, from, to, .. } => {
+                let face_up = shown == Some(card);
+                self.moved(game, card, from, to, face_up, joining);
             }
             Trace::Mixed { cards } => {
-                self.created_in = None;
+                self.settle();
                 let mixed = cards
                     .iter()
                     .copied()
                     .filter(|c| !marked(self.is[c.index()]));
                 for mind in &mut self.minds {
                     mind.merge(mixed.clone());
+                    mixed.clone().for_each(|c| {
+                        mind.recent.remove(&c);
+                    });
                 }
             }
             Trace::Shown { card, to } => {
-                self.created_in = None;
                 let is = self.is[card.index()];
+                let zone = self.zone[card.index()];
+                let held = self.held_with(card);
                 for (v, mind) in self.minds.iter_mut().enumerate() {
-                    if to.is_none_or(|p| p == PlayerId(v as u8)) {
-                        mind.identify(card, is);
+                    let v = PlayerId(v as u8);
+                    if to.is_none_or(|p| p == v) {
+                        let hidden = zone.owner().is_some_and(|p| p != v);
+                        let held = held.as_deref().filter(|_| hidden);
+                        mind.see(
+                            card,
+                            is,
+                            zone,
+                            held.filter(|_| !mind.recent.contains(&card)),
+                        );
                         mind.recent.insert(card);
                     }
                 }
+                match to {
+                    None => {
+                        self.held[card.index()] = 0;
+                        self.shown = Some(card);
+                    }
+                    Some(p) => {
+                        if matches!(zone, Zone::Deck(_) | Zone::Discard(_))
+                            && zone.owner() == Some(p)
+                        {
+                            self.hold(card, zone, joining);
+                        }
+                    }
+                }
             }
-            Trace::Turn { .. } => {}
+            Trace::Turn { .. } => self.settle(),
             Trace::Changed { card, from, to } => {
-                self.created_in = None;
+                self.settle();
                 self.is[card.index()] = to;
                 for mind in &mut self.minds {
                     let group = &mut mind.groups[mind.group_of[card.index()]];
@@ -306,6 +463,9 @@ impl Knowledge {
         if self.zone.len() <= card.index() {
             self.zone.resize(card.index() + 1, zone);
             self.is.resize(card.index() + 1, is);
+        }
+        if self.held.len() < self.zone.len() {
+            self.held.resize(self.zone.len(), 0);
         }
         self.zone[card.index()] = zone;
         self.is[card.index()] = is;
@@ -335,32 +495,72 @@ impl Knowledge {
         self.created_in = Some((container, card));
     }
 
-    fn moved(&mut self, game: &Game, card: CardId, from: Zone, to: Zone, top: bool) {
+    /// The cards `card` is held with out of the other players' sight, itself included.
+    fn held_with(&self, card: CardId) -> Option<Vec<CardId>> {
+        if marked(self.is[card.index()]) {
+            return None;
+        }
+        let zone = self.zone[card.index()];
+        let set = match zone {
+            Zone::Hand(_) | Zone::Mat(_, Mat::NativeVillage) => None,
+            Zone::Deck(_) | Zone::Discard(_) | Zone::SetAside(_)
+                if self.held[card.index()] != 0 =>
+            {
+                Some(self.held[card.index()])
+            }
+            _ => return None,
+        };
+        let with = |c: &CardId| {
+            !marked(self.is[c.index()]) && set.is_none_or(|set| self.held[c.index()] == set)
+        };
+        Some(self.members[&zone].iter().copied().filter(with).collect())
+    }
+
+    /// Puts `card`, in `zone`, in the held set the last entry added to there, or a new one.
+    fn hold(&mut self, card: CardId, zone: Zone, joining: Option<(Zone, u32)>) {
+        let set = match joining {
+            Some((z, set)) if z == zone => set,
+            _ => {
+                self.sets += 1;
+                self.sets
+            }
+        };
+        self.held[card.index()] = set;
+        self.joining = Some((zone, set));
+    }
+
+    /// `face_up` says the card was shown to everyone just before.
+    fn moved(
+        &mut self,
+        game: &Game,
+        card: CardId,
+        from: Zone,
+        to: Zone,
+        face_up: bool,
+        joining: Option<(Zone, u32)>,
+    ) {
+        let is = self.is[card.index()];
+        let held = self.held_with(card);
         self.zone[card.index()] = to;
         if let Some(cards) = self.members.get_mut(&from) {
             cards.retain(|&c| c != card);
         }
         self.members.entry(to).or_default().push(card);
-        let is = self.is[card.index()];
+        self.held[card.index()] = 0;
+        // Set aside face down: with the cards set aside along with it.
+        if matches!(to, Zone::SetAside(_)) && !face_up && !marked(is) {
+            self.hold(card, to, joining);
+        }
         let shown = public(game, from) || public(game, to) || marked(is);
         for (v, mind) in self.minds.iter_mut().enumerate() {
             let v = PlayerId(v as u8);
+            let hidden = from.owner().is_some_and(|p| p != v);
+            let followed = mind.recent.remove(&card);
+            let held = held.as_deref().filter(|_| hidden && !followed);
             if shown || private_to(from, v) || private_to(to, v) {
-                mind.identify(card, is);
-                mind.recent.insert(card);
-                continue;
-            }
-            if mind.recent.contains(&card) {
-                continue;
-            }
-            let lost = match from {
-                Zone::Hand(_) | Zone::Mat(_, Mat::NativeVillage) => true,
-                Zone::Deck(_) | Zone::Discard(_) => !top,
-                _ => false,
-            };
-            if lost && let Some(rest) = self.members.get(&from) {
-                let rest = rest.iter().copied().filter(|c| !marked(self.is[c.index()]));
-                mind.merge(rest.chain([card]));
+                mind.see(card, is, from, held);
+            } else {
+                mind.lose(card, from, to, held);
             }
         }
     }
@@ -410,6 +610,8 @@ impl Knowledge {
                     None => zones.push((zone, 1)),
                 }
             }
+            // Not in the cards' order, which says which card is where.
+            zones.sort();
             let owner = zones[0].0.owner();
             let one_owner = zones.iter().all(|(z, _)| z.owner() == owner);
             // A card is owned as what it is printed as; how many cards each player owns
@@ -449,6 +651,8 @@ impl Knowledge {
                 out.uncertain.push(UncertainCards { zones, candidates });
             }
         }
+        out.uncertain
+            .sort_by(|a, b| (&a.zones, &a.candidates).cmp(&(&b.zones, &b.candidates)));
         out
     }
 }
