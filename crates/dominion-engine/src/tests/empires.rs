@@ -2112,3 +2112,24 @@ fn donate_trashing_rocks_gains_the_silver_before_the_shuffle() {
     assert_eq!(g.count_owned(P0, Card::Silver), 1);
     assert_eq!(vp(&g, P0), 0);
 }
+
+#[test]
+fn throne_room_on_archive_makes_two_sets_and_stays_in_play_with_it() {
+    let mut g = setup(&[Card::Archive, Card::ThroneRoom]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Archive]);
+    deck(&mut g, P0, &[Card::Curse; 20]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Archive]);
+    assert_eq!(g.player(P0).set_aside.len(), 4);
+    assert_eq!(g.hand(P0).len(), 2);
+    for _ in 0..2 {
+        next_turn(&mut g);
+        assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Archive]);
+        next_turn(&mut g);
+        resolve_triggers(&mut g);
+    }
+    assert!(g.player(P0).set_aside.is_empty());
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+}
