@@ -533,31 +533,18 @@ fn once(f: &mut CardFrame, step: impl FnOnce(&mut Game, &mut CardFrame) -> Flow,
     Flow::done()
 }
 
-/// Schedules this play's Duration effect, stamped (Search also records the empty piles).
+/// Schedules this play's Duration effect, stamped (Search also records how many times
+/// Supply piles have emptied).
 fn duration(g: &mut Game, f: &mut CardFrame) {
     let mut data = stamped(g);
     if f.card == Card::Search {
-        let (n, m) = split(empty_supply_piles(g));
-        data.n = n;
-        data.m = m;
+        data.n = supply_piles_emptied(g);
     }
     f.add_duration(g, data);
 }
 
-fn empty_supply_piles(g: &Game) -> u64 {
-    g.piles()
-        .iter()
-        .enumerate()
-        .filter(|(i, p)| *i < 64 && p.in_supply && p.cards.is_empty())
-        .fold(0, |m, (i, _)| m | 1 << i)
-}
-
-fn split(bits: u64) -> (i32, i32) {
-    (bits as u32 as i32, (bits >> 32) as u32 as i32)
-}
-
-fn join(n: i32, m: i32) -> u64 {
-    u64::from(n as u32) | u64::from(m as u32) << 32
+fn supply_piles_emptied(g: &Game) -> i32 {
+    g.piles().iter().map(|p| p.emptied as i32).sum()
 }
 
 fn mask(players: &[PlayerId]) -> i32 {
@@ -733,15 +720,14 @@ fn each_target_gains(g: &Game, f: &mut CardFrame, card: Card) -> bool {
 
 // ---- Trigger producers ----
 
-/// Search: "the next time a Supply pile empties" (a pile empty now that wasn't then).
+/// Search: "the next time a Supply pile empties" (one emptied since it was played).
 fn search_triggers(g: &Game, out: &mut Vec<Trigger>) {
-    let mut empty = None;
+    let now = supply_piles_emptied(g);
     for l in g.lasting() {
         if l.card != Card::Search || l.until != Until::Removed {
             continue;
         }
-        let now = *empty.get_or_insert_with(|| empty_supply_piles(g));
-        if now & !join(l.data.n, l.data.m) != 0 {
+        if now > l.data.n {
             out.push(duration_trigger(l, WAITED));
         }
     }

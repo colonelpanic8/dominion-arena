@@ -143,6 +143,8 @@ pub struct Pile {
     pub removed: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
+    /// How many times it became empty while in the Supply.
+    pub emptied: u32,
 }
 
 impl Pile {
@@ -159,6 +161,7 @@ impl Pile {
             traits: vec![],
             removed: false,
             hidden: false,
+            emptied: 0,
         }
     }
 }
@@ -755,6 +758,12 @@ impl Game {
             .rposition(|&c| c == id)
             .expect("card missing from its recorded zone");
         src.remove(i);
+        if let Zone::Pile(pile) = from {
+            let pile = &mut self.piles[pile.index()];
+            if pile.cards.is_empty() && pile.in_supply {
+                pile.emptied += 1;
+            }
+        }
         if matches!(from, Zone::InPlay(_)) && !matches!(to, Zone::InPlay(_)) {
             self.masks.remove(&id);
             let t = &mut self.turn;

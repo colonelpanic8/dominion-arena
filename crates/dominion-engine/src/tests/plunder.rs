@@ -2750,7 +2750,6 @@ fn avoid_can_leave_every_shuffled_card_in_the_discard_pile() {
 }
 
 #[test]
-#[ignore = "Search compares with the piles empty when it was played, so a pile refilled and emptied again is missed"]
 fn search_counts_a_pile_refilled_and_emptied_again() {
     let mut g = setup(&[Card::Search, Card::Village]);
     hand(&mut g, P0, &[Card::Search]);
