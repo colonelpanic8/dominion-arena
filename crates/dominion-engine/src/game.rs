@@ -683,10 +683,14 @@ impl Game {
     }
 
     fn cost_with(&self, card: Card, id: Option<CardId>) -> Cost {
+        let mut cost = card.cost().unwrap_or_default();
+        // Only cards change cost: an Event or a Project costs what it says.
+        if card.kind().is_landscape() {
+            return cost;
+        }
         if let Some(cost) = cards::fixed_cost(self, card, id) {
             return cost;
         }
-        let mut cost = card.cost().unwrap_or_default();
         cards::modify_cost(self, card, id, &mut cost);
         cost
     }

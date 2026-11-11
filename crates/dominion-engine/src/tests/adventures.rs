@@ -690,6 +690,20 @@ fn bridge_troll_cheapens_cards_this_turn_and_next_and_gives_a_buy_each_time() {
 }
 
 #[test]
+fn bridge_troll_played_on_another_players_turn_cheapens_cards_on_that_turn() {
+    let mut g = game(&[Card::BridgeTroll], &[]);
+    hand(&mut g, P1, &[Card::BridgeTroll]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::BridgeTroll);
+    assert_eq!(g.cost(Card::Silver), Cost::coins(2));
+    finish_turn(&mut g);
+    // P1's next turn.
+    assert_eq!(g.cost(Card::Silver), Cost::coins(2));
+    finish_turn(&mut g);
+    assert_eq!(g.cost(Card::Silver), Cost::coins(3));
+}
+
+#[test]
 fn a_throne_roomed_bridge_troll_cheapens_two_on_both_turns() {
     let mut g = game(&[Card::BridgeTroll, Card::ThroneRoom], &[]);
     hand(&mut g, P0, &[Card::ThroneRoom, Card::BridgeTroll]);

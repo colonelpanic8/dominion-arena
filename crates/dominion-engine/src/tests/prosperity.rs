@@ -312,6 +312,31 @@ fn collection_gives_a_vp_per_action_gained_after_it_is_played() {
 }
 
 #[test]
+fn collections_played_while_a_gain_resolves_score_it_once_each() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Rush],
+        ..GameConfig::new(2, vec![Card::Collection, Card::Crown], 7)
+    });
+    hand(
+        &mut g,
+        P0,
+        &[Card::Collection, Card::Collection, Card::Gold, Card::Gold],
+    );
+    g.start();
+    play(&mut g, Card::Collection);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Rush)));
+    buy(&mut g, Card::Crown);
+    // +1 VP, then Rush plays the Crown, which plays the other Collection twice: +2 VP.
+    choose_kinds(&mut g, &[Card::Collection]);
+    assert_eq!(purpose(&g), Purpose::Turn);
+    assert_eq!(vp_tokens(&g, P0), 3);
+}
+
+#[test]
 fn crystal_ball_may_play_an_action_from_the_deck_in_the_buy_phase() {
     let mut g = setup(&[Card::CrystalBall, Card::Smithy]);
     hand(&mut g, P0, &[Card::CrystalBall]);
@@ -957,6 +982,21 @@ fn talisman_gains_a_copy_of_each_cheap_non_victory_card_bought() {
             Card::Market
         ]
     );
+}
+
+#[test]
+fn a_talisman_played_while_a_buy_resolves_copies_the_card_once() {
+    let mut g = setup(&[Card::Talisman, Card::MiningRoad]);
+    hand(&mut g, P0, &[Card::MiningRoad, Card::Talisman, Card::Gold]);
+    g.start();
+    play(&mut g, Card::MiningRoad);
+    play(&mut g, Card::Talisman);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Talisman);
+    // Mining Road plays the copy, which copies the bought card too.
+    trigger(&mut g, 0);
+    assert_eq!(purpose(&g), Purpose::Turn);
+    assert_eq!(g.count_owned(P0, Card::Talisman), 4);
 }
 
 #[test]

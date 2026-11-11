@@ -114,6 +114,15 @@ pub(crate) fn play(g: &mut Game, card: Card) {
     respond(g, Response::Move(Move::Play(id)));
 }
 
+/// Has `p` play `card` from their hand right now, as an effect would on another
+/// player's turn.
+pub(crate) fn play_out_of_turn(g: &mut Game, p: PlayerId, card: Card) {
+    let id = find(g, p, card);
+    g.stack.push(crate::frame::Frame::play(p, id, true, vec![]));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+}
+
 pub(crate) fn end_phase(g: &mut Game) {
     respond(g, Response::Move(Move::EndPhase));
 }
@@ -514,6 +523,42 @@ fn coffers_and_debt_can_be_used_in_every_phase() {
 // ---- Shuffling ----
 
 /// Resolves a pending Star Chart trigger, picking `card` to go on top of the shuffle.
+#[test]
+fn cost_reductions_leave_events_and_projects_alone() {
+    type Reduce = fn(&mut Game);
+    let cases: &[(Card, Reduce)] = &[
+        (Card::Bridge, |g| play(g, Card::Bridge)),
+        (Card::Highway, |g| play(g, Card::Highway)),
+        (Card::Princess, |g| play(g, Card::Princess)),
+        (Card::BridgeTroll, |g| play(g, Card::BridgeTroll)),
+        (Card::Quarry, |g| play(g, Card::Quarry)),
+        (Card::Inventor, |g| {
+            play(g, Card::Inventor);
+            choose_pile(g, Card::Silver);
+        }),
+        (Card::Renown, |g| play(g, Card::Renown)),
+        (Card::Canal, |g| g.players[0].projects.push(Card::Canal)),
+        (Card::FlourishingTrade, |g| {
+            g.prophecy = Some((Card::FlourishingTrade, 0));
+        }),
+    ];
+    for &(reducer, reduce) in cases {
+        let mut g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            landscapes: vec![Card::Populate, Card::Citadel],
+            ..GameConfig::new(2, vec![Card::Village], 7)
+        });
+        hand(&mut g, P0, &[reducer]);
+        g.start();
+        g.turn.coins = 3;
+        reduce(&mut g);
+        assert!(g.cost(Card::Village).less_than(Cost::coins(3)), "{reducer}");
+        assert_eq!(g.cost(Card::Populate), Cost::coins(10), "{reducer}");
+        assert_eq!(g.cost(Card::Citadel), Cost::coins(8), "{reducer}");
+    }
+}
+
 fn star_chart(g: &mut Game, card: Card) {
     let d = g.pending().expect("a decision is pending");
     assert_eq!(
@@ -619,6 +664,25 @@ fn actions_and_buys_do_nothing_on_another_players_turn() {
     check(Card::Stables, &[Card::Copper], |g| {
         choose_kinds(g, &[Card::Copper])
     });
+}
+
+#[test]
+fn an_attack_played_on_another_players_turn_starts_with_the_turn_player() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(3, vec![Card::Witch], 7)
+    });
+    let curses = g.supply_pile(Card::Curse).unwrap();
+    for c in g.pile(curses).cards.clone().into_iter().skip(1) {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+    hand(&mut g, P1, &[Card::Witch]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Witch);
+    // The last Curse goes to the player whose turn it is, not the one to P1's left.
+    assert_eq!(g.count_owned(P0, Card::Curse), 1);
+    assert_eq!(g.count_owned(P2, Card::Curse), 0);
 }
 
 #[test]

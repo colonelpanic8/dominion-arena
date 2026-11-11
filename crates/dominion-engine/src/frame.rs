@@ -1293,7 +1293,9 @@ impl PlayFrame {
                 // answer the card being played, whatever it ends up doing.
                 self.pc = 2;
                 if g.is(id, Types::ATTACK) {
-                    self.remaining = g.others(p);
+                    // In turn order from the player whose turn it is.
+                    self.remaining = g.players_from(g.turn.player);
+                    self.remaining.retain(|&q| q != p);
                     self.pc = 3;
                 }
                 Flow::Continue
@@ -1387,7 +1389,9 @@ impl PlayFrame {
                     coins: def.coins as u32,
                     potions: def.potions as u32,
                 };
-                cards::modify_bonus(g, p, id, &mut bonus);
+                if st.way.is_none() {
+                    cards::modify_bonus(g, p, id, &mut bonus);
+                }
                 let pl = &mut g.players[p.index()];
                 pl.villagers += bonus.plus.villagers as u32;
                 pl.coffers += bonus.plus.coffers as u32;

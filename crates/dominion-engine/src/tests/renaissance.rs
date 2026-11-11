@@ -413,6 +413,20 @@ fn improve_can_trash_itself() {
 }
 
 #[test]
+fn improve_played_on_another_players_turn_trashes_in_that_turns_clean_up() {
+    let mut g = setup(&[Card::Improve, Card::Smithy]);
+    hand(&mut g, P1, &[Card::Improve]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Improve);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(g.pending().unwrap().player, P1);
+    trigger(&mut g, Card::Improve);
+    assert_eq!(g.count_owned(P1, Card::Improve), 0);
+    assert_eq!(g.count_owned(P1, Card::Smithy), 1);
+}
+
+#[test]
 fn improve_cannot_trash_a_duration_staying_in_play() {
     let mut g = setup(&[Card::Improve, Card::Research]);
     hand(&mut g, P0, &[Card::Research, Card::Improve, Card::Silver]);

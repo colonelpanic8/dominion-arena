@@ -79,11 +79,13 @@ them.
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
   (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`: they are the card's
   player's, and the one resolved last applies), choose a Way if the game has Ways (it
-  can be used instead of either), open an `Attack` window per other player for Attacks (also when the
-  play is replaced or blocked: Reactions answer the card being played), then apply the
+  can be used instead of either), open an `Attack` window per other player for Attacks (in turn
+  order from the turn's player; also when the play is replaced or blocked: Reactions
+  answer the card being played), then apply the
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
-  `SetRules::modify_bonus`) and run the card's `Hook::Main`, then the `AfterPlay`
-  window. `chain` lists the cards playing it (Throne Room ...); pass
+  `SetRules::modify_bonus`; a Way's own instead, unmodified) and run the card's
+  `Hook::Main`, then the `AfterPlay` window. `chain` lists the cards playing it
+  (Throne Room ...); pass
   `f.chain_for_child()` when a card plays another more than once (only then does it stay
   in play with a Duration).
   `SetRules::can_play` can forbid a play from the hand (Warlord, Voyage): `Frame::play`
@@ -104,7 +106,10 @@ them.
   `Trigger`s that apply right now; the window resolves them (turn player first, then
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
-  card is: the stop-moving rule) when producing a trigger. It doesn't ask for an order
+  card is: the stop-moving rule) when producing a trigger. An effect that stacks ("this
+  turn, when you gain ...") produces one trigger per lasting effect or card in play,
+  never one trigger carrying a count: the window tracks what has resolved per trigger,
+  and more can come into effect while it is open. It doesn't ask for an order
   when a player's mandatory triggers all have the same effect, and resolves
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
   +1 Buy) first without asking. A trigger runs as the card's
@@ -121,7 +126,8 @@ them.
   turn" `Until::StartOfTurn(owner)`. Sets read `g.lasting()` for cost changes, triggers,
   immunity and so on.
 - **Modifiers.** Rules code asks the game, never the static data: `g.cost_of(id)` /
-  `g.cost(card)` (through `SetRules::modify_cost`), `g.types(id)` / `g.is(id, types)`
+  `g.cost(card)` (through `SetRules::modify_cost`; Events and Projects always cost what
+  they say), `g.types(id)` / `g.is(id, types)`
   (through `modify_types`), `g.card(id)` (what a card currently is: `Game::masks` make
   Band of Misfits-style cards another card until they leave play; `g.printed(id)` is
   what is printed). `SetRules::behavior` lets a card use another card's abilities

@@ -1152,12 +1152,6 @@ fn black_cat(g: &mut Game, f: &mut CardFrame) -> Flow {
     if f.player == g.turn.player {
         return Flow::done();
     }
-    if f.pc == 0 {
-        let order = g.players_from(g.turn.player);
-        f.targets
-            .sort_by_key(|t| order.iter().position(|p| p == t));
-        f.pc = 1;
-    }
     let Some(&target) = f.targets.get(f.s.i) else {
         return Flow::done();
     };
@@ -1826,6 +1820,8 @@ fn populate(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         .map(|i| PileId(i as u8))
         .filter(|&id| {
             let pile = g.pile(id);
+            // By the pile's card as printed: Enlightenment and Inheritance change cards,
+            // not piles.
             pile.in_supply && pile.card.is(Types::ACTION) && !pile.cards.is_empty() && !done(f, id)
         })
         .collect();
@@ -1999,7 +1995,13 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
             f.s.card = Some(behavior);
             f.s.n = g.next_lasting as i32;
             let def = behavior.def();
-            let plus = def.plus;
+            let mut bonus = super::Bonus {
+                plus: def.plus,
+                coins: def.coins as u32,
+                potions: def.potions as u32,
+            };
+            super::modify_bonus(g, p, id, &mut bonus);
+            let plus = bonus.plus;
             plus_actions(g, p, plus.actions as u32);
             plus_buys(g, p, plus.buys as u32);
             let pl = &mut g.players[p.index()];
@@ -2007,11 +2009,11 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
             pl.coffers += plus.coffers as u32;
             pl.favors += plus.favors as u32;
             if p == g.turn.player {
-                g.turn.potions += def.potions as u32;
+                g.turn.potions += bonus.potions;
             }
             g.add_coins(p, plus.cards as u32);
             f.pc = 1;
-            Flow::Call(Frame::draw(p, plus.coins as usize + def.coins as usize))
+            Flow::Call(Frame::draw(p, plus.coins as usize + bonus.coins as usize))
         }
         1 => {
             g.ext.menagerie.chameleon.push(id);

@@ -32,7 +32,8 @@ pub(crate) trait SetRules {
     /// Adds this set's triggered abilities that respond to `occ`.
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {}
 
-    /// Applies this set's cost modifiers to `card` (the physical `id`, if any).
+    /// Applies this set's cost modifiers to `card` (the physical `id`, if any). Not asked
+    /// about landscapes: an Event or a Project costs what it says.
     fn modify_cost(g: &Game, card: Card, id: Option<CardId>, cost: &mut Cost) {}
 
     /// A cost `card` has instead of its printed cost and every modifier (Wayfarer).
@@ -59,7 +60,7 @@ pub(crate) trait SetRules {
     /// Applies this set's type-changing effects to `id`.
     fn modify_types(g: &Game, id: CardId, types: &mut Types) {}
 
-    /// Changes the vanilla bonuses `p` gets from playing `id`.
+    /// Changes the vanilla bonuses `p` gets from following `id`'s own instructions.
     fn modify_bonus(g: &Game, p: PlayerId, id: CardId, bonus: &mut Bonus) {}
 
     /// How many more times a play of `id` by `p` follows its instructions (Reckless).

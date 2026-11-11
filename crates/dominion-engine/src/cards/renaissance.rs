@@ -68,7 +68,7 @@ impl SetRules for Rules {
             (Card::CargoShip, Hook::Ability(CARGO_SET_ASIDE)) => cargo_set_aside(g, f),
             (Card::Improve, Hook::Ability(IMPROVE_TRASH)) => improve_trash(g, f, input),
             (Card::Priest, Hook::Ability(PRIEST_COINS)) => {
-                g.add_coins(f.player, 2 * f.data as u32);
+                g.add_coins(f.player, 2);
                 Flow::done()
             }
             (_, Hook::Ability(GAINED)) => gained(g, f, input),
@@ -179,16 +179,19 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::Pageant, EFFECT).optional());
                 }
             }
-            Occasion::StartCleanup { player } => {
-                if player != g.turn.player || improvable(g, player).is_empty() {
-                    return;
-                }
-                for l in this_turn(g, Card::Improve, player) {
-                    out.push(
-                        Trigger::new(player, Card::Improve, IMPROVE_TRASH)
-                            .via_lasting(l.id)
-                            .optional(),
-                    );
+            Occasion::StartCleanup { .. } => {
+                // Whoever played it, on whoever's turn.
+                for l in g.lasting() {
+                    if l.card == Card::Improve
+                        && l.until == Until::EndOfTurn
+                        && !improvable(g, l.owner).is_empty()
+                    {
+                        out.push(
+                            Trigger::new(l.owner, Card::Improve, IMPROVE_TRASH)
+                                .via_lasting(l.id)
+                                .optional(),
+                        );
+                    }
                 }
             }
             Occasion::DiscardFromPlay { player } => {
@@ -485,9 +488,8 @@ fn trash_triggers(g: &Game, trasher: PlayerId, card: CardId, out: &mut Vec<Trigg
         out.push(Trigger::new(trasher, g.card(card), TRASHED).on(card));
     }
     if trasher == g.turn.player {
-        let priests = this_turn(g, Card::Priest, trasher).count();
-        if priests > 0 {
-            out.push(Trigger::new(trasher, Card::Priest, PRIEST_COINS).data(priests as i32));
+        for l in this_turn(g, Card::Priest, trasher) {
+            out.push(Trigger::new(trasher, Card::Priest, PRIEST_COINS).via_lasting(l.id));
         }
     }
     if has(g, trasher, Card::Sewers)
