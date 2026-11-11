@@ -691,6 +691,26 @@ fn riverboat_sets_aside_a_five_cost_action_and_plays_it_next_turn_leaving_it_the
     assert!(g.in_play(P0).is_empty());
 }
 
+/// Riverboat's random card comes by pile, as from the randomizers: the Knights are one
+/// pile, not eight $5 cards ("If you get the Knights randomizer, you randomly pick one of
+/// the 9 Knights", Riverboat).
+#[test]
+fn riverboats_random_card_is_dealt_by_pile() {
+    let knights = (0..600)
+        .filter(|&seed| {
+            let g = setup_with(GameConfig {
+                colonies: Some(false),
+                shelters: Some(false),
+                ..GameConfig::new(2, vec![Card::Riverboat], seed)
+            });
+            let card = g.card(g.ext.rising_sun.riverboat.unwrap());
+            card.is(Types::KNIGHT)
+        })
+        .count();
+    // About 5 expected; counting each $5 Knight as a card of its own gives about 28.
+    assert!((1..15).contains(&knights), "{knights}");
+}
+
 #[test]
 fn riverboats_card_gets_the_setup_it_needs() {
     for seed in 0..200 {

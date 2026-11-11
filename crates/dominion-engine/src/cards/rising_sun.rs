@@ -585,7 +585,22 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
                 && setup::unused(g, c)
         })
         .collect();
-    let Some(card) = s.choose(g, Card::Riverboat, pool) else {
+    // At random, a pile first, then one of its cards: the Knights randomizer stands for any
+    // of its $5 Knights.
+    let home = |c: Card| c.def().pile.unwrap_or(c);
+    let mut random: Vec<Card> = vec![];
+    for &c in &pool {
+        if random.iter().any(|&r| home(r) == home(c)) {
+            continue;
+        }
+        let cards: Vec<Card> = pool.iter().copied().filter(|&d| home(d) == home(c)).collect();
+        let i = if cards.len() > 1 { g.random_index(cards.len()) } else { 0 };
+        random.push(cards[i]);
+    }
+    let Some(card) = s
+        .choose_or_random(g, Card::Riverboat, pool, 1..=1, |c| random.contains(&c))
+        .pop()
+    else {
         return;
     };
     let pile = PileId(g.piles.len() as u8);
