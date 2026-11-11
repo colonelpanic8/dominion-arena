@@ -935,3 +935,21 @@ fn random_intrigue_games_keep_invariants() {
         .collect();
     random_games_with_copies(&pool, &[], 0..120, |_| vec![]);
 }
+
+#[test]
+fn moat_blocks_torturer_and_swindler() {
+    let mut g = setup(&[Card::Torturer, Card::Swindler, Card::Moat, Card::Village]);
+    hand(&mut g, P0, &[Card::Village, Card::Torturer, Card::Swindler]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    hand(&mut g, P1, &[Card::Moat, Card::Copper]);
+    deck(&mut g, P1, &[Card::Gold]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Torturer);
+    trigger(&mut g, Card::Moat);
+    play(&mut g, Card::Swindler);
+    trigger(&mut g, Card::Moat);
+    assert_eq!(hand_kinds(&g, P1), [Card::Moat, Card::Copper]);
+    assert_eq!(deck_kinds(&g, P1), [Card::Gold]);
+    assert_eq!(g.turn().coins, 2);
+}

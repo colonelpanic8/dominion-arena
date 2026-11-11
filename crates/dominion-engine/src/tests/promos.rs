@@ -607,3 +607,47 @@ fn random_promo_games_keep_invariants() {
         }
     });
 }
+
+#[test]
+fn throne_room_on_captain_plays_twice_now_and_twice_next_turn() {
+    let mut g = setup(&[Card::Captain, Card::ThroneRoom, Card::Village, Card::Smithy]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Captain]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Captain]);
+    choose_pile(&mut g, Card::Village);
+    choose_pile(&mut g, Card::Village);
+    assert_eq!(g.turn().actions, 4);
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::ThroneRoom, Card::Captain]);
+    trigger(&mut g, Card::Captain);
+    choose_pile(&mut g, Card::Smithy);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(g.hand(P0).len(), 11);
+    finish_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+}
+
+#[test]
+fn throne_roomed_church_returns_two_batches_each_with_a_trash() {
+    let mut g = setup(&[Card::Church, Card::ThroneRoom]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::ThroneRoom, Card::Church, Card::Gold, Card::Curse],
+    );
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Church]);
+    choose_kinds(&mut g, &[Card::Gold]);
+    choose_kinds(&mut g, &[Card::Curse]);
+    next_turn(&mut g);
+    trigger(&mut g, Card::Church);
+    assert_eq!(g.hand(P0).len(), 6);
+    choose(&mut g, &[]);
+    assert_eq!(g.hand(P0).len(), 7);
+    choose_kinds(&mut g, &[Card::Curse]);
+    assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Curse));
+}
