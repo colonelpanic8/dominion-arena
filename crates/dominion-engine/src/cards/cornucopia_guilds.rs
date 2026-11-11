@@ -1367,16 +1367,37 @@ fn followers(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 None => Flow::Continue,
             }
         }
+        // Each other player in turn gains a Curse, then discards.
         1 => {
-            let targets = f.targets.clone();
-            if let Some(flow) = each_gains(g, f, &targets, Card::Curse) {
-                return flow;
-            }
-            f.s.i = 0;
+            let Some(&t) = f.targets.get(f.s.i) else {
+                return Flow::done();
+            };
             f.pc = 2;
+            match g.supply_pile(Card::Curse) {
+                Some(pile) => Flow::Call(Frame::gain(t, pile, Dest::Discard)),
+                None => Flow::Continue,
+            }
+        }
+        2 => {
+            let t = f.targets[f.s.i];
+            let hand = g.hand(t).to_vec();
+            if hand.len() <= 3 {
+                f.pc = 4;
+                return Flow::Continue;
+            }
+            let n = hand.len() - 3;
+            f.pc = 3;
+            f.ask_cards_for(t, hand, n, n, Purpose::Discard)
+        }
+        3 => {
+            f.pc = 4;
+            Flow::Call(Frame::discard(f.targets[f.s.i], input.cards()))
+        }
+        _ => {
+            f.s.i += 1;
+            f.pc = 1;
             Flow::Continue
         }
-        _ => discard_down(g, f, input, 3, 2).unwrap_or_else(Flow::done),
     }
 }
 

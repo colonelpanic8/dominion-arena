@@ -1024,16 +1024,23 @@ fn prizes() {
 }
 
 #[test]
-fn followers_gains_an_estate_curses_and_attacks() {
-    let mut g = setup(&[Card::Tournament]);
+fn followers_gains_an_estate_and_attacks_each_player_in_turn() {
+    let mut g = setup_with(GameConfig::new(3, vec![Card::Tournament], 1));
     hand(&mut g, P0, &[Card::Followers]);
     deck(&mut g, P0, &[Card::Copper; 2]);
     g.start();
     play(&mut g, Card::Followers);
     assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
-    assert_eq!(g.count_owned(P1, Card::Curse), 1);
+    // P1 gains a Curse and discards before P2 gains one.
+    let curses = |g: &Game| [P1, P2].map(|p| g.count_owned(p, Card::Curse));
     let d = g.pending().unwrap();
     assert_eq!((d.player, d.purpose), (P1, Purpose::Discard));
+    assert_eq!(curses(&g), [1, 0]);
+    let hand = candidates(&g);
+    choose(&mut g, &hand[..2]);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P2, Purpose::Discard));
+    assert_eq!(curses(&g), [1, 1]);
 }
 
 #[test]
