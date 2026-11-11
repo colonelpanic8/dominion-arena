@@ -131,6 +131,8 @@ pub struct Pile {
     /// Adventures tokens on this pile, by owner.
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
+    /// Face down: no card in it is public, not even the top (the Black Market deck).
+    pub hidden: bool,
 }
 
 impl Pile {
@@ -145,6 +147,7 @@ impl Pile {
             trade_route: false,
             tokens: vec![],
             traits: vec![],
+            hidden: false,
         }
     }
 }
