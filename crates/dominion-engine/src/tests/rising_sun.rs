@@ -1282,3 +1282,16 @@ fn the_player_orders_shadow_cards_put_on_the_bottom_by_a_shuffle() {
     g.run(crate::frame::Input::Start);
     assert!(g.pending().is_some());
 }
+
+#[test]
+fn fishmonger_can_be_played_from_the_deck_in_the_buy_phase_with_capitalism() {
+    let mut g = game(&[Card::Fishmonger], &[Card::Capitalism], 0);
+    g.players[0].projects.push(Card::Capitalism);
+    hand(&mut g, P0, &[Card::Copper]);
+    let ids = deck(&mut g, P0, &[Card::Estate, Card::Fishmonger]);
+    g.start();
+    to_buy(&mut g);
+    assert!(moves(&g).contains(&Move::Play(ids[1])));
+    respond(&mut g, Response::Move(Move::Play(ids[1])));
+    assert_eq!((g.turn().coins, g.turn().buys), (1, 2));
+}

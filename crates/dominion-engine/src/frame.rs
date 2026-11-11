@@ -9,7 +9,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Move, Opt, Purpose, Response};
 use crate::event::{Dest, Event};
-use crate::game::{GainState, Phase, PlayState, Pos, Turn, Until, Zone};
+use crate::game::{EndReason, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -474,8 +474,18 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     pc: 0,
                 });
             }
-            g.turn = Turn::new(*next);
-            *next = g.left_of(*next);
+            if g.ending.is_some() {
+                let p = g
+                    .final_round
+                    .pop_front()
+                    .expect("a final-round turn is due");
+                g.turn = Turn::new(p);
+                // Like extra turns, these don't count for the tiebreaker.
+                g.players[p.index()].extra_turns_taken += 1;
+            } else {
+                g.turn = Turn::new(*next);
+                *next = g.left_of(*next);
+            }
             *pc = 1;
             Flow::Call(Frame::Turn {
                 player: g.turn.player,
@@ -483,7 +493,21 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
             })
         }
         _ => {
-            if let Some(reason) = g.game_over_reason() {
+            if g.ending.is_none()
+                && let Some(reason) = g.game_over_reason()
+            {
+                g.ending = Some(reason);
+                if reason != EndReason::TurnLimit {
+                    let order = g.players_from(g.left_of(g.turn.player));
+                    g.final_round = order
+                        .into_iter()
+                        .filter(|&p| cards::final_round(g, p))
+                        .collect();
+                }
+            }
+            if let Some(reason) = g.ending
+                && g.final_round.is_empty()
+            {
                 g.finish(reason);
                 return Flow::done();
             }
@@ -572,7 +596,13 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             ask_moves(p, Phase::Action, moves)
         }
         3 => {
-            // An effect returned to the Action phase (Continue, Villa, ...).
+            if g.turn.return_to_action {
+                g.turn.return_to_action = false;
+                *pc = 11;
+                return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
+            }
+            // An effect already returned to the Action phase itself (Continue, which plays
+            // a card there).
             if g.turn.phase == Phase::Action {
                 g.turn.bought = false;
                 *pc = 2;
@@ -710,6 +740,12 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             *pc = 10;
             Flow::Call(Frame::window(Occasion::EndTurn { player: p }))
         }
+        11 => {
+            g.turn.phase = Phase::Action;
+            g.turn.bought = false;
+            *pc = 2;
+            Flow::Continue
+        }
         _ => {
             g.lasting.retain(|l| l.until != Until::EndOfTurn);
             let kept = std::mem::take(&mut g.players[p.index()].boons_kept);
@@ -745,6 +781,7 @@ fn resume_gain(
                 to,
                 bought,
                 cancelled: false,
+                turn_index: None,
             });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
@@ -771,6 +808,8 @@ fn resume_gain(
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
+                g.gains.last_mut().expect("gain in progress").turn_index =
+                    Some(g.turn.gained.len());
                 g.turn.gained.push(kind);
                 if g.turn.phase == Phase::Buy {
                     g.turn.gained_in_buy_phase.push(kind);
@@ -939,6 +978,7 @@ impl PlayFrame {
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
+                    g.turn.played_ids.push(id);
                 }
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {
