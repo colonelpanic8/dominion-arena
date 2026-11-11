@@ -843,7 +843,7 @@ fn the_game_ends_when_provinces_run_out() {
 }
 
 #[test]
-fn during_your_turns_effects_are_over_when_the_game_is_scored() {
+fn a_score_during_a_turn_is_the_score_if_the_game_ended_now() {
     let mut g = setup_with(GameConfig {
         colonies: Some(false),
         shelters: Some(false),
@@ -854,15 +854,30 @@ fn during_your_turns_effects_are_over_when_the_game_is_scored() {
     g.players[0].projects.push(Card::Capitalism);
     let militia = hand(&mut g, P0, &[Card::Militia])[0];
     g.start();
-    // Keep: 5 VP for having the most copies of a Treasure, which Militia is for now.
+    // Keep: 5 VP for having the most copies of a Treasure, which Militia is only during
+    // P0's turns, so it doesn't count.
     assert!(g.is(militia, Types::TREASURE));
     let during = g.score(P0);
     while g.outcome().is_none() {
         end_phase(&mut g);
     }
-    let outcome = g.outcome().unwrap();
-    assert!(!g.is(militia, Types::TREASURE));
-    assert_eq!(outcome.scores[0], during - 5);
+    assert_eq!(g.outcome().unwrap().scores[0], during);
+
+    // Plateau Shepherds pairs Favors with cards costing $2, which Estates are again once
+    // this turn's Bridge is over.
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::PlateauShepherds],
+        ..GameConfig::new(2, vec![Card::Bridge], 7)
+    });
+    g.players[0].favors = 1;
+    hand(&mut g, P0, &[Card::Bridge, Card::Estate]);
+    g.start();
+    let before = g.score(P0);
+    play(&mut g, Card::Bridge);
+    assert_eq!(g.cost(Card::Estate).coins, 1);
+    assert_eq!(g.score(P0), before);
 }
 
 /// A random game in which every deck also starts with one of each Kingdom card (the top

@@ -883,9 +883,66 @@ impl Game {
             .count()
     }
 
-    /// `p`'s VP as the cards stand. During a turn its cost and type changes count; the
-    /// final scores are taken after the last turn, when none apply.
+    /// `p`'s VP if the game ended now. The final scores are taken after the last turn, so
+    /// during a turn this turn's effects (Capitalism, Inheritance, Bridge, cards played
+    /// as another card) don't count.
     pub fn score(&self, p: PlayerId) -> i32 {
+        let ended = self.turn_player().is_none()
+            && !self.lasting.iter().any(|l| l.until == Until::EndOfTurn);
+        if ended {
+            self.score_as_is(p)
+        } else {
+            self.after_turn().score_as_is(p)
+        }
+    }
+
+    /// This game as scored if it ended now: no turn in progress, this turn's lasting
+    /// effects over, and what leaves play in Clean-up no longer another card.
+    fn after_turn(&self) -> Game {
+        let mut g = Game {
+            config: self.config.clone(),
+            cards: self.cards.clone(),
+            zones: self.zones.clone(),
+            masks: self.masks.clone(),
+            players: self.players.clone(),
+            piles: self.piles.clone(),
+            trash: self.trash.clone(),
+            turn: self.turn.clone(),
+            landscapes: self.landscapes.clone(),
+            boons: self.boons.clone(),
+            hexes: self.hexes.clone(),
+            artifacts: self.artifacts.clone(),
+            prophecy: self.prophecy,
+            trade_route_mat: self.trade_route_mat,
+            lasting: self.lasting.clone(),
+            next_lasting: self.next_lasting,
+            extra_turns: self.extra_turns.clone(),
+            ending: self.ending,
+            final_round: self.final_round.clone(),
+            gains: vec![],
+            last_gain: None,
+            trashing: vec![],
+            plays: vec![],
+            leaving: vec![],
+            last_shuffle: vec![],
+            ext: self.ext.clone(),
+            stack: vec![],
+            pending: None,
+            rng: self.rng.clone(),
+            log: vec![],
+            outcome: None,
+            trace: None,
+        };
+        g.turn.phase = Phase::End;
+        g.lasting.retain(|l| l.until != Until::EndOfTurn);
+        let kept: Vec<CardId> = g.lasting.iter().flat_map(|l| l.keeps.clone()).collect();
+        let zones = &g.zones;
+        g.masks
+            .retain(|id, _| !matches!(zones[id.index()], Zone::InPlay(_)) || kept.contains(id));
+        g
+    }
+
+    fn score_as_is(&self, p: PlayerId) -> i32 {
         let player = &self.players[p.index()];
         let cards: i32 = player
             .owned()
