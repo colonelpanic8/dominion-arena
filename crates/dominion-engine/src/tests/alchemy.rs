@@ -625,3 +625,18 @@ fn random_possession_games_keep_invariants() {
         random_game_with_kingdom_decks(config, seed);
     }
 }
+
+#[test]
+fn a_possessed_players_overpay_does_nothing_since_the_possessor_gains_the_card() {
+    let mut g = possess(&[Card::Masterpiece], &[Card::Gold, Card::Gold]);
+    play_from(&mut g, P1, Card::Gold);
+    play_from(&mut g, P1, Card::Gold);
+    let silvers = g.count_owned(P0, Card::Silver) + g.count_owned(P1, Card::Silver);
+    buy(&mut g, Card::Masterpiece);
+    respond(&mut g, Response::Number(3));
+    assert_eq!(discard_kinds(&g, P0).last(), Some(&Card::Masterpiece));
+    assert_eq!(
+        g.count_owned(P0, Card::Silver) + g.count_owned(P1, Card::Silver),
+        silvers
+    );
+}
