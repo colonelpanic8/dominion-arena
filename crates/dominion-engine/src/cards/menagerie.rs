@@ -17,7 +17,7 @@ use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraTurn, Mat, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Mat, Phase, Pos, Scratch, Until, Zone};
 use crate::setup;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -254,7 +254,7 @@ impl SetRules for Rules {
                     player: p,
                     source: Card::SeizeTheDay,
                     controller: p,
-                    third_in_a_row: true,
+                    limit: ExtraLimit::None,
                 });
                 Flow::done()
             }

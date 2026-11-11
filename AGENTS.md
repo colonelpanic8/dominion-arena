@@ -63,8 +63,9 @@ them.
   Debt; `EndBuyPhase`), Night (`StartNight`; play Night cards), Clean-up
   (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Extra turns queue
-  in `Game::extra_turns`; one is not taken as a third turn in a row unless it says
-  so (`ExtraTurn::third_in_a_row`: Seize the Day), and extra turns
+  in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
+  in a row: check `g.third_in_a_row(p)` before queuing one; Possession: not a second
+  extra turn in a row; Seize the Day: never), and extra turns
   don't count for the tiebreaker. `Player::skip_turns` skips the next turns a player
   would take (Lich); skipped regular turns count for the tiebreaker. `Turn::controller` makes someone else decide and see
   the player's cards (Possession, which also replaces gains, trashing through

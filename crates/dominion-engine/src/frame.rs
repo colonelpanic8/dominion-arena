@@ -9,7 +9,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Move, Opt, Purpose, Response};
 use crate::event::{Dest, Event};
-use crate::game::{EndReason, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
+use crate::game::{EndReason, ExtraLimit, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -589,10 +589,17 @@ fn resume_shuffle(
 fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
     match pc {
         0 => {
-            let prev = (g.turn.player, g.turn.extra.is_some());
             let started = g.players.iter().any(|p| p.turns_taken > 0);
+            let last = started.then_some(g.turn.player);
             while let Some(extra) = g.extra_turns.pop_front() {
-                if started && extra.player == prev.0 && prev.1 && !extra.third_in_a_row {
+                let ruled_out = match extra.limit {
+                    ExtraLimit::None => false,
+                    ExtraLimit::ThirdInARow => g.third_in_a_row(extra.player),
+                    ExtraLimit::SecondExtraInARow => {
+                        g.turn.player == extra.player && g.turn.extra.is_some()
+                    }
+                };
+                if started && ruled_out {
                     continue;
                 }
                 if g.skips_turn(extra.player, true) {
@@ -605,6 +612,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     continue;
                 }
                 g.turn = Turn::new(extra.player);
+                g.turn.previous = last;
                 g.turn.controller = extra.controller;
                 g.turn.extra = Some(extra.source);
                 *pc = 1;
@@ -619,6 +627,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     .pop_front()
                     .expect("a final-round turn is due");
                 g.turn = Turn::new(p);
+                g.turn.previous = last;
                 // Like extra turns, these don't count for the tiebreaker.
                 g.players[p.index()].extra_turns_taken += 1;
             } else {
@@ -626,6 +635,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     *next = g.left_of(*next);
                 }
                 g.turn = Turn::new(*next);
+                g.turn.previous = last;
                 *next = g.left_of(*next);
             }
             *pc = 1;

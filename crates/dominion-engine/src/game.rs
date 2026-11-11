@@ -180,6 +180,8 @@ pub enum Phase {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Turn {
     pub player: PlayerId,
+    /// Who took the turn before this one (skipped turns aren't taken).
+    pub previous: Option<PlayerId>,
     /// Who makes this turn's decisions (differs under Possession).
     pub controller: PlayerId,
     /// The card that granted this as an extra turn, if it is one.
@@ -218,6 +220,7 @@ impl Turn {
     pub(crate) fn new(player: PlayerId) -> Turn {
         Turn {
             player,
+            previous: None,
             controller: player,
             extra: None,
             phase: Phase::Start,
@@ -291,9 +294,18 @@ pub struct ExtraTurn {
     pub source: Card,
     /// Who controls it (Possession).
     pub controller: PlayerId,
-    /// Taken even as a third turn in a row (Seize the Day; the other extra turns rule
-    /// that out).
-    pub third_in_a_row: bool,
+    pub limit: ExtraLimit,
+}
+
+/// When an extra turn doesn't happen (each card's own "but not ..." clause).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExtraLimit {
+    /// Always happens (Seize the Day).
+    None,
+    /// Not as a third turn in a row (Outpost, Voyage, Mission, ...).
+    ThirdInARow,
+    /// Not right after another extra turn of its player's (Possession).
+    SecondExtraInARow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -990,6 +1002,11 @@ impl Game {
             turns,
             winners,
         });
+    }
+
+    /// Whether a turn of `p`'s right after this one would be their third in a row.
+    pub(crate) fn third_in_a_row(&self, p: PlayerId) -> bool {
+        self.turn.player == p && self.turn.previous == Some(p)
     }
 
     /// Whether `p`'s next turn (an extra turn if `extra`) is skipped; if so, records it.

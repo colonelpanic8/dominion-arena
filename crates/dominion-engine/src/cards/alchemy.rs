@@ -7,7 +7,7 @@ use super::{CardFrame, Hook, SetRules};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{ExtraTurn, Pos, Scratch, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Pos, Scratch, Zone};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -241,7 +241,7 @@ fn possession_end_turn(g: &mut Game, p: PlayerId) {
             player: g.left_of(p),
             source: Card::Possession,
             controller: p,
-            third_in_a_row: false,
+            limit: ExtraLimit::SecondExtraInARow,
         });
     }
 }

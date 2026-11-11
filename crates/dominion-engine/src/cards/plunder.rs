@@ -14,7 +14,7 @@ use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraTurn, Lasting, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::add_mixed_pile;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -298,16 +298,12 @@ impl SetRules for Rules {
                     Until::EndOfTurn,
                     Scratch::default(),
                 );
-                let queued = g
-                    .extra_turns
-                    .iter()
-                    .any(|t| t.player == p && t.source == Card::Journey);
-                if !queued && p == g.turn.player && g.turn.extra.is_none() {
+                if p == g.turn.player && !g.third_in_a_row(p) {
                     g.extra_turns.push_back(ExtraTurn {
                         player: p,
                         source: Card::Journey,
                         controller: g.turn.controller,
-                        third_in_a_row: false,
+                        limit: ExtraLimit::ThirdInARow,
                     });
                 }
                 Flow::done()

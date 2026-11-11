@@ -12,7 +12,7 @@ use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{ExtraTurn, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Pos, Scratch, Until, Zone};
 use crate::setup::add_mixed_pile;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -872,7 +872,7 @@ fn ally_trigger(g: &Game, ally: Card, occ: &Occasion) -> Option<Trigger> {
         ),
         Occasion::EndTurn { player } if ally == Card::IslandFolk => (
             player,
-            favors(g, player) >= 5 && player == g.turn.player && g.turn.extra.is_none(),
+            favors(g, player) >= 5 && player == g.turn.player && !g.third_in_a_row(player),
         ),
         Occasion::Shuffled { player, .. }
             if matches!(ally, Card::OrderOfAstrologers | Card::OrderOfMasons) =>
@@ -1216,7 +1216,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 player: p,
                 source: Card::IslandFolk,
                 controller: p,
-                third_in_a_row: false,
+                limit: ExtraLimit::ThirdInARow,
             });
             Flow::done()
         }
@@ -2489,15 +2489,14 @@ fn old_map(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 fn voyage(g: &mut Game, f: &mut CardFrame) {
     let p = f.player;
-    // An extra turn now would be a third turn in a row.
-    if p == g.turn.player && g.turn.extra.is_some() {
+    if g.third_in_a_row(p) {
         return;
     }
     g.extra_turns.push_back(ExtraTurn {
         player: p,
         source: Card::Voyage,
         controller: p,
-        third_in_a_row: false,
+        limit: ExtraLimit::ThirdInARow,
     });
     g.add_lasting(
         Card::Voyage,

@@ -539,6 +539,19 @@ fn a_possessed_player_made_to_play_possession_possesses_the_next_player() {
 }
 
 #[test]
+fn a_possessed_player_made_to_play_voyage_takes_the_voyage_turn_then_their_own() {
+    let mut g = possess(&[Card::Odysseys], &[Card::Voyage]);
+    play_from(&mut g, P1, Card::Voyage);
+    next_turn(&mut g);
+    assert_eq!(
+        (g.turn().player, g.turn().controller, g.turn().extra),
+        (P1, P1, Some(Card::Voyage))
+    );
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+}
+
+#[test]
 fn an_outpost_turn_comes_before_a_possession_turn_from_the_same_turn() {
     let mut g = setup(&[Card::Possession, Card::Outpost, Card::Village]);
     hand(
