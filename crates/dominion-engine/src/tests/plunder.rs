@@ -1257,3 +1257,606 @@ fn figurine_draws_two_and_may_discard_an_action_for_a_buy_and_a_coin() {
     assert_eq!((g.turn().buys, g.turn().coins), (2, 1));
     assert_eq!(discard_kinds(&g, P0), [Card::Village]);
 }
+
+#[test]
+fn first_mate_plays_copies_of_an_action_including_drawn_ones_then_draws_to_six() {
+    let mut g = setup(&[Card::FirstMate, Card::Smithy]);
+    hand(&mut g, P0, &[Card::FirstMate, Card::Smithy, Card::Village]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Smithy,
+            Card::Copper,
+            Card::Copper,
+            Card::Silver,
+            Card::Silver,
+            Card::Silver,
+            Card::Gold,
+            Card::Gold,
+            Card::Gold,
+            Card::Gold,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::FirstMate);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    // The Smithy drew another Smithy; only Smithies are offered now.
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Smithy]);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    assert_eq!(
+        in_play_kinds(&g, P0),
+        [Card::FirstMate, Card::Smithy, Card::Smithy]
+    );
+    assert_eq!(g.hand(P0).len(), 6);
+}
+
+#[test]
+fn first_mate_with_no_action_just_draws_to_six() {
+    let mut g = setup(&[Card::FirstMate]);
+    hand(&mut g, P0, &[Card::FirstMate, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::FirstMate);
+    assert_eq!(g.hand(P0).len(), 6);
+}
+
+#[test]
+fn frigate_makes_others_discard_down_to_four_after_each_action_until_its_next_turn() {
+    let mut g = setup(&[Card::Frigate, Card::Village]);
+    hand(&mut g, P0, &[Card::Frigate]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Village,
+            Card::Village,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    deck(&mut g, P1, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::Frigate);
+    assert_eq!(g.turn().coins, 3);
+    next_turn(&mut g);
+    play(&mut g, Card::Village);
+    // Village drew to 5: discard down to 4 after it resolved.
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(purpose(&g), Purpose::Discard);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(g.hand(P1).len(), 4);
+    // Back at 4 after the second Village: nothing to discard.
+    play(&mut g, Card::Village);
+    assert_eq!(g.hand(P1).len(), 4);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Frigate]);
+    assert!(g.lasting().is_empty());
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+}
+
+#[test]
+fn a_frigate_nobody_is_hit_by_is_discarded_that_turn() {
+    let mut g = setup(&[Card::Frigate, Card::Moat]);
+    hand(&mut g, P0, &[Card::Frigate]);
+    hand(&mut g, P1, &[Card::Moat]);
+    g.start();
+    play(&mut g, Card::Frigate);
+    yes_trigger(&mut g);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+}
+
+/// Accepts the one optional trigger offered.
+fn yes_trigger(g: &mut Game) {
+    respond(g, Response::option(Opt::Trigger(0)));
+}
+
+#[test]
+fn longship_gives_two_actions_now_and_two_cards_next_turn() {
+    let mut g = setup(&[Card::Longship]);
+    hand(&mut g, P0, &[Card::Longship]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Longship);
+    assert_eq!(g.turn().actions, 2);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 7);
+}
+
+#[test]
+fn mining_road_may_play_a_gained_treasure_once_and_two_roads_cannot_play_it_twice() {
+    let mut g = setup(&[Card::MiningRoad]);
+    hand(&mut g, P0, &[Card::MiningRoad, Card::MiningRoad]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::MiningRoad);
+    play(&mut g, Card::MiningRoad);
+    assert_eq!((g.turn().coins, g.turn().buys), (4, 3));
+    to_buy(&mut g);
+    buy(&mut g, Card::Silver);
+    // Both Roads offer; once one plays it, the other has nothing to play.
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    yes_trigger(&mut g);
+    assert_eq!(g.turn().coins, 1 + 2);
+    assert_eq!(
+        g.lasting()
+            .iter()
+            .filter(|l| l.card == Card::MiningRoad)
+            .count(),
+        1
+    );
+    buy(&mut g, Card::Copper);
+    yes_trigger(&mut g);
+    assert_eq!(g.turn().coins, 4);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn pendant_counts_differently_named_treasures_in_play_including_itself() {
+    let mut g = setup(&[Card::Pendant, Card::Gondola]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Pendant, Card::Copper, Card::Copper, Card::Silver],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    play(&mut g, Card::Copper);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::Pendant);
+    assert_eq!(g.turn().coins, 4 + 3);
+}
+
+#[test]
+fn pickaxe_trashes_a_card_and_gains_a_loot_to_hand_for_three_or_more() {
+    let mut g = setup(&[Card::Pickaxe]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Pickaxe, Card::Pickaxe, Card::Silver, Card::Estate],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Pickaxe);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(loot_gained(&g, P0), 0);
+    // The Silver is the only card left to trash.
+    play(&mut g, Card::Pickaxe);
+    assert_eq!(loot_gained(&g, P0), 1);
+    assert!(g.hand(P0).iter().any(|&c| g.card(c).is(Types::LOOT)));
+}
+
+#[test]
+fn pilgrim_draws_four_and_puts_any_card_from_hand_onto_the_deck() {
+    let mut g = setup(&[Card::Pilgrim]);
+    hand(&mut g, P0, &[Card::Pilgrim, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Pilgrim);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(g.hand(P0).len(), 4);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Estate);
+}
+
+#[test]
+fn quartermaster_gains_cards_aside_and_hands_them_out_on_later_turns() {
+    let mut g = setup(&[Card::Quartermaster, Card::ThroneRoom, Card::Smithy]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Quartermaster]);
+    deck(&mut g, P0, &[Card::Copper; 40]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Quartermaster]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Throne Room: one set of cards, two choices each turn.
+    resolve_triggers(&mut g);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Silver);
+    resolve_triggers(&mut g);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(aside_kinds(&g, P0), [Card::Silver, Card::Smithy]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    resolve_triggers(&mut g);
+    mode(&mut g, 1);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    resolve_triggers(&mut g);
+    mode(&mut g, 1);
+    assert!(hand_kinds(&g, P0).contains(&Card::Silver));
+    assert!(hand_kinds(&g, P0).contains(&Card::Smithy));
+    assert_eq!(
+        in_play_kinds(&g, P0),
+        [Card::ThroneRoom, Card::Quartermaster]
+    );
+}
+
+#[test]
+fn silver_mine_gains_a_cheaper_treasure_to_hand() {
+    let mut g = setup(&[Card::SilverMine, Card::Gondola]);
+    hand(&mut g, P0, &[Card::SilverMine]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::SilverMine);
+    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+        panic!()
+    };
+    let names: Vec<Card> = piles.iter().map(|&p| g.pile(p).card).collect();
+    assert_eq!(names, [Card::Copper, Card::Silver, Card::Gondola]);
+    choose_pile(&mut g, Card::Gondola);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gondola]);
+}
+
+#[test]
+fn tricksters_curse_and_each_keep_a_treasure_for_the_next_hand() {
+    let mut g = setup(&[Card::Trickster, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::Trickster,
+            Card::Trickster,
+            Card::Gold,
+            Card::Silver,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    hand(&mut g, P1, &[Card::Copper; 3]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Trickster);
+    play(&mut g, Card::Trickster);
+    assert_eq!(gain_count(&g, P1, Card::Curse), 2);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    end_phase(&mut g);
+    resolve_triggers(&mut g);
+    choose_kinds(&mut g, &[Card::Gold]);
+    resolve_triggers(&mut g);
+    // The Silver is the only Treasure left: no choice.
+    assert_eq!(g.turn().player, P1);
+    let mut hand = hand_kinds(&g, P0);
+    hand.sort();
+    assert_eq!(
+        hand,
+        [
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Gold,
+            Card::Silver
+        ]
+    );
+}
+
+#[test]
+fn wealthy_village_gains_a_loot_with_three_differently_named_treasures_in_play() {
+    for (treasures, loot) in [
+        ([Card::Copper, Card::Silver, Card::Silver], 0),
+        ([Card::Copper, Card::Silver, Card::Gold], 1),
+    ] {
+        let mut g = setup(&[Card::WealthyVillage]);
+        hand(&mut g, P0, &treasures);
+        g.start();
+        to_buy(&mut g);
+        for t in treasures {
+            play(&mut g, t);
+        }
+        money(&mut g, 0, 2);
+        buy(&mut g, Card::WealthyVillage);
+        assert_eq!(loot_gained(&g, P0), loot);
+    }
+}
+
+#[test]
+fn sack_of_loot_gives_a_coin_a_buy_and_a_loot() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::SackOfLoot]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::SackOfLoot);
+    assert_eq!((g.turn().coins, g.turn().buys), (1, 2));
+    assert_eq!(loot_gained(&g, P0), 1);
+}
+
+#[test]
+fn amphora_gives_a_buy_and_three_coins_now_or_next_turn() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Amphora, Card::Amphora]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Amphora);
+    mode(&mut g, 0);
+    assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
+    play(&mut g, Card::Amphora);
+    mode(&mut g, 1);
+    assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Amphora]);
+    next_turn(&mut g);
+    assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
+}
+
+#[test]
+fn doubloons_comes_with_a_gold() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::SackOfLoot]);
+    g.start();
+    loot_top(&mut g, Card::Doubloons);
+    to_buy(&mut g);
+    play(&mut g, Card::SackOfLoot);
+    assert_eq!(gain_count(&g, P0, Card::Doubloons), 1);
+    assert_eq!(gain_count(&g, P0, Card::Gold), 1);
+}
+
+#[test]
+fn endless_chalice_pays_a_coin_and_a_buy_every_turn_for_the_rest_of_the_game() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::EndlessChalice]);
+    deck(&mut g, P0, &[Card::Copper; 40]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::EndlessChalice);
+    assert_eq!((g.turn().coins, g.turn().buys), (1, 2));
+    for _ in 0..3 {
+        next_turn(&mut g);
+        next_turn(&mut g);
+        assert_eq!((g.turn().coins, g.turn().buys), (1, 2));
+        assert_eq!(in_play_kinds(&g, P0), [Card::EndlessChalice]);
+    }
+}
+
+#[test]
+fn figurehead_pays_three_and_draws_two_next_turn() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Figurehead]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Figurehead);
+    assert_eq!(g.turn().coins, 3);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 7);
+}
+
+#[test]
+fn hammer_pays_three_and_gains_a_card_costing_up_to_four() {
+    let mut g = setup(&[Card::SackOfLoot, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Hammer]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Hammer);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(g.turn().coins, 3);
+    assert_eq!(gain_count(&g, P0, Card::Smithy), 1);
+}
+
+#[test]
+fn insignia_lets_each_card_gained_this_turn_go_onto_the_deck() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Insignia]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Insignia);
+    money(&mut g, 3, 3);
+    buy(&mut g, Card::Silver);
+    yes_trigger(&mut g);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Silver);
+    buy(&mut g, Card::Copper);
+    respond(&mut g, Response::option(Opt::No));
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Silver);
+    assert_eq!(discard_kinds(&g, P0), [Card::Copper]);
+}
+
+#[test]
+fn jewels_goes_to_the_bottom_of_the_deck_next_turn_leaving_kings_cache_until_clean_up() {
+    let mut g = setup(&[Card::KingsCache, Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::KingsCache, Card::Jewels]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::KingsCache);
+    choose_kinds(&mut g, &[Card::Jewels]);
+    assert_eq!((g.turn().coins, g.turn().buys), (9, 4));
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::KingsCache, Card::Jewels]);
+    next_turn(&mut g);
+    resolve_triggers(&mut g);
+    assert_eq!(
+        g.player(P0).deck.first().map(|&c| g.card(c)),
+        Some(Card::Jewels)
+    );
+    assert_eq!(in_play_kinds(&g, P0), [Card::KingsCache]);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+}
+
+#[test]
+fn orb_plays_a_card_from_the_discard_pile_or_gives_a_buy_and_three_coins() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Orb, Card::Orb]);
+    discard(&mut g, P0, &[Card::Estate, Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Orb);
+    mode(&mut g, 0);
+    assert_eq!(g.turn().coins, 3);
+    assert!(in_play_kinds(&g, P0).contains(&Card::Gold));
+    play(&mut g, Card::Orb);
+    mode(&mut g, 1);
+    assert_eq!((g.turn().coins, g.turn().buys), (6, 2));
+}
+
+#[test]
+fn prize_goat_pays_three_and_a_buy_and_may_trash() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::PrizeGoat, Card::Curse, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::PrizeGoat);
+    choose_kinds(&mut g, &[Card::Curse]);
+    assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
+    assert_eq!(trash_kinds(&g).last(), Some(&Card::Curse));
+}
+
+#[test]
+fn puzzle_box_keeps_a_card_for_the_next_hand() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::PuzzleBox, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::PuzzleBox);
+    choose_kinds(&mut g, &[Card::Gold]);
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert!(hand_kinds(&g, P0).contains(&Card::Gold));
+    assert!(discard_kinds(&g, P0).contains(&Card::PuzzleBox));
+}
+
+#[test]
+fn sextant_discards_any_of_the_top_five_and_puts_the_rest_back_in_any_order() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Sextant]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Estate,
+            Card::Gold,
+            Card::Curse,
+            Card::Silver,
+            Card::Copper,
+            Card::Duchy,
+        ],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Sextant);
+    choose_kinds(&mut g, &[Card::Estate, Card::Curse]);
+    choose_kinds(&mut g, &[Card::Silver, Card::Gold, Card::Copper]);
+    assert_eq!(
+        deck_kinds(&g, P0),
+        [Card::Silver, Card::Gold, Card::Copper, Card::Duchy]
+    );
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate, Card::Curse]);
+}
+
+#[test]
+fn shield_blocks_every_attack_of_a_turn_and_stays_in_hand() {
+    let mut g = setup(&[Card::Militia, Card::Siren, Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Militia, Card::Siren, Card::Village]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Shield,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Militia);
+    assert_eq!(g.pending().unwrap().player, P1);
+    yes_trigger(&mut g);
+    assert_eq!(g.hand(P1).len(), 5);
+    play(&mut g, Card::Siren);
+    yes_trigger(&mut g);
+    assert_eq!(gain_count(&g, P1, Card::Curse), 0);
+    assert!(hand_kinds(&g, P1).contains(&Card::Shield));
+}
+
+#[test]
+fn moat_blocks_a_sword_which_otherwise_makes_others_discard_down_to_four() {
+    let mut g = setup(&[Card::Moat, Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Sword, Card::Sword]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Sword);
+    yes_trigger(&mut g);
+    assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
+    assert_eq!(g.hand(P1).len(), 6);
+    play(&mut g, Card::Sword);
+    respond(&mut g, Response::option(Opt::No));
+    choose_kinds(&mut g, &[Card::Copper, Card::Copper]);
+    assert_eq!(g.hand(P1).len(), 4);
+}
+
+#[test]
+fn spell_scroll_gains_a_card_cheaper_than_its_cost_now_and_may_play_it() {
+    let mut g = setup(&[
+        Card::SackOfLoot,
+        Card::Bridge,
+        Card::Smithy,
+        Card::KingsCache,
+    ]);
+    hand(&mut g, P0, &[Card::Bridge, Card::SpellScroll]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Bridge);
+    to_buy(&mut g);
+    play(&mut g, Card::SpellScroll);
+    // It costs $6 now, as does King's Cache: that isn't cheaper.
+    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+        panic!()
+    };
+    assert!(piles.iter().any(|&p| g.pile(p).card == Card::Gold));
+    assert!(!piles.iter().any(|&p| g.pile(p).card == Card::KingsCache));
+    choose_pile(&mut g, Card::Smithy);
+    yes(&mut g);
+    assert!(in_play_kinds(&g, P0).contains(&Card::Smithy));
+    assert_eq!(g.hand(P0).len(), 3);
+    assert!(trash_kinds(&g).contains(&Card::SpellScroll));
+}
+
+#[test]
+fn a_siren_gained_with_spell_scroll_trashes_itself_and_is_not_played() {
+    let mut g = setup(&[Card::SackOfLoot, Card::Siren]);
+    hand(&mut g, P0, &[Card::SpellScroll]);
+    g.start();
+    play(&mut g, Card::SpellScroll);
+    choose_pile(&mut g, Card::Siren);
+    assert!(trash_kinds(&g).contains(&Card::Siren));
+    assert_eq!(phase(&g), Some(Phase::Buy));
+}
+
+#[test]
+fn staff_pays_three_and_a_buy_and_may_play_an_action() {
+    let mut g = setup(&[Card::SackOfLoot, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Staff, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Staff);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
+    assert_eq!(g.hand(P0).len(), 3);
+}
