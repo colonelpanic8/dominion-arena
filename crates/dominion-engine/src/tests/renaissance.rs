@@ -718,7 +718,6 @@ fn scepter_replaying_a_duration_stays_in_play_with_it() {
 }
 
 #[test]
-#[ignore = "Scepter doesn't know a card left play and came back (a called Duplicate)"]
 fn scepter_cannot_replay_a_card_that_left_play_and_came_back() {
     let mut g = setup(&[Card::Scepter, Card::Duplicate, Card::Swashbuckler]);
     g.artifacts.iter_mut().for_each(|a| {
@@ -1539,7 +1538,7 @@ fn random_renaissance_games_keep_invariants() {
     let projects: Vec<Card> = Card::in_set(Set::Renaissance)
         .filter(|c| c.kind() == Kind::Project)
         .collect();
-    for seed in 0..150 {
+    for seed in 0..fuzz_seeds(150) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
         cards.shuffle(&mut rng);

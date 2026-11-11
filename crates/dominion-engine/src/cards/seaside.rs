@@ -12,7 +12,7 @@ use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mas
 use crate::decision::{DecisionKind, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraTurn, Mat, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Until, Zone};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -677,27 +677,21 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
                 Scratch::default(),
             );
         }
-        // An extra turn now would be a third turn in a row.
-        if g.turn.extra.is_some() {
-            return Flow::done();
-        }
     }
-    let queued = g
-        .extra_turns
-        .iter()
-        .any(|t| t.player == p && t.source == Card::Outpost);
-    if !queued {
-        g.extra_turns.push_back(ExtraTurn {
-            player: p,
-            source: Card::Outpost,
-            controller: p,
-        });
+    if g.third_in_a_row(p) {
+        return Flow::done();
     }
+    g.extra_turns.push_back(ExtraTurn {
+        player: p,
+        source: Card::Outpost,
+        controller: p,
+        limit: ExtraLimit::ThirdInARow,
+    });
     g.add_lasting(
         Card::Outpost,
         p,
         f.this,
-        f.keeps(),
+        f.keeps(g),
         Until::StartOfTurn(p),
         Scratch::default(),
     );

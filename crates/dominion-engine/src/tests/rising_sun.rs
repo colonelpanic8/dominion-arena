@@ -1,5 +1,5 @@
 use super::*;
-use rand::seq::SliceRandom;
+use rand::seq::{IteratorRandom, SliceRandom};
 
 fn turn_starts(g: &Game) -> usize {
     g.log()
@@ -288,7 +288,8 @@ fn shadow_cards_go_to_the_bottom_when_shuffled_and_play_from_the_deck() {
     let mut cards = vec![Card::Estate; 6];
     cards.extend([Card::Alley, Card::Ninja]);
     discard(&mut g, P0, &cards);
-    g.shuffle_discard_into_deck(P0);
+    shuffle(&mut g, P0);
+    choose_kinds(&mut g, &[Card::Alley, Card::Ninja]);
     let bottom: Vec<Card> = deck_kinds(&g, P0).into_iter().rev().take(2).collect();
     assert!(bottom.iter().all(|c| c.is(Types::SHADOW)));
     g.start();
@@ -1159,15 +1160,22 @@ fn random_rising_sun_games_keep_invariants() {
         .filter(|c| c.kind() == Kind::Prophecy)
         .collect();
     let mut seen = std::collections::HashSet::new();
-    for seed in 0..fuzz_seeds(200) {
+    for seed in 0..fuzz_seeds(600) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
         cards.shuffle(&mut rng);
         cards.truncate(8);
         cards.extend([Card::ThroneRoom, Card::Moat]);
-        let mut landscapes = events.clone();
-        landscapes.shuffle(&mut rng);
-        landscapes.truncate(2);
+        // Every Event comes round in turn, plus one at random.
+        let rotated = events[seed as usize % events.len()];
+        let mut landscapes = vec![rotated];
+        landscapes.extend(
+            events
+                .iter()
+                .copied()
+                .filter(|&e| e != rotated)
+                .choose(&mut rng),
+        );
         landscapes.push(prophecies[seed as usize % prophecies.len()]);
         let players = rng.random_range(2..=4);
         let mut config = GameConfig::new(players, cards.clone(), seed);
@@ -1272,15 +1280,40 @@ fn riverboats_baker_gives_everyone_a_coffers() {
     panic!("no seed set aside Baker");
 }
 
+/// Shuffles `p`'s discard pile into their deck, outside any turn.
+fn shuffle(g: &mut Game, p: PlayerId) {
+    g.stack.push(crate::frame::Frame::shuffle(p));
+    g.run(crate::frame::Input::Start);
+}
+
 #[test]
-#[ignore = "shuffled Shadow cards go to the bottom in shuffled order; the player doesn't choose it"]
 fn the_player_orders_shadow_cards_put_on_the_bottom_by_a_shuffle() {
     let mut g = setup(&[Card::Alley, Card::Ninja]);
     deck(&mut g, P0, &[]);
     discard(&mut g, P0, &[Card::Alley, Card::Ninja, Card::Copper]);
-    g.stack.push(crate::frame::Frame::draw(P0, 1));
-    g.run(crate::frame::Input::Start);
-    assert!(g.pending().is_some());
+    shuffle(&mut g, P0);
+    match &g.pending().unwrap().kind {
+        DecisionKind::Cards { ordered, .. } => assert!(ordered),
+        k => panic!("expected an order, got {k:?}"),
+    }
+    choose_kinds(&mut g, &[Card::Ninja, Card::Alley]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Ninja, Card::Alley]);
+
+    discard(&mut g, P0, &[Card::Alley, Card::Ninja, Card::Copper]);
+    deck(&mut g, P0, &[]);
+    shuffle(&mut g, P0);
+    choose_kinds(&mut g, &[Card::Alley, Card::Ninja]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Alley, Card::Ninja]);
+}
+
+#[test]
+fn identical_shadow_cards_need_no_order() {
+    let mut g = setup(&[Card::Ninja]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[Card::Ninja, Card::Copper, Card::Ninja]);
+    shuffle(&mut g, P0);
+    assert!(g.pending().is_none());
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Ninja, Card::Ninja]);
 }
 
 #[test]

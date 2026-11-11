@@ -5,7 +5,7 @@ use super::intrigue::{GainRule, trash_and_gain};
 use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
-use crate::frame::{Flow, Frame, From as GainFrom, Input, OVERPAY};
+use crate::frame::{Flow, Frame, From as GainFrom, Input};
 use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
@@ -121,10 +121,9 @@ impl SetRules for Rules {
             Occasion::Gain { player, card, .. } if g.card(card) == Card::Marchland => {
                 out.push(Trigger::new(player, Card::Marchland, MARCHLAND_GAIN).on(card));
             }
-            Occasion::WouldShuffle { player } => {
-                if let Some(&stash) = g
-                    .player(player)
-                    .discard
+            Occasion::Shuffled { player, count } => {
+                let deck = &g.player(player).deck;
+                if let Some(&stash) = deck[..count.min(deck.len())]
                     .iter()
                     .find(|&&c| g.card(c) == Card::Stash)
                 {
@@ -325,11 +324,10 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     player: p,
                     card: kind,
                 });
-                if kind.def().overpay && g.turn.coins > 0 {
-                    f.pc = 10;
-                    return f.ask_number(0, g.turn.coins as i32, Purpose::Overpay);
-                }
                 f.pc = 11;
+                if kind.def().overpay {
+                    return Flow::Call(Frame::overpay(p, c));
+                }
                 Flow::Continue
             }
             None => {
@@ -337,22 +335,6 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Flow::Continue
             }
         },
-        10 => {
-            let n = input.number().unwrap_or(0);
-            f.pc = 11;
-            if n <= 0 {
-                return Flow::Continue;
-            }
-            g.turn.coins -= n as u32;
-            g.emit(Event::Overpaid {
-                player: p,
-                amount: n as u32,
-            });
-            let c = f.s.pick.expect("set in step 4");
-            let mut child = CardFrame::new(g.card(c), Hook::Ability(OVERPAY), p, Some(c));
-            child.data = n;
-            Flow::Call(Frame::Card(Box::new(child)))
-        }
         11 => {
             f.pc = 12;
             let card = f.s.pick.expect("set in step 4");
@@ -690,39 +672,35 @@ fn sauna_avanto(g: &mut Game, f: &mut CardFrame, input: Input, other: Card) -> F
     }
 }
 
-/// Stash: the discard pile is shuffled now, and each Stash in it is put where its owner
-/// chooses among the shuffled cards.
+/// Stash: each Stash just shuffled is put where its owner chooses among the shuffled cards
+/// (0: on top of them).
 fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
+    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
+        return Flow::done();
+    };
+    let shuffled = count.min(g.player(p).deck.len());
     match f.pc {
         0 => {
-            let discard = &g.player(p).discard;
-            f.s.n = discard.len() as i32;
-            f.s.cards = discard
+            f.s.cards = g.player(p).deck[..shuffled]
                 .iter()
                 .copied()
                 .filter(|&c| g.card(c) == Card::Stash)
                 .collect();
-            if f.s.n > 0 {
-                g.shuffle_discard_into_deck(p);
-            }
             f.pc = 1;
             Flow::Continue
         }
         1 => {
-            if f.s.i >= f.s.cards.len() {
+            if f.s.i >= f.s.cards.len() || shuffled == 0 {
                 return Flow::done();
             }
             f.pc = 2;
-            f.ask_number(0, f.s.n - 1, Purpose::Move)
+            f.ask_number(0, shuffled as i32 - 1, Purpose::Move)
         }
         _ => {
             let stash = f.s.cards[f.s.i];
-            let shuffled = f.s.n as usize;
             let deck = &mut g.players[p.index()].deck;
-            if let Some(i) = deck.iter().position(|&c| c == stash)
-                && i < shuffled
-            {
+            if let Some(i) = deck[..shuffled].iter().position(|&c| c == stash) {
                 deck.remove(i);
                 let pos = (input.number().unwrap_or(0).max(0) as usize).min(shuffled - 1);
                 deck.insert(shuffled - 1 - pos, stash);

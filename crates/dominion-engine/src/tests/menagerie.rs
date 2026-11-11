@@ -149,7 +149,7 @@ fn random_menagerie_games_keep_invariants() {
         .collect();
     let ways = landscapes_of(Kind::Way);
     let events = landscapes_of(Kind::Event);
-    random_games_with_copies(&pool, &[Card::Horse], 0..160, |seed| {
+    random_games_with_copies(&pool, &[Card::Horse], 0..fuzz_seeds(160), |seed| {
         let i = seed as usize;
         vec![ways[i % ways.len()], events[(i / 2) % events.len()]]
     });
@@ -1606,7 +1606,6 @@ fn seize_the_day_gives_an_extra_turn_once_per_game() {
 }
 
 #[test]
-#[ignore = "the engine never gives a third turn in a row; Seize the Day doesn't check the previous turn"]
 fn seize_the_day_bought_on_an_outpost_turn_gives_a_third_turn() {
     let mut g = setup_with_landscapes(&[Card::Outpost], &[Card::SeizeTheDay]);
     hand(&mut g, P0, &[Card::Outpost]);
@@ -2285,7 +2284,6 @@ fn way_of_the_squirrel_used_out_of_turn_draws_at_the_end_of_that_turn() {
 }
 
 #[test]
-#[ignore = "a Duration played by a Throne Room that Mastermind played keeps the whole chain in play"]
 fn a_mastermind_whose_throne_room_plays_a_duration_does_not_stay() {
     let mut g = setup(&[Card::Mastermind, Card::ThroneRoom, Card::Barge]);
     hand(&mut g, P0, &[Card::Mastermind]);
@@ -2296,6 +2294,50 @@ fn a_mastermind_whose_throne_room_plays_a_duration_does_not_stay() {
     play(&mut g, Card::Mastermind);
     next_turn(&mut g);
     next_turn(&mut g);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Barge]);
+    modes(&mut g, &[1]);
+    modes(&mut g, &[1]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Barge]);
+}
+
+#[test]
+fn a_throne_room_whose_mastermind_plays_a_duration_stays_with_the_mastermind() {
+    let mut g = setup(&[Card::Mastermind, Card::ThroneRoom, Card::Barge]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Mastermind]);
+    let mut cards = vec![Card::Barge];
+    cards.extend([Card::Copper; 40]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Mastermind]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // The two identical Mastermind effects resolve without an order prompt: the first
+    // plays Barge three times; the second has nothing to play.
+    choose_kinds(&mut g, &[Card::Barge]);
+    for _ in 0..3 {
+        modes(&mut g, &[1]);
+    }
+    next_turn(&mut g);
+    assert_eq!(
+        in_play_kinds(&g, P0),
+        [Card::ThroneRoom, Card::Mastermind, Card::Barge]
+    );
+}
+
+#[test]
+fn a_throne_room_whose_throne_room_plays_a_duration_does_not_stay() {
+    let mut g = setup(&[Card::ThroneRoom, Card::Barge]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::ThroneRoom, Card::ThroneRoom, Card::Barge],
+    );
+    deck(&mut g, P0, &[Card::Copper; 40]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
     choose_kinds(&mut g, &[Card::ThroneRoom]);
     choose_kinds(&mut g, &[Card::Barge]);
     modes(&mut g, &[1]);

@@ -661,15 +661,22 @@ fn stonemason_overpay_gains_two_actions_costing_the_overpay() {
 }
 
 #[test]
-#[ignore = "the engine's overpay decision offers coins only, so a Potion can't be overpaid"]
 fn stonemason_overpay_with_a_potion_gains_potion_cost_actions() {
     let mut g = setup(&[Card::Stonemason, Card::Golem]);
-    hand(&mut g, P0, &[Card::Gold, Card::Potion]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Potion]);
     g.start();
     play_treasures(&mut g);
     buy(&mut g, Card::Stonemason);
-    respond(&mut g, Response::Number(1));
+    respond(&mut g, Response::Number(4));
     assert_eq!(purpose(&g), Purpose::Overpay);
+    respond(&mut g, Response::Number(1));
+    // Golem is the only Action costing exactly $4 and a Potion.
+    assert_eq!(g.count_owned(P0, Card::Golem), 2);
+    assert!(g.log().contains(&Event::Overpaid {
+        player: P0,
+        amount: 4,
+        potions: 1,
+    }));
 }
 
 #[test]

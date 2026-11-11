@@ -17,7 +17,7 @@ use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraTurn, Mat, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Mat, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -267,6 +267,7 @@ impl SetRules for Rules {
                     player: p,
                     source: Card::SeizeTheDay,
                     controller: p,
+                    limit: ExtraLimit::None,
                 });
                 Flow::done()
             }
@@ -456,20 +457,20 @@ impl SetRules for Rules {
         }
     }
 
-    fn after_step(g: &mut Game, f: &CardFrame, before: &Step, flow: &mut Flow) {
+    fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, flow: &mut Flow) {
         if !exchanges(g, f) {
             return;
         }
         let p = f.player;
+        let mut got = 0;
         if p == g.turn.player {
-            let mut got = g.turn.coins.saturating_sub(before.coins);
+            got = g.turn.coins.saturating_sub(before.coins);
             g.turn.coins -= got;
             let pl = &mut g.players[p.index()];
             if before.minus_coin && !pl.minus_coin {
                 pl.minus_coin = true;
                 got += 1;
             }
-            draw_now(g, p, got as usize);
         }
         if let Flow::Call(Frame::Draw { player, count, .. }) = flow
             && *player == p
@@ -477,6 +478,10 @@ impl SetRules for Rules {
         {
             let n = std::mem::take(count);
             g.add_coins(p, n as u32);
+        }
+        if got > 0 {
+            let rest = std::mem::replace(flow, Flow::Call(Frame::draw(p, got as usize)));
+            f.hold(rest);
         }
     }
 
@@ -592,33 +597,6 @@ fn exiled_copies(g: &Game, p: PlayerId, card: Card) -> Vec<CardId> {
         .copied()
         .filter(|&c| g.card(c) == card)
         .collect()
-}
-
-/// Draws `n` cards at once, outside any frame (Way of the Chameleon's +$ turned into
-/// +Cards in the middle of an ability).
-fn draw_now(g: &mut Game, p: PlayerId, mut n: usize) {
-    if n > 0 && g.players[p.index()].minus_card {
-        g.players[p.index()].minus_card = false;
-        n -= 1;
-    }
-    let mut drawn = 0;
-    for _ in 0..n {
-        if g.player(p).deck.is_empty() {
-            if g.player(p).discard.is_empty() {
-                break;
-            }
-            g.shuffle_discard_into_deck(p);
-        }
-        let top = *g.player(p).deck.last().expect("deck is not empty");
-        g.move_card(top, Zone::Hand(p), Pos::Top);
-        drawn += 1;
-    }
-    if drawn > 0 {
-        g.emit(Event::Drew {
-            player: p,
-            count: drawn,
-        });
-    }
 }
 
 /// Whether the text above the card's dividing line says "+N Card(s)" beyond its vanilla

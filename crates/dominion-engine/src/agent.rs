@@ -99,10 +99,12 @@ impl<'a> View<'a> {
 
     /// The triggers a pending [`Purpose::Trigger`] decision's `Opt::Trigger(i)` options
     /// refer to (`[i]`).
-    pub fn pending_triggers(&self) -> &'a [Trigger] {
+    pub fn pending_triggers(&self) -> Vec<&'a Trigger> {
         match (self.pending(), self.game.stack.last()) {
-            (Some(d), Some(Frame::Window(w))) if d.purpose == Purpose::Trigger => w.asked(),
-            _ => &[],
+            (Some(d), Some(Frame::Window(w))) if d.purpose == Purpose::Trigger => {
+                w.asked().collect()
+            }
+            _ => vec![],
         }
     }
 

@@ -313,7 +313,7 @@ pub(crate) fn drive_randomly(mut g: Game, seed: u64) -> Game {
 
 #[test]
 fn random_games_keep_invariants() {
-    for seed in 0..200 {
+    for seed in 0..fuzz_seeds(200) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let players = rng.random_range(2..=4);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
@@ -465,6 +465,87 @@ fn buying_a_card_pays_and_gains_it() {
     assert_eq!(g.pending().unwrap().player, P1);
 }
 
+// ---- Shuffling ----
+
+/// Resolves a pending Star Chart trigger, picking `card` to go on top of the shuffle.
+fn star_chart(g: &mut Game, card: Card) {
+    let d = g.pending().expect("a decision is pending");
+    assert_eq!(
+        (d.purpose, d.source),
+        (Purpose::Trigger, Some(Card::StarChart))
+    );
+    respond(g, Response::option(Opt::Trigger(0)));
+    choose_kinds(g, &[card]);
+}
+
+#[test]
+fn inn_shuffling_the_deck_opens_the_shuffle_windows() {
+    let mut g = setup(&[Card::Inn, Card::Village]);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper, Card::Estate, Card::Estate]);
+    discard(&mut g, P0, &[Card::Village]);
+    g.start();
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Inn);
+    choose_kinds(&mut g, &[Card::Village]);
+    star_chart(&mut g, Card::Village);
+    assert_eq!(hand_kinds(&g, P0)[0], Card::Village);
+}
+
+#[test]
+fn a_way_of_the_chameleon_draw_opens_the_shuffle_windows() {
+    let mut g = setup(&[Card::Moneylender]);
+    g.landscapes.push(Card::WayOfTheChameleon);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Moneylender, Card::Copper]);
+    deck(&mut g, P0, &[]);
+    discard(
+        &mut g,
+        P0,
+        &[Card::Estate, Card::Gold, Card::Estate, Card::Estate],
+    );
+    g.start();
+    play(&mut g, Card::Moneylender);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheChameleon)));
+    choose_kinds(&mut g, &[Card::Copper]);
+    star_chart(&mut g, Card::Gold);
+    assert_eq!(g.turn().coins, 0);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold, Card::Estate, Card::Estate]);
+}
+
+#[test]
+fn stash_and_star_chart_both_apply_to_one_shuffle() {
+    let mut g = setup(&[Card::Smithy, Card::Stash]);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    discard(
+        &mut g,
+        P0,
+        &[
+            Card::Estate,
+            Card::Stash,
+            Card::Gold,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Smithy);
+    let d = g.pending().unwrap();
+    let DecisionKind::Choose { labels, .. } = &d.kind else {
+        panic!("expected the trigger order, got {d:?}");
+    };
+    assert_eq!(labels.len(), 3);
+    star_chart(&mut g, Card::Gold);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    // Second from the top, under the Gold.
+    respond(&mut g, Response::Number(1));
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold, Card::Stash, Card::Estate]);
+}
+
 #[test]
 fn the_game_ends_when_provinces_run_out() {
     let mut g = setup(&[Card::Smithy]);
@@ -511,14 +592,32 @@ pub(crate) fn random_game_with_kingdom_decks(config: GameConfig, seed: u64) -> G
     drive_randomly(g, seed)
 }
 
+/// Kingdom cards of the implemented sets that later editions removed, which
+/// `GameConfig::random` never deals.
+fn removed_kingdom_cards() -> Vec<Card> {
+    Card::ALL
+        .iter()
+        .copied()
+        .filter(|c| c.def().kingdom && c.def().removed && IMPLEMENTED.contains(&c.set()))
+        .collect()
+}
+
 /// Kingdoms (and landscapes) dealt from every implemented set, with every player's deck
-/// seeded with the Kingdom cards so cross-set interactions actually happen.
+/// seeded with the Kingdom cards so cross-set interactions actually happen. Up to three
+/// Kingdom piles are swapped for removed cards.
 #[test]
 fn cross_set_games_keep_invariants() {
+    let removed = removed_kingdom_cards();
     for seed in 0..fuzz_seeds(100) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xc0ffee);
         let players = rng.random_range(2..=4);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
+        for i in 0..rng.random_range(0..=3) {
+            let card = *removed.choose(&mut rng).unwrap();
+            if !config.kingdom.contains(&card) {
+                config.kingdom[i] = card;
+            }
+        }
         config.turn_limit = Some(60);
         let g = random_game_with_kingdom_decks(config, seed);
         if std::env::var("FUZZ_STATS").is_ok() {

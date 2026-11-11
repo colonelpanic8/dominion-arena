@@ -75,6 +75,7 @@ impl SetRules for Rules {
             (c, Hook::Ability(OVERPAY)) if OVERPAY_CARDS.contains(&c) => {
                 let data = Scratch {
                     n: f.data,
+                    cost: f.s.cost,
                     ..Scratch::default()
                 };
                 g.add_lasting(c, f.player, f.this, vec![], Until::EndOfTurn, data);
@@ -603,6 +604,7 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     if let Some(id) = f.lasting.take() {
         let l = g.remove_lasting(id).expect("lasting exists");
         f.data = l.data.n;
+        f.s.cost = l.data.cost;
     }
     let n = f.data;
     match f.card {
@@ -650,7 +652,7 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                         return Flow::done();
                     }
                     f.s.i += 1;
-                    let exact = Cost::coins(n as u8);
+                    let exact = f.s.cost;
                     let piles =
                         g.supply_piles_where(|t, c| c == exact && t.intersects(Types::ACTION));
                     if piles.is_empty() {

@@ -139,7 +139,7 @@ fn random_nocturne_games_keep_invariants() {
         Card::Pasture,
         Card::Pouch,
     ];
-    for seed in 0..150 {
+    for seed in 0..fuzz_seeds(150) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
         cards.shuffle(&mut rng);
@@ -1700,6 +1700,27 @@ fn famine_discards_the_revealed_actions_and_shuffles_the_rest_back() {
     let mut deck = deck_kinds(&g, P1);
     deck.sort();
     assert_eq!(deck, [Card::Copper, Card::Estate]);
+}
+
+#[test]
+fn famine_shuffling_the_deck_lets_stash_go_anywhere() {
+    let mut g = hexed(
+        Card::Famine,
+        &[],
+        &[
+            Card::Village,
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+            Card::Stash,
+        ],
+    );
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.source), (P1, Some(Card::Stash)));
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    respond(&mut g, Response::Number(0));
+    assert_eq!(deck_kinds(&g, P1)[0], Card::Stash);
+    assert!(g.log().contains(&Event::Shuffled { player: P1 }));
 }
 
 #[test]

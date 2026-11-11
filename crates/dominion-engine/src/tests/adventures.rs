@@ -123,11 +123,7 @@ fn fuzz(seeds: std::ops::Range<u64>) {
 
 #[test]
 fn random_adventures_games_keep_invariants() {
-    let n = std::env::var("ADVENTURES_FUZZ")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(60);
-    fuzz(0..n);
+    fuzz(0..fuzz_seeds(60));
 }
 
 // ---- Reserve cards ----

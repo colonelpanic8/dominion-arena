@@ -9,7 +9,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Move, Opt, Purpose, Response};
 use crate::event::{Dest, Event};
-use crate::game::{EndReason, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
+use crate::game::{EndReason, ExtraLimit, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -74,7 +74,7 @@ impl Input {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) enum Value {
     #[default]
     None,
@@ -82,6 +82,7 @@ pub(crate) enum Value {
     Bool(bool),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) enum Flow {
     Done(Value),
     /// Resume this frame again immediately with [`Input::Start`].
@@ -124,8 +125,15 @@ pub(crate) enum Frame {
         /// One draw shuffles at most once, even if its discard pile refills meanwhile.
         shuffled: bool,
     },
+    /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
+    /// are shuffled.
     Shuffle {
         player: PlayerId,
+        /// Shuffle the whole deck rather than the discard pile.
+        deck: bool,
+        count: usize,
+        /// The shuffled cards put on the bottom (Shadow cards), for their owner to order.
+        bottom: Vec<CardId>,
         pc: u8,
     },
     TopCards {
@@ -159,6 +167,13 @@ pub(crate) enum Frame {
         cards: Vec<CardId>,
         cleanup: bool,
         i: usize,
+    },
+    /// Offer to overpay for `card`, just bought: $, then Potions; then its overpay ability.
+    Overpay {
+        player: PlayerId,
+        card: CardId,
+        paid: crate::Cost,
+        pc: u8,
     },
     /// Receive a Boon or Hex: resolve it, then discard it unless it was kept.
     Receive {
@@ -199,8 +214,26 @@ impl Frame {
         }
     }
 
+    /// Shuffle `player`'s discard pile and put it under their deck.
     pub(crate) fn shuffle(player: PlayerId) -> Frame {
-        Frame::Shuffle { player, pc: 0 }
+        Frame::Shuffle {
+            player,
+            deck: false,
+            count: 0,
+            bottom: vec![],
+            pc: 0,
+        }
+    }
+
+    /// Shuffle `player`'s deck.
+    pub(crate) fn shuffle_deck(player: PlayerId) -> Frame {
+        Frame::Shuffle {
+            player,
+            deck: true,
+            count: 0,
+            bottom: vec![],
+            pc: 0,
+        }
     }
 
     /// Gain the top card of `pile`.
@@ -241,6 +274,15 @@ impl Frame {
             cards,
             cleanup: false,
             i: 0,
+        }
+    }
+
+    pub(crate) fn overpay(player: PlayerId, card: CardId) -> Frame {
+        Frame::Overpay {
+            player,
+            card,
+            paid: crate::Cost::ZERO,
+            pc: 0,
         }
     }
 
@@ -320,25 +362,13 @@ impl Frame {
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))
             }
-            Frame::Shuffle { player, pc } => match pc {
-                0 => {
-                    *pc = 1;
-                    Flow::Call(Frame::window(Occasion::WouldShuffle { player: *player }))
-                }
-                1 => {
-                    let count = g.players[player.index()].discard.len();
-                    if count == 0 {
-                        return Flow::done();
-                    }
-                    g.shuffle_discard_into_deck(*player);
-                    *pc = 2;
-                    Flow::Call(Frame::window(Occasion::Shuffled {
-                        player: *player,
-                        count,
-                    }))
-                }
-                _ => Flow::done(),
-            },
+            Frame::Shuffle {
+                player,
+                deck,
+                count,
+                bottom,
+                pc,
+            } => resume_shuffle(g, *player, *deck, count, bottom, pc, input),
             Frame::TopCards {
                 player,
                 count,
@@ -378,35 +408,40 @@ impl Frame {
                 pc,
             } => resume_buy(g, *player, *pile, *landscape, card, pc, input),
             Frame::Trash { player, cards, i } => {
-                // Cards trashed together are all trashed before any "when trashed" ability.
-                if *i == 0 {
-                    for &c in cards.iter() {
-                        let from = g.zone(c);
-                        if !cards::trash_instead(g, *player, c) {
-                            g.move_card(c, Zone::Trash, Pos::Top);
+                // Cards trashed together are all trashed before any "when trashed" ability,
+                // and their abilities share one window.
+                if *i > 0 {
+                    for c in cards.iter() {
+                        if let Some(pos) = g.trashing.iter().rposition(|(x, _)| x == c) {
+                            g.trashing.remove(pos);
                         }
-                        g.trashing.push((c, from));
-                        let card = g.card(c);
-                        if *player == g.turn.player {
-                            g.turn.trashed.push(card);
-                        }
-                        g.emit(Event::Trashed {
-                            player: *player,
-                            card,
-                        });
                     }
-                } else if let Some(pos) = g.trashing.iter().rposition(|(c, _)| *c == cards[*i - 1])
-                {
-                    g.trashing.remove(pos);
-                }
-                let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
-                };
-                *i += 1;
-                Flow::Call(Frame::window(Occasion::Trash {
-                    player: *player,
-                    card: c,
-                }))
+                }
+                *i = 1;
+                for &c in cards.iter() {
+                    let from = g.zone(c);
+                    if !cards::trash_instead(g, *player, c) {
+                        g.move_card(c, Zone::Trash, Pos::Top);
+                    }
+                    g.trashing.push((c, from));
+                    let card = g.card(c);
+                    if *player == g.turn.player {
+                        g.turn.trashed.push(card);
+                    }
+                    g.emit(Event::Trashed {
+                        player: *player,
+                        card,
+                    });
+                }
+                let occs = cards
+                    .iter()
+                    .map(|&card| Occasion::Trash {
+                        player: *player,
+                        card,
+                    })
+                    .collect();
+                Flow::Call(Window::open_all(occs))
             }
             Frame::Discard {
                 player,
@@ -439,6 +474,12 @@ impl Frame {
                     card: c,
                 }))
             }
+            Frame::Overpay {
+                player,
+                card,
+                paid,
+                pc,
+            } => resume_overpay(g, *player, *card, paid, pc, input),
             Frame::Receive { player, card, pc } => match pc {
                 0 => {
                     *pc = 1;
@@ -468,18 +509,110 @@ impl Frame {
     }
 }
 
+fn resume_shuffle(
+    g: &mut Game,
+    p: PlayerId,
+    whole_deck: bool,
+    count: &mut usize,
+    bottom: &mut Vec<CardId>,
+    pc: &mut u8,
+    input: Input,
+) -> Flow {
+    match pc {
+        0 => {
+            *pc = 1;
+            Flow::Call(Frame::window(Occasion::WouldShuffle { player: p }))
+        }
+        1 => {
+            let pl = &mut g.players[p.index()];
+            let mut cards = std::mem::take(if whole_deck {
+                &mut pl.deck
+            } else {
+                &mut pl.discard
+            });
+            if cards.is_empty() {
+                return Flow::done();
+            }
+            g.shuffle(&mut cards);
+            let (mut under, rest): (Vec<CardId>, Vec<CardId>) = cards
+                .iter()
+                .partition(|&&c| cards::bottom_when_shuffled(g, p, c));
+            *bottom = under.clone();
+            under.extend(rest);
+            for &c in &under {
+                g.zones[c.index()] = Zone::Deck(p);
+            }
+            *count = under.len();
+            let pl = &mut g.players[p.index()];
+            under.append(&mut pl.deck);
+            pl.deck = under;
+            g.emit(Event::Shuffled { player: p });
+            *pc = 3;
+            if bottom.len() > 1 {
+                *pc = 2;
+                let n = bottom.len();
+                return Flow::Ask(Decision {
+                    player: p,
+                    kind: DecisionKind::Cards {
+                        candidates: bottom.iter().rev().copied().collect(),
+                        min: n,
+                        max: n,
+                        ordered: true,
+                    },
+                    purpose: Purpose::Move,
+                    source: None,
+                });
+            }
+            Flow::Continue
+        }
+        2 => {
+            // Top first, so the last one is the bottom card of the deck.
+            let order = input.cards();
+            let deck = &mut g.players[p.index()].deck;
+            for (i, c) in order.into_iter().rev().enumerate() {
+                deck[i] = c;
+            }
+            *pc = 3;
+            Flow::Continue
+        }
+        3 => {
+            *pc = 4;
+            Flow::Call(Frame::window(Occasion::Shuffled {
+                player: p,
+                count: *count,
+            }))
+        }
+        _ => Flow::done(),
+    }
+}
+
 fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
     match pc {
         0 => {
-            let prev = (g.turn.player, g.turn.extra.is_some());
             let started = g.players.iter().any(|p| p.turns_taken > 0);
+            let last = started.then_some(g.turn.player);
             while let Some(extra) = g.extra_turns.pop_front() {
-                // Nobody takes more than two turns in a row.
-                if (started && extra.player == prev.0 && prev.1) || g.skips_turn(extra.player, true)
-                {
+                let ruled_out = match extra.limit {
+                    ExtraLimit::None => false,
+                    ExtraLimit::ThirdInARow => g.third_in_a_row(extra.player),
+                    ExtraLimit::SecondExtraInARow => {
+                        g.turn.player == extra.player && g.turn.extra.is_some()
+                    }
+                };
+                if started && ruled_out {
+                    continue;
+                }
+                if g.skips_turn(extra.player, true) {
+                    // What kept its card in play for that turn (Voyage, Outpost) ends, so
+                    // the card is discarded in the next Clean-up.
+                    let until = Until::StartOfTurn(extra.player);
+                    g.lasting.retain(|l| {
+                        !(l.owner == extra.player && l.card == extra.source && l.until == until)
+                    });
                     continue;
                 }
                 g.turn = Turn::new(extra.player);
+                g.turn.previous = last;
                 g.turn.controller = extra.controller;
                 g.turn.extra = Some(extra.source);
                 *pc = 1;
@@ -494,6 +627,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     .pop_front()
                     .expect("a final-round turn is due");
                 g.turn = Turn::new(p);
+                g.turn.previous = last;
                 // Like extra turns, these don't count for the tiebreaker.
                 g.players[p.index()].extra_turns_taken += 1;
             } else {
@@ -501,6 +635,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     *next = g.left_of(*next);
                 }
                 g.turn = Turn::new(*next);
+                g.turn.previous = last;
                 *next = g.left_of(*next);
             }
             *pc = 1;
@@ -934,35 +1069,10 @@ fn resume_buy(
                 card: kind,
             });
             *pc = 2;
-            if kind.def().overpay && (g.turn.coins > 0 || g.turn.potions > 0) {
-                *pc = 1;
-                return Flow::Ask(Decision {
-                    player: p,
-                    kind: DecisionKind::Number {
-                        min: 0,
-                        max: g.turn.coins as i32,
-                    },
-                    purpose: Purpose::Overpay,
-                    source: Some(kind),
-                });
+            if kind.def().overpay {
+                return Flow::Call(Frame::overpay(p, top));
             }
             Flow::Continue
-        }
-        1 => {
-            let n = input.number().unwrap_or(0);
-            *pc = 2;
-            if n <= 0 {
-                return Flow::Continue;
-            }
-            g.turn.coins -= n as u32;
-            let top = card.expect("set in step 0");
-            g.emit(Event::Overpaid {
-                player: p,
-                amount: n as u32,
-            });
-            let mut f = CardFrame::new(g.card(top), Hook::Ability(OVERPAY), p, Some(top));
-            f.data = n;
-            Flow::Call(Frame::Card(Box::new(f)))
         }
         2 => {
             *pc = 3;
@@ -985,6 +1095,63 @@ fn resume_buy(
                 card: None,
                 pc: 0,
             })
+        }
+        _ => Flow::done(),
+    }
+}
+
+fn resume_overpay(
+    g: &mut Game,
+    p: PlayerId,
+    card: CardId,
+    paid: &mut crate::Cost,
+    pc: &mut u8,
+    input: Input,
+) -> Flow {
+    let ask = |max: u32| {
+        Flow::Ask(Decision {
+            player: p,
+            kind: DecisionKind::Number {
+                min: 0,
+                max: max as i32,
+            },
+            purpose: Purpose::Overpay,
+            source: Some(g.card(card)),
+        })
+    };
+    match pc {
+        0 => {
+            *pc = 1;
+            if g.turn.coins > 0 {
+                return ask(g.turn.coins);
+            }
+            Flow::Continue
+        }
+        1 => {
+            paid.coins = input.number().unwrap_or(0).max(0) as u8;
+            *pc = 2;
+            if g.turn.potions > 0 {
+                return ask(g.turn.potions);
+            }
+            Flow::Continue
+        }
+        2 => {
+            paid.potions = input.number().unwrap_or(0).max(0) as u8;
+            *pc = 3;
+            if *paid == crate::Cost::ZERO {
+                return Flow::done();
+            }
+            g.turn.coins -= paid.coins as u32;
+            g.turn.potions -= paid.potions as u32;
+            g.emit(Event::Overpaid {
+                player: p,
+                amount: paid.coins as u32,
+                potions: paid.potions as u32,
+            });
+            let mut f = CardFrame::new(g.card(card), Hook::Ability(OVERPAY), p, Some(card));
+            f.data = paid.coins as i32;
+            f.s.cost = *paid;
+            Flow::Call(Frame::Card(Box::new(f)))
         }
         _ => Flow::done(),
     }
@@ -1033,6 +1200,7 @@ impl PlayFrame {
                 if p == g.turn.player {
                     g.turn.played.push(card);
                     g.turn.played_ids.push(id);
+                    g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
                 }
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {

@@ -169,7 +169,7 @@ fn random_plunder_games_keep_invariants() {
     let landscapes: Vec<Card> = Card::in_set(Set::Plunder)
         .filter(|c| matches!(c.kind(), Kind::Event | Kind::Trait))
         .collect();
-    for seed in 0..150 {
+    for seed in 0..fuzz_seeds(150) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
         cards.shuffle(&mut rng);
@@ -2296,6 +2296,41 @@ fn fated_cards_may_go_on_top_or_bottom_when_shuffling() {
 }
 
 #[test]
+fn fated_cards_put_under_can_go_among_shadow_cards() {
+    for (order, bottom) in [
+        ([Card::Ninja, Card::Village], Card::Village),
+        ([Card::Village, Card::Ninja], Card::Ninja),
+    ] {
+        let mut g = setup(&[Card::Village, Card::Smithy, Card::Ninja]);
+        set_trait(&mut g, Card::Fated, Card::Village);
+        hand(&mut g, P0, &[Card::Smithy]);
+        deck(&mut g, P0, &[]);
+        discard(
+            &mut g,
+            P0,
+            &[
+                Card::Village,
+                Card::Ninja,
+                Card::Copper,
+                Card::Copper,
+                Card::Copper,
+                Card::Copper,
+            ],
+        );
+        g.start();
+        play(&mut g, Card::Smithy);
+        resolve_triggers(&mut g);
+        choose(&mut g, &[]);
+        choose_kinds(&mut g, &[Card::Village]);
+        choose_kinds(&mut g, &order);
+        let deck = deck_kinds(&g, P0);
+        assert_eq!(deck.len(), 3);
+        assert_eq!(deck[2], bottom);
+        assert_eq!(deck[1], order[0]);
+    }
+}
+
+#[test]
 fn fawning_gains_a_fawning_card_with_each_province() {
     let mut g = setup(&[Card::Village]);
     set_trait(&mut g, Card::Fawning, Card::Village);
@@ -2715,7 +2750,6 @@ fn avoid_can_leave_every_shuffled_card_in_the_discard_pile() {
 }
 
 #[test]
-#[ignore = "Search compares with the piles empty when it was played, so a pile refilled and emptied again is missed"]
 fn search_counts_a_pile_refilled_and_emptied_again() {
     let mut g = setup(&[Card::Search, Card::Village]);
     hand(&mut g, P0, &[Card::Search]);

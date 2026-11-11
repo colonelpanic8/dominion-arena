@@ -166,20 +166,26 @@ impl Trigger {
     }
 }
 
-/// Resolves every trigger for one occasion. Finishes with `Value::Bool(true)` if any
-/// resolved trigger finished with `Value::Bool(true)`.
+/// Resolves every trigger for one occasion, or for several that happen together (cards
+/// trashed at once), whose triggers the players then order together. Finishes with
+/// `Value::Bool(true)` if any resolved trigger finished with `Value::Bool(true)`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Window {
-    occ: Occasion,
-    done: Vec<Trigger>,
-    asked: Vec<Trigger>,
+    occs: Vec<Occasion>,
+    /// Resolved or declined triggers, with the index of their occasion.
+    done: Vec<(usize, Trigger)>,
+    asked: Vec<(usize, Trigger)>,
     result: bool,
 }
 
 impl Window {
     pub(crate) fn open(occ: Occasion) -> Frame {
+        Window::open_all(vec![occ])
+    }
+
+    pub(crate) fn open_all(occs: Vec<Occasion>) -> Frame {
         Frame::Window(Window {
-            occ,
+            occs,
             done: vec![],
             asked: vec![],
             result: false,
@@ -191,11 +197,15 @@ impl Window {
             Input::Response(Response::Options(chosen)) => match chosen.first() {
                 Some(Opt::Trigger(i)) => {
                     let t = self.asked[*i as usize].clone();
-                    return self.run(t);
+                    return self.run(g, t);
                 }
                 _ => {
-                    let declined: Vec<Trigger> =
-                        self.asked.iter().filter(|t| t.optional).cloned().collect();
+                    let declined: Vec<(usize, Trigger)> = self
+                        .asked
+                        .iter()
+                        .filter(|(_, t)| t.optional)
+                        .cloned()
+                        .collect();
                     self.done.extend(declined);
                 }
             },
@@ -204,10 +214,14 @@ impl Window {
         }
 
         let mut all = vec![];
-        cards::triggers(g, &self.occ, &mut all);
+        for (i, occ) in self.occs.iter().enumerate() {
+            let mut found = vec![];
+            cards::triggers(g, occ, &mut found);
+            all.extend(found.into_iter().map(|t| (i, t)));
+        }
         all.retain(|t| !self.done.contains(t));
-        if all.iter().any(|t| t.first) {
-            all.retain(|t| t.first);
+        if all.iter().any(|(_, t)| t.first) {
+            all.retain(|(_, t)| t.first);
         }
         if all.is_empty() {
             return Flow::Done(Value::Bool(self.result));
@@ -215,19 +229,30 @@ impl Window {
         let order = g.players_from(g.turn.player);
         let owner = *order
             .iter()
-            .find(|p| all.iter().any(|t| t.owner == **p))
+            .find(|p| all.iter().any(|(_, t)| t.owner == **p))
             .expect("every trigger has an owner");
-        let mine: Vec<Trigger> = all.into_iter().filter(|t| t.owner == owner).collect();
-        if let Some(t) = mine.iter().find(|t| t.quiet && !t.optional) {
-            return self.run(t.clone());
+        let mine: Vec<(usize, Trigger)> =
+            all.into_iter().filter(|(_, t)| t.owner == owner).collect();
+        if let Some(t) = mine.iter().find(|(_, t)| t.quiet && !t.optional) {
+            return self.run(g, t.clone());
         }
-        if !mine[0].optional && mine.iter().all(|t| same_effect(g, t, &mine[0])) {
-            return self.run(mine[0].clone());
+        // Copies of one mandatory ability for occasions that happen together (Tomb for
+        // each card trashed together, two Rats) resolve in occasion order.
+        let same = |t: &Trigger| {
+            let u = &mine[0].1;
+            (t.card, t.ability, t.optional, t.lasting, t.data)
+                == (u.card, u.ability, false, u.lasting, u.data)
+        };
+        if self.occs.len() > 1 && mine.iter().all(|(_, t)| same(t)) {
+            return self.run(g, mine[0].clone());
+        }
+        if !mine[0].1.optional && mine.iter().all(|(_, t)| same_effect(g, t, &mine[0].1)) {
+            return self.run(g, mine[0].clone());
         }
         let mut options: Vec<Opt> = (0..mine.len()).map(|i| Opt::Trigger(i as u16)).collect();
         let mut labels: Vec<String> = mine
             .iter()
-            .map(|t| {
+            .map(|(_, t)| {
                 if t.optional {
                     format!("{} (optional)", t.card)
                 } else {
@@ -235,11 +260,11 @@ impl Window {
                 }
             })
             .collect();
-        if mine.iter().all(|t| t.optional) {
+        if mine.iter().all(|(_, t)| t.optional) {
             options.push(Opt::No);
             labels.push("Done".to_string());
         }
-        let source = mine.first().map(|t| t.card);
+        let source = mine.first().map(|(_, t)| t.card);
         self.asked = mine;
         Flow::Ask(Decision {
             player: owner,
@@ -255,15 +280,24 @@ impl Window {
     }
 
     /// The pending triggers the decision being asked is about.
-    pub(crate) fn asked(&self) -> &[Trigger] {
-        &self.asked
+    pub(crate) fn asked(&self) -> impl Iterator<Item = &Trigger> {
+        self.asked.iter().map(|(_, t)| t)
     }
 
-    fn run(&mut self, t: Trigger) -> Flow {
-        self.done.push(t.clone());
+    fn run(&mut self, g: &Game, (i, t): (usize, Trigger)) -> Flow {
+        self.done.push((i, t.clone()));
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
-        f.occ = Some(self.occ.clone());
+        f.occ = Some(self.occs[i].clone());
         f.lasting = t.lasting;
+        // A Duration's later ability is still played by what kept it in play.
+        if let Some(l) = t
+            .lasting
+            .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+            && t.source.is_some()
+            && l.keeps.first() == t.source.as_ref()
+        {
+            f.chain = l.keeps[1..].iter().rev().copied().collect();
+        }
         f.data = t.data;
         Flow::Call(Frame::Card(Box::new(f)))
     }

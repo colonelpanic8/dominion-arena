@@ -63,7 +63,9 @@ them.
   Debt; `EndBuyPhase`), Night (`StartNight`; play Night cards), Clean-up
   (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Extra turns queue
-  in `Game::extra_turns`; nobody takes more than two turns in a row, and extra turns
+  in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
+  in a row: check `g.third_in_a_row(p)` before queuing one; Possession: not a second
+  extra turn in a row; Seize the Day: never), and extra turns
   don't count for the tiebreaker. `Player::skip_turns` skips the next turns a player
   would take (Lich); skipped regular turns count for the tiebreaker. `Turn::controller` makes someone else decide and see
   the player's cards (Possession, which also replaces gains, trashing through
@@ -80,8 +82,9 @@ them.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
   card's cost then in `GainState::cost`), `Gain` window.
-  **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay (the card's
-  `Hook::Ability(frame::OVERPAY)` with `f.data` = amount), `Buy` window, then gain.
+  **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
+  (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
+  `f.data` = the $ and `f.s.cost` = all of it), `Buy` window, then gain.
   Events and Projects: pay, `BuyLandscape` window, then the landscape's `Hook::Main`
   (a Project also gets the buyer's cube in `Player::projects`).
 - **Triggers** (`trigger.rs`). Each set's `SetRules::triggers(g, occ, out)` adds the
@@ -95,8 +98,8 @@ them.
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
   trigger with `Value::Bool(true)` makes the target unaffected.
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
-  `f.add_duration(g, data)` (keeps the card and its `chain` in play) only when the play
-  has something left to do, and produce a `StartTurn` trigger from that lasting
+  `f.add_duration(g, data)` (keeps the card in play with what played it:
+  `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting
   (`cards::due_durations` lists the ones due: made on an earlier turn of the owner's;
   `cards::duration_trigger` builds the trigger), whose ability removes it
   (`f.end_lasting(g)`). "This turn" effects use `Until::EndOfTurn`, "until your next
@@ -113,8 +116,13 @@ them.
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with
   `g.add_debt` (never `debt +=`), so Possession can redirect it. A set's own state goes in
   its `State` struct (`g.ext.<set>`). Everything must stay `Clone + Serialize`.
-- **Shuffling** opens `WouldShuffle`, shuffles, then `Shuffled { count }` (the bottom
-  `count` cards of the deck are the shuffled ones). One draw shuffles at most once.
+- **Shuffling** goes through `Frame::shuffle` (a discard pile into its deck) or
+  `Frame::shuffle_deck` (a whole deck: Inn, Famine), never by hand: `WouldShuffle`,
+  shuffle, cards `SetRules::bottom_when_shuffled` says go to the bottom (Shadow cards, in
+  their owner's order), then `Shuffled { count }` (the bottom `count` cards of the deck are
+  the shuffled ones; "when you shuffle" placements such as Stash, Star Chart and Fated
+  resolve there). One draw shuffles at most once. A script step that must draw before its
+  own flow goes on calls the draw and `CardFrame::hold`s that flow (Way of the Chameleon).
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
   carries a `Purpose` and its `source` card. Never add a card-specific decision kind.

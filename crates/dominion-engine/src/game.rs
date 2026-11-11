@@ -145,6 +145,8 @@ pub struct Pile {
     pub removed: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
+    /// How many times it became empty while in the Supply.
+    pub emptied: u32,
 }
 
 impl Pile {
@@ -161,6 +163,7 @@ impl Pile {
             traits: vec![],
             removed: false,
             hidden: false,
+            emptied: 0,
         }
     }
 }
@@ -179,6 +182,8 @@ pub enum Phase {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Turn {
     pub player: PlayerId,
+    /// Who took the turn before this one (skipped turns aren't taken).
+    pub previous: Option<PlayerId>,
     /// Who makes this turn's decisions (differs under Possession).
     pub controller: PlayerId,
     /// The card that granted this as an extra turn, if it is one.
@@ -198,6 +203,8 @@ pub struct Turn {
     pub hand_plays: u32,
     /// The physical cards of `played`, in the same order.
     pub played_ids: Vec<CardId>,
+    /// For each of `played_ids`: whether it was in play when played and hasn't left since.
+    pub stayed_in_play: Vec<bool>,
     pub gained: Vec<Card>,
     /// The cards in `gained` that were gained in the Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
@@ -215,6 +222,7 @@ impl Turn {
     pub(crate) fn new(player: PlayerId) -> Turn {
         Turn {
             player,
+            previous: None,
             controller: player,
             extra: None,
             phase: Phase::Start,
@@ -227,6 +235,7 @@ impl Turn {
             played: vec![],
             hand_plays: 0,
             played_ids: vec![],
+            stayed_in_play: vec![],
             gained: vec![],
             gained_in_buy_phase: vec![],
             bought_cards: vec![],
@@ -287,6 +296,18 @@ pub struct ExtraTurn {
     pub source: Card,
     /// Who controls it (Possession).
     pub controller: PlayerId,
+    pub limit: ExtraLimit,
+}
+
+/// When an extra turn doesn't happen (each card's own "but not ..." clause).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExtraLimit {
+    /// Always happens (Seize the Day).
+    None,
+    /// Not as a third turn in a row (Outpost, Voyage, Mission, ...).
+    ThirdInARow,
+    /// Not right after another extra turn of its player's (Possession).
+    SecondExtraInARow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -754,8 +775,23 @@ impl Game {
             .rposition(|&c| c == id)
             .expect("card missing from its recorded zone");
         src.remove(i);
+        if let Zone::Pile(pile) = from {
+            let pile = &mut self.piles[pile.index()];
+            if pile.cards.is_empty() && pile.in_supply {
+                pile.emptied += 1;
+            }
+        }
         if matches!(from, Zone::InPlay(_)) && !matches!(to, Zone::InPlay(_)) {
             self.masks.remove(&id);
+            let t = &mut self.turn;
+            for (stayed, _) in t
+                .stayed_in_play
+                .iter_mut()
+                .zip(&t.played_ids)
+                .filter(|(_, c)| **c == id)
+            {
+                *stayed = false;
+            }
         }
         if let Zone::SetAside(p) = from {
             self.players[p.index()].face_up.retain(|&c| c != id);
@@ -779,21 +815,6 @@ impl Game {
 
     pub(crate) fn random_index(&mut self, n: usize) -> usize {
         self.rng.random_range(0..n)
-    }
-
-    /// Shuffles `p`'s discard pile and puts it under their deck.
-    pub(crate) fn shuffle_discard_into_deck(&mut self, p: PlayerId) {
-        let player = &mut self.players[p.index()];
-        let mut cards = std::mem::take(&mut player.discard);
-        cards.shuffle(&mut self.rng);
-        cards::arrange_shuffled(self, p, &mut cards);
-        for &c in &cards {
-            self.zones[c.index()] = Zone::Deck(p);
-        }
-        let player = &mut self.players[p.index()];
-        cards.append(&mut player.deck);
-        player.deck = cards;
-        self.emit(Event::Shuffled { player: p });
     }
 
     /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
@@ -993,6 +1014,11 @@ impl Game {
             turns,
             winners,
         });
+    }
+
+    /// Whether a turn of `p`'s right after this one would be their third in a row.
+    pub(crate) fn third_in_a_row(&self, p: PlayerId) -> bool {
+        self.turn.player == p && self.turn.previous == Some(p)
     }
 
     /// Whether `p`'s next turn (an extra turn if `extra`) is skipped; if so, records it.

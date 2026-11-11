@@ -933,7 +933,7 @@ fn random_intrigue_games_keep_invariants() {
     let pool: Vec<Card> = Card::in_set(Set::Intrigue)
         .filter(|c| c.def().kingdom)
         .collect();
-    random_games_with_copies(&pool, &[], 0..120, |_| vec![]);
+    random_games_with_copies(&pool, &[], 0..fuzz_seeds(120), |_| vec![]);
 }
 
 #[test]

@@ -5,7 +5,7 @@ use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mas
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraTurn, Mat, Phase, Pos, Scratch, Token, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Mat, Phase, Pos, Scratch, Token, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -294,6 +294,7 @@ impl SetRules for Rules {
                     player: f.player,
                     source: Card::Mission,
                     controller: f.player,
+                    limit: ExtraLimit::ThirdInARow,
                 });
                 Flow::done()
             }

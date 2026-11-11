@@ -53,7 +53,8 @@ pub(crate) trait SetRules {
 
     /// Called after each step of ability `f`, with the turn as it was before the step;
     /// may adjust what the step did and the flow it returned (Way of the Chameleon).
-    fn after_step(g: &mut Game, f: &CardFrame, before: &Step, flow: &mut Flow) {}
+    /// [`CardFrame::hold`] defers the step's flow until after a frame it calls instead.
+    fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, flow: &mut Flow) {}
 
     /// Applies this set's type-changing effects to `id`.
     fn modify_types(g: &Game, id: CardId, types: &mut Types) {}
@@ -114,8 +115,11 @@ pub(crate) trait SetRules {
     /// has settled: tokens on piles, starting resources, choices among the piles, ...
     fn setup(g: &mut Game, s: &mut Setup) {}
 
-    /// Rearranges `cards`, just shuffled to go under `p`'s deck (bottom first).
-    fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {}
+    /// Whether `id`, being shuffled into `p`'s deck, goes on the bottom of the shuffled
+    /// cards (Shadow cards). The player orders the cards that do.
+    fn bottom_when_shuffled(g: &Game, p: PlayerId, id: CardId) -> bool {
+        false
+    }
 
     /// Adds the cards `p` may play as if they were in their hand (Shadow cards in the deck).
     fn playable_as_if_in_hand(g: &Game, p: PlayerId, out: &mut Vec<CardId>) {}
@@ -177,6 +181,9 @@ macro_rules! sets {
         }
 
         pub(crate) fn resume(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
+            if let Some(held) = f.held.take() {
+                return *held;
+            }
             let before = Step {
                 coins: g.turn.coins,
                 actions: g.turn.actions,
@@ -271,8 +278,8 @@ macro_rules! sets {
             $(<$module::Rules as SetRules>::setup(g, s);)*
         }
 
-        pub(crate) fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {
-            $(<$module::Rules as SetRules>::arrange_shuffled(g, p, cards);)*
+        pub(crate) fn bottom_when_shuffled(g: &Game, p: PlayerId, id: CardId) -> bool {
+            false $(|| <$module::Rules as SetRules>::bottom_when_shuffled(g, p, id))*
         }
 
         pub(crate) fn playable_as_if_in_hand(g: &Game, p: PlayerId, out: &mut Vec<CardId>) {
@@ -400,6 +407,8 @@ pub(crate) struct CardFrame {
     pub pc: u8,
     /// Free for the script's use between steps.
     pub s: Scratch,
+    /// A step's flow, deferred until the frame called in its place returns.
+    pub held: Option<Box<Flow>>,
 }
 
 impl CardFrame {
@@ -416,7 +425,13 @@ impl CardFrame {
             data: 0,
             pc: 0,
             s: Scratch::default(),
+            held: None,
         }
+    }
+
+    /// Defers `flow` until this frame is next resumed (after the frame called instead).
+    pub(crate) fn hold(&mut self, flow: Flow) {
+        self.held = Some(Box::new(flow));
     }
 
     /// The card this ability is on. Panics for abilities that have none.
@@ -424,22 +439,33 @@ impl CardFrame {
         self.this.expect("ability has a physical card")
     }
 
-    /// The cards that stay in play while a Duration effect of this play lasts.
-    pub(crate) fn keeps(&self) -> Vec<CardId> {
-        self.this
-            .into_iter()
-            .chain(self.chain.iter().copied())
-            .collect()
+    /// The cards that stay in play while a Duration effect of this play lasts, innermost
+    /// first: this card, the card that played it, and further up the chain only while the
+    /// card played is a Duration (a Throne Room that plays a Throne Room that plays a
+    /// Duration doesn't stay; one that plays a Mastermind that plays a Duration does).
+    pub(crate) fn keeps(&self, g: &Game) -> Vec<CardId> {
+        let mut keeps: Vec<CardId> = self.this.into_iter().collect();
+        for &c in self.chain.iter().rev() {
+            if keeps
+                .last()
+                .is_some_and(|&inner| !g.is(inner, Types::DURATION))
+            {
+                break;
+            }
+            keeps.push(c);
+        }
+        keeps
     }
 
     /// Schedules this play's Duration effect: a [`crate::Lasting`] that keeps this card
     /// (and whatever played it) in play until removed.
     pub(crate) fn add_duration(&self, g: &mut Game, data: Scratch) -> u32 {
+        let keeps = self.keeps(g);
         g.add_lasting(
             self.card,
             self.player,
             self.this,
-            self.keeps(),
+            keeps,
             Until::Removed,
             data,
         )
@@ -452,7 +478,7 @@ impl CardFrame {
 
     /// The chain to pass when this card plays another card.
     pub(crate) fn chain_for_child(&self) -> Vec<CardId> {
-        self.keeps()
+        self.chain.iter().copied().chain(self.this).collect()
     }
 
     fn ask(&self, player: PlayerId, kind: DecisionKind, purpose: Purpose) -> Flow {

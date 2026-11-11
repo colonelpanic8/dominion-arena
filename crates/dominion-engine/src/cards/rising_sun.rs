@@ -299,7 +299,7 @@ impl SetRules for Rules {
                     Card::Samurai,
                     f.player,
                     f.this,
-                    f.keeps(),
+                    f.keeps(g),
                     Until::Removed,
                     Scratch::default(),
                 );
@@ -448,11 +448,8 @@ impl SetRules for Rules {
         g.prophecy_active(Card::FlourishingTrade)
     }
 
-    fn arrange_shuffled(g: &Game, _p: PlayerId, cards: &mut Vec<CardId>) {
-        let (mut shadows, rest): (Vec<_>, Vec<_>) =
-            cards.iter().partition(|&&c| g.is(c, Types::SHADOW));
-        shadows.extend(rest);
-        *cards = shadows;
+    fn bottom_when_shuffled(g: &Game, _p: PlayerId, id: CardId) -> bool {
+        g.is(id, Types::SHADOW)
     }
 
     fn playable_as_if_in_hand(g: &Game, p: PlayerId, out: &mut Vec<CardId>) {

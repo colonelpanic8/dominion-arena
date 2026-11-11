@@ -2306,8 +2306,6 @@ fn a_skirmisher_gained_and_played_with_city_state_attacks_for_its_own_gain() {
 }
 
 #[test]
-#[ignore = "a Voyage whose turn is skipped stays in play until its owner's next Clean-up, \
-            not the next Clean-up of any player"]
 fn a_voyage_whose_turn_lich_skips_is_discarded_in_the_next_clean_up() {
     let mut g = game(&[Card::Wizards, Card::Odysseys]);
     hand(&mut g, P0, &[Card::Lich, Card::Voyage]);
@@ -2316,6 +2314,8 @@ fn a_voyage_whose_turn_lich_skips_is_discarded_in_the_next_clean_up() {
     play(&mut g, Card::Voyage);
     play(&mut g, Card::Lich);
     next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert!(in_play_kinds(&g, P0).contains(&Card::Voyage));
     next_turn(&mut g);
     assert!(!in_play_kinds(&g, P0).contains(&Card::Voyage));
 }
