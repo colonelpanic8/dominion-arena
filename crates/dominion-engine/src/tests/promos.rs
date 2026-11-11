@@ -121,6 +121,34 @@ fn a_configured_black_market_deck_takes_one_card_of_each_unused_kingdom_pile() {
     rejected(vec![Card::RuinedVillage], Card::RuinedVillage);
 }
 
+/// A card bought from Black Market in the Buy phase (a Treasure under Capitalism) is bought
+/// in that phase: no Treasures can be played after it.
+#[test]
+fn black_market_bought_in_the_buy_phase_ends_playing_treasures() {
+    let mut g = setup(&[Card::BlackMarket]);
+    let bm = black_market_deck(&g);
+    replace(
+        &mut g,
+        Zone::Pile(bm),
+        &[Card::Moat, Card::Smithy, Card::Laboratory],
+    );
+    g.players[0].projects.push(Card::Capitalism);
+    hand(&mut g, P0, &[Card::BlackMarket, Card::Gold, Card::Copper]);
+    g.start();
+    end_phase(&mut g);
+    play(&mut g, Card::BlackMarket);
+    choose_kinds(&mut g, &[Card::Gold]);
+    choose(&mut g, &[]);
+    choose_kinds(&mut g, &[Card::Laboratory]);
+    choose_kinds(&mut g, &[Card::Smithy, Card::Moat]);
+    let copper = find(&g, P0, Card::Copper);
+    let DecisionKind::Turn { moves, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending());
+    };
+    assert!(!moves.contains(&Move::Play(copper)), "{moves:?}");
+    assert!(moves.contains(&Move::EndPhase));
+}
+
 #[test]
 fn black_market_buys_in_the_action_phase_without_using_a_buy() {
     let mut g = setup(&[Card::BlackMarket]);

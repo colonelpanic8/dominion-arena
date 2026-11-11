@@ -6,7 +6,7 @@ use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mas
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, PAY_OTHERWISE, Value};
-use crate::game::{Pos, Scratch, Until, Zone};
+use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -340,6 +340,9 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             g.add_debt(p, cost.debt as u32);
             let kind = g.card(c);
             g.turn.bought_cards.push(kind);
+            if g.turn.phase == Phase::Buy {
+                g.turn.bought = true;
+            }
             g.emit(Event::Bought {
                 player: p,
                 card: kind,
