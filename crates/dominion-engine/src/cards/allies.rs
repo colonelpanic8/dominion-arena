@@ -8,7 +8,7 @@
 //! Guildmaster, Skirmisher, Garrison's tokens) are `Until::EndOfTurn` lastings; the
 //! players an Attack affects are a bit mask in the lasting's `data.n`.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, take_mode};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -493,24 +493,6 @@ fn favors(g: &Game, p: PlayerId) -> u32 {
 fn spend(g: &mut Game, p: PlayerId, n: u32) {
     let pl = &mut g.players[p.index()];
     pl.favors = pl.favors.saturating_sub(n);
-}
-
-/// The chosen `Opt::Mode`s as a bit mask.
-fn mode_mask(input: Input) -> i32 {
-    input.options().iter().fold(0, |m, o| match o {
-        Opt::Mode(i) => m | 1 << i,
-        _ => m,
-    })
-}
-
-/// Takes the first mode left in `f.s.m`, in printed order.
-fn take_mode(f: &mut CardFrame) -> Option<u8> {
-    if f.s.m == 0 {
-        return None;
-    }
-    let i = f.s.m.trailing_zeros() as u8;
-    f.s.m &= !(1 << i);
-    Some(i)
 }
 
 fn up_to(coins: u8) -> impl Fn(&Game) -> Vec<PileId> {
