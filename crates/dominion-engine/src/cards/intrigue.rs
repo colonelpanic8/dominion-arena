@@ -46,7 +46,7 @@ impl SetRules for Rules {
             (Card::Courtyard, _) => courtyard(g, f, input),
             (Card::Diplomat, _) => {
                 if g.hand(f.player).len() <= 5 {
-                    g.turn.actions += 2;
+                    g.add_actions(f.player, 2);
                 }
                 Flow::done()
             }
@@ -281,7 +281,7 @@ fn conspirator(g: &mut Game, f: &mut CardFrame) -> Flow {
     }
     f.pc = 1;
     if g.turn.played_of(Types::ACTION) >= 3 {
-        g.turn.actions += 1;
+        g.add_actions(f.player, 1);
         return Flow::Call(Frame::draw(f.player, 1));
     }
     Flow::done()
@@ -310,8 +310,8 @@ fn courtier(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let modes = chosen_modes(input);
             for &m in &modes {
                 match m {
-                    0 => g.turn.actions += 1,
-                    1 => g.turn.buys += 1,
+                    0 => g.add_actions(f.player, 1),
+                    1 => g.add_buys(f.player, 1),
                     2 => g.add_coins(f.player, 3),
                     _ => {}
                 }
@@ -392,7 +392,7 @@ fn ironworks(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             let types = g.types(c);
             if types.contains(Types::ACTION) {
-                g.turn.actions += 1;
+                g.add_actions(f.player, 1);
             }
             if types.contains(Types::TREASURE) {
                 g.add_coins(f.player, 1);
@@ -645,7 +645,7 @@ fn nobles(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if f.s.m & 2 != 0 {
-                g.turn.actions += 2;
+                g.add_actions(f.player, 2);
             }
             Flow::done()
         }
@@ -695,10 +695,10 @@ fn pawn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if f.s.m & 2 != 0 {
-                g.turn.actions += 1;
+                g.add_actions(f.player, 1);
             }
             if f.s.m & 4 != 0 {
-                g.turn.buys += 1;
+                g.add_buys(f.player, 1);
             }
             if f.s.m & 8 != 0 {
                 g.add_coins(f.player, 1);
@@ -1083,7 +1083,7 @@ fn tribute(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 seen.push(g.card(c));
                 let types = g.types(c);
                 if types.contains(Types::ACTION) {
-                    g.turn.actions += 2;
+                    g.add_actions(f.player, 2);
                 }
                 if types.contains(Types::TREASURE) {
                     g.add_coins(f.player, 2);

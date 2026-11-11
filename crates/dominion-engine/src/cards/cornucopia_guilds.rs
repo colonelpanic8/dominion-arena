@@ -811,12 +811,12 @@ fn hamlet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, chosen))
         }
         2 => {
-            g.turn.actions += 1;
+            g.add_actions(f.player, 1);
             f.pc = 3;
             Flow::Continue
         }
         5 => {
-            g.turn.buys += 1;
+            g.add_buys(f.player, 1);
             Flow::done()
         }
         _ => Flow::done(),
@@ -1332,7 +1332,7 @@ fn courser(g: &mut Game, f: &mut CardFrame, input: Input, steed: bool) -> Flow {
     }
     if f.pc == 2 {
         if f.s.m & 2 != 0 {
-            g.turn.actions += 2;
+            g.add_actions(f.player, 2);
         }
         if f.s.m & 4 != 0 {
             g.add_coins(f.player, 2);

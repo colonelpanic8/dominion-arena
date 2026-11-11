@@ -123,6 +123,16 @@ pub(crate) fn buy(g: &mut Game, card: Card) {
     respond(g, Response::Move(Move::Buy(pile)));
 }
 
+/// P0 plays an Ambassador, revealing the Gondola that is the rest of their hand and
+/// returning none; P1 gains one and plays the only Action in their hand with it.
+pub(crate) fn play_on_another_players_turn(g: &mut Game) {
+    play(g, Card::Ambassador);
+    choose(g, &[]);
+    let d = g.pending().expect("a decision is pending");
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    respond(g, Response::option(Opt::Trigger(0)));
+}
+
 pub(crate) fn yes(g: &mut Game) {
     respond(g, Response::option(Opt::Yes));
 }
@@ -573,6 +583,35 @@ fn stash_and_star_chart_both_apply_to_one_shuffle() {
     // Second from the top, under the Gold.
     respond(&mut g, Response::Number(1));
     assert_eq!(hand_kinds(&g, P0), [Card::Gold, Card::Stash, Card::Estate]);
+}
+
+/// +Actions and +Buys are for the turn's player only: a card played on another player's
+/// turn gives them to no one.
+#[test]
+fn actions_and_buys_do_nothing_on_another_players_turn() {
+    let check = |card: Card, rest: &[Card], answer: fn(&mut Game)| {
+        let mut g = setup(&[Card::Ambassador, Card::Gondola, card]);
+        hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+        hand(&mut g, P1, &[&[card], rest].concat());
+        deck(&mut g, P1, &[Card::Copper; 5]);
+        g.start();
+        play_on_another_players_turn(&mut g);
+        answer(&mut g);
+        assert_eq!(kinds(&g, g.in_play(P1)), [card]);
+        let turn = g.turn();
+        assert_eq!((turn.player, turn.actions, turn.buys), (P0, 0, 1), "{card}");
+    };
+    check(Card::Pawn, &[], |g| intrigue::modes(g, &[1, 2]));
+    check(Card::Squire, &[], |g| {
+        respond(g, Response::option(Opt::Mode(1)))
+    });
+    check(Card::Hamlet, &[Card::Estate, Card::Curse], |g| {
+        choose_kinds(g, &[Card::Estate]);
+        choose_kinds(g, &[Card::Curse]);
+    });
+    check(Card::Stables, &[Card::Copper], |g| {
+        choose_kinds(g, &[Card::Copper])
+    });
 }
 
 #[test]

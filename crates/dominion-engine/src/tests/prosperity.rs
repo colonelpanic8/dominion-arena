@@ -206,6 +206,21 @@ fn city_scales_with_empty_supply_piles() {
 }
 
 #[test]
+fn city_played_on_another_players_turn_gives_no_buy() {
+    let mut g = setup(&[Card::City, Card::Ambassador, Card::Gondola]);
+    empty_pile(&mut g, Card::Curse);
+    empty_pile(&mut g, Card::Estate);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P1, &[Card::City]);
+    deck(&mut g, P1, &[Card::Copper; 5]);
+    g.start();
+    play_on_another_players_turn(&mut g);
+    assert_eq!(g.hand(P1).len(), 2);
+    let t = g.turn();
+    assert_eq!((t.player, t.actions, t.buys, t.coins), (P0, 0, 1, 0));
+}
+
+#[test]
 fn clerk_makes_players_with_five_cards_topdeck_one() {
     let mut g = setup(&[Card::Clerk]);
     hand(&mut g, P0, &[Card::Clerk]);

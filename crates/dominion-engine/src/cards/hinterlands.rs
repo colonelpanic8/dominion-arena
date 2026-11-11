@@ -845,14 +845,14 @@ fn spice_merchant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.m = mode_mask(input);
             f.pc = 4;
             if f.s.m & 1 != 0 {
-                g.turn.actions += 1;
+                g.add_actions(f.player, 1);
                 return Flow::Call(Frame::draw(f.player, 2));
             }
             Flow::Continue
         }
         _ => {
             if f.s.m & 2 != 0 {
-                g.turn.buys += 1;
+                g.add_buys(f.player, 1);
                 g.add_coins(f.player, 2);
             }
             Flow::done()
@@ -877,7 +877,7 @@ fn stables(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             f.pc = 3;
-            g.turn.actions += 1;
+            g.add_actions(f.player, 1);
             Flow::Call(Frame::draw(f.player, 3))
         }
         _ => Flow::done(),

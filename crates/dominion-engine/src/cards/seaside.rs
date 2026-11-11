@@ -54,7 +54,7 @@ impl SetRules for Rules {
             (_, Hook::Ability(_)) => return None,
             (Card::Astrolabe, _) => {
                 g.add_coins(f.player, 1);
-                plus_buys(g, f.player, 1);
+                g.add_buys(f.player, 1);
                 f.add_duration(g, Scratch::default());
                 Flow::done()
             }
@@ -112,7 +112,7 @@ impl SetRules for Rules {
             (Card::Warehouse, _) => warehouse(g, f, input),
             (Card::Wharf, _) => {
                 if f.pc == 0 {
-                    plus_buys(g, f.player, 1);
+                    g.add_buys(f.player, 1);
                     f.pc = 1;
                     return Some(Flow::Call(Frame::draw(f.player, 2)));
                 }
@@ -258,18 +258,6 @@ fn in_mask(mask: i32, p: PlayerId) -> bool {
     mask & (1 << p.0) != 0
 }
 
-fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
-}
-
-fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
-}
-
 /// At step `pc`, draws `n` cards and finishes.
 fn draw_then_done(f: &mut CardFrame, pc: u8, n: usize) -> Flow {
     if f.pc == pc {
@@ -315,7 +303,7 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.card {
         Card::Astrolabe => {
             g.add_coins(p, 1);
-            plus_buys(g, p, 1);
+            g.add_buys(p, 1);
             Flow::done()
         }
         Card::Blockade | Card::Haven => {
@@ -328,7 +316,7 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         Card::Caravan | Card::Corsair | Card::Monkey => draw_then_done(f, 1, 1),
         Card::FishingVillage => {
-            plus_actions(g, p, 1);
+            g.add_actions(p, 1);
             g.add_coins(p, 1);
             Flow::done()
         }
@@ -385,15 +373,15 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         },
         Card::Tactician => {
             if f.pc == 1 {
-                plus_actions(g, p, 1);
-                plus_buys(g, p, 1);
+                g.add_actions(p, 1);
+                g.add_buys(p, 1);
             }
             draw_then_done(f, 1, 5)
         }
         Card::TidePools => discard_from_hand(g, f, input, 1, 2),
         Card::Wharf => {
             if f.pc == 1 {
-                plus_buys(g, p, 1);
+                g.add_buys(p, 1);
             }
             draw_then_done(f, 1, 2)
         }
