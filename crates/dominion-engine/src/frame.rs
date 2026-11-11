@@ -267,6 +267,7 @@ impl Frame {
             chain,
             targets: vec![],
             remaining: vec![],
+            again: 0,
             pc: 0,
         })
     }
@@ -896,6 +897,8 @@ pub(crate) struct PlayFrame {
     chain: Vec<CardId>,
     targets: Vec<PlayerId>,
     remaining: Vec<PlayerId>,
+    /// How many more times to follow the card's own instructions.
+    again: u32,
     pc: u8,
 }
 
@@ -970,6 +973,9 @@ impl PlayFrame {
                 }
                 let st = g.plays.last().expect("play in progress");
                 let own = st.way.is_none() && st.replaced.is_none() && !st.blocked;
+                if own {
+                    self.again = cards::extra_runs(g, p, id);
+                }
                 self.pc = 4;
                 if own && g.is(id, Types::ATTACK) {
                     self.remaining = g.others(p);
@@ -1034,10 +1040,18 @@ impl PlayFrame {
             5 => {
                 let behavior = g.plays.last().expect("play in progress").behavior;
                 let mut f = CardFrame::new(behavior, Hook::Main, p, Some(id));
-                f.targets = std::mem::take(&mut self.targets);
+                f.targets = self.targets.clone();
                 f.chain = self.chain.clone();
-                self.pc = 7;
+                self.pc = 6;
                 Flow::Call(Frame::Card(Box::new(f)))
+            }
+            6 => {
+                self.pc = 7;
+                if self.again > 0 {
+                    self.again -= 1;
+                    self.pc = 4;
+                }
+                Flow::Continue
             }
             7 => {
                 self.pc = 8;

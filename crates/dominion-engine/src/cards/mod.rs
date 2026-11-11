@@ -39,6 +39,11 @@ pub(crate) trait SetRules {
     /// Changes the vanilla bonuses `p` gets from playing `id`.
     fn modify_bonus(g: &Game, p: PlayerId, id: CardId, bonus: &mut Bonus) {}
 
+    /// How many more times a play of `id` by `p` follows its instructions (Reckless).
+    fn extra_runs(g: &Game, p: PlayerId, id: CardId) -> u32 {
+        0
+    }
+
     /// The card whose abilities `id` uses when played, if not its own (Inheritance).
     fn behavior(g: &Game, id: CardId) -> Option<Card> {
         None
@@ -111,6 +116,10 @@ macro_rules! sets {
 
         pub(crate) fn modify_bonus(g: &Game, p: PlayerId, id: CardId, bonus: &mut Bonus) {
             $(<$module::Rules as SetRules>::modify_bonus(g, p, id, bonus);)*
+        }
+
+        pub(crate) fn extra_runs(g: &Game, p: PlayerId, id: CardId) -> u32 {
+            0 $(+ <$module::Rules as SetRules>::extra_runs(g, p, id))*
         }
 
         pub(crate) fn behavior(g: &Game, id: CardId) -> Option<Card> {
