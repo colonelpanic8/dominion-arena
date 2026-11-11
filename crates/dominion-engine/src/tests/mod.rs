@@ -299,7 +299,7 @@ pub(crate) fn drive_randomly(mut g: Game, seed: u64) -> Game {
 
 #[test]
 fn random_games_keep_invariants() {
-    for seed in 0..200 {
+    for seed in 0..fuzz_seeds(200) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let players = rng.random_range(2..=4);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
@@ -578,14 +578,32 @@ pub(crate) fn random_game_with_kingdom_decks(config: GameConfig, seed: u64) -> G
     drive_randomly(g, seed)
 }
 
+/// Kingdom cards of the implemented sets that later editions removed, which
+/// `GameConfig::random` never deals.
+fn removed_kingdom_cards() -> Vec<Card> {
+    Card::ALL
+        .iter()
+        .copied()
+        .filter(|c| c.def().kingdom && c.def().removed && IMPLEMENTED.contains(&c.set()))
+        .collect()
+}
+
 /// Kingdoms (and landscapes) dealt from every implemented set, with every player's deck
-/// seeded with the Kingdom cards so cross-set interactions actually happen.
+/// seeded with the Kingdom cards so cross-set interactions actually happen. Up to three
+/// Kingdom piles are swapped for removed cards.
 #[test]
 fn cross_set_games_keep_invariants() {
+    let removed = removed_kingdom_cards();
     for seed in 0..fuzz_seeds(100) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xc0ffee);
         let players = rng.random_range(2..=4);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
+        for i in 0..rng.random_range(0..=3) {
+            let card = *removed.choose(&mut rng).unwrap();
+            if !config.kingdom.contains(&card) {
+                config.kingdom[i] = card;
+            }
+        }
         config.turn_limit = Some(60);
         let g = random_game_with_kingdom_decks(config, seed);
         if std::env::var("FUZZ_STATS").is_ok() {

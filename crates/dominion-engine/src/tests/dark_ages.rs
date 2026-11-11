@@ -1551,7 +1551,7 @@ fn random_dark_ages_games_keep_invariants() {
         Card::Gold,
         Card::Survivors,
     ];
-    for seed in 0..200 {
+    for seed in 0..fuzz_seeds(200) {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
         let players = rng.random_range(2..=4);
         let mut config = GameConfig::random(players, &[Set::DarkAges], seed);

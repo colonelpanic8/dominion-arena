@@ -599,7 +599,7 @@ fn random_promo_games_keep_invariants() {
     let pool: Vec<Card> = Card::in_set(Set::Promos)
         .filter(|c| c.def().kingdom)
         .collect();
-    random_games_with_copies(&pool, &[Card::Avanto], 0..80, |seed| {
+    random_games_with_copies(&pool, &[Card::Avanto], 0..fuzz_seeds(80), |seed| {
         if seed % 2 == 0 {
             vec![Card::Summon]
         } else {

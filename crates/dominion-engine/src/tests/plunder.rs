@@ -169,7 +169,7 @@ fn random_plunder_games_keep_invariants() {
     let landscapes: Vec<Card> = Card::in_set(Set::Plunder)
         .filter(|c| matches!(c.kind(), Kind::Event | Kind::Trait))
         .collect();
-    for seed in 0..150 {
+    for seed in 0..fuzz_seeds(150) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
         cards.shuffle(&mut rng);

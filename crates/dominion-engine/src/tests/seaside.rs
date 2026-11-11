@@ -1106,7 +1106,7 @@ fn random_seaside_games_keep_invariants() {
     let pool: Vec<Card> = Card::in_set(Set::Seaside)
         .filter(|c| c.def().kingdom)
         .collect();
-    for seed in 0..120 {
+    for seed in 0..fuzz_seeds(120) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
         cards.shuffle(&mut rng);
