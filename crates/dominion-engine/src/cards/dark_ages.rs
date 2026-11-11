@@ -6,7 +6,7 @@ use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Pos, Scratch, Until, Zone};
-use crate::setup::{add_mixed_pile, add_pile};
+use crate::setup::{self, Setup, add_mixed_pile, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -236,17 +236,8 @@ impl SetRules for Rules {
         }
     }
 
-    fn setup_added_piles(g: &mut Game, _cards: &[Card]) {
-        Self::setup(g);
-    }
-
-    fn setup(g: &mut Game) {
-        let present = |g: &Game, pred: &dyn Fn(Card) -> bool| {
-            g.piles
-                .iter()
-                .any(|pile| pile.cards.iter().any(|&c| pred(g.printed(c))))
-        };
-        if present(g, &|c| c.is(Types::LOOTER)) && g.pile_of(Card::Ruins).is_none() {
+    fn ensure(g: &mut Game, _s: &mut Setup) {
+        if setup::in_game(g, |c| c.is(Types::LOOTER)) && g.pile_of(Card::Ruins).is_none() {
             let mut ruins: Vec<Card> = Card::Ruins
                 .pile_members()
                 .into_iter()
@@ -266,7 +257,7 @@ impl SetRules for Rules {
             (Card::Mercenary, 10, &[Card::Urchin][..]),
         ];
         for (card, size, users) in extra {
-            if present(g, &|c| users.contains(&c)) && g.pile_of(card).is_none() {
+            if setup::in_game(g, |c| users.contains(&c)) && g.pile_of(card).is_none() {
                 add_pile(g, card, size, false);
             }
         }

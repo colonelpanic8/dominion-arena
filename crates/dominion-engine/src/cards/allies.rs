@@ -13,7 +13,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{ExtraTurn, Pos, Scratch, Until, Zone};
-use crate::setup::add_mixed_pile;
+use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -407,33 +407,19 @@ impl SetRules for Rules {
         true
     }
 
-    fn setup(g: &mut Game) {
-        let liaison = g
-            .piles
-            .iter()
-            .any(|pile| pile.cards.iter().any(|&c| g.printed(c).is(Types::LIAISON)));
+    fn ensure(g: &mut Game, _s: &mut Setup) {
+        let liaison = setup::in_game(g, |c| c.is(Types::LIAISON));
         if liaison && allies(g).next().is_none() {
             add_random_ally(g);
-        }
-        if allies(g).next().is_none() {
-            return;
-        }
-        let importer = g.pile_of(Card::Importer).is_some();
-        for pl in &mut g.players {
-            pl.favors += if importer { 5 } else { 1 };
         }
     }
 
-    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
-        let liaison = cards.iter().any(|&c| {
-            c.is(Types::LIAISON) || c.pile_members().iter().any(|m| m.is(Types::LIAISON))
-        });
+    fn setup(g: &mut Game, s: &mut Setup) {
         let mut favors = 0;
-        if liaison && allies(g).next().is_none() {
-            add_random_ally(g);
+        if s.joined_cards().iter().any(|c| c.kind() == Kind::Ally) {
             favors += 1;
         }
-        if cards.contains(&Card::Importer) {
+        if s.joined(Card::Importer) {
             favors += 4;
         }
         for pl in &mut g.players {

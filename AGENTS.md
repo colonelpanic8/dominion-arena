@@ -136,12 +136,14 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   `CardFrame::ask_*` helpers.
 - Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
   check `g.zone(id)` is still that zone.
-- Setup: `build_kingdom_pile` for unusual Kingdom piles, `setup` for extra piles
-  (`setup::add_pile`, `add_mixed_pile`), decks of Boons/Hexes, tokens and so on,
-  `modify_starting_deck` for Heirlooms/Shelters-like changes. `setup_kingdom` runs
-  before `setup` for setup that adds Kingdom piles or decides what is in the game (the
-  Prophecy, Riverboat's card); `setup_added_piles` does the setup of cards that join
-  later (Divine Wind's piles, Riverboat's card), so only add what is missing there.
+- Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
+  Heirlooms/Shelters-like changes, and two phases (`setup::complete`). `ensure` adds
+  what the cards in the game need (extra piles, Boons/Hexes, set-aside cards, an Ally
+  or Prophecy): it asks `setup::in_game`, never which set added a card, and adds only
+  what is missing, because it runs until nothing changes, at the start and again for
+  cards joining mid-game (Divine Wind). `setup` then runs once for what joined
+  (`Setup::joined`): tokens on piles, starting resources. Random setup choices go
+  through `Setup::choose`.
   `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
 - "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
   playable as if in hand (Shadow cards in the deck). An effect that sets `turn.phase`

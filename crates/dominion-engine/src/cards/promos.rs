@@ -7,7 +7,7 @@ use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, OVERPAY};
 use crate::game::{Pos, Scratch, Until, Zone};
-use crate::setup;
+use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -172,18 +172,17 @@ impl SetRules for Rules {
         true
     }
 
-    fn setup(g: &mut Game) {
-        if g.supply_pile(Card::BlackMarket).is_none() {
+    fn ensure(g: &mut Game, s: &mut Setup) {
+        if g.ext.promos.black_market.is_some() || !setup::in_game(g, |c| c == Card::BlackMarket) {
             return;
         }
-        let mut pool: Vec<Card> = Card::ALL
+        let pool: Vec<Card> = Card::ALL
             .iter()
             .copied()
             .filter(|&c| black_market_eligible(g, c))
             .collect();
-        g.shuffle(&mut pool);
-        pool.truncate(BLACK_MARKET_SIZE);
-        let pile = setup::add_mixed_pile(g, Card::BlackMarket, &pool, false);
+        let deck = s.choose_n(g, Card::BlackMarket, pool, 1..=BLACK_MARKET_SIZE);
+        let pile = setup::add_mixed_pile(g, Card::BlackMarket, &deck, false);
         g.piles[pile.index()].hidden = true;
         g.ext.promos.black_market = Some(pile);
     }
@@ -197,7 +196,7 @@ fn black_market_eligible(g: &Game, card: Card) -> bool {
         "Setup", "Heirloom", "Prize", "Reward", "Boon", "Hex", "Ruins", "Loot", "Favor", "Sun",
     ];
     let def = card.def();
-    if card.kind() != Kind::Card || !def.kingdom || def.removed || g.home_pile(card).is_some() {
+    if card.kind() != Kind::Card || !def.kingdom || def.removed || !setup::unused(g, card) {
         return false;
     }
     let Some(cost) = def.cost else {

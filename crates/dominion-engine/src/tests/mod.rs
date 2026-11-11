@@ -62,6 +62,15 @@ pub(crate) fn setup_with(config: GameConfig) -> Game {
     crate::setup::build(config).unwrap()
 }
 
+/// Adds Kingdom piles mid-game, as Divine Wind does, with what they need.
+pub(crate) fn add_kingdom_piles(g: &mut Game, cards: &[Card]) {
+    let since = crate::setup::mark(g);
+    for &card in cards {
+        crate::setup::add_kingdom_pile(g, card);
+    }
+    crate::setup::complete(g, since);
+}
+
 /// Replaces the cards in `zone` with new copies of `cards`; old ones go to the trash.
 pub(crate) fn replace(g: &mut Game, zone: Zone, cards: &[Card]) -> Vec<CardId> {
     let old = std::mem::take(g.zone_vec(zone));

@@ -2241,7 +2241,7 @@ fn cheap_cards_cost_one_less_but_not_below_zero() {
 fn cursed_gives_the_card_then_a_loot_then_a_curse() {
     let mut g = setup(&[Card::Village]);
     set_trait(&mut g, Card::Cursed, Card::Village);
-    crate::cards::setup(&mut g);
+    add_kingdom_piles(&mut g, &[]);
     hand(&mut g, P0, &[]);
     g.start();
     money(&mut g, 3, 1);

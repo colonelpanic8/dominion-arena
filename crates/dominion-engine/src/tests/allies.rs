@@ -2361,11 +2361,11 @@ fn highwayman_or_enlightenment_applies_as_the_player_orders_them() {
 fn a_liaison_joining_mid_game_brings_an_ally_and_its_favors() {
     let mut g = setup_with(GameConfig::new(2, vec![Card::Smithy], 1));
     assert!(g.landscapes().is_empty());
-    crate::cards::setup_added_piles(&mut g, &[Card::Wizards]);
+    add_kingdom_piles(&mut g, &[Card::Wizards]);
     assert_eq!(g.landscapes().len(), 1);
     assert_eq!(g.landscapes()[0].kind(), Kind::Ally);
     assert_eq!((favors(&g, P0), favors(&g, P1)), (1, 1));
-    crate::cards::setup_added_piles(&mut g, &[Card::Importer, Card::Emissary]);
+    add_kingdom_piles(&mut g, &[Card::Importer, Card::Emissary]);
     assert_eq!(g.landscapes().len(), 1);
     assert_eq!(favors(&g, P0), 5);
 }

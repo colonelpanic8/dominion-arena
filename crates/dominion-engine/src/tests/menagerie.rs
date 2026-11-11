@@ -2395,12 +2395,12 @@ fn changeling_can_exchange_a_destrier_that_cost_three_when_gained() {
 fn horse_users_joining_the_game_late_bring_the_horse_pile() {
     let mut g = setup(&[Card::Smithy]);
     assert!(g.pile_of(Card::Horse).is_none());
-    crate::cards::setup_added_piles(&mut g, &[Card::Smithy]);
+    add_kingdom_piles(&mut g, &[Card::Smithy]);
     assert!(g.pile_of(Card::Horse).is_none());
-    crate::cards::setup_added_piles(&mut g, &[Card::Supplies]);
+    add_kingdom_piles(&mut g, &[Card::Supplies]);
     let horses = g.pile_of(Card::Horse).expect("a Horse pile");
     assert!(!g.pile(horses).in_supply);
-    crate::cards::setup_added_piles(&mut g, &[Card::Sleigh]);
+    add_kingdom_piles(&mut g, &[Card::Sleigh]);
     assert_eq!(
         g.piles().iter().filter(|p| p.card == Card::Horse).count(),
         1
