@@ -844,13 +844,21 @@ fn can_buy(g: &Game, p: PlayerId, card: Card, cost: crate::Cost) -> bool {
         && cards::can_buy(g, p, card)
 }
 
-/// Adds what `p` may do at any time during their turn: spend Coffers, pay off Debt.
+/// Adds spending Coffers and paying off Debt. Outside the Buy phase they are offered only
+/// where they could matter: while an Action could be played (also after a Villager, or by
+/// Market Towns at the start of the Buy phase), at Night while a Night card could, and
+/// paying Debt at Night after what reads `$` at the end of the Buy phase (Wine Merchant).
 fn push_token_moves(g: &Game, p: PlayerId, moves: &mut Vec<Move>) {
     let pl = &g.players[p.index()];
-    if pl.coffers > 0 {
+    let playable = match g.turn.phase {
+        Phase::Action => !g.playable(p, Types::ACTION).is_empty(),
+        Phase::Night => !g.playable(p, Types::NIGHT).is_empty(),
+        _ => true,
+    };
+    if pl.coffers > 0 && playable {
         moves.push(Move::Coffers);
     }
-    if pl.debt > 0 && g.turn.coins > 0 {
+    if pl.debt > 0 && g.turn.coins > 0 && (playable || g.turn.phase == Phase::Night) {
         moves.push(Move::PayDebt);
     }
 }

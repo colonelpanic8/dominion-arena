@@ -586,30 +586,56 @@ fn a_buy_gains_nothing_once_another_card_tops_the_pile() {
 
 #[test]
 fn coffers_and_debt_can_be_used_in_every_phase() {
-    let mut g = setup(&[Card::Smithy]);
-    hand(&mut g, P0, &[]);
+    let mut g = setup(&[Card::Smithy, Card::Monastery]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Monastery]);
     g.players[0].coffers = 3;
     g.players[0].debt = 3;
     g.start();
     for phase in [Phase::Action, Phase::Buy, Phase::Night] {
         let d = g.pending().unwrap();
-        assert_eq!(
-            d.kind,
-            DecisionKind::Turn {
-                phase,
-                moves: vec![Move::Coffers, Move::EndPhase]
-            }
-        );
+        let DecisionKind::Turn { phase: at, moves } = &d.kind else {
+            panic!("{d:?}");
+        };
+        assert_eq!(*at, phase);
+        assert!(moves.contains(&Move::Coffers), "{moves:?}");
         respond(&mut g, Response::Move(Move::Coffers));
         assert_eq!(g.turn().coins, 1);
         respond(&mut g, Response::Move(Move::PayDebt));
-        if phase != Phase::Night {
-            end_phase(&mut g);
-        }
+        end_phase(&mut g);
     }
-    // Nothing left to do at Night, so the turn ended on its own.
     assert_eq!(g.pending().unwrap().player, P1);
     assert_eq!((g.player(P0).coffers, g.player(P0).debt), (0, 0));
+}
+
+/// Outside the Buy phase the token moves wait for something to play, except paying Debt at
+/// Night, after what reads `$` at the end of the Buy phase.
+#[test]
+fn token_moves_are_not_offered_where_nothing_can_be_played() {
+    let mut g = setup(&[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Copper]);
+    g.players[0].coffers = 1;
+    g.players[0].debt = 1;
+    g.start();
+    let copper = find(&g, P0, Card::Copper);
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn {
+            phase: Phase::Buy,
+            moves: vec![Move::Play(copper), Move::Coffers, Move::EndPhase]
+        }
+    );
+    play(&mut g, Card::Copper);
+    end_phase(&mut g);
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn {
+            phase: Phase::Night,
+            moves: vec![Move::PayDebt, Move::EndPhase]
+        }
+    );
+    respond(&mut g, Response::Move(Move::PayDebt));
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!((g.player(P0).coffers, g.player(P0).debt), (1, 0));
 }
 
 // ---- Shuffling ----

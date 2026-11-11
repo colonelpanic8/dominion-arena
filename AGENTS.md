@@ -70,7 +70,8 @@ them.
   (`StartCleanup`, `DiscardFromPlay` for each player with cards in play to discard,
   discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Spending Coffers
-  and paying off Debt are moves in the Action, Buy and Night phases alike. Extra turns queue
+  and paying off Debt are moves in the Action, Buy and Night phases alike (outside the Buy
+  phase, offered only where they could matter: `push_token_moves`). Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
   in a row: check `g.third_in_a_row(p)` before queuing one; Possession: not a second
   extra turn in a row; Seize the Day: never), and extra turns

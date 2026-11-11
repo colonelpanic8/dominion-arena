@@ -883,7 +883,6 @@ fn merchant_guild_counts_each_buy_phase_separately() {
     assert_eq!(g.turn().phase, Phase::Action);
     assert_eq!(g.player(P0).coffers, 1);
     play(&mut g, Card::Villa);
-    end_phase(&mut g);
     buy(&mut g, Card::Copper);
     while g.turn().player == P0 {
         end_phase(&mut g);
@@ -1001,7 +1000,6 @@ fn huge_turnip_counts_the_new_coffers() {
     hand(&mut g, P0, &[Card::HugeTurnip]);
     g.players[0].coffers = 1;
     g.start();
-    end_phase(&mut g);
     play(&mut g, Card::HugeTurnip);
     assert_eq!(g.player(P0).coffers, 3);
     assert_eq!(g.turn().coins, 3);
