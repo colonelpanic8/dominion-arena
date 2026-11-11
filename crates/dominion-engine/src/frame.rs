@@ -395,15 +395,20 @@ impl Frame {
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
+                // Cards discarded together are all discarded before any reacts.
+                if *i == 0 {
+                    for &c in cards.iter() {
+                        g.move_card(c, Zone::Discard(*player), Pos::Top);
+                        g.emit(Event::Discarded {
+                            player: *player,
+                            card: g.card(c),
+                        });
+                    }
+                }
                 let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 };
                 *i += 1;
-                g.move_card(c, Zone::Discard(*player), Pos::Top);
-                g.emit(Event::Discarded {
-                    player: *player,
-                    card: g.card(c),
-                });
                 Flow::Call(Frame::window(Occasion::Discard {
                     player: *player,
                     card: c,
