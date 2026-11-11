@@ -276,8 +276,9 @@ impl SetRules for Rules {
     }
 }
 
+/// "In games using this": a Charlatan exists, in the Supply or elsewhere (Black Market).
 fn charlatan_in_game(g: &Game) -> bool {
-    g.pile_of(Card::Charlatan).is_some()
+    g.cards.contains(&Card::Charlatan)
 }
 
 /// The card a triggered ability's occasion is about.
