@@ -342,16 +342,20 @@ impl SetRules for Rules {
     }
 
     fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {
-        if d.purpose != Purpose::Mode || f.hook != Hook::Main {
+        if d.purpose != Purpose::Mode || f.hook != Hook::Main || d.player != f.player {
             return;
         }
         let Some(this) = f.this else {
             return;
         };
-        let elder = g
-            .lasting()
-            .iter()
-            .any(|l| l.card == Card::Elder && l.until == Until::Removed && l.data.pick == Some(this));
+        // Only Elder's own play of it, not a replay (Royal Carriage) during that play.
+        let play = g.turn.played_ids.iter().rposition(|&c| c == this);
+        let elder = g.lasting().iter().any(|l| {
+            l.card == Card::Elder
+                && l.until == Until::Removed
+                && l.data.pick == Some(this)
+                && Some(l.data.i) == play
+        });
         if let DecisionKind::Choose { options, max, .. } = &mut d.kind
             && elder
         {
@@ -911,7 +915,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             0 => {
                 spend(g, p, 1);
                 f.pc = 1;
-                f.ask_modes(&["+1 Card", "+1 Action", "+1 Buy"], 1, 1)
+                f.ask_either(&["+1 Card", "+1 Action", "+1 Buy"])
             }
             1 => {
                 f.pc = 2;
@@ -1644,19 +1648,21 @@ fn town(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["+1 Card and +2 Actions", "+1 Buy and +$2"], 1, 1)
         }
         1 => {
-            let m = mode_mask(input);
-            if m & 2 != 0 {
+            f.s.m = mode_mask(input);
+            f.pc = 2;
+            if f.s.m & 1 != 0 {
+                plus_actions(g, p, 2);
+                return Flow::Call(Frame::draw(p, 1));
+            }
+            Flow::Continue
+        }
+        _ => {
+            if f.s.m & 2 != 0 {
                 plus_buys(g, p, 1);
                 g.add_coins(p, 2);
             }
-            if m & 1 != 0 {
-                plus_actions(g, p, 2);
-                f.pc = 2;
-                return Flow::Call(Frame::draw(p, 1));
-            }
             Flow::done()
         }
-        _ => Flow::done(),
     }
 }
 
@@ -2147,6 +2153,7 @@ fn elder(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             let data = Scratch {
                 pick: Some(c),
+                i: g.turn.played_ids.len(),
                 ..Scratch::default()
             };
             f.s.n = g.add_lasting(Card::Elder, p, f.this, vec![], Until::Removed, data) as i32;

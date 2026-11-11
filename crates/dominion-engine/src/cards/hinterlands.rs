@@ -4,7 +4,7 @@ use super::cornucopia_guilds::{
     ask_ordered, discard_down, discard_n, each_gains, gain_one, put_back, reveal_hand,
     still_gained,
 };
-use super::{CardFrame, Hook, SetRules};
+use super::{CardFrame, Hook, SetRules, mode_mask};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -840,16 +840,21 @@ fn spice_merchant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["+2 Cards and +1 Action", "+1 Buy and +$2"], 1, 1)
         }
         3 => {
+            f.s.m = mode_mask(input);
             f.pc = 4;
-            if input.opt() == Some(Opt::Mode(0)) {
+            if f.s.m & 1 != 0 {
                 g.turn.actions += 1;
                 return Flow::Call(Frame::draw(f.player, 2));
             }
-            g.turn.buys += 1;
-            g.add_coins(f.player, 2);
+            Flow::Continue
+        }
+        _ => {
+            if f.s.m & 2 != 0 {
+                g.turn.buys += 1;
+                g.add_coins(f.player, 2);
+            }
             Flow::done()
         }
-        _ => Flow::done(),
     }
 }
 
@@ -914,7 +919,7 @@ fn weaver(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            f.ask_modes(&["Gain two Silvers", "Gain a card costing up to $4"], 1, 1)
+            f.ask_either(&["Gain two Silvers", "Gain a card costing up to $4"])
         }
         1 => {
             if input.opt() == Some(Opt::Mode(1)) {

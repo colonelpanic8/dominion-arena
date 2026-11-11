@@ -538,17 +538,7 @@ impl CardFrame {
 
     /// Ask to pick `min..=max` of the card's numbered choices; answers are `Opt::Mode(i)`.
     pub(crate) fn ask_modes(&self, labels: &[&str], min: usize, max: usize) -> Flow {
-        self.ask_modes_for(self.player, labels, min, max)
-    }
-
-    pub(crate) fn ask_modes_for(
-        &self,
-        player: PlayerId,
-        labels: &[&str],
-        min: usize,
-        max: usize,
-    ) -> Flow {
-        self.ask_numbered(player, labels, min, max, Purpose::Mode)
+        self.ask_numbered(self.player, labels, min, max, Purpose::Mode)
     }
 
     /// Ask to pick one of alternatives that aren't a "choose" (`Purpose::Either`); answers

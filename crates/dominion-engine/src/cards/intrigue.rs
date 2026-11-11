@@ -1,6 +1,6 @@
 //! Intrigue (2nd edition) and its removed 1st-edition cards.
 
-use super::{Bonus, CardFrame, Hook, SetRules};
+use super::{Bonus, CardFrame, Hook, SetRules, mode_mask, take_mode};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -427,14 +427,20 @@ fn lurker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         1 => {
-            if chosen_modes(input).first() == Some(&0) {
+            f.s.m = mode_mask(input);
+            f.pc = 2;
+            Flow::Continue
+        }
+        2 => match take_mode(f) {
+            Some(0) => {
                 let piles = g.supply_piles_where(|t, _| t.contains(Types::ACTION));
                 if piles.is_empty() {
-                    return Flow::done();
+                    return Flow::Continue;
                 }
-                f.pc = 2;
+                f.pc = 3;
                 f.ask_pile(piles, false, Purpose::Trash)
-            } else {
+            }
+            Some(_) => {
                 let actions: Vec<_> = g
                     .trash()
                     .iter()
@@ -442,27 +448,27 @@ fn lurker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .filter(|&c| g.is(c, Types::ACTION))
                     .collect();
                 if actions.is_empty() {
-                    return Flow::done();
+                    return Flow::Continue;
                 }
-                f.pc = 3;
+                f.pc = 4;
                 f.ask_cards(actions, 1, 1, Purpose::Gain)
             }
-        }
-        2 => {
-            f.pc = 4;
+            None => Flow::done(),
+        },
+        3 => {
+            f.pc = 2;
             match input.pile().and_then(|p| g.pile_top(p)) {
                 Some(top) => Flow::Call(Frame::trash(f.player, vec![top])),
-                None => Flow::done(),
+                None => Flow::Continue,
             }
         }
-        3 => {
-            f.pc = 4;
+        _ => {
+            f.pc = 2;
             match input.card() {
                 Some(c) => Flow::Call(Frame::gain_card(f.player, c, Dest::Discard)),
-                None => Flow::done(),
+                None => Flow::Continue,
             }
         }
-        _ => Flow::done(),
     }
 }
 
@@ -593,8 +599,11 @@ fn minion(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 );
             }
             1 => {
-                if input.take().map(chosen_modes).unwrap_or_default().first() == Some(&0) {
+                let m = input.take().map(mode_mask).unwrap_or_default();
+                if m & 1 != 0 {
                     g.add_coins(f.player, 2);
+                }
+                if m & 2 == 0 {
                     return Flow::done();
                 }
                 f.pc = 2;
@@ -633,14 +642,19 @@ fn nobles(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["+3 Cards", "+2 Actions"], 1, 1)
         }
         1 => {
+            f.s.m = mode_mask(input);
             f.pc = 2;
-            if chosen_modes(input).first() == Some(&0) {
+            if f.s.m & 1 != 0 {
                 return Flow::Call(Frame::draw(f.player, 3));
             }
-            g.turn.actions += 2;
+            Flow::Continue
+        }
+        _ => {
+            if f.s.m & 2 != 0 {
+                g.turn.actions += 2;
+            }
             Flow::done()
         }
-        _ => Flow::done(),
     }
 }
 
@@ -678,22 +692,25 @@ fn pawn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["+1 Card", "+1 Action", "+1 Buy", "+$1"], 2, 2)
         }
         1 => {
-            let modes = chosen_modes(input);
-            for &m in &modes {
-                match m {
-                    1 => g.turn.actions += 1,
-                    2 => g.turn.buys += 1,
-                    3 => g.add_coins(f.player, 1),
-                    _ => {}
-                }
-            }
+            f.s.m = mode_mask(input);
             f.pc = 2;
-            if modes.contains(&0) {
+            if f.s.m & 1 != 0 {
                 return Flow::Call(Frame::draw(f.player, 1));
+            }
+            Flow::Continue
+        }
+        _ => {
+            if f.s.m & 2 != 0 {
+                g.turn.actions += 1;
+            }
+            if f.s.m & 4 != 0 {
+                g.turn.buys += 1;
+            }
+            if f.s.m & 8 != 0 {
+                g.add_coins(f.player, 1);
             }
             Flow::done()
         }
-        _ => Flow::done(),
     }
 }
 
@@ -782,22 +799,26 @@ fn steward(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 1,
             )
         }
-        1 => match chosen_modes(input).first() {
-            Some(0) => {
-                f.pc = 3;
-                Flow::Call(Frame::draw(f.player, 2))
+        1 => {
+            f.s.m = mode_mask(input);
+            f.pc = 2;
+            if f.s.m & 1 != 0 {
+                return Flow::Call(Frame::draw(f.player, 2));
             }
-            Some(1) => {
-                g.add_coins(f.player, 2);
-                Flow::done()
-            }
-            _ => {
-                f.pc = 2;
-                f.ask_cards(g.hand(f.player).to_vec(), 2, 2, Purpose::Trash)
-            }
-        },
+            Flow::Continue
+        }
         2 => {
+            if f.s.m & 2 != 0 {
+                g.add_coins(f.player, 2);
+            }
+            if f.s.m & 4 == 0 {
+                return Flow::done();
+            }
             f.pc = 3;
+            f.ask_cards(g.hand(f.player).to_vec(), 2, 2, Purpose::Trash)
+        }
+        3 => {
+            f.pc = 4;
             Flow::Call(Frame::trash(f.player, input.cards()))
         }
         _ => Flow::done(),
@@ -856,11 +877,12 @@ fn torturer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.pc = 1;
-            f.ask_modes_for(
+            f.ask_numbered(
                 target,
                 &["Discard 2 cards", "Gain a Curse to your hand"],
                 1,
                 1,
+                Purpose::Either,
             )
         }
         1 => {

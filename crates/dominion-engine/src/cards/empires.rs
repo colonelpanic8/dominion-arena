@@ -8,7 +8,7 @@
 //! owner's next turn. Overlord plays a card where it sits in the Supply, so every "this"
 //! a card moves is checked to still be in play.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -1213,10 +1213,12 @@ fn charm(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             let p = f.player;
-            if input.opt() == Some(Opt::Mode(0)) {
+            let m = mode_mask(input);
+            if m & 1 != 0 {
                 plus_buys(g, p, 1);
                 g.add_coins(p, 2);
-            } else {
+            }
+            if m & 2 != 0 {
                 let data = Scratch {
                     n: g.turn.gained.len() as i32,
                     ..Scratch::default()
@@ -1718,7 +1720,7 @@ fn sprawling_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            f.ask_modes(&["Gain a Duchy", "Gain 3 Estates"], 1, 1)
+            f.ask_either(&["Gain a Duchy", "Gain 3 Estates"])
         }
         1 => {
             f.s.i = 0;
@@ -1821,19 +1823,25 @@ fn wild_hunt(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         1 => {
-            if input.opt() == Some(Opt::Mode(0)) {
-                f.pc = 2;
+            f.s.m = mode_mask(input);
+            f.pc = 2;
+            if f.s.m & 1 != 0 {
                 return Flow::Call(Frame::draw(p, 3));
             }
+            Flow::Continue
+        }
+        2 => {
+            if f.s.m & 1 != 0 {
+                add_pile_vp(g, Card::WildHunt, 1);
+            }
             f.pc = 3;
+            if f.s.m & 2 == 0 {
+                return Flow::done();
+            }
             match g.supply_pile(Card::Estate) {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
                 None => Flow::done(),
             }
-        }
-        2 => {
-            add_pile_vp(g, Card::WildHunt, 1);
-            Flow::done()
         }
         _ => {
             if !input.cards().is_empty()

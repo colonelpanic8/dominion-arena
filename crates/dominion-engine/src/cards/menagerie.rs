@@ -934,7 +934,7 @@ fn sleigh_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 2;
-            f.ask_modes(&["Put it into your hand", "Put it onto your deck"], 1, 1)
+            f.ask_either(&["Put it into your hand", "Put it onto your deck"])
         }
         _ => {
             if still_where_gained(g, card) {
@@ -1134,7 +1134,7 @@ fn now_or_next_turn(g: &mut Game, f: &mut CardFrame, input: Input, cards: usize)
     match f.pc {
         0 => {
             f.pc = 1;
-            f.ask_modes(&["Now", "At the start of your next turn"], 1, 1)
+            f.ask_either(&["Now", "At the start of your next turn"])
         }
         1 => {
             if input.opt() == Some(Opt::Mode(1)) {

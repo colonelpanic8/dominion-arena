@@ -1,7 +1,7 @@
 //! Adventures: Durations, Reserve cards and the Tavern mat, Travellers, Events and the
 //! Adventures tokens.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -1092,7 +1092,7 @@ fn call(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Card::Teacher => match f.pc {
             1 => {
                 f.pc = 2;
-                f.ask_modes(&["+1 Card", "+1 Action", "+1 Buy", "+$1"], 1, 1)
+                f.ask_either(&["+1 Card", "+1 Action", "+1 Buy", "+$1"])
             }
             2 => {
                 let token = match input.opt() {
@@ -1237,26 +1237,30 @@ fn amulet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 1;
             f.ask_modes(&["+$1", "Trash a card from your hand", "Gain a Silver"], 1, 1)
         }
-        1 => match input.opt() {
-            Some(Opt::Mode(1)) => {
-                f.pc = 2;
-                f.ask_cards(g.hand(p).to_vec(), 1, 1, Purpose::Trash)
-            }
-            Some(Opt::Mode(2)) => {
-                f.pc = 3;
-                match g.supply_pile(Card::Silver) {
-                    Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
-                    None => Flow::done(),
-                }
-            }
-            _ => {
+        1 => {
+            f.s.m = mode_mask(input);
+            if f.s.m & 1 != 0 {
                 g.add_coins(p, 1);
-                Flow::done()
             }
-        },
+            if f.s.m & 2 == 0 {
+                f.pc = 3;
+                return Flow::Continue;
+            }
+            f.pc = 2;
+            f.ask_cards(g.hand(p).to_vec(), 1, 1, Purpose::Trash)
+        }
         2 => {
             f.pc = 3;
             Flow::Call(Frame::trash(p, input.cards()))
+        }
+        3 => {
+            f.pc = 4;
+            if f.s.m & 4 != 0
+                && let Some(pile) = g.supply_pile(Card::Silver)
+            {
+                return Flow::Call(Frame::gain(p, pile, Dest::Discard));
+            }
+            Flow::done()
         }
         _ => Flow::done(),
     }
@@ -1494,11 +1498,13 @@ fn miser(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         _ => {
-            if input.opt() == Some(Opt::Mode(0)) {
-                if let Some(&c) = g.hand(p).iter().find(|&&c| g.card(c) == Card::Copper) {
-                    g.put_on_mat(c, p, Mat::Tavern);
-                }
-            } else {
+            let m = mode_mask(input);
+            if m & 1 != 0
+                && let Some(&c) = g.hand(p).iter().find(|&&c| g.card(c) == Card::Copper)
+            {
+                g.put_on_mat(c, p, Mat::Tavern);
+            }
+            if m & 2 != 0 {
                 let n = tavern(g, p)
                     .iter()
                     .filter(|&&c| g.card(c) == Card::Copper)
@@ -1725,10 +1731,12 @@ fn quest(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            f.ask_modes(
+            f.ask_numbered(
+                p,
                 &["Discard an Attack", "Discard two Curses", "Discard six cards"],
                 0,
                 1,
+                Purpose::Either,
             )
         }
         1 => {

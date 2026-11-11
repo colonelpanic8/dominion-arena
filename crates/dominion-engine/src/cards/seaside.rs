@@ -8,7 +8,7 @@
 //! lasting's `data.pick`; the players an Attack-Duration affects are a bit mask in
 //! `data.n`.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
 use crate::decision::{DecisionKind, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -638,18 +638,21 @@ fn native_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         1 => {
-            if input.opt() == Some(crate::Opt::Mode(1)) {
-                for c in g.player(p).mat(Mat::NativeVillage).to_vec() {
-                    g.put_in_hand(c, p);
-                }
-                return Flow::done();
-            }
+            f.s.m = mode_mask(input);
             f.pc = 2;
-            Flow::Call(Frame::look(p, 1))
+            if f.s.m & 1 != 0 {
+                return Flow::Call(Frame::look(p, 1));
+            }
+            Flow::Continue
         }
         _ => {
             if let Some(c) = input.card() {
                 g.put_on_mat(c, p, Mat::NativeVillage);
+            }
+            if f.s.m & 2 != 0 {
+                for c in g.player(p).mat(Mat::NativeVillage).to_vec() {
+                    g.put_in_hand(c, p);
+                }
             }
             Flow::done()
         }
@@ -1040,7 +1043,7 @@ fn navigator(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 2;
-            f.ask_modes(&["Discard them all", "Put them back in any order"], 1, 1)
+            f.ask_either(&["Discard them all", "Put them back in any order"])
         }
         2 => {
             if input.opt() == Some(crate::Opt::Mode(0)) {
@@ -1105,9 +1108,12 @@ fn pirate_ship(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 );
             }
             1 => {
-                if input.take().and_then(Input::opt) == Some(crate::Opt::Mode(0)) {
+                let m = input.take().map(mode_mask).unwrap_or_default();
+                if m & 1 != 0 {
                     let n = g.player(f.player).pirate_ship;
                     g.add_coins(f.player, n);
+                }
+                if m & 2 == 0 {
                     return Flow::done();
                 }
                 f.pc = 2;
