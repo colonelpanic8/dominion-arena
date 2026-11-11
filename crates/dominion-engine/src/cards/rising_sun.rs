@@ -651,7 +651,9 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     };
     let still_there = g.still_where_gained(card);
     match prophecy {
-        Card::Bureaucracy if g.cost_of(card) != Cost::ZERO => {
+        Card::Bureaucracy
+            if g.gain_cost(card).unwrap_or_else(|| g.cost_of(card)) != Cost::ZERO =>
+        {
             out.push(Trigger::new(player, Card::Bureaucracy, BUREAUCRACY));
         }
         Card::Growth if g.is(card, Types::TREASURE) => {

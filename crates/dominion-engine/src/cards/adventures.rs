@@ -877,7 +877,8 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
     if on_gain {
         out.push(Trigger::new(player, kind, ON_GAIN).on(card));
     }
-    let copyable = g.cost_of(card).at_most(Cost::coins(6)) && copy_pile(g, kind).is_some();
+    let cost = g.gain_cost(card).unwrap_or_else(|| g.cost_of(card));
+    let copyable = cost.at_most(Cost::coins(6)) && copy_pile(g, kind).is_some();
     for &c in tavern(g, player) {
         if copyable && g.card(c) == Card::Duplicate {
             out.push(Trigger::new(player, Card::Duplicate, CALL).on(c).optional());
