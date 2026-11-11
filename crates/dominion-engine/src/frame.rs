@@ -1441,6 +1441,17 @@ impl PlayFrame {
                     g.add_coins(p, plus.coins as u32);
                     return Flow::Call(Frame::draw(p, plus.cards as usize));
                 }
+                self.pc = 10;
+                if st.way.is_none()
+                    && let Some(first) = cards::prelude(st.behavior, p, id)
+                {
+                    return Flow::Call(first);
+                }
+                Flow::Continue
+            }
+            10 => {
+                let st = g.plays.last().expect("play in progress");
+                let mine = p == g.turn.player;
                 // A Way's own +Cards, +Actions, ... replace the card's.
                 let def = st.way.unwrap_or(st.behavior).def();
                 let mut bonus = cards::Bonus {

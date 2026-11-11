@@ -89,9 +89,9 @@ them.
   order from the turn's player; also when the play is replaced or blocked: Reactions
   answer the card being played), then apply the
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
-  `SetRules::modify_bonus`; a Way's own instead, unmodified) and run the card's
-  `Hook::Main`, then the `AfterPlay` window. `chain` lists the cards playing it
-  (Throne Room ...); pass
+  `SetRules::modify_bonus`; a Way's own instead, unmodified; an Omen's +1 Sun comes
+  before them: `cards::prelude`) and run the card's `Hook::Main`, then the `AfterPlay`
+  window. `chain` lists the cards playing it (Throne Room ...); pass
   `f.chain_for_child()` when a card plays another more than once (only then does it stay
   in play with a Duration).
   `SetRules::can_play` can forbid a play from the hand (Warlord, Voyage): `Frame::play`

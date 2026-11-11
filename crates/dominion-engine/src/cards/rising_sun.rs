@@ -1,14 +1,14 @@
 //! Rising Sun: Omens and the game's Prophecy, Shadow cards, Debt, Events.
 //!
 //! The Prophecy is `Game::prophecy` (card, Sun tokens left), dealt in setup when an Omen
-//! is in the game. An Omen's "+1 Sun" runs first in its `Hook::Main` (its vanilla bonuses
-//! come from the card data, applied just before). Effects that last are [`crate::Lasting`]s
+//! is in the game. An Omen's "+1 Sun" runs as its `Hook::Ability(SUN)`, before its vanilla
+//! bonuses (`cards::prelude`). Effects that last are [`crate::Lasting`]s
 //! named by their card: Durations (Riverboat, Samurai) and the Prophecies' set-aside cards
 //! (Rapid Expansion, Biding Time) resolve through `due_durations`; Daimyo, River Shrine and
 //! Foresight last until the end of the turn. Riverboat's card sits alone in a removed
 //! holder pile, so it has no pile of its own.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, turn_durations};
+use super::{CardFrame, Hook, SUN, SetRules, due_durations, duration_trigger, turn_durations};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -186,11 +186,14 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::Sickness, Hook::Ability(SICKNESS)) => sickness(g, f, input),
-            (_, Hook::Ability(_)) => return None,
-            (c, Hook::Main) if f.pc == 0 && c.is(Types::OMEN) => {
+            (_, Hook::Ability(SUN)) => {
+                if f.pc > 0 {
+                    return Some(Flow::done());
+                }
                 f.pc = 1;
                 remove_sun(g, f.player)
             }
+            (_, Hook::Ability(_)) => return None,
             (Card::Kitsune, _) => kitsune(g, f, input),
             (Card::MountainShrine, _) => mountain_shrine(g, f, input),
             (Card::Poet, _) => poet(g, f, input),
@@ -818,8 +821,8 @@ fn kitsune(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     loop {
         match f.pc {
-            1 => {
-                f.pc = 2;
+            0 => {
+                f.pc = 1;
                 return f.ask_modes(
                     &[
                         "+$2",
@@ -831,7 +834,7 @@ fn kitsune(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     2,
                 );
             }
-            2 => {
+            1 => {
                 let chosen = input.options();
                 let has = |i| chosen.contains(&crate::Opt::Mode(i));
                 f.s.n = (0..4).filter(|&i| has(i)).fold(0, |m, i| m | 1 << i);
@@ -841,12 +844,12 @@ fn kitsune(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 if has(1) {
                     plus_actions(g, p, 2);
                 }
-                f.pc = if has(2) { 3 } else { 4 };
+                f.pc = if has(2) { 2 } else { 3 };
                 return Flow::Continue;
             }
-            3 => {
+            2 => {
                 let Some(&target) = f.targets.get(f.s.i) else {
-                    f.pc = 4;
+                    f.pc = 3;
                     continue;
                 };
                 f.s.i += 1;
@@ -854,8 +857,8 @@ fn kitsune(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::Call(Frame::gain(target, curse, Dest::Discard));
                 }
             }
-            4 => {
-                f.pc = 5;
+            3 => {
+                f.pc = 4;
                 if f.s.n & 1 << 3 != 0
                     && let Some(silver) = g.supply_pile(Card::Silver)
                 {
@@ -869,16 +872,16 @@ fn kitsune(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 fn mountain_shrine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
+        0 => {
+            f.pc = 1;
+            f.ask_cards(g.hand(f.player).to_vec(), 0, 1, Purpose::Trash)
+        }
         1 => {
             f.pc = 2;
-            f.ask_cards(g.hand(f.player).to_vec(), 0, 1, Purpose::Trash)
+            Flow::Call(Frame::trash(f.player, input.cards()))
         }
         2 => {
             f.pc = 3;
-            Flow::Call(Frame::trash(f.player, input.cards()))
-        }
-        3 => {
-            f.pc = 4;
             if g.trash().iter().any(|&c| g.is(c, Types::ACTION)) {
                 return Flow::Call(Frame::draw(f.player, 2));
             }
@@ -890,8 +893,8 @@ fn mountain_shrine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 fn poet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
-        1 => {
-            f.pc = 2;
+        0 => {
+            f.pc = 1;
             Flow::Call(Frame::reveal(f.player, 1))
         }
         _ => {
@@ -907,12 +910,12 @@ fn poet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 fn river_shrine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
-        1 => {
-            f.pc = 2;
+        0 => {
+            f.pc = 1;
             f.ask_cards(g.hand(f.player).to_vec(), 0, 2, Purpose::Trash)
         }
-        2 => {
-            f.pc = 3;
+        1 => {
+            f.pc = 2;
             Flow::Call(Frame::trash(f.player, input.cards()))
         }
         _ => {
@@ -933,26 +936,26 @@ fn river_shrine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 fn rustic_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
-        1 => {
+        0 => {
             if g.hand(f.player).len() < 2 {
                 return Flow::done();
             }
-            f.pc = 2;
+            f.pc = 1;
             f.ask_yes_no(Purpose::Discard)
         }
-        2 => {
+        1 => {
             if !input.is_yes() {
                 return Flow::done();
             }
-            f.pc = 3;
+            f.pc = 2;
             f.ask_cards(g.hand(f.player).to_vec(), 2, 2, Purpose::Discard)
+        }
+        2 => {
+            f.pc = 3;
+            Flow::Call(Frame::discard(f.player, input.cards()))
         }
         3 => {
             f.pc = 4;
-            Flow::Call(Frame::discard(f.player, input.cards()))
-        }
-        4 => {
-            f.pc = 5;
             Flow::Call(Frame::draw(f.player, 1))
         }
         _ => Flow::done(),

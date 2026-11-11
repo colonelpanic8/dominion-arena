@@ -132,6 +132,44 @@ fn an_omen_removes_a_sun_and_the_last_one_makes_the_prophecy_happen() {
 }
 
 #[test]
+fn an_omens_sun_comes_before_its_other_bonuses() {
+    let mut g = game(
+        &[Card::Poet, Card::Watchtower, Card::Village],
+        &[Card::KindEmperor],
+        1,
+    );
+    hand(&mut g, P0, &[Card::Poet, Card::Watchtower]);
+    deck(&mut g, P0, &[Card::Gold]);
+    g.start();
+    play(&mut g, Card::Poet);
+    // Kind Emperor happens first: an Action gained to the hand, which Watchtower puts onto
+    // the deck. Then Poet's +1 Card draws it, leaving the Gold to reveal.
+    choose_pile(&mut g, Card::Village);
+    resolve_triggers(&mut g);
+    modes(&mut g, &[1]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Watchtower, Card::Village]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold]);
+}
+
+#[test]
+fn an_omen_played_as_way_of_the_chameleon_still_removes_a_sun_first() {
+    let mut g = game(
+        &[Card::TeaHouse],
+        &[Card::WayOfTheChameleon, Card::GreatLeader],
+        1,
+    );
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheChameleon)));
+    // +$1 for its +1 Card and +2 Cards for its +$2; Great Leader is already in effect.
+    assert_eq!(g.prophecy(), Some((Card::GreatLeader, 0)));
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1, 2));
+    assert_eq!(g.turn().actions, 2);
+}
+
+#[test]
 fn throne_room_on_an_omen_removes_two_suns() {
     let mut g = game(&[Card::Poet, Card::ThroneRoom], &[Card::Panic], 5);
     hand(&mut g, P0, &[Card::ThroneRoom, Card::Poet]);

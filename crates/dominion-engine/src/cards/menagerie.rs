@@ -1992,7 +1992,11 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
                 return Flow::Call(Frame::draw(p, plus.cards as usize));
             }
             let behavior = play.map_or(g.card(id), |st| st.behavior);
-            f.s.card = Some(behavior);
+            if f.s.card.replace(behavior).is_none()
+                && let Some(first) = super::prelude(behavior, p, id)
+            {
+                return Flow::Call(first);
+            }
             f.s.n = g.next_lasting as i32;
             let def = behavior.def();
             let mut bonus = super::Bonus {
