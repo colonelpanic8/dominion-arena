@@ -111,6 +111,9 @@ pub struct Trigger {
     pub lasting: Option<u32>,
     /// "You may": the owner can decline it.
     pub optional: bool,
+    /// Resolves before every trigger without this ("At the start of your next turn,
+    /// first, ...").
+    pub first: bool,
     pub data: i32,
 }
 
@@ -123,6 +126,7 @@ impl Trigger {
             source: None,
             lasting: None,
             optional: false,
+            first: false,
             data: 0,
         }
     }
@@ -139,6 +143,11 @@ impl Trigger {
 
     pub(crate) fn optional(mut self) -> Trigger {
         self.optional = true;
+        self
+    }
+
+    pub(crate) fn first(mut self) -> Trigger {
+        self.first = true;
         self
     }
 
@@ -188,6 +197,9 @@ impl Window {
         let mut all = vec![];
         cards::triggers(g, &self.occ, &mut all);
         all.retain(|t| !self.done.contains(t));
+        if all.iter().any(|t| t.first) {
+            all.retain(|t| t.first);
+        }
         if all.is_empty() {
             return Flow::Done(Value::Bool(self.result));
         }

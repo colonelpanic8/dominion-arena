@@ -88,14 +88,21 @@ impl<'a> View<'a> {
     pub fn card(&self, id: CardId) -> Option<Card> {
         let g = self.game;
         let visible = match g.zone(id) {
-            Zone::Hand(p) | Zone::SetAside(p) => p == self.me,
+            Zone::Hand(p) | Zone::SetAside(p) => self.sees_for(p),
             Zone::InPlay(_) | Zone::Trash => true,
             Zone::Discard(p) => g.player(p).discard.last() == Some(&id),
-            Zone::Pile(pile) => g.pile_top(pile) == Some(id) && !g.pile(pile).face_down,
-            Zone::Mat(p, mat) => p == self.me || mat != crate::Mat::NativeVillage,
+            Zone::Pile(pile) => !g.pile(pile).hidden && g.pile_top(pile) == Some(id),
+            Zone::Mat(p, mat) => self.sees_for(p) || mat != crate::Mat::NativeVillage,
             Zone::Deck(_) => false,
         };
         (visible || self.offered(id)).then(|| g.card(id))
+    }
+
+    /// Whether this player sees what `p` sees: their own cards, or those of a player
+    /// whose turn they control (Possession).
+    fn sees_for(&self, p: PlayerId) -> bool {
+        let turn = self.game.turn();
+        p == self.me || (turn.player == p && turn.controller == self.me)
     }
 
     fn offered(&self, id: CardId) -> bool {
@@ -156,6 +163,9 @@ impl<'a> View<'a> {
     }
 
     pub fn pile_top(&self, id: PileId) -> Option<Card> {
+        if self.game.pile(id).hidden {
+            return None;
+        }
         self.game.pile_top(id).map(|c| self.game.card(c))
     }
 

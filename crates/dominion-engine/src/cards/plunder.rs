@@ -466,15 +466,8 @@ impl SetRules for Rules {
             .any(|pile| pile.cards.iter().any(|&c| LOOT_GAINERS.contains(&g.printed(c))))
             || g.landscapes.iter().any(|l| LOOT_GAINERS.contains(l))
             || trait_pile(g, Card::Cursed).is_some();
-        if gainer && g.pile_of(Card::Loot).is_none() {
-            let mut loot: Vec<Card> = Card::Loot
-                .pile_members()
-                .into_iter()
-                .flat_map(|c| [c; 2])
-                .collect();
-            g.shuffle(&mut loot);
-            let pile = add_mixed_pile(g, Card::Loot, &loot, false);
-            g.piles[pile.index()].face_down = true;
+        if gainer {
+            add_loot_pile(g);
         }
 
         // Inherited: each player in turn order takes a card of its pile for their deck.
@@ -487,6 +480,18 @@ impl SetRules for Rules {
                     g.move_card(top, Zone::Deck(p), Pos::Top);
                 }
             }
+        }
+    }
+
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+        let gainer = cards.iter().any(|&c| {
+            c.pile_members()
+                .iter()
+                .chain([&c])
+                .any(|m| LOOT_GAINERS.contains(m))
+        });
+        if gainer {
+            add_loot_pile(g);
         }
     }
 
@@ -510,6 +515,21 @@ impl SetRules for Rules {
 }
 
 // ---- Helpers ----
+
+/// The Loot pile: two of each Loot, shuffled face down, outside the Supply.
+fn add_loot_pile(g: &mut Game) {
+    if g.pile_of(Card::Loot).is_some() {
+        return;
+    }
+    let mut loot: Vec<Card> = Card::Loot
+        .pile_members()
+        .into_iter()
+        .flat_map(|c| [c; 2])
+        .collect();
+    g.shuffle(&mut loot);
+    let pile = add_mixed_pile(g, Card::Loot, &loot, false);
+    g.piles[pile.index()].hidden = true;
+}
 
 /// Scratch data stamped with the log's length now.
 fn stamped(g: &Game) -> Scratch {
@@ -627,9 +647,10 @@ fn trait_pile(g: &Game, t: Card) -> Option<PileId> {
         .find(|&p| g.pile(p).traits.contains(&t))
 }
 
-/// Whether cards named `card` are from the pile with Trait `t`.
+/// Whether cards named `card` are from the pile with Trait `t` (even once that pile is
+/// out of the game).
 fn is_trait(g: &Game, card: Card, t: Card) -> bool {
-    trait_pile(g, t).is_some_and(|pile| g.home_pile(card) == Some(pile))
+    trait_pile(g, t).is_some_and(|pile| g.pile(pile).card == card.def().pile.unwrap_or(card))
 }
 
 fn is_traited(g: &Game, id: CardId, t: Card) -> bool {
@@ -752,7 +773,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         Card::BuriedTreasure | Card::Siren | Card::Doubloons => {
             out.push(on(Trigger::new(gainer, kind, GAINED)));
         }
-        Card::Gondola if !g.cards_in_hand_where(gainer, Types::ACTION).is_empty() => {
+        Card::Gondola if !g.playable(gainer, Types::ACTION).is_empty() => {
             out.push(on(Trigger::new(gainer, kind, GAINED)).optional());
         }
         Card::WealthyVillage if treasure_names_in_play(g, gainer) >= 3 => {
@@ -1794,7 +1815,7 @@ fn trait_ability(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             0 => {
                 let names: Vec<Card> = g.in_play(p).iter().map(|&c| g.card(c)).collect();
                 let actions: Vec<CardId> = g
-                    .cards_in_hand_where(p, Types::ACTION)
+                    .playable(p, Types::ACTION)
                     .into_iter()
                     .filter(|&c| !names.contains(&g.card(c)))
                     .collect();
@@ -2003,7 +2024,7 @@ fn discard_down_one(g: &mut Game, f: &mut CardFrame, input: Input, target: Playe
 fn play_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, types: Types) -> Flow {
     match f.pc {
         0 => {
-            let cards = g.cards_in_hand_where(f.player, types);
+            let cards = g.playable(f.player, types);
             if cards.is_empty() {
                 return Flow::done();
             }
@@ -2014,7 +2035,7 @@ fn play_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, types: Types) -
         1 => {
             f.pc = 2;
             match input.card() {
-                Some(c) if g.zone(c) == Zone::Hand(f.player) => {
+                Some(c) if g.playable(f.player, types).contains(&c) => {
                     Flow::Call(Frame::play(f.player, c, true, vec![]))
                 }
                 _ => Flow::done(),
@@ -2300,7 +2321,7 @@ fn first_mate(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let name = f.s.card;
             let actions: Vec<CardId> = g
-                .cards_in_hand_where(p, Types::ACTION)
+                .playable(p, Types::ACTION)
                 .into_iter()
                 .filter(|&c| name.is_none_or(|n| g.card(c) == n))
                 .collect();
@@ -2411,7 +2432,7 @@ fn kings_cache(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let treasures = g.cards_in_hand_where(p, Types::TREASURE);
+            let treasures = g.playable(p, Types::TREASURE);
             if treasures.is_empty() {
                 return Flow::done();
             }
@@ -2820,7 +2841,7 @@ fn invasion(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let attacks = g.cards_in_hand_where(p, Types::ATTACK);
+            let attacks = g.playable(p, Types::ATTACK);
             f.pc = 2;
             if attacks.is_empty() {
                 return Flow::Continue;
