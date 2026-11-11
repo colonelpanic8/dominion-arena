@@ -544,6 +544,31 @@ fn salvager_gives_coins_equal_to_the_trashed_cost() {
     assert_eq!((g.turn().coins, g.turn().buys), (6, 2));
 }
 
+/// A "when you gain" effect set up while a card is being gained applies to that gain.
+#[test]
+fn a_sailor_played_by_a_gained_gondola_can_play_that_gondola() {
+    let mut g = setup(&[Card::Sailor, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Sailor, Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::Gondola);
+    // Gondola's when-gain ability plays the Sailor.
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    let d = g.pending().unwrap();
+    assert_eq!(
+        (d.purpose, d.source),
+        (Purpose::Trigger, Some(Card::Sailor))
+    );
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    // The Gondola, for its +$2 next turn.
+    mode(&mut g, 1);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Sailor, Card::Gondola]);
+}
+
 #[test]
 fn sailor_plays_a_gained_duration_once_and_pays_next_turn() {
     let mut g = setup(&[Card::Sailor, Card::Caravan, Card::Festival]);
