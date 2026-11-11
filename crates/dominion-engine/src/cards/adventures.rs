@@ -661,23 +661,13 @@ fn upgrade(card: Card) -> Option<Card> {
     })
 }
 
-/// Supply piles that hold Action cards (or would, for an empty pile). Inheritance's
-/// Estates don't make the Estate pile one.
+/// The Action Supply piles, empty ones too. A pile's types are those of the card it is
+/// named after (its randomizer), whatever is in it now: Catapult / Rocks is one even down
+/// to its Rocks, the Castles and an Estate pile under Inheritance aren't.
 fn action_supply_piles(g: &Game) -> Vec<PileId> {
     (0..g.piles().len())
         .map(|i| PileId(i as u8))
-        .filter(|&id| {
-            let pile = g.pile(id);
-            pile.in_supply
-                && if pile.cards.is_empty() {
-                    pile.card
-                        .pile_members()
-                        .iter()
-                        .any(|c| c.is(Types::ACTION))
-                } else {
-                    pile.cards.iter().any(|&c| g.card(c).is(Types::ACTION))
-                }
-        })
+        .filter(|&id| g.pile(id).in_supply && g.pile(id).card.is(Types::ACTION))
         .collect()
 }
 

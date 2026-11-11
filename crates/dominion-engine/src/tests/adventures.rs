@@ -1642,6 +1642,23 @@ fn lost_arts_training_and_pathfinding_move_their_tokens() {
 }
 
 #[test]
+fn an_action_supply_pile_is_one_by_its_randomizer_whatever_cards_are_in_it() {
+    let mut g = buy_phase(&[Card::Castles, Card::Catapult], &[Card::Training], 6);
+    let catapults = g.supply_pile(Card::Catapult).unwrap();
+    while let Some(top) = g
+        .pile_top(catapults)
+        .filter(|&c| g.card(c) == Card::Catapult)
+    {
+        g.move_card(top, Zone::Trash, crate::game::Pos::Top);
+    }
+    assert_eq!(g.pile_top(catapults).map(|c| g.card(c)), Some(Card::Rocks));
+    // The Catapult / Rocks pile is the only one: the Castles are a Victory pile, for all
+    // their Action Castles.
+    buy_event(&mut g, Card::Training);
+    assert_eq!(g.pile(catapults).tokens, [(P0, Token::PlusCoin)]);
+}
+
+#[test]
 fn inheritance_sets_an_action_aside_and_makes_estates_play_it() {
     let mut g = game(
         &[Card::Village, Card::Smithy, Card::Festival],
