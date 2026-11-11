@@ -1036,13 +1036,32 @@ fn embargo_trashes_itself_to_add_a_token_that_curses_buyers() {
 }
 
 #[test]
-fn buying_an_embargoed_curse_gains_it_and_another_curse() {
+fn buying_an_embargoed_curse_gains_it_and_a_curse_per_token() {
     let mut g = setup(&[Card::Embargo]);
     let curses = g.supply_pile(Card::Curse).unwrap();
-    g.piles[curses.index()].embargo = 1;
+    g.piles[curses.index()].embargo = 2;
     hand(&mut g, P0, &[]);
     g.start();
     buy(&mut g, Card::Curse);
+    assert_eq!(g.count_owned(P0, Card::Curse), 3);
+}
+
+#[test]
+fn an_embargo_token_added_while_a_buy_resolves_adds_one_curse() {
+    let mut g = setup(&[Card::Embargo, Card::Talisman]);
+    g.players[0].projects.push(Card::Innovation);
+    let embargoes = g.supply_pile(Card::Embargo).unwrap();
+    g.piles[embargoes.index()].embargo = 1;
+    hand(&mut g, P0, &[Card::Talisman, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Talisman);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Embargo);
+    super::intrigue::trigger(&mut g, Card::Embargo);
+    // Talisman's copy, played with Innovation, puts a second token on the pile.
+    super::intrigue::trigger(&mut g, Card::Innovation);
+    choose_pile(&mut g, Card::Embargo);
+    assert_eq!(g.pile(embargoes).embargo, 2);
     assert_eq!(g.count_owned(P0, Card::Curse), 2);
 }
 

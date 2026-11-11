@@ -159,10 +159,10 @@ impl SetRules for Rules {
             Occasion::Buy { player, card, .. } => {
                 // The pile bought from: the copy that was on top may have left it since.
                 if let Some(pile) = g.home_pile(g.printed(card)) {
-                    let tokens = g.pile(pile).embargo;
-                    if tokens > 0 {
+                    for token in 1..=g.pile(pile).embargo {
                         out.push(
-                            Trigger::new(player, Card::Embargo, EMBARGO_CURSE).data(tokens as i32),
+                            Trigger::new(player, Card::Embargo, EMBARGO_CURSE)
+                                .labelled(format!("Embargo token {token}")),
                         );
                     }
                 }
@@ -436,10 +436,10 @@ fn sailor_play(g: &mut Game, f: &mut CardFrame) -> Flow {
 }
 
 fn embargo_curse(g: &mut Game, f: &mut CardFrame) -> Flow {
-    if f.s.i < f.data as usize
+    if f.pc == 0
         && let Some(curse) = g.supply_pile(Card::Curse)
     {
-        f.s.i += 1;
+        f.pc = 1;
         return Flow::Call(Frame::gain(f.player, curse, Dest::Discard));
     }
     Flow::done()
