@@ -1158,6 +1158,7 @@ fn random_rising_sun_games_keep_invariants() {
     let prophecies: Vec<Card> = Card::in_set(Set::RisingSun)
         .filter(|c| c.kind() == Kind::Prophecy)
         .collect();
+    let mut seen = std::collections::HashSet::new();
     for seed in 0..fuzz_seeds(150) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
@@ -1178,7 +1179,7 @@ fn random_rising_sun_games_keep_invariants() {
         }
         for p in 0..players {
             let p = PlayerId(p);
-            for &c in &cards {
+            for &c in cards.iter().chain(&[Card::Gold; 3]) {
                 g.create(c, Zone::Deck(p));
             }
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
@@ -1186,6 +1187,87 @@ fn random_rising_sun_games_keep_invariants() {
             g.players[p.index()].deck = deck;
         }
         g.start();
-        drive_randomly(g, seed);
+        let g = drive_randomly(g, seed);
+        for e in g.log() {
+            match e {
+                Event::Played { card, .. } | Event::BoughtLandscape { card, .. } => {
+                    seen.insert(*card);
+                }
+                _ => {}
+            }
+        }
+        if let Some((p, 0)) = g.prophecy() {
+            seen.insert(p);
+        }
     }
+    let missing: Vec<Card> = Card::in_set(Set::RisingSun)
+        .filter(|c| !seen.contains(c))
+        .collect();
+    assert!(missing.is_empty(), "never played: {missing:?}");
+}
+
+#[test]
+fn mountain_shrine_checks_the_trash_after_a_fortress_has_left_it() {
+    let mut g = setup(&[Card::MountainShrine, Card::Fortress]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::MountainShrine, Card::Fortress, Card::Estate],
+    );
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    play(&mut g, Card::MountainShrine);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    resolve_triggers(&mut g);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate, Card::Fortress]);
+}
+
+#[test]
+fn divine_wind_sets_up_the_piles_it_deals() {
+    let mut dealt_looter = false;
+    for seed in 0..60 {
+        let config = GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            landscapes: vec![Card::DivineWind],
+            ..GameConfig::new(2, vec![Card::TeaHouse], seed)
+        };
+        let mut g = setup_with(config);
+        g.prophecy = Some((Card::DivineWind, 1));
+        hand(&mut g, P0, &[Card::TeaHouse]);
+        deck(&mut g, P0, &coppers(5));
+        g.start();
+        play(&mut g, Card::TeaHouse);
+        let looter = g
+            .piles()
+            .iter()
+            .any(|p| p.in_supply && p.card.is(Types::LOOTER));
+        if looter {
+            assert!(g.supply_pile(Card::Ruins).is_some(), "seed {seed}");
+            dealt_looter = true;
+        }
+        if g.supply_pile(Card::Riverboat).is_some() {
+            assert!(g.ext.rising_sun.riverboat.is_some(), "seed {seed}");
+        }
+        check_zones(&g);
+    }
+    assert!(dealt_looter);
+}
+
+#[test]
+fn riverboats_baker_gives_everyone_a_coffers() {
+    for seed in 0..400 {
+        let config = GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            ..GameConfig::new(2, vec![Card::Riverboat], seed)
+        };
+        let g = setup_with(config);
+        if g.card(g.ext.rising_sun.riverboat.unwrap()) == Card::Baker {
+            assert_eq!(g.player(P0).coffers, 1);
+            assert_eq!(g.player(P1).coffers, 1);
+            return;
+        }
+    }
+    panic!("no seed set aside Baker");
 }

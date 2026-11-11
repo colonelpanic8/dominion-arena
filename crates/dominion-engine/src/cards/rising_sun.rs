@@ -453,6 +453,12 @@ impl SetRules for Rules {
         );
     }
 
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+        if cards.contains(&Card::Riverboat) && g.ext.rising_sun.riverboat.is_none() {
+            set_aside_riverboat_card(g);
+        }
+    }
+
     fn setup_kingdom(g: &mut Game) {
         if g.supply_pile(Card::Riverboat).is_some() {
             set_aside_riverboat_card(g);
@@ -612,6 +618,7 @@ fn set_aside_riverboat_card(g: &mut Game) {
     g.piles.push(holder);
     let id = g.create(card, Zone::Pile(pile));
     g.ext.rising_sun.riverboat = Some(id);
+    super::setup_added_piles(g, &[card]);
 }
 
 /// "+1 Sun": removes a Sun token; the last one makes the Prophecy happen.
@@ -668,7 +675,7 @@ fn divine_wind(g: &mut Game) {
     if potions && g.supply_pile(Card::Potion).is_none() {
         add_pile(g, Card::Potion, 16, true);
     }
-    super::setup(g);
+    super::setup_added_piles(g, &pool);
 }
 
 fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
