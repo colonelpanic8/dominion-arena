@@ -333,9 +333,13 @@ pub struct GainState {
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
+    /// The log's length when the gain began: effects set up later ("the next time you
+    /// gain ...") don't respond to it.
+    pub since: usize,
 }
 
-/// A play in progress. "When you play" triggers may change it.
+/// A play in progress, until its `AfterPlay` window closes. "When you play" triggers may
+/// change it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayState {
     pub player: PlayerId,
@@ -348,6 +352,11 @@ pub struct PlayState {
     pub replaced: Option<crate::Plus>,
     /// Its own effect does nothing (Highwayman).
     pub blocked: bool,
+    /// The log's length when the play began: effects set up later ("the next time you
+    /// play ...") don't respond to it.
+    pub since: usize,
+    /// The turn's $ when the play began.
+    pub coins: u32,
 }
 
 impl Game {

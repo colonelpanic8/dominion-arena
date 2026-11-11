@@ -714,6 +714,7 @@ fn resume_gain(
                 to,
                 bought,
                 cancelled: false,
+                since: g.log.len(),
             });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
@@ -894,6 +895,7 @@ impl PlayFrame {
                     g.move_card(id, Zone::InPlay(p), Pos::Top);
                 }
                 let card = g.card(id);
+                let since = g.log.len();
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
@@ -906,6 +908,8 @@ impl PlayFrame {
                     way: None,
                     replaced: None,
                     blocked: false,
+                    since,
+                    coins: g.turn.coins,
                 });
                 self.pc = 1;
                 Flow::Call(Frame::window(Occasion::Play {
@@ -1023,14 +1027,16 @@ impl PlayFrame {
                 Flow::Call(Frame::Card(Box::new(f)))
             }
             7 => {
-                g.plays.pop();
                 self.pc = 8;
                 Flow::Call(Frame::window(Occasion::AfterPlay {
                     player: p,
                     card: id,
                 }))
             }
-            _ => Flow::done(),
+            _ => {
+                g.plays.pop();
+                Flow::done()
+            }
         }
     }
 }
