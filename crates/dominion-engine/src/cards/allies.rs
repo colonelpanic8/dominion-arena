@@ -140,11 +140,11 @@ impl SetRules for Rules {
             }
             (Card::Lich, Hook::Ability(REACT)) => lich_trashed(g, f, input),
             (Card::Galleria, Hook::Ability(REACT)) => {
-                plus_buys(g, f.player, f.data as u32);
+                plus_buys(g, f.player, 1);
                 Flow::done()
             }
             (Card::Guildmaster, Hook::Ability(REACT)) => {
-                g.players[f.player.index()].favors += f.data as u32;
+                g.players[f.player.index()].favors += 1;
                 Flow::done()
             }
             (Card::Skirmisher, Hook::Ability(REACT)) => {
@@ -749,13 +749,13 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
             .filter(move |l| l.card == c && l.owner == player && l.until == Until::EndOfTurn)
     };
     let cost = gain_cost(g, card);
-    let galleria = this_turn(Card::Galleria).count();
-    if galleria > 0 && (3..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0 {
-        out.push(Trigger::new(player, Card::Galleria, REACT).data(galleria as i32).quiet());
+    if (3..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0 {
+        for l in this_turn(Card::Galleria) {
+            out.push(Trigger::new(player, Card::Galleria, REACT).via_lasting(l.id).quiet());
+        }
     }
-    let guildmaster = this_turn(Card::Guildmaster).count();
-    if guildmaster > 0 {
-        out.push(Trigger::new(player, Card::Guildmaster, REACT).data(guildmaster as i32).quiet());
+    for l in this_turn(Card::Guildmaster) {
+        out.push(Trigger::new(player, Card::Guildmaster, REACT).via_lasting(l.id).quiet());
     }
     if g.is(card, Types::ATTACK) {
         for l in this_turn(Card::Skirmisher) {

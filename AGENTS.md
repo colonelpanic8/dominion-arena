@@ -104,7 +104,10 @@ them.
   `Trigger`s that apply right now; the window resolves them (turn player first, then
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
-  card is: the stop-moving rule) when producing a trigger. It doesn't ask for an order
+  card is: the stop-moving rule) when producing a trigger. An effect that stacks ("this
+  turn, when you gain ...") produces one trigger per lasting effect or card in play,
+  never one trigger carrying a count: the window tracks what has resolved per trigger,
+  and more can come into effect while it is open. It doesn't ask for an order
   when a player's mandatory triggers all have the same effect, and resolves
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
   +1 Buy) first without asking. A trigger runs as the card's

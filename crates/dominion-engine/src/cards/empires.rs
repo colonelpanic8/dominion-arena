@@ -196,7 +196,7 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::Groundskeeper, Hook::Ability(GROUNDSKEEPER_VP)) => {
-                add_vp(g, f.player, f.data);
+                add_vp(g, f.player, 1);
                 Flow::done()
             }
             (Card::Aqueduct | Card::DefiledShrine, Hook::Ability(MOVE)) => {
@@ -721,13 +721,14 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     let victory = g.is(card, Types::VICTORY);
     let action = g.is(card, Types::ACTION);
     if victory {
-        let n = g
-            .lasting()
-            .iter()
-            .filter(|l| l.card == Card::Groundskeeper && l.owner == player)
-            .count();
-        if n > 0 {
-            out.push(Trigger::new(player, Card::Groundskeeper, GROUNDSKEEPER_VP).data(n as i32));
+        for l in g.lasting() {
+            if l.card == Card::Groundskeeper && l.owner == player {
+                out.push(
+                    Trigger::new(player, Card::Groundskeeper, GROUNDSKEEPER_VP)
+                        .via_lasting(l.id)
+                        .quiet(),
+                );
+            }
         }
     }
     let pile_vp = g

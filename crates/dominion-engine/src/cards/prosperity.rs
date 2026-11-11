@@ -51,15 +51,15 @@ impl SetRules for Rules {
                 Flow::Call(Frame::trash(f.player, treasures))
             }
             (Card::Hoard, Hook::Ability(HOARD_GOLD)) => match g.supply_pile(Card::Gold) {
-                Some(gold) if f.s.n < f.data => {
-                    f.s.n += 1;
+                Some(gold) if f.pc == 0 => {
+                    f.pc = 1;
                     Flow::Call(Frame::gain(f.player, gold, Dest::Discard))
                 }
                 _ => Flow::done(),
             },
             (Card::Collection, Hook::Ability(COLLECTION_VP))
             | (Card::Goons, Hook::Ability(GOONS_VP)) => {
-                g.players[f.player.index()].vp_tokens += f.data;
+                g.players[f.player.index()].vp_tokens += 1;
                 Flow::done()
             }
             (Card::Tiara, Hook::Ability(TIARA_TOPDECK))
@@ -72,10 +72,10 @@ impl SetRules for Rules {
             }
             (Card::Talisman, Hook::Ability(TALISMAN_COPY)) => {
                 let bought = occ_card(f);
-                if f.s.n >= f.data {
+                if f.pc > 0 {
                     return Some(Flow::done());
                 }
-                f.s.n += 1;
+                f.pc = 1;
                 match copy_in_supply(g, g.card(bought), Some(bought)) {
                     Some(copy) => Flow::Call(Frame::gain_card(f.player, copy, Dest::Discard)),
                     None => Flow::done(),
@@ -152,11 +152,12 @@ impl SetRules for Rules {
                 card,
                 bought,
             } => {
+                // One trigger per effect, so each applies once however many come into
+                // effect while the gain resolves.
                 let lastings = |which: Card| {
                     g.lasting()
                         .iter()
-                        .filter(|l| l.card == which && l.owner == player)
-                        .count() as i32
+                        .filter(move |l| l.card == which && l.owner == player)
                 };
                 let in_place = where_gained(g, player, card);
                 if in_place
@@ -171,20 +172,22 @@ impl SetRules for Rules {
                 if g.card(card) == Card::Mint {
                     out.push(Trigger::new(player, Card::Mint, MINT_GAINED).on(card));
                 }
-                let hoards = lastings(Card::Hoard);
-                if bought && hoards > 0 && g.is(card, Types::VICTORY) {
-                    out.push(Trigger::new(player, Card::Hoard, HOARD_GOLD).data(hoards));
+                if bought && g.is(card, Types::VICTORY) {
+                    for l in lastings(Card::Hoard) {
+                        out.push(Trigger::new(player, Card::Hoard, HOARD_GOLD).via_lasting(l.id));
+                    }
                 }
-                let collections = lastings(Card::Collection);
-                if collections > 0 && g.is(card, Types::ACTION) {
-                    out.push(
-                        Trigger::new(player, Card::Collection, COLLECTION_VP)
-                    .data(collections)
-                    .quiet(),
-                    );
+                if g.is(card, Types::ACTION) {
+                    for l in lastings(Card::Collection) {
+                        out.push(
+                            Trigger::new(player, Card::Collection, COLLECTION_VP)
+                                .via_lasting(l.id)
+                                .quiet(),
+                        );
+                    }
                 }
                 if in_place && g.zone(card) != Zone::Deck(player) {
-                    if lastings(Card::Tiara) > 0 {
+                    if lastings(Card::Tiara).next().is_some() {
                         out.push(Trigger::new(player, Card::Tiara, TIARA_TOPDECK).optional());
                     }
                     if let Some(&seal) = g
@@ -201,22 +204,17 @@ impl SetRules for Rules {
                 }
             }
             Occasion::Buy { player, card } => {
-                let in_play = |which: Card| {
-                    g.in_play(player)
-                        .iter()
-                        .filter(|&&c| g.card(c) == which)
-                        .count() as i32
-                };
-                let talismans = in_play(Card::Talisman);
-                if talismans > 0
-                    && !g.is(card, Types::VICTORY)
-                    && g.cost_of(card).at_most(Cost::coins(4))
-                {
-                    out.push(Trigger::new(player, Card::Talisman, TALISMAN_COPY).data(talismans));
-                }
-                let goons = in_play(Card::Goons);
-                if goons > 0 {
-                    out.push(Trigger::new(player, Card::Goons, GOONS_VP).data(goons).quiet());
+                let copies = !g.is(card, Types::VICTORY) && g.cost_of(card).at_most(Cost::coins(4));
+                for &c in g.in_play(player) {
+                    match g.card(c) {
+                        Card::Talisman if copies => {
+                            out.push(Trigger::new(player, Card::Talisman, TALISMAN_COPY).on(c));
+                        }
+                        Card::Goons => {
+                            out.push(Trigger::new(player, Card::Goons, GOONS_VP).on(c).quiet());
+                        }
+                        _ => {}
+                    }
                 }
             }
             _ => {}

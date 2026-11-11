@@ -1878,6 +1878,35 @@ fn way_of_the_chameleon_also_changes_this_turns_later_effects() {
 }
 
 #[test]
+fn way_of_the_chameleon_changes_only_its_own_priests_later_coins() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Priest]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Priest,
+            Card::Priest,
+            Card::Estate,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Gold; 5]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Priest);
+    way(&mut g, Card::WayOfTheChameleon);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(hand_kinds(&g, P0)[3..], [Card::Gold; 2]);
+    play(&mut g, Card::Priest);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Estate]);
+    // The first Priest's +$2 became +2 Cards; the second gave +$2 itself.
+    assert_eq!(g.turn().coins, 2);
+    assert_eq!(g.hand(P0).len(), 5);
+}
+
+#[test]
 fn way_of_the_chameleon_changes_plus_cards_after_a_decision_but_not_draw_until() {
     let mut g = way_game(
         Card::WayOfTheChameleon,

@@ -68,7 +68,7 @@ impl SetRules for Rules {
             (Card::CargoShip, Hook::Ability(CARGO_SET_ASIDE)) => cargo_set_aside(g, f),
             (Card::Improve, Hook::Ability(IMPROVE_TRASH)) => improve_trash(g, f, input),
             (Card::Priest, Hook::Ability(PRIEST_COINS)) => {
-                g.add_coins(f.player, 2 * f.data as u32);
+                g.add_coins(f.player, 2);
                 Flow::done()
             }
             (_, Hook::Ability(GAINED)) => gained(g, f, input),
@@ -485,9 +485,8 @@ fn trash_triggers(g: &Game, trasher: PlayerId, card: CardId, out: &mut Vec<Trigg
         out.push(Trigger::new(trasher, g.card(card), TRASHED).on(card));
     }
     if trasher == g.turn.player {
-        let priests = this_turn(g, Card::Priest, trasher).count();
-        if priests > 0 {
-            out.push(Trigger::new(trasher, Card::Priest, PRIEST_COINS).data(priests as i32));
+        for l in this_turn(g, Card::Priest, trasher) {
+            out.push(Trigger::new(trasher, Card::Priest, PRIEST_COINS).via_lasting(l.id));
         }
     }
     if has(g, trasher, Card::Sewers)
