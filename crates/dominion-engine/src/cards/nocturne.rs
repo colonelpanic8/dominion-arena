@@ -1355,7 +1355,7 @@ fn play_unique_action(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let in_play: Vec<Card> = g.in_play(p).iter().map(|&c| g.card(c)).collect();
             let candidates: Vec<CardId> = g
-                .cards_in_hand_where(p, Types::ACTION)
+                .playable(p, Types::ACTION)
                 .into_iter()
                 .filter(|&c| !in_play.contains(&g.card(c)))
                 .collect();

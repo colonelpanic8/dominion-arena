@@ -529,7 +529,7 @@ fn ask_moves(player: PlayerId, phase: Phase, moves: Vec<Move>) -> Flow {
 /// Whether `p` may buy `card` (a card on top of a pile, an Event or a Project) now.
 fn can_buy(g: &Game, p: PlayerId, card: Card, cost: crate::Cost) -> bool {
     let t = &g.turn;
-    t.buys > 0
+    (t.buys > 0 || (t.actions > 0 && cards::actions_are_buys(g)))
         && g.players[p.index()].debt == 0
         && cost.coins as u32 <= t.coins
         && cost.potions as u32 <= t.potions
@@ -567,6 +567,10 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                     g.players[p.index()].villagers -= 1;
                     g.turn.actions += 1;
                 }
+                Input::Response(Response::Move(Move::PayDebt)) => {
+                    g.players[p.index()].debt -= 1;
+                    g.turn.coins -= 1;
+                }
                 Input::Response(Response::Move(Move::EndPhase)) => {
                     g.turn.phase = Phase::Buy;
                     *pc = 3;
@@ -575,7 +579,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 _ => {}
             }
             let mut moves: Vec<Move> = if g.turn.actions > 0 {
-                g.cards_in_hand_where(p, Types::ACTION)
+                g.playable(p, Types::ACTION)
                     .into_iter()
                     .map(Move::Play)
                     .collect()
@@ -585,6 +589,9 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             if g.players[p.index()].villagers > 0 {
                 moves.push(Move::Villager);
             }
+            if g.players[p.index()].debt > 0 && g.turn.coins > 0 {
+                moves.push(Move::PayDebt);
+            }
             moves.push(Move::EndPhase);
             ask_moves(p, Phase::Action, moves)
         }
@@ -593,6 +600,13 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 g.turn.return_to_action = false;
                 *pc = 11;
                 return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
+            }
+            // An effect already returned to the Action phase itself (Continue, which plays
+            // a card there).
+            if g.turn.phase == Phase::Action {
+                g.turn.bought = false;
+                *pc = 2;
+                return Flow::Continue;
             }
             if let Input::Response(Response::Move(m)) = input {
                 match m {
@@ -632,11 +646,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             }
             let mut moves = vec![];
             if !g.turn.bought {
-                moves.extend(
-                    g.cards_in_hand_where(p, Types::TREASURE)
-                        .into_iter()
-                        .map(Move::Play),
-                );
+                moves.extend(g.playable(p, Types::TREASURE).into_iter().map(Move::Play));
             }
             if g.turn.can_buy_cards {
                 for (i, pile) in g.piles.iter().enumerate() {
@@ -681,7 +691,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 _ => {}
             }
             let mut moves: Vec<Move> = g
-                .cards_in_hand_where(p, Types::NIGHT)
+                .playable(p, Types::NIGHT)
                 .into_iter()
                 .map(Move::Play)
                 .collect();
@@ -936,7 +946,11 @@ fn pay(g: &mut Game, p: PlayerId, cost: crate::Cost) {
     let turn = &mut g.turn;
     turn.coins -= cost.coins as u32;
     turn.potions -= cost.potions as u32;
-    turn.buys -= 1;
+    if turn.buys > 0 {
+        turn.buys -= 1;
+    } else {
+        turn.actions -= 1;
+    }
     turn.bought = true;
     g.add_debt(p, cost.debt as u32);
 }

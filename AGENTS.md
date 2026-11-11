@@ -129,7 +129,14 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   check `g.zone(id)` is still that zone.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `setup` for extra piles
   (`setup::add_pile`, `add_mixed_pile`), decks of Boons/Hexes, tokens and so on,
-  `modify_starting_deck` for Heirlooms/Shelters-like changes.
+  `modify_starting_deck` for Heirlooms/Shelters-like changes. `setup_kingdom` runs
+  before `setup` for setup that adds Kingdom piles or decides what is in the game (the
+  Prophecy, Riverboat's card); `setup_added_piles` does the setup of cards that join
+  later (Divine Wind's piles, Riverboat's card), so only add what is missing there.
+  `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
+- "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
+  playable as if in hand (Shadow cards in the deck). An effect that sets `turn.phase`
+  back to `Action` during the Buy phase returns the turn to its Action phase.
 
 Tests: `src/tests/<set>.rs` (register it in `tests/mod.rs` and add the set to
 `IMPLEMENTED`, which feeds the fuzz test). Give every card with more than vanilla

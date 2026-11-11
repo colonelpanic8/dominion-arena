@@ -12,6 +12,7 @@ mod nocturne;
 mod promos;
 mod prosperity;
 mod renaissance;
+mod rising_sun;
 mod seaside;
 
 use crate::game::Zone;
@@ -34,6 +35,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::Empires,
     Set::Nocturne,
     Set::Renaissance,
+    Set::RisingSun,
     Set::Promos,
 ];
 

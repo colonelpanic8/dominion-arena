@@ -1294,7 +1294,7 @@ fn crown(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if p != g.turn.player {
                 return Flow::done();
             }
-            let candidates = g.cards_in_hand_where(p, types);
+            let candidates = g.playable(p, types);
             if candidates.is_empty() {
                 return Flow::done();
             }

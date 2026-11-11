@@ -422,7 +422,7 @@ pub(super) fn each_target_gains(g: &mut Game, f: &mut CardFrame, card: Card) -> 
 fn play_times(g: &mut Game, f: &mut CardFrame, input: Input, n: i32, types: Types) -> Flow {
     match f.pc {
         0 => {
-            let cards = g.cards_in_hand_where(f.player, types);
+            let cards = g.playable(f.player, types);
             if cards.is_empty() {
                 return Flow::done();
             }

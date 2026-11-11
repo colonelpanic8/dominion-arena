@@ -236,6 +236,10 @@ impl SetRules for Rules {
         }
     }
 
+    fn setup_added_piles(g: &mut Game, _cards: &[Card]) {
+        Self::setup(g);
+    }
+
     fn setup(g: &mut Game) {
         let present = |g: &Game, pred: &dyn Fn(Card) -> bool| {
             g.piles
@@ -747,7 +751,7 @@ fn play_twice_and_trash(g: &mut Game, f: &mut CardFrame, input: Input, types: Ty
     match f.pc {
         0 => {
             let candidates: Vec<CardId> = g
-                .cards_in_hand_where(p, types)
+                .playable(p, types)
                 .into_iter()
                 .filter(|&c| !g.is(c, Types::DURATION))
                 .collect();
