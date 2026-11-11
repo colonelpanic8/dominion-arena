@@ -714,7 +714,9 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 2;
+            let deck = g.player(p).deck[..shuffled].iter().rev().copied().collect();
             f.ask_number(0, shuffled as i32 - 1, Purpose::Move)
+                .about(deck)
         }
         _ => {
             let stash = f.s.cards[f.s.i];

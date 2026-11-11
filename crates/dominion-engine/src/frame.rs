@@ -97,6 +97,14 @@ impl Flow {
     pub(crate) fn done() -> Flow {
         Flow::Done(Value::None)
     }
+
+    /// Marks the decision asked as being about `cards` (see [`Decision::about`]).
+    pub(crate) fn about(mut self, cards: Vec<CardId>) -> Flow {
+        if let Flow::Ask(d) = &mut self {
+            d.about = cards;
+        }
+        self
+    }
 }
 
 /// Where a gain takes its card from.
@@ -652,6 +660,7 @@ fn resume_shuffle(
                     },
                     purpose: Purpose::Move,
                     source: None,
+                    about: vec![],
                 });
             }
             Flow::Continue
@@ -732,6 +741,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                             },
                             purpose: Purpose::Either,
                             source: None,
+                            about: vec![],
                         });
                     }
                     None => sources[0],
@@ -820,6 +830,7 @@ fn ask_moves(player: PlayerId, phase: Phase, moves: Vec<Move>) -> Flow {
         kind: DecisionKind::Turn { phase, moves },
         purpose: Purpose::Turn,
         source: None,
+        about: vec![],
     })
 }
 
@@ -1279,6 +1290,7 @@ fn resume_overpay(
             },
             purpose: Purpose::Overpay,
             source: Some(g.card(card)),
+            about: vec![],
         })
     };
     match pc {
@@ -1431,6 +1443,7 @@ impl PlayFrame {
                     },
                     purpose: Purpose::Mode,
                     source: Some(g.card(id)),
+                    about: vec![],
                 })
             }
             3 => {

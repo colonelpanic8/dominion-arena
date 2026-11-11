@@ -507,6 +507,47 @@ fn view_hides_hidden_information() {
     assert_eq!(g.view(P1).card(buried[0]), None);
 }
 
+/// A question about cards the player looks at shows them those cards, and only them.
+#[test]
+fn a_question_about_looked_at_cards_shows_them() {
+    // (card, cards it draws first, cards it looks at)
+    for (card, drawn, looked_at) in [
+        (Card::JackOfAllTrades, 0, 1),
+        (Card::Duchess, 0, 1),
+        (Card::Navigator, 0, 5),
+        (Card::Catacombs, 0, 3),
+        (Card::Survivors, 0, 2),
+        (Card::ZombieSpy, 1, 1),
+        (Card::CrystalBall, 0, 1),
+    ] {
+        let mut g = setup(&[Card::JackOfAllTrades]);
+        hand(&mut g, P0, &[card]);
+        let top = deck(
+            &mut g,
+            P0,
+            &[
+                Card::Gold,
+                Card::Curse,
+                Card::Duchy,
+                Card::Silver,
+                Card::Province,
+                Card::Copper,
+            ],
+        );
+        g.start();
+        play(&mut g, card);
+        assert!(
+            matches!(g.pending().unwrap().kind, DecisionKind::Choose { .. }),
+            "{card}"
+        );
+        for &c in &top[drawn..drawn + looked_at] {
+            assert_eq!(g.view(P0).card(c), Some(g.card(c)), "{card}");
+            assert_eq!(g.view(P1).card(c), None, "{card}");
+        }
+        assert_eq!(g.view(P0).card(top[drawn + looked_at]), None, "{card}");
+    }
+}
+
 #[test]
 fn buying_a_card_pays_and_gains_it() {
     let mut g = setup(&[Card::Smithy]);

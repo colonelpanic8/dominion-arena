@@ -174,6 +174,9 @@ them.
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
   carries a `Purpose` and its `source` card. Never add a card-specific decision kind.
+  A question about cards the player looks at but isn't offered as candidates (Navigator's
+  "discard them all?") lists them in `Decision::about` (`f.ask_*(..).about(cards)`), so
+  the player's view shows them.
   `SetRules::modify_decision` may change what a card ability asks: Elder adds one pick
   to a `Purpose::Mode` "choose" (`ask_modes`), so scripts must handle every chosen mode,
   in printed order (`mode_mask` / `take_mode`). Alternatives that aren't a "choose"

@@ -368,6 +368,7 @@ fn ask_name_for(f: &CardFrame, player: PlayerId) -> Flow {
         kind: DecisionKind::NameCard,
         purpose: Purpose::Name,
         source: Some(f.card),
+        about: vec![],
     })
 }
 
@@ -384,6 +385,7 @@ pub(super) fn ask_order_for(f: &CardFrame, player: PlayerId, cards: Vec<CardId>)
         },
         purpose: Purpose::TopDeck,
         source: Some(f.card),
+        about: vec![],
     })
 }
 
@@ -671,6 +673,7 @@ fn crystal_ball(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             options.push(Opt::Mode(3));
             labels.push("Leave it".into());
             f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Either)
+                .about(vec![c])
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");

@@ -2097,6 +2097,7 @@ fn mountain_pass(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 },
                 purpose: Purpose::Other,
                 source: Some(Card::MountainPass),
+                about: vec![],
             })
         }
         _ => {

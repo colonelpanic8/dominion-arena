@@ -1,4 +1,6 @@
-use dominion_agent::{AgentDecision, Answer, AnswerError, JSON_SCHEMA, Table, glossary_for};
+use dominion_agent::{
+    AgentDecision, AgentOption, Answer, AnswerError, JSON_SCHEMA, Table, glossary_for,
+};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use jsonschema::Validator;
 use rand::seq::SliceRandom;
@@ -255,4 +257,102 @@ fn bad_answers_are_rejected_with_reasons() {
         err(&mut table, 0, Answer::indices(&d.id, vec![0])),
         AnswerError::StaleDecision { .. }
     ));
+}
+
+/// A 2-player game of `kingdom` filled up with Base cards.
+fn table(kingdom: &[Card], seed: u64, names: &[&str]) -> Table {
+    let mut cards = kingdom.to_vec();
+    for filler in [
+        Card::Cellar,
+        Card::Market,
+        Card::Mine,
+        Card::Moat,
+        Card::Remodel,
+        Card::Smithy,
+        Card::Village,
+        Card::Workshop,
+        Card::Festival,
+        Card::Laboratory,
+    ] {
+        if cards.len() < 10 {
+            cards.push(filler);
+        }
+    }
+    let config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, cards, seed)
+    };
+    Table::new("t", config, names.iter().map(|s| s.to_string()).collect()).unwrap()
+}
+
+fn pick(d: &AgentDecision, wanted: impl Fn(&AgentOption) -> bool) -> Option<Answer> {
+    d.options
+        .iter()
+        .find(|o| wanted(o))
+        .map(|o| Answer::indices(&d.id, vec![o.index]))
+}
+
+fn first(d: &AgentDecision) -> Answer {
+    let min = d.min.unwrap_or(1) as usize;
+    Answer::indices(&d.id, d.options.iter().take(min).map(|o| o.index).collect())
+}
+
+/// Seat 0 plays whatever it can and buys `card` once (Silver otherwise); the other seat
+/// does nothing. Stops at the first decision `stop` accepts, returning its seat.
+fn play_to(
+    table: &mut Table,
+    card: &str,
+    stop: impl Fn(PlayerId, &AgentDecision) -> bool,
+) -> Option<PlayerId> {
+    let mut bought = false;
+    for _ in 0..600 {
+        let seat = table.deciding()?;
+        let d = table.view(seat).decision.unwrap();
+        if stop(seat, &d) {
+            return Some(seat);
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 {
+            end.unwrap()
+        } else if let Some(play) = pick(&d, |o| o.action == "play") {
+            play
+        } else if let Some(buy) = pick(&d, |o| {
+            !bought && o.label.starts_with(&format!("Buy {card}"))
+        }) {
+            bought = true;
+            buy
+        } else if let Some(silver) = pick(&d, |o| !bought && o.label.starts_with("Buy Silver")) {
+            silver
+        } else {
+            end.unwrap()
+        };
+        table.answer(seat, &answer).unwrap();
+    }
+    None
+}
+
+#[test]
+fn a_question_about_looked_at_cards_names_them() {
+    let mut t = table(&[Card::Navigator], 1, &[]);
+    let asked = |_: PlayerId, d: &AgentDecision| d.source.as_deref() == Some("Navigator");
+    assert_eq!(play_to(&mut t, "Navigator", asked), Some(PlayerId(0)));
+    let g = t.game();
+    let top: Vec<&str> = g
+        .player(PlayerId(0))
+        .deck
+        .iter()
+        .rev()
+        .take(5)
+        .map(|&c| g.card(c).name())
+        .collect();
+    let d = t.view(PlayerId(0)).decision.unwrap();
+    assert!(
+        d.prompt
+            .starts_with(&format!("Navigator (looking at {}): ", top.join(", "))),
+        "{}",
+        d.prompt
+    );
 }

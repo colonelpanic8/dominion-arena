@@ -2193,7 +2193,7 @@ fn zombie_spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard).about(vec![c])
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");

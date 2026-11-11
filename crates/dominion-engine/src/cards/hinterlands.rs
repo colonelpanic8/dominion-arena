@@ -757,7 +757,7 @@ fn jack_of_all_trades(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 3;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard).about(f.s.pick.into_iter().collect())
         }
         3 => {
             f.pc = 4;
@@ -1020,6 +1020,7 @@ fn duchess(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             f.ask_yes_no_for(q, Purpose::Discard)
+                .about(f.s.pick.into_iter().collect())
         }
         _ => {
             f.s.i += 1;

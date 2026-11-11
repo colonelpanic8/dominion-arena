@@ -556,7 +556,18 @@ pub(crate) fn decision(
 ) -> (AgentDecision, Vec<Target>) {
     let v = game.view(d.player);
     let source = d.source.map(|c| c.name().to_string());
-    let prefix = d.source.map(|c| format!("{c}: ")).unwrap_or_default();
+    let about: Vec<&str> = d
+        .about
+        .iter()
+        .filter_map(|&c| v.card(c))
+        .map(|c| c.name())
+        .collect();
+    let prefix = match (d.source, about.is_empty()) {
+        (Some(c), true) => format!("{c}: "),
+        (Some(c), false) => format!("{c} (looking at {}): ", about.join(", ")),
+        (None, false) => format!("Looking at {}: ", about.join(", ")),
+        (None, true) => String::new(),
+    };
     let mut items: Vec<(AgentOption, Target)> = vec![];
     let card_option = |i: usize, c: CardId, action: &str| {
         let name = v

@@ -110,7 +110,7 @@ impl<'a> View<'a> {
 
     /// What `id` is, if this player can see it: cards in play, in the trash, on public
     /// mats, set aside face up, on top of a discard pile or a face-up pile, their own
-    /// hand and face-down cards, and cards offered to them in a decision.
+    /// hand and face-down cards, and cards offered to them in a decision or that it is about.
     pub fn card(&self, id: CardId) -> Option<Card> {
         self.visible(id).then(|| self.game.card(id))
     }
@@ -157,11 +157,15 @@ impl<'a> View<'a> {
     }
 
     fn offered(&self, id: CardId) -> bool {
-        match self.pending().map(|d| &d.kind) {
-            Some(DecisionKind::Turn { moves, .. }) => moves.contains(&Move::Play(id)),
-            Some(DecisionKind::Cards { candidates, .. }) => candidates.contains(&id),
-            _ => false,
-        }
+        let Some(d) = self.pending() else {
+            return false;
+        };
+        d.about.contains(&id)
+            || match &d.kind {
+                DecisionKind::Turn { moves, .. } => moves.contains(&Move::Play(id)),
+                DecisionKind::Cards { candidates, .. } => candidates.contains(&id),
+                _ => false,
+            }
     }
 
     /// This player's hand.

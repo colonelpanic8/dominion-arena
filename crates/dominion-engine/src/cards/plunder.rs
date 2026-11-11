@@ -2496,6 +2496,7 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 1,
                 1,
             )
+            .about(g.player(p).discard.clone())
         }
         1 => {
             f.s.m = mode_mask(input);
