@@ -1682,7 +1682,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 4;
             let under = f.s.cards[top..].to_vec();
-            if under.len() > 1 && under.iter().any(|&c| !is_traited(g, c, Card::Fated)) {
+            if under.iter().any(|&c| g.card(c) != g.card(under[0])) {
                 return f.ask_order(under, Purpose::Move);
             }
             Flow::Continue

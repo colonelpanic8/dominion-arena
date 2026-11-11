@@ -3291,3 +3291,24 @@ fn star_chart_after_avoid_picks_from_the_shuffled_cards_only() {
     choose_kinds(&mut g, &[Card::Silver]);
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Silver, Card::Duchy]);
 }
+
+#[test]
+fn differently_named_fated_cards_put_under_are_ordered() {
+    let mut g = setup(&[Card::Encampment, Card::Smithy]);
+    set_trait(&mut g, Card::Fated, Card::Encampment);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    let mut cards = vec![Card::Encampment, Card::Plunder];
+    cards.extend([Card::Copper; 4]);
+    discard(&mut g, P0, &cards);
+    g.start();
+    play(&mut g, Card::Smithy);
+    resolve_triggers(&mut g);
+    choose(&mut g, &[]);
+    choose_kinds(&mut g, &[Card::Encampment, Card::Plunder]);
+    choose_kinds(&mut g, &[Card::Plunder, Card::Encampment]);
+    assert_eq!(
+        deck_kinds(&g, P0),
+        [Card::Copper, Card::Plunder, Card::Encampment]
+    );
+}
