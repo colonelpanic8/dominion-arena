@@ -33,6 +33,26 @@ pub(crate) trait SetRules {
     /// Applies this set's cost modifiers to `card` (the physical `id`, if any).
     fn modify_cost(g: &Game, card: Card, id: Option<CardId>, cost: &mut Cost) {}
 
+    /// A cost `card` has instead of its printed cost and every modifier (Wayfarer).
+    fn fixed_cost(g: &Game, card: Card, id: Option<CardId>) -> Option<Cost> {
+        None
+    }
+
+    /// Whether `p` may pay for buying `card` some other way than its cost (Animal Fair).
+    /// The card's `Hook::Ability(frame::PAY_OTHERWISE)` then offers it.
+    fn pays_otherwise(g: &Game, p: PlayerId, card: Card) -> bool {
+        false
+    }
+
+    /// Whether the play of `id` may use `way` (Way of the Mouse's own card cannot).
+    fn can_use_way(g: &Game, id: CardId, way: Card) -> bool {
+        true
+    }
+
+    /// Called after each step of ability `f`, with the turn as it was before the step;
+    /// may adjust what the step did and the flow it returned (Way of the Chameleon).
+    fn after_step(g: &mut Game, f: &CardFrame, before: &Step, flow: &mut Flow) {}
+
     /// Applies this set's type-changing effects to `id`.
     fn modify_types(g: &Game, id: CardId, types: &mut Types) {}
 
@@ -65,11 +85,24 @@ pub(crate) trait SetRules {
         false
     }
 
+    /// Setup after the Supply is built, before every set's `setup` (Way of the Mouse sets
+    /// aside a Kingdom card, whose own setup must then happen too).
+    fn pre_setup(g: &mut Game) {}
+
     /// Setup after the Supply is built: extra piles, decks of Boons, tokens, ...
     fn setup(g: &mut Game) {}
 
     /// Changes a player's starting deck (Heirlooms, ...).
     fn modify_starting_deck(g: &Game, p: PlayerId, deck: &mut Vec<Card>) {}
+}
+
+/// The turn as it was before a step of an ability ran (see [`SetRules::after_step`]).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Step {
+    pub coins: u32,
+    pub actions: u32,
+    /// The ability's player's -$1 token.
+    pub minus_coin: bool,
 }
 
 /// The bonuses a play gives before the card's script runs.
@@ -91,10 +124,20 @@ macro_rules! sets {
         }
 
         pub(crate) fn resume(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
-            match f.card.set() {
+            let before = Step {
+                coins: g.turn.coins,
+                actions: g.turn.actions,
+                minus_coin: g.players[f.player.index()].minus_coin,
+            };
+            let mut flow = match f.card.set() {
                 $(Set::$set => <$module::Rules as SetRules>::run(g, f, input),)*
             }
-            .unwrap_or_else(Flow::done)
+            .unwrap_or_else(Flow::done);
+            if g.turn.ignore_plus_actions && g.turn.actions > before.actions {
+                g.turn.actions = before.actions;
+            }
+            $(<$module::Rules as SetRules>::after_step(g, f, &before, &mut flow);)*
+            flow
         }
 
         pub(crate) fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
@@ -103,6 +146,18 @@ macro_rules! sets {
 
         pub(crate) fn modify_cost(g: &Game, card: Card, id: Option<CardId>, cost: &mut Cost) {
             $(<$module::Rules as SetRules>::modify_cost(g, card, id, cost);)*
+        }
+
+        pub(crate) fn fixed_cost(g: &Game, card: Card, id: Option<CardId>) -> Option<Cost> {
+            None$(.or_else(|| <$module::Rules as SetRules>::fixed_cost(g, card, id)))*
+        }
+
+        pub(crate) fn pays_otherwise(g: &Game, p: PlayerId, card: Card) -> bool {
+            false $(|| <$module::Rules as SetRules>::pays_otherwise(g, p, card))*
+        }
+
+        pub(crate) fn can_use_way(g: &Game, id: CardId, way: Card) -> bool {
+            true $(&& <$module::Rules as SetRules>::can_use_way(g, id, way))*
         }
 
         pub(crate) fn modify_types(g: &Game, id: CardId, types: &mut Types) {
@@ -135,6 +190,10 @@ macro_rules! sets {
             match card.set() {
                 $(Set::$set => <$module::Rules as SetRules>::build_kingdom_pile(g, card),)*
             }
+        }
+
+        pub(crate) fn pre_setup(g: &mut Game) {
+            $(<$module::Rules as SetRules>::pre_setup(g);)*
         }
 
         pub(crate) fn setup(g: &mut Game) {

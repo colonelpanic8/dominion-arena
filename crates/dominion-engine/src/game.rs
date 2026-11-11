@@ -175,7 +175,7 @@ pub struct Turn {
     pub buys: u32,
     pub coins: u32,
     pub potions: u32,
-    /// Bought anything (card, Event or Project) this turn.
+    /// Bought anything (card, Event or Project) in this Buy phase: no more Treasures then.
     pub bought: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
@@ -188,6 +188,10 @@ pub struct Turn {
     pub cleanup_draw: usize,
     /// Whether the player may buy cards (not Events or Projects) this turn.
     pub can_buy_cards: bool,
+    /// No more +Actions this turn (Snowy Village).
+    pub ignore_plus_actions: bool,
+    /// Go back to the Action phase when the current Buy phase step finishes (Cavalry, Villa).
+    pub return_to_action: bool,
 }
 
 impl Turn {
@@ -209,6 +213,8 @@ impl Turn {
             trashed: vec![],
             cleanup_draw: 5,
             can_buy_cards: true,
+            ignore_plus_actions: false,
+            return_to_action: false,
         }
     }
 }
@@ -332,6 +338,8 @@ pub struct Game {
 pub struct GainState {
     pub player: PlayerId,
     pub card: CardId,
+    /// What the card cost as it was gained, just before it moved.
+    pub cost: Cost,
     pub to: crate::Dest,
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
@@ -534,6 +542,9 @@ impl Game {
     }
 
     fn cost_with(&self, card: Card, id: Option<CardId>) -> Cost {
+        if let Some(cost) = cards::fixed_cost(self, card, id) {
+            return cost;
+        }
         let mut cost = card.cost().unwrap_or_default();
         cards::modify_cost(self, card, id, &mut cost);
         cost

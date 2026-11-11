@@ -206,6 +206,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         }
     }
 
+    cards::pre_setup(&mut g);
     cards::setup(&mut g);
 
     let estates = if shelters {
