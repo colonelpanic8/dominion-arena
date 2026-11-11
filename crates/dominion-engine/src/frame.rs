@@ -267,6 +267,7 @@ impl Frame {
             chain,
             targets: vec![],
             remaining: vec![],
+            again: 0,
             pc: 0,
         })
     }
@@ -799,6 +800,7 @@ fn resume_gain(
                 to,
                 bought,
                 cancelled: false,
+                since: g.log.len(),
                 cost: g.cost_of(id),
                 turn_index: None,
             });
@@ -1006,6 +1008,8 @@ pub(crate) struct PlayFrame {
     chain: Vec<CardId>,
     targets: Vec<PlayerId>,
     remaining: Vec<PlayerId>,
+    /// How many more times to follow the card's own instructions.
+    again: u32,
     pc: u8,
 }
 
@@ -1021,6 +1025,7 @@ impl PlayFrame {
                     g.move_card(id, Zone::InPlay(p), Pos::Top);
                 }
                 let card = g.card(id);
+                let since = g.log.len();
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
@@ -1034,6 +1039,8 @@ impl PlayFrame {
                     way: None,
                     replaced: None,
                     blocked: false,
+                    since,
+                    coins: g.turn.coins,
                 });
                 self.pc = 1;
                 Flow::Call(Frame::window(Occasion::Play {
@@ -1042,6 +1049,7 @@ impl PlayFrame {
                 }))
             }
             1 => {
+                g.plays.last_mut().expect("play in progress").coins = g.turn.coins;
                 // Reactions to an Attack (Moat, ...) come before its player picks a Way.
                 let st = g.plays.last().expect("play in progress");
                 self.pc = 2;
@@ -1105,6 +1113,10 @@ impl PlayFrame {
                 if let Some(Opt::Card(way)) = input.opt() {
                     g.plays.last_mut().expect("play in progress").way = Some(way);
                 }
+                let st = g.plays.last().expect("play in progress");
+                if st.way.is_none() && st.replaced.is_none() && !st.blocked {
+                    self.again = cards::extra_runs(g, p, id);
+                }
                 self.pc = 4;
                 Flow::Continue
             }
@@ -1154,20 +1166,30 @@ impl PlayFrame {
                 let st = g.plays.last().expect("play in progress");
                 let source = st.way.unwrap_or(st.behavior);
                 let mut f = CardFrame::new(source, Hook::Main, p, Some(id));
-                f.targets = std::mem::take(&mut self.targets);
+                f.targets = self.targets.clone();
                 f.chain = self.chain.clone();
-                self.pc = 7;
+                self.pc = 9;
                 Flow::Call(Frame::Card(Box::new(f)))
             }
+            9 => {
+                self.pc = 7;
+                if self.again > 0 {
+                    self.again -= 1;
+                    self.pc = 4;
+                }
+                Flow::Continue
+            }
             7 => {
-                g.plays.pop();
                 self.pc = 8;
                 Flow::Call(Frame::window(Occasion::AfterPlay {
                     player: p,
                     card: id,
                 }))
             }
-            _ => Flow::done(),
+            _ => {
+                g.plays.pop();
+                Flow::done()
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ mod hinterlands;
 mod intrigue;
 mod menagerie;
 mod nocturne;
+mod plunder;
 mod promos;
 mod prosperity;
 mod renaissance;
@@ -40,6 +41,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::Renaissance,
     Set::Menagerie,
     Set::RisingSun,
+    Set::Plunder,
     Set::Promos,
 ];
 
@@ -336,7 +338,7 @@ fn card_data_is_consistent() {
         }
         if let Some(pile) = def.pile {
             assert!(
-                pile.def().kingdom || pile == Card::Ruins,
+                pile.def().kingdom || matches!(pile, Card::Ruins | Card::Loot),
                 "{card}'s pile {pile}"
             );
         }
