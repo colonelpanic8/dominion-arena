@@ -1049,7 +1049,8 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 /// Patient and Prepare: play the set-aside cards in any order (Prepare: its Actions and
-/// Treasures, then discard the rest).
+/// Treasures, then discard the rest). Each is played once: one set aside again by its own
+/// play (Encampment, Way of the Turtle) is no longer theirs.
 fn play_held(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
@@ -1073,7 +1074,10 @@ fn play_held(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         2 => {
             f.pc = 1;
             match input.card() {
-                Some(c) => Flow::Call(Frame::play(p, c, true, vec![])),
+                Some(c) => {
+                    f.s.cards.retain(|&x| x != c);
+                    Flow::Call(Frame::play(p, c, true, vec![]))
+                }
                 None => Flow::Continue,
             }
         }

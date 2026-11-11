@@ -2822,3 +2822,35 @@ fn flagship_after_band_of_misfits_replays_the_card_it_played() {
     // Smithy twice, with no second choice.
     assert_eq!(g.hand(P0).len(), 1 + 6);
 }
+
+fn play_count(g: &Game, card: Card) -> usize {
+    g.log()
+        .iter()
+        .filter(|e| matches!(e, Event::Played { card: c, .. } if *c == card))
+        .count()
+}
+
+#[test]
+fn prepare_plays_an_encampment_that_sets_itself_aside_only_once() {
+    let mut g = setup_l(&[Card::Encampment], &[Card::Prepare]);
+    hand(&mut g, P0, &[Card::Encampment]);
+    let mut cards = vec![Card::Gold];
+    cards.extend([Card::Copper; 30]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 3, 1);
+    buy_event(&mut g, Card::Prepare);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    // Encampment, played by Prepare: don't reveal the Gold, so it is set aside again.
+    assert_eq!(
+        (purpose(&g), g.pending().unwrap().source),
+        (Purpose::Reveal, Some(Card::Encampment))
+    );
+    choose(&mut g, &[]);
+    assert_eq!(purpose(&g), Purpose::Turn);
+    assert_eq!(play_count(&g, Card::Encampment), 1);
+    // It is Encampment's now, not one of the rest Prepare discards.
+    assert_eq!(aside_kinds(&g, P0), [Card::Encampment]);
+}
