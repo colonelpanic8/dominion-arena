@@ -315,6 +315,10 @@ pub struct Game {
     pub(crate) lasting: Vec<Lasting>,
     pub(crate) next_lasting: u32,
     pub(crate) extra_turns: VecDeque<ExtraTurn>,
+    /// Set once the game has ended, while an extra round after its end is played.
+    pub(crate) ending: Option<EndReason>,
+    /// The turns of the extra round after the game ended (Fleet) still to be taken.
+    pub(crate) final_round: VecDeque<PlayerId>,
     pub(crate) gains: Vec<GainState>,
     /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
     pub(crate) trashing: Vec<(CardId, Zone)>,

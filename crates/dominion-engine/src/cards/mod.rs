@@ -75,6 +75,11 @@ pub(crate) trait SetRules {
     /// Reacts to `event` as it is logged, for effects that only change counters and
     /// never move cards or ask anything (Patron's +1 Coffers when revealed).
     fn on_event(g: &mut Game, event: &Event) {}
+
+    /// Whether `p` takes a turn in an extra round after the game ends (Fleet).
+    fn final_round(g: &Game, p: PlayerId) -> bool {
+        false
+    }
 }
 
 /// The bonuses a play gives before the card's script runs.
@@ -152,6 +157,10 @@ macro_rules! sets {
 
         pub(crate) fn on_event(g: &mut Game, event: &Event) {
             $(<$module::Rules as SetRules>::on_event(g, event);)*
+        }
+
+        pub(crate) fn final_round(g: &Game, p: PlayerId) -> bool {
+            false $(|| <$module::Rules as SetRules>::final_round(g, p))*
         }
     };
 }
