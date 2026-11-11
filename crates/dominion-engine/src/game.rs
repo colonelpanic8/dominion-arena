@@ -336,6 +336,9 @@ pub struct GainState {
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
+    /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
+    /// you gain", "your second gain this turn").
+    pub turn_index: Option<usize>,
 }
 
 /// A play in progress. "When you play" triggers may change it.

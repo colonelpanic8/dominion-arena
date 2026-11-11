@@ -714,6 +714,7 @@ fn resume_gain(
                 to,
                 bought,
                 cancelled: false,
+                turn_index: None,
             });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
@@ -733,6 +734,8 @@ fn resume_gain(
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
+                g.gains.last_mut().expect("gain in progress").turn_index =
+                    Some(g.turn.gained.len());
                 g.turn.gained.push(kind);
                 if g.turn.phase == Phase::Buy {
                     g.turn.gained_in_buy_phase.push(kind);
