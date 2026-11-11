@@ -86,9 +86,11 @@ them.
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
   trigger with `Value::Bool(true)` makes the target unaffected.
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
-  `f.add_duration(g, data)` (keeps the card and its `chain` in play) and produce a
-  `StartTurn` trigger from that lasting, whose ability removes it
-  (`g.remove_lasting`). "This turn" effects use `Until::EndOfTurn`, "until your next
+  `f.add_duration(g, data)` (keeps the card and its `chain` in play) only when the play
+  has something left to do, and produce a `StartTurn` trigger from that lasting
+  (`cards::due_durations` lists the ones due: made on an earlier turn of the owner's;
+  `cards::duration_trigger` builds the trigger), whose ability removes it
+  (`f.end_lasting(g)`). "This turn" effects use `Until::EndOfTurn`, "until your next
   turn" `Until::StartOfTurn(owner)`. Sets read `g.lasting()` for cost changes, triggers,
   immunity and so on.
 - **Modifiers.** Rules code asks the game, never the static data: `g.cost_of(id)` /

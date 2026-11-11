@@ -635,6 +635,20 @@ fn two_corsairs_still_trash_only_one_treasure() {
 }
 
 #[test]
+fn a_player_who_revealed_moat_to_corsair_keeps_their_silver() {
+    let mut g = setup(&[Card::Corsair, Card::Moat]);
+    hand(&mut g, P0, &[Card::Corsair]);
+    hand(&mut g, P1, &[Card::Moat, Card::Silver]);
+    g.start();
+    play(&mut g, Card::Corsair);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    next_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    assert_eq!(in_play_kinds(&g, P1), [Card::Silver]);
+}
+
+#[test]
 fn outpost_gives_an_extra_turn_with_a_three_card_hand_but_not_a_third() {
     let mut g = setup(&[Card::Outpost, Card::MerchantShip]);
     hand(&mut g, P0, &[Card::Outpost, Card::MerchantShip]);
@@ -731,6 +745,36 @@ fn pirate_is_played_when_anyone_gains_a_treasure_and_gains_one_next_turn() {
 }
 
 #[test]
+fn a_pirate_played_at_the_start_of_a_turn_waits_for_the_next_one() {
+    let mut g = setup(&[Card::Pirate]);
+    hand(&mut g, P0, &[Card::Copper, Card::Copper, Card::Copper]);
+    hand(&mut g, P1, &[Card::Pirate, Card::Pirate, Card::Estate]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    to_buy(&mut g);
+    for _ in 0..3 {
+        play(&mut g, Card::Copper);
+    }
+    buy(&mut g, Card::Silver);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    no(&mut g);
+    assert_eq!(g.turn().player, P1);
+    choose_pile(&mut g, Card::Gold);
+    // Gaining the Gold lets P1 play the other Pirate, at the start of their turn.
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(in_play_kinds(&g, P1), [Card::Pirate, Card::Pirate]);
+    assert_eq!(g.pending().unwrap().purpose, Purpose::Turn);
+    assert_eq!(hand_kinds(&g, P1), [Card::Estate, Card::Gold]);
+    next_turn(&mut g);
+    // Only the first Pirate is discarded.
+    assert_eq!(in_play_kinds(&g, P1), [Card::Pirate]);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(purpose(&g), Purpose::Gain);
+}
+
+#[test]
 fn pirate_can_be_declined() {
     let mut g = setup(&[Card::Pirate]);
     hand(&mut g, P0, &[Card::Copper, Card::Copper, Card::Copper]);
@@ -790,6 +834,22 @@ fn treasury_cannot_go_on_the_deck_after_gaining_a_victory_card() {
     buy(&mut g, Card::Estate);
     assert_eq!(g.turn().player, P1);
     assert!(discard_kinds(&g, P0).contains(&Card::Treasury));
+}
+
+#[test]
+fn treasury_ignores_victory_cards_gained_outside_the_buy_phase() {
+    let mut g = setup(&[Card::Treasury, Card::Workshop]);
+    hand(&mut g, P0, &[Card::Treasury, Card::Workshop]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Treasury);
+    play(&mut g, Card::Workshop);
+    choose_pile(&mut g, Card::Estate);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert!(hand_kinds(&g, P0).contains(&Card::Treasury));
 }
 
 #[test]
