@@ -203,8 +203,8 @@ impl SetRules for Rules {
                     }
                 }
             }
-            Occasion::Buy { player, card } => {
-                let copies = !g.is(card, Types::VICTORY) && g.cost_of(card).at_most(Cost::coins(4));
+            Occasion::Buy { player, card, cost } => {
+                let copies = !g.is(card, Types::VICTORY) && cost.at_most(Cost::coins(4));
                 for &c in g.in_play(player) {
                     match g.card(c) {
                         Card::Talisman if copies => {

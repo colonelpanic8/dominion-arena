@@ -1222,9 +1222,11 @@ fn resume_buy(
         }
         2 => {
             *pc = 3;
+            let card = card.expect("set in step 0");
             Flow::Call(Frame::window(Occasion::Buy {
                 player: p,
-                card: card.expect("set in step 0"),
+                card,
+                cost: g.cost_of(card),
             }))
         }
         3 => {

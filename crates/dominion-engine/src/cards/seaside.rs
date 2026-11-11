@@ -156,7 +156,7 @@ impl SetRules for Rules {
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
-            Occasion::Buy { player, card } => {
+            Occasion::Buy { player, card, .. } => {
                 // The pile bought from: the copy that was on top may have left it since.
                 if let Some(pile) = g.home_pile(g.printed(card)) {
                     let tokens = g.pile(pile).embargo;

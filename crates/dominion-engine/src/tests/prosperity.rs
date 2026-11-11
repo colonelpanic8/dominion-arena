@@ -1037,6 +1037,24 @@ fn talisman_gains_no_copy_of_a_card_with_no_other_copy_and_the_buy_still_gains_i
 }
 
 #[test]
+fn talisman_judges_a_card_by_what_it_cost_when_bought() {
+    let mut g = setup(&[Card::Talisman, Card::Destrier, Card::Embargo]);
+    let destriers = g.supply_pile(Card::Destrier).unwrap();
+    g.piles[destriers.index()].embargo = 1;
+    hand(&mut g, P0, &[Card::Talisman, Card::Gold, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Talisman);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    g.turn.buys = 2;
+    buy(&mut g, Card::Estate);
+    buy(&mut g, Card::Destrier);
+    // Bought for $5; Embargo's Curse then lowers it to $4, which doesn't count.
+    assert_eq!(g.count_owned(P0, Card::Curse), 1);
+    assert_eq!(g.count_owned(P0, Card::Destrier), 1);
+}
+
+#[test]
 fn trade_route_tokens_move_to_the_mat_when_victory_piles_are_gained_from() {
     let mut g = setup(&[Card::TradeRoute, Card::Gardens]);
     let tokens: Vec<Card> = g
