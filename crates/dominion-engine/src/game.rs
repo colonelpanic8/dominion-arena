@@ -96,6 +96,8 @@ pub struct Player {
     pub minus_coin: bool,
     pub journey_face_up: bool,
     pub turns_taken: u32,
+    /// How many of `turns_taken` were extra turns, which don't count for the tiebreaker.
+    pub extra_turns_taken: u32,
 }
 
 impl Player {
@@ -268,6 +270,7 @@ pub enum EndReason {
 pub struct Outcome {
     pub reason: EndReason,
     pub scores: Vec<i32>,
+    /// Turns each player took, not counting extra turns (the tiebreaker).
     pub turns: Vec<u32>,
     /// More than one winner means a tie.
     pub winners: Vec<PlayerId>,
@@ -869,7 +872,11 @@ impl Game {
     pub(crate) fn finish(&mut self, reason: EndReason) {
         let n = self.players.len();
         let scores: Vec<i32> = (0..n).map(|p| self.score(PlayerId(p as u8))).collect();
-        let turns: Vec<u32> = self.players.iter().map(|p| p.turns_taken).collect();
+        let turns: Vec<u32> = self
+            .players
+            .iter()
+            .map(|p| p.turns_taken - p.extra_turns_taken)
+            .collect();
         let best = (0..n)
             .map(|p| (scores[p], std::cmp::Reverse(turns[p])))
             .max()

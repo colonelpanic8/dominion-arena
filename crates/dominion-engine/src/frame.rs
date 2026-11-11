@@ -504,6 +504,9 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             g.turn.phase = Phase::Start;
             let pl = &mut g.players[p.index()];
             pl.turns_taken += 1;
+            if g.turn.extra.is_some() {
+                pl.extra_turns_taken += 1;
+            }
             let turn = pl.turns_taken;
             g.emit(Event::TurnStart { player: p, turn });
             *pc = 1;
