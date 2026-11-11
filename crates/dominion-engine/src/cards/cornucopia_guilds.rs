@@ -277,7 +277,8 @@ impl SetRules for Rules {
                         Card::HorseTraders => HORSE_TRADERS_RETURN,
                         _ => continue,
                     };
-                    if l.owner == player {
+                    // "Your next turn": not the turn the card was set aside on.
+                    if l.owner == player && l.turn < g.player(player).turns_taken {
                         out.push(Trigger::new(player, l.card, ability).via_lasting(l.id));
                     }
                 }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::Zone;
+use crate::game::{Phase, Zone};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -176,6 +176,30 @@ fn farmhands_sets_aside_a_card_to_play_next_turn() {
     assert_eq!(g.zone(smithy), Zone::InPlay(P0));
     assert_eq!(g.turn().actions, 1);
     assert_eq!(g.hand(P0).len(), 5 + 3);
+}
+
+#[test]
+fn farmhands_gained_at_the_start_of_a_turn_plays_the_card_next_turn() {
+    let mut g = setup(&[Card::Farmhands, Card::Cobbler]);
+    hand(&mut g, P0, &[Card::Cobbler]);
+    deck(&mut g, P0, &[Card::Estate; 20]);
+    g.start();
+    while g.turn().phase != Phase::Night {
+        end_phase(&mut g);
+    }
+    play(&mut g, Card::Cobbler);
+    end_phase(&mut g);
+    // At the start of P0's turn Cobbler gains Farmhands to hand, which sets itself aside.
+    assert_eq!((g.turn().player, g.turn().phase), (P0, Phase::Start));
+    choose_pile(&mut g, Card::Farmhands);
+    let farmhands = find(&g, P0, Card::Farmhands);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.zone(farmhands), Zone::SetAside(P0));
+    assert_eq!((g.turn().player, g.turn().phase), (P0, Phase::Buy));
+    end_phase(&mut g);
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.zone(farmhands), Zone::InPlay(P0));
 }
 
 #[test]
