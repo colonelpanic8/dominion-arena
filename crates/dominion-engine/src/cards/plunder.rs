@@ -633,19 +633,20 @@ fn loot_pile(g: &Game) -> Option<PileId> {
     g.pile_of(Card::Loot).filter(|&p| g.pile_top(p).is_some())
 }
 
-/// Gains a Loot (the top card of the Loot pile).
+/// Gains a Loot (the top card of the Loot pile), as one step of an ability: with none
+/// left, the ability goes on to its next step. Set `f.pc` first.
 fn gain_loot(g: &Game, p: PlayerId, to: Dest) -> Flow {
     match loot_pile(g) {
         Some(pile) => Flow::Call(Frame::gain(p, pile, to)),
-        None => Flow::done(),
+        None => Flow::Continue,
     }
 }
 
-/// Gains `card` from its Supply pile.
+/// Gains `card` from its Supply pile, as one step of an ability (see [`gain_loot`]).
 fn gain_basic(g: &Game, p: PlayerId, card: Card) -> Flow {
     match g.supply_pile(card).filter(|&s| g.pile_top(s).is_some()) {
         Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
-        None => Flow::done(),
+        None => Flow::Continue,
     }
 }
 

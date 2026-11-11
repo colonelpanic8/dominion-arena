@@ -2823,6 +2823,14 @@ fn flagship_after_band_of_misfits_replays_the_card_it_played() {
     assert_eq!(g.hand(P0).len(), 1 + 6);
 }
 
+/// Moves every card of `card`'s pile to the trash.
+fn empty_pile(g: &mut Game, card: Card) {
+    let pile = g.pile_of(card).expect("pile exists");
+    for c in g.pile(pile).cards.clone() {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+}
+
 fn play_count(g: &Game, card: Card) -> usize {
     g.log()
         .iter()
@@ -2853,4 +2861,50 @@ fn prepare_plays_an_encampment_that_sets_itself_aside_only_once() {
     assert_eq!(play_count(&g, Card::Encampment), 1);
     // It is Encampment's now, not one of the rest Prepare discards.
     assert_eq!(aside_kinds(&g, P0), [Card::Encampment]);
+}
+
+#[test]
+fn invasion_with_no_duchies_left_still_gains_an_action_and_a_loot() {
+    let mut g = setup_l(&[Card::Smithy], &[Card::Invasion]);
+    empty_pile(&mut g, Card::Duchy);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 10, 2);
+    loot_top(&mut g, Card::Doubloons);
+    buy_event(&mut g, Card::Invasion);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Smithy);
+    assert_eq!(loot_gained(&g, P0), 1);
+    assert!(in_play_kinds(&g, P0).contains(&Card::Doubloons));
+}
+
+#[test]
+fn cursed_with_an_empty_loot_pile_still_gains_a_curse() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Cursed, Card::Village);
+    add_kingdom_piles(&mut g, &[]);
+    empty_pile(&mut g, Card::Loot);
+    hand(&mut g, P0, &[]);
+    g.start();
+    money(&mut g, 3, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Village);
+    assert_eq!(gain_count(&g, P0, Card::Village), 1);
+    assert_eq!(gain_count(&g, P0, Card::Curse), 1);
+}
+
+#[test]
+fn prosper_with_an_empty_loot_pile_still_gains_treasures() {
+    let mut g = setup_l(&[Card::Village], &[Card::Prosper]);
+    empty_pile(&mut g, Card::Loot);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 10, 1);
+    buy_event(&mut g, Card::Prosper);
+    assert_eq!(purpose(&g), Purpose::Gain);
+    choose_pile(&mut g, Card::Gold);
+    assert_eq!(gain_count(&g, P0, Card::Gold), 1);
 }
