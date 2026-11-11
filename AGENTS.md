@@ -122,7 +122,8 @@ them.
   turn" `Until::StartOfTurn(owner)`. Sets read `g.lasting()` for cost changes, triggers,
   immunity and so on.
 - **Modifiers.** Rules code asks the game, never the static data: `g.cost_of(id)` /
-  `g.cost(card)` (through `SetRules::modify_cost`), `g.types(id)` / `g.is(id, types)`
+  `g.cost(card)` (through `SetRules::modify_cost`; Events and Projects always cost what
+  they say), `g.types(id)` / `g.is(id, types)`
   (through `modify_types`), `g.card(id)` (what a card currently is: `Game::masks` make
   Band of Misfits-style cards another card until they leave play; `g.printed(id)` is
   what is printed). `SetRules::behavior` lets a card use another card's abilities

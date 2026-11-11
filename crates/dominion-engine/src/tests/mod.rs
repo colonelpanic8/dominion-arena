@@ -514,6 +514,42 @@ fn coffers_and_debt_can_be_used_in_every_phase() {
 // ---- Shuffling ----
 
 /// Resolves a pending Star Chart trigger, picking `card` to go on top of the shuffle.
+#[test]
+fn cost_reductions_leave_events_and_projects_alone() {
+    type Reduce = fn(&mut Game);
+    let cases: &[(Card, Reduce)] = &[
+        (Card::Bridge, |g| play(g, Card::Bridge)),
+        (Card::Highway, |g| play(g, Card::Highway)),
+        (Card::Princess, |g| play(g, Card::Princess)),
+        (Card::BridgeTroll, |g| play(g, Card::BridgeTroll)),
+        (Card::Quarry, |g| play(g, Card::Quarry)),
+        (Card::Inventor, |g| {
+            play(g, Card::Inventor);
+            choose_pile(g, Card::Silver);
+        }),
+        (Card::Renown, |g| play(g, Card::Renown)),
+        (Card::Canal, |g| g.players[0].projects.push(Card::Canal)),
+        (Card::FlourishingTrade, |g| {
+            g.prophecy = Some((Card::FlourishingTrade, 0));
+        }),
+    ];
+    for &(reducer, reduce) in cases {
+        let mut g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            landscapes: vec![Card::Populate, Card::Citadel],
+            ..GameConfig::new(2, vec![Card::Village], 7)
+        });
+        hand(&mut g, P0, &[reducer]);
+        g.start();
+        g.turn.coins = 3;
+        reduce(&mut g);
+        assert!(g.cost(Card::Village).less_than(Cost::coins(3)), "{reducer}");
+        assert_eq!(g.cost(Card::Populate), Cost::coins(10), "{reducer}");
+        assert_eq!(g.cost(Card::Citadel), Cost::coins(8), "{reducer}");
+    }
+}
+
 fn star_chart(g: &mut Game, card: Card) {
     let d = g.pending().expect("a decision is pending");
     assert_eq!(
