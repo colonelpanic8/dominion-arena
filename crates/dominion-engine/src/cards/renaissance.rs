@@ -512,14 +512,11 @@ fn cargo_set_aside(g: &mut Game, f: &mut CardFrame) -> Flow {
     };
     let p = f.player;
     g.set_aside(card, p);
-    // A Cargo Ship no longer in play can't bring the card back.
-    if l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(p)) {
-        let data = Scratch {
-            pick: Some(card),
-            ..Scratch::default()
-        };
-        g.add_lasting(Card::CargoShip, p, l.source, l.data.cards, Until::Removed, data);
-    }
+    let data = Scratch {
+        pick: Some(card),
+        ..Scratch::default()
+    };
+    g.continue_lasting(&l, l.data.cards.clone(), Until::Removed, data);
     Flow::done()
 }
 

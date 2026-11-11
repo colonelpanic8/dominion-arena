@@ -766,6 +766,40 @@ fn samurai_played_at_the_start_of_a_turn_gives_its_coin_that_turn() {
 }
 
 #[test]
+fn a_samurai_that_left_play_gives_no_more_coins() {
+    let mut g = setup(&[Card::Samurai]);
+    hand(&mut g, P0, &[Card::Samurai]);
+    deck(&mut g, P0, &coppers(30));
+    hand(&mut g, P1, &coppers(5));
+    g.start();
+    play(&mut g, Card::Samurai);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().coins, 1);
+    leave_play(&mut g, P0, Card::Samurai);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().coins), (P0, 0));
+}
+
+#[test]
+fn a_daimyo_played_from_the_trash_does_not_double_a_duration_on_later_turns() {
+    let mut g = setup(&[Card::Daimyo, Card::Necromancer, Card::Wharf]);
+    hand(&mut g, P0, &[Card::Necromancer, Card::Wharf]);
+    deck(&mut g, P0, &coppers(30));
+    let daimyo = g.create(Card::Daimyo, Zone::Trash);
+    g.start();
+    play(&mut g, Card::Necromancer);
+    choose(&mut g, &[daimyo]);
+    play(&mut g, Card::Wharf);
+    resolve_triggers(&mut g);
+    assert_eq!(g.turn().buys, 3);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().buys), (P0, 2));
+}
+
+#[test]
 fn snake_witch_returns_to_its_pile_to_curse_when_the_hand_has_no_duplicates() {
     let mut g = setup(&[Card::SnakeWitch]);
     hand(&mut g, P0, &[Card::SnakeWitch, Card::Estate]);

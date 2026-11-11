@@ -631,13 +631,11 @@ fn flip_journey(g: &mut Game, p: PlayerId) -> bool {
     pl.journey_face_up
 }
 
-/// Lastings of `card` owned by `p` whose card is still in play (Champion, Hireling).
+/// `p`'s lasting effects of `card`.
 fn active(g: &Game, p: PlayerId, card: Card) -> impl Iterator<Item = &crate::Lasting> {
-    g.lasting().iter().filter(move |l| {
-        l.card == card
-            && l.owner == p
-            && l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(p))
-    })
+    g.lasting()
+        .iter()
+        .filter(move |l| l.card == card && l.owner == p)
 }
 
 /// The Supply pile a copy of `card` can be gained from.
@@ -820,8 +818,7 @@ fn start_turn_triggers(g: &Game, occ: &Occasion, player: PlayerId, out: &mut Vec
         }
     }
     for l in turn_durations(g, occ) {
-        if l.card == Card::Hireling && l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player))
-        {
+        if l.card == Card::Hireling {
             out.push(duration_trigger(l, DURATION));
         }
     }

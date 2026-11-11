@@ -351,7 +351,6 @@ impl SetRules for Rules {
                 let this = f.this();
                 let p = f.player;
                 if g.zone(this) == Zone::InPlay(p) {
-                    left_play(g, this);
                     g.set_aside(this, p);
                     let data = Scratch {
                         pick: Some(this),
@@ -641,24 +640,12 @@ fn exchanges(g: &Game, f: &CardFrame) -> bool {
     })
 }
 
-/// A card that left play ends the Duration effects it made this turn.
-fn left_play(g: &mut Game, id: CardId) {
-    let card = g.card(id);
-    g.lasting.retain(|l| {
-        !(l.source == Some(id)
-            && l.card == card
-            && l.until == Until::Removed
-            && l.turn == g.players[l.owner.index()].turns_taken)
-    });
-}
-
 /// Returns the played card to its pile if it is in play (Horse, Way of the Horse).
 fn return_this(g: &mut Game, f: &CardFrame) -> bool {
     let this = f.this();
     if g.zone(this) != Zone::InPlay(f.player) {
         return false;
     }
-    left_play(g, this);
     g.return_to_pile(this)
 }
 
@@ -1943,7 +1930,6 @@ fn butterfly(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             let target = g.cost_of(this).plus_coins(1);
-            left_play(g, this);
             if !g.return_to_pile(this) {
                 return Flow::done();
             }

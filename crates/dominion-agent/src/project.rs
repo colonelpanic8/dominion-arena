@@ -230,6 +230,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
             cards.sort();
             cards.dedup();
             let (until, until_player) = match l.until {
+                _ if l.ending => ("end-of-turn", None),
                 Until::EndOfTurn => ("end-of-turn", None),
                 Until::StartOfTurn(p) => ("start-of-turn", Some(p.0)),
                 Until::Removed => ("removed", None),

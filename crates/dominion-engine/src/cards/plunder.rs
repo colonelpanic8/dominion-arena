@@ -127,7 +127,8 @@ impl SetRules for Rules {
             (Card::Taskmaster, Hook::Ability(TASKMASTER_ARM)) => {
                 if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
                     l.until = Until::Removed;
-                    l.keeps = l.data.cards.clone();
+                    let (id, keeps) = (l.id, l.data.cards.clone());
+                    g.keep_in_play(id, keeps);
                 }
                 Flow::done()
             }
@@ -983,7 +984,8 @@ fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>
 fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     if f.pc == 0 {
-        let l = if permanent(f.card) {
+        // A Taskmaster's effect watches this turn's gains again.
+        let l = if permanent(f.card) || f.card == Card::Taskmaster {
             f.lasting
                 .and_then(|id| g.lasting().iter().find(|l| l.id == id).cloned())
         } else {
@@ -1032,7 +1034,11 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Taskmaster => {
             plus_actions(g, p, 1);
             coins(g, p, 1);
-            taskmaster_watch(g, p, f.this, std::mem::take(&mut f.s.cards));
+            // The same effect watches this turn's gains again.
+            if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
+                l.until = Until::EndOfTurn;
+                l.keeps.clear();
+            }
             Flow::done()
         }
         Card::CabinBoy => cabin_boy(g, f, input),

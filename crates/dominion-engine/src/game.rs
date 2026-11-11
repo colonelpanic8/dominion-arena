@@ -331,6 +331,22 @@ pub struct Lasting {
     /// The owner's [`Player::turns_taken`] when it was created.
     pub turn: u32,
     pub data: Scratch,
+    /// For a replay of `source` (Throne Room's second play, ...): the card that replayed
+    /// it, which has to stay in play to keep track of this effect.
+    #[serde(default)]
+    pub tracker: Option<CardId>,
+    /// A Duration's effect whose card, or `tracker`, isn't in play: it still works this
+    /// turn and ends with it.
+    #[serde(default)]
+    pub ending: bool,
+}
+
+impl Lasting {
+    /// Whether this is a Duration card's effect, which keeps that card in play and
+    /// lasts only while it stays there.
+    fn tied_to_play(&self) -> bool {
+        self.source.is_some() && self.keeps.first() == self.source.as_ref()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -497,6 +513,10 @@ pub struct PlayState {
     /// more than once for a Reckless card): "if this made you shuffle".
     #[serde(default)]
     pub run_since: usize,
+    /// For a replay (the card was already played, or isn't put into play): the card that
+    /// replays it, if a card does.
+    #[serde(default)]
+    pub tracker: Option<CardId>,
 }
 
 impl Game {
@@ -958,6 +978,7 @@ impl Game {
             {
                 *stayed = false;
             }
+            self.left_play(id);
         }
         if let Zone::SetAside(p) = from {
             self.players[p.index()].face_up.retain(|&c| c != id);
@@ -1143,6 +1164,45 @@ impl Game {
         until: Until,
         data: Scratch,
     ) -> u32 {
+        let tracker = self
+            .plays
+            .last()
+            .filter(|st| Some(st.card) == source)
+            .and_then(|st| st.tracker);
+        self.push_lasting(card, owner, source, tracker, keeps, until, data)
+    }
+
+    /// Adds a later part of the effect `from` began (a card set aside by its "once this
+    /// turn" part, ...): the same play's, so with the same card keeping track of it.
+    pub(crate) fn continue_lasting(
+        &mut self,
+        from: &Lasting,
+        keeps: Vec<CardId>,
+        until: Until,
+        data: Scratch,
+    ) -> u32 {
+        self.push_lasting(
+            from.card,
+            from.owner,
+            from.source,
+            from.tracker,
+            keeps,
+            until,
+            data,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn push_lasting(
+        &mut self,
+        card: Card,
+        owner: PlayerId,
+        source: Option<CardId>,
+        tracker: Option<CardId>,
+        keeps: Vec<CardId>,
+        until: Until,
+        data: Scratch,
+    ) -> u32 {
         let id = self.next_lasting;
         self.next_lasting += 1;
         let turn = self.players[owner.index()].turns_taken;
@@ -1151,12 +1211,47 @@ impl Game {
             card,
             owner,
             source,
-            keeps,
+            keeps: vec![],
             until,
             turn,
             data,
+            tracker,
+            ending: false,
         });
+        self.keep_in_play(id, keeps);
         id
+    }
+
+    /// Makes lasting `id` keep `keeps` in play. A Duration's effect (it keeps its own
+    /// card) whose card or `tracker` isn't in play ends with this turn instead: a card
+    /// that never was in play is like one that left it.
+    pub(crate) fn keep_in_play(&mut self, id: u32, keeps: Vec<CardId>) {
+        let zones = &self.zones;
+        let in_play = |c: &CardId| matches!(zones[c.index()], Zone::InPlay(_));
+        let Some(l) = self.lasting.iter_mut().find(|l| l.id == id) else {
+            return;
+        };
+        l.keeps = keeps;
+        if l.tied_to_play()
+            && !(l.source.as_ref().is_some_and(in_play) && l.tracker.as_ref().is_none_or(in_play))
+        {
+            l.ending = true;
+            l.keeps.clear();
+        }
+        l.keeps.retain(in_play);
+    }
+
+    /// `id` left play: a Duration stops doing things after this turn, and so do the
+    /// replays of one that `id` was keeping track of. Nothing stays in play for `id`.
+    fn left_play(&mut self, id: CardId) {
+        for l in &mut self.lasting {
+            if l.tied_to_play() && (l.source == Some(id) || l.tracker == Some(id)) {
+                l.ending = true;
+                l.keeps.clear();
+            } else {
+                l.keeps.retain(|&c| c != id);
+            }
+        }
     }
 
     pub(crate) fn remove_lasting(&mut self, id: u32) -> Option<Lasting> {
