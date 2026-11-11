@@ -48,13 +48,20 @@ const PRIZES: [Card; 5] = [
     Card::TrustySteed,
 ];
 
-/// Overpay cards whose ability happens when the card is gained.
-const ON_GAIN_OVERPAY: [Card; 4] = [Card::Farrier, Card::Herald, Card::Infirmary, Card::Stonemason];
+/// Overpaying happens on buying; the overpay abilities happen when the card is gained.
+const OVERPAY_CARDS: [Card; 6] = [
+    Card::Farrier,
+    Card::Herald,
+    Card::Infirmary,
+    Card::Stonemason,
+    Card::Doctor,
+    Card::Masterpiece,
+];
 
 impl SetRules for Rules {
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
-            (c, Hook::Ability(OVERPAY)) if ON_GAIN_OVERPAY.contains(&c) => {
+            (c, Hook::Ability(OVERPAY)) if OVERPAY_CARDS.contains(&c) => {
                 let data = Scratch {
                     n: f.data,
                     ..Scratch::default()
@@ -62,9 +69,7 @@ impl SetRules for Rules {
                 g.add_lasting(c, f.player, f.this, vec![], Until::EndOfTurn, data);
                 Flow::done()
             }
-            (Card::Masterpiece, Hook::Ability(OVERPAY)) => gain_n(g, f, Card::Silver),
-            (Card::Doctor, Hook::Ability(OVERPAY)) => doctor_overpay(g, f, input),
-            (c, Hook::Ability(OVERPAID)) if ON_GAIN_OVERPAY.contains(&c) => {
+            (c, Hook::Ability(OVERPAID)) if OVERPAY_CARDS.contains(&c) => {
                 overpaid(g, f, input)
             }
             (Card::Farmhands, Hook::Ability(FARMHANDS_SET_ASIDE)) => farmhands(g, f, input),
@@ -225,7 +230,7 @@ impl SetRules for Rules {
         match *occ {
             Occasion::Gain { player, card, .. } => {
                 for l in g.lasting() {
-                    if l.source == Some(card) && ON_GAIN_OVERPAY.contains(&l.card) {
+                    if l.source == Some(card) && OVERPAY_CARDS.contains(&l.card) {
                         out.push(Trigger::new(player, l.card, OVERPAID).on(card).via_lasting(l.id));
                     }
                 }
@@ -604,15 +609,14 @@ fn play_set_aside(g: &mut Game, f: &mut CardFrame) -> Flow {
 // ---- Card scripts ----
 
 fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
-    if f.pc == 0 {
-        let l = g
-            .remove_lasting(f.lasting.expect("from a lasting"))
-            .expect("lasting exists");
-        f.s.m = l.data.n;
-        f.pc = 1;
+    if let Some(id) = f.lasting.take() {
+        let l = g.remove_lasting(id).expect("lasting exists");
+        f.data = l.data.n;
     }
-    let n = f.s.m;
+    let n = f.data;
     match f.card {
+        Card::Masterpiece => gain_n(g, f, Card::Silver),
+        Card::Doctor => doctor_overpay(g, f, input),
         Card::Farrier => {
             if f.player == g.turn.player {
                 g.turn.cleanup_draw += n as usize;
@@ -620,17 +624,17 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::done()
         }
         Card::Herald => match f.pc {
-            1 => {
+            0 => {
                 let discard = g.player(f.player).discard.clone();
                 if discard.is_empty() {
                     return Flow::done();
                 }
-                f.pc = 2;
+                f.pc = 1;
                 f.ask_cards(discard, n as usize, n as usize, Purpose::TopDeck)
             }
-            2 => {
+            1 => {
                 let chosen = input.cards();
-                f.pc = 3;
+                f.pc = 2;
                 f.ask_order(chosen, Purpose::TopDeck)
             }
             _ => {
@@ -650,7 +654,7 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             // Stonemason: gain 2 Actions each costing exactly the amount overpaid.
             match f.pc {
-                1 => {
+                0 => {
                     if f.s.i >= 2 {
                         return Flow::done();
                     }
@@ -661,11 +665,11 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     if piles.is_empty() {
                         return Flow::done();
                     }
-                    f.pc = 2;
+                    f.pc = 1;
                     f.ask_pile(piles, false, Purpose::Gain)
                 }
                 _ => {
-                    f.pc = 1;
+                    f.pc = 0;
                     match input.pile() {
                         Some(pile) => Flow::Call(Frame::gain(f.player, pile, Dest::Discard)),
                         None => Flow::Continue,

@@ -241,8 +241,15 @@ impl SetRules for Rules {
             (Card::Cartographer, _) => cartographer(g, f, input),
             (Card::Cauldron, _) => {
                 let mask = f.targets.iter().fold(0, |m, t| m | (1 << t.0));
+                // Action gains already finished: a gain still resolving can be the third.
+                let resolving = g
+                    .gains
+                    .iter()
+                    .filter(|s| s.player == f.player && g.is(s.card, Types::ACTION))
+                    .count();
                 let data = Scratch {
                     n: mask,
+                    m: (actions_gained(g) - resolving.min(actions_gained(g))) as i32,
                     ..Scratch::default()
                 };
                 g.add_lasting(Card::Cauldron, f.player, f.this, vec![], Until::EndOfTurn, data);
@@ -390,8 +397,7 @@ impl SetRules for Rules {
                         }
                     }
                 }
-                let exchangeable = kind != Card::Silver
-                    && still_gained(g, card)
+                let exchangeable = still_gained(g, card)
                     && g.home_pile(g.printed(card)).is_some()
                     && g
                         .supply_pile(Card::Silver)
@@ -407,14 +413,11 @@ impl SetRules for Rules {
                         }
                     }
                 }
+                // Fires once the third Action is gained, even if resolving its other
+                // when-gain abilities gained more Actions first.
                 let third_action = player == g.turn.player
                     && g.is(card, Types::ACTION)
-                    && g.turn
-                        .gained
-                        .iter()
-                        .filter(|c| c.is(Types::ACTION))
-                        .count()
-                        == 3;
+                    && actions_gained(g) >= 3;
                 for l in g.lasting() {
                     if l.owner != player {
                         continue;
@@ -422,7 +425,7 @@ impl SetRules for Rules {
                     if l.card == Card::Haggler && bought {
                         out.push(Trigger::new(player, l.card, HAGGLER_GAIN).via_lasting(l.id));
                     }
-                    if l.card == Card::Cauldron && third_action {
+                    if l.card == Card::Cauldron && third_action && l.data.m < 3 {
                         out.push(Trigger::new(player, l.card, CAULDRON_CURSE).via_lasting(l.id));
                     }
                 }
@@ -509,6 +512,15 @@ impl SetRules for Rules {
             victory as i32 / 4
         })
     }
+}
+
+/// Action cards the turn's player has gained this turn.
+fn actions_gained(g: &Game) -> usize {
+    g.turn
+        .gained
+        .iter()
+        .filter(|c| c.is(Types::ACTION))
+        .count()
 }
 
 /// Action cards `p` has in play that Clean-up will discard.
