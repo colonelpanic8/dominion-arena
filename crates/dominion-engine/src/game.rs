@@ -308,6 +308,8 @@ pub struct Game {
     pub(crate) next_lasting: u32,
     pub(crate) extra_turns: VecDeque<ExtraTurn>,
     pub(crate) gains: Vec<GainState>,
+    /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
+    pub(crate) trashing: Vec<(CardId, Zone)>,
     pub(crate) plays: Vec<PlayState>,
     pub(crate) ext: Ext,
     pub(crate) stack: Vec<Frame>,
@@ -498,6 +500,15 @@ impl Game {
     pub fn home_pile(&self, card: Card) -> Option<PileId> {
         let name = card.def().pile.unwrap_or(card);
         self.pile_of(name).or_else(|| self.pile_of(card))
+    }
+
+    /// Where `id` was trashed from, while its "when trashed" abilities resolve.
+    pub fn trashed_from(&self, id: CardId) -> Option<Zone> {
+        self.trashing
+            .iter()
+            .rev()
+            .find(|(c, _)| *c == id)
+            .map(|(_, z)| *z)
     }
 
     pub fn pile_top(&self, id: PileId) -> Option<CardId> {
