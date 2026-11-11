@@ -9,7 +9,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Move, Opt, Purpose, Response};
 use crate::event::{Dest, Event};
-use crate::game::{GainState, Phase, PlayState, Pos, Turn, Until, Zone};
+use crate::game::{EndReason, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -474,8 +474,18 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     pc: 0,
                 });
             }
-            g.turn = Turn::new(*next);
-            *next = g.left_of(*next);
+            if g.ending.is_some() {
+                let p = g
+                    .final_round
+                    .pop_front()
+                    .expect("a final-round turn is due");
+                g.turn = Turn::new(p);
+                // Like extra turns, these don't count for the tiebreaker.
+                g.players[p.index()].extra_turns_taken += 1;
+            } else {
+                g.turn = Turn::new(*next);
+                *next = g.left_of(*next);
+            }
             *pc = 1;
             Flow::Call(Frame::Turn {
                 player: g.turn.player,
@@ -483,7 +493,21 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
             })
         }
         _ => {
-            if let Some(reason) = g.game_over_reason() {
+            if g.ending.is_none()
+                && let Some(reason) = g.game_over_reason()
+            {
+                g.ending = Some(reason);
+                if reason != EndReason::TurnLimit {
+                    let order = g.players_from(g.left_of(g.turn.player));
+                    g.final_round = order
+                        .into_iter()
+                        .filter(|&p| cards::final_round(g, p))
+                        .collect();
+                }
+            }
+            if let Some(reason) = g.ending
+                && g.final_round.is_empty()
+            {
                 g.finish(reason);
                 return Flow::done();
             }
@@ -926,6 +950,7 @@ impl PlayFrame {
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
+                    g.turn.played_ids.push(id);
                 }
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {
