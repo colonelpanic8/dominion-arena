@@ -1041,11 +1041,8 @@ impl PlayFrame {
                     .copied()
                     .filter(|&l| l.kind() == Kind::Way && cards::can_use_way(g, id, l))
                     .collect();
-                if ways.is_empty()
-                    || st.replaced.is_some()
-                    || st.blocked
-                    || !g.is(id, Types::ACTION)
-                {
+                // A Way can be used instead of a replaced effect (Enchantress, Enlightenment).
+                if ways.is_empty() || st.blocked || !g.is(id, Types::ACTION) {
                     return Flow::Continue;
                 }
                 let mut options = vec![Opt::No];
@@ -1099,7 +1096,9 @@ impl PlayFrame {
                     return Flow::Continue;
                 }
                 let mine = p == g.turn.player;
-                if let Some(plus) = st.replaced {
+                if let Some(plus) = st.replaced
+                    && st.way.is_none()
+                {
                     if mine {
                         if !g.turn.ignore_plus_actions {
                             g.turn.actions += plus.actions as u32;
