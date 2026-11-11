@@ -84,9 +84,12 @@ them.
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
   `SetRules::modify_bonus`) and run the card's `Hook::Main`, then the `AfterPlay`
   window. `chain` lists the cards playing it (Throne Room ...); pass
-  `f.chain_for_child()` when a card plays another. `SetRules::can_play` can forbid a
-  play from the hand (Warlord, Voyage; `g.playable` applies it); `Turn::hand_plays`
-  counts the turn's plays from the hand.
+  `f.chain_for_child()` when a card plays another more than once (only then does it stay
+  in play with a Duration).
+  `SetRules::can_play` can forbid a play from the hand (Warlord, Voyage): `Frame::play`
+  then does nothing, so offer only what may be played (`g.playable`; `cards::can_play`
+  for a Reaction that plays itself from the hand). `Turn::hand_plays` counts the turn's
+  plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
   card's cost then in `GainState::cost`), `Gain` window.

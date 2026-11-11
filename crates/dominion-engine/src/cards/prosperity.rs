@@ -142,7 +142,7 @@ impl SetRules for Rules {
         match *occ {
             Occasion::StartTurn { player } => {
                 for &c in g.hand(player) {
-                    if g.card(c) == Card::Clerk {
+                    if g.card(c) == Card::Clerk && super::can_play(g, player, c) {
                         out.push(Trigger::new(player, Card::Clerk, CLERK_START).on(c).optional());
                     }
                 }

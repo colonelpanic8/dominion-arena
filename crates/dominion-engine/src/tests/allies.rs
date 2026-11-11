@@ -1396,6 +1396,57 @@ fn warlord_stops_others_playing_an_action_they_have_two_copies_of_in_play() {
 }
 
 #[test]
+fn warlord_stops_a_third_clerk_played_at_the_start_of_the_turn() {
+    let mut g = game(&[Card::Clashes, Card::Clerk]);
+    hand(&mut g, P0, &[Card::Warlord]);
+    deck(&mut g, P0, &[Card::Copper; 2]);
+    discard(&mut g, P0, &[]);
+    hand(&mut g, P1, &[Card::Clerk, Card::Clerk, Card::Clerk]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Warlord);
+    next_turn(&mut g);
+    accept(&mut g, Card::Clerk);
+    accept(&mut g, Card::Clerk);
+    assert_eq!(in_play_kinds(&g, P1), [Card::Clerk, Card::Clerk]);
+    assert!(!offered(&g, Card::Clerk));
+    assert!(!can_play(&g, Card::Clerk));
+}
+
+#[test]
+fn warlord_stops_a_third_caravan_guard_played_in_reaction_on_another_turn() {
+    let mut g = game(&[
+        Card::Clashes,
+        Card::CaravanGuard,
+        Card::Militia,
+        Card::Village,
+    ]);
+    hand(&mut g, P0, &[Card::Village, Card::Warlord, Card::Militia]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    replace(
+        &mut g,
+        Zone::InPlay(P1),
+        &[Card::CaravanGuard, Card::CaravanGuard],
+    );
+    hand(
+        &mut g,
+        P1,
+        &[Card::CaravanGuard, Card::Copper, Card::Copper],
+    );
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Warlord);
+    // Warlord is not in effect yet when it is played.
+    assert!(offered(&g, Card::CaravanGuard));
+    decline(&mut g);
+    play(&mut g, Card::Militia);
+    assert!(!offered(&g, Card::CaravanGuard));
+    assert_eq!(g.hand(P1).len(), 3);
+    assert_eq!(g.turn().coins, 2);
+}
+
+#[test]
 fn warlord_lets_throne_room_play_a_card_with_one_copy_in_play() {
     let mut g = game(&[Card::Clashes, Card::Village, Card::ThroneRoom]);
     hand(&mut g, P0, &[Card::Warlord]);
@@ -1610,6 +1661,39 @@ fn voyage_on_an_extra_turn_gives_no_third_turn() {
     play(&mut g, Card::Voyage);
     next_turn(&mut g);
     assert_eq!(g.turn().player, P1);
+}
+
+#[test]
+fn voyage_counts_the_cards_sauna_and_avanto_play_from_the_hand() {
+    let mut g = game(&[Card::Odysseys, Card::Sauna]);
+    hand(&mut g, P0, &[Card::Voyage]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Sauna,
+            Card::Avanto,
+            Card::Sauna,
+            Card::Avanto,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Voyage);
+    next_turn(&mut g);
+    assert_eq!(g.turn().extra, Some(Card::Voyage));
+    play(&mut g, Card::Sauna);
+    choose_kinds(&mut g, &[Card::Avanto]);
+    choose_kinds(&mut g, &[Card::Sauna]);
+    // The second Sauna was the third card played from the hand: it offers no Avanto.
+    assert!(hand_kinds(&g, P0).contains(&Card::Avanto));
+    assert!(moves(&g).iter().all(|m| !matches!(m, Move::Play(_))));
+    assert_eq!(g.turn().hand_plays, 3);
 }
 
 #[test]

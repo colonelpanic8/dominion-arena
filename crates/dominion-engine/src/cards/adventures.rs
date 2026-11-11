@@ -428,7 +428,7 @@ impl SetRules for Rules {
                     out.push(Trigger::new(target, Card::Champion, PROTECT));
                 }
                 for &c in g.hand(target) {
-                    if g.card(c) == Card::CaravanGuard {
+                    if g.card(c) == Card::CaravanGuard && super::can_play(g, target, c) {
                         out.push(
                             Trigger::new(target, Card::CaravanGuard, REACT)
                                 .on(c)

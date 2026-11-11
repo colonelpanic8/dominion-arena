@@ -819,7 +819,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     Card::Stowaway => duration,
                     _ => false,
                 };
-                if react {
+                if react && super::can_play(g, p, c) {
                     out.push(Trigger::new(p, g.card(c), REACT).on(c).optional());
                 }
             }
