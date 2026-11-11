@@ -1945,8 +1945,9 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.s.card = Some(g.card(c));
+            f.s.n = g.next_lasting as i32;
             f.pc = 2;
-            Flow::Call(Frame::play(p, c, true, f.chain_for_child()))
+            Flow::Call(Frame::play(p, c, true, vec![]))
         }
         2 => {
             f.pc = 3;
@@ -1960,6 +1961,16 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => match take_mode(f) {
             Some(0) => {
                 let c = f.s.pick.expect("set in step 1");
+                // Only a Duration played again keeps this in play with it, and then for
+                // what its first play left to do as well.
+                if g.is(c, Types::DURATION) {
+                    let (first, keeps) = (f.s.n as u32, f.keeps(g));
+                    for l in &mut g.lasting {
+                        if l.id >= first && l.keeps.last() == Some(&c) {
+                            l.keeps.extend(&keeps);
+                        }
+                    }
+                }
                 Flow::Call(Frame::play(p, c, false, f.chain_for_child()))
             }
             Some(_) => {

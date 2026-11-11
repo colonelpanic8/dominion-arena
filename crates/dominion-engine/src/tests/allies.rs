@@ -1098,6 +1098,25 @@ fn specialist_plays_a_card_and_plays_it_again_or_gains_a_copy() {
 }
 
 #[test]
+fn specialist_stays_in_play_only_with_a_duration_it_played_again() {
+    let mut g = game(&[Card::Specialist, Card::Wharf]);
+    hand(&mut g, P0, &[Card::Specialist, Card::Wharf]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Specialist);
+    choose_kinds(&mut g, &[Card::Wharf]);
+    let mut again = g.clone();
+    // Having gained a copy, it played the Wharf once.
+    modes(&mut g, &[1]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Wharf]);
+
+    modes(&mut again, &[0]);
+    next_turn(&mut again);
+    assert_eq!(in_play_kinds(&again, P0), [Card::Specialist, Card::Wharf]);
+}
+
+#[test]
 fn swap_returns_an_action_and_gains_a_different_one_to_the_hand() {
     let mut g = game(&[Card::Swap, Card::Village, Card::Smithy]);
     hand(&mut g, P0, &[Card::Swap, Card::Village]);
