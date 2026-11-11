@@ -3243,3 +3243,51 @@ fn a_hasty_card_gained_with_quartermaster_is_not_on_the_quartermaster() {
     assert!(!hand_kinds(&g, P0).contains(&Card::Village));
     assert!(in_play_kinds(&g, P0).contains(&Card::Village));
 }
+
+#[test]
+fn a_second_avoid_picks_from_the_shuffled_cards_only() {
+    let mut g = setup_l(&[Card::Village], &[Card::Avoid]);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Province; 2]);
+    discard(&mut g, P0, &[Card::Estate; 6]);
+    g.start();
+    money(&mut g, 4, 3);
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Avoid);
+    buy_event(&mut g, Card::Avoid);
+    // Looking at 4 cards shuffles the discard pile under the two Provinces.
+    g.stack.push(crate::frame::Frame::look(P0, 4));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+    resolve_triggers(&mut g);
+    choose_kinds(&mut g, &[Card::Estate; 3]);
+    resolve_triggers(&mut g);
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Estate; 3]);
+}
+
+#[test]
+fn star_chart_after_avoid_picks_from_the_shuffled_cards_only() {
+    let mut g = setup_l(&[Card::Village], &[Card::Avoid, Card::StarChart]);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[]);
+    let gold = deck(&mut g, P0, &[Card::Gold])[0];
+    let mut cards = vec![Card::Estate; 3];
+    cards.extend([Card::Silver, Card::Duchy]);
+    discard(&mut g, P0, &cards);
+    g.start();
+    money(&mut g, 2, 2);
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Avoid);
+    // Looking at 5 cards shuffles the discard pile under the Gold.
+    g.stack.push(crate::frame::Frame::look(P0, 5));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+    let i = trigger_index(&g, Card::Avoid);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    choose_kinds(&mut g, &[Card::Estate; 3]);
+    let i = trigger_index(&g, Card::StarChart);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    assert!(!candidates(&g).contains(&gold));
+    choose_kinds(&mut g, &[Card::Silver]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Silver, Card::Duchy]);
+}

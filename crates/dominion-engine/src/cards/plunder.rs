@@ -389,13 +389,13 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::JewelledEgg, TRASHED).on(card));
                 }
             }
-            Occasion::Shuffled { player, count } => {
+            Occasion::Shuffled { player, .. } => {
                 for l in g.lasting() {
                     if l.card == Card::Avoid && l.owner == player {
                         out.push(Trigger::new(player, Card::Avoid, THIS_TURN).via_lasting(l.id));
                     }
                 }
-                if !shuffled_fated(g, player, count).is_empty() {
+                if !shuffled_fated(g, player).is_empty() {
                     out.push(Trigger::new(player, Card::Fated, THIS_TURN).optional());
                 }
             }
@@ -1591,13 +1591,12 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         Card::Avoid => {
-            let Some(Occasion::Shuffled { count, .. }) = f.occ else {
-                return Flow::done();
-            };
             if f.pc == 0 {
                 f.end_lasting(g);
                 f.pc = 1;
-                return f.ask_cards(shuffled_cards(g, p, count), 0, 3, Purpose::Move);
+                let mut shuffled = g.shuffled(p).to_vec();
+                shuffled.sort();
+                return f.ask_cards(shuffled, 0, 3, Purpose::Move);
             }
             for c in input.cards() {
                 if g.zone(c) == Zone::Deck(p) {
@@ -1618,33 +1617,28 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// The cards just shuffled into `p`'s deck: its bottom `count` cards.
-fn shuffled_cards(g: &Game, p: PlayerId, count: usize) -> Vec<CardId> {
-    let deck = &g.player(p).deck;
-    deck[..count.min(deck.len())].to_vec()
-}
-
-fn shuffled_fated(g: &Game, p: PlayerId, count: usize) -> Vec<CardId> {
+fn shuffled_fated(g: &Game, p: PlayerId) -> Vec<CardId> {
     if trait_pile(g, Card::Fated).is_none() {
         return vec![];
     }
-    shuffled_cards(g, p, count)
-        .into_iter()
+    let mut fated: Vec<CardId> = g
+        .shuffled(p)
+        .iter()
+        .copied()
         .filter(|&c| is_traited(g, c, Card::Fated))
-        .collect()
+        .collect();
+    fated.sort();
+    fated
 }
 
 /// Fated: put any of the Fated cards just shuffled on top of or under the shuffled cards.
 /// Those put under can go among the cards the shuffle put on the bottom (Shadow cards).
 fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
-    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
-        return Flow::done();
-    };
-    let shuffled = shuffled_cards(g, p, count);
+    let shuffled = g.shuffled(p).to_vec();
     match f.pc {
         0 => {
-            let fated = shuffled_fated(g, p, count);
+            let fated = shuffled_fated(g, p);
             let n = fated.len();
             f.s.cards = fated.clone();
             f.pc = 1;

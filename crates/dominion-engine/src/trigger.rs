@@ -92,7 +92,8 @@ pub enum Occasion {
     WouldShuffle {
         player: PlayerId,
     },
-    /// Just shuffled `count` cards, now the bottom `count` cards of the deck.
+    /// Just shuffled `count` cards, put under the deck: [`Game::shuffled`] is those still
+    /// there.
     Shuffled {
         player: PlayerId,
         count: usize,

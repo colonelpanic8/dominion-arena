@@ -1218,14 +1218,10 @@ fn again(g: &Game, f: &mut CardFrame) -> Flow {
 /// left out of the shuffle, into the discard pile).
 fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
-    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
-        return Flow::done();
-    };
     let astrologers = f.card == Card::OrderOfAstrologers;
     match f.pc {
         0 => {
-            let deck = &g.player(p).deck;
-            let mut shuffled: Vec<CardId> = deck[..count.min(deck.len())].to_vec();
+            let mut shuffled = g.shuffled(p).to_vec();
             shuffled.sort();
             let n = favors(g, p) as usize;
             let max = if astrologers { n } else { 2 * n };
@@ -1253,8 +1249,8 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             let chosen = input.cards();
+            let base = g.shuffled(p).len();
             let deck = &mut g.players[p.index()].deck;
-            let base = count.min(deck.len());
             let rest: Vec<CardId> = deck[..base]
                 .iter()
                 .copied()

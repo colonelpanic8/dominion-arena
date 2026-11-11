@@ -412,6 +412,9 @@ pub struct Game {
     /// [`Game::leaving_play`]).
     #[serde(default)]
     pub(crate) leaving: Vec<Vec<CardId>>,
+    /// The cards of the latest shuffle (see [`Game::shuffled`]).
+    #[serde(default)]
+    pub(crate) last_shuffle: Vec<CardId>,
     pub(crate) ext: Ext,
     pub(crate) stack: Vec<Frame>,
     pub(crate) pending: Option<Decision>,
@@ -976,6 +979,19 @@ impl Game {
     /// leaving play at another time or another player's cards leaving in this Clean-up.
     pub(crate) fn cleaning_up(&self, p: PlayerId) -> bool {
         p == self.turn.player && self.turn.phase == Phase::Cleanup && self.leaving.is_empty()
+    }
+
+    /// The cards just shuffled into `p`'s deck that are still in it, while the `Shuffled`
+    /// window is open: the bottom cards of the deck, fewer than were shuffled once some
+    /// have been put elsewhere (Avoid, Order of Masons).
+    pub(crate) fn shuffled(&self, p: PlayerId) -> &[CardId] {
+        let left = self
+            .last_shuffle
+            .iter()
+            .filter(|c| self.zones[c.index()] == Zone::Deck(p))
+            .count();
+        let deck = &self.players[p.index()].deck;
+        &deck[..left.min(deck.len())]
     }
 
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {

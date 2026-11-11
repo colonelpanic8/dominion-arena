@@ -153,9 +153,9 @@ them.
 - **Shuffling** goes through `Frame::shuffle` (a discard pile into its deck) or
   `Frame::shuffle_deck` (a whole deck: Inn, Famine), never by hand: `WouldShuffle`,
   shuffle, cards `SetRules::bottom_when_shuffled` says go to the bottom (Shadow cards, in
-  their owner's order), then `Shuffled { count }` (the bottom `count` cards of the deck are
-  the shuffled ones; "when you shuffle" placements such as Stash, Star Chart and Fated
-  resolve there). One draw shuffles at most once. A script step that must draw before its
+  their owner's order), then `Shuffled { count }` (`g.shuffled(p)`, the bottom cards of
+  the deck, is the shuffled ones still in it; "when you shuffle" placements such as Stash,
+  Star Chart and Fated resolve there). One draw shuffles at most once. A script step that must draw before its
   own flow goes on calls the draw and `CardFrame::hold`s that flow (Way of the Chameleon).
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each

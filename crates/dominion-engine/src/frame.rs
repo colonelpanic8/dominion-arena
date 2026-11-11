@@ -633,6 +633,7 @@ fn resume_shuffle(
             let mixed = under.clone();
             g.record(|| crate::Trace::Mixed { cards: mixed });
             *count = under.len();
+            g.last_shuffle = under.clone();
             let pl = &mut g.players[p.index()];
             under.append(&mut pl.deck);
             pl.deck = under;
