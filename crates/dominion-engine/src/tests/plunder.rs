@@ -2831,6 +2831,16 @@ fn empty_pile(g: &mut Game, card: Card) {
     }
 }
 
+/// Which of the triggers being asked about is `card`'s.
+fn trigger_index(g: &Game, card: Card) -> u16 {
+    let p = g.pending().expect("a decision is pending").player;
+    g.view(p)
+        .pending_triggers()
+        .iter()
+        .position(|t| t.card == card)
+        .unwrap_or_else(|| panic!("no {card} trigger pending")) as u16
+}
+
 fn play_count(g: &Game, card: Card) -> usize {
     g.log()
         .iter()
@@ -2907,4 +2917,29 @@ fn prosper_with_an_empty_loot_pile_still_gains_treasures() {
     assert_eq!(purpose(&g), Purpose::Gain);
     choose_pile(&mut g, Card::Gold);
     assert_eq!(gain_count(&g, P0, Card::Gold), 1);
+}
+
+#[test]
+fn rush_and_mirror_apply_to_the_next_action_gained_not_one_gained_because_of_it() {
+    for event in [Card::Rush, Card::Mirror] {
+        let mut g = setup_l(&[Card::BorderVillage, Card::Village], &[event]);
+        hand(&mut g, P0, &[]);
+        deck(&mut g, P0, &[Card::Copper; 30]);
+        g.start();
+        to_buy(&mut g);
+        money(&mut g, 9, 2);
+        buy_event(&mut g, event);
+        buy(&mut g, Card::BorderVillage);
+        // Border Village's own ability first: the Village it gains is not the next Action.
+        let i = trigger_index(&g, Card::BorderVillage);
+        respond(&mut g, Response::option(Opt::Trigger(i)));
+        choose_pile(&mut g, Card::Village);
+        if event == Card::Rush {
+            assert_eq!(g.turn().played, [Card::BorderVillage]);
+        } else {
+            choose_pile(&mut g, Card::Village);
+            assert_eq!(gain_count(&g, P0, Card::BorderVillage), 2);
+            assert_eq!(gain_count(&g, P0, Card::Village), 2);
+        }
+    }
 }

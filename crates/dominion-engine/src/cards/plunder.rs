@@ -4,17 +4,18 @@
 //! (see Seaside). "Next time" Durations (Cage, Search, Secluded Shrine, Abundance,
 //! Cutthroat, Flagship, Landing Party) wait in play until their event, and resolve as
 //! their `WAITED` ability. Effects that wait record the log's length when they were set
-//! up in `data.i`; "the next time" ones ignore a gain or play that began before that
-//! (`GainState::since`, `PlayState::since`). Cards held until the end of the turn (Cage,
-//! Puzzle Box, Deliver, Trickster, Tireless) sit in their owner's `SetAside` zone, listed
-//! in an `Until::EndOfTurn` lasting's `data.cards`. Traits sit on their pile
-//! (`Pile::traits`); the Loot pile is a face-down non-Supply pile named [`Card::Loot`].
+//! up in `data.i`; "the next time" ones ignore a play that began before that
+//! (`PlayState::since`) and answer the first gain to begin after it (`GainState::since`;
+//! see [`next_gain`]). Cards held until the end of the turn (Cage, Puzzle Box, Deliver,
+//! Trickster, Tireless) sit in their owner's `SetAside` zone, listed in an
+//! `Until::EndOfTurn` lasting's `data.cards`. Traits sit on their pile (`Pile::traits`);
+//! the Loot pile is a face-down non-Supply pile named [`Card::Loot`].
 
 use super::{CardFrame, Hook, SetRules, duration_trigger, mode_mask, turn_durations};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Lasting, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Trace, Types};
@@ -581,9 +582,22 @@ fn where_gained(g: &Game, card: CardId) -> bool {
     gain_state(g, card).is_some_and(|s| dest_zone(s.to, s.player) == g.zone(card))
 }
 
-/// Whether lasting `l` was set up before the gain of `card` began.
-fn before_gain(g: &Game, l: &Lasting, card: CardId) -> bool {
-    gain_state(g, card).is_some_and(|s| l.data.i <= s.since)
+/// Whether the gain of `card` is the next one `wanted` accepts since lasting `l` was set
+/// up: it began after that, and not while an earlier such gain was still being resolved
+/// (that one is the next, whichever of its abilities are resolved first).
+fn next_gain(g: &Game, l: &Lasting, card: CardId, wanted: impl Fn(&GainState) -> bool) -> bool {
+    let Some(i) = g.gains.iter().rposition(|s| s.card == card) else {
+        return false;
+    };
+    l.data.i <= g.gains[i].since
+        && !g.gains[..i]
+            .iter()
+            .any(|s| l.data.i <= s.since && wanted(s))
+}
+
+/// [`next_gain`] for a card of `types` gained by `l`'s owner.
+fn next_gain_of(g: &Game, l: &Lasting, card: CardId, types: Types) -> bool {
+    next_gain(g, l, card, |s| s.player == l.owner && g.is(s.card, types))
 }
 
 /// The play of `card` in progress (up to its AfterPlay window), if any.
@@ -765,21 +779,26 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
     let mut mirror = false;
     for l in g.lasting() {
         let mine = l.owner == gainer;
-        let next = before_gain(g, l, card);
+        let next =
+            |wanted| mine && types.contains(wanted) && next_gain_of(g, l, card, wanted);
         let via = |ability| duration_trigger(l, ability);
         match l.card {
-            Card::Cage if mine && next && l.until == Until::Removed && types.contains(Types::VICTORY) => {
+            Card::Cage if l.until == Until::Removed && next(Types::VICTORY) => {
                 out.push(via(WAITED));
             }
-            Card::SecludedShrine
-                if mine && next && l.until == Until::Removed && types.contains(Types::TREASURE) =>
+            Card::SecludedShrine if l.until == Until::Removed && next(Types::TREASURE) => {
+                out.push(via(WAITED));
+            }
+            Card::Abundance if next(Types::ACTION) => {
+                out.push(via(WAITED));
+            }
+            Card::Cutthroat
+                if types.contains(Types::TREASURE)
+                    && cost.coins >= 5
+                    && next_gain(g, l, card, |s| {
+                        g.is(s.card, Types::TREASURE) && s.cost.coins >= 5
+                    }) =>
             {
-                out.push(via(WAITED));
-            }
-            Card::Abundance if mine && next && types.contains(Types::ACTION) => {
-                out.push(via(WAITED));
-            }
-            Card::Cutthroat if next && types.contains(Types::TREASURE) && cost.coins >= 5 => {
                 out.push(via(WAITED));
             }
             Card::Taskmaster
@@ -804,11 +823,11 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             Card::Deliver if mine && where_gained(g, card) => {
                 out.push(via(THIS_TURN));
             }
-            Card::Rush if mine && next && types.contains(Types::ACTION) && !rush => {
+            Card::Rush if next(Types::ACTION) && !rush => {
                 rush = true;
                 out.push(via(THIS_TURN));
             }
-            Card::Mirror if mine && next && types.contains(Types::ACTION) && !mirror => {
+            Card::Mirror if next(Types::ACTION) && !mirror => {
                 mirror = true;
                 out.push(via(THIS_TURN));
             }
@@ -1462,7 +1481,9 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let used: Vec<u32> = g
                     .lasting()
                     .iter()
-                    .filter(|l| l.card == f.card && l.owner == p && before_gain(g, l, c))
+                    .filter(|l| {
+                        l.card == f.card && l.owner == p && next_gain_of(g, l, c, Types::ACTION)
+                    })
                     .map(|l| l.id)
                     .collect();
                 for id in &used {
