@@ -862,6 +862,7 @@ fn huge_turnip_counts_the_new_coffers() {
     hand(&mut g, P0, &[Card::HugeTurnip]);
     g.players[0].coffers = 1;
     g.start();
+    end_phase(&mut g);
     play(&mut g, Card::HugeTurnip);
     assert_eq!(g.player(P0).coffers, 3);
     assert_eq!(g.turn().coins, 3);

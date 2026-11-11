@@ -700,6 +700,27 @@ fn can_buy(g: &Game, p: PlayerId, card: Card, cost: crate::Cost) -> bool {
         && cards::can_buy(g, p, card)
 }
 
+/// Adds what `p` may do at any time during their turn: spend Coffers, pay off Debt.
+fn push_token_moves(g: &Game, p: PlayerId, moves: &mut Vec<Move>) {
+    let pl = &g.players[p.index()];
+    if pl.coffers > 0 {
+        moves.push(Move::Coffers);
+    }
+    if pl.debt > 0 && g.turn.coins > 0 {
+        moves.push(Move::PayDebt);
+    }
+}
+
+fn spend_coffers(g: &mut Game, p: PlayerId) {
+    g.players[p.index()].coffers -= 1;
+    g.add_coins(p, 1);
+}
+
+fn pay_debt(g: &mut Game, p: PlayerId) {
+    g.players[p.index()].debt -= 1;
+    g.turn.coins -= 1;
+}
+
 fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flow {
     let p = player;
     match pc {
@@ -733,10 +754,8 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                         g.turn.actions += 1;
                     }
                 }
-                Input::Response(Response::Move(Move::PayDebt)) => {
-                    g.players[p.index()].debt -= 1;
-                    g.turn.coins -= 1;
-                }
+                Input::Response(Response::Move(Move::Coffers)) => spend_coffers(g, p),
+                Input::Response(Response::Move(Move::PayDebt)) => pay_debt(g, p),
                 Input::Response(Response::Move(Move::EndPhase)) => {
                     g.turn.phase = Phase::Buy;
                     *pc = 3;
@@ -755,9 +774,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             if g.players[p.index()].villagers > 0 {
                 moves.push(Move::Villager);
             }
-            if g.players[p.index()].debt > 0 && g.turn.coins > 0 {
-                moves.push(Move::PayDebt);
-            }
+            push_token_moves(g, p, &mut moves);
             moves.push(Move::EndPhase);
             ask_moves(p, Phase::Action, moves)
         }
@@ -795,14 +812,8 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                             pc: 0,
                         });
                     }
-                    Move::Coffers => {
-                        g.players[p.index()].coffers -= 1;
-                        g.add_coins(p, 1);
-                    }
-                    Move::PayDebt => {
-                        g.players[p.index()].debt -= 1;
-                        g.turn.coins -= 1;
-                    }
+                    Move::Coffers => spend_coffers(g, p),
+                    Move::PayDebt => pay_debt(g, p),
                     Move::EndPhase => {
                         *pc = 4;
                         return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
@@ -829,13 +840,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                     moves.push(Move::BuyLandscape(l));
                 }
             }
-            let pl = &g.players[p.index()];
-            if pl.coffers > 0 {
-                moves.push(Move::Coffers);
-            }
-            if pl.debt > 0 && g.turn.coins > 0 {
-                moves.push(Move::PayDebt);
-            }
+            push_token_moves(g, p, &mut moves);
             moves.push(Move::EndPhase);
             ask_moves(p, Phase::Buy, moves)
         }
@@ -849,6 +854,8 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 Input::Response(Response::Move(Move::Play(c))) => {
                     return Flow::Call(Frame::play(p, c, true, vec![]));
                 }
+                Input::Response(Response::Move(Move::Coffers)) => spend_coffers(g, p),
+                Input::Response(Response::Move(Move::PayDebt)) => pay_debt(g, p),
                 Input::Response(Response::Move(Move::EndPhase)) => {
                     g.turn.phase = Phase::Cleanup;
                     *pc = 6;
@@ -861,6 +868,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 .into_iter()
                 .map(Move::Play)
                 .collect();
+            push_token_moves(g, p, &mut moves);
             moves.push(Move::EndPhase);
             ask_moves(p, Phase::Night, moves)
         }

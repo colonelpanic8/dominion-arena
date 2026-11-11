@@ -1078,6 +1078,7 @@ fn exploration_rewards_a_buy_phase_without_gains() {
         Response::Move(Move::BuyLandscape(Card::Exploration)),
     );
     assert_eq!((g.player(P0).coffers, g.player(P0).villagers), (1, 1));
+    next_turn(&mut g);
     to_buy(&mut g);
     play(&mut g, Card::Copper);
     buy(&mut g, Card::Copper);
