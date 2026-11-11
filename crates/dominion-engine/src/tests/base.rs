@@ -147,6 +147,62 @@ fn sentry_trashes_and_reorders() {
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Estate, Card::Silver]);
 }
 
+/// Trashing an Overgrown Estate draws a card in the middle of Sentry, which goes on with
+/// the cards still on the deck only.
+#[test]
+fn sentry_leaves_alone_a_card_drawn_while_it_resolves() {
+    let mut g = setup(&[Card::Sentry]);
+    hand(&mut g, P0, &[Card::Sentry]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Copper,
+            Card::OvergrownEstate,
+            Card::Gold,
+            Card::Silver,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Sentry);
+    choose_kinds(&mut g, &[Card::OvergrownEstate]);
+    // Discard nothing and put back whatever Sentry still has.
+    while g.pending().is_some_and(|d| d.source == Some(Card::Sentry)) {
+        let keep = match purpose(&g) {
+            Purpose::Discard => vec![],
+            _ => candidates(&g),
+        };
+        choose(&mut g, &keep);
+    }
+    assert_eq!(g.hand(P0).len(), 2);
+    assert_eq!(g.player(P0).deck.len(), 1);
+    assert!(g.player(P0).discard.is_empty());
+}
+
+/// P1's Silver is trashed: Market Square gains a Gold, which lets Sheepdog draw the
+/// Estate Bandit revealed. Bandit then discards only what is still on the deck.
+#[test]
+fn bandit_does_not_discard_a_revealed_card_drawn_meanwhile() {
+    let mut g = setup(&[Card::Bandit, Card::MarketSquare, Card::Sheepdog]);
+    hand(&mut g, P0, &[Card::Bandit]);
+    hand(&mut g, P1, &[Card::MarketSquare, Card::Sheepdog]);
+    deck(
+        &mut g,
+        P1,
+        &[Card::Silver, Card::Estate, Card::Copper, Card::Copper],
+    );
+    discard(&mut g, P1, &[]);
+    g.start();
+    play(&mut g, Card::Bandit);
+    super::intrigue::trigger(&mut g, Card::MarketSquare);
+    super::intrigue::trigger(&mut g, Card::Sheepdog);
+    assert_eq!(hand_kinds(&g, P1), [Card::Estate, Card::Copper]);
+    assert_eq!(
+        kinds(&g, &g.player(P1).discard),
+        [Card::MarketSquare, Card::Gold]
+    );
+}
+
 #[test]
 fn vassal_shuffles_and_plays_the_discarded_action() {
     let mut g = setup(&[Card::Vassal, Card::Smithy]);

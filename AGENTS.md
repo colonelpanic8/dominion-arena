@@ -186,7 +186,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   just revealed); `move_card` to `SetAside` leaves it face down, seen only by its owner.
   Public state kept in the set's `State` goes to agents through `SetRules::notes`.
 - Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
-  check `g.zone(id)` is still that zone.
+  check `g.zone(id)` is still that zone. That includes cards from `Frame::look` /
+  `Frame::reveal`: they stay on the deck, where a "when trashed" draw in the middle of
+  the effect can take one.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
   Heirlooms/Shelters-like changes, and two phases (`setup::complete`). `ensure` adds
   what the cards in the game need (extra piles, Boons/Hexes, set-aside cards, an Ally

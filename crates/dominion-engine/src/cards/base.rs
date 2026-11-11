@@ -111,6 +111,13 @@ fn top_deck(g: &mut Game, p: PlayerId, cards: Vec<crate::CardId>) {
     }
 }
 
+/// Those of `cards`, looked at or revealed from `p`'s deck, that are still there: an
+/// ability resolving meanwhile may have moved some.
+fn on_deck(g: &Game, p: PlayerId, mut cards: Vec<crate::CardId>) -> Vec<crate::CardId> {
+    cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+    cards
+}
+
 fn cellar(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
@@ -452,8 +459,9 @@ fn bandit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             4 => {
                 f.pc = 5;
-                let rest = std::mem::take(&mut f.s.cards);
-                return Flow::Call(Frame::discard(f.targets[f.s.i], rest));
+                let target = f.targets[f.s.i];
+                let rest = on_deck(g, target, std::mem::take(&mut f.s.cards));
+                return Flow::Call(Frame::discard(target, rest));
             }
             _ => {
                 f.s.i += 1;
@@ -532,6 +540,7 @@ fn sentry(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, chosen))
         }
         3 => {
+            f.s.cards = on_deck(g, f.player, std::mem::take(&mut f.s.cards));
             f.pc = 4;
             f.ask_cards(f.s.cards.clone(), 0, f.s.cards.len(), Purpose::Discard)
         }
@@ -542,6 +551,7 @@ fn sentry(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, chosen))
         }
         5 => {
+            f.s.cards = on_deck(g, f.player, std::mem::take(&mut f.s.cards));
             f.pc = 6;
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
@@ -744,8 +754,9 @@ fn thief(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             4 => {
                 f.pc = 6;
-                let rest = std::mem::take(&mut f.s.cards);
-                return Flow::Call(Frame::discard(f.targets[f.s.i], rest));
+                let target = f.targets[f.s.i];
+                let rest = on_deck(g, target, std::mem::take(&mut f.s.cards));
+                return Flow::Call(Frame::discard(target, rest));
             }
             _ => {
                 f.s.i += 1;
