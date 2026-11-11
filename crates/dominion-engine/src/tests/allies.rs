@@ -1167,6 +1167,25 @@ fn specialist_stays_in_play_only_with_a_duration_it_played_again() {
 }
 
 #[test]
+fn a_duration_a_specialist_in_the_trash_played_again_is_doubled_this_turn_only() {
+    let mut g = game(&[Card::Specialist, Card::Wharf, Card::Necromancer]);
+    hand(&mut g, P0, &[Card::Necromancer, Card::Wharf]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    let specialist = g.create(Card::Specialist, Zone::Trash);
+    g.start();
+    play(&mut g, Card::Necromancer);
+    choose(&mut g, &[specialist]);
+    choose_kinds(&mut g, &[Card::Wharf]);
+    modes(&mut g, &[0]);
+    assert_eq!((g.hand(P0).len(), g.turn().buys), (4, 3));
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Wharf]);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.hand(P0).len(), g.turn().buys), (7, 2));
+}
+
+#[test]
 fn swap_returns_an_action_and_gains_a_different_one_to_the_hand() {
     let mut g = game(&[Card::Swap, Card::Village, Card::Smithy]);
     hand(&mut g, P0, &[Card::Swap, Card::Village]);

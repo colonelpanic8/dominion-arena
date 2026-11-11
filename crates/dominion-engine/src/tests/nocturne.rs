@@ -938,17 +938,22 @@ fn necromancer_plays_an_action_from_the_trash_once_per_turn() {
 }
 
 #[test]
-fn necromancer_stays_in_play_with_a_duration_its_throne_room_played() {
-    let mut g = setup(&[Card::Necromancer, Card::ThroneRoom, Card::Caravan]);
-    g.create(Card::ThroneRoom, Zone::Trash);
-    hand(&mut g, P0, &[Card::Necromancer, Card::Caravan]);
-    deck(&mut g, P0, &[Card::Copper; 15]);
+fn a_duration_played_by_a_throne_room_in_the_trash_is_doubled_this_turn_only() {
+    let mut g = setup(&[Card::Necromancer, Card::ThroneRoom, Card::Wharf]);
+    hand(&mut g, P0, &[Card::Necromancer, Card::Wharf]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    let throne = g.create(Card::ThroneRoom, Zone::Trash);
     g.start();
     play(&mut g, Card::Necromancer);
-    choose_kinds(&mut g, &[Card::ThroneRoom]);
-    choose_kinds(&mut g, &[Card::Caravan]);
+    choose(&mut g, &[throne]);
+    choose_kinds(&mut g, &[Card::Wharf]);
+    assert_eq!((g.hand(P0).len(), g.turn().buys), (4, 3));
+    // The Throne Room never was in play, so nothing keeps track of the second play.
     next_turn(&mut g);
-    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Necromancer, Card::Caravan]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Wharf]);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.hand(P0).len(), g.turn().buys), (7, 2));
 }
 
 #[test]

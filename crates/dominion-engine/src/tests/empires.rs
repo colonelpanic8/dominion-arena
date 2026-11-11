@@ -977,10 +977,9 @@ fn overlord_playing_encampment_or_farmers_market_cannot_move_them() {
     assert_eq!(pile_kinds(&g, Card::FarmersMarket).len(), 10);
 }
 
-/// The Throne Room is in the Supply and can't stay in play with the Duration it played,
-/// so the Overlord that played it does.
+/// The Throne Room stays in the Supply, so nothing keeps track of the second play.
 #[test]
-fn overlord_stays_in_play_with_a_duration_its_throne_room_played() {
+fn a_duration_played_by_an_overlords_throne_room_is_doubled_this_turn_only() {
     let mut g = setup(&[Card::Overlord, Card::ThroneRoom, Card::Caravan]);
     hand(&mut g, P0, &[Card::Overlord, Card::Caravan]);
     deck(&mut g, P0, &[Card::Copper; 12]);
@@ -988,11 +987,11 @@ fn overlord_stays_in_play_with_a_duration_its_throne_room_played() {
     // Throne Room is the only card Overlord can play.
     play(&mut g, Card::Overlord);
     choose_kinds(&mut g, &[Card::Caravan]);
+    assert_eq!(g.hand(P0).len(), 2);
     next_turn(&mut g);
-    assert_eq!(in_play_kinds(&g, P0), [Card::Overlord, Card::Caravan]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Caravan]);
     next_turn(&mut g);
-    next_turn(&mut g);
-    assert!(g.in_play(P0).is_empty());
+    assert_eq!((g.turn().player, g.hand(P0).len()), (P0, 6));
 }
 
 #[test]
