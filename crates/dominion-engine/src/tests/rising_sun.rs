@@ -335,6 +335,18 @@ fn rustic_village_may_discard_two_cards_for_a_card() {
     assert_eq!(discard_kinds(&g, P0), [Card::Estate, Card::Curse]);
 }
 
+#[test]
+fn rustic_village_may_discard_its_only_card_for_nothing() {
+    let mut g = setup(&[Card::RusticVillage]);
+    hand(&mut g, P0, &[Card::RusticVillage]);
+    deck(&mut g, P0, &[Card::Curse, Card::Silver]);
+    g.start();
+    play(&mut g, Card::RusticVillage);
+    yes(&mut g);
+    assert_eq!(discard_kinds(&g, P0), [Card::Curse]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver]);
+}
+
 // ---- Shadow ----
 
 #[test]

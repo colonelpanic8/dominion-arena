@@ -937,7 +937,7 @@ fn river_shrine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn rustic_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            if g.hand(f.player).len() < 2 {
+            if g.hand(f.player).is_empty() {
                 return Flow::done();
             }
             f.pc = 1;
@@ -951,11 +951,16 @@ fn rustic_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_cards(g.hand(f.player).to_vec(), 2, 2, Purpose::Discard)
         }
         2 => {
+            let chosen = input.cards();
+            f.s.n = chosen.len() as i32;
             f.pc = 3;
-            Flow::Call(Frame::discard(f.player, input.cards()))
+            Flow::Call(Frame::discard(f.player, chosen))
         }
         3 => {
             f.pc = 4;
+            if f.s.n < 2 {
+                return Flow::done();
+            }
             Flow::Call(Frame::draw(f.player, 1))
         }
         _ => Flow::done(),
