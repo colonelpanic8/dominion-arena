@@ -1111,3 +1111,433 @@ fn wild_hunt_draws_and_adds_a_token_or_gains_an_estate_and_takes_them() {
     assert_eq!(pile_vp(&g, Card::WildHunt), 0);
     assert_eq!(g.count_owned(P0, Card::Estate), 1);
 }
+
+// ---- Castles ----
+
+#[test]
+fn humble_and_kings_castle_count_castles_including_themselves() {
+    let mut g = setup(&[Card::Castles]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::HumbleCastle,
+            Card::KingsCastle,
+            Card::OpulentCastle,
+            Card::SmallCastle,
+        ],
+    );
+    hand(&mut g, P0, &[]);
+    // 4 Castles: Humble 4, King's 8, Opulent 3, Small 2.
+    assert_eq!(g.score(P0), 17);
+}
+
+#[test]
+fn crumbling_castle_gives_a_vp_and_a_silver_when_gained_or_trashed() {
+    let mut g = setup(&[Card::Castles]);
+    strip(&mut g, Card::Castles, 1);
+    hand(&mut g, P0, &[Card::Gold, Card::Silver]);
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    play_all(&mut g, Card::Silver);
+    buy(&mut g, Card::CrumblingCastle);
+    assert_eq!(vp(&g, P0), 1);
+    assert_eq!(g.count_owned(P0, Card::Silver), 2);
+}
+
+#[test]
+fn small_castle_trashes_itself_or_a_castle_to_gain_the_top_castle() {
+    let mut g = setup(&[Card::Castles, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::SmallCastle,
+            Card::SmallCastle,
+            Card::CrumblingCastle,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::SmallCastle);
+    let offered = kinds(&g, &candidates(&g));
+    assert_eq!(
+        offered,
+        [Card::SmallCastle, Card::SmallCastle, Card::CrumblingCastle]
+    );
+    choose_kinds(&mut g, &[Card::CrumblingCastle]);
+    assert_eq!(vp(&g, P0), 1);
+    assert_eq!(g.count_owned(P0, Card::Silver), 1);
+    assert_eq!(g.count_owned(P0, Card::HumbleCastle), 1);
+    // With no Castle in hand, the second one trashes itself.
+    play(&mut g, Card::SmallCastle);
+    assert_eq!(g.count_owned(P0, Card::SmallCastle), 1);
+    assert_eq!(g.count_owned(P0, Card::CrumblingCastle), 1);
+    assert_eq!(vp(&g, P0), 2);
+}
+
+#[test]
+fn haunted_castle_gains_a_gold_and_makes_others_with_five_cards_topdeck_two() {
+    let mut g = setup(&[Card::Castles]);
+    strip(&mut g, Card::Castles, 3);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Copper,
+            Card::Estate,
+            Card::Silver,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::HauntedCastle);
+    assert_eq!(g.pending().unwrap().player, P1);
+    choose_kinds(&mut g, &[Card::Estate, Card::Silver]);
+    assert_eq!(g.hand(P1).len(), 3);
+    assert_eq!(deck_kinds(&g, P1)[..2], [Card::Estate, Card::Silver]);
+    assert_eq!(g.count_owned(P0, Card::Gold), 3);
+}
+
+#[test]
+fn opulent_castle_gives_two_coins_per_victory_card_discarded() {
+    let mut g = setup(&[Card::Castles]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::OpulentCastle,
+            Card::Estate,
+            Card::Duchy,
+            Card::HumbleCastle,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::OpulentCastle);
+    choose_kinds(&mut g, &[Card::Estate, Card::HumbleCastle]);
+    assert_eq!(g.turn().coins, 4);
+    assert_eq!(hand_kinds(&g, P0), [Card::Duchy]);
+}
+
+#[test]
+fn sprawling_castle_gains_a_duchy_or_three_estates_and_grand_castle_counts_victory_cards() {
+    let mut g = setup(&[Card::Castles]);
+    strip(&mut g, Card::Castles, 5);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Gold, Card::Estate],
+    );
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    g.turn.coins = 17;
+    let estates = g.count_owned(P0, Card::Estate);
+    // The pending moves were listed with $9; Sprawling Castle costs $8.
+    buy(&mut g, Card::SprawlingCastle);
+    modes(&mut g, &[1]);
+    assert_eq!(g.count_owned(P0, Card::Estate), estates + 3);
+    assert_eq!(g.count_owned(P0, Card::Duchy), 0);
+    buy(&mut g, Card::GrandCastle);
+    // An Estate in hand; none in play.
+    assert_eq!(vp(&g, P0), 1);
+}
+
+#[test]
+fn grand_castle_counts_victory_cards_in_play_too() {
+    let mut g = setup(&[Card::Castles, Card::Village]);
+    strip(&mut g, Card::Castles, 6);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::OpulentCastle,
+            Card::Duchy,
+            Card::Estate,
+            Card::Gold,
+            Card::Gold,
+            Card::Gold,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::OpulentCastle);
+    choose(&mut g, &[]);
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::GrandCastle);
+    assert_eq!(vp(&g, P0), 3);
+}
+
+// ---- Events ----
+
+#[test]
+fn advance_trashes_an_action_for_an_action_costing_up_to_six() {
+    let mut g = setup_landscapes(
+        &[Card::Village, Card::Laboratory, Card::Overlord],
+        &[Card::Advance],
+    );
+    hand(&mut g, P0, &[Card::Village, Card::Estate]);
+    g.start();
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Advance);
+    choose_kinds(&mut g, &[Card::Village]);
+    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+        panic!("expected a pile choice");
+    };
+    let names: Vec<Card> = piles.iter().map(|&p| g.pile(p).card).collect();
+    assert_eq!(names.len(), 2);
+    assert!(!names.contains(&Card::Overlord));
+    choose_pile(&mut g, Card::Laboratory);
+    assert_eq!(g.count_owned(P0, Card::Laboratory), 1);
+    assert_eq!(g.count_owned(P0, Card::Village), 0);
+}
+
+#[test]
+fn annex_shuffles_all_but_up_to_five_discarded_cards_into_the_deck_and_gains_a_duchy() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Annex]);
+    // A $ left keeps the Buy phase open (to pay Debt).
+    hand(&mut g, P0, &[Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper, Card::Copper]);
+    discard(
+        &mut g,
+        P0,
+        &[Card::Estate, Card::Silver, Card::Gold, Card::Curse],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    buy_event(&mut g, Card::Annex);
+    choose_kinds(&mut g, &[Card::Estate, Card::Curse]);
+    assert_eq!(g.player(P0).debt, 8);
+    let mut d = deck_kinds(&g, P0);
+    d.sort();
+    let mut want = vec![Card::Copper, Card::Copper, Card::Silver, Card::Gold];
+    want.sort();
+    assert_eq!(d, want);
+    assert_eq!(
+        discard_kinds(&g, P0),
+        [Card::Estate, Card::Curse, Card::Duchy]
+    );
+}
+
+#[test]
+fn banquet_gains_two_coppers_and_a_non_victory_card_up_to_five() {
+    let mut g = setup_landscapes(&[Card::Village, Card::Duke], &[Card::Banquet]);
+    hand(&mut g, P0, &[Card::Silver, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::Copper);
+    let coppers = g.count_owned(P0, Card::Copper);
+    buy_event(&mut g, Card::Banquet);
+    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+        panic!("expected a pile choice");
+    };
+    let names: Vec<Card> = piles.iter().map(|&p| g.pile(p).card).collect();
+    assert!(!names.contains(&Card::Duke) && !names.contains(&Card::Duchy));
+    assert!(names.contains(&Card::Curse));
+    choose_pile(&mut g, Card::Village);
+    assert_eq!(g.count_owned(P0, Card::Copper), coppers + 2);
+    assert_eq!(g.count_owned(P0, Card::Village), 1);
+}
+
+#[test]
+fn conquest_gains_two_silvers_and_a_vp_per_silver_gained_this_turn() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Conquest]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Gold, Card::Gold],
+    );
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    buy_event(&mut g, Card::Conquest);
+    assert_eq!(vp(&g, P0), 2);
+    buy_event(&mut g, Card::Conquest);
+    assert_eq!(vp(&g, P0), 6);
+}
+
+#[test]
+fn delve_gives_its_buy_back_and_a_silver() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Delve]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    for _ in 0..3 {
+        buy_event(&mut g, Card::Delve);
+    }
+    assert_eq!(g.turn().buys, 1);
+    assert_eq!(g.count_owned(P0, Card::Silver), 3);
+}
+
+#[test]
+fn dominate_gives_nine_vp_only_with_a_province() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Dominate]);
+    hand(&mut g, P0, &[Card::Gold; 5]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    g.turn.coins = 28;
+    buy_event(&mut g, Card::Dominate);
+    assert_eq!(vp(&g, P0), 9);
+    assert_eq!(g.count_owned(P0, Card::Province), 1);
+    strip(&mut g, Card::Province, 7);
+    buy_event(&mut g, Card::Dominate);
+    assert_eq!(vp(&g, P0), 9);
+}
+
+#[test]
+fn donate_happens_first_at_the_start_of_the_next_turn() {
+    let mut g = setup_landscapes(&[Card::Archive], &[Card::Donate]);
+    hand(&mut g, P0, &[Card::Archive, Card::Gold, Card::Gold]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            &[Card::Curse, Card::Curse, Card::Estate][..],
+            &[Card::Copper; 10],
+        ]
+        .concat(),
+    );
+    g.start();
+    play(&mut g, Card::Archive);
+    choose_kinds(&mut g, &[Card::Estate]);
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    buy_event(&mut g, Card::Donate);
+    assert_eq!(g.player(P0).debt, 8);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Donate resolves before Archive, without asking for an order.
+    let d = g.pending().unwrap();
+    assert_eq!((d.purpose, d.source), (Purpose::Trash, Some(Card::Donate)));
+    // Deck, discard pile and hand; not the Curses Archive holds or the Archive.
+    assert_eq!(g.hand(P0).len(), 13);
+    let curses_and_estates: Vec<CardId> = g
+        .hand(P0)
+        .iter()
+        .copied()
+        .filter(|&c| matches!(g.card(c), Card::Estate | Card::Curse))
+        .collect();
+    choose(&mut g, &curses_and_estates);
+    // Then Archive gives one of its two Curses.
+    resolve_triggers(&mut g);
+    if purpose(&g) == Purpose::Move {
+        let first = candidates(&g)[..1].to_vec();
+        choose(&mut g, &first);
+    }
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!(g.count_owned(P0, Card::Estate), 0);
+    assert!(hand_kinds(&g, P0).contains(&Card::Curse));
+    assert!(g.lasting().iter().all(|l| l.card != Card::Donate));
+}
+
+#[test]
+fn ritual_gains_a_curse_and_trashes_a_card_for_a_vp_per_coin() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Ritual]);
+    hand(&mut g, P0, &[Card::Gold, Card::Silver, Card::Province]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    buy_event(&mut g, Card::Ritual);
+    assert_eq!(g.count_owned(P0, Card::Curse), 1);
+    assert_eq!(vp(&g, P0), 8);
+    assert_eq!(g.count_owned(P0, Card::Province), 0);
+}
+
+#[test]
+fn salt_the_earth_trashes_a_victory_card_from_the_supply_and_tomb_counts_it() {
+    let mut g = setup_landscapes(&[Card::Castles], &[Card::SaltTheEarth, Card::Tomb]);
+    strip(&mut g, Card::Castles, 1);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy_event(&mut g, Card::SaltTheEarth);
+    choose_pile(&mut g, Card::Castles);
+    // Crumbling Castle's trash ability and Tomb.
+    resolve_triggers(&mut g);
+    assert_eq!(vp(&g, P0), 3);
+    assert_eq!(g.count_owned(P0, Card::Silver), 1);
+    assert_eq!(pile_kinds(&g, Card::Castles)[0], Card::SmallCastle);
+}
+
+#[test]
+fn tax_puts_debt_on_every_pile_and_a_gain_in_the_buy_phase_takes_it() {
+    let mut g = setup_landscapes(&[Card::Village, Card::Engineer], &[Card::Tax]);
+    assert!(g.piles().iter().all(|p| p.debt_tokens == 1));
+    hand(&mut g, P0, &[Card::Engineer, Card::Gold, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Engineer);
+    choose_pile(&mut g, Card::Village);
+    no(&mut g);
+    assert_eq!(g.player(P0).debt, 0);
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    buy_event(&mut g, Card::Tax);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(g.pile(g.pile_of(Card::Silver).unwrap()).debt_tokens, 3);
+    buy(&mut g, Card::Silver);
+    assert_eq!(g.player(P0).debt, 3);
+    assert_eq!(g.pile(g.pile_of(Card::Silver).unwrap()).debt_tokens, 0);
+    assert_eq!(g.pile(g.pile_of(Card::Village).unwrap()).debt_tokens, 1);
+}
+
+#[test]
+fn triumph_gains_an_estate_and_a_vp_per_card_gained_this_turn() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Triumph, Card::Delve]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    buy_event(&mut g, Card::Delve);
+    buy_event(&mut g, Card::Delve);
+    // Pay the Debt first: Triumph costs 5 Debt and no $.
+    buy_event(&mut g, Card::Triumph);
+    assert_eq!(vp(&g, P0), 3);
+    assert_eq!(g.player(P0).debt, 5);
+}
+
+#[test]
+fn wedding_gives_a_vp_and_a_gold_even_with_no_golds() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Wedding]);
+    strip(&mut g, Card::Gold, 30);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy_event(&mut g, Card::Wedding);
+    assert_eq!(vp(&g, P0), 1);
+    assert_eq!(g.player(P0).debt, 3);
+}
+
+#[test]
+fn windfall_gains_three_golds_only_with_no_deck_or_discard_pile() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Windfall]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    deck(&mut g, P0, &[]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    g.turn.coins = 10;
+    buy_event(&mut g, Card::Windfall);
+    assert_eq!(g.count_owned(P0, Card::Gold), 5);
+    buy_event(&mut g, Card::Windfall);
+    assert_eq!(g.count_owned(P0, Card::Gold), 5);
+}
