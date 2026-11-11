@@ -3,6 +3,7 @@ use crate::decision::{Decision, Response, ResponseError};
 use crate::event::Event;
 use crate::frame::{Flow, Frame, Input};
 use crate::setup::GameConfig;
+use crate::trigger::Occasion;
 use crate::{Card, CardId, Cost, Kind, PileId, PlayerId, Types};
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -375,6 +376,7 @@ impl Game {
             next: PlayerId(0),
             pc: 0,
         });
+        self.stack.push(Frame::window(Occasion::GameStart));
         self.run(Input::Start);
     }
 

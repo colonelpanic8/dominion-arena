@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 /// Something that happened, or is about to, that abilities can respond to.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Occasion {
+    /// Before the first turn, for setup choices players make (Inherited).
+    GameStart,
     /// Start of a turn, before the Action phase (Durations, ...).
     StartTurn {
         player: PlayerId,
