@@ -96,6 +96,10 @@ pub struct Player {
     pub minus_coin: bool,
     pub journey_face_up: bool,
     pub turns_taken: u32,
+    /// Turns this player will skip (Lich): the next ones they would take.
+    pub skip_turns: u32,
+    /// Turns skipped so far; they count for the tiebreaker.
+    pub turns_skipped: u32,
 }
 
 impl Player {
@@ -899,7 +903,11 @@ impl Game {
     pub(crate) fn finish(&mut self, reason: EndReason) {
         let n = self.players.len();
         let scores: Vec<i32> = (0..n).map(|p| self.score(PlayerId(p as u8))).collect();
-        let turns: Vec<u32> = self.players.iter().map(|p| p.turns_taken).collect();
+        let turns: Vec<u32> = self
+            .players
+            .iter()
+            .map(|p| p.turns_taken + p.turns_skipped)
+            .collect();
         let best = (0..n)
             .map(|p| (scores[p], std::cmp::Reverse(turns[p])))
             .max()
@@ -914,6 +922,17 @@ impl Game {
             turns,
             winners,
         });
+    }
+
+    /// Whether `p`'s next turn is skipped; if so, records it as skipped.
+    pub(crate) fn skips_turn(&mut self, p: PlayerId) -> bool {
+        let pl = &mut self.players[p.index()];
+        if pl.skip_turns == 0 {
+            return false;
+        }
+        pl.skip_turns -= 1;
+        pl.turns_skipped += 1;
+        true
     }
 
     /// Whether `card` is a landscape, Boon, Hex or other non-physical object in play this game.
