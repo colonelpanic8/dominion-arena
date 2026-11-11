@@ -96,9 +96,11 @@ pub struct Player {
     pub minus_coin: bool,
     pub journey_face_up: bool,
     pub turns_taken: u32,
+    /// How many of `turns_taken` were extra turns, which don't count for the tiebreaker.
+    pub extra_turns_taken: u32,
     /// Turns this player will skip (Lich): the next ones they would take.
     pub skip_turns: u32,
-    /// Turns skipped so far; they count for the tiebreaker.
+    /// Regular turns skipped so far; they count for the tiebreaker.
     pub turns_skipped: u32,
 }
 
@@ -135,6 +137,8 @@ pub struct Pile {
     /// Adventures tokens on this pile, by owner.
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
+    /// Face down: no card in it is public, not even the top (the Black Market deck).
+    pub hidden: bool,
 }
 
 impl Pile {
@@ -149,6 +153,7 @@ impl Pile {
             trade_route: false,
             tokens: vec![],
             traits: vec![],
+            hidden: false,
         }
     }
 }
@@ -280,6 +285,7 @@ pub enum EndReason {
 pub struct Outcome {
     pub reason: EndReason,
     pub scores: Vec<i32>,
+    /// Turns each player took, not counting extra turns (the tiebreaker).
     pub turns: Vec<u32>,
     /// More than one winner means a tie.
     pub winners: Vec<PlayerId>,
@@ -773,6 +779,12 @@ impl Game {
         }
     }
 
+    /// `p` takes `n` Debt (or whoever takes it for them: Possession).
+    pub(crate) fn add_debt(&mut self, p: PlayerId, n: u32) {
+        let taker = cards::debt_taker(self, p).unwrap_or(p);
+        self.players[taker.index()].debt += n;
+    }
+
     /// Puts `id` on top of `p`'s deck.
     pub(crate) fn top_deck(&mut self, id: CardId, p: PlayerId) {
         self.move_card(id, Zone::Deck(p), Pos::Top);
@@ -906,7 +918,7 @@ impl Game {
         let turns: Vec<u32> = self
             .players
             .iter()
-            .map(|p| p.turns_taken + p.turns_skipped)
+            .map(|p| p.turns_taken - p.extra_turns_taken + p.turns_skipped)
             .collect();
         let best = (0..n)
             .map(|p| (scores[p], std::cmp::Reverse(turns[p])))
@@ -924,14 +936,16 @@ impl Game {
         });
     }
 
-    /// Whether `p`'s next turn is skipped; if so, records it as skipped.
-    pub(crate) fn skips_turn(&mut self, p: PlayerId) -> bool {
+    /// Whether `p`'s next turn (an extra turn if `extra`) is skipped; if so, records it.
+    pub(crate) fn skips_turn(&mut self, p: PlayerId, extra: bool) -> bool {
         let pl = &mut self.players[p.index()];
         if pl.skip_turns == 0 {
             return false;
         }
         pl.skip_turns -= 1;
-        pl.turns_skipped += 1;
+        if !extra {
+            pl.turns_skipped += 1;
+        }
         true
     }
 

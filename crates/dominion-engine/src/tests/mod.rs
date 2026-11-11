@@ -1,7 +1,14 @@
 //! Engine tests and shared helpers. Each set's card tests live in `tests/<set>.rs`.
 
+mod adventures;
+mod alchemy;
 mod base;
+mod cornucopia_guilds;
 mod dark_ages;
+mod hinterlands;
+mod intrigue;
+mod promos;
+mod prosperity;
 mod seaside;
 
 use crate::game::Zone;
@@ -11,7 +18,18 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 /// Sets whose cards are implemented; the fuzz test deals kingdoms from these.
-pub(crate) const IMPLEMENTED: &[Set] = &[Set::Base, Set::Seaside, Set::DarkAges];
+pub(crate) const IMPLEMENTED: &[Set] = &[
+    Set::Base,
+    Set::Intrigue,
+    Set::Seaside,
+    Set::Alchemy,
+    Set::Prosperity,
+    Set::CornucopiaGuilds,
+    Set::Hinterlands,
+    Set::DarkAges,
+    Set::Adventures,
+    Set::Promos,
+];
 
 pub(crate) const P0: PlayerId = PlayerId(0);
 pub(crate) const P1: PlayerId = PlayerId(1);
@@ -232,10 +250,22 @@ impl Agent for Chaos {
     }
 }
 
+/// How many seeds a fuzz test runs: `default`, or `$FUZZ_SEEDS` if set.
+pub(crate) fn fuzz_seeds(default: u64) -> u64 {
+    std::env::var("FUZZ_SEEDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+}
+
 /// Plays a game of random decisions, checking invariants at every decision.
 pub(crate) fn random_game(config: GameConfig, seed: u64) -> Game {
-    let players = config.players;
-    let mut g = Game::new(config).unwrap();
+    drive_randomly(Game::new(config).unwrap(), seed)
+}
+
+/// Answers every decision of a started game randomly until it ends, checking invariants.
+pub(crate) fn drive_randomly(mut g: Game, seed: u64) -> Game {
+    let players = g.num_players();
     let mut agents: Vec<Chaos> = (0..players)
         .map(|p| Chaos(ChaCha8Rng::seed_from_u64(seed * 10 + p as u64)))
         .collect();
@@ -424,4 +454,31 @@ fn the_game_ends_when_provinces_run_out() {
     let outcome = g.outcome().expect("game over");
     assert_eq!(outcome.reason, EndReason::ProvincesGone);
     assert_eq!(outcome.winners, [P0]);
+}
+
+/// A random game in which every deck also starts with one of each Kingdom card (the top
+/// card of each Kingdom pile), two Golds and, if the game has them, two Potions, so the
+/// Kingdom cards actually get played.
+pub(crate) fn random_game_with_kingdom_decks(config: GameConfig, seed: u64) -> Game {
+    let mut g = setup_with(config);
+    let mut extra: Vec<Card> = g
+        .config()
+        .kingdom
+        .iter()
+        .map(|&k| k.pile_members()[0])
+        .collect();
+    extra.extend([Card::Gold; 2]);
+    if g.supply_pile(Card::Potion).is_some() {
+        extra.extend([Card::Potion; 2]);
+    }
+    for p in 0..g.num_players() {
+        for &card in &extra {
+            g.create(card, Zone::Deck(PlayerId(p as u8)));
+        }
+        let mut deck = std::mem::take(&mut g.players[p].deck);
+        g.shuffle(&mut deck);
+        g.players[p].deck = deck;
+    }
+    g.start();
+    drive_randomly(g, seed)
 }
