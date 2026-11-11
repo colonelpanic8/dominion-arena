@@ -104,6 +104,8 @@ impl SetRules for Rules {
             }
             (Card::Enlightenment, Hook::Ability(ENLIGHTENMENT)) => {
                 if let Some(st) = g.plays.last_mut() {
+                    // Overrides a Highwayman resolved before it.
+                    st.blocked = false;
                     st.replaced = Some(Plus {
                         cards: 1,
                         actions: 1,

@@ -1119,7 +1119,7 @@ fn shop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let in_play: Vec<Card> = g.in_play(f.player).iter().map(|&c| g.card(c)).collect();
             let cands: Vec<CardId> = g
-                .cards_in_hand_where(f.player, Types::ACTION)
+                .playable(f.player, Types::ACTION)
                 .into_iter()
                 .filter(|&c| !in_play.contains(&g.card(c)))
                 .collect();
@@ -1281,7 +1281,7 @@ fn play_twice(
 ) -> Option<Flow> {
     if f.pc == at {
         let cands: Vec<CardId> = g
-            .cards_in_hand_where(f.player, types)
+            .playable(f.player, types)
             .into_iter()
             .filter(|&c| !g.is(c, Types::REWARD))
             .collect();

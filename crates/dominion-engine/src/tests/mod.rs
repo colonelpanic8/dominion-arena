@@ -2,6 +2,7 @@
 
 mod adventures;
 mod alchemy;
+mod allies;
 mod base;
 mod cornucopia_guilds;
 mod dark_ages;
@@ -32,6 +33,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::Hinterlands,
     Set::DarkAges,
     Set::Adventures,
+    Set::Allies,
     Set::Empires,
     Set::Nocturne,
     Set::Renaissance,

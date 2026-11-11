@@ -98,6 +98,10 @@ pub struct Player {
     pub turns_taken: u32,
     /// How many of `turns_taken` were extra turns, which don't count for the tiebreaker.
     pub extra_turns_taken: u32,
+    /// Turns this player will skip (Lich): the next ones they would take.
+    pub skip_turns: u32,
+    /// Regular turns skipped so far; they count for the tiebreaker.
+    pub turns_skipped: u32,
 }
 
 impl Player {
@@ -187,6 +191,8 @@ pub struct Turn {
     pub return_to_action: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
+    /// How many of this turn's plays by its player were from their hand.
+    pub hand_plays: u32,
     /// The physical cards of `played`, in the same order.
     pub played_ids: Vec<CardId>,
     pub gained: Vec<Card>,
@@ -214,6 +220,7 @@ impl Turn {
             bought: false,
             return_to_action: false,
             played: vec![],
+            hand_plays: 0,
             played_ids: vec![],
             gained: vec![],
             gained_in_buy_phase: vec![],
@@ -353,6 +360,8 @@ pub struct GainState {
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
+    /// What the card cost at the moment it was gained (set as it moves).
+    pub cost: Cost,
     /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
     /// you gain", "your second gain this turn").
     pub turn_index: Option<usize>,
@@ -666,6 +675,9 @@ impl Game {
                     input = Input::Start;
                 }
                 Flow::Ask(mut decision) => {
+                    if let Frame::Card(f) = &frame {
+                        cards::modify_decision(self, f, &mut decision);
+                    }
                     self.stack.push(frame);
                     if decision.player == self.turn.player {
                         decision.player = self.turn.controller;
@@ -752,11 +764,12 @@ impl Game {
     }
 
     /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
-    /// elsewhere that can be played as if there (Shadow cards in the deck).
+    /// elsewhere that can be played as if there (Shadow cards in the deck), less those
+    /// `SetRules::can_play` forbids (Warlord, Voyage).
     pub(crate) fn playable(&self, p: PlayerId, types: Types) -> Vec<CardId> {
         let mut cards = self.hand(p).to_vec();
         cards::playable_as_if_in_hand(self, p, &mut cards);
-        cards.retain(|&c| self.is(c, types));
+        cards.retain(|&c| self.is(c, types) && cards::can_play(self, p, c));
         cards
     }
 
@@ -924,7 +937,7 @@ impl Game {
         let turns: Vec<u32> = self
             .players
             .iter()
-            .map(|p| p.turns_taken - p.extra_turns_taken)
+            .map(|p| p.turns_taken - p.extra_turns_taken + p.turns_skipped)
             .collect();
         let best = (0..n)
             .map(|p| (scores[p], std::cmp::Reverse(turns[p])))
@@ -940,6 +953,19 @@ impl Game {
             turns,
             winners,
         });
+    }
+
+    /// Whether `p`'s next turn (an extra turn if `extra`) is skipped; if so, records it.
+    pub(crate) fn skips_turn(&mut self, p: PlayerId, extra: bool) -> bool {
+        let pl = &mut self.players[p.index()];
+        if pl.skip_turns == 0 {
+            return false;
+        }
+        pl.skip_turns -= 1;
+        if !extra {
+            pl.turns_skipped += 1;
+        }
+        true
     }
 
     /// Whether `card` is a landscape, Boon, Hex or other non-physical object in play this game.

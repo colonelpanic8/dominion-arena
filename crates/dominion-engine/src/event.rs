@@ -76,6 +76,11 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
+    /// A pile's top card and the copies of it right under it went to its bottom.
+    Rotated {
+        player: PlayerId,
+        pile: crate::PileId,
+    },
     /// A card moved somewhere not covered by the other events (a mat, Exile, back to its
     /// pile, ...). `card` is `None` when only its owner may know which card it was.
     Moved {
