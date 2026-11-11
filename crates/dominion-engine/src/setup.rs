@@ -18,7 +18,8 @@ pub struct GameConfig {
     /// (Knights, Castles, Augurs, ...). Usually 10.
     pub kingdom: Vec<Card>,
     /// Events, Landmarks, Projects, Ways, Traits and other landscapes in the game. An Ally
-    /// or Prophecy is added automatically when the kingdom needs one and none is given.
+    /// or Prophecy is added automatically when the kingdom needs one and none is given; a
+    /// game has one of each at most.
     pub landscapes: Vec<Card>,
     pub seed: u64,
     /// End the game once this many turns have been taken in total.
@@ -98,6 +99,8 @@ pub enum SetupError {
     NotLandscape(Card),
     #[error("{0} appears more than once")]
     Duplicate(Card),
+    #[error("a game has one Ally and one Prophecy at most, got {0} and {1}")]
+    OnlyOne(Card, Card),
     #[error("{choice} is not a legal setup choice for {by}")]
     InvalidChoice { by: Card, choice: Card },
     #[error("wrong number of setup choices for {0}")]
@@ -131,6 +134,12 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         }
         if config.landscapes[..i].contains(card) {
             return Err(SetupError::Duplicate(*card));
+        }
+        let kind = card.kind();
+        if matches!(kind, Kind::Ally | Kind::Prophecy)
+            && let Some(other) = config.landscapes[..i].iter().find(|l| l.kind() == kind)
+        {
+            return Err(SetupError::OnlyOne(*other, *card));
         }
     }
 

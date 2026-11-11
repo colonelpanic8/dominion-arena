@@ -20,6 +20,7 @@ mod renaissance;
 mod rising_sun;
 mod seaside;
 mod setup;
+mod turns;
 
 use crate::game::Zone;
 use crate::*;

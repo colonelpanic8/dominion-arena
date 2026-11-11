@@ -346,3 +346,18 @@ fn five_and_six_players_use_two_sets_of_base_treasures() {
         }
     }
 }
+
+#[test]
+fn a_game_has_one_ally_and_one_prophecy_at_most() {
+    let kingdom = [Card::Underling, Card::TeaHouse];
+    let err = |landscapes: &[Card]| build(config(&kingdom, landscapes, &[])).err();
+    assert_eq!(err(&[Card::IslandFolk, Card::DivineWind]), None);
+    assert_eq!(
+        err(&[Card::IslandFolk, Card::CaveDwellers]),
+        Some(SetupError::OnlyOne(Card::IslandFolk, Card::CaveDwellers))
+    );
+    assert_eq!(
+        err(&[Card::DivineWind, Card::ApproachingArmy]),
+        Some(SetupError::OnlyOne(Card::DivineWind, Card::ApproachingArmy))
+    );
+}

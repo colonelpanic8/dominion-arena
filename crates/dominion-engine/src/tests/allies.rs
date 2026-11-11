@@ -2214,24 +2214,29 @@ fn island_folk_takes_an_extra_turn_for_five_favors_but_not_a_third_in_a_row() {
 }
 
 #[test]
-fn island_folk_and_voyage_in_one_turn_take_only_the_island_folk_turn() {
-    let mut g = game_with(&[Card::Underling, Card::Odysseys], Card::IslandFolk);
-    set_favors(&mut g, P0, 5);
-    hand(&mut g, P0, &[Card::Voyage]);
-    deck(&mut g, P0, &[Card::Village; 20]);
-    g.start();
-    play(&mut g, Card::Voyage);
-    to_buy(&mut g);
-    end_phase(&mut g);
-    accept(&mut g, Card::IslandFolk);
-    assert_eq!(g.turn().extra, Some(Card::IslandFolk));
-    // Not limited to 3 plays from the hand.
-    for _ in 0..4 {
-        play(&mut g, Card::Village);
+fn island_folk_and_voyage_in_one_turn_give_one_extra_turn_of_the_players_choice() {
+    for taken in [Card::IslandFolk, Card::Voyage] {
+        let mut g = game_with(&[Card::Underling, Card::Odysseys], Card::IslandFolk);
+        set_favors(&mut g, P0, 5);
+        hand(&mut g, P0, &[Card::Voyage]);
+        deck(&mut g, P0, &[Card::Village; 20]);
+        g.start();
+        play(&mut g, Card::Voyage);
+        to_buy(&mut g);
+        end_phase(&mut g);
+        accept(&mut g, Card::IslandFolk);
+        assert_eq!(purpose(&g), Purpose::Either);
+        respond(&mut g, Response::option(Opt::Card(taken)));
+        assert_eq!(g.turn().extra, Some(taken));
+        // Only Voyage's turn is limited to 3 plays from the hand.
+        for _ in 0..3 {
+            play(&mut g, Card::Village);
+        }
+        assert_eq!(can_play(&g, Card::Village), taken == Card::IslandFolk);
+        next_turn(&mut g);
+        assert_eq!(g.turn().player, P1);
+        assert!(g.in_play(P0).is_empty());
     }
-    next_turn(&mut g);
-    assert_eq!(g.turn().player, P1);
-    assert!(g.in_play(P0).is_empty());
 }
 
 #[test]
