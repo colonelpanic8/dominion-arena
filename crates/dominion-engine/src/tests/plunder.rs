@@ -2012,7 +2012,7 @@ fn foray_gains_a_loot_for_three_different_names_only() {
     );
     buy_event(&mut g, Card::Foray);
     assert_eq!(loot_gained(&g, P0), 0);
-    assert_eq!(discard_kinds(&g, P0).len(), 2 + 0);
+    assert_eq!(discard_kinds(&g, P0).len(), 2);
 }
 
 #[test]
