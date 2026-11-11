@@ -1,4 +1,4 @@
-use super::intrigue::{modes, random_games_with_copies, setup3, trigger};
+use super::intrigue::{modes, random_games_with_copies, setup3, trigger, trigger_labels};
 use super::*;
 
 fn landscapes_of(kind: Kind) -> Vec<Card> {
@@ -1070,6 +1070,37 @@ fn a_sleigh_gained_to_the_hand_discards_itself_but_cannot_move_itself_back() {
     trigger(&mut g, Card::Sleigh);
     assert_eq!(discard_kinds(&g, P0), [Card::Sleigh]);
     assert!(g.hand(P0).is_empty());
+}
+
+#[test]
+fn sleigh_is_discarded_not_played_so_voyages_limit_does_not_stop_it() {
+    let mut g = setup_with_landscapes(
+        &[Card::Odysseys, Card::Sleigh, Card::Sheepdog],
+        &[Card::PlateauShepherds],
+    );
+    hand(&mut g, P0, &[Card::Voyage]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Sleigh,
+            Card::Sheepdog,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Voyage);
+    next_turn(&mut g);
+    assert_eq!(g.turn().extra, Some(Card::Voyage));
+    // Three plays from the hand: Sheepdog can no longer be played, Sleigh still reacts.
+    play_treasures(&mut g);
+    buy(&mut g, Card::Silver);
+    assert_eq!(trigger_labels(&g), ["Sleigh (optional)", "Done"]);
+    trigger(&mut g, Card::Sleigh);
+    modes(&mut g, &[0]);
+    assert!(hand_kinds(&g, P0).contains(&Card::Silver));
 }
 
 #[test]
