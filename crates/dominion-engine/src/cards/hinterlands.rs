@@ -626,12 +626,12 @@ fn develop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
-            let (up, down) = develop_costs(f);
+            let (up, down) = develop_costs(g, f);
             let piles = g.supply_piles_where(|_, c| Some(c) == up || Some(c) == down);
             if piles.is_empty() {
                 return Flow::done();
@@ -644,7 +644,7 @@ fn develop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             let top = g.pile_top(pile).expect("offered piles are not empty");
-            let (up, _) = develop_costs(f);
+            let (up, _) = develop_costs(g, f);
             f.s.m |= if Some(g.cost_of(top)) == up { 1 } else { 2 };
             f.pc = 2;
             Flow::Call(Frame::gain(f.player, pile, Dest::DeckTop))
@@ -652,10 +652,12 @@ fn develop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// The costs Develop still has to gain: $1 more and $1 less than the trashed card.
-fn develop_costs(f: &CardFrame) -> (Option<Cost>, Option<Cost>) {
-    let up = (f.s.m & 1 == 0).then(|| f.s.cost.plus_coins(1));
-    let down = (f.s.m & 2 == 0 && f.s.cost.coins >= 1).then(|| f.s.cost.minus_coins(1));
+/// The costs Develop still has to gain: $1 more and $1 less than the trashed card costs
+/// now.
+fn develop_costs(g: &Game, f: &CardFrame) -> (Option<Cost>, Option<Cost>) {
+    let cost = g.cost_of(f.s.pick.expect("set when trashed"));
+    let up = (f.s.m & 1 == 0).then(|| cost.plus_coins(1));
+    let down = (f.s.m & 2 == 0 && cost.coins >= 1).then(|| cost.minus_coins(1));
     (up, down)
 }
 

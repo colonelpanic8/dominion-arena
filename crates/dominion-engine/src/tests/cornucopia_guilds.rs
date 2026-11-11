@@ -1075,3 +1075,18 @@ fn taxman_makes_others_discard_a_copy_and_gains_onto_the_deck() {
     choose_pile(&mut g, Card::Gold);
     assert_eq!(deck_kinds(&g, P0)[0], Card::Gold);
 }
+
+#[test]
+fn coronet_stays_in_play_with_a_duration_it_played() {
+    let mut g = setup(&[Card::Joust, Card::Caravan]);
+    hand(&mut g, P0, &[Card::Coronet, Card::Caravan]);
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    g.start();
+    play(&mut g, Card::Coronet);
+    choose_kinds(&mut g, &[Card::Caravan]);
+    // No Treasure.
+    choose(&mut g, &[]);
+    end_phase(&mut g);
+    end_phase(&mut g);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Coronet, Card::Caravan]);
+}

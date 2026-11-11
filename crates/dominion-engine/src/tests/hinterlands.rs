@@ -873,3 +873,52 @@ fn silk_road_counts_victory_cards() {
     }
     assert_eq!(crate::cards::vp(&g, P0, Card::SilkRoad), Some(2));
 }
+
+#[test]
+fn scheme_with_throne_room_topdecks_two_actions() {
+    let mut g = setup(&[Card::Scheme, Card::ThroneRoom, Card::Smithy]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Scheme]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Smithy,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Scheme]);
+    play(&mut g, Card::Smithy);
+    end_phase(&mut g);
+    trigger(&mut g, 0);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    trigger(&mut g, 0);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    let drawn = hand_kinds(&g, P0);
+    assert!(drawn.contains(&Card::Smithy) && drawn.contains(&Card::ThroneRoom));
+}
+
+#[test]
+fn guard_dog_can_draw_a_moat_in_time() {
+    let mut g = setup(&[Card::GuardDog, Card::Militia, Card::Moat]);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(&mut g, P1, &[Card::GuardDog, Card::Copper]);
+    deck(
+        &mut g,
+        P1,
+        &[Card::Moat, Card::Copper, Card::Copper, Card::Copper],
+    );
+    g.start();
+    play(&mut g, Card::Militia);
+    trigger(&mut g, 0);
+    // The Moat just drawn reacts to the same Attack.
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    trigger(&mut g, 0);
+    assert_eq!(g.hand(P1).len(), 5);
+    assert_eq!(g.pending().unwrap().player, P0);
+}
