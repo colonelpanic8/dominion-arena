@@ -971,9 +971,12 @@ impl PlayFrame {
                 if st.blocked {
                     return Flow::Continue;
                 }
+                let mine = p == g.turn.player;
                 if let Some(plus) = st.replaced {
-                    g.turn.actions += plus.actions as u32;
-                    g.turn.buys += plus.buys as u32;
+                    if mine {
+                        g.turn.actions += plus.actions as u32;
+                        g.turn.buys += plus.buys as u32;
+                    }
                     g.add_coins(p, plus.coins as u32);
                     return Flow::Call(Frame::draw(p, plus.cards as usize));
                 }
@@ -993,9 +996,11 @@ impl PlayFrame {
                 pl.villagers += bonus.plus.villagers as u32;
                 pl.coffers += bonus.plus.coffers as u32;
                 pl.favors += bonus.plus.favors as u32;
-                g.turn.actions += bonus.plus.actions as u32;
-                g.turn.buys += bonus.plus.buys as u32;
-                g.turn.potions += bonus.potions;
+                if mine {
+                    g.turn.actions += bonus.plus.actions as u32;
+                    g.turn.buys += bonus.plus.buys as u32;
+                    g.turn.potions += bonus.potions;
+                }
                 g.add_coins(p, bonus.plus.coins as u32 + bonus.coins);
                 self.pc = 5;
                 Flow::Call(Frame::draw(p, bonus.plus.cards as usize))
