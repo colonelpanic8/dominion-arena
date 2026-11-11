@@ -321,3 +321,17 @@ async fn a_server_on_ipv6_loopback_is_reached_at_its_bracketed_address() {
     client.close().await;
     server.stop.cancel();
 }
+
+#[test]
+fn card_text_shows_costs_as_views_do() {
+    let head = |name: &str| {
+        let entry = dominion_agent::glossary(name).unwrap();
+        let text = dominion_server::card_text(&entry);
+        text.lines().next().unwrap().to_string()
+    };
+    assert_eq!(head("Smithy"), "Smithy | Action | $4 | Base");
+    assert_eq!(head("Copper"), "Copper | Treasure | $0 | Base");
+    assert_eq!(head("Transmute"), "Transmute | Action | P | Alchemy");
+    assert_eq!(head("Golem"), "Golem | Action | $4P | Alchemy");
+    assert_eq!(head("Engineer"), "Engineer | Action | 4D | Empires");
+}

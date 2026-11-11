@@ -68,14 +68,12 @@ pub async fn serve(
 pub fn card_text(entry: &GlossaryEntry) -> String {
     let mut head = vec![entry.name.clone(), entry.types.join(" - ")];
     if let Some(cost) = &entry.cost {
-        let mut c = format!("${}", cost.coins);
-        if cost.potions > 0 {
-            c.push_str(&"P".repeat(cost.potions as usize));
-        }
-        if cost.debt > 0 {
-            c.push_str(&format!(" {}D", cost.debt));
-        }
-        head.push(c);
+        let cost = dominion_engine::Cost {
+            coins: cost.coins as u8,
+            potions: cost.potions as u8,
+            debt: cost.debt as u8,
+        };
+        head.push(cost.to_string());
     }
     if let Some(set) = &entry.set {
         head.push(set.clone());
