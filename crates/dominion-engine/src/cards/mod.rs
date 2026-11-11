@@ -13,7 +13,7 @@
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::Event;
 use crate::frame::{Flow, Input};
-use crate::game::{Lasting, Scratch, Until};
+use crate::game::{Lasting, Scratch, Until, Zone};
 use crate::setup::Setup;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Plus, Set, Types};
@@ -442,15 +442,20 @@ impl CardFrame {
     /// The cards that stay in play while a Duration effect of this play lasts, innermost
     /// first: this card, the card that played it, and further up the chain only while the
     /// card played is a Duration (a Throne Room that plays a Throne Room that plays a
-    /// Duration doesn't stay; one that plays a Mastermind that plays a Duration does).
+    /// Duration doesn't stay; one that plays a Mastermind that plays a Duration does). A
+    /// card that played another leaving it where it was (a Command card) stays in its
+    /// place, and counts as that card for whatever played it in turn.
     pub(crate) fn keeps(&self, g: &Game) -> Vec<CardId> {
         let mut keeps: Vec<CardId> = self.this.into_iter().collect();
+        let mut counts_as = self.this;
         for &c in self.chain.iter().rev() {
-            if keeps
-                .last()
-                .is_some_and(|&inner| !g.is(inner, Types::DURATION))
+            if let (Some(&played), Some(card)) = (keeps.last(), counts_as)
+                && matches!(g.zone(played), Zone::InPlay(_))
             {
-                break;
+                if !g.is(card, Types::DURATION) {
+                    break;
+                }
+                counts_as = Some(c);
             }
             keeps.push(c);
         }

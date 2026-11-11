@@ -398,7 +398,7 @@ fn captain_play(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.pc = 2;
             match input.pile().and_then(|p| g.pile_top(p)) {
-                Some(top) => Flow::Call(Frame::play(f.player, top, false, vec![])),
+                Some(top) => Flow::Call(Frame::play(f.player, top, false, f.chain_for_child())),
                 None => Flow::done(),
             }
         }

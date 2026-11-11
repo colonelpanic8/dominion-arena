@@ -965,6 +965,24 @@ fn overlord_playing_encampment_or_farmers_market_cannot_move_them() {
     assert_eq!(pile_kinds(&g, Card::FarmersMarket).len(), 10);
 }
 
+/// The Throne Room is in the Supply and can't stay in play with the Duration it played,
+/// so the Overlord that played it does.
+#[test]
+fn overlord_stays_in_play_with_a_duration_its_throne_room_played() {
+    let mut g = setup(&[Card::Overlord, Card::ThroneRoom, Card::Caravan]);
+    hand(&mut g, P0, &[Card::Overlord, Card::Caravan]);
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    g.start();
+    // Throne Room is the only card Overlord can play.
+    play(&mut g, Card::Overlord);
+    choose_kinds(&mut g, &[Card::Caravan]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Overlord, Card::Caravan]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+}
+
 #[test]
 fn patrician_takes_a_card_costing_five_or_more_but_not_a_debt_only_card() {
     let mut g = setup(&[Card::Patrician]);

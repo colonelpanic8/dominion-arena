@@ -327,6 +327,23 @@ fn captain_plays_supply_cards_now_and_next_turn() {
     assert!(g.in_play(P0).is_empty());
 }
 
+/// The Throne Room is in the Supply, so Captain stays in play with the Duration it played.
+#[test]
+fn captain_stays_in_play_with_a_duration_its_throne_room_played() {
+    let mut g = setup(&[Card::Captain, Card::ThroneRoom, Card::Caravan]);
+    hand(&mut g, P0, &[Card::Captain]);
+    let mut cards = vec![Card::Caravan];
+    cards.extend([Card::Copper; 20]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    // Throne Room is the only card Captain can play; this turn it has nothing to play.
+    play(&mut g, Card::Captain);
+    next_turn(&mut g);
+    choose_kinds(&mut g, &[Card::Caravan]);
+    finish_turn(&mut g);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Captain, Card::Caravan]);
+}
+
 #[test]
 fn church_returns_its_cards_and_offers_a_trash() {
     let mut g = setup(&[Card::Church]);
