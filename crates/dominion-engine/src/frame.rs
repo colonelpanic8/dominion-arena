@@ -1121,6 +1121,7 @@ impl PlayFrame {
                 if p == g.turn.player {
                     g.turn.played.push(card);
                     g.turn.played_ids.push(id);
+                    g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
                 }
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {

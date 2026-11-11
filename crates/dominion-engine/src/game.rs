@@ -196,6 +196,8 @@ pub struct Turn {
     pub hand_plays: u32,
     /// The physical cards of `played`, in the same order.
     pub played_ids: Vec<CardId>,
+    /// For each of `played_ids`: whether it was in play when played and hasn't left since.
+    pub stayed_in_play: Vec<bool>,
     pub gained: Vec<Card>,
     /// The cards in `gained` that were gained in the Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
@@ -225,6 +227,7 @@ impl Turn {
             played: vec![],
             hand_plays: 0,
             played_ids: vec![],
+            stayed_in_play: vec![],
             gained: vec![],
             gained_in_buy_phase: vec![],
             bought_cards: vec![],
@@ -754,6 +757,15 @@ impl Game {
         src.remove(i);
         if matches!(from, Zone::InPlay(_)) && !matches!(to, Zone::InPlay(_)) {
             self.masks.remove(&id);
+            let t = &mut self.turn;
+            for (stayed, _) in t
+                .stayed_in_play
+                .iter_mut()
+                .zip(&t.played_ids)
+                .filter(|(_, c)| **c == id)
+            {
+                *stayed = false;
+            }
         }
         self.zones[id.index()] = to;
         let dst = self.zone_vec(to);

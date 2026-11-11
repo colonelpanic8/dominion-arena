@@ -1109,7 +1109,8 @@ fn scepter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             let mut candidates: Vec<CardId> = vec![];
-            for &c in &g.turn.played_ids {
+            let played = g.turn.played_ids.iter().zip(&g.turn.stayed_in_play);
+            for (&c, _) in played.filter(|(_, stayed)| **stayed) {
                 let ok = g.zone(c) == Zone::InPlay(p)
                     && g.is(c, Types::ACTION)
                     && !g.is(c, Types::COMMAND)
