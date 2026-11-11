@@ -553,7 +553,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 _ => {}
             }
             let mut moves: Vec<Move> = if g.turn.actions > 0 {
-                g.cards_in_hand_where(p, Types::ACTION)
+                g.playable(p, Types::ACTION)
                     .into_iter()
                     .map(Move::Play)
                     .collect()
@@ -605,11 +605,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             }
             let mut moves = vec![];
             if !g.turn.bought {
-                moves.extend(
-                    g.cards_in_hand_where(p, Types::TREASURE)
-                        .into_iter()
-                        .map(Move::Play),
-                );
+                moves.extend(g.playable(p, Types::TREASURE).into_iter().map(Move::Play));
             }
             if g.turn.can_buy_cards {
                 for (i, pile) in g.piles.iter().enumerate() {
@@ -654,7 +650,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 _ => {}
             }
             let mut moves: Vec<Move> = g
-                .cards_in_hand_where(p, Types::NIGHT)
+                .playable(p, Types::NIGHT)
                 .into_iter()
                 .map(Move::Play)
                 .collect();
@@ -905,6 +901,9 @@ impl PlayFrame {
         let (p, id) = (self.player, self.card);
         match self.pc {
             0 => {
+                if self.move_to_play && g.zone(id) == Zone::Hand(p) && p == g.turn.player {
+                    g.turn.hand_plays += 1;
+                }
                 if self.move_to_play && g.zone(id) != Zone::InPlay(p) {
                     g.move_card(id, Zone::InPlay(p), Pos::Top);
                 }

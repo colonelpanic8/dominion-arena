@@ -54,6 +54,11 @@ pub(crate) trait SetRules {
         0
     }
 
+    /// Whether `p` may play `id` from their hand now.
+    fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {
+        true
+    }
+
     /// Whether `p` may buy `card` (a card, Event or Project) when they can afford it.
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {
         true
@@ -125,6 +130,10 @@ macro_rules! sets {
 
         pub(crate) fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
             0 $(+ <$module::Rules as SetRules>::bonus_vp(g, p))*
+        }
+
+        pub(crate) fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {
+            true $(&& <$module::Rules as SetRules>::can_play(g, p, id))*
         }
 
         pub(crate) fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {

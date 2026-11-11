@@ -747,7 +747,7 @@ fn play_twice_and_trash(g: &mut Game, f: &mut CardFrame, input: Input, types: Ty
     match f.pc {
         0 => {
             let candidates: Vec<CardId> = g
-                .cards_in_hand_where(p, types)
+                .playable(p, types)
                 .into_iter()
                 .filter(|&c| !g.is(c, Types::DURATION))
                 .collect();
@@ -804,9 +804,8 @@ fn cultist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => each_target_gains(g, f, Card::Ruins, 1),
         1 => {
             let cultists: Vec<CardId> = g
-                .hand(p)
-                .iter()
-                .copied()
+                .playable(p, Types::ACTION)
+                .into_iter()
                 .filter(|&c| g.card(c) == Card::Cultist)
                 .collect();
             if cultists.is_empty() {

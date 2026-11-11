@@ -176,6 +176,8 @@ pub struct Turn {
     pub bought: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
+    /// How many of this turn's plays by its player were from their hand.
+    pub hand_plays: u32,
     pub gained: Vec<Card>,
     /// The cards in `gained` that were gained in the Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
@@ -200,6 +202,7 @@ impl Turn {
             potions: 0,
             bought: false,
             played: vec![],
+            hand_plays: 0,
             gained: vec![],
             gained_in_buy_phase: vec![],
             bought_cards: vec![],
@@ -733,6 +736,16 @@ impl Game {
             .iter()
             .copied()
             .filter(|&c| self.is(c, types))
+            .collect()
+    }
+
+    /// The cards of `types` in `p`'s hand that `p` may play from their hand now (Warlord,
+    /// Voyage, ... may forbid some).
+    pub(crate) fn playable(&self, p: PlayerId, types: Types) -> Vec<CardId> {
+        self.hand(p)
+            .iter()
+            .copied()
+            .filter(|&c| self.is(c, types) && cards::can_play(self, p, c))
             .collect()
     }
 

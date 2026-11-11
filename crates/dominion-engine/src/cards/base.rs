@@ -389,7 +389,7 @@ fn upgrade(
 fn throne_room(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            let actions = g.cards_in_hand_where(f.player, Types::ACTION);
+            let actions = g.playable(f.player, Types::ACTION);
             if actions.is_empty() {
                 return Flow::done();
             }
