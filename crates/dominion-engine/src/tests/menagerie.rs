@@ -1602,7 +1602,6 @@ fn seize_the_day_gives_an_extra_turn_once_per_game() {
 }
 
 #[test]
-#[ignore = "the engine never gives a third turn in a row; Seize the Day doesn't check the previous turn"]
 fn seize_the_day_bought_on_an_outpost_turn_gives_a_third_turn() {
     let mut g = setup_with_landscapes(&[Card::Outpost], &[Card::SeizeTheDay]);
     hand(&mut g, P0, &[Card::Outpost]);

@@ -570,8 +570,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
             let prev = (g.turn.player, g.turn.extra.is_some());
             let started = g.players.iter().any(|p| p.turns_taken > 0);
             while let Some(extra) = g.extra_turns.pop_front() {
-                // Nobody takes more than two turns in a row.
-                if started && extra.player == prev.0 && prev.1 {
+                if started && extra.player == prev.0 && prev.1 && !extra.third_in_a_row {
                     continue;
                 }
                 if g.skips_turn(extra.player, true) {

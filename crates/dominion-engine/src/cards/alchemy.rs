@@ -241,6 +241,7 @@ fn possession_end_turn(g: &mut Game, p: PlayerId) {
             player: g.left_of(p),
             source: Card::Possession,
             controller: p,
+            third_in_a_row: false,
         });
     }
 }

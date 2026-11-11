@@ -688,6 +688,7 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
             player: p,
             source: Card::Outpost,
             controller: p,
+            third_in_a_row: false,
         });
     }
     g.add_lasting(

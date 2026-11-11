@@ -254,6 +254,7 @@ impl SetRules for Rules {
                     player: p,
                     source: Card::SeizeTheDay,
                     controller: p,
+                    third_in_a_row: true,
                 });
                 Flow::done()
             }

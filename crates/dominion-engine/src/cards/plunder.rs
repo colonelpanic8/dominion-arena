@@ -307,6 +307,7 @@ impl SetRules for Rules {
                         player: p,
                         source: Card::Journey,
                         controller: g.turn.controller,
+                        third_in_a_row: false,
                     });
                 }
                 Flow::done()

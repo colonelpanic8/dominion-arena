@@ -1216,6 +1216,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 player: p,
                 source: Card::IslandFolk,
                 controller: p,
+                third_in_a_row: false,
             });
             Flow::done()
         }
@@ -2496,6 +2497,7 @@ fn voyage(g: &mut Game, f: &mut CardFrame) {
         player: p,
         source: Card::Voyage,
         controller: p,
+        third_in_a_row: false,
     });
     g.add_lasting(
         Card::Voyage,

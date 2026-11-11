@@ -285,6 +285,7 @@ impl SetRules for Rules {
                     player: f.player,
                     source: Card::Mission,
                     controller: f.player,
+                    third_in_a_row: false,
                 });
                 Flow::done()
             }

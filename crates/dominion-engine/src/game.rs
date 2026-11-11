@@ -291,6 +291,9 @@ pub struct ExtraTurn {
     pub source: Card,
     /// Who controls it (Possession).
     pub controller: PlayerId,
+    /// Taken even as a third turn in a row (Seize the Day; the other extra turns rule
+    /// that out).
+    pub third_in_a_row: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
