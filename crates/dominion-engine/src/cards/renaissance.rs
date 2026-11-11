@@ -422,7 +422,7 @@ fn trash_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, pc: u8) -> Opt
 
 fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
     if holds(g, p, Card::Key) {
-        out.push(Trigger::new(p, Card::Key, EFFECT).quiet());
+        out.push(Trigger::new(p, Card::Key, EFFECT));
     }
     for &project in &g.player(p).projects {
         let t = Trigger::new(p, project, EFFECT);
@@ -431,8 +431,10 @@ fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
             Card::CropRotation if !g.cards_in_hand_where(p, Types::VICTORY).is_empty() => {
                 out.push(t.optional())
             }
-            Card::Fair | Card::Barracks => out.push(t.quiet()),
-            Card::Cathedral | Card::CityGate | Card::SinisterPlot | Card::Piazza => out.push(t),
+            Card::Fair => out.push(t.quiet()),
+            Card::Barracks | Card::Cathedral | Card::CityGate | Card::SinisterPlot | Card::Piazza => {
+                out.push(t)
+            }
             _ => {}
         }
     }

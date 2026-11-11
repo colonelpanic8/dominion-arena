@@ -1045,7 +1045,7 @@ fn city_gate_draws_then_topdecks() {
 }
 
 #[test]
-fn bonus_projects_resolve_without_asking_for_an_order() {
+fn fair_resolves_without_asking_for_an_order() {
     let mut g = setup(&[Card::Smithy]);
     for project in [Card::Fair, Card::Barracks, Card::CityGate, Card::Piazza] {
         give_project(&mut g, P0, project);
@@ -1053,12 +1053,38 @@ fn bonus_projects_resolve_without_asking_for_an_order() {
     hand(&mut g, P0, &[Card::Estate, Card::Copper]);
     deck(&mut g, P0, &[Card::Copper, Card::Silver, Card::Gold]);
     g.start();
-    assert_eq!((g.turn().buys, g.turn().actions), (2, 2));
-    // City Gate and Piazza both use the deck, so their order is still asked.
+    assert_eq!((g.turn().buys, g.turn().actions), (2, 1));
+    // What the others do can depend on their order (Piazza can play any Action).
     let DecisionKind::Choose { labels, .. } = &g.pending().unwrap().kind else {
         panic!("expected the trigger order");
     };
-    assert_eq!(labels, &["City Gate", "Piazza"]);
+    assert_eq!(labels, &["Barracks", "City Gate", "Piazza"]);
+}
+
+#[test]
+fn barracks_after_a_snowy_village_gives_no_action() {
+    let mut g = setup(&[Card::SnowyVillage]);
+    give_project(&mut g, P0, Card::Barracks);
+    give_project(&mut g, P0, Card::Piazza);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::SnowyVillage, Card::Copper]);
+    g.start();
+    trigger(&mut g, Card::Piazza);
+    assert_eq!(g.turn().actions, 5);
+}
+
+#[test]
+fn the_key_can_be_taken_after_other_start_of_turn_effects() {
+    let mut g = setup(&[Card::Treasurer, Card::PoorHouse]);
+    give_project(&mut g, P0, Card::Piazza);
+    let key = g.artifacts.iter_mut().find(|a| a.0 == Card::Key);
+    key.expect("the Key is in the game").1 = Some(P0);
+    hand(&mut g, P0, &[Card::Copper; 5]);
+    deck(&mut g, P0, &[Card::PoorHouse, Card::Copper, Card::Copper]);
+    g.start();
+    // Piazza first: Poor House makes $4 - $5 = $0; then the Key's $1 is kept.
+    trigger(&mut g, Card::Piazza);
+    assert_eq!(g.turn().coins, 1);
 }
 
 #[test]
