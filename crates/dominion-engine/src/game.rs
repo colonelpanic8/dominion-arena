@@ -435,6 +435,10 @@ pub struct GainState {
     /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
     /// you gain", "your second gain this turn").
     pub turn_index: Option<usize>,
+    /// Once gained by the turn's player in their Buy phase: its position among the cards
+    /// gained in that Buy phase ("the first card you gain in your Buy phase").
+    #[serde(default)]
+    pub buy_index: Option<usize>,
 }
 
 /// A play in progress, until its `AfterPlay` window closes. "When you play" triggers may

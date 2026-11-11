@@ -5,7 +5,7 @@ use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mas
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Mat, Phase, Pos, Scratch, Token, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Token, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -866,10 +866,12 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
     let on_gain = match kind {
         Card::LostCity => true,
         Card::Port => !g.ext.adventures.extra_ports.contains(&card),
-        Card::Messenger => {
-            let t = &g.turn;
-            player == t.player && t.phase == Phase::Buy && t.gained_this_buy_phase().len() == 1
-        }
+        Card::Messenger => g
+            .gains
+            .iter()
+            .rev()
+            .find(|st| st.card == card)
+            .is_some_and(|st| st.buy_index == Some(0)),
         _ => false,
     };
     if on_gain {

@@ -1799,6 +1799,26 @@ fn messenger_gained_in_the_action_phase_does_nothing_extra() {
 }
 
 #[test]
+fn messenger_stays_the_first_gain_while_another_gain_resolves_before_its_ability() {
+    let mut g = game(&[Card::Messenger, Card::Duplicate], &[]);
+    on_tavern(&mut g, P0, Card::Duplicate);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    budget(&mut g, 6, 2);
+    buy(&mut g, Card::Messenger);
+    accept(&mut g, Card::Duplicate);
+    assert_eq!(g.turn().gained, [Card::Messenger, Card::Messenger]);
+    // The first Messenger's ability is still to resolve; the copy has none.
+    assert_eq!(purpose(&g), Purpose::Gain);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(discard_kinds(&g, P1), [Card::Silver]);
+    assert_eq!(g.count_owned(P0, Card::Silver), 1);
+    assert_eq!(purpose(&g), Purpose::Turn);
+}
+
+#[test]
 fn raze_uses_the_cost_lowered_by_bridge_troll() {
     let mut g = game(&[Card::Raze, Card::BridgeTroll, Card::Village], &[]);
     hand(
