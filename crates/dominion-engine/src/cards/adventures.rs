@@ -1680,7 +1680,7 @@ fn disciple(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let actions = g.cards_in_hand_where(p, Types::ACTION);
+            let actions = g.playable(p, Types::ACTION);
             if actions.is_empty() {
                 return Flow::done();
             }
