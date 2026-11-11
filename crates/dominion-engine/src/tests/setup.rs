@@ -271,3 +271,23 @@ fn setup_choices_round_trip_through_json() {
     assert!(!json.contains("setup_choices"));
     assert_eq!(serde_json::from_str::<GameConfig>(&json).unwrap(), plain);
 }
+
+#[test]
+fn five_and_six_players_use_two_sets_of_base_treasures() {
+    for (players, coppers, provinces, curses) in [(4, 32, 12, 30), (5, 85, 15, 40), (6, 78, 18, 50)]
+    {
+        let mut c = config(&[Card::Gardens], &[], &[]);
+        c.players = players;
+        let g = setup_with(c);
+        let size = |card| g.pile(g.supply_pile(card).unwrap()).cards.len();
+        let doubled = if players > 4 { 2 } else { 1 };
+        assert_eq!(size(Card::Copper), coppers);
+        assert_eq!(size(Card::Silver), 40 * doubled);
+        assert_eq!(size(Card::Gold), 30 * doubled);
+        assert_eq!(size(Card::Province), provinces);
+        assert_eq!(size(Card::Curse), curses);
+        for card in [Card::Estate, Card::Duchy, Card::Gardens] {
+            assert_eq!(size(card), 12);
+        }
+    }
+}

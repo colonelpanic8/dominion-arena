@@ -316,7 +316,7 @@ pub(crate) fn drive_randomly(mut g: Game, seed: u64) -> Game {
 fn random_games_keep_invariants() {
     for seed in 0..fuzz_seeds(200) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let players = rng.random_range(2..=4);
+        let players = rng.random_range(2..=6);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
         config.turn_limit = Some(80);
         let g = random_game(config, seed);
@@ -639,7 +639,7 @@ fn cross_set_games_keep_invariants() {
     let removed = removed_kingdom_cards();
     for seed in 0..fuzz_seeds(100) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xc0ffee);
-        let players = rng.random_range(2..=4);
+        let players = rng.random_range(2..=6);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
         for i in 0..rng.random_range(0..=3) {
             let card = *removed.choose(&mut rng).unwrap();

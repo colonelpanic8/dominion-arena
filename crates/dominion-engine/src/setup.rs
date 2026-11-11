@@ -193,10 +193,12 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         5 => 15,
         _ => 18,
     };
+    // Five and six players use two sets of base Treasures.
+    let sets = if n > 4 { 2 } else { 1 };
     let mut basics = vec![
-        (Card::Copper, 60 - 7 * n),
-        (Card::Silver, 40),
-        (Card::Gold, 30),
+        (Card::Copper, 60 * sets - 7 * n),
+        (Card::Silver, 40 * sets),
+        (Card::Gold, 30 * sets),
     ];
     if colonies {
         basics.push((Card::Platinum, 12));
