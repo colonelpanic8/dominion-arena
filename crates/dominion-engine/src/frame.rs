@@ -786,7 +786,10 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             Flow::Call(Frame::window(Occasion::StartTurn { player: p }))
         }
         1 => {
-            g.lasting.retain(|l| l.until != Until::StartOfTurn(p));
+            // One made during this start of turn lasts until the next turn.
+            let turn = g.players[p.index()].turns_taken;
+            g.lasting
+                .retain(|l| l.until != Until::StartOfTurn(p) || (l.owner == p && l.turn == turn));
             g.turn.phase = Phase::Action;
             *pc = 2;
             Flow::Continue

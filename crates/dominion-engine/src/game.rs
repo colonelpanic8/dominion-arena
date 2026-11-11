@@ -300,7 +300,8 @@ pub struct Scratch {
 pub enum Until {
     /// At the end of this turn (after Clean-up).
     EndOfTurn,
-    /// When that player's next turn starts (after start-of-turn effects).
+    /// When that player's next turn starts (after start-of-turn effects); for one made
+    /// during the start of a turn, that is the turn after.
     StartOfTurn(PlayerId),
     /// Only when an effect removes it (Durations remove themselves when they resolve).
     Removed,

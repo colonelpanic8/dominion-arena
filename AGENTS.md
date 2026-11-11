@@ -62,7 +62,8 @@ them.
   as a `Frame`: a coroutine whose `pc` records where to resume. A frame returns
   `Flow::Ask` (a decision), `Flow::Call` (push a child; its result comes back as
   `Input::Return`), `Flow::Continue` (re-enter now) or `Flow::Done(value)`.
-- **Turns.** Start (`StartTurn` window, then `Until::StartOfTurn` lastings expire),
+- **Turns.** Start (`StartTurn` window, then `Until::StartOfTurn` lastings made before
+  this turn expire),
   Action (moves: play an Action, spend a Villager, end), Buy (`StartBuyPhase`; play
   Treasures until something is bought, buy cards / Events / Projects; `EndBuyPhase`),
   Night (`StartNight`; play Night cards), Clean-up
