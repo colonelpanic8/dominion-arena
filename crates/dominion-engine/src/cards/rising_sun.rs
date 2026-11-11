@@ -126,7 +126,7 @@ impl SetRules for Rules {
                 let pile = &mut g.piles[f.data as usize];
                 if pile.debt_tokens > 0 {
                     let debt = std::mem::take(&mut pile.debt_tokens);
-                    g.players[f.player.index()].debt += debt as u32;
+                    g.add_debt(f.player, debt as u32);
                 } else {
                     pile.debt_tokens += 2;
                 }
@@ -188,6 +188,10 @@ impl SetRules for Rules {
             (Card::TeaHouse, _) => Flow::done(),
             (Card::Alley, _) => alley(g, f, input),
             (Card::Aristocrat, _) => {
+                if f.pc > 0 {
+                    return Some(Flow::done());
+                }
+                f.pc = 1;
                 let n = g
                     .in_play(f.player)
                     .iter()
@@ -218,7 +222,7 @@ impl SetRules for Rules {
             (Card::Change, _) => change(g, f, input),
             (Card::Craftsman, _) => {
                 if f.pc == 0 {
-                    add_debt(g, f.player, 2);
+                    g.add_debt(f.player, 2);
                 }
                 gain_where(g, f, input, 0, Dest::Discard, |_, c| {
                     c.at_most(Cost::coins(5))
@@ -238,15 +242,15 @@ impl SetRules for Rules {
             (Card::Fishmonger, _) => Flow::done(),
             (Card::GoldMine, _) => gold_mine(g, f, input),
             (Card::ImperialEnvoy, _) => {
-                add_debt(g, f.player, 2);
+                g.add_debt(f.player, 2);
                 Flow::done()
             }
             (Card::Litter, _) => {
-                add_debt(g, f.player, 1);
+                g.add_debt(f.player, 1);
                 Flow::done()
             }
             (Card::RootCellar, _) => {
-                add_debt(g, f.player, 3);
+                g.add_debt(f.player, 3);
                 Flow::done()
             }
             (Card::Ninja, _) => discard_down_to_3(g, f, input),
@@ -508,10 +512,6 @@ fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
     if p == g.turn.player {
         g.turn.buys += n;
     }
-}
-
-fn add_debt(g: &mut Game, p: PlayerId, n: u32) {
-    g.players[p.index()].debt += n;
 }
 
 /// This turn's lasting effects of `card` owned by `p`.
@@ -1036,7 +1036,7 @@ fn change(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if let Some(gained) = input.card() {
                 let trashed = g.cost_of(f.s.pick.expect("set in step 1")).coins;
                 let diff = g.cost_of(gained).coins.abs_diff(trashed);
-                add_debt(g, p, diff as u32);
+                g.add_debt(p, diff as u32);
             }
             Flow::done()
         }
@@ -1061,7 +1061,7 @@ fn gold_mine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if !input.cards().is_empty() {
-                add_debt(g, f.player, 4);
+                g.add_debt(f.player, 4);
             }
             Flow::done()
         }
@@ -1288,7 +1288,7 @@ fn credit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
     if let Some(c) = input.card() {
         let debt = g.cost_of(c).coins;
-        add_debt(g, f.player, debt as u32);
+        g.add_debt(f.player, debt as u32);
     }
     Flow::done()
 }

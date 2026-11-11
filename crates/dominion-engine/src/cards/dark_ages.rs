@@ -747,7 +747,7 @@ fn play_twice_and_trash(g: &mut Game, f: &mut CardFrame, input: Input, types: Ty
     match f.pc {
         0 => {
             let candidates: Vec<CardId> = g
-                .cards_in_hand_where(p, types)
+                .playable(p, types)
                 .into_iter()
                 .filter(|&c| !g.is(c, Types::DURATION))
                 .collect();
