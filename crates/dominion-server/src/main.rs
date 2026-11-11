@@ -1,4 +1,5 @@
 use clap::{Args, Parser, Subcommand};
+use dominion_server::Options;
 use dominion_server::config::Config;
 use dominion_server::hub::{Hub, NewGame};
 use std::net::{IpAddr, SocketAddr};
@@ -106,7 +107,11 @@ async fn serve(config: Config) -> Result<(), String> {
         let _ = tokio::signal::ctrl_c().await;
         signal.cancel();
     });
-    dominion_server::serve(listener, Arc::new(hub), hosts, stop)
+    let options = Options {
+        allowed_hosts: hosts,
+        session_idle: config.session_idle(),
+    };
+    dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
         .map_err(|e| e.to_string())
 }

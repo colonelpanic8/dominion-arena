@@ -1,20 +1,42 @@
+use dominion_server::Options;
 use dominion_server::client::{Client, Reply};
 use dominion_server::hub::Hub;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 
-async fn start() -> (String, CancellationToken) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+struct Server {
+    url: String,
+    stop: CancellationToken,
+}
+
+async fn start_on(addr: &str, options: Options) -> Server {
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let url = format!("http://{}/mcp", listener.local_addr().unwrap());
     let stop = CancellationToken::new();
     tokio::spawn(dominion_server::serve(
         listener,
         Arc::new(Hub::default()),
-        vec![],
+        options,
         stop.clone(),
     ));
-    (url, stop)
+    Server { url, stop }
+}
+
+async fn start() -> (String, CancellationToken) {
+    let server = start_on("127.0.0.1:0", Options::default()).await;
+    (server.url, server.stop)
+}
+
+/// A server whose sessions close after `idle` without a call.
+async fn start_with_idle(idle: Duration) -> Server {
+    let options = Options {
+        session_idle: Some(idle),
+        ..Options::default()
+    };
+    start_on("127.0.0.1:0", options).await
 }
 
 /// A two-player game: its id and seat tokens.
@@ -216,4 +238,48 @@ async fn arguments_a_tool_does_not_take_are_refused() {
     assert_eq!(games.json.unwrap()["games"].as_array().unwrap().len(), 1);
     client.close().await;
     stop.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_join_lasts_until_its_session_ends() {
+    let server = start_with_idle(Duration::from_secs(3)).await;
+    let client = Client::connect(&server.url).await.unwrap();
+    let (game, tokens) = create(&client).await;
+    let join = json!({ "game_id": game, "token": tokens[0] });
+    assert!(call(&client, "join_game", join.clone()).await.ok);
+    assert!(call(&client, "view", json!({})).await.ok);
+
+    // The idle session is closed; the client starts another without saying so.
+    sleep(Duration::from_secs(5)).await;
+    let unbound = call(&client, "view", json!({})).await;
+    assert!(!unbound.ok);
+    assert!(unbound.text.contains("join_game again"), "{}", unbound.text);
+    assert!(
+        call(&client, "view", json!({ "token": tokens[0] }))
+            .await
+            .ok
+    );
+    assert!(call(&client, "join_game", join).await.ok);
+    assert!(call(&client, "view", json!({})).await.ok);
+    client.close().await;
+    server.stop.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_wait_ends_before_its_session_would() {
+    let server = start_with_idle(Duration::from_secs(2)).await;
+    let client = Client::connect(&server.url).await.unwrap();
+    let (_, tokens) = create(&client).await;
+    let waiting = client.call(
+        "wait_for_decision",
+        json!({ "token": tokens[1], "timeout_ms": 30_000 }),
+    );
+    let waited = timeout(Duration::from_secs(10), waiting)
+        .await
+        .expect("the wait outlived its session and was never answered")
+        .unwrap();
+    assert!(waited.ok, "{}", waited.text);
+    assert_eq!(waited.json.unwrap()["decision"], Value::Null);
+    client.close().await;
+    server.stop.cancel();
 }

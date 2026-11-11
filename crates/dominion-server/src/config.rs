@@ -8,6 +8,7 @@ use std::time::Duration;
 
 pub const DEFAULT_PORT: u16 = 7317;
 pub const DEFAULT_KEEP_FINISHED_DAYS: u32 = 7;
+pub const DEFAULT_SESSION_IDLE_MINUTES: u32 = 24 * 60;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -20,6 +21,10 @@ pub struct Config {
     /// and the listen address.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
+    /// Minutes an MCP session may go without a call before the server closes it, which
+    /// also forgets the seat it joined (default 1440; 0 never closes one). Under twenty
+    /// minutes it also shortens the longest `wait_for_decision`, to half of it.
+    pub session_idle_minutes: Option<u32>,
     /// The MCP endpoint `dominion play` connects to (default the local server).
     pub server: Option<String>,
     /// Whether `dominion serve` saves its games and resumes them on restart (default true).
@@ -85,6 +90,14 @@ impl Config {
         self.port.unwrap_or(DEFAULT_PORT)
     }
 
+    /// How long an idle MCP session is kept; `None` is until the server stops.
+    pub fn session_idle(&self) -> Option<Duration> {
+        let minutes = self
+            .session_idle_minutes
+            .unwrap_or(DEFAULT_SESSION_IDLE_MINUTES);
+        (minutes > 0).then(|| Duration::from_secs(u64::from(minutes) * 60))
+    }
+
     pub fn server(&self) -> String {
         self.server
             .clone()
@@ -105,10 +118,13 @@ mod tests {
         assert_eq!(config.listen(), IpAddr::from([0, 0, 0, 0]));
         assert_eq!(config.port(), 9000);
         assert_eq!(config.server(), "http://127.0.0.1:9000/mcp");
+        assert_eq!(config.session_idle(), Some(Duration::from_secs(86_400)));
         assert!(toml::from_str::<Config>("prot = 1").is_err());
         let off: Config = toml::from_str("persist = false\nstate_dir = \"/x\"").unwrap();
         assert_eq!(off.state_dir(), None);
         let on: Config = toml::from_str("state_dir = \"/x\"").unwrap();
         assert_eq!(on.state_dir(), Some(PathBuf::from("/x")));
+        let sessions: Config = toml::from_str("session_idle_minutes = 0").unwrap();
+        assert_eq!(sessions.session_idle(), None);
     }
 }

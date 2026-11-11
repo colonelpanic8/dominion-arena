@@ -13,6 +13,9 @@ use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+/// The longest `wait_for_decision` waits, whatever it is asked for.
+pub const MAX_WAIT: Duration = Duration::from_secs(600);
+
 /// How a view is returned as text content.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -35,7 +38,7 @@ pub struct JoinParams {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ViewParams {
-    /// Your seat token (optional after join_game in a session-keeping client).
+    /// Your seat token (optional in an MCP session that has called join_game).
     pub token: Option<String>,
     #[serde(default)]
     pub format: Format,
@@ -80,6 +83,7 @@ pub struct NoParams {}
 pub struct Session {
     hub: Arc<Hub>,
     joined: Arc<Mutex<Option<Seat>>>,
+    max_wait: Duration,
 }
 
 fn failure(message: impl Into<String>) -> CallToolResult {
@@ -102,10 +106,13 @@ fn view_result(view: &AgentView, text: String, format: Format) -> CallToolResult
 }
 
 impl Session {
-    pub fn new(hub: Arc<Hub>) -> Session {
+    /// `max_wait` caps `wait_for_decision`; it must be shorter than the time an idle
+    /// session is kept, or a waiting call would outlive its session.
+    pub fn new(hub: Arc<Hub>, max_wait: Duration) -> Session {
         Session {
             hub,
             joined: Arc::new(Mutex::new(None)),
+            max_wait: max_wait.min(MAX_WAIT),
         }
     }
 
@@ -117,7 +124,12 @@ impl Session {
         match token {
             Some(token) => self.hub.find(token),
             None => self.joined().clone().ok_or_else(|| {
-                HubError::BadRequest("pass your seat token (or call join_game first)".into())
+                HubError::BadRequest(
+                    "this MCP session has not joined a seat (a join lasts until the session \
+                     ends: a server restart or a long idle spell ends it): pass your seat \
+                     token, or call join_game again"
+                        .into(),
+                )
             }),
         }
     }
@@ -155,7 +167,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Bind this MCP session to the seat a token claims, so later calls may omit the token. Returns that seat's view."
+        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Returns that seat's view."
     )]
     async fn join_game(
         &self,
@@ -192,7 +204,7 @@ impl Session {
             Ok(seat) => seat,
             Err(e) => return Ok(failure(e.to_string())),
         };
-        let timeout = Duration::from_millis(p.timeout_ms.unwrap_or(30_000).min(600_000));
+        let timeout = Duration::from_millis(p.timeout_ms.unwrap_or(30_000)).min(self.max_wait);
         if let Err(e) = self.hub.wait(&seat, timeout).await {
             return Ok(failure(e.to_string()));
         }
@@ -270,7 +282,8 @@ impl Session {
     name = "dominion",
     instructions = "Play Dominion. create_game returns a token per seat; a seat's \
 token is the only way to see or act for it. Pass `token` to view, wait_for_decision and \
-answer (or call join_game once, in clients that keep MCP sessions). Loop: \
+answer. (join_game binds a seat to this MCP session so later calls may leave the token \
+out, but only until the session ends: keep the token.) Loop: \
 wait_for_decision, read the view, then answer the decision with option indices (in order \
 when the decision is ordered, or `name` when it says any card may be named). Views are \
 dominion/agent-view@2: the JSON is the structured content, the text rendering the text \
