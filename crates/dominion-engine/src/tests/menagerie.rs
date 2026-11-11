@@ -1252,6 +1252,28 @@ fn village_green_discarded_by_cardinal_is_played_out_of_turn() {
 }
 
 #[test]
+fn village_green_discarded_during_clean_up_cannot_be_played() {
+    let mut g = setup(&[Card::VillageGreen]);
+    g.landscapes.push(Card::Friendly);
+    let pile = g.pile_of(Card::VillageGreen).unwrap();
+    g.piles[pile.index()].traits.push(Card::Friendly);
+    hand(&mut g, P0, &[Card::VillageGreen, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    exiled(&mut g, P0, &[Card::VillageGreen]);
+    g.start();
+    to_buy(&mut g);
+    end_phase(&mut g);
+    // Friendly, at the start of Clean-up, discards the one in hand to gain another,
+    // which lets the Exiled one be discarded.
+    trigger(&mut g, Card::Friendly);
+    trigger(&mut g, Card::Sanctuary);
+    assert!(exile_kinds(&g, P0).is_empty());
+    assert_eq!(g.count_owned(P0, Card::VillageGreen), 3);
+    assert!(in_play_kinds(&g, P0).is_empty());
+    assert_eq!(g.turn().player, P1);
+}
+
+#[test]
 fn wayfarer_draws_three_and_may_gain_a_silver() {
     let mut g = setup(&[Card::Wayfarer]);
     hand(&mut g, P0, &[Card::Wayfarer]);

@@ -17,7 +17,7 @@ use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -385,7 +385,10 @@ impl SetRules for Rules {
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
             Occasion::Discard { player, card } => {
-                if g.card(card) == Card::VillageGreen && g.zone(card) == Zone::Discard(player) {
+                if g.card(card) == Card::VillageGreen
+                    && g.zone(card) == Zone::Discard(player)
+                    && g.turn.phase != Phase::Cleanup
+                {
                     out.push(Trigger::new(player, Card::VillageGreen, REACT).on(card).optional());
                 }
             }
