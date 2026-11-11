@@ -1400,6 +1400,137 @@ fn ruins_and_necropolis_give_their_bonuses() {
     assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
 }
 
+// ---- Rulings and interactions ----
+
+#[test]
+fn a_market_square_drawn_by_a_trash_ability_can_react_to_that_trash() {
+    let mut g = setup(&[Card::MarketSquare, Card::JunkDealer]);
+    hand(&mut g, P0, &[Card::JunkDealer, Card::OvergrownEstate]);
+    deck(&mut g, P0, &[Card::Copper, Card::MarketSquare]);
+    g.start();
+    play(&mut g, Card::JunkDealer);
+    choose_kinds(&mut g, &[Card::OvergrownEstate]);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    trigger(&mut g, 0);
+    assert_eq!(g.count_owned(P0, Card::Gold), 1);
+}
+
+#[test]
+fn catacombs_trashed_by_remodel_gains_before_remodel_does() {
+    let mut g = setup(&[Card::Remodel, Card::Catacombs]);
+    hand(&mut g, P0, &[Card::Remodel, Card::Catacombs]);
+    g.start();
+    play(&mut g, Card::Remodel);
+    assert_eq!(g.pending().unwrap().source, Some(Card::Catacombs));
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(g.pending().unwrap().source, Some(Card::Remodel));
+    choose_pile(&mut g, Card::Gold);
+    assert_eq!(discard_kinds(&g, P0), [Card::Silver, Card::Gold]);
+}
+
+#[test]
+fn hovel_reacts_to_a_victory_card_gained_from_the_trash() {
+    let mut g = setup_with(GameConfig {
+        shelters: Some(true),
+        colonies: Some(false),
+        ..GameConfig::new(2, vec![Card::Rogue], 7)
+    });
+    // The replaced starting hand in the trash costs at most $1.
+    let hovel = hand(&mut g, P0, &[Card::Rogue, Card::Hovel])[1];
+    g.create(Card::Duchy, Zone::Trash);
+    g.start();
+    play(&mut g, Card::Rogue);
+    trigger(&mut g, 0);
+    assert_eq!(g.count_owned(P0, Card::Duchy), 1);
+    assert_eq!(g.zone(hovel), Zone::Trash);
+}
+
+#[test]
+fn a_throne_roomed_cultist_gives_two_ruins_and_draws_four() {
+    let mut g = setup(&[Card::Cultist, Card::ThroneRoom]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Cultist]);
+    deck(&mut g, P0, &[Card::Copper; 6]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Cultist]);
+    assert_eq!(g.hand(P0).len(), 4);
+    assert_eq!(owned_where(&g, P1, Types::RUINS), 2);
+}
+
+#[test]
+fn beggar_reaction_is_optional() {
+    let mut g = setup(&[Card::Beggar, Card::Marauder]);
+    hand(&mut g, P0, &[Card::Marauder]);
+    hand(&mut g, P1, &[Card::Beggar]);
+    g.start();
+    play(&mut g, Card::Marauder);
+    no(&mut g);
+    assert_eq!(hand_kinds(&g, P1), [Card::Beggar]);
+    assert_eq!(g.count_owned(P1, Card::Silver), 0);
+}
+
+#[test]
+fn moat_protects_from_a_knight() {
+    let mut g = setup(&[Card::Knights, Card::Moat]);
+    hand(&mut g, P0, &[Card::SirBailey]);
+    hand(&mut g, P1, &[Card::Moat]);
+    deck(&mut g, P1, &[Card::Silver, Card::Gold]);
+    g.start();
+    play(&mut g, Card::SirBailey);
+    trigger(&mut g, 0);
+    assert_eq!(deck_kinds(&g, P1), [Card::Silver, Card::Gold]);
+}
+
+#[test]
+fn graverobber_options_can_be_chosen_when_they_cannot_be_done() {
+    let mut g = setup(&[Card::Graverobber]);
+    hand(&mut g, P0, &[Card::Graverobber, Card::Copper]);
+    empty_trash(&mut g);
+    g.start();
+    play(&mut g, Card::Graverobber);
+    mode(&mut g, 0);
+    assert_eq!(g.turn().phase, Phase::Buy);
+
+    let mut g = setup(&[Card::Graverobber]);
+    hand(&mut g, P0, &[Card::Graverobber, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Graverobber);
+    mode(&mut g, 1);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+}
+
+#[test]
+fn a_hermit_that_left_play_is_not_exchanged() {
+    let mut g = setup(&[Card::Hermit, Card::Procession, Card::Sage]);
+    hand(&mut g, P0, &[Card::Procession, Card::Hermit]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Procession);
+    choose_kinds(&mut g, &[Card::Hermit]);
+    choose_pile(&mut g, Card::Sage);
+    choose(&mut g, &[]);
+    choose_pile(&mut g, Card::Sage);
+    // Procession trashed it; no Action costs exactly $4, so nothing is gained.
+    end_phase(&mut g);
+    assert_eq!(g.count_owned(P0, Card::Madman), 0);
+    assert_eq!(trash_kinds(&g).last(), Some(&Card::Hermit));
+}
+
+#[test]
+#[ignore = "each trashed card's abilities resolve in its own window, in trash order; the \
+            player can't interleave the abilities of cards trashed together"]
+fn the_abilities_of_cards_trashed_together_resolve_in_the_players_order() {
+    let mut g = setup(&[Card::Urchin, Card::Rats, Card::Cultist]);
+    hand(&mut g, P0, &[Card::Mercenary, Card::Rats, Card::Cultist]);
+    deck(&mut g, P0, &[Card::Copper; 6]);
+    g.start();
+    play(&mut g, Card::Mercenary);
+    yes(&mut g);
+    choose_kinds(&mut g, &[Card::Rats, Card::Cultist]);
+    // Rats' +1 Card and Cultist's +3 Cards are both pending: the player picks the order.
+    assert_eq!(purpose(&g), Purpose::Trigger);
+}
+
 // ---- Random games ----
 
 /// Random games of Dark Ages kingdoms where every deck starts with a copy of each
@@ -1453,6 +1584,10 @@ fn random_dark_ages_games_keep_invariants() {
             assert!(steps < 100_000, "seed {seed}: game does not end");
         }
         check_zones(&g);
+        assert!(
+            g.trashing.is_empty(),
+            "seed {seed}: trash bookkeeping leaked"
+        );
         assert!(!g.outcome().unwrap().winners.is_empty());
     }
 }
