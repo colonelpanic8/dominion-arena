@@ -499,8 +499,9 @@ impl SetRules for Rules {
         }
         if g.has_landscape(Card::ApproachingArmy) && !g.ext.rising_sun.army_added {
             g.ext.rising_sun.army_added = true;
-            let mut pool = unused_kingdom_cards(g);
-            pool.retain(|c| c.is(Types::ATTACK));
+            let pool = Card::kingdom_cards()
+                .filter(|&c| c.is(Types::ATTACK) && setup::unused(g, c))
+                .collect();
             if let Some(card) = s.choose(g, Card::ApproachingArmy, pool) {
                 setup::add_kingdom_pile(g, card);
             }
@@ -569,7 +570,7 @@ fn gain_where(
     })
 }
 
-/// Kingdom cards not used in this game.
+/// Kingdom cards not used in this game that a random kingdom can have.
 fn unused_kingdom_cards(g: &Game) -> Vec<Card> {
     Card::kingdom_cards()
         .filter(|&c| !c.def().removed && setup::unused(g, c))
@@ -583,7 +584,6 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
         .filter(|&c| {
             let def = c.def();
             c.kind() == Kind::Card
-                && !def.removed
                 && (def.kingdom || def.pile.is_some_and(|p| p.def().kingdom))
                 && c.is(Types::ACTION)
                 && !c.is(Types::DURATION)

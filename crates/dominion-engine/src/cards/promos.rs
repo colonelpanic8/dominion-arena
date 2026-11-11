@@ -200,7 +200,7 @@ impl SetRules for Rules {
 /// card in the game.
 fn black_market_eligible(g: &Game, card: Card) -> bool {
     let def = card.def();
-    if card.kind() != Kind::Card || !def.kingdom || def.removed || !setup::unused(g, card) {
+    if card.kind() != Kind::Card || !def.kingdom || !setup::unused(g, card) {
         return false;
     }
     let Some(cost) = def.cost else {

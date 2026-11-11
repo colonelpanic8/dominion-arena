@@ -494,7 +494,6 @@ impl SetRules for Rules {
                     let def = c.def();
                     c.kind() == Kind::Card
                         && def.kingdom
-                        && !def.removed
                         && def.pile.is_none()
                         && c.is(Types::ACTION)
                         && !c.is(Types::DURATION)
