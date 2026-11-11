@@ -717,7 +717,7 @@ fn summon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
-                && g.zone(c) == Zone::Discard(f.player)
+                && g.gained_to(f.player, c) == Some(g.zone(c))
             {
                 g.set_aside(c, f.player);
                 g.add_lasting(

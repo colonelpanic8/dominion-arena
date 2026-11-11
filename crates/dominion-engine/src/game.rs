@@ -401,6 +401,9 @@ pub struct Game {
     /// The turns of the extra round after the game ended (Fleet) still to be taken.
     pub(crate) final_round: VecDeque<PlayerId>,
     pub(crate) gains: Vec<GainState>,
+    /// The gain that finished last.
+    #[serde(default)]
+    pub(crate) last_gain: Option<GainState>,
     /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
     pub(crate) trashing: Vec<(CardId, Zone)>,
     pub(crate) plays: Vec<PlayState>,
@@ -641,6 +644,19 @@ impl Game {
             .rev()
             .find(|st| st.card == id)
             .map(|st| st.cost)
+    }
+
+    /// Where `p` gained `id` to, if that is the gain that just finished (`None` if someone
+    /// else gained it instead): for effects that go on to do something with the card they
+    /// had `p` gain.
+    pub(crate) fn gained_to(&self, p: PlayerId, id: CardId) -> Option<Zone> {
+        let st = self.last_gain.as_ref()?;
+        (st.card == id && st.player == p).then_some(match st.to {
+            crate::Dest::Discard => Zone::Discard(p),
+            crate::Dest::Hand => Zone::Hand(p),
+            crate::Dest::DeckTop => Zone::Deck(p),
+            crate::Dest::SetAside => Zone::SetAside(p),
+        })
     }
 
     /// Where `id` was trashed from, while its "when trashed" abilities resolve.

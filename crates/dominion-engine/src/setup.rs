@@ -175,6 +175,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         ending: None,
         final_round: VecDeque::new(),
         gains: vec![],
+        last_gain: None,
         trashing: vec![],
         plays: vec![],
         ext: Ext::default(),

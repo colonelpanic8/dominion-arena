@@ -92,7 +92,9 @@ them.
   plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
-  card's cost then in `GainState::cost`), `Gain` window.
+  card's cost then in `GainState::cost`), `Gain` window. An effect that goes on with the
+  card it gained asks `g.gained_to(p, id)` where `p` gained it to (`None` if someone
+  else gained it instead: Possession) rather than assuming the discard pile.
   **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
   (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
   `f.data` = the $ and `f.s.cost` = all of it), `Buy` window, then gain.

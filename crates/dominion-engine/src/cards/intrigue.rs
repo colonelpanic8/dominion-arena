@@ -719,7 +719,9 @@ fn replace(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             return Flow::done();
         };
         let types = g.types(c);
-        if types.intersects(Types::ACTION | Types::TREASURE) && g.zone(c) == Zone::Discard(p) {
+        if types.intersects(Types::ACTION | Types::TREASURE)
+            && g.gained_to(p, c) == Some(g.zone(c))
+        {
             g.top_deck(c, p);
         }
         if !types.contains(Types::VICTORY) {
