@@ -82,12 +82,15 @@ state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_
 keep_finished_days = 7         # serve: delete finished games this old at startup
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to
+reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 ```
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;
-`dominion play --game ID --token T` plays a seat of an existing game. `dominion card NAME`
-prints a card's text.
+`dominion play --game ID --token T` plays a seat of an existing game. It rides out a
+server restart: when it loses the server it keeps trying to reach it for
+`reconnect_seconds` (`--reconnect`), then gives up. `dominion card NAME` prints a card's
+text.
 
 ## Development
 

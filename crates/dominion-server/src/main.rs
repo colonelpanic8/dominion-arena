@@ -6,6 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 /// Play Dominion through the agent-view@2 protocol.
@@ -48,6 +49,9 @@ struct PlayArgs {
     /// The server's MCP endpoint (default from the config file, else the local server).
     #[arg(long)]
     server: Option<String>,
+    /// Seconds to keep trying to reach a server that went away (default 30).
+    #[arg(long, value_name = "SECONDS")]
+    reconnect: Option<u32>,
     /// Create a new game and take its first seat.
     #[arg(long, conflicts_with_all = ["game", "token"])]
     new: bool,
@@ -143,6 +147,9 @@ async fn main() -> ExitCode {
         }
         Command::Play(args) => {
             let url = args.server.clone().unwrap_or_else(|| config.server());
+            let reconnect = args
+                .reconnect
+                .map_or(config.reconnect(), |s| Duration::from_secs(s.into()));
             let new = args.new.then(|| NewGame {
                 players: args.players,
                 names: args.names,
@@ -153,7 +160,7 @@ async fn main() -> ExitCode {
                 ..NewGame::default()
             });
             let seat = args.game.zip(args.token);
-            dominion_server::client::play(&url, new, seat).await
+            dominion_server::client::play(&url, new, seat, reconnect).await
         }
         Command::Card { names } => names.iter().try_for_each(|name| {
             dominion_agent::glossary(name)

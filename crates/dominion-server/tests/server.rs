@@ -1,28 +1,30 @@
 use dominion_server::Options;
-use dominion_server::client::{Client, Reply};
+use dominion_server::client::{CallError, Client, Reply};
 use dominion_server::hub::Hub;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::task::JoinHandle;
 use tokio::time::{sleep, timeout};
 use tokio_util::sync::CancellationToken;
 
 struct Server {
     url: String,
     stop: CancellationToken,
+    done: JoinHandle<std::io::Result<()>>,
 }
 
 async fn start_on(addr: &str, options: Options) -> Server {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     let url = format!("http://{}/mcp", listener.local_addr().unwrap());
     let stop = CancellationToken::new();
-    tokio::spawn(dominion_server::serve(
+    let done = tokio::spawn(dominion_server::serve(
         listener,
         Arc::new(Hub::default()),
         options,
         stop.clone(),
     ));
-    Server { url, stop }
+    Server { url, stop, done }
 }
 
 async fn start() -> (String, CancellationToken) {
@@ -282,4 +284,27 @@ async fn a_wait_ends_before_its_session_would() {
     assert_eq!(waited.json.unwrap()["decision"], Value::Null);
     client.close().await;
     server.stop.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_call_fails_when_the_server_goes_away() {
+    let server = start_on("127.0.0.1:0", Options::default()).await;
+    let client = Client::connect(&server.url).await.unwrap();
+    let (_, tokens) = create(&client).await;
+    let waiting = tokio::spawn(async move {
+        let wait = json!({ "token": tokens[1], "timeout_ms": 60_000 });
+        client.call("wait_for_decision", wait).await
+    });
+    sleep(Duration::from_millis(500)).await;
+    server.stop.cancel();
+    timeout(Duration::from_secs(5), server.done)
+        .await
+        .expect("the server shuts down")
+        .unwrap()
+        .unwrap();
+    let outcome = timeout(Duration::from_secs(20), waiting)
+        .await
+        .expect("the call neither returned nor failed after the server was gone")
+        .unwrap();
+    assert!(matches!(outcome, Err(CallError::Lost(_))), "{outcome:?}");
 }

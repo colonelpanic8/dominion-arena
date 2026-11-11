@@ -9,6 +9,7 @@ use std::time::Duration;
 pub const DEFAULT_PORT: u16 = 7317;
 pub const DEFAULT_KEEP_FINISHED_DAYS: u32 = 7;
 pub const DEFAULT_SESSION_IDLE_MINUTES: u32 = 24 * 60;
+pub const DEFAULT_RECONNECT_SECONDS: u32 = 30;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -27,6 +28,9 @@ pub struct Config {
     pub session_idle_minutes: Option<u32>,
     /// The MCP endpoint `dominion play` connects to (default the local server).
     pub server: Option<String>,
+    /// Seconds `dominion play` keeps trying to reach a server it lost before it gives up
+    /// (default 30).
+    pub reconnect_seconds: Option<u32>,
     /// Whether `dominion serve` saves its games and resumes them on restart (default true).
     pub persist: Option<bool>,
     /// Where saved games live (default `$XDG_STATE_HOME/dominion/games`).
@@ -102,6 +106,11 @@ impl Config {
         self.server
             .clone()
             .unwrap_or_else(|| format!("http://127.0.0.1:{}/mcp", self.port()))
+    }
+
+    pub fn reconnect(&self) -> Duration {
+        let seconds = self.reconnect_seconds.unwrap_or(DEFAULT_RECONNECT_SECONDS);
+        Duration::from_secs(seconds.into())
     }
 }
 
