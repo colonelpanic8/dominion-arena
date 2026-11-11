@@ -96,6 +96,8 @@ pub struct Player {
     pub minus_coin: bool,
     pub journey_face_up: bool,
     pub turns_taken: u32,
+    /// How many of `turns_taken` were extra turns, which don't count for the tiebreaker.
+    pub extra_turns_taken: u32,
 }
 
 impl Player {
@@ -279,6 +281,7 @@ pub enum EndReason {
 pub struct Outcome {
     pub reason: EndReason,
     pub scores: Vec<i32>,
+    /// Turns each player took, not counting extra turns (the tiebreaker).
     pub turns: Vec<u32>,
     /// More than one winner means a tie.
     pub winners: Vec<PlayerId>,
@@ -760,6 +763,12 @@ impl Game {
         }
     }
 
+    /// `p` takes `n` Debt (or whoever takes it for them: Possession).
+    pub(crate) fn add_debt(&mut self, p: PlayerId, n: u32) {
+        let taker = cards::debt_taker(self, p).unwrap_or(p);
+        self.players[taker.index()].debt += n;
+    }
+
     /// Puts `id` on top of `p`'s deck.
     pub(crate) fn top_deck(&mut self, id: CardId, p: PlayerId) {
         self.move_card(id, Zone::Deck(p), Pos::Top);
@@ -890,7 +899,11 @@ impl Game {
     pub(crate) fn finish(&mut self, reason: EndReason) {
         let n = self.players.len();
         let scores: Vec<i32> = (0..n).map(|p| self.score(PlayerId(p as u8))).collect();
-        let turns: Vec<u32> = self.players.iter().map(|p| p.turns_taken).collect();
+        let turns: Vec<u32> = self
+            .players
+            .iter()
+            .map(|p| p.turns_taken - p.extra_turns_taken)
+            .collect();
         let best = (0..n)
             .map(|p| (scores[p], std::cmp::Reverse(turns[p])))
             .max()

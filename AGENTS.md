@@ -63,8 +63,10 @@ them.
   Debt; `EndBuyPhase`), Night (`StartNight`; play Night cards), Clean-up
   (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Extra turns queue
-  in `Game::extra_turns`; nobody takes more than two turns in a row. `Turn::controller`
-  makes someone else decide (Possession).
+  in `Game::extra_turns`; nobody takes more than two turns in a row, and extra turns
+  don't count for the tiebreaker. `Turn::controller` makes someone else decide and see
+  the player's cards (Possession, which also replaces gains, trashing through
+  `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
   (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`), choose a Way if the
   game has Ways, open an `Attack` window per other player for Attacks, then apply the
@@ -101,7 +103,8 @@ them.
   (Inheritance).
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
   Debt, VP tokens, Projects, States, Adventures tokens, ...), `Pile` (VP / Debt /
-  Embargo / Trade Route / player tokens, Traits) and `Turn`. A set's own state goes in
+  Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with
+  `g.add_debt` (never `debt +=`), so Possession can redirect it. A set's own state goes in
   its `State` struct (`g.ext.<set>`). Everything must stay `Clone + Serialize`.
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
