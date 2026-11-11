@@ -936,8 +936,10 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .take(2)
                 .collect();
             if coppers.len() < 2 {
-                let cards = g.player(p).discard.iter().map(|&c| g.card(c)).collect();
-                g.emit(Event::RevealedHand { player: p, cards });
+                let cards: Vec<Card> = g.player(p).discard.iter().map(|&c| g.card(c)).collect();
+                for card in cards {
+                    g.emit(Event::Revealed { player: p, card });
+                }
             }
             for c in coppers {
                 g.top_deck(c, p);
