@@ -498,6 +498,16 @@ impl Game {
         self.zones[id.index()]
     }
 
+    /// Whether `id` is still where it was put (gained to, put onto a deck) for an effect
+    /// that expects it there: in `zone` and, on a deck, not covered by another card.
+    pub(crate) fn still_where_put(&self, id: CardId, zone: Zone) -> bool {
+        self.zone(id) == zone
+            && match zone {
+                Zone::Deck(p) => self.players[p.index()].deck.last() == Some(&id),
+                _ => true,
+            }
+    }
+
     /// Total number of physical cards in the game.
     pub fn card_count(&self) -> usize {
         self.cards.len()

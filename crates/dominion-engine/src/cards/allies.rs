@@ -512,7 +512,18 @@ fn still_landed(g: &Game, card: CardId) -> bool {
         .iter()
         .rev()
         .find(|st| st.card == card)
-        .is_some_and(|st| dest_zone(st.to, st.player) == g.zone(card))
+        .is_some_and(|st| g.still_where_put(card, dest_zone(st.to, st.player)))
+}
+
+/// Where `p` gained `card`: the first such gain logged since `since`.
+fn gained_to(g: &Game, p: PlayerId, card: CardId, since: usize) -> Option<Zone> {
+    let kind = g.card(card);
+    g.log()[since..].iter().find_map(|e| match e {
+        Event::Gained { player, card, to } if *player == p && *card == kind => {
+            Some(dest_zone(*to, p))
+        }
+        _ => None,
+    })
 }
 
 /// What a card being gained cost when it was gained.
@@ -2389,6 +2400,7 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             f.pc = 2;
+            f.s.i = g.log().len();
             match input.pile() {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
                 None => {
@@ -2408,10 +2420,14 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         4 => {
             let m = mode_mask(input);
+            // The card is expected where it was gained to, which need not be the discard
+            // pile.
             if m & 1 != 0
                 && let Some(c) = f.s.pick
-                && g.zone(c) == Zone::Discard(p)
+                && gained_to(g, p, c, f.s.i)
+                    .is_some_and(|zone| zone != Zone::Hand(p) && g.still_where_put(c, zone))
             {
+                g.show(c);
                 g.put_in_hand(c, p);
             }
             if m & 2 != 0 {

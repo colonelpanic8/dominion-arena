@@ -1579,6 +1579,31 @@ fn hill_fort_gains_a_card_into_hand_or_gives_a_card_and_an_action() {
 }
 
 #[test]
+fn hill_fort_takes_a_card_from_where_it_was_gained_to_only() {
+    // Nomad Camp is gained onto the deck.
+    let mut g = game(&[Card::Forts, Card::NomadCamp]);
+    hand(&mut g, P0, &[Card::HillFort]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::HillFort);
+    choose_pile(&mut g, Card::NomadCamp);
+    modes(&mut g, &[0]);
+    assert_eq!(hand_kinds(&g, P0), [Card::NomadCamp]);
+
+    // A Silver that Trappers' Lodge then put onto the deck has moved.
+    let mut g = game_with(&[Card::Forts, Card::Underling], Card::TrappersLodge);
+    hand(&mut g, P0, &[Card::HillFort]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::HillFort);
+    choose_pile(&mut g, Card::Silver);
+    accept(&mut g, Card::TrappersLodge);
+    modes(&mut g, &[0]);
+    assert!(g.hand(P0).is_empty());
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Silver);
+}
+
+#[test]
 fn stronghold_gives_three_coins_or_three_cards_next_turn_and_two_vp() {
     let mut g = game(&[Card::Forts]);
     hand(&mut g, P0, &[Card::Stronghold]);
