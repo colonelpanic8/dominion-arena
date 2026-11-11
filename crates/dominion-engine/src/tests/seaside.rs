@@ -938,6 +938,30 @@ fn treasury_cannot_go_on_the_deck_after_gaining_a_victory_card() {
     assert!(discard_kinds(&g, P0).contains(&Card::Treasury));
 }
 
+/// A Treasury played on another player's turn is discarded in that turn's Clean-up, and
+/// its player had no Buy phase to gain a Victory card in.
+#[test]
+fn treasury_played_on_another_players_turn_may_go_on_the_deck() {
+    let mut g = setup(&[Card::Treasury, Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P1, &[Card::Treasury]);
+    deck(&mut g, P1, &[Card::Copper; 5]);
+    g.start();
+    play_on_another_players_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Gondola);
+    mode(&mut g, 0);
+    buy(&mut g, Card::Estate);
+    let d = g.pending().unwrap();
+    assert_eq!(
+        (d.player, d.purpose, d.source),
+        (P1, Purpose::Trigger, Some(Card::Treasury))
+    );
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(deck_kinds(&g, P1)[0], Card::Treasury);
+}
+
 #[test]
 fn treasury_ignores_victory_cards_gained_outside_the_buy_phase() {
     let mut g = setup(&[Card::Treasury, Card::Workshop]);
