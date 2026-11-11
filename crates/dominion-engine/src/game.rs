@@ -177,6 +177,8 @@ pub struct Turn {
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
     pub gained: Vec<Card>,
+    /// The cards in `gained` that were gained in the Buy phase.
+    pub gained_in_buy_phase: Vec<Card>,
     pub bought_cards: Vec<Card>,
     pub trashed: Vec<Card>,
     /// Cards drawn in Clean-up.
@@ -199,6 +201,7 @@ impl Turn {
             bought: false,
             played: vec![],
             gained: vec![],
+            gained_in_buy_phase: vec![],
             bought_cards: vec![],
             trashed: vec![],
             cleanup_draw: 5,

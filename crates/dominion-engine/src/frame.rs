@@ -724,6 +724,9 @@ fn resume_gain(
             let kind = g.card(st.card);
             if st.player == g.turn.player {
                 g.turn.gained.push(kind);
+                if g.turn.phase == Phase::Buy {
+                    g.turn.gained_in_buy_phase.push(kind);
+                }
             }
             g.emit(Event::Gained {
                 player: st.player,
