@@ -3220,3 +3220,26 @@ fn orb_looks_through_the_discard_pile_before_asking_which_option() {
     };
     assert!(g.trace().unwrap().contains(&looked));
 }
+
+#[test]
+fn a_hasty_card_gained_with_quartermaster_is_not_on_the_quartermaster() {
+    let mut g = setup(&[Card::Quartermaster, Card::Village]);
+    set_trait(&mut g, Card::Hasty, Card::Village);
+    hand(&mut g, P0, &[Card::Quartermaster]);
+    deck(&mut g, P0, &[Card::Copper; 40]);
+    g.start();
+    play(&mut g, Card::Quartermaster);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Village);
+    assert_eq!(aside_kinds(&g, P0), [Card::Village]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Quartermaster first: it has no card to put into the hand.
+    let i = trigger_index(&g, Card::Quartermaster);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    mode(&mut g, 1);
+    assert!(!hand_kinds(&g, P0).contains(&Card::Village));
+    assert!(in_play_kinds(&g, P0).contains(&Card::Village));
+}
