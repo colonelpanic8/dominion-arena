@@ -131,6 +131,9 @@ pub struct Pile {
     /// Adventures tokens on this pile, by owner.
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
+    /// Not a pile any more (Divine Wind removed it from the game) or never one (a holder for
+    /// cards set aside in setup, like Riverboat's): lookups by name skip it.
+    pub removed: bool,
 }
 
 impl Pile {
@@ -145,6 +148,7 @@ impl Pile {
             trade_route: false,
             tokens: vec![],
             traits: vec![],
+            removed: false,
         }
     }
 }
@@ -172,7 +176,8 @@ pub struct Turn {
     pub buys: u32,
     pub coins: u32,
     pub potions: u32,
-    /// Bought anything (card, Event or Project) this turn.
+    /// Bought anything (card, Event or Project) in this Buy phase (Treasures can't be played
+    /// after that).
     pub bought: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
@@ -489,7 +494,7 @@ impl Game {
     pub fn pile_of(&self, card: Card) -> Option<PileId> {
         self.piles
             .iter()
-            .position(|p| p.card == card)
+            .position(|p| p.card == card && !p.removed)
             .map(|i| PileId(i as u8))
     }
 
@@ -717,6 +722,7 @@ impl Game {
         let player = &mut self.players[p.index()];
         let mut cards = std::mem::take(&mut player.discard);
         cards.shuffle(&mut self.rng);
+        cards::arrange_shuffled(self, p, &mut cards);
         for &c in &cards {
             self.zones[c.index()] = Zone::Deck(p);
         }
@@ -724,6 +730,15 @@ impl Game {
         cards.append(&mut player.deck);
         player.deck = cards;
         self.emit(Event::Shuffled { player: p });
+    }
+
+    /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
+    /// elsewhere that can be played as if there (Shadow cards in the deck).
+    pub(crate) fn playable(&self, p: PlayerId, types: Types) -> Vec<CardId> {
+        let mut cards = self.hand(p).to_vec();
+        cards::playable_as_if_in_hand(self, p, &mut cards);
+        cards.retain(|&c| self.is(c, types));
+        cards
     }
 
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {
