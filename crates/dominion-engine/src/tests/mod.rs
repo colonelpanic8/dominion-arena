@@ -594,6 +594,29 @@ fn the_game_ends_when_provinces_run_out() {
     assert_eq!(outcome.winners, [P0]);
 }
 
+#[test]
+fn during_your_turns_effects_are_over_when_the_game_is_scored() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Keep],
+        turn_limit: Some(1),
+        ..GameConfig::new(2, vec![Card::Militia], 7)
+    });
+    g.players[0].projects.push(Card::Capitalism);
+    let militia = hand(&mut g, P0, &[Card::Militia])[0];
+    g.start();
+    // Keep: 5 VP for having the most copies of a Treasure, which Militia is for now.
+    assert!(g.is(militia, Types::TREASURE));
+    let during = g.score(P0);
+    while g.outcome().is_none() {
+        end_phase(&mut g);
+    }
+    let outcome = g.outcome().unwrap();
+    assert!(!g.is(militia, Types::TREASURE));
+    assert_eq!(outcome.scores[0], during - 5);
+}
+
 /// A random game in which every deck also starts with one of each Kingdom card (the top
 /// card of each Kingdom pile), two Golds and, if the game has them, two Potions, so the
 /// Kingdom cards actually get played.

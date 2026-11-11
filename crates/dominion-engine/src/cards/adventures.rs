@@ -491,7 +491,9 @@ impl SetRules for Rules {
         if card.kind() != Kind::Card {
             return;
         }
-        let p = g.turn.player;
+        let Some(p) = g.turn_player() else {
+            return;
+        };
         let player = g.player(p);
         let trolls = g
             .lasting()
@@ -511,14 +513,13 @@ impl SetRules for Rules {
     }
 
     fn modify_types(g: &Game, id: CardId, types: &mut Types) {
-        if g.card(id) == Card::Estate && inherited_card(g, g.turn.player).is_some() {
+        if g.card(id) == Card::Estate && inherited(g) {
             *types |= Types::ACTION | Types::COMMAND;
         }
     }
 
     fn behavior(g: &Game, id: CardId) -> Option<Card> {
-        (g.card(id) == Card::Estate && inherited_card(g, g.turn.player).is_some())
-            .then_some(Card::Inheritance)
+        (g.card(id) == Card::Estate && inherited(g)).then_some(Card::Inheritance)
     }
 
     fn vp(_g: &Game, _p: PlayerId, card: Card) -> Option<i32> {
@@ -697,6 +698,13 @@ fn inherited_card(g: &Game, p: PlayerId) -> Option<CardId> {
         .iter()
         .find(|&&(q, _)| q == p)
         .and_then(|&(_, c)| c)
+}
+
+/// Whether Estates are what Inheritance makes them: during the turns of a player who
+/// bought it.
+fn inherited(g: &Game) -> bool {
+    g.turn_player()
+        .is_some_and(|p| inherited_card(g, p).is_some())
 }
 
 /// How many cards `p` gained on their most recent turn.

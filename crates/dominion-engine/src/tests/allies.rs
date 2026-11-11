@@ -2232,6 +2232,49 @@ fn plateau_shepherds_pairs_favors_with_cards_costing_two() {
     assert_eq!(g.score(P0), 3 + 6);
 }
 
+/// A Plateau Shepherds game that ends after P0's first turn.
+fn one_turn_game(kingdom: &[Card]) -> Game {
+    setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::PlateauShepherds],
+        turn_limit: Some(1),
+        ..GameConfig::new(2, kingdom.to_vec(), 7)
+    })
+}
+
+fn score_after_the_turn(g: &mut Game, p: PlayerId) -> i32 {
+    while g.outcome().is_none() {
+        end_phase(g);
+    }
+    g.outcome().unwrap().scores[p.index()]
+}
+
+#[test]
+fn plateau_shepherds_scores_without_canal() {
+    let mut g = one_turn_game(&[Card::Underling]);
+    g.players[0].projects.push(Card::Canal);
+    set_favors(&mut g, P0, 3);
+    g.start();
+    let estate = find(&g, P0, Card::Estate);
+    assert_eq!(g.cost_of(estate), Cost::coins(1));
+    // "During your turns" is over: three Estates and three pairs with them.
+    assert_eq!(score_after_the_turn(&mut g, P0), 3 + 6);
+}
+
+#[test]
+fn plateau_shepherds_scores_fisherman_at_its_printed_cost() {
+    let mut g = one_turn_game(&[Card::Underling, Card::Fisherman]);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Fisherman; 5]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    assert_eq!(g.cost(Card::Fisherman), Cost::coins(2));
+    assert_eq!(score_after_the_turn(&mut g, P0), 0);
+    assert!(g.player(P0).discard.is_empty());
+}
+
 #[test]
 fn trappers_lodge_puts_a_gained_card_onto_the_deck_for_a_favor() {
     let mut g = game_with(&[Card::Underling], Card::TrappersLodge);

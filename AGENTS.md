@@ -120,6 +120,8 @@ them.
   (Inheritance). Effects that look back at the turn ("the first Action you play", "the
   third Action you gain") count the types cards had then: `Turn::played_types` /
   `gained_types` (`played_of`, `gained_of`), never `Card::is` on `played` / `gained`.
+  "During your turns" and "this turn" modifiers ask `g.turn_player()`, which is no one
+  between turns and when the game is scored, never `g.turn.player`.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
   Debt, VP tokens, Projects, States, Adventures tokens, ...), `Pile` (VP / Debt /
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with

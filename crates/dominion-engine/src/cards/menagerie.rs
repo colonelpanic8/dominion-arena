@@ -417,11 +417,12 @@ impl SetRules for Rules {
     }
 
     fn modify_cost(g: &Game, card: Card, _id: Option<CardId>, cost: &mut Cost) {
+        let turn_player = g.turn_player();
         match card {
-            Card::Fisherman if g.player(g.turn.player).discard.is_empty() => {
+            Card::Fisherman if turn_player.is_some_and(|p| g.player(p).discard.is_empty()) => {
                 *cost = cost.minus_coins(3);
             }
-            Card::Destrier => {
+            Card::Destrier if turn_player.is_some() => {
                 *cost = cost.minus_coins(g.turn.gained.len().min(255) as u8);
             }
             _ => {}
@@ -429,7 +430,7 @@ impl SetRules for Rules {
     }
 
     fn fixed_cost(g: &Game, card: Card, _id: Option<CardId>) -> Option<Cost> {
-        if card != Card::Wayfarer {
+        if card != Card::Wayfarer || g.turn_player().is_none() {
             return None;
         }
         let log = g.log();

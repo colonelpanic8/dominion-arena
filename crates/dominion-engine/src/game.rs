@@ -535,6 +535,12 @@ impl Game {
         &self.turn
     }
 
+    /// Whose turn is in progress. No one's between turns and once the game is over, when
+    /// "during your turns" and "this turn" effects apply to nobody (scoring).
+    pub(crate) fn turn_player(&self) -> Option<PlayerId> {
+        (self.turn.phase != Phase::End).then_some(self.turn.player)
+    }
+
     pub fn landscapes(&self) -> &[Card] {
         &self.landscapes
     }
@@ -714,6 +720,8 @@ impl Game {
             .count()
     }
 
+    /// `p`'s VP as the cards stand. During a turn its cost and type changes count; the
+    /// final scores are taken after the last turn, when none apply.
     pub fn score(&self, p: PlayerId) -> i32 {
         let player = &self.players[p.index()];
         let cards: i32 = player
