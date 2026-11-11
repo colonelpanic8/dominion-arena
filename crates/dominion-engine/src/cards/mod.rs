@@ -60,7 +60,7 @@ pub(crate) trait SetRules {
     /// Applies this set's type-changing effects to `id`.
     fn modify_types(g: &Game, id: CardId, types: &mut Types) {}
 
-    /// Changes the vanilla bonuses `p` gets from playing `id`.
+    /// Changes the vanilla bonuses `p` gets from following `id`'s own instructions.
     fn modify_bonus(g: &Game, p: PlayerId, id: CardId, bonus: &mut Bonus) {}
 
     /// How many more times a play of `id` by `p` follows its instructions (Reckless).

@@ -1387,7 +1387,9 @@ impl PlayFrame {
                     coins: def.coins as u32,
                     potions: def.potions as u32,
                 };
-                cards::modify_bonus(g, p, id, &mut bonus);
+                if st.way.is_none() {
+                    cards::modify_bonus(g, p, id, &mut bonus);
+                }
                 let pl = &mut g.players[p.index()];
                 pl.villagers += bonus.plus.villagers as u32;
                 pl.coffers += bonus.plus.coffers as u32;

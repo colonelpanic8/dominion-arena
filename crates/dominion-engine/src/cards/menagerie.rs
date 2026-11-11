@@ -1972,7 +1972,13 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
             f.s.card = Some(behavior);
             f.s.n = g.next_lasting as i32;
             let def = behavior.def();
-            let plus = def.plus;
+            let mut bonus = super::Bonus {
+                plus: def.plus,
+                coins: def.coins as u32,
+                potions: def.potions as u32,
+            };
+            super::modify_bonus(g, p, id, &mut bonus);
+            let plus = bonus.plus;
             plus_actions(g, p, plus.actions as u32);
             plus_buys(g, p, plus.buys as u32);
             let pl = &mut g.players[p.index()];
@@ -1980,11 +1986,11 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
             pl.coffers += plus.coffers as u32;
             pl.favors += plus.favors as u32;
             if p == g.turn.player {
-                g.turn.potions += def.potions as u32;
+                g.turn.potions += bonus.potions;
             }
             g.add_coins(p, plus.cards as u32);
             f.pc = 1;
-            Flow::Call(Frame::draw(p, plus.coins as usize + def.coins as usize))
+            Flow::Call(Frame::draw(p, plus.coins as usize + bonus.coins as usize))
         }
         1 => {
             g.ext.menagerie.chameleon.push(id);

@@ -2465,6 +2465,26 @@ fn enlightenment_still_replaces_a_treasure_played_with_way_of_the_chameleon() {
 }
 
 #[test]
+fn a_way_replaces_the_coin_a_curse_makes_with_charlatan() {
+    for (way_used, coins, cards) in [(Card::WayOfTheOx, 0, 0), (Card::WayOfTheChameleon, 0, 1)] {
+        let mut g = setup_with_landscapes(&[Card::Charlatan], &[way_used]);
+        g.prophecy = Some((Card::Enlightenment, 0));
+        hand(&mut g, P0, &[Card::Curse]);
+        deck(&mut g, P0, &[Card::Copper; 5]);
+        g.start();
+        to_buy(&mut g);
+        // A Treasure (Charlatan), so an Action (Enlightenment).
+        play(&mut g, Card::Curse);
+        way(&mut g, way_used);
+        assert_eq!(
+            (g.turn().coins, g.hand(P0).len()),
+            (coins, cards),
+            "{way_used}"
+        );
+    }
+}
+
+#[test]
 fn changeling_cannot_exchange_a_fisherman_that_cost_two_when_gained() {
     let mut g = setup(&[Card::Changeling, Card::Fisherman]);
     hand(&mut g, P0, &[Card::Silver]);
