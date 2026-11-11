@@ -589,6 +589,11 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             ask_moves(p, Phase::Action, moves)
         }
         3 => {
+            if g.turn.return_to_action {
+                g.turn.return_to_action = false;
+                *pc = 11;
+                return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
+            }
             if let Input::Response(Response::Move(m)) = input {
                 match m {
                     Move::Play(c) => return Flow::Call(Frame::play(p, c, true, vec![])),
@@ -725,6 +730,12 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             *pc = 10;
             Flow::Call(Frame::window(Occasion::EndTurn { player: p }))
         }
+        11 => {
+            g.turn.phase = Phase::Action;
+            g.turn.bought = false;
+            *pc = 2;
+            Flow::Continue
+        }
         _ => {
             g.lasting.retain(|l| l.until != Until::EndOfTurn);
             let kept = std::mem::take(&mut g.players[p.index()].boons_kept);
@@ -760,6 +771,7 @@ fn resume_gain(
                 to,
                 bought,
                 cancelled: false,
+                turn_index: None,
             });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
@@ -786,6 +798,8 @@ fn resume_gain(
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
+                g.gains.last_mut().expect("gain in progress").turn_index =
+                    Some(g.turn.gained.len());
                 g.turn.gained.push(kind);
                 if g.turn.phase == Phase::Buy {
                     g.turn.gained_in_buy_phase.push(kind);
