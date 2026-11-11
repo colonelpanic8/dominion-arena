@@ -1,5 +1,5 @@
 use super::alchemy::possess;
-use super::prosperity::play_from;
+use super::prosperity::{next_turn, play_from};
 use super::*;
 use rand::SeedableRng;
 
@@ -311,6 +311,25 @@ fn hermit_played_in_the_buy_phase_counts_the_card_it_gains() {
     end_phase(&mut g);
     assert_eq!(g.count_owned(P0, Card::Hermit), 1);
     assert_eq!(g.count_owned(P0, Card::Madman), 0);
+}
+
+#[test]
+fn hermit_is_exchanged_after_a_second_buy_phase_without_gains() {
+    let mut g = setup(&[Card::Hermit, Card::Villa]);
+    hand(&mut g, P0, &[Card::Hermit, Card::Gold, Card::Copper]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    end_phase(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    // The first Buy phase gains a Villa, which returns the turn to its Action phase.
+    buy(&mut g, Card::Villa);
+    play(&mut g, Card::Hermit);
+    choose(&mut g, &[]);
+    choose_pile(&mut g, Card::Silver);
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.count_owned(P0, Card::Madman), 1);
 }
 
 #[test]
@@ -1530,6 +1549,26 @@ fn graverobber_options_can_be_chosen_when_they_cannot_be_done() {
     play(&mut g, Card::Graverobber);
     mode(&mut g, 1);
     assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+}
+
+#[test]
+fn a_fortress_trashed_on_a_possession_turn_goes_to_hand_or_is_set_aside() {
+    for take in [true, false] {
+        let kingdom = [Card::Fortress, Card::JunkDealer];
+        let mut g = possess(&kingdom, &[Card::JunkDealer, Card::Fortress]);
+        play_from(&mut g, P1, Card::JunkDealer);
+        choose_kinds(&mut g, &[Card::Fortress]);
+        // Possession sets it aside and Fortress puts it into the hand: the possessor
+        // picks which happens.
+        assert_eq!(purpose(&g), Purpose::Either);
+        mode(&mut g, if take { 0 } else { 1 });
+        assert_eq!(hand_kinds(&g, P1).contains(&Card::Fortress), take);
+        assert_eq!(g.player(P1).set_aside.is_empty(), take);
+        // Set aside, it comes back at the end of the turn like any other trashed card.
+        next_turn(&mut g);
+        assert!(g.player(P1).set_aside.is_empty());
+        assert!(discard_kinds(&g, P1).contains(&Card::Fortress));
+    }
 }
 
 #[test]
