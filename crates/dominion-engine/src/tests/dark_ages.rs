@@ -314,6 +314,25 @@ fn hermit_played_in_the_buy_phase_counts_the_card_it_gains() {
 }
 
 #[test]
+fn hermit_is_exchanged_after_a_second_buy_phase_without_gains() {
+    let mut g = setup(&[Card::Hermit, Card::Villa]);
+    hand(&mut g, P0, &[Card::Hermit, Card::Gold, Card::Copper]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    end_phase(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    // The first Buy phase gains a Villa, which returns the turn to its Action phase.
+    buy(&mut g, Card::Villa);
+    play(&mut g, Card::Hermit);
+    choose(&mut g, &[]);
+    choose_pile(&mut g, Card::Silver);
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.count_owned(P0, Card::Madman), 1);
+}
+
+#[test]
 fn a_throne_roomed_hermit_exchanges_once() {
     let mut g = setup(&[Card::Hermit, Card::ThroneRoom, Card::Sage]);
     hand(&mut g, P0, &[Card::ThroneRoom, Card::Hermit]);
