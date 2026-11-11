@@ -189,7 +189,12 @@ macro_rules! sets {
                 actions: g.turn.actions,
                 minus_coin: g.players[f.player.index()].minus_coin,
             };
-            let mut flow = match f.card.set() {
+            // The Exile rule applies to cards of every set.
+            let set = match f.hook {
+                Hook::Ability(menagerie::EXILE_DISCARD) => Set::Menagerie,
+                _ => f.card.set(),
+            };
+            let mut flow = match set {
                 $(Set::$set => <$module::Rules as SetRules>::run(g, f, input),)*
             }
             .unwrap_or_else(Flow::done);

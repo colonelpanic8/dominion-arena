@@ -109,7 +109,9 @@ them.
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
   +1 Buy) first without asking. A trigger runs as the card's
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
-  trigger with `Value::Bool(true)` makes the target unaffected.
+  trigger with `Value::Bool(true)` makes the target unaffected. Players choose among
+  triggers by card name: give one `Trigger::labelled` when the name doesn't say what it
+  is (the Exile rule on a gained card, which card a Way's ability is on).
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
   `f.add_duration(g, data)` (keeps the card in play with what played it:
   `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting

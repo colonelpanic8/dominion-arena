@@ -1,9 +1,9 @@
 //! Menagerie: its Kingdom cards, the Horse pile, Exile, Events and Ways.
 //!
 //! Exile is each player's `Mat::Exile`; the cards on it are still theirs. When a player
-//! gains a card, they may discard every copy of it from their Exile mat (an optional
-//! trigger hosted on [`EXILE_HOST`]). Cards Exiled by Invest are listed in
-//! [`State::invested`] while they stay on the mat.
+//! gains a card, they may discard every copy of it from their Exile mat (the optional
+//! [`EXILE_DISCARD`] trigger). Cards Exiled by Invest are listed in [`State::invested`]
+//! while they stay on the mat.
 //!
 //! Ways run as the Way's `Hook::Main` with `f.this` = the card played; the engine applies
 //! a Way's own vanilla bonuses. Way of the Chameleon plays the card's own ability as a
@@ -17,7 +17,7 @@ use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -30,8 +30,8 @@ pub(crate) struct State {
     pub mouse: Option<CardId>,
     /// Cards Exiled by Invest.
     pub invested: Vec<CardId>,
-    /// Gains (the card and its place in `Game::gains`) during which the gainer discarded
-    /// copies of the card from Exile.
+    /// Gains in progress (the card and its `GainState::since`, which no other gain of
+    /// that card shares) during which the gainer discarded copies of the card from Exile.
     pub exile_discarded: Vec<(CardId, usize)>,
     /// Cards being played using Way of the Chameleon, innermost last.
     pub chameleon: Vec<CardId>,
@@ -45,16 +45,15 @@ pub(crate) struct State {
 
 pub(crate) struct Rules;
 
-/// The card the Exile rule ("when you gain a card, you may discard its copies from Exile")
-/// is resolved as.
-pub(crate) const EXILE_HOST: Card = Card::Sanctuary;
+/// The Exile rule ("when you gain a card, you may discard its copies from Exile"), as an
+/// ability of the gained card, whatever its set: `cards::resume` sends it to this module.
+pub(crate) const EXILE_DISCARD: u8 = 253;
 
 /// Durations and "at the start of your next turn" effects.
 const START: u8 = 0;
 /// Reactions and when-gain abilities of cards.
 const REACT: u8 = 1;
 const ON_GAIN: u8 = 2;
-const EXILE_DISCARD: u8 = 10;
 const GATEKEEPER_EXILE: u8 = 1;
 const INVEST_DRAW: u8 = 0;
 const KILN_COPY: u8 = 1;
@@ -105,8 +104,8 @@ impl SetRules for Rules {
 
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
+            (_, Hook::Ability(EXILE_DISCARD)) => exile_discard(g, f),
             (c, Hook::Ability(START)) if STARTS.contains(&c) => start(g, f, input),
-            (EXILE_HOST, Hook::Ability(EXILE_DISCARD)) => exile_discard(g, f),
             (Card::BlackCat | Card::Sheepdog | Card::Falconer, Hook::Ability(REACT)) => {
                 play_from(g, f, Zone::Hand(f.player))
             }
@@ -241,19 +240,25 @@ impl SetRules for Rules {
             (Card::Desperation, _) => desperation(g, f, input),
             (Card::Enclave, _) => {
                 if f.pc == 0 {
-                    exile_from_supply(g, f.player, Card::Duchy);
                     f.pc = 1;
                     if let Some(gold) = g.supply_pile(Card::Gold) {
                         return Some(Flow::Call(Frame::gain(f.player, gold, Dest::Discard)));
                     }
                 }
+                exile_from_supply(g, f.player, Card::Duchy);
                 Flow::done()
             }
             (Card::Enhance, _) => enhance(g, f, input),
             (Card::Gamble, _) => gamble(g, f, input),
             (Card::Invest, _) => invest(g, f, input),
             (Card::March, _) => {
-                let actions = cards_where(g, &g.player(f.player).discard, Types::ACTION);
+                let p = f.player;
+                if f.pc == 0 {
+                    for c in g.player(p).discard.clone() {
+                        g.show_to(c, p);
+                    }
+                }
+                let actions = cards_where(g, &g.player(p).discard, Types::ACTION);
                 play_one_of(f, input, actions, true)
             }
             (Card::Populate, _) => populate(g, f, input),
@@ -372,7 +377,14 @@ impl SetRules for Rules {
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         for l in due_durations(g, occ) {
             if STARTS.contains(&l.card) {
-                out.push(duration_trigger(l, START));
+                let t = duration_trigger(l, START);
+                out.push(match l.data.pick {
+                    // Delay, Reap, Way of the Turtle: which set-aside card it plays.
+                    Some(c) if l.source.is_none() => {
+                        t.labelled(format!("{} ({})", l.card, g.card(c)))
+                    }
+                    _ => t,
+                });
             }
         }
         match *occ {
@@ -385,7 +397,10 @@ impl SetRules for Rules {
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
             Occasion::Discard { player, card } => {
-                if g.card(card) == Card::VillageGreen && g.zone(card) == Zone::Discard(player) {
+                if g.card(card) == Card::VillageGreen
+                    && g.zone(card) == Zone::Discard(player)
+                    && g.turn.phase != Phase::Cleanup
+                {
                     out.push(Trigger::new(player, Card::VillageGreen, REACT).on(card).optional());
                 }
             }
@@ -398,7 +413,14 @@ impl SetRules for Rules {
                         && g.zone(c) == Zone::InPlay(player)
                         && !kept
                     {
-                        out.push(Trigger::new(player, Card::WayOfTheFrog, FROG_TOPDECK).via_lasting(l.id));
+                        // Differently named cards go onto the deck in a chosen order.
+                        let kind = g.card(c);
+                        out.push(
+                            Trigger::new(player, Card::WayOfTheFrog, FROG_TOPDECK)
+                                .via_lasting(l.id)
+                                .data(kind as i32)
+                                .labelled(format!("Way of the Frog ({kind})")),
+                        );
                     }
                 }
             }
@@ -558,9 +580,14 @@ fn supply_pile_topped_by(g: &Game, card: Card) -> Option<PileId> {
         .find(|&id| g.pile(id).in_supply && g.pile_top(id).is_some_and(|t| g.card(t) == card))
 }
 
+/// The gain of `card` in progress.
+fn gain_of(g: &Game, card: CardId) -> Option<&GainState> {
+    g.gains.iter().rev().find(|st| st.card == card)
+}
+
 /// Where the gain of `card` in progress put it.
 fn gain_zone(g: &Game, card: CardId) -> Option<Zone> {
-    let st = g.gains.iter().rev().find(|st| st.card == card)?;
+    let st = gain_of(g, card)?;
     Some(match st.to {
         Dest::Discard => Zone::Discard(st.player),
         Dest::Hand => Zone::Hand(st.player),
@@ -775,19 +802,18 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         .collect();
     if !copies.is_empty() {
         out.push(
-            Trigger::new(gainer, EXILE_HOST, EXILE_DISCARD)
+            Trigger::new(gainer, kind, EXILE_DISCARD)
                 .on(card)
-                .optional(),
+                .optional()
+                .labelled(format!("Discard {kind} from Exile")),
         );
     }
     let in_place = still_where_gained(g, card);
 
     // Gatekeeper: only if the gainer had no Exiled copy when they gained it.
     let action_or_treasure = g.is(card, Types::ACTION | Types::TREASURE);
-    let had_copies = st
-        .exile_discarded
-        .iter()
-        .any(|&(c, i)| c == card && g.gains.get(i).is_some_and(|s| s.card == c));
+    let had_copies = gain_of(g, card)
+        .is_some_and(|gain| st.exile_discarded.contains(&(card, gain.since)));
     if action_or_treasure && in_place && copies.is_empty() && !had_copies {
         for l in g.lasting() {
             let active = l.until == Until::Removed && g.player(l.owner).turns_taken == l.turn;
@@ -874,13 +900,12 @@ fn exile_discard(g: &mut Game, f: &mut CardFrame) -> Flow {
         .into_iter()
         .filter(|&c| c != card)
         .collect();
+    let since = gain_of(g, card).map(|gain| gain.since);
     let st = &mut g.ext.menagerie;
     let gains = &g.gains;
     st.exile_discarded
-        .retain(|&(c, i)| gains.get(i).is_some_and(|s| s.card == c));
-    if let Some(i) = gains.iter().rposition(|s| s.card == card) {
-        st.exile_discarded.push((card, i));
-    }
+        .retain(|&(c, since)| gains.iter().any(|s| s.card == c && s.since == since));
+    st.exile_discarded.extend(since.map(|since| (card, since)));
     st.invested.retain(|c| !copies.contains(c));
     f.pc = 1;
     Flow::Call(Frame::discard(p, copies))
@@ -1003,8 +1028,10 @@ fn animal_fair_pay(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Done(Value::Bool(false));
             }
             let cost = g.cost_of(f.this());
-            let affordable =
-                cost.coins as u32 <= g.turn.coins && cost.potions as u32 <= g.turn.potions;
+            // Only the turn's player has $ to pay with (Black Market on another's turn).
+            let affordable = p == g.turn.player
+                && cost.coins as u32 <= g.turn.coins
+                && cost.potions as u32 <= g.turn.potions;
             f.pc = 2;
             if affordable {
                 f.pc = 1;

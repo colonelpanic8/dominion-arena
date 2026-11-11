@@ -119,6 +119,9 @@ pub struct Trigger {
     /// with): it resolves before the owner's other triggers without asking.
     pub quiet: bool,
     pub data: i32,
+    /// What the choice is called when `card`'s name doesn't say it: a rule applied to
+    /// `card` rather than its own ability, or which card a shared ability is on.
+    pub label: Option<String>,
 }
 
 impl Trigger {
@@ -133,6 +136,7 @@ impl Trigger {
             first: false,
             quiet: false,
             data: 0,
+            label: None,
         }
     }
 
@@ -163,6 +167,11 @@ impl Trigger {
 
     pub(crate) fn data(mut self, data: i32) -> Trigger {
         self.data = data;
+        self
+    }
+
+    pub(crate) fn labelled(mut self, label: String) -> Trigger {
+        self.label = Some(label);
         self
     }
 }
@@ -254,10 +263,11 @@ impl Window {
         let mut labels: Vec<String> = mine
             .iter()
             .map(|(_, t)| {
+                let name = t.label.clone().unwrap_or_else(|| t.card.to_string());
                 if t.optional {
-                    format!("{} (optional)", t.card)
+                    format!("{name} (optional)")
                 } else {
-                    t.card.to_string()
+                    name
                 }
             })
             .collect();

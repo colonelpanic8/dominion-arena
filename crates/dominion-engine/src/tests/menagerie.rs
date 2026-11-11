@@ -1,4 +1,4 @@
-use super::intrigue::{modes, random_games_with_copies, setup3, trigger};
+use super::intrigue::{modes, random_games_with_copies, setup3, trigger, trigger_labels};
 use super::*;
 
 fn landscapes_of(kind: Kind) -> Vec<Card> {
@@ -119,6 +119,15 @@ fn gained(g: &Game, p: PlayerId) -> Vec<Card> {
         .collect()
 }
 
+/// Takes the offer to discard the gained card's copies from Exile.
+fn discard_from_exile(g: &mut Game) {
+    let i = trigger_labels(g)
+        .iter()
+        .position(|l| l.ends_with("from Exile (optional)"))
+        .expect("an offer to discard from Exile");
+    respond(g, Response::option(Opt::Trigger(i as u16)));
+}
+
 /// Puts `cards` on `p`'s Exile mat.
 fn exiled(g: &mut Game, p: PlayerId, cards: &[Card]) -> Vec<CardId> {
     replace(g, Zone::Mat(p, Mat::Exile), cards)
@@ -195,7 +204,7 @@ fn a_falconer_cannot_gain_a_horse_from_its_non_supply_pile() {
 
 #[test]
 fn gaining_a_card_lets_you_discard_its_copies_from_exile() {
-    let mut g = setup(&[Card::Sanctuary]);
+    let mut g = setup(&[Card::BountyHunter]);
     let exile = exiled(&mut g, P0, &[Card::Silver, Card::Silver, Card::Estate]);
     hand(&mut g, P0, &[Card::Gold]);
     g.start();
@@ -206,8 +215,17 @@ fn gaining_a_card_lets_you_discard_its_copies_from_exile() {
     g.turn.buys = 2;
     play_treasures(&mut g);
     buy(&mut g, Card::Silver);
-    assert_eq!(purpose(&g), Purpose::Trigger);
-    trigger(&mut g, Card::Sanctuary);
+    // The offer is about the gained card, whatever put its copies into Exile.
+    let d = g.pending().unwrap();
+    assert_eq!(
+        (d.purpose, d.source),
+        (Purpose::Trigger, Some(Card::Silver))
+    );
+    assert_eq!(
+        trigger_labels(&g),
+        ["Discard Silver from Exile (optional)", "Done"]
+    );
+    discard_from_exile(&mut g);
     assert_eq!(exile_kinds(&g, P0), [Card::Estate]);
     assert_eq!(discard_kinds(&g, P0), [Card::Silver; 3]);
 }
@@ -612,7 +630,7 @@ fn gatekeeper_exiles_actions_and_treasures_others_gain_until_its_owners_next_tur
     assert_eq!(exile_kinds(&g, P1), [Card::Silver]);
     // Having an exiled Silver, the next one is not Exiled and may bring it back.
     buy(&mut g, Card::Silver);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P1).is_empty());
     next_turn(&mut g);
     assert_eq!(g.turn().coins, 3);
@@ -630,9 +648,34 @@ fn gatekeeper_exiles_the_first_of_two_horses_but_not_the_second() {
     play(&mut g, Card::Sleigh);
     assert_eq!(exile_kinds(&g, P1), [Card::Horse]);
     // The second Horse finds a copy in Exile: P1 may discard it.
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P1).is_empty());
     assert_eq!(discard_kinds(&g, P1), [Card::Horse, Card::Horse]);
+}
+
+#[test]
+fn gatekeeper_exiles_a_horse_gained_again_after_its_first_gain_discarded_exiled_horses() {
+    let mut g = setup(&[Card::Gatekeeper, Card::Supplies]);
+    hand(&mut g, P0, &[Card::Copper]);
+    deck(&mut g, P0, &[Card::Gatekeeper]);
+    hand(&mut g, P1, &[Card::Supplies]);
+    let mut cards = vec![Card::Supplies];
+    cards.extend([Card::Copper; 5]);
+    deck(&mut g, P1, &cards);
+    exiled(&mut g, P1, &[Card::Horse]);
+    g.start();
+    next_turn(&mut g);
+    // P1 gains a Horse onto the deck and discards the Exiled one.
+    play_treasures(&mut g);
+    discard_from_exile(&mut g);
+    assert!(exile_kinds(&g, P1).is_empty());
+    next_turn(&mut g);
+    play(&mut g, Card::Gatekeeper);
+    next_turn(&mut g);
+    // That Horse returns to its pile and is the one gained again.
+    play(&mut g, Card::Horse);
+    play_treasures(&mut g);
+    assert_eq!(exile_kinds(&g, P1), [Card::Horse]);
 }
 
 #[test]
@@ -1073,6 +1116,37 @@ fn a_sleigh_gained_to_the_hand_discards_itself_but_cannot_move_itself_back() {
 }
 
 #[test]
+fn sleigh_is_discarded_not_played_so_voyages_limit_does_not_stop_it() {
+    let mut g = setup_with_landscapes(
+        &[Card::Odysseys, Card::Sleigh, Card::Sheepdog],
+        &[Card::PlateauShepherds],
+    );
+    hand(&mut g, P0, &[Card::Voyage]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Sleigh,
+            Card::Sheepdog,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Voyage);
+    next_turn(&mut g);
+    assert_eq!(g.turn().extra, Some(Card::Voyage));
+    // Three plays from the hand: Sheepdog can no longer be played, Sleigh still reacts.
+    play_treasures(&mut g);
+    buy(&mut g, Card::Silver);
+    assert_eq!(trigger_labels(&g), ["Sleigh (optional)", "Done"]);
+    trigger(&mut g, Card::Sleigh);
+    modes(&mut g, &[0]);
+    assert!(hand_kinds(&g, P0).contains(&Card::Silver));
+}
+
+#[test]
 fn snowy_village_ignores_further_actions_this_turn() {
     let mut g = setup(&[Card::SnowyVillage, Card::Village, Card::ThroneRoom]);
     hand(
@@ -1113,7 +1187,7 @@ fn stockpile_gives_three_and_a_buy_and_exiles_itself() {
     assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
     assert_eq!(exile_kinds(&g, P0), [Card::Stockpile; 2]);
     buy(&mut g, Card::Stockpile);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P0).is_empty());
     assert_eq!(discard_kinds(&g, P0), [Card::Stockpile; 3]);
 }
@@ -1193,6 +1267,28 @@ fn village_green_discarded_by_cardinal_is_played_out_of_turn() {
     assert_eq!(in_play_kinds(&g, P1), [Card::VillageGreen]);
     // The +2 Actions of a play now would not help P0.
     assert_eq!(g.turn().actions, 0);
+}
+
+#[test]
+fn village_green_discarded_during_clean_up_cannot_be_played() {
+    let mut g = setup(&[Card::VillageGreen]);
+    g.landscapes.push(Card::Friendly);
+    let pile = g.pile_of(Card::VillageGreen).unwrap();
+    g.piles[pile.index()].traits.push(Card::Friendly);
+    hand(&mut g, P0, &[Card::VillageGreen, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    exiled(&mut g, P0, &[Card::VillageGreen]);
+    g.start();
+    to_buy(&mut g);
+    end_phase(&mut g);
+    // Friendly, at the start of Clean-up, discards the one in hand to gain another,
+    // which lets the Exiled one be discarded.
+    trigger(&mut g, Card::Friendly);
+    discard_from_exile(&mut g);
+    assert!(exile_kinds(&g, P0).is_empty());
+    assert_eq!(g.count_owned(P0, Card::VillageGreen), 3);
+    assert!(in_play_kinds(&g, P0).is_empty());
+    assert_eq!(g.turn().player, P1);
 }
 
 #[test]
@@ -1411,12 +1507,20 @@ fn desperation_with_no_curse_left_gives_nothing() {
 }
 
 #[test]
-fn enclave_gains_a_gold_and_exiles_a_duchy() {
-    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Enclave]);
-    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Silver]);
+fn enclave_gains_a_gold_then_exiles_a_duchy() {
+    let mut g = setup_with_landscapes(&[Card::Sleigh], &[Card::Enclave]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Silver, Card::Sleigh],
+    );
     g.start();
     play_treasures(&mut g);
     buy_event(&mut g, Card::Enclave);
+    // Sleigh may react to the Gold, before the Duchy is Exiled.
+    assert_eq!(trigger_labels(&g), ["Sleigh (optional)", "Done"]);
+    assert!(exile_kinds(&g, P0).is_empty());
+    no(&mut g);
     assert_eq!(gained(&g, P0), [Card::Gold]);
     assert_eq!(exile_kinds(&g, P0), [Card::Duchy]);
 }
@@ -1494,20 +1598,32 @@ fn invest_stops_drawing_once_the_card_leaves_exile() {
     play_treasures(&mut g);
     buy_event(&mut g, Card::Invest);
     buy(&mut g, Card::Smithy);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P0).is_empty());
     assert!(g.ext.menagerie.invested.is_empty());
 }
 
 #[test]
-fn march_plays_an_action_from_the_discard_pile() {
+fn march_looks_through_the_discard_pile_and_plays_an_action_from_it() {
     let mut g = setup_with_landscapes(&[Card::Village], &[Card::March]);
     hand(&mut g, P0, &[Card::Gold]);
-    discard(&mut g, P0, &[Card::Village, Card::Estate]);
+    let pile = discard(&mut g, P0, &[Card::Village, Card::Estate]);
+    g.enable_trace();
     g.start();
     g.turn.buys = 2;
     play_treasures(&mut g);
+    g.take_trace();
     buy_event(&mut g, Card::March);
+    // P0 looked at the whole pile, not only at the Action on offer.
+    let looked: Vec<CardId> = g
+        .take_trace()
+        .into_iter()
+        .filter_map(|t| match t {
+            Trace::Shown { card, to } if to == Some(P0) => Some(card),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(looked, pile);
     choose_kinds(&mut g, &[Card::Village]);
     assert_eq!(in_play_kinds(&g, P0), [Card::Gold, Card::Village]);
 }
@@ -1972,6 +2088,45 @@ fn way_of_the_frog_puts_the_card_onto_the_deck_when_discarded_from_play() {
 }
 
 #[test]
+fn cards_played_with_way_of_the_frog_go_onto_the_deck_in_a_chosen_order() {
+    let mut g = way_game(Card::WayOfTheFrog, &[Card::Village, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Village, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    g.turn.cleanup_draw = 1;
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheFrog);
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheFrog);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(
+        trigger_labels(&g),
+        ["Way of the Frog (Village)", "Way of the Frog (Smithy)"]
+    );
+    respond(&mut g, Response::option(Opt::Trigger(1)));
+    // The Village went on last, so it is the card drawn.
+    assert_eq!(hand_kinds(&g, P0), [Card::Village]);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Smithy);
+}
+
+// A card played on another player's turn is discarded from play in that turn's Clean-up.
+#[test]
+#[ignore = "needs the off-turn discard-from-play window"]
+fn way_of_the_frog_used_out_of_turn_puts_the_card_onto_its_owners_deck() {
+    let mut g = way_game(Card::WayOfTheFrog, &[Card::BlackCat]);
+    hand(&mut g, P0, &[Card::Copper, Card::Copper]);
+    hand(&mut g, P1, &[Card::BlackCat]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Estate);
+    trigger(&mut g, Card::BlackCat);
+    way(&mut g, Card::WayOfTheFrog);
+    next_turn(&mut g);
+    assert_eq!(deck_kinds(&g, P1).first(), Some(&Card::BlackCat));
+}
+
+#[test]
 fn way_of_the_frog_on_a_throned_duration_does_not_topdeck_it() {
     let mut g = way_game(Card::WayOfTheFrog, &[Card::ThroneRoom, Card::Barge]);
     hand(&mut g, P0, &[Card::ThroneRoom, Card::Barge]);
@@ -2180,6 +2335,26 @@ fn way_of_the_turtle_sets_the_card_aside_and_plays_it_next_turn() {
     next_turn(&mut g);
     own(&mut g);
     assert_eq!((g.turn().actions, g.hand(P0).len()), (3, 6));
+}
+
+#[test]
+fn cards_set_aside_by_way_of_the_turtle_are_told_apart_when_ordering_their_plays() {
+    let mut g = way_game(Card::WayOfTheTurtle, &[Card::Village, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Village, Card::Village, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Village);
+    own(&mut g);
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheTurtle);
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheTurtle);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(
+        trigger_labels(&g),
+        ["Way of the Turtle (Village)", "Way of the Turtle (Smithy)"]
+    );
 }
 
 #[test]

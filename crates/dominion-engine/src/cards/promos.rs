@@ -5,7 +5,7 @@ use super::intrigue::{GainRule, trash_and_gain};
 use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
-use crate::frame::{Flow, Frame, From as GainFrom, Input};
+use crate::frame::{Flow, Frame, From as GainFrom, Input, PAY_OTHERWISE, Value};
 use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
@@ -239,14 +239,14 @@ fn funds(g: &Game, p: PlayerId) -> (u32, u32) {
     }
 }
 
-/// Whether `p` could pay for `id` right now.
+/// Whether `p` could buy `id` right now, paying its cost or some other way (Animal Fair).
 fn affordable(g: &Game, p: PlayerId, id: CardId) -> bool {
-    let cost = g.cost_of(id);
+    let (cost, kind) = (g.cost_of(id), g.card(id));
     let (coins, potions) = funds(g, p);
     g.player(p).debt == 0
-        && cost.coins as u32 <= coins
-        && cost.potions as u32 <= potions
-        && super::can_buy(g, p, g.card(id))
+        && ((cost.coins as u32 <= coins && cost.potions as u32 <= potions)
+            || super::pays_otherwise(g, p, kind))
+        && super::can_buy(g, p, kind)
 }
 
 fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
@@ -309,19 +309,11 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Some(c) => {
                 f.s.pick = Some(c);
                 f.s.cards.retain(|&x| x != c);
-                let cost = g.cost_of(c);
-                g.turn.coins -= cost.coins as u32;
-                g.turn.potions -= cost.potions as u32;
-                g.add_debt(p, cost.debt as u32);
+                f.pc = 10;
                 let kind = g.card(c);
-                g.turn.bought_cards.push(kind);
-                g.emit(Event::Bought {
-                    player: p,
-                    card: kind,
-                });
-                f.pc = 11;
-                if kind.def().overpay {
-                    return Flow::Call(Frame::overpay(p, c));
+                if super::pays_otherwise(g, p, kind) {
+                    let pay = CardFrame::new(kind, Hook::Ability(PAY_OTHERWISE), p, Some(c));
+                    return Flow::Call(Frame::Card(Box::new(pay)));
                 }
                 Flow::Continue
             }
@@ -330,6 +322,27 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Flow::Continue
             }
         },
+        10 => {
+            let c = f.s.pick.expect("set in step 4");
+            let cost = match input {
+                Input::Return(Value::Bool(true)) => Cost::ZERO,
+                _ => g.cost_of(c),
+            };
+            g.turn.coins -= cost.coins as u32;
+            g.turn.potions -= cost.potions as u32;
+            g.add_debt(p, cost.debt as u32);
+            let kind = g.card(c);
+            g.turn.bought_cards.push(kind);
+            g.emit(Event::Bought {
+                player: p,
+                card: kind,
+            });
+            f.pc = 11;
+            if kind.def().overpay {
+                return Flow::Call(Frame::overpay(p, c));
+            }
+            Flow::Continue
+        }
         11 => {
             f.pc = 12;
             let card = f.s.pick.expect("set in step 4");
