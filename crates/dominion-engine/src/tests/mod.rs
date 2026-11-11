@@ -17,6 +17,7 @@ mod prosperity;
 mod renaissance;
 mod rising_sun;
 mod seaside;
+mod setup;
 
 use crate::game::Zone;
 use crate::*;

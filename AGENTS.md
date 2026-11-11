@@ -143,7 +143,7 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   what is missing, because it runs until nothing changes, at the start and again for
   cards joining mid-game (Divine Wind). `setup` then runs once for what joined
   (`Setup::joined`): tokens on piles, starting resources. Random setup choices go
-  through `Setup::choose`.
+  through `Setup::choose`, which applies `GameConfig::setup_choices`.
   `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
 - "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
   playable as if in hand (Shadow cards in the deck). An effect that sets `turn.phase`

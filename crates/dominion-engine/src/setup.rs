@@ -29,6 +29,13 @@ pub struct GameConfig {
     /// Use Shelters instead of starting Estates. `None` follows the usual rule (a random
     /// Kingdom card is from Dark Ages).
     pub shelters: Option<bool>,
+    /// Choices setup otherwise makes at random, by the card that makes them: the unused
+    /// Kingdom card Young Witch (its Bane), Ferryman, Way of the Mouse, Riverboat and
+    /// Approaching Army add; the Black Market deck (top first); Druid's three Boons; and
+    /// the Kingdom pile Obelisk or each Trait goes on. The Ally and Prophecy are chosen by
+    /// listing them in `landscapes`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub setup_choices: BTreeMap<Card, Vec<Card>>,
 }
 
 impl GameConfig {
@@ -41,6 +48,7 @@ impl GameConfig {
             turn_limit: None,
             colonies: None,
             shelters: None,
+            setup_choices: BTreeMap::new(),
         }
     }
 
@@ -89,6 +97,12 @@ pub enum SetupError {
     NotLandscape(Card),
     #[error("{0} appears more than once")]
     Duplicate(Card),
+    #[error("{choice} is not a legal setup choice for {by}")]
+    InvalidChoice { by: Card, choice: Card },
+    #[error("wrong number of setup choices for {0}")]
+    ChoiceCount(Card),
+    #[error("a setup choice is given for {0}, which makes none in this game")]
+    UnusedChoice(Card),
 }
 
 /// Number of copies a Victory pile starts with.
@@ -202,7 +216,18 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         add_kingdom_pile(&mut g, card);
     }
 
-    complete(&mut g, Mark::default());
+    let s = complete(&mut g, Mark::default());
+    if let Some(err) = s.error {
+        return Err(err);
+    }
+    if let Some(&by) = g
+        .config
+        .setup_choices
+        .keys()
+        .find(|by| !s.made.contains(by))
+    {
+        return Err(SetupError::UnusedChoice(by));
+    }
 
     let estates = if shelters {
         vec![Card::Hovel, Card::Necropolis, Card::OvergrownEstate]
@@ -252,10 +277,12 @@ pub(crate) fn mark(g: &Game) -> Mark {
     }
 }
 
-/// Setup in progress: what joined the game.
+/// Setup in progress: what joined the game, and the configured choices made.
 #[derive(Debug, Default)]
 pub(crate) struct Setup {
     joined: Vec<Card>,
+    made: Vec<Card>,
+    error: Option<SetupError>,
 }
 
 impl Setup {
@@ -269,20 +296,43 @@ impl Setup {
         &self.joined
     }
 
-    /// The choice `by` makes among `candidates`, at random.
+    /// The choice `by` makes among `candidates`: the configured one, or a random one.
     pub(crate) fn choose(&mut self, g: &mut Game, by: Card, candidates: Vec<Card>) -> Option<Card> {
         self.choose_n(g, by, candidates, 1..=1).pop()
     }
 
-    /// The different cards `by` chooses among `candidates`: as many as possible up to
-    /// `n.end()`, at random.
+    /// The different cards `by` chooses among `candidates`: the configured ones (as many as
+    /// `n` allows), or as many as possible up to `n.end()` at random.
     pub(crate) fn choose_n(
         &mut self,
         g: &mut Game,
-        _by: Card,
+        by: Card,
         mut candidates: Vec<Card>,
         n: RangeInclusive<usize>,
     ) -> Vec<Card> {
+        self.made.push(by);
+        if let Some(chosen) = g.config.setup_choices.get(&by).cloned() {
+            let err = if n.contains(&chosen.len()) {
+                chosen
+                    .iter()
+                    .enumerate()
+                    .find(|&(i, c)| !candidates.contains(c) || chosen[..i].contains(c))
+                    .map(|(_, &choice)| SetupError::InvalidChoice { by, choice })
+            } else {
+                Some(SetupError::ChoiceCount(by))
+            };
+            match err {
+                None => return chosen,
+                Some(err) => {
+                    self.error.get_or_insert(err);
+                }
+            }
+        }
+        // A card configured for another choice isn't free for a random one.
+        let reserved = |c: &Card| {
+            g.home_pile(*c).is_none() && g.config.setup_choices.values().flatten().any(|r| r == c)
+        };
+        candidates.retain(|c| !reserved(c));
         g.shuffle(&mut candidates);
         candidates.truncate(*n.end());
         candidates
