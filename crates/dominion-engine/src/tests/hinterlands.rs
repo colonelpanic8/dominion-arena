@@ -922,3 +922,14 @@ fn guard_dog_can_draw_a_moat_in_time() {
     assert_eq!(g.hand(P1).len(), 5);
     assert_eq!(g.pending().unwrap().player, P0);
 }
+
+#[test]
+fn mandarin_puts_a_card_from_hand_onto_the_deck() {
+    let mut g = setup(&[Card::Mandarin]);
+    hand(&mut g, P0, &[Card::Mandarin, Card::Estate, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Mandarin);
+    choose_kinds(&mut g, &[Card::Gold]);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Gold);
+    assert_eq!(g.turn().coins, 3);
+}
