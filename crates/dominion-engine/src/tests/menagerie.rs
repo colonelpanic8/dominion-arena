@@ -1,4 +1,4 @@
-use super::intrigue::{modes, random_games_with_copies, setup3, trigger, trigger_labels};
+use super::intrigue::{modes, random_games_with_copies, setup3, trigger};
 use super::*;
 
 fn landscapes_of(kind: Kind) -> Vec<Card> {
@@ -1222,4 +1222,973 @@ fn wayfarer_costs_what_the_last_other_card_gained_this_turn_costs() {
     assert_eq!(g.cost(Card::Wayfarer), Cost::ZERO);
     next_turn(&mut g);
     assert_eq!(g.cost(Card::Wayfarer), Cost::coins(6));
+}
+
+#[test]
+fn kiln_gains_a_stockpile_before_the_played_one_exiles_itself() {
+    let mut g = setup(&[Card::Kiln, Card::Stockpile]);
+    hand(&mut g, P0, &[Card::Kiln, Card::Stockpile]);
+    g.start();
+    play(&mut g, Card::Kiln);
+    play_treasures(&mut g);
+    yes(&mut g);
+    assert_eq!(exile_kinds(&g, P0), [Card::Stockpile]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Stockpile]);
+}
+
+// ---- Events ----
+
+fn play_treasure(g: &mut Game, card: Card) {
+    to_buy(g);
+    let p = g.turn().player;
+    let c = find(g, p, card);
+    respond(g, Response::Move(Move::Play(c)));
+}
+
+#[test]
+fn alliance_gains_six_cards_in_order() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Alliance]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Gold, Card::Copper],
+    );
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Alliance);
+    assert_eq!(
+        gained(&g, P0),
+        [
+            Card::Province,
+            Card::Duchy,
+            Card::Estate,
+            Card::Gold,
+            Card::Silver,
+            Card::Copper
+        ]
+    );
+}
+
+#[test]
+fn banish_exiles_any_number_of_cards_with_the_same_name() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Banish]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Copper,
+            Card::Estate,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    g.start();
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Banish);
+    choose_kinds(&mut g, &[Card::Estate]);
+    let DecisionKind::Cards { candidates, .. } = &g.pending().unwrap().kind else {
+        panic!("expected more copies to choose");
+    };
+    assert_eq!(kinds(&g, candidates), [Card::Estate, Card::Estate]);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(exile_kinds(&g, P0), [Card::Estate, Card::Estate]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate]);
+}
+
+#[test]
+fn bargain_gains_a_non_victory_card_and_gives_each_other_player_a_horse() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Bargain]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Bargain);
+    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+        panic!("expected a pile choice");
+    };
+    assert!(!piles.contains(&g.supply_pile(Card::Duchy).unwrap()));
+    assert!(!piles.contains(&g.supply_pile(Card::Gold).unwrap()));
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(gained(&g, P0), [Card::Smithy]);
+    assert_eq!(gained(&g, P1), [Card::Horse]);
+}
+
+#[test]
+fn commerce_gains_a_gold_per_differently_named_card_gained_this_turn() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Commerce]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Gold]);
+    g.start();
+    g.turn.buys = 4;
+    play_treasures(&mut g);
+    buy(&mut g, Card::Copper);
+    buy(&mut g, Card::Copper);
+    buy(&mut g, Card::Silver);
+    buy_event(&mut g, Card::Commerce);
+    assert_eq!(
+        gained(&g, P0),
+        [
+            Card::Copper,
+            Card::Copper,
+            Card::Silver,
+            Card::Gold,
+            Card::Gold
+        ]
+    );
+}
+
+#[test]
+fn delay_sets_an_action_aside_and_plays_it_at_the_start_of_next_turn() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Delay]);
+    hand(&mut g, P0, &[Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    buy_event(&mut g, Card::Delay);
+    choose_kinds(&mut g, &[Card::Village]);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Village]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Village]);
+    assert_eq!((g.turn().actions, g.hand(P0).len()), (3, 6));
+}
+
+#[test]
+fn delay_may_set_nothing_aside() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Delay]);
+    hand(&mut g, P0, &[Card::Village]);
+    g.start();
+    buy_event(&mut g, Card::Delay);
+    choose(&mut g, &[]);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn demand_gains_a_horse_then_a_card_both_onto_the_deck() {
+    let mut g = setup_with_landscapes(&[Card::Smithy, Card::Destrier], &[Card::Demand]);
+    hand(&mut g, P0, &[Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper]);
+    g.start();
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Demand);
+    // The Horse is gained before the card is chosen, which makes Destrier cheaper.
+    assert_eq!(g.cost(Card::Destrier), Cost::coins(5));
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(
+        deck_kinds(&g, P0),
+        [Card::Smithy, Card::Horse, Card::Copper]
+    );
+}
+
+#[test]
+fn desperation_once_per_turn_gains_a_curse_for_a_buy_and_two() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Desperation]);
+    hand(&mut g, P0, &[Card::Copper]);
+    g.start();
+    buy_event(&mut g, Card::Desperation);
+    yes(&mut g);
+    assert_eq!(gained(&g, P0), [Card::Curse]);
+    assert_eq!((g.turn().buys, g.turn().coins), (1, 2));
+    assert!(!can_buy_event(&g, Card::Desperation));
+    next_turn(&mut g);
+    next_turn(&mut g);
+    to_buy(&mut g);
+    assert!(can_buy_event(&g, Card::Desperation));
+}
+
+#[test]
+fn desperation_with_no_curse_left_gives_nothing() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Desperation]);
+    empty_pile(&mut g, Card::Curse);
+    g.start();
+    buy_event(&mut g, Card::Desperation);
+    yes(&mut g);
+    assert!(gained(&g, P0).is_empty());
+    assert!(g.turn().player == P1 || g.turn().coins == 0);
+}
+
+#[test]
+fn enclave_gains_a_gold_and_exiles_a_duchy() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Enclave]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Silver]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Enclave);
+    assert_eq!(gained(&g, P0), [Card::Gold]);
+    assert_eq!(exile_kinds(&g, P0), [Card::Duchy]);
+}
+
+#[test]
+fn enhance_trashes_a_non_victory_card_to_gain_one_costing_up_to_two_more() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Enhance]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Silver, Card::Copper, Card::Smithy, Card::Estate],
+    );
+    g.start();
+    play_treasure(&mut g, Card::Silver);
+    play_treasure(&mut g, Card::Copper);
+    buy_event(&mut g, Card::Enhance);
+    assert_eq!(candidates(&g).len(), 1);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    choose_pile(&mut g, Card::Gold);
+    assert_eq!(gained(&g, P0), [Card::Gold]);
+}
+
+#[test]
+fn gamble_discards_the_top_card_and_may_play_an_action_or_treasure() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Gamble]);
+    hand(&mut g, P0, &[Card::Silver]);
+    deck(&mut g, P0, &[Card::Gold, Card::Copper]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Gamble);
+    assert_eq!(g.turn().buys, 1);
+    yes(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Silver, Card::Gold]);
+    assert_eq!(g.turn().coins, 3);
+}
+
+#[test]
+fn gamble_discards_a_card_that_cannot_be_played() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Gamble]);
+    hand(&mut g, P0, &[Card::Silver]);
+    deck(&mut g, P0, &[Card::Estate, Card::Copper]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Gamble);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
+    assert_eq!(g.turn().buys, 1);
+}
+
+#[test]
+fn invest_draws_when_another_player_gains_or_invests_in_a_copy() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Invest]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::Gold, Card::Gold, Card::Gold]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Invest);
+    assert_eq!(exile_kinds(&g, P0), [Card::Smithy]);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.hand(P0).len(), 5);
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy(&mut g, Card::Smithy);
+    assert_eq!(g.hand(P0).len(), 7);
+    buy_event(&mut g, Card::Invest);
+    assert_eq!(g.hand(P0).len(), 9);
+}
+
+#[test]
+fn invest_stops_drawing_once_the_card_leaves_exile() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Invest]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Gold]);
+    g.start();
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Invest);
+    buy(&mut g, Card::Smithy);
+    trigger(&mut g, Card::Sanctuary);
+    assert!(exile_kinds(&g, P0).is_empty());
+    assert!(g.ext.menagerie.invested.is_empty());
+}
+
+#[test]
+fn march_plays_an_action_from_the_discard_pile() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::March]);
+    hand(&mut g, P0, &[Card::Gold]);
+    discard(&mut g, P0, &[Card::Village, Card::Estate]);
+    g.start();
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::March);
+    choose_kinds(&mut g, &[Card::Village]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Gold, Card::Village]);
+}
+
+#[test]
+fn populate_gains_one_card_from_each_action_supply_pile_in_a_chosen_order() {
+    let mut g = setup_with_landscapes(
+        &[Card::Village, Card::Smithy, Card::Gardens, Card::Sleigh],
+        &[Card::Populate],
+    );
+    empty_pile(&mut g, Card::Sleigh);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Gold, Card::Copper],
+    );
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Populate);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(gained(&g, P0), [Card::Smithy, Card::Village]);
+}
+
+#[test]
+fn pursue_keeps_the_named_cards_on_the_deck_and_discards_the_rest() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Pursue]);
+    hand(&mut g, P0, &[Card::Silver]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Copper,
+            Card::Estate,
+            Card::Copper,
+            Card::Silver,
+            Card::Gold,
+        ],
+    );
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Pursue);
+    respond(&mut g, Response::Name(Card::Copper));
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Copper, Card::Gold]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate, Card::Silver]);
+    assert_eq!(g.turn().buys, 1);
+}
+
+#[test]
+fn reap_sets_a_gold_aside_and_plays_it_next_turn() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Reap]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Copper]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Reap);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Gold]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Gold]);
+    assert_eq!(g.turn().coins, 3);
+}
+
+#[test]
+fn ride_gains_a_horse() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Ride]);
+    hand(&mut g, P0, &[Card::Silver]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Ride);
+    assert_eq!(gained(&g, P0), [Card::Horse]);
+}
+
+#[test]
+fn seize_the_day_gives_an_extra_turn_once_per_game() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::SeizeTheDay]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Gold,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::SeizeTheDay);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.turn().extra, Some(Card::SeizeTheDay));
+    play_treasures(&mut g);
+    assert!(!can_buy_event(&g, Card::SeizeTheDay));
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+}
+
+#[test]
+#[ignore = "the engine never gives a third turn in a row; Seize the Day doesn't check the previous turn"]
+fn seize_the_day_bought_on_an_outpost_turn_gives_a_third_turn() {
+    let mut g = setup_with_landscapes(&[Card::Outpost], &[Card::SeizeTheDay]);
+    hand(&mut g, P0, &[Card::Outpost]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Copper, Card::Copper],
+    );
+    g.start();
+    play(&mut g, Card::Outpost);
+    next_turn(&mut g);
+    assert_eq!(g.turn().extra, Some(Card::Outpost));
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::SeizeTheDay);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+}
+
+#[test]
+fn stampede_gains_five_horses_onto_the_deck_with_five_or_fewer_cards_in_play() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Stampede]);
+    hand(&mut g, P0, &[Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper]);
+    g.start();
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Stampede);
+    assert_eq!(gained(&g, P0), [Card::Horse; 5]);
+    assert_eq!(deck_kinds(&g, P0)[..5], [Card::Horse; 5]);
+
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Stampede]);
+    hand(&mut g, P0, &[Card::Copper; 6]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Stampede);
+    assert!(gained(&g, P0).is_empty());
+}
+
+#[test]
+fn toil_gives_a_buy_and_may_play_an_action_from_the_hand() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Toil]);
+    hand(&mut g, P0, &[Card::Silver, Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Toil);
+    choose_kinds(&mut g, &[Card::Village]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Silver, Card::Village]);
+    assert_eq!(g.turn().buys, 1);
+}
+
+#[test]
+fn transport_exiles_an_action_from_the_supply_or_puts_an_exiled_one_onto_the_deck() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Transport]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    exiled(&mut g, P0, &[Card::Smithy, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper]);
+    g.start();
+    g.turn.buys = 3;
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Transport);
+    modes(&mut g, &[0]);
+    assert_eq!(
+        exile_kinds(&g, P0),
+        [Card::Smithy, Card::Estate, Card::Village]
+    );
+    buy_event(&mut g, Card::Transport);
+    modes(&mut g, &[1]);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    assert_eq!(exile_kinds(&g, P0), [Card::Estate, Card::Village]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Smithy, Card::Copper]);
+}
+
+// ---- Ways ----
+
+fn way_game(way: Card, kingdom: &[Card]) -> Game {
+    setup_with_landscapes(kingdom, &[way])
+}
+
+#[test]
+fn a_way_is_offered_for_every_action_and_none_plays_the_card_normally() {
+    let mut g = way_game(Card::WayOfTheOx, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    let DecisionKind::Choose { options, .. } = &g.pending().unwrap().kind else {
+        panic!("expected the Way choice");
+    };
+    assert_eq!(options, &[Opt::No, Opt::Card(Card::WayOfTheOx)]);
+    own(&mut g);
+    assert_eq!(g.hand(P0).len(), 3);
+}
+
+#[test]
+fn simple_ways_give_their_bonuses_instead_of_the_card() {
+    let cases = [
+        (Card::WayOfTheMonkey, (0, 2, 1, 0)),
+        (Card::WayOfTheMule, (1, 1, 1, 0)),
+        (Card::WayOfTheOtter, (0, 1, 0, 2)),
+        (Card::WayOfTheOx, (2, 1, 0, 0)),
+        (Card::WayOfThePig, (1, 1, 0, 1)),
+        (Card::WayOfTheSheep, (0, 1, 2, 0)),
+    ];
+    for (w, (actions, buys, coins, cards)) in cases {
+        let mut g = way_game(w, &[Card::Smithy]);
+        hand(&mut g, P0, &[Card::Smithy, Card::Village]);
+        deck(&mut g, P0, &[Card::Copper; 5]);
+        g.start();
+        play(&mut g, Card::Smithy);
+        way(&mut g, w);
+        let t = g.turn();
+        let got = (t.actions, t.buys, t.coins, g.hand(P0).len() - 1);
+        assert_eq!(got, (actions, buys, coins, cards), "{w}");
+    }
+}
+
+#[test]
+fn an_attack_played_as_a_way_attacks_nobody_but_moat_is_revealed_first() {
+    let mut g = way_game(Card::WayOfTheOx, &[Card::Militia, Card::Moat]);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Militia);
+    // P1 decides on Moat before P0 decides on the Way.
+    assert_eq!(g.pending().unwrap().player, P1);
+    no(&mut g);
+    way(&mut g, Card::WayOfTheOx);
+    assert_eq!(g.hand(P1).len(), 5);
+    assert_eq!((g.turn().actions, g.turn().coins), (2, 0));
+}
+
+#[test]
+fn a_duration_played_as_a_way_does_not_stay_in_play() {
+    let mut g = way_game(Card::WayOfTheOx, &[Card::Barge]);
+    hand(&mut g, P0, &[Card::Barge]);
+    g.start();
+    play(&mut g, Card::Barge);
+    way(&mut g, Card::WayOfTheOx);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn throne_room_chooses_a_way_for_each_play() {
+    let mut g = way_game(Card::WayOfTheOx, &[Card::ThroneRoom, Card::Smithy]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    way(&mut g, Card::WayOfTheOx);
+    own(&mut g);
+    assert_eq!((g.turn().actions, g.hand(P0).len()), (2, 3));
+}
+
+#[test]
+fn way_of_the_butterfly_returns_the_card_for_one_costing_exactly_one_more() {
+    let mut g = way_game(Card::WayOfTheButterfly, &[Card::Village, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Village]);
+    g.start();
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheButterfly);
+    yes(&mut g);
+    assert!(g.in_play(P0).is_empty());
+    assert_eq!(pile_len(&g, Card::Village), 11);
+    assert_eq!(gained(&g, P0), [Card::Smithy]);
+}
+
+#[test]
+fn way_of_the_butterfly_returns_a_horse_to_its_non_supply_pile() {
+    let mut g = way_game(Card::WayOfTheButterfly, &[Card::Sleigh, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Horse]);
+    g.start();
+    play(&mut g, Card::Horse);
+    way(&mut g, Card::WayOfTheButterfly);
+    yes(&mut g);
+    assert_eq!(pile_len(&g, Card::Horse), 31);
+    assert_eq!(gained(&g, P0), [Card::Smithy]);
+}
+
+#[test]
+fn way_of_the_butterfly_cannot_return_a_card_with_no_pile() {
+    let mut g = way_game(Card::WayOfTheButterfly, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Necropolis]);
+    g.start();
+    play(&mut g, Card::Necropolis);
+    way(&mut g, Card::WayOfTheButterfly);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Necropolis]);
+    assert!(gained(&g, P0).is_empty());
+}
+
+#[test]
+fn way_of_the_camel_and_the_worm_exile_a_gold_and_an_estate() {
+    for (w, card) in [
+        (Card::WayOfTheCamel, Card::Gold),
+        (Card::WayOfTheWorm, Card::Estate),
+    ] {
+        let mut g = way_game(w, &[Card::Village]);
+        hand(&mut g, P0, &[Card::Village]);
+        g.start();
+        play(&mut g, Card::Village);
+        way(&mut g, w);
+        assert_eq!(exile_kinds(&g, P0), [card]);
+    }
+}
+
+#[test]
+fn way_of_the_chameleon_turns_cards_into_coins_and_coins_into_cards() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Smithy, Card::Moneylender]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Moneylender, Card::Copper]);
+    deck(&mut g, P0, &[Card::Silver; 10]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (3, 2));
+    play(&mut g, Card::Moneylender);
+    way(&mut g, Card::WayOfTheChameleon);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert_eq!(g.turn().coins, 3);
+    assert_eq!(hand_kinds(&g, P0), [Card::Silver; 3]);
+}
+
+#[test]
+fn way_of_the_chameleon_also_changes_this_turns_later_effects() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Merchant]);
+    hand(&mut g, P0, &[Card::Merchant, Card::Silver]);
+    deck(&mut g, P0, &[Card::Gold; 5]);
+    g.start();
+    play(&mut g, Card::Merchant);
+    way(&mut g, Card::WayOfTheChameleon);
+    // +1 Card +1 Action became +$1 +1 Action.
+    assert_eq!(
+        (g.turn().coins, g.turn().actions, g.hand(P0).len()),
+        (1, 1, 1)
+    );
+    play_treasure(&mut g, Card::Silver);
+    // Merchant's +$1 for the first Silver became +1 Card.
+    assert_eq!(g.turn().coins, 3);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
+}
+
+#[test]
+fn way_of_the_chameleon_changes_plus_cards_after_a_decision_but_not_draw_until() {
+    let mut g = way_game(
+        Card::WayOfTheChameleon,
+        &[Card::HuntingLodge, Card::Library],
+    );
+    hand(
+        &mut g,
+        P0,
+        &[Card::HuntingLodge, Card::Library, Card::Estate],
+    );
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::HuntingLodge);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.turn().actions), (1, 2));
+    yes(&mut g);
+    assert_eq!(g.turn().coins, 6);
+    assert!(g.hand(P0).is_empty());
+
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Library]);
+    hand(&mut g, P0, &[Card::Library]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Library);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (0, 7));
+}
+
+#[test]
+fn way_of_the_chameleon_on_a_duration_changes_only_this_turn() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::MerchantShip]);
+    hand(&mut g, P0, &[Card::MerchantShip]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::MerchantShip);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (0, 2));
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().coins, 2);
+}
+
+#[test]
+fn way_of_the_chameleon_does_not_change_a_card_its_card_plays() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::ThroneRoom, Card::Smithy]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    way(&mut g, Card::WayOfTheChameleon);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    own(&mut g);
+    own(&mut g);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (0, 6));
+}
+
+#[test]
+fn way_of_the_chameleon_leaves_the_minus_coin_token_for_cards() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Moneylender]);
+    hand(&mut g, P0, &[Card::Moneylender, Card::Copper]);
+    deck(&mut g, P0, &[Card::Silver; 5]);
+    g.players[0].minus_coin = true;
+    g.start();
+    play(&mut g, Card::Moneylender);
+    way(&mut g, Card::WayOfTheChameleon);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert_eq!(g.hand(P0).len(), 3);
+    assert!(g.player(P0).minus_coin);
+}
+
+#[test]
+fn way_of_the_frog_puts_the_card_onto_the_deck_when_discarded_from_play() {
+    let mut g = way_game(Card::WayOfTheFrog, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheFrog);
+    assert_eq!(g.turn().actions, 1);
+    next_turn(&mut g);
+    assert!(hand_kinds(&g, P0).contains(&Card::Smithy));
+}
+
+#[test]
+fn way_of_the_frog_on_a_throned_duration_does_not_topdeck_it() {
+    let mut g = way_game(Card::WayOfTheFrog, &[Card::ThroneRoom, Card::Barge]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Barge]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Barge]);
+    own(&mut g);
+    modes(&mut g, &[1]);
+    way(&mut g, Card::WayOfTheFrog);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Barge]);
+}
+
+#[test]
+fn way_of_the_goat_trashes_a_card_from_the_hand() {
+    let mut g = way_game(Card::WayOfTheGoat, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Estate, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheGoat);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+    assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Estate));
+}
+
+#[test]
+fn way_of_the_horse_returns_the_card_to_its_pile() {
+    let mut g = way_game(Card::WayOfTheHorse, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheHorse);
+    assert_eq!((g.turn().actions, g.hand(P0).len()), (1, 2));
+    assert_eq!(pile_len(&g, Card::Smithy), 11);
+}
+
+#[test]
+fn way_of_the_horse_still_draws_for_a_card_with_no_pile() {
+    let mut g = way_game(Card::WayOfTheHorse, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Necropolis]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Necropolis);
+    way(&mut g, Card::WayOfTheHorse);
+    assert_eq!(g.hand(P0).len(), 2);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Necropolis]);
+}
+
+#[test]
+fn way_of_the_mole_discards_the_hand_and_draws_three() {
+    let mut g = way_game(Card::WayOfTheMole, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Estate]);
+    deck(&mut g, P0, &[Card::Silver; 5]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheMole);
+    assert_eq!(hand_kinds(&g, P0), [Card::Silver; 3]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
+    assert_eq!(g.turn().actions, 1);
+}
+
+fn set_mouse(g: &mut Game, card: Card) {
+    let id = g
+        .ext
+        .menagerie
+        .mouse
+        .expect("Way of the Mouse set a card aside");
+    let Zone::Pile(pile) = g.zone(id) else {
+        panic!("the Mouse card is in its pile");
+    };
+    g.cards[id.index()] = card;
+    g.piles[pile.index()].card = card;
+}
+
+#[test]
+fn way_of_the_mouse_sets_aside_an_unused_cheap_non_duration_action() {
+    for seed in 0..20 {
+        let g = setup_with(GameConfig {
+            landscapes: vec![Card::WayOfTheMouse],
+            ..GameConfig::new(2, vec![Card::Village, Card::Smithy], seed)
+        });
+        let id = g.ext.menagerie.mouse.expect("a card set aside");
+        let card = g.card(id);
+        assert!(card.def().kingdom && card.is(Types::ACTION) && !card.is(Types::DURATION));
+        assert!(matches!(card.cost().unwrap().coins, 2 | 3), "{card}");
+        assert!(!g.config().kingdom.contains(&card));
+        let Zone::Pile(pile) = g.zone(id) else {
+            panic!("set aside in its own pile");
+        };
+        assert!(!g.pile(pile).in_supply);
+    }
+}
+
+#[test]
+fn way_of_the_mouse_plays_the_set_aside_card_leaving_it_there() {
+    let mut g = way_game(Card::WayOfTheMouse, &[Card::Smithy]);
+    set_mouse(&mut g, Card::Village);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheMouse);
+    // Village is played without a Way choice: Way of the Mouse can't be used on it.
+    assert_eq!((g.turn().actions, g.hand(P0).len()), (2, 1));
+    assert_eq!(in_play_kinds(&g, P0), [Card::Smithy]);
+    let mouse = g.ext.menagerie.mouse.unwrap();
+    assert!(matches!(g.zone(mouse), Zone::Pile(_)));
+}
+
+#[test]
+fn way_of_the_mouses_card_cannot_move_itself() {
+    let mut g = way_game(Card::WayOfTheMouse, &[Card::Smithy]);
+    set_mouse(&mut g, Card::Horse);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheMouse);
+    assert_eq!(g.hand(P0).len(), 2);
+    let mouse = g.ext.menagerie.mouse.unwrap();
+    assert_eq!(g.zone(mouse), Zone::Pile(g.pile_of(Card::Horse).unwrap()));
+}
+
+#[test]
+fn way_of_the_owl_draws_until_six_cards_in_hand() {
+    let mut g = way_game(Card::WayOfTheOwl, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Estate, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheOwl);
+    assert_eq!(g.hand(P0).len(), 6);
+}
+
+#[test]
+fn way_of_the_rat_discards_a_treasure_to_gain_a_copy() {
+    let mut g = way_game(Card::WayOfTheRat, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheRat);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert_eq!(gained(&g, P0), [Card::Smithy]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Copper, Card::Smithy]);
+}
+
+#[test]
+fn way_of_the_rat_cannot_copy_a_card_that_is_not_in_the_supply() {
+    let mut g = way_game(Card::WayOfTheRat, &[Card::Sleigh]);
+    hand(&mut g, P0, &[Card::Horse, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Horse);
+    way(&mut g, Card::WayOfTheRat);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert!(gained(&g, P0).is_empty());
+}
+
+#[test]
+fn way_of_the_seal_lets_gained_cards_go_onto_the_deck_this_turn() {
+    let mut g = way_game(Card::WayOfTheSeal, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheSeal);
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    assert_eq!(g.turn().coins, 3);
+    buy(&mut g, Card::Silver);
+    trigger(&mut g, Card::WayOfTheSeal);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Copper]);
+}
+
+#[test]
+fn way_of_the_squirrel_draws_two_at_the_end_of_the_turn() {
+    let mut g = way_game(Card::WayOfTheSquirrel, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheSquirrel);
+    assert!(g.hand(P0).is_empty());
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 7);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn way_of_the_turtle_sets_the_card_aside_and_plays_it_next_turn() {
+    let mut g = way_game(Card::WayOfTheTurtle, &[Card::Village]);
+    hand(&mut g, P0, &[Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheTurtle);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Village]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Played at the start of the turn: it may be set aside again.
+    way(&mut g, Card::WayOfTheTurtle);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Village]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    own(&mut g);
+    assert_eq!((g.turn().actions, g.hand(P0).len()), (3, 6));
+}
+
+#[test]
+fn throne_room_and_way_of_the_turtle_twice_sets_the_card_aside_once() {
+    let mut g = way_game(Card::WayOfTheTurtle, &[Card::ThroneRoom, Card::Village]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Village]);
+    way(&mut g, Card::WayOfTheTurtle);
+    way(&mut g, Card::WayOfTheTurtle);
+    assert_eq!(g.lasting().len(), 1);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+    next_turn(&mut g);
+    own(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Village]);
+}
+
+#[test]
+fn way_of_the_turtle_after_a_duration_played_normally_cancels_its_next_turn() {
+    let mut g = way_game(Card::WayOfTheTurtle, &[Card::ThroneRoom, Card::Barge]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Barge]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Barge]);
+    own(&mut g);
+    modes(&mut g, &[1]);
+    way(&mut g, Card::WayOfTheTurtle);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+    next_turn(&mut g);
+    // Only the Turtle's play happens: Barge's own next-turn effect is gone.
+    own(&mut g);
+    modes(&mut g, &[0]);
+    assert_eq!((g.hand(P0).len(), g.turn().buys), (8, 2));
 }
