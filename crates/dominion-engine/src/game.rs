@@ -480,6 +480,10 @@ pub struct GainState {
     pub card: CardId,
     pub to: crate::Dest,
     pub bought: bool,
+    /// For a bought card: which buy of the turn it is for (its position in
+    /// [`Turn::bought_cards`], from 1). Another buy may come between (Black Market).
+    #[serde(default)]
+    pub buy: Option<usize>,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
     /// The log's length when the gain began: effects set up later ("the next time you

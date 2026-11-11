@@ -215,6 +215,44 @@ fn farrier_overpay_draws_extra_cards_at_end_of_turn() {
     assert_eq!(g.hand(P0).len(), 7);
 }
 
+/// Talisman gains a copy of the overpaid Herald, which Rush plays; it plays a Black Market,
+/// which buys a card before the bought Herald is gained. The overpay is the bought one's.
+#[test]
+fn an_overpay_survives_a_buy_made_before_its_card_is_gained() {
+    let mut g = setup_with(crate::GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Rush],
+        setup_choices: [(
+            Card::BlackMarket,
+            vec![Card::Moat, Card::Smithy, Card::Village],
+        )]
+        .into(),
+        ..crate::GameConfig::new(2, vec![Card::Herald, Card::Talisman, Card::BlackMarket], 7)
+    });
+    hand(
+        &mut g,
+        P0,
+        &[Card::Talisman, Card::Gold, Card::Gold, Card::Gold],
+    );
+    deck(
+        &mut g,
+        P0,
+        &[Card::Estate, Card::BlackMarket, Card::Copper, Card::Copper],
+    );
+    g.start();
+    play_treasures(&mut g);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Rush)));
+    buy(&mut g, Card::Herald);
+    respond(&mut g, Response::Number(1));
+    choose_kinds(&mut g, &[Card::Village]);
+    choose_kinds(&mut g, &[Card::Moat, Card::Smithy]);
+    assert_eq!(purpose(&g), Purpose::TopDeck);
+    choose_kinds(&mut g, &[Card::Village]);
+    // On top of the deck, so drawn in Clean-up.
+    assert!(hand_kinds(&g, P0).contains(&Card::Village));
+}
+
 #[test]
 fn farrier_gained_without_buying_draws_nothing_extra() {
     let mut g = setup(&[Card::Farrier, Card::Workshop]);

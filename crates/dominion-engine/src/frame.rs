@@ -160,6 +160,9 @@ pub(crate) enum Frame {
         from: From,
         to: Dest,
         bought: bool,
+        /// For a bought card: which buy of the turn (see [`GainState::buy`]).
+        #[serde(default)]
+        buy: Option<usize>,
         card: Option<CardId>,
         pc: u8,
     },
@@ -168,6 +171,10 @@ pub(crate) enum Frame {
         pile: Option<PileId>,
         landscape: Option<Card>,
         card: Option<CardId>,
+        /// Which buy of the turn this is, once paid for: its position in
+        /// `Turn::bought_cards`, from 1.
+        #[serde(default)]
+        index: usize,
         pc: u8,
     },
     Trash {
@@ -281,6 +288,7 @@ impl Frame {
             from: From::Pile(pile),
             to,
             bought: false,
+            buy: None,
             card: None,
             pc: 0,
         }
@@ -293,6 +301,7 @@ impl Frame {
             from: From::Card(card),
             to,
             bought: false,
+            buy: None,
             card: None,
             pc: 0,
         }
@@ -456,16 +465,18 @@ impl Frame {
                 from,
                 to,
                 bought,
+                buy,
                 card,
                 pc,
-            } => resume_gain(g, *player, *from, *to, *bought, card, pc),
+            } => resume_gain(g, *player, *from, *to, (*bought, *buy), card, pc),
             Frame::Buy {
                 player,
                 pile,
                 landscape,
                 card,
+                index,
                 pc,
-            } => resume_buy(g, *player, *pile, *landscape, card, pc, input),
+            } => resume_buy(g, *player, (*pile, *landscape), card, index, pc, input),
             Frame::Trash { player, cards, i } => {
                 // Cards trashed together are all trashed before any "when trashed" ability,
                 // and their abilities share one window.
@@ -948,6 +959,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                             pile: Some(pile),
                             landscape: None,
                             card: None,
+                            index: 0,
                             pc: 0,
                         });
                     }
@@ -957,6 +969,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                             pile: None,
                             landscape: Some(card),
                             card: None,
+                            index: 0,
                             pc: 0,
                         });
                     }
@@ -1082,7 +1095,7 @@ fn resume_gain(
     player: PlayerId,
     from: From,
     to: Dest,
-    bought: bool,
+    (bought, buy): (bool, Option<usize>),
     card: &mut Option<CardId>,
     pc: &mut u8,
 ) -> Flow {
@@ -1101,6 +1114,7 @@ fn resume_gain(
                 card: id,
                 to,
                 bought,
+                buy,
                 cancelled: false,
                 since: g.log.len(),
                 cost: g.cost_of(id),
@@ -1176,9 +1190,9 @@ pub(crate) use crate::cards::{OVERPAY, PAY_OTHERWISE};
 fn resume_buy(
     g: &mut Game,
     p: PlayerId,
-    pile: Option<PileId>,
-    landscape: Option<Card>,
+    (pile, landscape): (Option<PileId>, Option<Card>),
     card: &mut Option<CardId>,
+    index: &mut usize,
     pc: &mut u8,
     input: Input,
 ) -> Flow {
@@ -1236,6 +1250,7 @@ fn resume_buy(
             pay(g, p, cost);
             let kind = g.card(top);
             g.turn.bought_cards.push(kind);
+            *index = g.turn.bought_cards.len();
             g.emit(Event::Bought {
                 player: p,
                 card: kind,
@@ -1271,6 +1286,7 @@ fn resume_buy(
                 from: From::Card(top),
                 to: Dest::Discard,
                 bought: true,
+                buy: Some(*index),
                 card: None,
                 pc: 0,
             })
