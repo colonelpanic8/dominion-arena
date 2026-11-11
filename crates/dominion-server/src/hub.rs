@@ -16,6 +16,7 @@ use tokio::sync::watch;
 
 /// What a client asks for when creating a game.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct NewGame {
     /// Number of players, 2 to 6.
     pub players: u8,

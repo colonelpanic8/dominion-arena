@@ -61,8 +61,8 @@ claude mcp add --transport http dominion http://127.0.0.1:7317/mcp
 Tools: `create_game` (returns one secret token per seat), `join_game`, `view`,
 `wait_for_decision`, `answer`, `card`, `list_games`. A seat's token is the only way to see
 or act for it; pass it to each call (or `join_game` once, in clients that keep MCP
-sessions). Views come back as structured JSON plus their text rendering. `create_game`
-refuses options that don't fit together.
+sessions). Views come back as structured JSON plus their text rendering. Arguments a tool
+doesn't take are refused, as are `create_game` options that don't fit together.
 
 Games survive restarts: the server saves each game (with its seat tokens, so the files
 are private to you) to `$XDG_STATE_HOME/dominion/games/<id>.json` after every change and

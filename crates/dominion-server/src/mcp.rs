@@ -25,6 +25,7 @@ pub enum Format {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct JoinParams {
     pub game_id: String,
     /// The seat token create_game returned.
@@ -32,6 +33,7 @@ pub struct JoinParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ViewParams {
     /// Your seat token (optional after join_game in a session-keeping client).
     pub token: Option<String>,
@@ -40,6 +42,7 @@ pub struct ViewParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WaitParams {
     pub token: Option<String>,
     /// How long to wait, in milliseconds (default 30000, at most 600000).
@@ -49,6 +52,7 @@ pub struct WaitParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AnswerParams {
     pub token: Option<String>,
     /// The open decision's id, from the view.
@@ -62,9 +66,15 @@ pub struct AnswerParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CardParams {
     pub name: String,
 }
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("properties" = {}))]
+pub struct NoParams {}
 
 #[derive(Clone)]
 pub struct Session {
@@ -226,7 +236,10 @@ impl Session {
     }
 
     #[tool(description = "The games on this server (no tokens).")]
-    async fn list_games(&self) -> Result<CallToolResult, ErrorData> {
+    async fn list_games(
+        &self,
+        Parameters(NoParams {}): Parameters<NoParams>,
+    ) -> Result<CallToolResult, ErrorData> {
         let games = self.hub.list();
         let text = if games.is_empty() {
             "No games.".to_string()

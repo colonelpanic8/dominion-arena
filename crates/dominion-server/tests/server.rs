@@ -17,6 +17,25 @@ async fn start() -> (String, CancellationToken) {
     (url, stop)
 }
 
+/// A two-player game: its id and seat tokens.
+async fn create(client: &Client) -> (String, Vec<String>) {
+    let created = call(
+        client,
+        "create_game",
+        json!({ "players": 2, "kingdom": ["Village"], "seed": 1 }),
+    )
+    .await;
+    assert!(created.ok, "{}", created.text);
+    let created = created.json.unwrap();
+    let tokens = created["seats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["token"].as_str().unwrap().to_string())
+        .collect();
+    (created["game_id"].as_str().unwrap().to_string(), tokens)
+}
+
 async fn call(client: &Client, tool: &'static str, args: Value) -> Reply {
     client.call(tool, args).await.unwrap()
 }
@@ -147,5 +166,54 @@ async fn two_clients_play_their_seats_to_the_end() {
     let games = call(&card, "list_games", json!({})).await;
     assert!(games.text.contains(&game) && !games.text.contains(&token(0)));
     card.close().await;
+    stop.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn arguments_a_tool_does_not_take_are_refused() {
+    let (url, stop) = start().await;
+    let client = Client::connect(&url).await.unwrap();
+    let (game, tokens) = create(&client).await;
+    for (tool, unknown, args) in [
+        (
+            "create_game",
+            "kingdoms",
+            json!({ "players": 2, "kingdoms": ["Village"] }),
+        ),
+        (
+            "create_game",
+            "turnLimit",
+            json!({ "players": 2, "turnLimit": 3 }),
+        ),
+        (
+            "join_game",
+            "seat",
+            json!({ "game_id": game, "token": tokens[0], "seat": 0 }),
+        ),
+        ("view", "fmt", json!({ "token": tokens[0], "fmt": "json" })),
+        (
+            "wait_for_decision",
+            "timeout",
+            json!({ "token": tokens[1], "timeout": 5 }),
+        ),
+        (
+            "answer",
+            "index",
+            json!({ "token": tokens[0], "decision_id": "d1", "index": 0 }),
+        ),
+        ("card", "set", json!({ "name": "Moat", "set": "Base" })),
+        ("list_games", "running", json!({ "running": true })),
+    ] {
+        let refused = call(&client, tool, args).await;
+        assert!(!refused.ok, "{tool} took `{unknown}`");
+        assert!(
+            refused.text.contains(&format!("unknown field `{unknown}`")),
+            "{tool}: {}",
+            refused.text
+        );
+    }
+    let games = call(&client, "list_games", json!({})).await;
+    assert_eq!(games.json.unwrap()["games"].as_array().unwrap().len(), 1);
+    client.close().await;
     stop.cancel();
 }
