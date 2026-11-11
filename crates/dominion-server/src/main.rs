@@ -1,10 +1,12 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand};
+use dominion_server::Options;
 use dominion_server::config::Config;
 use dominion_server::hub::{Hub, NewGame};
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 /// Play Dominion through the agent-view@2 protocol.
@@ -43,10 +45,14 @@ enum Command {
 }
 
 #[derive(Args)]
+#[command(group(ArgGroup::new("seat").required(true).args(["new", "game"])))]
 struct PlayArgs {
     /// The server's MCP endpoint (default from the config file, else the local server).
     #[arg(long)]
     server: Option<String>,
+    /// Seconds to keep trying to reach a server that went away (default 30).
+    #[arg(long, value_name = "SECONDS")]
+    reconnect: Option<u32>,
     /// Create a new game and take its first seat.
     #[arg(long, conflicts_with_all = ["game", "token"])]
     new: bool,
@@ -56,20 +62,21 @@ struct PlayArgs {
     /// The seat token for --game.
     #[arg(long, requires = "game")]
     token: Option<String>,
-    #[arg(long, default_value_t = 2)]
-    players: u8,
-    /// Kingdom cards, comma separated (default: a random kingdom).
-    #[arg(long, value_delimiter = ',')]
+    /// Number of players in the new game (default 2).
+    #[arg(long, conflicts_with = "game")]
+    players: Option<u8>,
+    /// Kingdom cards of the new game, comma separated (default: a random kingdom).
+    #[arg(long, value_delimiter = ',', conflicts_with = "game")]
     kingdom: Vec<String>,
-    /// Sets to deal a random kingdom from, comma separated.
-    #[arg(long, value_delimiter = ',')]
+    /// Sets to deal the new game's random kingdom from, comma separated.
+    #[arg(long, value_delimiter = ',', conflicts_with_all = ["game", "kingdom"])]
     sets: Vec<String>,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "game")]
     seed: Option<u64>,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "game")]
     turn_limit: Option<u32>,
-    /// Seat names, comma separated.
-    #[arg(long, value_delimiter = ',')]
+    /// Seat names of the new game, comma separated.
+    #[arg(long, value_delimiter = ',', conflicts_with = "game")]
     names: Vec<String>,
 }
 
@@ -78,12 +85,21 @@ async fn serve(config: Config) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| format!("listening on {addr}: {e}"))?;
+    // The port asked for may be 0: any free one.
+    let addr = listener.local_addr().map_err(|e| e.to_string())?;
     let mut hosts = config.allowed_hosts.clone();
     if !config.listen().is_loopback() && !config.listen().is_unspecified() {
         hosts.push(config.listen().to_string());
     }
     let hub = match config.state_dir() {
-        None => Hub::default(),
+        None if config.persist == Some(false) => Hub::default(),
+        None => {
+            return Err(
+                "no place to save games: set state_dir (or XDG_STATE_HOME or HOME), \
+                 or pass --ephemeral"
+                    .into(),
+            );
+        }
         Some(dir) => {
             let (hub, loaded) = Hub::open(&dir, config.keep_finished())
                 .map_err(|e| format!("opening {}: {e}", dir.display()))?;
@@ -106,7 +122,11 @@ async fn serve(config: Config) -> Result<(), String> {
         let _ = tokio::signal::ctrl_c().await;
         signal.cancel();
     });
-    dominion_server::serve(listener, Arc::new(hub), hosts, stop)
+    let options = Options {
+        allowed_hosts: hosts,
+        session_idle: config.session_idle(),
+    };
+    dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
         .map_err(|e| e.to_string())
 }
@@ -138,8 +158,11 @@ async fn main() -> ExitCode {
         }
         Command::Play(args) => {
             let url = args.server.clone().unwrap_or_else(|| config.server());
+            let reconnect = args
+                .reconnect
+                .map_or(config.reconnect(), |s| Duration::from_secs(s.into()));
             let new = args.new.then(|| NewGame {
-                players: args.players,
+                players: args.players.unwrap_or(2),
                 names: args.names,
                 kingdom: args.kingdom,
                 sets: args.sets,
@@ -148,7 +171,7 @@ async fn main() -> ExitCode {
                 ..NewGame::default()
             });
             let seat = args.game.zip(args.token);
-            dominion_server::client::play(&url, new, seat).await
+            dominion_server::client::play(&url, new, seat, reconnect).await
         }
         Command::Card { names } => names.iter().try_for_each(|name| {
             dominion_agent::glossary(name)

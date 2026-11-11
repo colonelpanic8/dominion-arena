@@ -11,28 +11,51 @@ use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
+/// How [`serve`] serves.
+#[derive(Clone, Debug)]
+pub struct Options {
+    /// Accepted in the Host header besides loopback.
+    pub allowed_hosts: Vec<String>,
+    /// How long an MCP session may go without a call before it is closed, and the seat
+    /// it joined forgotten. `None` keeps sessions until the server stops.
+    pub session_idle: Option<Duration>,
+}
+
+impl Default for Options {
+    fn default() -> Options {
+        Options {
+            allowed_hosts: vec![],
+            session_idle: config::Config::default().session_idle(),
+        }
+    }
+}
+
 /// Serves the MCP endpoint at `/mcp` on `listener` until `stop` is cancelled.
-/// `allowed_hosts` are accepted in the Host header besides loopback.
 pub async fn serve(
     listener: TcpListener,
     hub: Arc<hub::Hub>,
-    allowed_hosts: Vec<String>,
+    options: Options,
     stop: CancellationToken,
 ) -> std::io::Result<()> {
     let mut hosts: Vec<String> = ["localhost", "127.0.0.1", "::1"]
         .into_iter()
         .map(String::from)
         .collect();
-    hosts.extend(allowed_hosts);
+    hosts.extend(options.allowed_hosts);
     let config = StreamableHttpServerConfig::default()
         .with_allowed_hosts(hosts)
         .with_cancellation_token(stop.child_token());
+    let mut sessions = LocalSessionManager::default();
+    sessions.session_config.keep_alive = options.session_idle;
+    // A call in progress doesn't keep its session alive, so no wait may outlast it.
+    let max_wait = options.session_idle.map_or(mcp::MAX_WAIT, |idle| idle / 2);
     let service = StreamableHttpService::new(
-        move || Ok(mcp::Session::new(hub.clone())),
-        Arc::new(LocalSessionManager::default()),
+        move || Ok(mcp::Session::new(hub.clone(), max_wait)),
+        Arc::new(sessions),
         config,
     );
     let router = axum::Router::new().nest_service("/mcp", service);
@@ -45,14 +68,12 @@ pub async fn serve(
 pub fn card_text(entry: &GlossaryEntry) -> String {
     let mut head = vec![entry.name.clone(), entry.types.join(" - ")];
     if let Some(cost) = &entry.cost {
-        let mut c = format!("${}", cost.coins);
-        if cost.potions > 0 {
-            c.push_str(&"P".repeat(cost.potions as usize));
-        }
-        if cost.debt > 0 {
-            c.push_str(&format!(" {}D", cost.debt));
-        }
-        head.push(c);
+        let cost = dominion_engine::Cost {
+            coins: cost.coins as u8,
+            potions: cost.potions as u8,
+            debt: cost.debt as u8,
+        };
+        head.push(cost.to_string());
     }
     if let Some(set) = &entry.set {
         head.push(set.clone());

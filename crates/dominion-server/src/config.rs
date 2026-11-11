@@ -2,12 +2,14 @@
 //! line flags override.
 
 use serde::Deserialize;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub const DEFAULT_PORT: u16 = 7317;
 pub const DEFAULT_KEEP_FINISHED_DAYS: u32 = 7;
+pub const DEFAULT_SESSION_IDLE_MINUTES: u32 = 24 * 60;
+pub const DEFAULT_RECONNECT_SECONDS: u32 = 30;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -20,8 +22,16 @@ pub struct Config {
     /// and the listen address.
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
-    /// The MCP endpoint `dominion play` connects to (default the local server).
+    /// Minutes an MCP session may go without a call before the server closes it, which
+    /// also forgets the seat it joined (default 1440; 0 never closes one). Under twenty
+    /// minutes it also shortens the longest `wait_for_decision`, to half of it.
+    pub session_idle_minutes: Option<u32>,
+    /// The MCP endpoint `dominion play` connects to (default the local server, at
+    /// `listen` and `port`).
     pub server: Option<String>,
+    /// Seconds `dominion play` keeps trying to reach a server it lost before it gives up
+    /// (default 30).
+    pub reconnect_seconds: Option<u32>,
     /// Whether `dominion serve` saves its games and resumes them on restart (default true).
     pub persist: Option<bool>,
     /// Where saved games live (default `$XDG_STATE_HOME/dominion/games`).
@@ -85,10 +95,29 @@ impl Config {
         self.port.unwrap_or(DEFAULT_PORT)
     }
 
+    /// How long an idle MCP session is kept; `None` is until the server stops.
+    pub fn session_idle(&self) -> Option<Duration> {
+        let minutes = self
+            .session_idle_minutes
+            .unwrap_or(DEFAULT_SESSION_IDLE_MINUTES);
+        (minutes > 0).then(|| Duration::from_secs(u64::from(minutes) * 60))
+    }
+
     pub fn server(&self) -> String {
-        self.server
-            .clone()
-            .unwrap_or_else(|| format!("http://127.0.0.1:{}/mcp", self.port()))
+        self.server.clone().unwrap_or_else(|| {
+            // A server listening on every address is reached through loopback.
+            let host = match self.listen() {
+                IpAddr::V4(ip) if ip.is_unspecified() => Ipv4Addr::LOCALHOST.into(),
+                IpAddr::V6(ip) if ip.is_unspecified() => Ipv6Addr::LOCALHOST.into(),
+                ip => ip,
+            };
+            format!("http://{}/mcp", SocketAddr::new(host, self.port()))
+        })
+    }
+
+    pub fn reconnect(&self) -> Duration {
+        let seconds = self.reconnect_seconds.unwrap_or(DEFAULT_RECONNECT_SECONDS);
+        Duration::from_secs(seconds.into())
     }
 }
 
@@ -105,10 +134,29 @@ mod tests {
         assert_eq!(config.listen(), IpAddr::from([0, 0, 0, 0]));
         assert_eq!(config.port(), 9000);
         assert_eq!(config.server(), "http://127.0.0.1:9000/mcp");
+        assert_eq!(config.session_idle(), Some(Duration::from_secs(86_400)));
         assert!(toml::from_str::<Config>("prot = 1").is_err());
         let off: Config = toml::from_str("persist = false\nstate_dir = \"/x\"").unwrap();
         assert_eq!(off.state_dir(), None);
         let on: Config = toml::from_str("state_dir = \"/x\"").unwrap();
         assert_eq!(on.state_dir(), Some(PathBuf::from("/x")));
+        let sessions: Config = toml::from_str("session_idle_minutes = 0").unwrap();
+        assert_eq!(sessions.session_idle(), None);
+    }
+
+    #[test]
+    fn the_default_play_endpoint_is_where_the_server_listens() {
+        let server = |toml: &str| toml::from_str::<Config>(toml).unwrap().server();
+        assert_eq!(server(""), "http://127.0.0.1:7317/mcp");
+        assert_eq!(
+            server("listen = \"::1\"\nport = 9000"),
+            "http://[::1]:9000/mcp"
+        );
+        assert_eq!(server("listen = \"::\""), "http://[::1]:7317/mcp");
+        assert_eq!(server("listen = \"10.1.2.3\""), "http://10.1.2.3:7317/mcp");
+        assert_eq!(
+            server("listen = \"::1\"\nserver = \"http://box/mcp\""),
+            "http://box/mcp"
+        );
     }
 }

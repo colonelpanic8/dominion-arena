@@ -60,13 +60,17 @@ claude mcp add --transport http dominion http://127.0.0.1:7317/mcp
 
 Tools: `create_game` (returns one secret token per seat), `join_game`, `view`,
 `wait_for_decision`, `answer`, `card`, `list_games`. A seat's token is the only way to see
-or act for it; pass it to each call (or `join_game` once, in clients that keep MCP
-sessions). Views come back as structured JSON plus their text rendering.
+or act for it; pass it to each call. `join_game` binds a seat to the MCP session, so that
+later calls in it may leave the token out; the binding ends with the session (when the
+server restarts, or after `session_idle_minutes` without a call), so keep the token. Views
+come back as structured JSON plus their text rendering. Arguments a tool doesn't take are
+refused, as are `create_game` options that don't fit together.
 
 Games survive restarts: the server saves each game (with its seat tokens, so the files
 are private to you) to `$XDG_STATE_HOME/dominion/games/<id>.json` after every change and
 resumes them on startup. Finished games are deleted on a later startup once they are a
-week old. `--ephemeral` keeps games in memory only.
+week old. One server uses the directory at a time. `--ephemeral` keeps games in memory
+only.
 
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 
@@ -77,13 +81,17 @@ allowed_hosts = []             # serve: extra Host header values to accept
 persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: delete finished games this old at startup
-server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to
+session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
+server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
+reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 ```
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;
-`dominion play --game ID --token T` plays a seat of an existing game. `dominion card NAME`
-prints a card's text.
+`dominion play --game ID --token T` plays a seat of an existing game. It rides out a
+server restart: when it loses the server it keeps trying to reach it for
+`reconnect_seconds` (`--reconnect`), then gives up. `dominion card NAME` prints a card's
+text.
 
 ## Development
 

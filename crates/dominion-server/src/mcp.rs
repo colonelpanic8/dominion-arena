@@ -1,13 +1,20 @@
 //! The MCP tools: one `Session` per MCP session, sharing the `Hub`.
 
-use crate::hub::{Hub, HubError, NewGame, Seat};
+use crate::hub::{Hub, HubError, NewGame, Seat, panic_message};
 use dominion_agent::{AgentView, Answer};
+use futures_util::FutureExt;
+use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock};
-use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
+use rmcp::model::{CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::panic::AssertUnwindSafe;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+
+/// The longest `wait_for_decision` waits, whatever it is asked for.
+pub const MAX_WAIT: Duration = Duration::from_secs(600);
 
 /// How a view is returned as text content.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
@@ -21,6 +28,7 @@ pub enum Format {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct JoinParams {
     pub game_id: String,
     /// The seat token create_game returned.
@@ -28,14 +36,16 @@ pub struct JoinParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ViewParams {
-    /// Your seat token (optional after join_game in a session-keeping client).
+    /// Your seat token (optional in an MCP session that has called join_game).
     pub token: Option<String>,
     #[serde(default)]
     pub format: Format,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WaitParams {
     pub token: Option<String>,
     /// How long to wait, in milliseconds (default 30000, at most 600000).
@@ -45,6 +55,7 @@ pub struct WaitParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct AnswerParams {
     pub token: Option<String>,
     /// The open decision's id, from the view.
@@ -58,14 +69,21 @@ pub struct AnswerParams {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CardParams {
     pub name: String,
 }
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(extend("properties" = {}))]
+pub struct NoParams {}
 
 #[derive(Clone)]
 pub struct Session {
     hub: Arc<Hub>,
     joined: Arc<Mutex<Option<Seat>>>,
+    max_wait: Duration,
 }
 
 fn failure(message: impl Into<String>) -> CallToolResult {
@@ -88,18 +106,30 @@ fn view_result(view: &AgentView, text: String, format: Format) -> CallToolResult
 }
 
 impl Session {
-    pub fn new(hub: Arc<Hub>) -> Session {
+    /// `max_wait` caps `wait_for_decision`; it must be shorter than the time an idle
+    /// session is kept, or a waiting call would outlive its session.
+    pub fn new(hub: Arc<Hub>, max_wait: Duration) -> Session {
         Session {
             hub,
             joined: Arc::new(Mutex::new(None)),
+            max_wait: max_wait.min(MAX_WAIT),
         }
+    }
+
+    fn joined(&self) -> std::sync::MutexGuard<'_, Option<Seat>> {
+        self.joined.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn seat(&self, token: Option<&str>) -> Result<Seat, HubError> {
         match token {
             Some(token) => self.hub.find(token),
-            None => self.joined.lock().unwrap().clone().ok_or_else(|| {
-                HubError::BadRequest("pass your seat token (or call join_game first)".into())
+            None => self.joined().clone().ok_or_else(|| {
+                HubError::BadRequest(
+                    "this MCP session has not joined a seat (a join lasts until the session \
+                     ends: a server restart or a long idle spell ends it): pass your seat \
+                     token, or call join_game again"
+                        .into(),
+                )
             }),
         }
     }
@@ -137,7 +167,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Bind this MCP session to the seat a token claims, so later calls may omit the token. Returns that seat's view."
+        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Returns that seat's view."
     )]
     async fn join_game(
         &self,
@@ -145,7 +175,7 @@ impl Session {
     ) -> Result<CallToolResult, ErrorData> {
         Ok(match self.hub.claim(&p.game_id, &p.token) {
             Ok(seat) => {
-                *self.joined.lock().unwrap() = Some(seat.clone());
+                *self.joined() = Some(seat.clone());
                 self.view_of(&seat, Format::Text)
             }
             Err(e) => failure(e.to_string()),
@@ -174,7 +204,7 @@ impl Session {
             Ok(seat) => seat,
             Err(e) => return Ok(failure(e.to_string())),
         };
-        let timeout = Duration::from_millis(p.timeout_ms.unwrap_or(30_000).min(600_000));
+        let timeout = Duration::from_millis(p.timeout_ms.unwrap_or(30_000)).min(self.max_wait);
         if let Err(e) = self.hub.wait(&seat, timeout).await {
             return Ok(failure(e.to_string()));
         }
@@ -218,7 +248,10 @@ impl Session {
     }
 
     #[tool(description = "The games on this server (no tokens).")]
-    async fn list_games(&self) -> Result<CallToolResult, ErrorData> {
+    async fn list_games(
+        &self,
+        Parameters(NoParams {}): Parameters<NoParams>,
+    ) -> Result<CallToolResult, ErrorData> {
         let games = self.hub.list();
         let text = if games.is_empty() {
             "No games.".to_string()
@@ -249,10 +282,60 @@ impl Session {
     name = "dominion",
     instructions = "Play Dominion. create_game returns a token per seat; a seat's \
 token is the only way to see or act for it. Pass `token` to view, wait_for_decision and \
-answer (or call join_game once, in clients that keep MCP sessions). Loop: \
+answer. (join_game binds a seat to this MCP session so later calls may leave the token \
+out, but only until the session ends: keep the token.) Loop: \
 wait_for_decision, read the view, then answer the decision with option indices (in order \
 when the decision is ordered, or `name` when it says any card may be named). Views are \
 dominion/agent-view@2: the JSON is the structured content, the text rendering the text \
 content."
 )]
-impl ServerHandler for Session {}
+impl ServerHandler for Session {
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let tool = request.name.to_string();
+        let router = Self::tool_router();
+        answered(
+            &tool,
+            router.call(ToolCallContext::new(self, request, context)),
+        )
+        .await
+    }
+}
+
+/// Runs a tool call. rmcp leaves a request whose handler panics unanswered, so a panic
+/// becomes an error result.
+async fn answered(
+    tool: &str,
+    call: impl Future<Output = Result<CallToolResponse, ErrorData>>,
+) -> Result<CallToolResponse, ErrorData> {
+    match AssertUnwindSafe(call).catch_unwind().await {
+        Ok(result) => result,
+        Err(panic) => Ok(failure(format!(
+            "{tool} failed inside the server ({}). This is a bug in the server",
+            panic_message(&*panic)
+        ))
+        .into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_tool_call_that_panics_is_answered_with_an_error() {
+        let answer = answered("view", async { panic!("boom") }).await;
+        let Ok(CallToolResponse::Complete(result)) = answer else {
+            panic!("{answer:?}");
+        };
+        assert_eq!(result.is_error, Some(true));
+        let text = result.content[0].as_text().unwrap().text.clone();
+        assert_eq!(
+            text,
+            "view failed inside the server (boom). This is a bug in the server"
+        );
+    }
+}

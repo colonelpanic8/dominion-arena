@@ -117,5 +117,80 @@ fn finished_games_expire_and_unreadable_files_are_left_alone() {
     assert!(!dir.join("g1.json").exists());
     assert!(dir.join("g9.json").exists());
     assert_eq!(hub.list()[0].game_id, "g2");
-    assert_eq!(hub.create(&new_game(None)).unwrap().game_id, "g3");
+    // Not g3: ids run on from the highest file, so g9.json is never written over.
+    assert_eq!(hub.create(&new_game(None)).unwrap().game_id, "g10");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("g9.json")).unwrap(),
+        "not a game"
+    );
+}
+
+#[test]
+fn files_that_do_not_hold_their_game_are_skipped() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    {
+        let (hub, _) = Hub::open(dir, KEEP).unwrap();
+        create(&hub, None);
+    }
+    let saved = std::fs::read_to_string(dir.join("g1.json")).unwrap();
+    // A copy would be a second g1.
+    std::fs::write(dir.join("g5.json"), &saved).unwrap();
+    let mut seatless: Value = serde_json::from_str(&saved).unwrap();
+    seatless["table"]["id"] = "g3".into();
+    seatless["tokens"].as_array_mut().unwrap().pop();
+    std::fs::write(dir.join("g3.json"), seatless.to_string()).unwrap();
+    // What a server that died while saving leaves behind.
+    std::fs::write(dir.join(".g1.json.tmp"), &saved[..saved.len() / 2]).unwrap();
+
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!(loaded.games, 1);
+    let mut skipped: Vec<String> = loaded
+        .unreadable
+        .iter()
+        .map(|(path, why)| format!("{}: {why}", path.file_name().unwrap().display()))
+        .collect();
+    skipped.sort();
+    assert_eq!(
+        skipped,
+        [
+            "g3.json: has 1 seat tokens for 2 seats",
+            "g5.json: holds game g1, not g5"
+        ]
+    );
+    assert_eq!(hub.list().len(), 1);
+    assert!(!dir.join(".g1.json.tmp").exists());
+    assert_eq!(std::fs::read_to_string(dir.join("g1.json")).unwrap(), saved);
+}
+
+#[test]
+fn a_directory_serves_one_hub_at_a_time() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (first, _) = Hub::open(tmp.path(), KEEP).unwrap();
+    let second = Hub::open(tmp.path(), KEEP).err().map(|e| e.to_string());
+    assert_eq!(
+        second.as_deref(),
+        Some("another dominion server is using this directory")
+    );
+    drop(first);
+    assert!(Hub::open(tmp.path(), KEEP).is_ok());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_directory_that_cannot_be_written_to_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    {
+        let (hub, _) = Hub::open(dir, KEEP).unwrap();
+        create(&hub, None);
+    }
+    let set_mode = |mode| std::fs::set_permissions(dir, PermissionsExt::from_mode(mode)).unwrap();
+    set_mode(0o500);
+    // Root writes anywhere, so there is nothing to refuse.
+    let writable = std::fs::write(dir.join("x"), "").is_ok();
+    let opened = Hub::open(dir, KEEP).map(|_| ());
+    set_mode(0o700);
+    assert!(writable || opened.is_err());
 }
