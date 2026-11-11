@@ -2,6 +2,7 @@
 
 mod base;
 mod dark_ages;
+mod rising_sun;
 mod seaside;
 
 use crate::game::Zone;
@@ -11,7 +12,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 /// Sets whose cards are implemented; the fuzz test deals kingdoms from these.
-pub(crate) const IMPLEMENTED: &[Set] = &[Set::Base, Set::Seaside, Set::DarkAges];
+pub(crate) const IMPLEMENTED: &[Set] = &[Set::Base, Set::Seaside, Set::DarkAges, Set::RisingSun];
 
 pub(crate) const P0: PlayerId = PlayerId(0);
 pub(crate) const P1: PlayerId = PlayerId(1);
