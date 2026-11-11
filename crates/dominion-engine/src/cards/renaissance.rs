@@ -60,6 +60,13 @@ impl SetRules for Rules {
                 out.push(Note::new(Card::SinisterPlot).player(p).count(n as i32));
             }
         }
+        // The game has ended; the round after it is under way, with these players to go.
+        if g.ending.is_some() && g.outcome().is_none() {
+            out.push(Note::new(Card::Fleet));
+            for &p in &g.final_round {
+                out.push(Note::new(Card::Fleet).player(p));
+            }
+        }
     }
 
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {

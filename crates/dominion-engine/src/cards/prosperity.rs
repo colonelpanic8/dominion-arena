@@ -5,7 +5,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
-use crate::setup::Setup;
+use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Note, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,9 @@ const GOONS_VP: u8 = 0;
 
 impl SetRules for Rules {
     fn notes(g: &Game, out: &mut Vec<Note>) {
+        if setup::in_game(g, |c| c == Card::TradeRoute) {
+            out.push(Note::new(Card::TradeRoute).count(g.trade_route_mat() as i32));
+        }
         for l in g.lasting() {
             if let (Card::Contraband | Card::WarChest, Some(named)) = (l.card, l.data.card) {
                 out.push(Note::new(l.card).player(l.owner).card(named));

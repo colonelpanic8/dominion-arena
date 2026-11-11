@@ -1086,6 +1086,8 @@ fn trade_route_tokens_move_to_the_mat_when_victory_piles_are_gained_from() {
     buy(&mut g, Card::Estate);
     // One token per pile, however many cards were gained from it.
     assert_eq!(g.trade_route_mat(), 1);
+    let mat = Note::new(Card::TradeRoute).count(1);
+    assert!(g.view(P1).notes().contains(&mat));
     let estates = g.supply_pile(Card::Estate).unwrap();
     assert!(!g.pile(estates).trade_route);
 }

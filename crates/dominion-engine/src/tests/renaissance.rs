@@ -1493,6 +1493,14 @@ fn fleet_gives_its_owners_one_more_turn_after_the_game_ends() {
     assert!(g.outcome().is_none());
     // P2 then P0 take their Fleet turns; P1 doesn't.
     assert_eq!(g.turn().player, P2);
+    let fleet: Vec<Option<PlayerId>> = g
+        .view(P1)
+        .notes()
+        .iter()
+        .filter(|n| n.source == Card::Fleet)
+        .map(|n| n.player)
+        .collect();
+    assert_eq!(fleet, [None, Some(P0)]);
     next_turn(&mut g);
     assert_eq!(g.turn().player, P0);
     to_buy(&mut g);
@@ -1501,6 +1509,7 @@ fn fleet_gives_its_owners_one_more_turn_after_the_game_ends() {
     assert_eq!(outcome.reason, EndReason::ProvincesGone);
     // Fleet turns, like extra turns, do not count for the tiebreaker.
     assert_eq!(outcome.turns, [1, 1, 0]);
+    assert!(g.view(P1).notes().iter().all(|n| n.source != Card::Fleet));
 }
 
 #[test]
