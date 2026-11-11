@@ -192,6 +192,34 @@ fn heirlooms_replace_starting_coppers_and_the_coppers_go_to_the_pile() {
     assert_eq!(g.pile(copper).cards.len(), 60 - 14 + 4);
 }
 
+/// A card set aside in setup is in the game: it brings its Heirloom.
+#[test]
+fn cards_set_aside_in_setup_bring_their_heirlooms() {
+    let heirloom = |by: Card, kingdom: &[Card], landscapes: &[Card], card: Card, heirloom: Card| {
+        let g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            landscapes: landscapes.to_vec(),
+            setup_choices: [(by, vec![card])].into_iter().collect(),
+            ..GameConfig::new(2, kingdom.to_vec(), 3)
+        });
+        for p in [P0, P1] {
+            assert_eq!(g.count_owned(p, heirloom), 1, "{by}");
+            assert_eq!(g.count_owned(p, Card::Copper), 6, "{by}");
+        }
+    };
+    let mouse = Card::WayOfTheMouse;
+    heirloom(
+        mouse,
+        &[Card::Smithy],
+        &[mouse],
+        Card::Fool,
+        Card::LuckyCoin,
+    );
+    let riverboat = Card::Riverboat;
+    heirloom(riverboat, &[riverboat], &[], Card::Pooka, Card::CursedGold);
+}
+
 #[test]
 fn setup_adds_boons_hexes_and_the_piles_the_cards_use() {
     let g = setup(&[

@@ -456,7 +456,7 @@ impl SetRules for Rules {
 
     fn modify_starting_deck(g: &Game, _p: PlayerId, deck: &mut Vec<Card>) {
         for (kingdom, heirloom) in HEIRLOOMS {
-            if g.pile_of(kingdom).is_some()
+            if setup::in_game(g, |c| c == kingdom)
                 && let Some(i) = deck.iter().position(|&c| c == Card::Copper)
             {
                 deck[i] = heirloom;
