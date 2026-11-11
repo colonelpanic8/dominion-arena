@@ -207,20 +207,11 @@ impl SetRules for Rules {
                 }
             }
             Occasion::AfterPlay { player, card } => {
-                if player != g.turn.player
-                    || !has(g, player, Card::Citadel)
-                    || used(g, Card::Citadel, player)
+                if player == g.turn.player
+                    && has(g, player, Card::Citadel)
+                    && !used(g, Card::Citadel, player)
+                    && first_action_play(g, player, card)
                 {
-                    return;
-                }
-                let t = &g.turn;
-                let first = t
-                    .played_types
-                    .iter()
-                    .position(|types| types.contains(Types::ACTION))
-                    .map(|i| t.played_ids[i]);
-                let once = t.played_ids.iter().filter(|&&c| c == card).count() == 1;
-                if first == Some(card) && once {
                     out.push(Trigger::new(player, Card::Citadel, EFFECT).on(card));
                 }
             }
@@ -328,6 +319,25 @@ fn this_turn(g: &Game, card: Card, p: PlayerId) -> impl Iterator<Item = &crate::
 /// Whether `p` used their once-per-turn `card` ability this turn.
 fn used(g: &Game, card: Card, p: PlayerId) -> bool {
     this_turn(g, card, p).next().is_some()
+}
+
+/// Whether the play of `card` being resolved is the turn's first play of an Action card,
+/// however often that card has been played again since.
+fn first_action_play(g: &Game, p: PlayerId, card: CardId) -> bool {
+    let Some(st) = g.plays.last().filter(|st| st.card == card) else {
+        return false;
+    };
+    let log = g.log();
+    let start = log
+        .iter()
+        .rposition(|e| matches!(e, Event::TurnStart { .. }))
+        .unwrap_or(0);
+    let earlier = log[start..st.since.max(start)]
+        .iter()
+        .filter(|e| matches!(e, Event::Played { player, .. } if *player == p))
+        .count();
+    let first = g.turn.played_types.iter().position(|t| t.contains(Types::ACTION));
+    first == Some(earlier)
 }
 
 fn mark_used(g: &mut Game, card: Card, p: PlayerId) {

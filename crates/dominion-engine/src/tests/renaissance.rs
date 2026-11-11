@@ -1321,6 +1321,20 @@ fn citadel_replays_the_first_action_each_turn() {
 }
 
 #[test]
+fn citadel_still_replays_an_action_a_royal_carriage_replayed_first() {
+    let mut g = setup(&[Card::RoyalCarriage, Card::Village]);
+    give_project(&mut g, P0, Card::Citadel);
+    g.create(Card::RoyalCarriage, Zone::Mat(P0, crate::game::Mat::Tavern));
+    hand(&mut g, P0, &[Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    trigger(&mut g, Card::RoyalCarriage);
+    // The Village, Royal Carriage's replay, then Citadel's.
+    assert_eq!(g.turn().actions, 6);
+}
+
+#[test]
 fn citadel_replays_a_throne_room() {
     let mut g = setup(&[Card::ThroneRoom, Card::Smithy]);
     give_project(&mut g, P0, Card::Citadel);
