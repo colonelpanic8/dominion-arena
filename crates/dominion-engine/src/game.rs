@@ -168,14 +168,22 @@ impl Pile {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
+    #[default]
     Start,
     Action,
     Buy,
     Night,
     Cleanup,
     End,
+}
+
+impl Phase {
+    /// The start of a turn is part of its Action phase.
+    pub fn is_action(self) -> bool {
+        matches!(self, Phase::Start | Phase::Action)
+    }
 }
 
 /// State that lasts for one turn.
@@ -439,6 +447,9 @@ pub struct GainState {
     pub since: usize,
     /// What the card cost at the moment it was gained (set as it moves).
     pub cost: Cost,
+    /// The turn's phase at the moment it was gained (set as it moves).
+    #[serde(default)]
+    pub phase: Phase,
     /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
     /// you gain", "your second gain this turn").
     pub turn_index: Option<usize>,
@@ -607,9 +618,9 @@ impl Game {
         self.prophecy
     }
 
-    /// Whether it is an Action phase: the start of a turn is part of its Action phase.
+    /// Whether it is an Action phase.
     pub fn in_action_phase(&self) -> bool {
-        matches!(self.turn.phase, Phase::Start | Phase::Action)
+        self.turn.phase.is_action()
     }
 
     /// Whether the game's Prophecy is in effect (all its Sun tokens removed).
@@ -688,6 +699,16 @@ impl Game {
             crate::Dest::DeckTop => Zone::Deck(p),
             crate::Dest::SetAside => Zone::SetAside(p),
         })
+    }
+
+    /// The phase `id` was gained in, while its gain is in progress ("when you gain a card in
+    /// your Buy phase" abilities look at this: resolving the gain may change the phase).
+    pub fn gain_phase(&self, id: CardId) -> Option<Phase> {
+        self.gains
+            .iter()
+            .rev()
+            .find(|st| st.card == id)
+            .map(|st| st.phase)
     }
 
     /// Where `id` was trashed from, while its "when trashed" abilities resolve.

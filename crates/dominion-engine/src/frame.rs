@@ -1074,6 +1074,7 @@ fn resume_gain(
                 cancelled: false,
                 since: g.log.len(),
                 cost: g.cost_of(id),
+                phase: g.turn.phase,
                 turn_index: None,
                 buy_index: None,
             });
@@ -1093,7 +1094,9 @@ fn resume_gain(
                 Dest::SetAside => Zone::SetAside(st.player),
             };
             let cost = g.cost_of(st.card);
-            g.gains.last_mut().expect("gain in progress").cost = cost;
+            let gain = g.gains.last_mut().expect("gain in progress");
+            gain.cost = cost;
+            gain.phase = g.turn.phase;
             if let Some(pile) = g.home_pile(g.printed(st.card)) {
                 let pile = &mut g.piles[pile.index()];
                 if pile.trade_route {

@@ -8,7 +8,7 @@ use crate::frame::{Flow, Frame, Input, OVERPAY, Value};
 use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
-use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::{Card, CardId, Cost, Game, Kind, Phase, PileId, PlayerId, Set, Types};
 use crate::Note;
 use serde::{Deserialize, Serialize};
 
@@ -278,7 +278,9 @@ impl SetRules for Rules {
                     _ => {}
                 }
                 // "In games using this": wherever its cards are (the Black Market deck).
-                if g.in_action_phase() && setup::in_game(g, |c| c == Card::Footpad) {
+                if g.gain_phase(card).is_some_and(Phase::is_action)
+                    && setup::in_game(g, |c| c == Card::Footpad)
+                {
                     out.push(Trigger::new(player, Card::Footpad, FOOTPAD_DRAW));
                 }
             }

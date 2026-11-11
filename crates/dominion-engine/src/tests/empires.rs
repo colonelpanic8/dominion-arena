@@ -1643,6 +1643,20 @@ fn tax_puts_debt_on_every_pile_and_a_gain_in_the_buy_phase_takes_it() {
 }
 
 #[test]
+fn tax_debt_is_taken_for_a_gain_that_ends_the_buy_phase() {
+    let mut g = setup_landscapes(&[Card::Cavalry], &[Card::Tax]);
+    let pile = g.supply_pile(Card::Cavalry).unwrap();
+    hand(&mut g, P0, &[Card::Silver, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play_all(&mut g, Card::Silver);
+    buy(&mut g, Card::Cavalry);
+    // Cavalry first: it was still gained in the Buy phase.
+    trigger(&mut g, Card::Cavalry);
+    assert_eq!((g.player(P0).debt, g.pile(pile).debt_tokens), (1, 0));
+}
+
+#[test]
 fn triumph_gains_an_estate_and_a_vp_per_card_gained_this_turn() {
     let mut g = setup_landscapes(&[Card::Village], &[Card::Triumph, Card::Delve]);
     hand(&mut g, P0, &[Card::Gold, Card::Gold]);

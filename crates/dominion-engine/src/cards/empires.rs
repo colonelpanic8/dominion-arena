@@ -690,7 +690,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         .find(|st| st.card == card)
         .and_then(|st| st.turn_index);
     let my_turn = player == g.turn.player;
-    let buy_phase = my_turn && g.turn.phase == Phase::Buy;
+    let buy_phase = my_turn && g.gain_phase(card) == Some(Phase::Buy);
     let own = match kind {
         Card::Rocks
         | Card::CrumblingCastle

@@ -302,6 +302,18 @@ fn footpad_draws_on_gains_in_action_phases_only() {
 }
 
 #[test]
+fn footpad_does_not_draw_for_a_gain_that_returns_to_the_action_phase() {
+    let mut g = setup(&[Card::Footpad, Card::Cavalry]);
+    hand(&mut g, P0, &[Card::Silver, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Cavalry);
+    // Cavalry's +2 Cards only: it was gained in the Buy phase.
+    assert_eq!(g.hand(P0).len(), 2);
+}
+
+#[test]
 fn footpad_in_the_black_market_deck_draws_on_gains() {
     let mut g = setup_with(GameConfig {
         setup_choices: [(Card::BlackMarket, vec![Card::Footpad])].into(),
