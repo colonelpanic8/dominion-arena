@@ -1017,6 +1017,22 @@ fn cathedral_trashes_a_card_at_the_start_of_turn() {
 }
 
 #[test]
+fn cathedral_with_an_empty_hand_can_resolve_before_cards_are_drawn() {
+    let mut g = setup(&[Card::Smithy]);
+    give_project(&mut g, P0, Card::Cathedral);
+    give_project(&mut g, P0, Card::SinisterPlot);
+    g.ext.renaissance.plot[0] = 2;
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Gold, Card::Gold, Card::Copper]);
+    g.start();
+    // Cathedral first, with nothing to trash; then Sinister Plot's two cards.
+    trigger(&mut g, Card::Cathedral);
+    mode(&mut g, 1);
+    assert!(phase(&g).is_some(), "{:?}", g.pending());
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold, Card::Gold]);
+}
+
+#[test]
 fn city_gate_draws_then_topdecks() {
     let mut g = setup(&[Card::Smithy]);
     give_project(&mut g, P0, Card::CityGate);

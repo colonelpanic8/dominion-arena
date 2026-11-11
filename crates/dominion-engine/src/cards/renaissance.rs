@@ -427,13 +427,12 @@ fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
     for &project in &g.player(p).projects {
         let t = Trigger::new(p, project, EFFECT);
         match project {
-            Card::Cathedral if !g.hand(p).is_empty() => out.push(t),
             Card::Silos if !coppers_in_hand(g, p).is_empty() => out.push(t),
             Card::CropRotation if !g.cards_in_hand_where(p, Types::VICTORY).is_empty() => {
                 out.push(t.optional())
             }
             Card::Fair | Card::Barracks => out.push(t.quiet()),
-            Card::CityGate | Card::SinisterPlot | Card::Piazza => out.push(t),
+            Card::Cathedral | Card::CityGate | Card::SinisterPlot | Card::Piazza => out.push(t),
             _ => {}
         }
     }
