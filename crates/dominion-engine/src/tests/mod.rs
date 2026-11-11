@@ -6,6 +6,7 @@ mod allies;
 mod base;
 mod cornucopia_guilds;
 mod dark_ages;
+mod elder;
 mod empires;
 mod hinterlands;
 mod intrigue;
