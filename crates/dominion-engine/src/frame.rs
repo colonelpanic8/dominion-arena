@@ -369,8 +369,10 @@ impl Frame {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 };
                 *i += 1;
-                g.move_card(c, Zone::Trash, Pos::Top);
                 let card = g.card(c);
+                if !cards::trash_instead(g, *player, c) {
+                    g.move_card(c, Zone::Trash, Pos::Top);
+                }
                 if *player == g.turn.player {
                     g.turn.trashed.push(card);
                 }
@@ -857,7 +859,7 @@ fn pay(g: &mut Game, p: PlayerId, cost: crate::Cost) {
     turn.potions -= cost.potions as u32;
     turn.buys -= 1;
     turn.bought = true;
-    g.players[p.index()].debt += cost.debt as u32;
+    g.add_debt(p, cost.debt as u32);
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

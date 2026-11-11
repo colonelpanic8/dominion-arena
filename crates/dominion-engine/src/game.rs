@@ -735,6 +735,12 @@ impl Game {
         }
     }
 
+    /// `p` takes `n` Debt (or whoever takes it for them: Possession).
+    pub(crate) fn add_debt(&mut self, p: PlayerId, n: u32) {
+        let taker = cards::debt_taker(self, p).unwrap_or(p);
+        self.players[taker.index()].debt += n;
+    }
+
     /// Puts `id` on top of `p`'s deck.
     pub(crate) fn top_deck(&mut self, id: CardId, p: PlayerId) {
         self.move_card(id, Zone::Deck(p), Pos::Top);
