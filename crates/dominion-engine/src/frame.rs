@@ -726,6 +726,7 @@ fn resume_gain(
                 to,
                 bought,
                 cancelled: false,
+                cost: g.cost_of(id),
             });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
@@ -742,6 +743,8 @@ fn resume_gain(
                 Dest::DeckTop => Zone::Deck(st.player),
                 Dest::SetAside => Zone::SetAside(st.player),
             };
+            let cost = g.cost_of(st.card);
+            g.gains.last_mut().expect("gain in progress").cost = cost;
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {

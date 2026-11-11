@@ -333,6 +333,8 @@ pub struct GainState {
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
+    /// What the card cost at the moment it was gained (set as it moves).
+    pub cost: Cost,
 }
 
 /// A play in progress. "When you play" triggers may change it.
