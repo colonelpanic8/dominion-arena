@@ -205,9 +205,18 @@ pub struct Turn {
     pub played_ids: Vec<CardId>,
     /// For each of `played_ids`: whether it was in play when played and hasn't left since.
     pub stayed_in_play: Vec<bool>,
+    /// The types each of `played` had as it was played.
+    #[serde(default)]
+    pub played_types: Vec<Types>,
     pub gained: Vec<Card>,
+    /// The types each of `gained` had as it was gained.
+    #[serde(default)]
+    pub gained_types: Vec<Types>,
     /// The cards in `gained` that were gained in the Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
+    /// The types each of `gained_in_buy_phase` had as it was gained.
+    #[serde(default)]
+    pub gained_in_buy_phase_types: Vec<Types>,
     pub bought_cards: Vec<Card>,
     pub trashed: Vec<Card>,
     /// Cards drawn in Clean-up.
@@ -236,8 +245,11 @@ impl Turn {
             hand_plays: 0,
             played_ids: vec![],
             stayed_in_play: vec![],
+            played_types: vec![],
             gained: vec![],
+            gained_types: vec![],
             gained_in_buy_phase: vec![],
+            gained_in_buy_phase_types: vec![],
             bought_cards: vec![],
             trashed: vec![],
             cleanup_draw: 5,
@@ -245,6 +257,20 @@ impl Turn {
             ignore_plus_actions: false,
         }
     }
+
+    /// How many of this turn's plays were of a card that had any of `types` as it was played.
+    pub fn played_of(&self, types: Types) -> usize {
+        count_of(&self.played_types, types)
+    }
+
+    /// How many of this turn's gains were of a card that had any of `types` as it was gained.
+    pub fn gained_of(&self, types: Types) -> usize {
+        count_of(&self.gained_types, types)
+    }
+}
+
+fn count_of(history: &[Types], types: Types) -> usize {
+    history.iter().filter(|t| t.intersects(types)).count()
 }
 
 /// Free-form state an effect carries between steps.

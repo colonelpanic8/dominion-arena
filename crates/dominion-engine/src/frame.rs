@@ -990,11 +990,14 @@ fn resume_gain(
             }
             let kind = g.card(st.card);
             if st.player == g.turn.player {
+                let types = g.types(st.card);
                 g.gains.last_mut().expect("gain in progress").turn_index =
                     Some(g.turn.gained.len());
                 g.turn.gained.push(kind);
+                g.turn.gained_types.push(types);
                 if g.turn.phase == Phase::Buy {
                     g.turn.gained_in_buy_phase.push(kind);
+                    g.turn.gained_in_buy_phase_types.push(types);
                 }
             }
             g.emit(Event::Gained {
@@ -1220,6 +1223,7 @@ impl PlayFrame {
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
+                    g.turn.played_types.push(g.types(id));
                     g.turn.played_ids.push(id);
                     g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
                 }

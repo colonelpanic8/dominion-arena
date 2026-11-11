@@ -528,11 +528,7 @@ impl SetRules for Rules {
 
 /// Action cards the turn's player has gained this turn.
 fn actions_gained(g: &Game) -> usize {
-    g.turn
-        .gained
-        .iter()
-        .filter(|c| c.is(Types::ACTION))
-        .count()
+    g.turn.gained_of(Types::ACTION)
 }
 
 /// Action cards `p` has in play that Clean-up will discard.

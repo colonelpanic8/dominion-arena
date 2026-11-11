@@ -122,6 +122,21 @@ fn conspirator_counts_actions_played_including_throne_room_replays() {
     assert_eq!(g.hand(P0).len(), 1);
 }
 
+/// Under Enlightenment the Coppers played were Actions.
+#[test]
+fn conspirator_counts_cards_that_were_actions_by_an_effect() {
+    let mut g = setup(&[Card::Conspirator]);
+    g.prophecy = Some((Card::Enlightenment, 0));
+    hand(&mut g, P0, &[Card::Copper, Card::Copper, Card::Conspirator]);
+    deck(&mut g, P0, &[Card::Estate; 5]);
+    g.start();
+    play(&mut g, Card::Copper);
+    play(&mut g, Card::Copper);
+    play(&mut g, Card::Conspirator);
+    assert_eq!((g.turn().actions, g.turn().coins), (1, 2));
+    assert_eq!(g.hand(P0).len(), 3);
+}
+
 #[test]
 fn courtier_chooses_one_option_per_type() {
     let mut g = setup(&[Card::Courtier, Card::Mill]);

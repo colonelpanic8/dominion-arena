@@ -117,7 +117,9 @@ them.
   (through `modify_types`), `g.card(id)` (what a card currently is: `Game::masks` make
   Band of Misfits-style cards another card until they leave play; `g.printed(id)` is
   what is printed). `SetRules::behavior` lets a card use another card's abilities
-  (Inheritance).
+  (Inheritance). Effects that look back at the turn ("the first Action you play", "the
+  third Action you gain") count the types cards had then: `Turn::played_types` /
+  `gained_types` (`played_of`, `gained_of`), never `Card::is` on `played` / `gained`.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
   Debt, VP tokens, Projects, States, Adventures tokens, ...), `Pile` (VP / Debt /
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with

@@ -123,7 +123,7 @@ fn main() {
     assert!(types.len() <= 64, "too many card types");
 
     let mut out = String::new();
-    out.push_str("bitflags::bitflags! {\n    /// Card types.\n    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]\n    pub struct Types: u64 {\n");
+    out.push_str("bitflags::bitflags! {\n    /// Card types.\n    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]\n    pub struct Types: u64 {\n");
     for (i, t) in types.iter().enumerate() {
         writeln!(out, "        const {} = 1 << {i};", type_const(t)).unwrap();
     }

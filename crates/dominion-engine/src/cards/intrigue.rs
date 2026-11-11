@@ -280,13 +280,7 @@ fn conspirator(g: &mut Game, f: &mut CardFrame) -> Flow {
         return Flow::done();
     }
     f.pc = 1;
-    let actions = g
-        .turn
-        .played
-        .iter()
-        .filter(|c| c.is(Types::ACTION))
-        .count();
-    if actions >= 3 {
+    if g.turn.played_of(Types::ACTION) >= 3 {
         g.turn.actions += 1;
         return Flow::Call(Frame::draw(f.player, 1));
     }

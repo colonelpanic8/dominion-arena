@@ -213,9 +213,13 @@ impl SetRules for Rules {
                 {
                     return;
                 }
-                let played = &g.turn.played_ids;
-                let first = played.iter().copied().find(|&c| g.is(c, Types::ACTION));
-                let once = played.iter().filter(|&&c| c == card).count() == 1;
+                let t = &g.turn;
+                let first = t
+                    .played_types
+                    .iter()
+                    .position(|types| types.contains(Types::ACTION))
+                    .map(|i| t.played_ids[i]);
+                let once = t.played_ids.iter().filter(|&&c| c == card).count() == 1;
                 if first == Some(card) && once {
                     out.push(Trigger::new(player, Card::Citadel, EFFECT).on(card));
                 }

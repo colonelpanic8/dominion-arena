@@ -838,6 +838,44 @@ fn highwayman_stops_the_first_treasure_each_other_player_plays_each_turn() {
     assert_eq!(g.turn().coins, 1);
 }
 
+/// With Charlatan in the game a Curse is a Treasure, so one played first is the first
+/// Treasure.
+#[test]
+fn highwayman_counts_a_curse_that_charlatan_makes_a_treasure() {
+    let mut g = game(&[Card::Highwayman, Card::Charlatan]);
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Curse, Card::Silver]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Curse);
+    assert_eq!(g.turn().coins, 0);
+    play(&mut g, Card::Silver);
+    assert_eq!(g.turn().coins, 2);
+}
+
+/// Under Capitalism, Militia is a Treasure during its owner's turns.
+#[test]
+fn highwayman_counts_an_action_that_capitalism_makes_a_treasure() {
+    let mut g = game(&[Card::Highwayman, Card::Militia]);
+    g.players[1].projects.push(Card::Capitalism);
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Militia, Card::Silver]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    play(&mut g, Card::Militia);
+    assert_eq!(g.turn().coins, 0);
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    assert_eq!(g.turn().coins, 2);
+}
+
 #[test]
 fn highwayman_is_not_cumulative_and_moat_blocks_it() {
     let mut g = game(&[Card::Highwayman, Card::Moat]);

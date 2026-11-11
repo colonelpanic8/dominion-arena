@@ -299,9 +299,10 @@ impl SetRules for Rules {
                 _ => {}
             },
             Occasion::Play { player, card } => {
-                if g.is(card, Types::TREASURE)
+                if player == g.turn.player
+                    && g.is(card, Types::TREASURE)
                     && highwayman_attacks(g, player)
-                    && treasures_played_this_turn(g, player) == 1
+                    && g.turn.played_of(Types::TREASURE) == 1
                 {
                     out.push(Trigger::new(player, Card::Highwayman, HIGHWAYMAN_BLOCK).on(card));
                 }
@@ -689,18 +690,6 @@ fn highwayman_attacks(g: &Game, p: PlayerId) -> bool {
 
 fn warlord_attacks(g: &Game, p: PlayerId) -> bool {
     attack_on(g, Card::Warlord, p)
-}
-
-/// How many Treasures `p` has played this turn.
-fn treasures_played_this_turn(g: &Game, p: PlayerId) -> usize {
-    g.log()
-        .iter()
-        .rev()
-        .take_while(|e| !matches!(e, Event::TurnStart { .. }))
-        .filter(|e| {
-            matches!(e, Event::Played { player, card } if *player == p && card.is(Types::TREASURE))
-        })
-        .count()
 }
 
 /// Adds a token to each Garrison `p` has in play that watches this turn's gains.

@@ -1527,6 +1527,26 @@ fn citadel_replays_an_action_treasure_played_first_in_the_buy_phase() {
     assert_eq!(g.turn().coins, 4);
 }
 
+/// Which card was the first Action is settled as the cards are played: a Copper played
+/// before Enlightenment took effect doesn't become it afterwards.
+#[test]
+fn citadel_replays_the_first_card_that_was_an_action_when_played() {
+    let mut g = setup(&[Card::Kitsune]);
+    g.prophecy = Some((Card::Enlightenment, 1));
+    give_project(&mut g, P0, Card::Citadel);
+    give_project(&mut g, P0, Card::Capitalism);
+    hand(&mut g, P0, &[Card::Copper, Card::Kitsune]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    play(&mut g, Card::Kitsune);
+    let coins_and_actions = Response::Options(vec![Opt::Mode(0), Opt::Mode(1)]);
+    respond(&mut g, coins_and_actions.clone());
+    assert!(g.prophecy_active(Card::Enlightenment));
+    respond(&mut g, coins_and_actions);
+    assert_eq!(g.turn().coins, 1 + 2 + 2);
+}
+
 /// Random games over Renaissance with Throne Room and Moat, each player starting with a
 /// copy of the Kingdom cards and a random Project, with two more to buy. Half the games
 /// start with nearly empty Estate, Curse and Copper piles, so that they end (and Fleet
