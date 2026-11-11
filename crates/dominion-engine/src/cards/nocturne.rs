@@ -19,6 +19,7 @@ use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::setup::add_pile;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -112,6 +113,12 @@ fn kept_boon(card: Card) -> bool {
 }
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        for &boon in &g.ext.nocturne.druid {
+            out.push(Note::new(Card::Druid).card(boon));
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if c.is(Types::DURATION) => start(g, f, input),
@@ -1096,7 +1103,7 @@ fn war(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Call(Frame::trash(p, vec![c]));
             }
-            g.move_card(c, Zone::SetAside(p), Pos::Top);
+            g.set_aside_revealed(c, p);
             f.s.cards.push(c);
             f.pc = 0;
             Flow::Continue
@@ -1575,7 +1582,7 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Continue;
             };
-            g.move_card(c, Zone::SetAside(p), Pos::Top);
+            g.set_aside_revealed(c, p);
             if g.is(c, Types::ACTION) {
                 g.emit(Event::SetAside {
                     player: p,

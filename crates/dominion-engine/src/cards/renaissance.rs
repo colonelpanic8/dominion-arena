@@ -15,6 +15,7 @@ use crate::frame::{Flow, Frame, Input};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Opt, PlayerId, Set, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -51,6 +52,15 @@ const ARTIFACTS: [(Card, Card); 5] = [
 ];
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        for (i, &n) in g.ext.renaissance.plot.iter().enumerate() {
+            let p = PlayerId(i as u8);
+            if g.player(p).projects.contains(&Card::SinisterPlot) {
+                out.push(Note::new(Card::SinisterPlot).player(p).count(n as i32));
+            }
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (Card::CargoShip | Card::Research, Hook::Ability(START)) => start(g, f),
@@ -162,7 +172,7 @@ impl SetRules for Rules {
             }
             Occasion::EndBuyPhase { player } => {
                 if has(g, player, Card::Exploration) && g.turn.gained_in_buy_phase.is_empty() {
-                    out.push(Trigger::new(player, Card::Exploration, EFFECT));
+                    out.push(Trigger::new(player, Card::Exploration, EFFECT).quiet());
                 }
                 if has(g, player, Card::Pageant) && g.turn.coins >= 1 {
                     out.push(Trigger::new(player, Card::Pageant, EFFECT).optional());
@@ -399,7 +409,7 @@ fn trash_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, pc: u8) -> Opt
 
 fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
     if holds(g, p, Card::Key) {
-        out.push(Trigger::new(p, Card::Key, EFFECT));
+        out.push(Trigger::new(p, Card::Key, EFFECT).quiet());
     }
     for &project in &g.player(p).projects {
         let t = Trigger::new(p, project, EFFECT);
@@ -409,9 +419,8 @@ fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
             Card::CropRotation if !g.cards_in_hand_where(p, Types::VICTORY).is_empty() => {
                 out.push(t.optional())
             }
-            Card::CityGate | Card::Fair | Card::Barracks | Card::SinisterPlot | Card::Piazza => {
-                out.push(t)
-            }
+            Card::Fair | Card::Barracks => out.push(t.quiet()),
+            Card::CityGate | Card::SinisterPlot | Card::Piazza => out.push(t),
             _ => {}
         }
     }

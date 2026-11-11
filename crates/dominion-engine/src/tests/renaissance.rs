@@ -292,6 +292,11 @@ fn cargo_ship_sets_aside_a_gained_card_for_next_turn() {
     buy(&mut g, Card::Smithy);
     trigger(&mut g, Card::CargoShip);
     assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Smithy]);
+    // Set aside face up.
+    let v = g.view(P1);
+    let smithy = v.player(P0).set_aside();
+    assert_eq!(smithy.len(), 1);
+    assert_eq!(v.card(smithy[0]), Some(Card::Smithy));
     // P0's turn ended with no Buys left; P1's turn now.
     assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
     next_turn(&mut g);
@@ -1022,6 +1027,23 @@ fn city_gate_draws_then_topdecks() {
     assert_eq!(g.hand(P0).len(), 3);
     choose_kinds(&mut g, &[Card::Estate]);
     assert_eq!(deck_kinds(&g, P0), [Card::Estate, Card::Silver]);
+}
+
+#[test]
+fn bonus_projects_resolve_without_asking_for_an_order() {
+    let mut g = setup(&[Card::Smithy]);
+    for project in [Card::Fair, Card::Barracks, Card::CityGate, Card::Piazza] {
+        give_project(&mut g, P0, project);
+    }
+    hand(&mut g, P0, &[Card::Estate, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper, Card::Silver, Card::Gold]);
+    g.start();
+    assert_eq!((g.turn().buys, g.turn().actions), (2, 2));
+    // City Gate and Piazza both use the deck, so their order is still asked.
+    let DecisionKind::Choose { labels, .. } = &g.pending().unwrap().kind else {
+        panic!("expected the trigger order");
+    };
+    assert_eq!(labels, &["City Gate", "Piazza"]);
 }
 
 #[test]

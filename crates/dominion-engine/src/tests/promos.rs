@@ -44,8 +44,14 @@ fn black_market_deck_is_unused_kingdom_cards_face_down() {
         assert!(c.cost().unwrap().potions == 0, "{c}");
     }
     assert!(!cards.contains(&Card::YoungWitch) && !cards.contains(&Card::Tournament));
-    assert_eq!(g.view(P0).pile_top(bm), None);
-    assert_eq!(g.view(P0).card(pile.cards[59]), None);
+    let v = g.view(P0);
+    assert_eq!((v.pile(bm).top(), v.pile(bm).size()), (None, 60));
+    assert!(pile.cards.iter().all(|&c| v.card(c).is_none()));
+    assert!(
+        v.notes()
+            .iter()
+            .any(|n| n.source == Card::BlackMarket && n.pile == Some(bm))
+    );
     assert_eq!(
         g.supply_pile(Card::BlackMarket),
         g.pile_of(Card::BlackMarket)
@@ -621,7 +627,6 @@ fn throne_room_on_captain_plays_twice_now_and_twice_next_turn() {
     assert_eq!(g.turn().actions, 4);
     next_turn(&mut g);
     assert_eq!(kinds(&g, g.in_play(P0)), [Card::ThroneRoom, Card::Captain]);
-    trigger(&mut g, Card::Captain);
     choose_pile(&mut g, Card::Smithy);
     choose_pile(&mut g, Card::Smithy);
     assert_eq!(g.hand(P0).len(), 11);

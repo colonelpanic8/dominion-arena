@@ -88,7 +88,10 @@ them.
   `Trigger`s that apply right now; the window resolves them (turn player first, then
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
-  card is: the stop-moving rule) when producing a trigger. A trigger runs as the card's
+  card is: the stop-moving rule) when producing a trigger. It doesn't ask for an order
+  when a player's mandatory triggers all have the same effect, and resolves
+  `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
+  +1 Buy) first without asking. A trigger runs as the card's
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
   trigger with `Value::Bool(true)` makes the target unaffected.
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
@@ -119,7 +122,12 @@ them.
   to a `Purpose::Mode` "choose" (`ask_modes`), so scripts must handle every chosen mode,
   in printed order (`mode_mask` / `take_mode`). Alternatives that aren't a "choose"
   ("either ... or", which Artifact) use `ask_either` (`Purpose::Either`).
-- **Agents** get a `View`, never the `Game`.
+- **Agents** get a `View`, never the `Game`: everything public (piles and their
+  tokens through `PileView`, each player's tokens, mats and zones through
+  `PlayerView`, landscapes, Artifacts, the Prophecy, Boon/Hex discards, lasting effects,
+  extra turns, sets' `SetRules::notes`), plus what that player may look at. Never hand
+  out card ids from hidden places: ids are allocated deterministically, so an id gives
+  its card away.
 
 ## Writing a set
 
@@ -135,6 +143,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   `return_to_pile`, `add_coins`) trigger nothing.
 - `+$` goes through `g.add_coins(p, n)` (the -$1 token). Decisions are asked with the
   `CardFrame::ask_*` helpers.
+- Set cards aside face up with `g.set_aside` (or `g.set_aside_revealed` for a card
+  just revealed); `move_card` to `SetAside` leaves it face down, seen only by its owner.
+  Public state kept in the set's `State` goes to agents through `SetRules::notes`.
 - Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
   check `g.zone(id)` is still that zone.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `setup` for extra piles

@@ -10,6 +10,7 @@ use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -34,6 +35,12 @@ const SUMMON_PLAY: u8 = 0;
 const WALLED_VILLAGE_TOPDECK: u8 = 0;
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        if let Some(pile) = g.ext.promos.black_market {
+            out.push(Note::new(Card::BlackMarket).pile(pile));
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (Card::Prince, Hook::Ability(PRINCE_PLAY)) => prince_play(g, f),

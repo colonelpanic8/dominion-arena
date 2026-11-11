@@ -196,9 +196,13 @@ fn a_falconer_cannot_gain_a_horse_from_its_non_supply_pile() {
 #[test]
 fn gaining_a_card_lets_you_discard_its_copies_from_exile() {
     let mut g = setup(&[Card::Sanctuary]);
-    exiled(&mut g, P0, &[Card::Silver, Card::Silver, Card::Estate]);
+    let exile = exiled(&mut g, P0, &[Card::Silver, Card::Silver, Card::Estate]);
     hand(&mut g, P0, &[Card::Gold]);
     g.start();
+    // Exile is public.
+    let v = g.view(P1);
+    assert_eq!(v.player(P0).mat(Mat::Exile), Some(&exile[..]));
+    assert_eq!(v.card(exile[2]), Some(Card::Estate));
     g.turn.buys = 2;
     play_treasures(&mut g);
     buy(&mut g, Card::Silver);

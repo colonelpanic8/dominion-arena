@@ -704,8 +704,7 @@ fn a_throne_roomed_bridge_troll_cheapens_two_on_both_turns() {
     assert_eq!((g.turn().buys, g.cost(Card::Silver)), (3, Cost::coins(1)));
     finish_turn(&mut g);
     finish_turn(&mut g);
-    // Two Duration effects to order.
-    accept(&mut g, Card::BridgeTroll);
+    // Its two identical Duration effects resolve without asking for an order.
     assert_eq!((g.turn().buys, g.cost(Card::Silver)), (3, Cost::coins(1)));
     assert_eq!(
         kinds(&g, g.in_play(P0)),
@@ -758,7 +757,6 @@ fn caravan_guard_is_played_from_the_hand_against_an_attack() {
     assert_eq!(g.hand(P1).len(), 3);
     finish_turn(&mut g);
     assert_eq!(g.turn().player, P1);
-    accept(&mut g, Card::CaravanGuard);
     assert_eq!(g.turn().coins, 2);
     finish_turn(&mut g);
     assert!(g.in_play(P1).is_empty());
@@ -883,11 +881,9 @@ fn swamp_hag_curses_buyers_and_gives_three_coins_next_turn() {
     choose_kinds(&mut g, &[Card::SwampHag]);
     finish_turn(&mut g);
     buy(&mut g, Card::Copper);
-    accept(&mut g, Card::SwampHag);
     // One Curse per Swamp Hag effect.
     assert_eq!(g.count_owned(P1, Card::Curse), 2);
     assert_eq!(g.turn().player, P0);
-    accept(&mut g, Card::SwampHag);
     assert_eq!(g.turn().coins, 6);
 }
 
@@ -917,7 +913,6 @@ fn hireling_draws_a_card_every_turn_for_the_rest_of_the_game() {
     for _ in 0..3 {
         finish_turn(&mut g);
         finish_turn(&mut g);
-        accept(&mut g, Card::Hireling);
         assert_eq!(g.hand(P0).len(), 7);
         assert_eq!(kinds(&g, g.in_play(P0)), [Card::ThroneRoom, Card::Hireling]);
     }
@@ -1598,6 +1593,14 @@ fn inheritance_sets_an_action_aside_and_makes_estates_play_it() {
     choose_pile(&mut g, Card::Village);
     let village = g.player(P0).set_aside[0];
     assert_eq!(g.card(village), Card::Village);
+    assert_eq!(g.view(P1).card(village), Some(Card::Village));
+    assert!(g.view(P1).notes().contains(&Note {
+        source: Card::Inheritance,
+        player: Some(P0),
+        pile: None,
+        card: Some(Card::Village),
+        count: 0,
+    }));
     assert_eq!(g.turn().player, P1);
     let estate = find(&g, P1, Card::Estate);
     // Not Actions on another player's turn.
@@ -1756,4 +1759,17 @@ fn coin_of_the_realm_called_on_another_players_turn_gives_nothing() {
         kinds(&g, g.in_play(P1)),
         [Card::CaravanGuard, Card::CoinOfTheRealm]
     );
+}
+
+#[test]
+fn saves_card_is_set_aside_face_down() {
+    let mut g = game(&[Card::Smithy], &[Card::Save]);
+    let gold = hand(&mut g, P0, &[Card::Gold, Card::Copper])[0];
+    g.start();
+    let buys = g.turn().buys;
+    budget(&mut g, 1, buys);
+    buy_event(&mut g, Card::Save);
+    choose(&mut g, &[gold]);
+    assert_eq!(g.view(P1).card(gold), None);
+    assert_eq!(g.view(P0).card(gold), Some(Card::Gold));
 }

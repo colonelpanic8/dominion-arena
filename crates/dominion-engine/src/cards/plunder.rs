@@ -358,7 +358,11 @@ impl SetRules for Rules {
                 if let Some(l) = this_turn_lasting(g, Card::Journey, player) {
                     let all = g.in_play(player).to_vec();
                     if all.iter().any(|c| !l.keeps.contains(c)) {
-                        out.push(Trigger::new(player, Card::Journey, THIS_TURN).via_lasting(l.id));
+                        out.push(
+                            Trigger::new(player, Card::Journey, THIS_TURN)
+                                .via_lasting(l.id)
+                                .quiet(),
+                        );
                     }
                 }
             }
@@ -809,7 +813,11 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             Card::Taskmaster
                 if mine && l.until == Until::EndOfTurn && cost == Cost::coins(5) =>
             {
-                out.push(Trigger::new(gainer, Card::Taskmaster, TASKMASTER_ARM).via_lasting(l.id));
+                out.push(
+                    Trigger::new(gainer, Card::Taskmaster, TASKMASTER_ARM)
+                        .via_lasting(l.id)
+                        .quiet(),
+                );
             }
             Card::Insignia
                 if mine

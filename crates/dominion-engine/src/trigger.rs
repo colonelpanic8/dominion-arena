@@ -114,6 +114,9 @@ pub struct Trigger {
     /// Resolves before every trigger without this ("At the start of your next turn,
     /// first, ...").
     pub first: bool,
+    /// Order never matters for it (bookkeeping, or a bonus nothing else can interact
+    /// with): it resolves before the owner's other triggers without asking.
+    pub quiet: bool,
     pub data: i32,
 }
 
@@ -127,6 +130,7 @@ impl Trigger {
             lasting: None,
             optional: false,
             first: false,
+            quiet: false,
             data: 0,
         }
     }
@@ -148,6 +152,11 @@ impl Trigger {
 
     pub(crate) fn first(mut self) -> Trigger {
         self.first = true;
+        self
+    }
+
+    pub(crate) fn quiet(mut self) -> Trigger {
+        self.quiet = true;
         self
     }
 
@@ -209,7 +218,10 @@ impl Window {
             .find(|p| all.iter().any(|t| t.owner == **p))
             .expect("every trigger has an owner");
         let mine: Vec<Trigger> = all.into_iter().filter(|t| t.owner == owner).collect();
-        if mine.len() == 1 && !mine[0].optional {
+        if let Some(t) = mine.iter().find(|t| t.quiet && !t.optional) {
+            return self.run(t.clone());
+        }
+        if !mine[0].optional && mine.iter().all(|t| same_effect(g, t, &mine[0])) {
             return self.run(mine[0].clone());
         }
         let mut options: Vec<Opt> = (0..mine.len()).map(|i| Opt::Trigger(i as u16)).collect();
@@ -242,6 +254,11 @@ impl Window {
         })
     }
 
+    /// The pending triggers the decision being asked is about.
+    pub(crate) fn asked(&self) -> &[Trigger] {
+        &self.asked
+    }
+
     fn run(&mut self, t: Trigger) -> Flow {
         self.done.push(t.clone());
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
@@ -250,4 +267,17 @@ impl Window {
         f.data = t.data;
         Flow::Call(Frame::Card(Box::new(f)))
     }
+}
+
+/// Whether resolving `a` or `b` makes no difference: the same ability with the same data,
+/// from lasting effects (if any) holding the same data. Which physical card it is on does
+/// not matter.
+fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
+    let lasting = |t: &Trigger| {
+        t.lasting
+            .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+            .map(|l| (l.card, &l.data))
+    };
+    (a.card, a.ability, a.data, a.optional) == (b.card, b.ability, b.data, b.optional)
+        && lasting(a) == lasting(b)
 }

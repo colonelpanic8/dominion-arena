@@ -202,7 +202,7 @@ impl SetRules for Rules {
         if g.zone(id).owner() != Some(possessed) {
             return false;
         }
-        g.move_card(id, Zone::SetAside(possessed), Pos::Top);
+        g.set_aside_revealed(id, possessed);
         g.ext.alchemy.possessed_trash.push(id);
         true
     }

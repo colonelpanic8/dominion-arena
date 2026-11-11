@@ -564,7 +564,6 @@ fn merchant_guild_gives_coffers_per_card_gained_in_the_buy_phase() {
     buy(&mut g, Card::Silver);
     buy(&mut g, Card::Copper);
     end_phase(&mut g);
-    respond(&mut g, Response::option(Opt::Trigger(0)));
     // Two plays, two cards gained: 2 x 2 Coffers.
     assert_eq!(g.player(P0).coffers, 4);
 }
@@ -753,6 +752,12 @@ fn young_witch_bane_in_hand_blocks_the_curse() {
     let bane = g.pile(bane_pile).card;
     assert!(g.pile(bane_pile).in_supply);
     assert!(matches!(g.cost(bane).coins, 2 | 3));
+    assert!(
+        g.view(P1)
+            .notes()
+            .iter()
+            .any(|n| n.source == Card::YoungWitch && n.pile == Some(bane_pile))
+    );
     hand(&mut g, P0, &[Card::YoungWitch, Card::Estate, Card::Estate]);
     hand(&mut g, P1, &[bane, Card::Copper]);
     deck(&mut g, P0, &[Card::Copper, Card::Copper]);

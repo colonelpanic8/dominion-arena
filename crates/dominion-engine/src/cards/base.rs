@@ -502,11 +502,7 @@ fn library(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         2 => {
             if input.is_yes() {
                 let c = f.s.pick.expect("set in step 1");
-                g.move_card(c, Zone::SetAside(f.player), Pos::Top);
-                g.emit(Event::SetAside {
-                    player: f.player,
-                    card: g.card(c),
-                });
+                g.set_aside(c, f.player);
                 f.s.cards.push(c);
             }
             f.pc = 0;
@@ -608,7 +604,7 @@ fn adventurer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Continue;
             };
-            g.move_card(c, Zone::SetAside(f.player), Pos::Top);
+            g.set_aside_revealed(c, f.player);
             f.s.cards.push(c);
             if g.is(c, Types::TREASURE) {
                 f.s.n += 1;

@@ -16,6 +16,7 @@ use crate::game::{ExtraTurn, Pos, Scratch, Until, Zone};
 use crate::setup::add_mixed_pile;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -83,6 +84,12 @@ const DURATIONS: [Card; 8] = [
 ];
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        for &(pile, n) in &g.ext.allies.inventors {
+            out.push(Note::new(Card::FamilyOfInventors).pile(pile).count(n as i32));
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if DURATIONS.contains(&c) => start(g, f, input),
@@ -757,11 +764,11 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     let cost = gain_cost(g, card);
     let galleria = this_turn(Card::Galleria).count();
     if galleria > 0 && (3..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0 {
-        out.push(Trigger::new(player, Card::Galleria, REACT).data(galleria as i32));
+        out.push(Trigger::new(player, Card::Galleria, REACT).data(galleria as i32).quiet());
     }
     let guildmaster = this_turn(Card::Guildmaster).count();
     if guildmaster > 0 {
-        out.push(Trigger::new(player, Card::Guildmaster, REACT).data(guildmaster as i32));
+        out.push(Trigger::new(player, Card::Guildmaster, REACT).data(guildmaster as i32).quiet());
     }
     if g.is(card, Types::ATTACK) {
         for l in this_turn(Card::Skirmisher) {
@@ -770,7 +777,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     }
     if this_turn(Card::Garrison).any(|l| l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player)))
     {
-        out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN));
+        out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN).quiet());
     }
     if let Some(l) = this_turn(Card::Bauble).next()
         && still_landed(g, card)
