@@ -456,8 +456,7 @@ impl SetRules for Rules {
                 .piles
                 .iter()
                 .filter(|p| {
-                    p.in_supply
-                        && p.card.def().kingdom
+                    p.is_kingdom()
                         && p.traits.is_empty()
                         && p.card.is(Types::ACTION | Types::TREASURE)
                 })

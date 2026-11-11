@@ -153,7 +153,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
                 .map(|t| t.name().to_string()),
             cost: pile_cost.map(cost),
             types,
-            kingdom: game.config().kingdom.contains(&pile.card()),
+            kingdom: pile.kingdom(),
             hidden: pile.hidden(),
             tokens: PileTokens {
                 embargo: pile.embargo(),
@@ -353,7 +353,12 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
         id: cx.game_id.map(String::from),
         running: game.outcome().is_none(),
         result,
-        kingdom: names(&game.config().kingdom),
+        kingdom: game
+            .piles()
+            .iter()
+            .filter(|p| p.is_kingdom())
+            .map(|p| p.card.name().to_string())
+            .collect(),
         landscapes: names(game.landscapes()),
     }
 }

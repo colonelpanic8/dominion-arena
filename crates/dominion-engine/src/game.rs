@@ -166,6 +166,11 @@ impl Pile {
             emptied: 0,
         }
     }
+
+    /// A Kingdom pile: a Supply pile of a Kingdom card (or randomizer).
+    pub fn is_kingdom(&self) -> bool {
+        self.in_supply && !self.removed && self.card.def().kingdom
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

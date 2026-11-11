@@ -456,6 +456,12 @@ impl<'a> PileView<'a> {
         self.pile.in_supply
     }
 
+    /// A Kingdom pile: a Supply pile of a Kingdom card, whether it was dealt at setup or
+    /// added later (Young Witch's Bane, Divine Wind).
+    pub fn kingdom(&self) -> bool {
+        self.pile.is_kingdom()
+    }
+
     pub fn vp_tokens(&self) -> i32 {
         self.pile.vp_tokens
     }

@@ -646,7 +646,7 @@ fn remove_sun(g: &mut Game, p: PlayerId) -> Flow {
 fn divine_wind(g: &mut Game) {
     for i in 0..g.piles.len() {
         let pile = &mut g.piles[i];
-        if !(pile.in_supply && pile.card.def().kingdom) {
+        if !pile.is_kingdom() {
             continue;
         }
         pile.in_supply = false;

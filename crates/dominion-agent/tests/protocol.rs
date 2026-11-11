@@ -384,3 +384,82 @@ fn everyone_sees_the_card_named_for_contraband() {
         );
     }
 }
+
+#[test]
+fn the_kingdom_is_the_kingdom_piles_in_the_game() {
+    let t = table(&[Card::YoungWitch], 0, &[]);
+    let view = t.view(PlayerId(0));
+    let bane = view
+        .notes
+        .iter()
+        .find(|n| n.source == "Young Witch")
+        .and_then(|n| n.pile.clone())
+        .expect("the Bane pile");
+    let flagged: Vec<&str> = view
+        .supply
+        .iter()
+        .filter(|p| p.kingdom)
+        .map(|p| p.card.as_str())
+        .collect();
+    assert_eq!(flagged.len(), 11);
+    assert!(flagged.contains(&bane.as_str()));
+    assert_eq!(view.game.kingdom, flagged);
+}
+
+#[test]
+fn divine_wind_replaces_the_kingdom() {
+    let config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::DivineWind],
+        ..GameConfig::new(
+            2,
+            vec![
+                Card::Poet,
+                Card::Cellar,
+                Card::Market,
+                Card::Mine,
+                Card::Moat,
+                Card::Remodel,
+                Card::Smithy,
+                Card::Village,
+                Card::Workshop,
+                Card::Festival,
+            ],
+            3,
+        )
+    };
+    let mut t = Table::new("t", config, vec![]).unwrap();
+    let suns = |t: &Table| {
+        let view = t.view(PlayerId(1));
+        let wind = view.landscapes.iter().find(|l| l.card == "Divine Wind");
+        wind.and_then(|l| l.suns).expect("Divine Wind's Sun tokens")
+    };
+    // Seat 0 buys and plays Poets until the last Sun is gone; seat 1 does nothing.
+    while suns(&t) > 0 {
+        let seat = t.deciding().expect("the game goes on");
+        let d = t.view(seat).decision.unwrap();
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 {
+            end.unwrap()
+        } else {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| pick(&d, |o| o.label.starts_with("Buy Poet")))
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    let view = t.view(PlayerId(1));
+    let flagged: Vec<&str> = view
+        .supply
+        .iter()
+        .filter(|p| p.kingdom)
+        .map(|p| p.card.as_str())
+        .collect();
+    assert_eq!(flagged.len(), 10);
+    assert!(!flagged.contains(&"Poet"));
+    assert_eq!(view.game.kingdom, flagged);
+}
