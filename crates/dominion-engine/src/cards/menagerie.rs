@@ -1552,7 +1552,7 @@ fn bargain(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         };
         return gain_from(f, input, piles, 0, Dest::Discard);
     }
-    let others = g.others(f.player);
+    let others = g.others_in_turn_order(f.player);
     if let Some(&other) = others.get(f.s.i) {
         f.s.i += 1;
         if let Some(horses) = g.pile_of(Card::Horse) {
@@ -1743,7 +1743,7 @@ fn invest(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             g.ext.menagerie.invested.push(top);
             let name = g.card(top);
             // Every other player's Investment in a copy draws them 2 cards, in turn order.
-            for q in g.others(p) {
+            for q in g.others_in_turn_order(p) {
                 for &c in &g.ext.menagerie.invested {
                     if g.zone(c) == Zone::Mat(q, Mat::Exile) && g.card(c) == name {
                         f.s.cards.push(c);

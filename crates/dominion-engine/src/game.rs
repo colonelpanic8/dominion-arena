@@ -208,8 +208,11 @@ pub struct Turn {
     pub potions: u32,
     /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures).
     pub bought: bool,
-    /// Every play this turn, in order. A card played twice appears twice.
+    /// Every play this turn, by any player, in order. A card played twice appears twice.
     pub played: Vec<Card>,
+    /// Who made each of `played`.
+    #[serde(default)]
+    pub played_by: Vec<PlayerId>,
     /// How many of this turn's plays by its player were from their hand.
     pub hand_plays: u32,
     /// The physical cards of `played`, in the same order.
@@ -236,8 +239,6 @@ pub struct Turn {
     pub trashed: Vec<Card>,
     /// Cards drawn in Clean-up.
     pub cleanup_draw: usize,
-    /// Whether the player may buy cards (not Events or Projects) this turn.
-    pub can_buy_cards: bool,
     /// No more +Actions this turn (Snowy Village).
     pub ignore_plus_actions: bool,
 }
@@ -256,6 +257,7 @@ impl Turn {
             potions: 0,
             bought: false,
             played: vec![],
+            played_by: vec![],
             hand_plays: 0,
             played_ids: vec![],
             stayed_in_play: vec![],
@@ -268,7 +270,6 @@ impl Turn {
             bought_cards: vec![],
             trashed: vec![],
             cleanup_draw: 5,
-            can_buy_cards: true,
             ignore_plus_actions: false,
         }
     }
@@ -279,9 +280,27 @@ impl Turn {
         &self.gained_in_buy_phase[self.earlier_buy_phase_gains..]
     }
 
-    /// How many of this turn's plays were of a card that had any of `types` as it was played.
-    pub fn played_of(&self, types: Types) -> usize {
-        count_of(&self.played_types, types)
+    /// `p`'s plays this turn, in order: each card and the types it had as it was played.
+    pub fn plays_by(&self, p: PlayerId) -> impl Iterator<Item = (Card, Types)> + '_ {
+        self.played
+            .iter()
+            .zip(&self.played_types)
+            .zip(&self.played_by)
+            .filter(move |(_, q)| **q == p)
+            .map(|((&c, &t), _)| (c, t))
+    }
+
+    /// How many of `p`'s plays this turn were of a card that had any of `types` as it was
+    /// played.
+    pub fn played_of(&self, p: PlayerId, types: Types) -> usize {
+        self.plays_by(p)
+            .filter(|(_, t)| t.intersects(types))
+            .count()
+    }
+
+    /// How many times `p` played a `card` this turn.
+    pub fn played_count(&self, p: PlayerId, card: Card) -> usize {
+        self.plays_by(p).filter(|&(c, _)| c == card).count()
     }
 
     /// How many of this turn's gains were of a card that had any of `types` as it was gained.
@@ -461,6 +480,10 @@ pub struct GainState {
     pub card: CardId,
     pub to: crate::Dest,
     pub bought: bool,
+    /// For a bought card: which buy of the turn it is for (its position in
+    /// [`Turn::bought_cards`], from 1). Another buy may come between (Black Market).
+    #[serde(default)]
+    pub buy: Option<usize>,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
     /// The log's length when the gain began: effects set up later ("the next time you
@@ -833,6 +856,14 @@ impl Game {
         (1..n).map(|i| PlayerId((p.0 + i) % n)).collect()
     }
 
+    /// The players other than `p`, in turn order from the player whose turn it is: the
+    /// order an effect on several players resolves in, also off-turn.
+    pub fn others_in_turn_order(&self, p: PlayerId) -> Vec<PlayerId> {
+        let mut v = self.players_from(self.turn.player);
+        v.retain(|&q| q != p);
+        v
+    }
+
     /// All players in turn order, starting with `p`.
     pub fn players_from(&self, p: PlayerId) -> Vec<PlayerId> {
         let mut v = vec![p];
@@ -856,9 +887,66 @@ impl Game {
             .count()
     }
 
-    /// `p`'s VP as the cards stand. During a turn its cost and type changes count; the
-    /// final scores are taken after the last turn, when none apply.
+    /// `p`'s VP if the game ended now. The final scores are taken after the last turn, so
+    /// during a turn this turn's effects (Capitalism, Inheritance, Bridge, cards played
+    /// as another card) don't count.
     pub fn score(&self, p: PlayerId) -> i32 {
+        let ended = self.turn_player().is_none()
+            && !self.lasting.iter().any(|l| l.until == Until::EndOfTurn);
+        if ended {
+            self.score_as_is(p)
+        } else {
+            self.after_turn().score_as_is(p)
+        }
+    }
+
+    /// This game as scored if it ended now: no turn in progress, this turn's lasting
+    /// effects over, and what leaves play in Clean-up no longer another card.
+    fn after_turn(&self) -> Game {
+        let mut g = Game {
+            config: self.config.clone(),
+            cards: self.cards.clone(),
+            zones: self.zones.clone(),
+            masks: self.masks.clone(),
+            players: self.players.clone(),
+            piles: self.piles.clone(),
+            trash: self.trash.clone(),
+            turn: self.turn.clone(),
+            landscapes: self.landscapes.clone(),
+            boons: self.boons.clone(),
+            hexes: self.hexes.clone(),
+            artifacts: self.artifacts.clone(),
+            prophecy: self.prophecy,
+            trade_route_mat: self.trade_route_mat,
+            lasting: self.lasting.clone(),
+            next_lasting: self.next_lasting,
+            extra_turns: self.extra_turns.clone(),
+            ending: self.ending,
+            final_round: self.final_round.clone(),
+            gains: vec![],
+            last_gain: None,
+            trashing: vec![],
+            plays: vec![],
+            leaving: vec![],
+            last_shuffle: vec![],
+            ext: self.ext.clone(),
+            stack: vec![],
+            pending: None,
+            rng: self.rng.clone(),
+            log: vec![],
+            outcome: None,
+            trace: None,
+        };
+        g.turn.phase = Phase::End;
+        g.lasting.retain(|l| l.until != Until::EndOfTurn);
+        let kept: Vec<CardId> = g.lasting.iter().flat_map(|l| l.keeps.clone()).collect();
+        let zones = &g.zones;
+        g.masks
+            .retain(|id, _| !matches!(zones[id.index()], Zone::InPlay(_)) || kept.contains(id));
+        g
+    }
+
+    fn score_as_is(&self, p: PlayerId) -> i32 {
         let player = &self.players[p.index()];
         let cards: i32 = player
             .owned()

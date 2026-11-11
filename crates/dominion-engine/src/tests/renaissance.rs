@@ -225,6 +225,30 @@ fn horn_puts_a_border_guard_on_the_deck_once_per_turn() {
     assert!(discard_kinds(&g, P0).contains(&Card::BorderGuard));
 }
 
+/// Horn has no "on your turn": a Border Guard played on another player's turn is put back
+/// when it is discarded from play in that turn's Clean-up.
+#[test]
+fn horn_works_on_another_players_turn() {
+    let mut g = setup(&[Card::BorderGuard]);
+    hand(&mut g, P0, &[Card::Copper]);
+    hand(&mut g, P1, &[Card::BorderGuard]);
+    deck(&mut g, P1, &[Card::Copper; 7]);
+    g.artifacts.iter_mut().for_each(|a| {
+        if a.0 == Card::Horn {
+            a.1 = Some(P1);
+        }
+    });
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::BorderGuard);
+    if g.pending().is_some_and(|d| d.player == P1) {
+        choose_kinds(&mut g, &[Card::Copper]);
+    }
+    end_phase(&mut g);
+    trigger(&mut g, Card::Horn);
+    let top = *g.player(P1).deck.last().unwrap();
+    assert_eq!(g.card(top), Card::BorderGuard);
+}
+
 #[test]
 fn patron_revealed_by_border_guard_in_the_action_phase_gives_coffers() {
     let mut g = setup(&[Card::BorderGuard, Card::Patron]);
@@ -315,6 +339,46 @@ fn cargo_ship_sets_aside_a_gained_card_for_next_turn() {
     assert_eq!(g.hand(P0).len(), 6);
     next_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
+}
+
+/// Each Cargo Ship says what keeps it in play, and once one has set the card aside the
+/// others aren't offered.
+#[test]
+fn cargo_ships_say_what_keeps_them_in_play() {
+    let mut g = setup(&[Card::CargoShip, Card::ThroneRoom, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::ThroneRoom,
+            Card::CargoShip,
+            Card::CargoShip,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::CargoShip]);
+    play(&mut g, Card::CargoShip);
+    to_buy(&mut g);
+    buy(&mut g, Card::Silver);
+    let DecisionKind::Choose { labels, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending());
+    };
+    assert_eq!(
+        labels,
+        &[
+            "Cargo Ship played by Throne Room (optional)",
+            "Cargo Ship played by Throne Room (optional)",
+            "Cargo Ship (optional)",
+            "Done"
+        ]
+    );
+    respond(&mut g, Response::option(Opt::Trigger(2)));
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
 }
 
 #[test]
@@ -1145,8 +1209,7 @@ fn exploration_rewards_a_buy_phase_without_gains() {
         Response::Move(Move::BuyLandscape(Card::Exploration)),
     );
     assert_eq!((g.player(P0).coffers, g.player(P0).villagers), (1, 1));
-    next_turn(&mut g);
-    to_buy(&mut g);
+    assert_eq!(g.turn().player, P1);
     play(&mut g, Card::Copper);
     buy(&mut g, Card::Copper);
     assert_eq!((g.player(P1).coffers, g.player(P1).villagers), (0, 0));

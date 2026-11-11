@@ -70,7 +70,8 @@ them.
   (`StartCleanup`, `DiscardFromPlay` for each player with cards in play to discard,
   discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Spending Coffers
-  and paying off Debt are moves in the Action, Buy and Night phases alike. Extra turns queue
+  and paying off Debt are moves in the Action, Buy and Night phases alike (outside the Buy
+  phase, offered only where they could matter: `push_token_moves`). Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
   in a row: check `g.third_in_a_row(p)` before queuing one; Possession: not a second
   extra turn in a row; Seize the Day: never), and extra turns
@@ -157,6 +158,7 @@ them.
   (Inheritance). Effects that look back at the turn ("the first Action you play", "the
   third Action you gain") count the types cards had then: `Turn::played_types` /
   `gained_types` (`played_of`, `gained_of`), never `Card::is` on `played` / `gained`.
+  Plays are recorded for every player, off-turn ones too: count one player's (`plays_by`).
   "During your turns" and "this turn" modifiers ask `g.turn_player()`, which is no one
   between turns and when the game is scored, never `g.turn.player`.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,

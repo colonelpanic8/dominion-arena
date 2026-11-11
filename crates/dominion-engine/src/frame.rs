@@ -160,6 +160,9 @@ pub(crate) enum Frame {
         from: From,
         to: Dest,
         bought: bool,
+        /// For a bought card: which buy of the turn (see [`GainState::buy`]).
+        #[serde(default)]
+        buy: Option<usize>,
         card: Option<CardId>,
         pc: u8,
     },
@@ -168,6 +171,10 @@ pub(crate) enum Frame {
         pile: Option<PileId>,
         landscape: Option<Card>,
         card: Option<CardId>,
+        /// Which buy of the turn this is, once paid for: its position in
+        /// `Turn::bought_cards`, from 1.
+        #[serde(default)]
+        index: usize,
         pc: u8,
     },
     Trash {
@@ -281,6 +288,7 @@ impl Frame {
             from: From::Pile(pile),
             to,
             bought: false,
+            buy: None,
             card: None,
             pc: 0,
         }
@@ -293,6 +301,7 @@ impl Frame {
             from: From::Card(card),
             to,
             bought: false,
+            buy: None,
             card: None,
             pc: 0,
         }
@@ -456,16 +465,18 @@ impl Frame {
                 from,
                 to,
                 bought,
+                buy,
                 card,
                 pc,
-            } => resume_gain(g, *player, *from, *to, *bought, card, pc),
+            } => resume_gain(g, *player, *from, *to, (*bought, *buy), card, pc),
             Frame::Buy {
                 player,
                 pile,
                 landscape,
                 card,
+                index,
                 pc,
-            } => resume_buy(g, *player, *pile, *landscape, card, pc, input),
+            } => resume_buy(g, *player, (*pile, *landscape), card, index, pc, input),
             Frame::Trash { player, cards, i } => {
                 // Cards trashed together are all trashed before any "when trashed" ability,
                 // and their abilities share one window.
@@ -844,13 +855,21 @@ fn can_buy(g: &Game, p: PlayerId, card: Card, cost: crate::Cost) -> bool {
         && cards::can_buy(g, p, card)
 }
 
-/// Adds what `p` may do at any time during their turn: spend Coffers, pay off Debt.
+/// Adds spending Coffers and paying off Debt. Outside the Buy phase they are offered only
+/// where they could matter: while an Action could be played (also after a Villager, or by
+/// Market Towns at the start of the Buy phase), at Night while a Night card could, and
+/// paying Debt at Night after what reads `$` at the end of the Buy phase (Wine Merchant).
 fn push_token_moves(g: &Game, p: PlayerId, moves: &mut Vec<Move>) {
     let pl = &g.players[p.index()];
-    if pl.coffers > 0 {
+    let playable = match g.turn.phase {
+        Phase::Action => !g.playable(p, Types::ACTION).is_empty(),
+        Phase::Night => !g.playable(p, Types::NIGHT).is_empty(),
+        _ => true,
+    };
+    if pl.coffers > 0 && playable {
         moves.push(Move::Coffers);
     }
-    if pl.debt > 0 && g.turn.coins > 0 {
+    if pl.debt > 0 && g.turn.coins > 0 && (playable || g.turn.phase == Phase::Night) {
         moves.push(Move::PayDebt);
     }
 }
@@ -940,6 +959,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                             pile: Some(pile),
                             landscape: None,
                             card: None,
+                            index: 0,
                             pc: 0,
                         });
                     }
@@ -949,6 +969,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                             pile: None,
                             landscape: Some(card),
                             card: None,
+                            index: 0,
                             pc: 0,
                         });
                     }
@@ -965,14 +986,12 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             if !g.turn.bought {
                 moves.extend(g.playable(p, Types::TREASURE).into_iter().map(Move::Play));
             }
-            if g.turn.can_buy_cards {
-                for (i, pile) in g.piles.iter().enumerate() {
-                    if let Some(&top) = pile.cards.last()
-                        && pile.in_supply
-                        && can_buy(g, p, g.card(top), g.cost_of(top))
-                    {
-                        moves.push(Move::Buy(PileId(i as u8)));
-                    }
+            for (i, pile) in g.piles.iter().enumerate() {
+                if let Some(&top) = pile.cards.last()
+                    && pile.in_supply
+                    && can_buy(g, p, g.card(top), g.cost_of(top))
+                {
+                    moves.push(Move::Buy(PileId(i as u8)));
                 }
             }
             for &l in &g.landscapes {
@@ -1076,7 +1095,7 @@ fn resume_gain(
     player: PlayerId,
     from: From,
     to: Dest,
-    bought: bool,
+    (bought, buy): (bool, Option<usize>),
     card: &mut Option<CardId>,
     pc: &mut u8,
 ) -> Flow {
@@ -1095,6 +1114,7 @@ fn resume_gain(
                 card: id,
                 to,
                 bought,
+                buy,
                 cancelled: false,
                 since: g.log.len(),
                 cost: g.cost_of(id),
@@ -1170,9 +1190,9 @@ pub(crate) use crate::cards::{OVERPAY, PAY_OTHERWISE};
 fn resume_buy(
     g: &mut Game,
     p: PlayerId,
-    pile: Option<PileId>,
-    landscape: Option<Card>,
+    (pile, landscape): (Option<PileId>, Option<Card>),
     card: &mut Option<CardId>,
+    index: &mut usize,
     pc: &mut u8,
     input: Input,
 ) -> Flow {
@@ -1230,6 +1250,7 @@ fn resume_buy(
             pay(g, p, cost);
             let kind = g.card(top);
             g.turn.bought_cards.push(kind);
+            *index = g.turn.bought_cards.len();
             g.emit(Event::Bought {
                 player: p,
                 card: kind,
@@ -1265,6 +1286,7 @@ fn resume_buy(
                 from: From::Card(top),
                 to: Dest::Discard,
                 bought: true,
+                buy: Some(*index),
                 card: None,
                 pc: 0,
             })
@@ -1377,12 +1399,11 @@ impl PlayFrame {
                 let card = g.card(id);
                 let since = g.log.len();
                 g.emit(Event::Played { player: p, card });
-                if p == g.turn.player {
-                    g.turn.played.push(card);
-                    g.turn.played_types.push(g.types(id));
-                    g.turn.played_ids.push(id);
-                    g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
-                }
+                g.turn.played.push(card);
+                g.turn.played_by.push(p);
+                g.turn.played_types.push(g.types(id));
+                g.turn.played_ids.push(id);
+                g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {
                     player: p,
@@ -1407,9 +1428,7 @@ impl PlayFrame {
                 // answer the card being played, whatever it ends up doing.
                 self.pc = 2;
                 if g.is(id, Types::ATTACK) {
-                    // In turn order from the player whose turn it is.
-                    self.remaining = g.players_from(g.turn.player);
-                    self.remaining.retain(|&q| q != p);
+                    self.remaining = g.others_in_turn_order(p);
                     self.pc = 3;
                 }
                 Flow::Continue

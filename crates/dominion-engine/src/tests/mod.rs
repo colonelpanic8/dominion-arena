@@ -586,30 +586,56 @@ fn a_buy_gains_nothing_once_another_card_tops_the_pile() {
 
 #[test]
 fn coffers_and_debt_can_be_used_in_every_phase() {
-    let mut g = setup(&[Card::Smithy]);
-    hand(&mut g, P0, &[]);
+    let mut g = setup(&[Card::Smithy, Card::Monastery]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Monastery]);
     g.players[0].coffers = 3;
     g.players[0].debt = 3;
     g.start();
     for phase in [Phase::Action, Phase::Buy, Phase::Night] {
         let d = g.pending().unwrap();
-        assert_eq!(
-            d.kind,
-            DecisionKind::Turn {
-                phase,
-                moves: vec![Move::Coffers, Move::EndPhase]
-            }
-        );
+        let DecisionKind::Turn { phase: at, moves } = &d.kind else {
+            panic!("{d:?}");
+        };
+        assert_eq!(*at, phase);
+        assert!(moves.contains(&Move::Coffers), "{moves:?}");
         respond(&mut g, Response::Move(Move::Coffers));
         assert_eq!(g.turn().coins, 1);
         respond(&mut g, Response::Move(Move::PayDebt));
-        if phase != Phase::Night {
-            end_phase(&mut g);
-        }
+        end_phase(&mut g);
     }
-    // Nothing left to do at Night, so the turn ended on its own.
     assert_eq!(g.pending().unwrap().player, P1);
     assert_eq!((g.player(P0).coffers, g.player(P0).debt), (0, 0));
+}
+
+/// Outside the Buy phase the token moves wait for something to play, except paying Debt at
+/// Night, after what reads `$` at the end of the Buy phase.
+#[test]
+fn token_moves_are_not_offered_where_nothing_can_be_played() {
+    let mut g = setup(&[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Copper]);
+    g.players[0].coffers = 1;
+    g.players[0].debt = 1;
+    g.start();
+    let copper = find(&g, P0, Card::Copper);
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn {
+            phase: Phase::Buy,
+            moves: vec![Move::Play(copper), Move::Coffers, Move::EndPhase]
+        }
+    );
+    play(&mut g, Card::Copper);
+    end_phase(&mut g);
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn {
+            phase: Phase::Night,
+            moves: vec![Move::PayDebt, Move::EndPhase]
+        }
+    );
+    respond(&mut g, Response::Move(Move::PayDebt));
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!((g.player(P0).coffers, g.player(P0).debt), (1, 0));
 }
 
 // ---- Shuffling ----
@@ -777,6 +803,26 @@ fn an_attack_played_on_another_players_turn_starts_with_the_turn_player() {
     assert_eq!(g.count_owned(P2, Card::Curse), 0);
 }
 
+/// Non-Attacks too: "each (other) player" goes in turn order from the turn's player.
+#[test]
+fn effects_on_several_players_start_with_the_turn_player_off_turn() {
+    let check = |card: Card, rest: &[Card], answer: fn(&mut Game), first: PlayerId| {
+        let mut g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            ..GameConfig::new(3, vec![card], 7)
+        });
+        hand(&mut g, P1, &[&[card], rest].concat());
+        g.start();
+        play_out_of_turn(&mut g, P1, card);
+        answer(&mut g);
+        assert_eq!(g.pending().unwrap().player, first, "{card}");
+    };
+    check(Card::Bishop, &[Card::Copper], |_| {}, P0);
+    check(Card::Vault, &[Card::Copper], |g| choose(g, &[]), P0);
+    check(Card::Duchess, &[], |_| {}, P0);
+}
+
 #[test]
 fn the_game_ends_when_provinces_run_out() {
     let mut g = setup(&[Card::Smithy]);
@@ -797,7 +843,7 @@ fn the_game_ends_when_provinces_run_out() {
 }
 
 #[test]
-fn during_your_turns_effects_are_over_when_the_game_is_scored() {
+fn a_score_during_a_turn_is_the_score_if_the_game_ended_now() {
     let mut g = setup_with(GameConfig {
         colonies: Some(false),
         shelters: Some(false),
@@ -808,15 +854,30 @@ fn during_your_turns_effects_are_over_when_the_game_is_scored() {
     g.players[0].projects.push(Card::Capitalism);
     let militia = hand(&mut g, P0, &[Card::Militia])[0];
     g.start();
-    // Keep: 5 VP for having the most copies of a Treasure, which Militia is for now.
+    // Keep: 5 VP for having the most copies of a Treasure, which Militia is only during
+    // P0's turns, so it doesn't count.
     assert!(g.is(militia, Types::TREASURE));
     let during = g.score(P0);
     while g.outcome().is_none() {
         end_phase(&mut g);
     }
-    let outcome = g.outcome().unwrap();
-    assert!(!g.is(militia, Types::TREASURE));
-    assert_eq!(outcome.scores[0], during - 5);
+    assert_eq!(g.outcome().unwrap().scores[0], during);
+
+    // Plateau Shepherds pairs Favors with cards costing $2, which Estates are again once
+    // this turn's Bridge is over.
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::PlateauShepherds],
+        ..GameConfig::new(2, vec![Card::Bridge], 7)
+    });
+    g.players[0].favors = 1;
+    hand(&mut g, P0, &[Card::Bridge, Card::Estate]);
+    g.start();
+    let before = g.score(P0);
+    play(&mut g, Card::Bridge);
+    assert_eq!(g.cost(Card::Estate).coins, 1);
+    assert_eq!(g.score(P0), before);
 }
 
 /// A random game in which every deck also starts with one of each Kingdom card (the top

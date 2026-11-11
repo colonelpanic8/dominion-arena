@@ -39,7 +39,7 @@ impl SetRules for Rules {
             (Card::Chapel, _) => chapel(g, f, input),
             (Card::Harbinger, _) => harbinger(g, f, input),
             (Card::Merchant, _) => {
-                let silvers = g.turn.played.iter().filter(|&&c| c == Card::Silver).count();
+                let silvers = g.turn.played_count(f.player, Card::Silver);
                 let data = Scratch {
                     n: silvers as i32,
                     ..Scratch::default()
@@ -83,7 +83,7 @@ impl SetRules for Rules {
             Occasion::Play { player, card } => {
                 let first_silver = g.card(card) == Card::Silver
                     && player == g.turn.player
-                    && g.turn.played.iter().filter(|&&c| c == Card::Silver).count() == 1;
+                    && g.turn.played_count(player, Card::Silver) == 1;
                 if first_silver {
                     for l in g.lasting() {
                         if l.card == Card::Merchant && l.owner == player && l.data.n == 0 {
@@ -472,7 +472,7 @@ fn bandit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 fn council_room(g: &mut Game, f: &mut CardFrame) -> Flow {
-    match g.others(f.player).get(f.s.i) {
+    match g.others_in_turn_order(f.player).get(f.s.i) {
         Some(&other) => {
             f.s.i += 1;
             Flow::Call(Frame::draw(other, 1))

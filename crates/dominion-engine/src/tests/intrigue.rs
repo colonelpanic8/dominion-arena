@@ -122,6 +122,25 @@ fn conspirator_counts_actions_played_including_throne_room_replays() {
     assert_eq!(g.hand(P0).len(), 1);
 }
 
+/// On another player's turn Conspirator counts its own player's plays, not the turn's.
+#[test]
+fn conspirator_off_turn_counts_its_players_actions() {
+    let mut g = setup(&[Card::Conspirator, Card::ThroneRoom, Card::Village]);
+    hand(&mut g, P0, &[Card::Village; 3]);
+    hand(&mut g, P1, &[Card::ThroneRoom, Card::Conspirator]);
+    deck(&mut g, P1, &[Card::Copper; 5]);
+    g.start();
+    for _ in 0..3 {
+        play(&mut g, Card::Village);
+    }
+    play_out_of_turn(&mut g, P1, Card::ThroneRoom);
+    if g.pending().is_some_and(|d| d.player == P1) {
+        choose_kinds(&mut g, &[Card::Conspirator]);
+    }
+    // Only the second Conspirator is P1's third Action this turn.
+    assert_eq!(g.hand(P1).len(), 1);
+}
+
 /// Under Enlightenment the Coppers played were Actions.
 #[test]
 fn conspirator_counts_cards_that_were_actions_by_an_effect() {

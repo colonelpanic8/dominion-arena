@@ -155,6 +155,26 @@ fn black_market_bought_in_the_buy_phase_ends_playing_treasures() {
 }
 
 #[test]
+fn debt_can_be_paid_off_before_playing_black_market() {
+    let mut g = setup(&[Card::BlackMarket]);
+    let bm = black_market_deck(&g);
+    replace(
+        &mut g,
+        Zone::Pile(bm),
+        &[Card::Moat, Card::Smithy, Card::Village],
+    );
+    hand(&mut g, P0, &[Card::BlackMarket]);
+    g.players[0].coffers = 1;
+    g.players[0].debt = 1;
+    g.start();
+    respond(&mut g, Response::Move(Move::Coffers));
+    respond(&mut g, Response::Move(Move::PayDebt));
+    play(&mut g, Card::BlackMarket);
+    choose_kinds(&mut g, &[Card::Moat]);
+    assert_eq!(g.count_owned(P0, Card::Moat), 1);
+}
+
+#[test]
 fn black_market_buys_in_the_action_phase_without_using_a_buy() {
     let mut g = setup(&[Card::BlackMarket]);
     let bm = black_market_deck(&g);

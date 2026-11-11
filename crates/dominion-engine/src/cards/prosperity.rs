@@ -601,7 +601,7 @@ fn bishop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 3;
             }
             3 => {
-                let Some(&other) = g.others(f.player).get(f.s.i) else {
+                let Some(&other) = g.others_in_turn_order(f.player).get(f.s.i) else {
                     return Flow::done();
                 };
                 let hand = g.hand(other).to_vec();
@@ -613,7 +613,7 @@ fn bishop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return f.ask_cards_for(other, hand, 0, 1, Purpose::Trash);
             }
             _ => {
-                let other = g.others(f.player)[f.s.i];
+                let other = g.others_in_turn_order(f.player)[f.s.i];
                 f.s.i += 1;
                 f.pc = 3;
                 return Flow::Call(Frame::trash(other, input.take().map(Input::cards).unwrap_or_default()));
@@ -890,7 +890,7 @@ fn vault(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 3;
             }
             3 => {
-                let Some(&other) = g.others(f.player).get(f.s.i) else {
+                let Some(&other) = g.others_in_turn_order(f.player).get(f.s.i) else {
                     return Flow::done();
                 };
                 if g.hand(other).is_empty() {
@@ -901,7 +901,7 @@ fn vault(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return f.ask_yes_no_for(other, Purpose::Discard);
             }
             4 => {
-                let other = g.others(f.player)[f.s.i];
+                let other = g.others_in_turn_order(f.player)[f.s.i];
                 if !input.take().is_some_and(|i| i.is_yes()) {
                     f.s.i += 1;
                     f.pc = 3;
@@ -912,14 +912,14 @@ fn vault(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return f.ask_cards_for(other, hand, 2, 2, Purpose::Discard);
             }
             5 => {
-                let other = g.others(f.player)[f.s.i];
+                let other = g.others_in_turn_order(f.player)[f.s.i];
                 let chosen = input.take().map(Input::cards).unwrap_or_default();
                 f.s.m = chosen.len() as i32;
                 f.pc = 6;
                 return Flow::Call(Frame::discard(other, chosen));
             }
             6 => {
-                let other = g.others(f.player)[f.s.i];
+                let other = g.others_in_turn_order(f.player)[f.s.i];
                 f.s.i += 1;
                 f.pc = 3;
                 if f.s.m == 2 {

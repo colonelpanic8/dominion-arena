@@ -265,7 +265,12 @@ impl SetRules for Rules {
             (Card::Bury, _) => bury(g, f, input),
             (Card::Avoid | Card::Rush | Card::Mirror, _) => {
                 plus_buys(g, f.player, 1);
-                let data = stamped(g);
+                // A Rush or Mirror still waiting waits for the same gain: sharing its stamp
+                // makes their triggers interchangeable.
+                let waiting = g.lasting().iter().find(|l| {
+                    f.card != Card::Avoid && l.card == f.card && l.owner == f.player
+                });
+                let data = waiting.map_or_else(|| stamped(g), |l| l.data.clone());
                 g.add_lasting(f.card, f.player, None, vec![], Until::EndOfTurn, data);
                 Flow::done()
             }
@@ -796,8 +801,6 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
     }
 
     // Effects waiting for a gain
-    let mut rush = false;
-    let mut mirror = false;
     for l in g.lasting() {
         let mine = l.owner == gainer;
         let next =
@@ -844,12 +847,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             Card::Deliver if mine && where_gained(g, card) => {
                 out.push(via(THIS_TURN));
             }
-            Card::Rush if next(Types::ACTION) && !rush => {
-                rush = true;
-                out.push(via(THIS_TURN));
-            }
-            Card::Mirror if next(Types::ACTION) && !mirror => {
-                mirror = true;
+            Card::Rush | Card::Mirror if next(Types::ACTION) => {
                 out.push(via(THIS_TURN));
             }
             _ => {}
@@ -1523,33 +1521,17 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = gained else {
                 return Flow::done();
             };
-            if f.pc == 0 {
-                // Every Rush (Mirror) waiting for this gain is used up by it.
-                let used: Vec<u32> = g
-                    .lasting()
-                    .iter()
-                    .filter(|l| {
-                        l.card == f.card && l.owner == p && next_gain_of(g, l, c, Types::ACTION)
-                    })
-                    .map(|l| l.id)
-                    .collect();
-                for id in &used {
-                    g.remove_lasting(*id);
-                }
-                f.s.n = used.len() as i32;
-                f.pc = 1;
-            }
-            if f.card == Card::Rush {
-                if f.pc == 1 && where_gained(g, c) {
-                    f.pc = 2;
-                    return Flow::Call(Frame::play(p, c, true, vec![]));
-                }
+            if f.pc > 0 {
                 return Flow::done();
             }
-            if (f.s.i as i32) < f.s.n
-                && let Some(pile) = supply_pile_topped_by(g, g.card(c))
-            {
-                f.s.i += 1;
+            f.pc = 1;
+            f.end_lasting(g);
+            if f.card == Card::Rush {
+                // A second Rush finds the card already played.
+                if where_gained(g, c) {
+                    return Flow::Call(Frame::play(p, c, true, vec![]));
+                }
+            } else if let Some(pile) = supply_pile_topped_by(g, g.card(c)) {
                 return Flow::Call(Frame::gain(p, pile, Dest::Discard));
             }
             Flow::done()
@@ -2836,7 +2818,7 @@ fn maelstrom(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(p, input.cards()))
         }
         2 => {
-            let others = g.others(p);
+            let others = g.others_in_turn_order(p);
             while let Some(&other) = others.get(f.s.i) {
                 let hand = g.hand(other).to_vec();
                 if hand.len() >= 5 {
@@ -2848,7 +2830,7 @@ fn maelstrom(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::done()
         }
         3 => {
-            let other = g.others(p)[f.s.i];
+            let other = g.others_in_turn_order(p)[f.s.i];
             f.pc = 4;
             Flow::Call(Frame::trash(other, input.cards()))
         }

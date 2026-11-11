@@ -91,11 +91,11 @@ impl SetRules for Rules {
                 }
             }
             (Card::Embassy, Hook::Ability(GAINED)) => {
-                let others = g.others(f.player);
+                let others = g.others_in_turn_order(f.player);
                 each_gains(g, f, &others, Card::Silver).unwrap_or_else(Flow::done)
             }
             (Card::IllGottenGains, Hook::Ability(GAINED)) => {
-                let others = g.others(f.player);
+                let others = g.others_in_turn_order(f.player);
                 each_gains(g, f, &others, Card::Curse).unwrap_or_else(Flow::done)
             }
             (Card::Mandarin, Hook::Ability(GAINED)) => match f.pc {
@@ -201,7 +201,7 @@ impl SetRules for Rules {
                     let l = g.remove_lasting(f.lasting.expect("from a lasting"));
                     let mask = l.map_or(0, |l| l.data.n);
                     f.targets = g
-                        .others(f.player)
+                        .others_in_turn_order(f.player)
                         .into_iter()
                         .filter(|t| mask & (1 << t.0) != 0)
                         .collect();
@@ -239,7 +239,7 @@ impl SetRules for Rules {
             }
             (Card::NobleBrigand, Hook::Ability(NOBLE_BRIGAND_BUY)) => {
                 if f.targets.is_empty() {
-                    f.targets = g.others(f.player);
+                    f.targets = g.others_in_turn_order(f.player);
                 }
                 noble_brigand(g, f, input)
             }
@@ -270,12 +270,7 @@ impl SetRules for Rules {
                     Flow::Call(Frame::draw(f.player, n))
                 }
                 _ => {
-                    let plays = g
-                        .turn
-                        .played
-                        .iter()
-                        .filter(|&&c| c == Card::Crossroads)
-                        .count();
+                    let plays = g.turn.played_count(f.player, Card::Crossroads);
                     if plays == 1 && f.player == g.turn.player {
                         g.turn.actions += 3;
                     }
@@ -284,12 +279,7 @@ impl SetRules for Rules {
             },
             (Card::Develop, _) => develop(g, f, input),
             (Card::FoolsGold, _) => {
-                let plays = g
-                    .turn
-                    .played
-                    .iter()
-                    .filter(|&&c| c == Card::FoolsGold)
-                    .count();
+                let plays = g.turn.played_count(f.player, Card::FoolsGold);
                 g.add_coins(f.player, if plays <= 1 { 1 } else { 4 });
                 Flow::done()
             }
@@ -1002,7 +992,7 @@ fn witchs_hut(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 fn duchess(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
-    let players = g.players_from(f.player);
+    let players = g.players_from(g.turn.player);
     let Some(&q) = players.get(f.s.i) else {
         return Flow::done();
     };

@@ -346,6 +346,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             g.add_debt(p, cost.debt as u32);
             let kind = g.card(c);
             g.turn.bought_cards.push(kind);
+            f.s.i = g.turn.bought_cards.len();
             if g.turn.phase == Phase::Buy {
                 g.turn.bought = true;
             }
@@ -380,6 +381,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 from: GainFrom::Card(c),
                 to: Dest::Discard,
                 bought: true,
+                buy: Some(f.s.i),
                 card: None,
                 pc: 0,
             })
@@ -552,7 +554,7 @@ fn governor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         if f.s.m == 0 {
             return Flow::done();
         }
-        let order = g.players_from(f.player);
+        let order = g.players_from(g.turn.player);
         let Some(&who) = order.get(f.s.i) else {
             f.s.m &= f.s.m - 1;
             f.s.i = 0;
