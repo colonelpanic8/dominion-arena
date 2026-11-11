@@ -225,6 +225,30 @@ fn horn_puts_a_border_guard_on_the_deck_once_per_turn() {
     assert!(discard_kinds(&g, P0).contains(&Card::BorderGuard));
 }
 
+/// Horn has no "on your turn": a Border Guard played on another player's turn is put back
+/// when it is discarded from play in that turn's Clean-up.
+#[test]
+fn horn_works_on_another_players_turn() {
+    let mut g = setup(&[Card::BorderGuard]);
+    hand(&mut g, P0, &[Card::Copper]);
+    hand(&mut g, P1, &[Card::BorderGuard]);
+    deck(&mut g, P1, &[Card::Copper; 7]);
+    g.artifacts.iter_mut().for_each(|a| {
+        if a.0 == Card::Horn {
+            a.1 = Some(P1);
+        }
+    });
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::BorderGuard);
+    if g.pending().is_some_and(|d| d.player == P1) {
+        choose_kinds(&mut g, &[Card::Copper]);
+    }
+    end_phase(&mut g);
+    trigger(&mut g, Card::Horn);
+    let top = *g.player(P1).deck.last().unwrap();
+    assert_eq!(g.card(top), Card::BorderGuard);
+}
+
 #[test]
 fn patron_revealed_by_border_guard_in_the_action_phase_gives_coffers() {
     let mut g = setup(&[Card::BorderGuard, Card::Patron]);
