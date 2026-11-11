@@ -192,7 +192,7 @@ macro_rules! sets {
             };
             // The Exile rule applies to cards of every set.
             let set = match f.hook {
-                Hook::Ability(menagerie::EXILE_DISCARD) => Set::Menagerie,
+                Hook::Ability(EXILE_DISCARD) => Set::Menagerie,
                 _ => f.card.set(),
             };
             let mut flow = match set {
@@ -369,9 +369,26 @@ pub(crate) fn duration_trigger(l: &Lasting, ability: u8) -> Trigger {
     }
 }
 
-/// An Omen's "+1 Sun" is resolved as the card's ability with this number (the ones above
-/// it are `menagerie::EXILE_DISCARD`, `frame::PAY_OTHERWISE` and `frame::OVERPAY`).
-pub(crate) const SUN: u8 = 252;
+/// Ability numbers any card can be run with, above every card's own. One enum, so that the
+/// compiler rejects two that collide or one past 255.
+#[repr(u8)]
+enum Reserved {
+    Sun = 252,
+    ExileDiscard,
+    PayOtherwise,
+    Overpay,
+}
+
+/// An Omen's "+1 Sun" is resolved as the card's ability with this number.
+pub(crate) const SUN: u8 = Reserved::Sun as u8;
+/// The Exile rule ("when you gain a card, you may discard its copies from Exile"), as an
+/// ability of the gained card, whatever its set: [`resume`] sends it to Menagerie.
+pub(crate) const EXILE_DISCARD: u8 = Reserved::ExileDiscard as u8;
+/// Paying for a card another way than with its cost (Animal Fair) is offered as the card's
+/// ability with this number, which finishes with `Value::Bool(true)` if it was paid that way.
+pub(crate) const PAY_OTHERWISE: u8 = Reserved::PayOtherwise as u8;
+/// Overpay is resolved as the bought card's ability with this number.
+pub(crate) const OVERPAY: u8 = Reserved::Overpay as u8;
 
 /// What following `card`'s instructions does before anything else, its vanilla bonuses
 /// included: an Omen's "+1 Sun".

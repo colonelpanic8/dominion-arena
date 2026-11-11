@@ -1141,11 +1141,7 @@ fn resume_gain(
     }
 }
 
-/// Overpay is resolved as the bought card's ability with this number.
-pub(crate) const OVERPAY: u8 = 255;
-/// Paying for a card another way than with its cost (Animal Fair) is offered as the card's
-/// ability with this number, which finishes with `Value::Bool(true)` if it was paid that way.
-pub(crate) const PAY_OTHERWISE: u8 = 254;
+pub(crate) use crate::cards::{OVERPAY, PAY_OTHERWISE};
 
 fn resume_buy(
     g: &mut Game,

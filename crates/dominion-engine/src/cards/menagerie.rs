@@ -46,9 +46,7 @@ pub(crate) struct State {
 
 pub(crate) struct Rules;
 
-/// The Exile rule ("when you gain a card, you may discard its copies from Exile"), as an
-/// ability of the gained card, whatever its set: `cards::resume` sends it to this module.
-pub(crate) const EXILE_DISCARD: u8 = 253;
+pub(crate) use super::EXILE_DISCARD;
 
 /// Durations and "at the start of your next turn" effects.
 const START: u8 = 0;
