@@ -1,7 +1,8 @@
 use super::prosperity::{next_turn, play_from};
 use super::*;
-use crate::game::Zone;
+use crate::game::{Mat, Zone};
 use std::collections::BTreeMap;
+use std::fmt::Write;
 
 fn start(mut g: Game) -> (Game, Knowledge) {
     g.enable_trace();
@@ -913,10 +914,500 @@ fn everyone_knows_where_a_stash_is() {
     assert_eq!(k.known(&g, P1).zone(Zone::Deck(P0)).unknown, 2);
 }
 
+// ---- Twin worlds: what a player knows can't depend on what they couldn't observe ----
+
+fn names(g: &Game, cards: &[CardId]) -> Vec<&'static str> {
+    let mut v: Vec<&'static str> = cards.iter().map(|&c| g.card(c).name()).collect();
+    v.sort();
+    v
+}
+
+/// What `v` can observe at a decision by the rules alone: the public log and state, the
+/// cards they may look at, and their own decision. Card ids are left out.
+fn observation(g: &Game, v: PlayerId, log_from: usize) -> String {
+    let t = g.turn();
+    let mut out = String::new();
+    let _ = writeln!(out, "log {:?}", &g.log()[log_from.min(g.log().len())..]);
+    let _ = writeln!(
+        out,
+        "turn {:?} {:?} a{} b{} c{} p{}",
+        t.player, t.phase, t.actions, t.buys, t.coins, t.potions
+    );
+    for (i, pl) in g.players.iter().enumerate() {
+        let p = PlayerId(i as u8);
+        let _ = writeln!(
+            out,
+            "{p}: deck {} hand {} discard {} top {:?} play {:?} aside {}",
+            pl.deck.len(),
+            pl.hand.len(),
+            pl.discard.len(),
+            pl.discard.last().map(|&c| g.card(c)),
+            names(g, &pl.in_play),
+            pl.set_aside.len(),
+        );
+        if p == v {
+            let _ = writeln!(out, "  hand {:?}", names(g, &pl.hand));
+            let _ = writeln!(out, "  aside {:?}", names(g, &pl.set_aside));
+        } else {
+            let _ = writeln!(out, "  face up {:?}", names(g, &pl.face_up));
+        }
+        // Stash and Shadow cards show through their backs wherever they are.
+        let backs = |cards: &[CardId]| {
+            let marked = |c: &&CardId| {
+                let card = g.printed(**c);
+                card == Card::Stash || card.is(Types::SHADOW)
+            };
+            names(g, &cards.iter().filter(marked).copied().collect::<Vec<_>>())
+        };
+        let _ = writeln!(
+            out,
+            "  backs: deck {:?} hand {:?} discard {:?} aside {:?}",
+            backs(&pl.deck),
+            backs(&pl.hand),
+            backs(&pl.discard),
+            backs(&pl.set_aside)
+        );
+        for (&mat, cards) in &pl.mats {
+            if mat != Mat::NativeVillage || p == v {
+                let _ = writeln!(out, "  {mat:?} {:?}", names(g, cards));
+            } else {
+                let _ = writeln!(out, "  {mat:?} {}", cards.len());
+            }
+        }
+        let _ = writeln!(
+            out,
+            "  vp{} co{} vi{} fa{} de{} ps{} {:?} {:?} {:?} {:?}",
+            pl.vp_tokens,
+            pl.coffers,
+            pl.villagers,
+            pl.favors,
+            pl.debt,
+            pl.pirate_ship,
+            pl.projects,
+            pl.states,
+            pl.boons_kept,
+            pl.tokens
+        );
+    }
+    for pile in g.piles() {
+        let top = pile
+            .cards
+            .last()
+            .filter(|_| !pile.hidden)
+            .map(|&c| g.card(c));
+        let _ = writeln!(
+            out,
+            "pile {} x{} top {top:?} {} {} {}",
+            pile.card,
+            pile.cards.len(),
+            pile.vp_tokens,
+            pile.debt_tokens,
+            pile.embargo
+        );
+    }
+    let _ = writeln!(out, "trash {:?}", names(g, g.trash()));
+    if let Some(d) = g.pending() {
+        let _ = writeln!(
+            out,
+            "deciding {:?} {:?} {:?}",
+            d.player, d.purpose, d.source
+        );
+        if d.player == v {
+            let sig = |c: &CardId| format!("{} in {:?}", g.card(*c), g.zone(*c));
+            let kind = match &d.kind {
+                DecisionKind::Turn { phase, moves } => {
+                    let mut m: Vec<String> = moves
+                        .iter()
+                        .map(|m| match m {
+                            Move::Play(c) => format!("play {}", sig(c)),
+                            m => format!("{m:?}"),
+                        })
+                        .collect();
+                    m.sort();
+                    format!("{phase:?} {m:?}")
+                }
+                DecisionKind::Cards {
+                    candidates,
+                    min,
+                    max,
+                    ordered,
+                } => {
+                    let mut c: Vec<String> = candidates.iter().map(sig).collect();
+                    c.sort();
+                    format!("{c:?} {min} {max} {ordered}")
+                }
+                k => format!("{k:?}"),
+            };
+            let _ = writeln!(out, "{kind}");
+        }
+    }
+    out
+}
+
+/// What `v` knows, as text.
+fn digest(g: &Game, k: &Knowledge, v: PlayerId) -> String {
+    let known = k.known(g, v);
+    let mut zones: Vec<String> = known
+        .zones
+        .iter()
+        .map(|(z, zk)| format!("{z:?} {zk:?}"))
+        .collect();
+    zones.sort();
+    format!(
+        "zones {zones:#?}\nuncertain {:#?}\nowned {:?}",
+        known.uncertain, known.owned
+    )
+}
+
+/// `r`, an answer to `a`'s decision, as an answer to `b`'s: the same choice of cards by
+/// name and zone.
+fn translate(a: &Game, b: &Game, r: &Response) -> Option<Response> {
+    let (da, db) = (a.pending()?, b.pending()?);
+    if da.player != db.player {
+        return None;
+    }
+    let sig = |g: &Game, c: CardId| (g.card(c), g.zone(c));
+    let translated = match (r, &db.kind) {
+        (Response::Move(Move::Play(c)), DecisionKind::Turn { moves, .. }) => {
+            let want = sig(a, *c);
+            if moves.contains(&Move::Play(*c)) && sig(b, *c) == want {
+                r.clone()
+            } else {
+                moves.iter().find_map(|m| match m {
+                    Move::Play(x) if sig(b, *x) == want => Some(Response::Move(*m)),
+                    _ => None,
+                })?
+            }
+        }
+        (Response::Cards(chosen), DecisionKind::Cards { candidates, .. }) => {
+            let mut left = candidates.clone();
+            let mut out = vec![];
+            for &c in chosen {
+                let want = sig(a, c);
+                let i = left
+                    .iter()
+                    .position(|&x| x == c && sig(b, x) == want)
+                    .or_else(|| left.iter().position(|&x| sig(b, x) == want))?;
+                out.push(left.remove(i));
+            }
+            Response::Cards(out)
+        }
+        _ => r.clone(),
+    };
+    db.validate(&translated).ok()?;
+    Some(translated)
+}
+
+/// Answers and updates `k`, returning what each player watched happen meanwhile that the
+/// log and the next decision don't show: every card movement (without the card, unless
+/// they see it) and the cards they looked at.
+fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
+    // Names and choices are announced.
+    let said = match &r {
+        Response::Name(_) | Response::Options(_) | Response::Number(_) | Response::Pile(_) => {
+            format!("{r:?}\n")
+        }
+        _ => String::new(),
+    };
+    g.respond(r).unwrap();
+    let mut seen = vec![said; g.num_players()];
+    for entry in g.trace().unwrap_or_default() {
+        match entry {
+            Trace::Moved {
+                card,
+                from,
+                to,
+                top,
+            } => {
+                for (v, out) in seen.iter_mut().enumerate() {
+                    let v = PlayerId(v as u8);
+                    let mine = |z: &Zone| match *z {
+                        Zone::Hand(p) | Zone::SetAside(p) | Zone::Mat(p, Mat::NativeVillage) => {
+                            p == v
+                        }
+                        _ => false,
+                    };
+                    let public = |z: &Zone| match *z {
+                        Zone::InPlay(_) | Zone::Trash => true,
+                        Zone::Mat(_, mat) => mat != Mat::NativeVillage,
+                        Zone::Pile(pile) => !g.pile(pile).hidden,
+                        _ => false,
+                    };
+                    let what = if mine(from) || mine(to) || public(from) || public(to) {
+                        g.printed(*card).name()
+                    } else {
+                        "a card"
+                    };
+                    // Whether it was the top card shows only for decks and piles.
+                    let top = matches!(from, Zone::Deck(_) | Zone::Pile(_)) && *top;
+                    let _ = writeln!(out, "{what} {from:?} -> {to:?} top {top}");
+                }
+            }
+            Trace::Shown { card, to: Some(p) } => {
+                for (v, out) in seen.iter_mut().enumerate() {
+                    let v = PlayerId(v as u8);
+                    if *p == v {
+                        let _ = writeln!(out, "looked at {}", g.printed(*card));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    k.update(g);
+    seen
+}
+
+/// Plays two worlds on, giving the same answers where possible. While a player has
+/// observed the same things in both, they must know the same things in both.
+fn twins_agree(
+    mut a: (Game, Knowledge),
+    mut b: (Game, Knowledge),
+    mut same: Vec<bool>,
+    log_from: usize,
+    rng: &mut ChaCha8Rng,
+) -> Result<(), String> {
+    let mut history = String::new();
+    for _ in 0..25 {
+        for (v, same) in same.iter_mut().enumerate() {
+            let p = PlayerId(v as u8);
+            if !*same {
+                continue;
+            }
+            if observation(&a.0, p, log_from) != observation(&b.0, p, log_from) {
+                *same = false;
+                continue;
+            }
+            let (ka, kb) = (digest(&a.0, &a.1, p), digest(&b.0, &b.1, p));
+            if ka != kb {
+                let only = |x: &str, y: &str| -> String {
+                    x.lines()
+                        .filter(|l| !y.lines().any(|m| m == *l))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+                let log = &a.0.log()[log_from.min(a.0.log().len())..];
+                return Err(format!(
+                    "{p} observed the same in both worlds (log since the split: {log:?})\nbut knows\n{}\nin one and\n{}\nin the other.\nAnswers since the split:\n{history}",
+                    only(&ka, &kb),
+                    only(&kb, &ka)
+                ));
+            }
+        }
+        if !same.iter().any(|&s| s) {
+            break;
+        }
+        let (Some(da), Some(db)) = (a.0.pending().cloned(), b.0.pending().cloned()) else {
+            break;
+        };
+        let mut chaos = Chaos(ChaCha8Rng::seed_from_u64(rng.random()));
+        let ra = chaos.decide(&a.0.view(da.player), &da);
+        let rb =
+            translate(&a.0, &b.0, &ra).unwrap_or_else(|| chaos.decide(&b.0.view(db.player), &db));
+        let _ = writeln!(history, "  {:?} {ra:?} / {:?} {rb:?}", da.player, db.player);
+        let sa = respond_traced(&mut a.0, &mut a.1, ra);
+        let sb = respond_traced(&mut b.0, &mut b.1, rb);
+        for (same, (x, y)) in same.iter_mut().zip(sa.iter().zip(&sb)) {
+            *same &= x == y;
+        }
+    }
+    Ok(())
+}
+
+/// A random game in which every Kingdom card and landscape gets its turn (the removed
+/// ones too), each player starting with one of every Kingdom card.
+fn traced_random_game(seed: u64, players: u8) -> (Game, Knowledge) {
+    let mut config = GameConfig::random(players, IMPLEMENTED, seed);
+    config.turn_limit = Some(40);
+    let implemented = |c: &&Card| IMPLEMENTED.contains(&c.set());
+    let kingdom: Vec<Card> = Card::ALL
+        .iter()
+        .filter(implemented)
+        .copied()
+        .filter(|c| c.def().kingdom && !c.def().unimplemented)
+        .collect();
+    let landscape = |c: &Card| {
+        matches!(
+            c.kind(),
+            Kind::Event | Kind::Landmark | Kind::Project | Kind::Way | Kind::Trait
+        )
+    };
+    let landscapes: Vec<Card> = Card::ALL
+        .iter()
+        .filter(implemented)
+        .copied()
+        .filter(landscape)
+        .collect();
+    let forced = kingdom[seed as usize % kingdom.len()];
+    if !config.kingdom.contains(&forced) {
+        config.kingdom[0] = forced;
+    }
+    let forced = landscapes[seed as usize % landscapes.len()];
+    if !config.landscapes.contains(&forced) {
+        config
+            .landscapes
+            .retain(|l| l.kind() != Kind::Way || forced.kind() != Kind::Way);
+        config.landscapes.truncate(1);
+        config.landscapes.push(forced);
+    }
+    let mut g = setup_with(config);
+    let mut extra: Vec<Card> = g
+        .config()
+        .kingdom
+        .iter()
+        .map(|&k| k.pile_members()[0])
+        .collect();
+    extra.push(Card::Gold);
+    if g.supply_pile(Card::Potion).is_some() {
+        extra.push(Card::Potion);
+    }
+    for p in 0..g.num_players() {
+        for &card in &extra {
+            g.create(card, Zone::Deck(PlayerId(p as u8)));
+        }
+    }
+    start(g)
+}
+
 fn printed(g: &Game, cards: &[CardId]) -> CardCount {
     let mut count = CardCount::new();
     for &c in cards {
         *count.entry(g.printed(c)).or_default() += 1;
     }
     count
+}
+
+/// Hidden things that differ between two worlds (how the next shuffles come out, which
+/// card a player privately picks) don't change what the others know. Nor is what everyone
+/// watched forgotten: players know their own deck and discard pile and, every gain, trash
+/// and return being public, which cards each player owns (until a Masquerade passes one).
+#[test]
+fn knowledge_depends_only_on_what_a_player_can_observe() {
+    let mut failures = vec![];
+    for seed in 0..fuzz_seeds(30) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x7717);
+        let players = rng.random_range(2..=4);
+        let (mut g, mut k) = traced_random_game(seed, players);
+        let passes = (0..g.card_count() as u32).any(|c| g.printed(CardId(c)) == Card::Masquerade);
+        let mut agents: Vec<Chaos> = (0..g.num_players())
+            .map(|p| Chaos(ChaCha8Rng::seed_from_u64(seed * 10 + p as u64)))
+            .collect();
+        let mut step = 0;
+        'game: while let Some(d) = g.pending().cloned() {
+            for v in 0..g.num_players() {
+                let viewer = PlayerId(v as u8);
+                let known = k.known(&g, viewer);
+                for (p, owned) in known.owned.iter().enumerate() {
+                    let cards: Vec<CardId> = g.players[p].owned().collect();
+                    let truth = (printed(&g, &cards), 0);
+                    if !passes && *owned != truth {
+                        failures.push(format!(
+                            "seed {seed} step {step}: {viewer} thinks P{} owns {owned:?}, truly {truth:?}",
+                            p + 1
+                        ));
+                        break 'game;
+                    }
+                }
+                // Players know their own deck and discard pile.
+                for zone in [Zone::Deck(viewer), Zone::Discard(viewer)] {
+                    let pl = g.player(viewer);
+                    let cards = if zone == Zone::Deck(viewer) {
+                        &pl.deck
+                    } else {
+                        &pl.discard
+                    };
+                    let (mine, truth) = (known.zone(zone), printed(&g, cards));
+                    if (&mine.known, mine.unknown) != (&truth, 0) {
+                        failures.push(format!(
+                            "seed {seed} step {step}: {viewer} knows {mine:?} of their {zone:?}, truly {truth:?}"
+                        ));
+                        break 'game;
+                    }
+                }
+            }
+            let r = agents[d.player.index()].decide(&g.view(d.player), &d);
+            if rng.random_bool(0.2) {
+                let log_from = g.log().len();
+                // A world where the hidden future differs.
+                let mut a = (g.clone(), k.clone());
+                let mut b = (g.clone(), k.clone());
+                b.0.rng = ChaCha8Rng::seed_from_u64(rng.random());
+                let mut same = vec![true; g.num_players()];
+                // Or one where the deciding player picks something else.
+                if rng.random_bool(0.5) {
+                    let other = agents[d.player.index()].decide(&g.view(d.player), &d);
+                    if other != r {
+                        b = (g.clone(), k.clone());
+                        let sa = respond_traced(&mut a.0, &mut a.1, r.clone());
+                        let sb = respond_traced(&mut b.0, &mut b.1, other);
+                        for (same, (x, y)) in same.iter_mut().zip(sa.iter().zip(&sb)) {
+                            *same &= x == y;
+                        }
+                        same[d.player.index()] = false;
+                    }
+                }
+                if let Err(e) = twins_agree(a, b, same, log_from, &mut rng) {
+                    failures.push(format!(
+                        "seed {seed} step {step} ({:?} {:?} {:?}): {e}",
+                        d.player, d.purpose, d.source
+                    ));
+                    break 'game;
+                }
+            }
+            respond_traced(&mut g, &mut k, r);
+            step += 1;
+            assert!(step < 100_000, "seed {seed}: game does not end");
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} games:\n{}",
+        failures.len(),
+        failures.join("\n=====\n")
+    );
+}
+
+/// Tracing changes nothing, and a traced game and its knowledge survive serialization.
+#[test]
+fn traced_games_play_like_untraced_ones_and_survive_serialization() {
+    for seed in 0..fuzz_seeds(20) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x5eed);
+        let players = rng.random_range(2..=6);
+        let mut config = GameConfig::random(players, IMPLEMENTED, seed);
+        config.turn_limit = Some(30);
+        let mut plain = Game::new(config.clone()).unwrap();
+        let mut traced = Game::new_traced(config.clone()).unwrap();
+        let mut resumed = Game::new_traced(config).unwrap();
+        let mut k = Knowledge::new(players as usize);
+        let mut k_resumed = k.clone();
+        k.update(&mut traced);
+        k_resumed.update(&mut resumed);
+        let mut chaos = Chaos(ChaCha8Rng::seed_from_u64(seed));
+        let mut step = 0;
+        while let Some(d) = plain.pending().cloned() {
+            assert_eq!(traced.pending(), Some(&d), "seed {seed} step {step}");
+            assert_eq!(traced.log(), plain.log(), "seed {seed} step {step}");
+            let r = chaos.decide(&plain.view(d.player), &d);
+            plain.respond(r.clone()).unwrap();
+            traced.respond(r.clone()).unwrap();
+            resumed.respond(r).unwrap();
+            assert_eq!(traced.trace(), resumed.trace(), "seed {seed} step {step}");
+            if step % 5 == 0 {
+                let json = serde_json::to_string(&(&resumed, &k_resumed)).unwrap();
+                (resumed, k_resumed) = serde_json::from_str(&json).unwrap();
+            }
+            k.update(&mut traced);
+            k_resumed.update(&mut resumed);
+            step += 1;
+        }
+        assert_eq!(traced.log(), plain.log(), "seed {seed}");
+        for v in 0..players {
+            let v = PlayerId(v);
+            assert_eq!(
+                k.known(&traced, v),
+                k_resumed.known(&resumed, v),
+                "seed {seed}"
+            );
+        }
+    }
 }
