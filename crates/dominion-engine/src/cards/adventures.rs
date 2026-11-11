@@ -1,11 +1,13 @@
 //! Adventures: Durations, Reserve cards and the Tavern mat, Travellers, Events and the
 //! Adventures tokens.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, turn_durations,
+};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Mat, Phase, Pos, Scratch, Token, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Token, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -463,9 +465,11 @@ impl SetRules for Rules {
                     let Some(next) = upgrade(printed) else {
                         continue;
                     };
-                    let available = g
-                        .pile_of(next)
-                        .is_some_and(|p| !g.pile(p).cards.is_empty());
+                    // An exchange needs both cards to move: a pile to return this one to.
+                    let available = g.home_pile(printed).is_some()
+                        && g
+                            .pile_of(next)
+                            .is_some_and(|p| !g.pile(p).cards.is_empty());
                     if g.card(c) == printed && !kept.contains(&c) && available {
                         out.push(Trigger::new(player, printed, EXCHANGE).on(c).optional());
                     }
@@ -659,23 +663,13 @@ fn upgrade(card: Card) -> Option<Card> {
     })
 }
 
-/// Supply piles that hold Action cards (or would, for an empty pile). Inheritance's
-/// Estates don't make the Estate pile one.
+/// The Action Supply piles, empty ones too. A pile's types are those of the card it is
+/// named after (its randomizer), whatever is in it now: Catapult / Rocks is one even down
+/// to its Rocks, the Castles and an Estate pile under Inheritance aren't.
 fn action_supply_piles(g: &Game) -> Vec<PileId> {
     (0..g.piles().len())
         .map(|i| PileId(i as u8))
-        .filter(|&id| {
-            let pile = g.pile(id);
-            pile.in_supply
-                && if pile.cards.is_empty() {
-                    pile.card
-                        .pile_members()
-                        .iter()
-                        .any(|c| c.is(Types::ACTION))
-                } else {
-                    pile.cards.iter().any(|&c| g.card(c).is(Types::ACTION))
-                }
-        })
+        .filter(|&id| g.pile(id).in_supply && g.pile(id).card.is(Types::ACTION))
         .collect()
 }
 
@@ -818,10 +812,15 @@ fn start_turn_triggers(g: &Game, occ: &Occasion, player: PlayerId, out: &mut Vec
             | Card::HauntedWoods
             | Card::SwampHag => true,
             Card::BridgeTroll => l.data.n == 0,
-            Card::Hireling => l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player)),
             _ => false,
         };
         if fires {
+            out.push(duration_trigger(l, DURATION));
+        }
+    }
+    for l in turn_durations(g, occ) {
+        if l.card == Card::Hireling && l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player))
+        {
             out.push(duration_trigger(l, DURATION));
         }
     }
@@ -866,10 +865,12 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
     let on_gain = match kind {
         Card::LostCity => true,
         Card::Port => !g.ext.adventures.extra_ports.contains(&card),
-        Card::Messenger => {
-            let t = &g.turn;
-            player == t.player && t.phase == Phase::Buy && t.gained_this_buy_phase().len() == 1
-        }
+        Card::Messenger => g
+            .gains
+            .iter()
+            .rev()
+            .find(|st| st.card == card)
+            .is_some_and(|st| st.buy_index == Some(0)),
         _ => false,
     };
     if on_gain {
@@ -945,7 +946,9 @@ fn exchange(g: &mut Game, f: &mut CardFrame) -> Flow {
     let Some(top) = top else {
         return Flow::done();
     };
-    g.return_to_pile(this);
+    if !g.return_to_pile(this) {
+        return Flow::done();
+    }
     g.move_card(top, Zone::Discard(p), Pos::Top);
     g.emit(Event::Moved {
         player: p,

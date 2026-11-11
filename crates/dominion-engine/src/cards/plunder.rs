@@ -10,7 +10,7 @@
 //! in an `Until::EndOfTurn` lasting's `data.cards`. Traits sit on their pile
 //! (`Pile::traits`); the Loot pile is a face-down non-Supply pile named [`Card::Loot`].
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{CardFrame, Hook, SetRules, duration_trigger, mode_mask, turn_durations};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -82,6 +82,12 @@ fn has_start(card: Card) -> bool {
             | Card::Patient
             | Card::Prepare
     )
+}
+
+/// Cards whose start-of-turn effect is "at the start of each of your turns for the rest of
+/// the game": it resolves on every turn, the one it is played at the start of included.
+fn permanent(card: Card) -> bool {
+    matches!(card, Card::Quartermaster | Card::EndlessChalice)
 }
 
 /// Cards whose Duration waits for "the next time" something happens.
@@ -317,8 +323,9 @@ impl SetRules for Rules {
     }
 
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
-        for l in due_durations(g, occ) {
-            if l.card.set() == Set::Plunder && has_start(l.card) {
+        for l in turn_durations(g, occ) {
+            let due = permanent(l.card) || l.turn < g.player(l.owner).turns_taken;
+            if due && l.card.set() == Set::Plunder && has_start(l.card) {
                 out.push(duration_trigger(l, START));
             }
         }
@@ -338,7 +345,7 @@ impl SetRules for Rules {
                 }
             }
             Occasion::StartTurn { player } => {
-                if g.pile_of(Card::Shaman).is_some() {
+                if setup::in_game(g, |c| c == Card::Shaman) {
                     out.push(Trigger::new(player, Card::Shaman, SHAMAN_GAIN));
                 }
                 if !traited_in_hand(g, player, Card::Shy).is_empty() {
@@ -604,7 +611,7 @@ fn trait_pile(g: &Game, t: Card) -> Option<PileId> {
 /// Whether cards named `card` are from the pile with Trait `t` (even once that pile is
 /// out of the game).
 fn is_trait(g: &Game, card: Card, t: Card) -> bool {
-    trait_pile(g, t).is_some_and(|pile| g.pile(pile).card == card.def().pile.unwrap_or(card))
+    trait_pile(g, t).is_some_and(|pile| g.origin_pile(card) == Some(pile))
 }
 
 fn is_traited(g: &Game, id: CardId, t: Card) -> bool {
@@ -925,8 +932,7 @@ fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>
 fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     if f.pc == 0 {
-        let permanent = matches!(f.card, Card::Quartermaster | Card::EndlessChalice);
-        let l = if permanent {
+        let l = if permanent(f.card) {
             f.lasting
                 .and_then(|id| g.lasting().iter().find(|l| l.id == id).cloned())
         } else {

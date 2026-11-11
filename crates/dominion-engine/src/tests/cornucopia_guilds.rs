@@ -801,6 +801,16 @@ fn footpad_draws_for_any_player_gaining_in_an_action_phase() {
 }
 
 #[test]
+fn footpad_draws_for_a_gain_at_the_start_of_a_turn() {
+    let mut g = setup(&[Card::Footpad, Card::Shaman]);
+    g.create(Card::Gold, Zone::Trash);
+    g.start();
+    // Shaman's gain: the start of a turn is part of its Action phase.
+    assert_eq!(g.count_owned(P0, Card::Gold), 1);
+    assert_eq!(g.hand(P0).len(), 6);
+}
+
+#[test]
 fn moat_comes_before_revealing_a_bane() {
     let mut g = setup(&[Card::YoungWitch, Card::Moat]);
     hand(&mut g, P0, &[Card::YoungWitch, Card::Estate, Card::Estate]);

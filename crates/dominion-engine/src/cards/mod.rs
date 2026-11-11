@@ -8,11 +8,11 @@
 //! matches on `frame.pc`. Each arm does some work, sets `pc` to the next step, and either
 //! asks a decision, calls a child frame, or finishes. A played card's vanilla bonuses
 //! ([`crate::CardDef::plus`], a Treasure's `coins`) are applied before its `Hook::Main`
-//! runs.
+//! runs, and after its [`prelude`].
 
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::Event;
-use crate::frame::{Flow, Input};
+use crate::frame::{Flow, Frame, Input};
 use crate::game::{Lasting, Scratch, Until, Zone};
 use crate::setup::Setup;
 use crate::trigger::{Occasion, Trigger};
@@ -339,19 +339,24 @@ sets! {
     Promos => promos,
 }
 
-/// The Duration effects (from [`CardFrame::add_duration`]) due now, if `occ` is a
-/// `StartTurn`: the turn player's, made on an earlier turn of theirs (one played during
-/// this start of turn waits for the next).
-pub(crate) fn due_durations<'a>(g: &'a Game, occ: &Occasion) -> impl Iterator<Item = &'a Lasting> {
+/// The turn player's Duration effects (from [`CardFrame::add_duration`]), if `occ` is a
+/// `StartTurn`: what happens "at the start of each of your turns" (Hireling) does so on
+/// every one, the turn it is played at the start of included.
+pub(crate) fn turn_durations<'a>(g: &'a Game, occ: &Occasion) -> impl Iterator<Item = &'a Lasting> {
     let player = match *occ {
         Occasion::StartTurn { player } => Some(player),
         _ => None,
     };
-    g.lasting().iter().filter(move |l| {
-        Some(l.owner) == player
-            && l.until == Until::Removed
-            && l.turn < g.player(l.owner).turns_taken
-    })
+    g.lasting()
+        .iter()
+        .filter(move |l| Some(l.owner) == player && l.until == Until::Removed)
+}
+
+/// The Duration effects due "at the start of your next turn", if `occ` is a `StartTurn`:
+/// the turn player's, made on an earlier turn of theirs (one played during this start of
+/// turn waits for the next).
+pub(crate) fn due_durations<'a>(g: &'a Game, occ: &Occasion) -> impl Iterator<Item = &'a Lasting> {
+    turn_durations(g, occ).filter(|l| l.turn < g.player(l.owner).turns_taken)
 }
 
 /// The start-of-turn trigger that resolves Duration effect `l` as its card's `ability`.
@@ -362,6 +367,19 @@ pub(crate) fn duration_trigger(l: &Lasting, ability: u8) -> Trigger {
         Some(c) => t.on(c),
         None => t,
     }
+}
+
+/// An Omen's "+1 Sun" is resolved as the card's ability with this number (the ones above
+/// it are `menagerie::EXILE_DISCARD`, `frame::PAY_OTHERWISE` and `frame::OVERPAY`).
+pub(crate) const SUN: u8 = 252;
+
+/// What following `card`'s instructions does before anything else, its vanilla bonuses
+/// included: an Omen's "+1 Sun".
+pub(crate) fn prelude(card: Card, player: PlayerId, id: CardId) -> Option<Frame> {
+    card.is(Types::OMEN).then(|| {
+        let f = CardFrame::new(card, Hook::Ability(SUN), player, Some(id));
+        Frame::Card(Box::new(f))
+    })
 }
 
 /// The chosen `Opt::Mode`s as a bit mask, to resolve in printed order with [`take_mode`].

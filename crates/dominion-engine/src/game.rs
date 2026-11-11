@@ -435,6 +435,10 @@ pub struct GainState {
     /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
     /// you gain", "your second gain this turn").
     pub turn_index: Option<usize>,
+    /// Once gained by the turn's player in their Buy phase: its position among the cards
+    /// gained in that Buy phase ("the first card you gain in your Buy phase").
+    #[serde(default)]
+    pub buy_index: Option<usize>,
 }
 
 /// A play in progress, until its `AfterPlay` window closes. "When you play" triggers may
@@ -594,6 +598,11 @@ impl Game {
         self.prophecy
     }
 
+    /// Whether it is an Action phase: the start of a turn is part of its Action phase.
+    pub fn in_action_phase(&self) -> bool {
+        matches!(self.turn.phase, Phase::Start | Phase::Action)
+    }
+
     /// Whether the game's Prophecy is in effect (all its Sun tokens removed).
     pub fn prophecy_active(&self, card: Card) -> bool {
         self.prophecy == Some((card, 0))
@@ -635,6 +644,18 @@ impl Game {
     pub fn home_pile(&self, card: Card) -> Option<PileId> {
         let name = card.def().pile.unwrap_or(card);
         self.pile_of(name).or_else(|| self.pile_of(card))
+    }
+
+    /// The pile `card` is from, even one no longer in the game (Divine Wind): its cards are
+    /// still that pile's for what marks the pile (the Bane, Obelisk).
+    pub fn origin_pile(&self, card: Card) -> Option<PileId> {
+        self.home_pile(card).or_else(|| {
+            let name = card.def().pile.unwrap_or(card);
+            self.piles
+                .iter()
+                .position(|p| p.card == name)
+                .map(|i| PileId(i as u8))
+        })
     }
 
     /// What `id` cost as it was gained, while its gain is in progress ("when you gain a

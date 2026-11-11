@@ -5,7 +5,7 @@ use super::{CardFrame, Hook, SetRules};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, OVERPAY, Value};
-use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -267,7 +267,7 @@ impl SetRules for Rules {
                     _ => {}
                 }
                 // "In games using this": wherever its cards are (the Black Market deck).
-                if g.turn.phase == Phase::Action && setup::in_game(g, |c| c == Card::Footpad) {
+                if g.in_action_phase() && setup::in_game(g, |c| c == Card::Footpad) {
                     out.push(Trigger::new(player, Card::Footpad, FOOTPAD_DRAW));
                 }
             }
@@ -1221,7 +1221,7 @@ fn young_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .hand(t)
                 .iter()
                 .copied()
-                .filter(|&c| bane.is_some() && g.home_pile(g.card(c)) == bane)
+                .filter(|&c| bane.is_some() && g.origin_pile(g.card(c)) == bane)
                 .collect();
             if banes.is_empty() {
                 f.pc = 4;

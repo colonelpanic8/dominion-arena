@@ -132,6 +132,44 @@ fn an_omen_removes_a_sun_and_the_last_one_makes_the_prophecy_happen() {
 }
 
 #[test]
+fn an_omens_sun_comes_before_its_other_bonuses() {
+    let mut g = game(
+        &[Card::Poet, Card::Watchtower, Card::Village],
+        &[Card::KindEmperor],
+        1,
+    );
+    hand(&mut g, P0, &[Card::Poet, Card::Watchtower]);
+    deck(&mut g, P0, &[Card::Gold]);
+    g.start();
+    play(&mut g, Card::Poet);
+    // Kind Emperor happens first: an Action gained to the hand, which Watchtower puts onto
+    // the deck. Then Poet's +1 Card draws it, leaving the Gold to reveal.
+    choose_pile(&mut g, Card::Village);
+    resolve_triggers(&mut g);
+    modes(&mut g, &[1]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Watchtower, Card::Village]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold]);
+}
+
+#[test]
+fn an_omen_played_as_way_of_the_chameleon_still_removes_a_sun_first() {
+    let mut g = game(
+        &[Card::TeaHouse],
+        &[Card::WayOfTheChameleon, Card::GreatLeader],
+        1,
+    );
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheChameleon)));
+    // +$1 for its +1 Card and +2 Cards for its +$2; Great Leader is already in effect.
+    assert_eq!(g.prophecy(), Some((Card::GreatLeader, 0)));
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1, 2));
+    assert_eq!(g.turn().actions, 2);
+}
+
+#[test]
 fn throne_room_on_an_omen_removes_two_suns() {
     let mut g = game(&[Card::Poet, Card::ThroneRoom], &[Card::Panic], 5);
     hand(&mut g, P0, &[Card::ThroneRoom, Card::Poet]);
@@ -295,6 +333,18 @@ fn rustic_village_may_discard_two_cards_for_a_card() {
     yes(&mut g);
     assert_eq!(hand_kinds(&g, P0), [Card::Silver]);
     assert_eq!(discard_kinds(&g, P0), [Card::Estate, Card::Curse]);
+}
+
+#[test]
+fn rustic_village_may_discard_its_only_card_for_nothing() {
+    let mut g = setup(&[Card::RusticVillage]);
+    hand(&mut g, P0, &[Card::RusticVillage]);
+    deck(&mut g, P0, &[Card::Curse, Card::Silver]);
+    g.start();
+    play(&mut g, Card::RusticVillage);
+    yes(&mut g);
+    assert_eq!(discard_kinds(&g, P0), [Card::Curse]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver]);
 }
 
 // ---- Shadow ----
@@ -665,6 +715,23 @@ fn samurai_attacks_once_and_gives_a_coin_at_the_start_of_every_turn() {
 }
 
 #[test]
+fn samurai_played_at_the_start_of_a_turn_gives_its_coin_that_turn() {
+    let mut g = with_prophecy(&[Card::Samurai], Card::RapidExpansion);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &coppers(12));
+    g.start();
+    buy_phase_with(&mut g, 6);
+    buy(&mut g, Card::Samurai);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Rapid Expansion plays it; P1 discards down to 3.
+    let discards = candidates(&g)[..2].to_vec();
+    choose(&mut g, &discards);
+    assert_eq!(g.turn().played, [Card::Samurai]);
+    assert_eq!(g.turn().coins, 1);
+}
+
+#[test]
 fn snake_witch_returns_to_its_pile_to_curse_when_the_hand_has_no_duplicates() {
     let mut g = setup(&[Card::SnakeWitch]);
     hand(&mut g, P0, &[Card::SnakeWitch, Card::Estate]);
@@ -762,6 +829,30 @@ fn continue_returns_to_the_action_phase_and_plays_the_card_gained() {
     g.players[0].debt = 0;
     reask(&mut g);
     assert!(!moves(&g).contains(&Move::BuyLandscape(Card::Continue)));
+}
+
+#[test]
+fn continue_plays_the_card_where_it_was_gained_to_unless_it_has_moved() {
+    let mut g = game(&[Card::NomadCamp], &[Card::Continue], 0);
+    hand(&mut g, P0, &[]);
+    g.start();
+    // Nomad Camp is gained onto the deck.
+    buy_landscape(&mut g, Card::Continue);
+    assert_eq!(in_play_kinds(&g, P0), [Card::NomadCamp]);
+    assert_eq!(g.turn().coins, 2);
+
+    let mut g = game(&[Card::Village, Card::Watchtower], &[Card::Continue], 0);
+    hand(&mut g, P0, &[Card::Watchtower]);
+    g.start();
+    end_phase(&mut g);
+    buy_landscape(&mut g, Card::Continue);
+    choose_pile(&mut g, Card::Village);
+    // Watchtower puts the Village onto the deck: Continue has lost track of it.
+    resolve_triggers(&mut g);
+    modes(&mut g, &[1]);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Village);
+    assert_eq!(g.turn().phase, Phase::Action);
+    assert_eq!((g.turn().actions, g.turn().buys), (2, 1));
 }
 
 #[test]
@@ -987,6 +1078,93 @@ fn divine_wind_replaces_the_kingdom_piles_with_ten_new_ones() {
     check_zones(&g);
 }
 
+/// A game one Sun away from Divine Wind, with setup choices (by the card that makes them).
+fn before_divine_wind(kingdom: &[Card], landscapes: &[Card], choices: &[(Card, Card)]) -> Game {
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: landscapes.to_vec(),
+        ..GameConfig::new(2, kingdom.to_vec(), 7)
+    };
+    config.landscapes.push(Card::DivineWind);
+    for &(by, choice) in choices {
+        config.setup_choices.insert(by, vec![choice]);
+    }
+    let mut g = setup_with(config);
+    g.prophecy = Some((Card::DivineWind, 1));
+    g
+}
+
+#[test]
+fn a_card_from_a_pile_divine_wind_removed_cannot_be_exchanged() {
+    let mut g = before_divine_wind(&[Card::Page, Card::TeaHouse], &[], &[]);
+    hand(&mut g, P0, &[Card::TeaHouse, Card::Page]);
+    deck(&mut g, P0, &coppers(12));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Page), None);
+    play(&mut g, Card::Page);
+    // It can't return to its pile, so it is discarded like any card.
+    next_turn(&mut g);
+    assert_eq!(g.count_owned(P0, Card::Page), 1);
+    assert_eq!(g.count_owned(P0, Card::TreasureHunter), 0);
+}
+
+#[test]
+fn the_bane_is_still_the_bane_after_divine_wind() {
+    let mut g = before_divine_wind(
+        &[Card::YoungWitch, Card::TeaHouse],
+        &[],
+        &[(Card::YoungWitch, Card::Aristocrat)],
+    );
+    hand(
+        &mut g,
+        P0,
+        &[Card::TeaHouse, Card::YoungWitch, Card::Copper, Card::Copper],
+    );
+    deck(&mut g, P0, &coppers(10));
+    hand(&mut g, P1, &[Card::Aristocrat, Card::Copper]);
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Aristocrat), None);
+    // Its discard isn't asked: the hand is all Coppers.
+    play(&mut g, Card::YoungWitch);
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(purpose(&g), Purpose::Reveal);
+    yes(&mut g);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+}
+
+#[test]
+fn obelisk_still_scores_its_pile_after_divine_wind() {
+    let mut g = before_divine_wind(
+        &[Card::TeaHouse, Card::Smithy],
+        &[Card::Obelisk],
+        &[(Card::Obelisk, Card::Smithy)],
+    );
+    hand(&mut g, P0, &[Card::TeaHouse, Card::Smithy]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    assert_eq!(g.score(P0), 2);
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Smithy), None);
+    assert_eq!(g.score(P0), 2);
+}
+
+#[test]
+fn in_games_using_this_abilities_go_on_after_divine_wind() {
+    let mut g = before_divine_wind(&[Card::Shaman, Card::Footpad, Card::TeaHouse], &[], &[]);
+    g.create(Card::TeaHouse, Zone::Hand(P0));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Shaman), None);
+    g.create(Card::Gold, Zone::Trash);
+    next_turn(&mut g);
+    // Shaman's gain at the start of P1's turn, and Footpad's +1 Card for it.
+    assert_eq!(g.count_owned(P1, Card::Gold), 1);
+    assert_eq!(g.hand(P1).len(), 6);
+}
+
 #[test]
 fn enlightenment_makes_treasures_actions_that_draw_in_the_action_phase() {
     let mut g = with_prophecy(&[Card::RiceBroker], Card::Enlightenment);
@@ -1003,6 +1181,25 @@ fn enlightenment_makes_treasures_actions_that_draw_in_the_action_phase() {
     to_buy(&mut g);
     play(&mut g, Card::Copper);
     assert_eq!(g.turn().coins, 1);
+}
+
+#[test]
+fn enlightenment_applies_to_a_treasure_played_at_the_start_of_a_turn() {
+    let mut g = game(&[Card::Smithy], &[Card::Enlightenment, Card::Summon], 0);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Estate; 12]);
+    g.start();
+    buy_phase_with(&mut g, 5);
+    buy_landscape(&mut g, Card::Summon);
+    choose_pile(&mut g, Card::Silver);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Summon played the Silver: the start of a turn is part of its Action phase.
+    assert_eq!(g.turn().played, [Card::Silver]);
+    assert_eq!(
+        (g.turn().coins, g.turn().actions, g.hand(P0).len()),
+        (0, 2, 6)
+    );
 }
 
 #[test]
@@ -1114,6 +1311,26 @@ fn panic_gives_buys_for_treasures_and_returns_them_to_their_piles() {
     );
     assert_eq!(g.count_owned(P0, Card::Silver), 0);
     assert_eq!(g.count_owned(P0, Card::Copper), 0);
+}
+
+#[test]
+fn capitals_debt_is_taken_though_panic_returns_it_to_its_pile() {
+    let mut g = with_prophecy(&[Card::Capital], Card::Panic);
+    hand(&mut g, P0, &[Card::Capital]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Capital);
+    g.turn.coins = 0;
+    reask(&mut g);
+    let n = turn_starts(&g);
+    while turn_starts(&g) == n {
+        // The Debt is not something to order after Panic's return.
+        assert_eq!(purpose(&g), Purpose::Turn);
+        end_phase(&mut g);
+    }
+    assert_eq!(g.count_owned(P0, Card::Capital), 0);
+    assert_eq!(g.player(P0).debt, 6);
 }
 
 #[test]

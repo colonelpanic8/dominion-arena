@@ -928,6 +928,18 @@ fn hireling_draws_a_card_every_turn_for_the_rest_of_the_game() {
     }
 }
 
+#[test]
+fn hireling_played_at_the_start_of_a_turn_draws_that_turn() {
+    let mut g = game(&[Card::Hireling], &[Card::Piazza]);
+    g.players[0].projects.push(Card::Piazza);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Hireling, Card::Copper, Card::Copper]);
+    g.start();
+    // Piazza played it; it is still the start of the turn.
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Hireling]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+}
+
 // ---- Other Kingdom cards ----
 
 #[test]
@@ -1630,6 +1642,23 @@ fn lost_arts_training_and_pathfinding_move_their_tokens() {
 }
 
 #[test]
+fn an_action_supply_pile_is_one_by_its_randomizer_whatever_cards_are_in_it() {
+    let mut g = buy_phase(&[Card::Castles, Card::Catapult], &[Card::Training], 6);
+    let catapults = g.supply_pile(Card::Catapult).unwrap();
+    while let Some(top) = g
+        .pile_top(catapults)
+        .filter(|&c| g.card(c) == Card::Catapult)
+    {
+        g.move_card(top, Zone::Trash, crate::game::Pos::Top);
+    }
+    assert_eq!(g.pile_top(catapults).map(|c| g.card(c)), Some(Card::Rocks));
+    // The Catapult / Rocks pile is the only one: the Castles are a Victory pile, for all
+    // their Action Castles.
+    buy_event(&mut g, Card::Training);
+    assert_eq!(g.pile(catapults).tokens, [(P0, Token::PlusCoin)]);
+}
+
+#[test]
 fn inheritance_sets_an_action_aside_and_makes_estates_play_it() {
     let mut g = game(
         &[Card::Village, Card::Smithy, Card::Festival],
@@ -1795,6 +1824,26 @@ fn messenger_gained_in_the_action_phase_does_nothing_extra() {
     play(&mut g, Card::Workshop);
     choose_pile(&mut g, Card::Messenger);
     assert_eq!(g.turn().gained, [Card::Messenger]);
+    assert_eq!(purpose(&g), Purpose::Turn);
+}
+
+#[test]
+fn messenger_stays_the_first_gain_while_another_gain_resolves_before_its_ability() {
+    let mut g = game(&[Card::Messenger, Card::Duplicate], &[]);
+    on_tavern(&mut g, P0, Card::Duplicate);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    budget(&mut g, 6, 2);
+    buy(&mut g, Card::Messenger);
+    accept(&mut g, Card::Duplicate);
+    assert_eq!(g.turn().gained, [Card::Messenger, Card::Messenger]);
+    // The first Messenger's ability is still to resolve; the copy has none.
+    assert_eq!(purpose(&g), Purpose::Gain);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(discard_kinds(&g, P1), [Card::Silver]);
+    assert_eq!(g.count_owned(P0, Card::Silver), 1);
     assert_eq!(purpose(&g), Purpose::Turn);
 }
 

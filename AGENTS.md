@@ -89,9 +89,9 @@ them.
   order from the turn's player; also when the play is replaced or blocked: Reactions
   answer the card being played), then apply the
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
-  `SetRules::modify_bonus`; a Way's own instead, unmodified) and run the card's
-  `Hook::Main`, then the `AfterPlay` window. `chain` lists the cards playing it
-  (Throne Room ...); pass
+  `SetRules::modify_bonus`; a Way's own instead, unmodified; an Omen's +1 Sun comes
+  before them: `cards::prelude`) and run the card's `Hook::Main`, then the `AfterPlay`
+  window. `chain` lists the cards playing it (Throne Room ...); pass
   `f.chain_for_child()` when a card plays another more than once (only then does it stay
   in play with a Duration).
   `SetRules::can_play` can forbid a play from the hand (Warlord, Voyage): `Frame::play`
@@ -127,6 +127,8 @@ them.
   `f.add_duration(g, data)` (keeps the card in play with what played it:
   `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting
   (`cards::due_durations` lists the ones due: made on an earlier turn of the owner's;
+  `cards::turn_durations` lists them all, for "at the start of each of your turns",
+  which includes a turn the card is played at the start of;
   `cards::duration_trigger` builds the trigger), whose ability removes it
   (`f.end_lasting(g)`). "This turn" effects use `Until::EndOfTurn`, "until your next
   turn" `Until::StartOfTurn(owner)`. Sets read `g.lasting()` for cost changes, triggers,
@@ -220,6 +222,11 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   card the rules allow (a configured choice can be any of them; a random one is never
   an unused removed card), and narrow only the random pick with `choose_or_random`.
   `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
+  What marks a pile keeps applying to its cards (the Bane, Obelisk, Traits): ask
+  `g.origin_pile(card)`. "In games using this" asks `setup::in_game`, not for a pile.
+- A pile's types are those of the card it is named after (`Pile::card`: its randomizer
+  or top card), whatever is in it now: that decides an "Action Supply pile".
+- "In an Action phase" asks `g.in_action_phase()`: the start of a turn is part of it.
 - "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
   playable as if in hand (Shadow cards in the deck). "Return to your Action phase" is
   `Frame::return_to_action`, never a write to `turn.phase`: the Buy phase ends there

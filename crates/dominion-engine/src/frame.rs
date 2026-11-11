@@ -1052,6 +1052,7 @@ fn resume_gain(
                 since: g.log.len(),
                 cost: g.cost_of(id),
                 turn_index: None,
+                buy_index: None,
             });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
@@ -1085,11 +1086,12 @@ fn resume_gain(
             let kind = g.card(st.card);
             if st.player == g.turn.player {
                 let types = g.types(st.card);
-                g.gains.last_mut().expect("gain in progress").turn_index =
-                    Some(g.turn.gained.len());
+                let gain = g.gains.last_mut().expect("gain in progress");
+                gain.turn_index = Some(g.turn.gained.len());
                 g.turn.gained.push(kind);
                 g.turn.gained_types.push(types);
                 if g.turn.phase == Phase::Buy {
+                    gain.buy_index = Some(g.turn.gained_this_buy_phase().len());
                     g.turn.gained_in_buy_phase.push(kind);
                     g.turn.gained_in_buy_phase_types.push(types);
                 }
@@ -1439,6 +1441,17 @@ impl PlayFrame {
                     g.add_coins(p, plus.coins as u32);
                     return Flow::Call(Frame::draw(p, plus.cards as usize));
                 }
+                self.pc = 10;
+                if st.way.is_none()
+                    && let Some(first) = cards::prelude(st.behavior, p, id)
+                {
+                    return Flow::Call(first);
+                }
+                Flow::Continue
+            }
+            10 => {
+                let st = g.plays.last().expect("play in progress");
+                let mine = p == g.turn.player;
                 // A Way's own +Cards, +Actions, ... replace the card's.
                 let def = st.way.unwrap_or(st.behavior).def();
                 let mut bonus = cards::Bonus {
