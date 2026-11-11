@@ -468,7 +468,10 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                 });
             }
             if g.ending.is_some() {
-                let p = g.final_round.pop_front().expect("a final-round turn is due");
+                let p = g
+                    .final_round
+                    .pop_front()
+                    .expect("a final-round turn is due");
                 g.turn = Turn::new(p);
             } else {
                 g.turn = Turn::new(*next);
