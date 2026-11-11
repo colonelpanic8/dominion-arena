@@ -338,8 +338,11 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::WayOfTheOwl, _) => {
-                let n = 6usize.saturating_sub(g.hand(f.player).len());
-                draw_then_done(f, 0, n)
+                if f.pc == 0 {
+                    f.pc = 1;
+                    return Some(Flow::Call(Frame::draw_to(f.player, 6)));
+                }
+                Flow::done()
             }
             (Card::WayOfTheRat, _) => way_of_the_rat(g, f, input),
             (Card::WayOfTheTurtle, _) => {

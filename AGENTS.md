@@ -117,7 +117,9 @@ them.
   (through `modify_types`), `g.card(id)` (what a card currently is: `Game::masks` make
   Band of Misfits-style cards another card until they leave play; `g.printed(id)` is
   what is printed). `SetRules::behavior` lets a card use another card's abilities
-  (Inheritance).
+  (Inheritance). Effects that look back at the turn ("the first Action you play", "the
+  third Action you gain") count the types cards had then: `Turn::played_types` /
+  `gained_types` (`played_of`, `gained_of`), never `Card::is` on `played` / `gained`.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
   Debt, VP tokens, Projects, States, Adventures tokens, ...), `Pile` (VP / Debt /
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with
@@ -172,6 +174,8 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   `return_to_pile`, `add_coins`) trigger nothing.
 - `+$` goes through `g.add_coins(p, n)` (the -$1 token). Decisions are asked with the
   `CardFrame::ask_*` helpers.
+- "Draw until you have N cards in hand" is `Frame::draw_to(p, n)`, never a draw of
+  `n - hand`: the -1 Card token replaces a draw without making the hand smaller.
 - Set cards aside face up with `g.set_aside` (or `g.set_aside_revealed` for a card
   just revealed); `move_card` to `SetAside` leaves it face down, seen only by its owner.
   Public state kept in the set's `State` goes to agents through `SetRules::notes`.

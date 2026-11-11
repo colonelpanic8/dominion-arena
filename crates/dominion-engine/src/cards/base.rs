@@ -481,7 +481,8 @@ fn library(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 1;
-            Flow::Call(Frame::draw(f.player, 1))
+            // One more card, even if the -1 Card token takes the place of a draw.
+            Flow::Call(Frame::draw_to(f.player, g.hand(f.player).len() + 1))
         }
         1 => {
             let Some(c) = input.card() else {

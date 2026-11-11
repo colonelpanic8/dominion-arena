@@ -120,6 +120,9 @@ pub(crate) enum Frame {
     Draw {
         player: PlayerId,
         count: usize,
+        /// Draw until the hand has this many cards instead of drawing `count`.
+        #[serde(default)]
+        to: Option<usize>,
         drawn: Vec<CardId>,
         started: bool,
         /// One draw shuffles at most once, even if its discard pile refills meanwhile.
@@ -188,6 +191,19 @@ impl Frame {
         Frame::Draw {
             player,
             count,
+            to: None,
+            drawn: vec![],
+            started: false,
+            shuffled: false,
+        }
+    }
+
+    /// Draw until `player` has `size` cards in hand, or has no more cards to draw.
+    pub(crate) fn draw_to(player: PlayerId, size: usize) -> Frame {
+        Frame::Draw {
+            player,
+            count: 0,
+            to: Some(size),
             drawn: vec![],
             started: false,
             shuffled: false,
@@ -328,20 +344,27 @@ impl Frame {
             Frame::Draw {
                 player,
                 count,
+                to,
                 drawn,
                 started,
                 shuffled,
             } => {
-                let p = *player;
+                let (p, to) = (*player, *to);
+                // Whether another card is to be drawn after `n` of `count`.
+                let wants = |g: &Game, count: usize, n: usize| match to {
+                    Some(size) => g.hand(p).len() < size,
+                    None => n < count,
+                };
                 if !*started {
                     *started = true;
-                    let pl = &mut g.players[p.index()];
-                    if pl.minus_card && *count > 0 {
-                        pl.minus_card = false;
-                        *count -= 1;
+                    if g.players[p.index()].minus_card && wants(g, *count, 0) {
+                        g.players[p.index()].minus_card = false;
+                        // The token replaces one draw of a fixed number; a draw up to a
+                        // hand size still goes on to that size.
+                        *count = count.saturating_sub(1);
                     }
                 }
-                while drawn.len() < *count {
+                while wants(g, *count, drawn.len()) {
                     let pl = &g.players[p.index()];
                     if pl.deck.is_empty() {
                         if pl.discard.is_empty() || *shuffled {
@@ -990,11 +1013,14 @@ fn resume_gain(
             }
             let kind = g.card(st.card);
             if st.player == g.turn.player {
+                let types = g.types(st.card);
                 g.gains.last_mut().expect("gain in progress").turn_index =
                     Some(g.turn.gained.len());
                 g.turn.gained.push(kind);
+                g.turn.gained_types.push(types);
                 if g.turn.phase == Phase::Buy {
                     g.turn.gained_in_buy_phase.push(kind);
+                    g.turn.gained_in_buy_phase_types.push(types);
                 }
             }
             g.emit(Event::Gained {
@@ -1220,6 +1246,7 @@ impl PlayFrame {
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
+                    g.turn.played_types.push(g.types(id));
                     g.turn.played_ids.push(id);
                     g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
                 }

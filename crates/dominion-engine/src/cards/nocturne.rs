@@ -230,8 +230,7 @@ impl SetRules for Rules {
             (Card::CursedVillage, _) => {
                 if f.pc == 0 {
                     f.pc = 1;
-                    let n = 6usize.saturating_sub(g.hand(f.player).len());
-                    return Some(Flow::Call(Frame::draw(f.player, n)));
+                    return Some(Flow::Call(Frame::draw_to(f.player, 6)));
                 }
                 Flow::done()
             }
@@ -403,9 +402,13 @@ impl SetRules for Rules {
     }
 
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {
-        !(card.kind() == Kind::Card
-            && card.is(Types::ACTION)
-            && returned_state(g, p, Card::Deluded))
+        if card.kind() != Kind::Card || !returned_state(g, p, Card::Deluded) {
+            return true;
+        }
+        // The copy on offer is in a pile, and every copy there has the same types.
+        let mut copies = g.piles().iter().flat_map(|pile| &pile.cards);
+        let copy = copies.find(|&&c| g.card(c) == card);
+        !copy.map_or(card.is(Types::ACTION), |&c| g.is(c, Types::ACTION))
     }
 
     fn ensure(g: &mut Game, s: &mut Setup) {

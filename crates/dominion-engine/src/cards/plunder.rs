@@ -961,8 +961,7 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Siren => {
             if f.pc == 1 {
                 f.pc = 2;
-                let n = 8usize.saturating_sub(g.hand(p).len());
-                return Flow::Call(Frame::draw(p, n));
+                return Flow::Call(Frame::draw_to(p, 8));
             }
             Flow::done()
         }
@@ -2301,8 +2300,7 @@ fn first_mate(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         },
         2 => {
             f.pc = 3;
-            let n = 6usize.saturating_sub(g.hand(p).len());
-            Flow::Call(Frame::draw(p, n))
+            Flow::Call(Frame::draw_to(p, 6))
         }
         _ => Flow::done(),
     }

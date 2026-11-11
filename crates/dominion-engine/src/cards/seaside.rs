@@ -169,9 +169,9 @@ impl SetRules for Rules {
             Occasion::DiscardFromPlay { player } => {
                 let victory = g
                     .turn
-                    .gained_in_buy_phase
+                    .gained_in_buy_phase_types
                     .iter()
-                    .any(|c| c.is(Types::VICTORY));
+                    .any(|t| t.contains(Types::VICTORY));
                 if victory || player != g.turn.player {
                     return;
                 }

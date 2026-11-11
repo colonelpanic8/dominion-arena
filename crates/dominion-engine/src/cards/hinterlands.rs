@@ -528,11 +528,7 @@ impl SetRules for Rules {
 
 /// Action cards the turn's player has gained this turn.
 fn actions_gained(g: &Game) -> usize {
-    g.turn
-        .gained
-        .iter()
-        .filter(|c| c.is(Types::ACTION))
-        .count()
+    g.turn.gained_of(Types::ACTION)
 }
 
 /// Action cards `p` has in play that Clean-up will discard.
@@ -775,8 +771,7 @@ fn jack_of_all_trades(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         4 => {
             f.pc = 5;
-            let n = 5usize.saturating_sub(g.hand(f.player).len());
-            Flow::Call(Frame::draw(f.player, n))
+            Flow::Call(Frame::draw_to(f.player, 5))
         }
         5 => {
             f.pc = 6;

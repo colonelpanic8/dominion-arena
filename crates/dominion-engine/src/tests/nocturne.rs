@@ -1654,6 +1654,23 @@ fn delusion_stops_buying_actions_for_a_turn() {
     assert!(g.lasting().is_empty());
 }
 
+/// Under Enlightenment the Treasures in the Supply are Actions too.
+#[test]
+fn deluded_stops_buying_cards_that_are_actions_by_an_effect() {
+    let mut g = hexed(
+        Card::Delusion,
+        &[Card::Gold, Card::Copper],
+        &[Card::Copper; 10],
+    );
+    g.prophecy = Some((Card::Enlightenment, 0));
+    next_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    let moves = buy_moves(&g);
+    assert!(moves.contains(&Card::Estate));
+    assert!(!moves.contains(&Card::Silver));
+}
+
 #[test]
 fn envy_makes_silver_and_gold_worth_one_for_a_turn() {
     let mut g = hexed(

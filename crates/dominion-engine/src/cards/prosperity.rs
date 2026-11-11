@@ -125,8 +125,7 @@ impl SetRules for Rules {
                     return Some(Flow::done());
                 }
                 f.pc = 1;
-                let n = 6usize.saturating_sub(g.hand(f.player).len());
-                Flow::Call(Frame::draw(f.player, n))
+                Flow::Call(Frame::draw_to(f.player, 6))
             }
             (Card::Contraband, _) => contraband(g, f, input),
             (Card::CountingHouse, _) => counting_house(g, f, input),

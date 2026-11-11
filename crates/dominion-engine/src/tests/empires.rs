@@ -623,6 +623,47 @@ fn enchantress_affects_only_the_first_action_even_twice_and_moat_blocks_it() {
     assert_eq!(g.hand(P1).len(), 4);
 }
 
+/// Under Enlightenment a Treasure is an Action card, so one played first is the first
+/// Action card its player plays.
+#[test]
+fn enchantress_affects_a_treasure_that_is_an_action_played_first() {
+    let mut g = setup(&[Card::Enchantress]);
+    g.prophecy = Some((Card::Enlightenment, 0));
+    hand(&mut g, P0, &[Card::Enchantress]);
+    deck(&mut g, P0, &[Card::Estate; 12]);
+    hand(&mut g, P1, &[Card::Copper, Card::Estate]);
+    deck(&mut g, P1, &[Card::Estate; 12]);
+    g.start();
+    play(&mut g, Card::Enchantress);
+    next_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    // +1 Card +1 Action instead of $1.
+    assert_eq!((g.turn().coins, g.turn().actions), (0, 2));
+    assert_eq!(g.hand(P1).len(), 2);
+}
+
+#[test]
+fn enchantress_leaves_an_inherited_estate_played_second_alone() {
+    let mut g = setup(&[Card::Enchantress, Card::Village, Card::Smithy]);
+    let village = g.supply_pile(Card::Village).unwrap();
+    let top = g.pile_top(village).unwrap();
+    g.move_card(top, Zone::SetAside(P1), crate::game::Pos::Top);
+    g.ext.adventures.inherited.push((P1, Some(top)));
+    hand(&mut g, P0, &[Card::Enchantress]);
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    hand(&mut g, P1, &[Card::Smithy, Card::Estate]);
+    deck(&mut g, P1, &[Card::Copper; 12]);
+    g.start();
+    play(&mut g, Card::Enchantress);
+    next_turn(&mut g);
+    play(&mut g, Card::Smithy);
+    assert_eq!((g.hand(P1).len(), g.turn().actions), (2, 1));
+    play(&mut g, Card::Estate);
+    // The Estate plays the Village: +1 Card +2 Actions.
+    assert_eq!((g.hand(P1).len(), g.turn().actions), (2, 2));
+}
+
 /// An Enchanted Attack was still played, so Reactions to it can be used.
 #[test]
 fn reactions_answer_an_attack_enchantress_replaces() {

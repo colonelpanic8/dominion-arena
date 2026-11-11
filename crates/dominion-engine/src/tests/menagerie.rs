@@ -1888,6 +1888,16 @@ fn way_of_the_chameleon_changes_plus_cards_after_a_decision_but_not_draw_until()
     play(&mut g, Card::Library);
     way(&mut g, Card::WayOfTheChameleon);
     assert_eq!((g.turn().coins, g.hand(P0).len()), (0, 7));
+
+    // Not even on a card whose other options say +Cards.
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Townsfolk]);
+    hand(&mut g, P0, &[Card::Blacksmith]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Blacksmith);
+    way(&mut g, Card::WayOfTheChameleon);
+    respond(&mut g, Response::option(Opt::Mode(0)));
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (0, 6));
 }
 
 #[test]

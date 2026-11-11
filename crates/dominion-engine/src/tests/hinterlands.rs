@@ -151,6 +151,22 @@ fn cauldron_curses_on_the_third_action_gained() {
     assert_eq!(g.count_owned(P1, Card::Curse), 1);
 }
 
+/// Under Enlightenment the Silvers gained are Actions.
+#[test]
+fn cauldron_counts_cards_that_are_actions_by_an_effect() {
+    let mut g = setup(&[Card::Cauldron]);
+    g.prophecy = Some((Card::Enlightenment, 0));
+    hand(&mut g, P0, &[Card::Cauldron]);
+    g.start();
+    end_phase(&mut g);
+    play(&mut g, Card::Cauldron);
+    gain(&mut g, P0, Card::Silver);
+    gain(&mut g, P0, Card::Silver);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+    gain(&mut g, P0, Card::Silver);
+    assert_eq!(g.count_owned(P1, Card::Curse), 1);
+}
+
 #[test]
 fn moat_protects_from_cauldron() {
     let mut g = setup(&[Card::Cauldron, Card::Village, Card::Moat]);
