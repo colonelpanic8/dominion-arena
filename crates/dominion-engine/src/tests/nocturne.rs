@@ -1347,6 +1347,40 @@ fn the_rivers_gift_draws_a_card_after_the_cleanup_draw() {
     assert_eq!(g.boons().discard.last(), Some(&Card::TheRiversGift));
 }
 
+/// Swindler makes P1 gain a Blessed Village on P0's turn; P1 receives `boon` at once.
+fn swindled_into(boon: Card) -> Game {
+    let mut g = setup(&[Card::BlessedVillage, Card::Swindler, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Swindler]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    deck(&mut g, P1, &[Card::Smithy, Card::Copper]);
+    stack_boons(&mut g, &[boon]);
+    g.start();
+    play(&mut g, Card::Swindler);
+    choose_pile(&mut g, Card::BlessedVillage);
+    assert_eq!(g.pending().unwrap().player, P1);
+    mode(&mut g, 0);
+    assert_eq!(g.turn().player, P0);
+    g
+}
+
+#[test]
+fn a_boon_kept_on_another_players_turn_stays_until_that_turns_cleanup() {
+    let mut g = swindled_into(Card::TheFieldsGift);
+    assert_eq!(g.player(P1).boons_kept, [Card::TheFieldsGift]);
+    assert!(!g.boons().discard.contains(&Card::TheFieldsGift));
+    assert_eq!((g.turn().actions, g.turn().coins), (0, 2));
+    next_turn(&mut g);
+    assert!(g.player(P1).boons_kept.is_empty());
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheFieldsGift));
+
+    let mut g = swindled_into(Card::TheRiversGift);
+    assert_eq!(g.player(P1).boons_kept, [Card::TheRiversGift]);
+    next_turn(&mut g);
+    assert_eq!((g.hand(P0).len(), g.hand(P1).len()), (5, 6));
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheRiversGift));
+}
+
 #[test]
 fn the_seas_and_winds_gifts() {
     let g = bard_receives(Card::TheSeasGift, &[], &[Card::Copper; 3]);

@@ -820,11 +820,9 @@ fn boon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         plus_actions(g, p, plus.actions as u32);
         plus_buys(g, p, plus.buys as u32);
         plus_coins(g, p, plus.coins as u32);
-        if kept_boon(f.card) && p == g.turn.player {
-            let kept = &mut g.players[p.index()].boons_kept;
-            if !kept.contains(&f.card) {
-                kept.push(f.card);
-            }
+        // In front of its first receiver, whoever's turn it is.
+        if kept_boon(f.card) && !g.players.iter().any(|pl| pl.boons_kept.contains(&f.card)) {
+            g.players[p.index()].boons_kept.push(f.card);
         }
         if f.card == Card::TheRiversGift {
             g.add_lasting(
