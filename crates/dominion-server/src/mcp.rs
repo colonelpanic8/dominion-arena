@@ -1,12 +1,16 @@
 //! The MCP tools: one `Session` per MCP session, sharing the `Hub`.
 
-use crate::hub::{Hub, HubError, NewGame, Seat};
+use crate::hub::{Hub, HubError, NewGame, Seat, panic_message};
 use dominion_agent::{AgentView, Answer};
+use futures_util::FutureExt;
+use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock};
-use rmcp::{ErrorData, ServerHandler, tool, tool_handler, tool_router};
+use rmcp::model::{CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock};
+use rmcp::service::RequestContext;
+use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::panic::AssertUnwindSafe;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 /// How a view is returned as text content.
@@ -95,10 +99,14 @@ impl Session {
         }
     }
 
+    fn joined(&self) -> std::sync::MutexGuard<'_, Option<Seat>> {
+        self.joined.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     fn seat(&self, token: Option<&str>) -> Result<Seat, HubError> {
         match token {
             Some(token) => self.hub.find(token),
-            None => self.joined.lock().unwrap().clone().ok_or_else(|| {
+            None => self.joined().clone().ok_or_else(|| {
                 HubError::BadRequest("pass your seat token (or call join_game first)".into())
             }),
         }
@@ -145,7 +153,7 @@ impl Session {
     ) -> Result<CallToolResult, ErrorData> {
         Ok(match self.hub.claim(&p.game_id, &p.token) {
             Ok(seat) => {
-                *self.joined.lock().unwrap() = Some(seat.clone());
+                *self.joined() = Some(seat.clone());
                 self.view_of(&seat, Format::Text)
             }
             Err(e) => failure(e.to_string()),
@@ -255,4 +263,53 @@ when the decision is ordered, or `name` when it says any card may be named). Vie
 dominion/agent-view@2: the JSON is the structured content, the text rendering the text \
 content."
 )]
-impl ServerHandler for Session {}
+impl ServerHandler for Session {
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let tool = request.name.to_string();
+        let router = Self::tool_router();
+        answered(
+            &tool,
+            router.call(ToolCallContext::new(self, request, context)),
+        )
+        .await
+    }
+}
+
+/// Runs a tool call. rmcp leaves a request whose handler panics unanswered, so a panic
+/// becomes an error result.
+async fn answered(
+    tool: &str,
+    call: impl Future<Output = Result<CallToolResponse, ErrorData>>,
+) -> Result<CallToolResponse, ErrorData> {
+    match AssertUnwindSafe(call).catch_unwind().await {
+        Ok(result) => result,
+        Err(panic) => Ok(failure(format!(
+            "{tool} failed inside the server ({}). This is a bug in the server",
+            panic_message(&*panic)
+        ))
+        .into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_tool_call_that_panics_is_answered_with_an_error() {
+        let answer = answered("view", async { panic!("boom") }).await;
+        let Ok(CallToolResponse::Complete(result)) = answer else {
+            panic!("{answer:?}");
+        };
+        assert_eq!(result.is_error, Some(true));
+        let text = result.content[0].as_text().unwrap().text.clone();
+        assert_eq!(
+            text,
+            "view failed inside the server (boom). This is a bug in the server"
+        );
+    }
+}
