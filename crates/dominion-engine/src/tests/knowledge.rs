@@ -242,6 +242,34 @@ fn a_passed_card_is_known_to_both_players() {
     assert_eq!(p1.zone(Zone::Hand(P1)).known.get(&Card::Gold), Some(&1));
 }
 
+/// After a card passes between two other players, a viewer can't say whose each of their
+/// cards is, but still knows how many each of them owns.
+#[test]
+fn players_who_passed_a_card_still_own_their_number_of_cards() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(3, vec![Card::Masquerade], 7)
+    });
+    hand(&mut g, P0, &[Card::Masquerade, Card::Copper]);
+    hand(&mut g, P1, &[Card::Curse, Card::Copper]);
+    hand(&mut g, P2, &[Card::Copper, Card::Copper]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Masquerade);
+    for pass in [Card::Copper, Card::Curse, Card::Copper] {
+        choose_kinds(&mut g, &[pass]);
+        k.update(&mut g);
+    }
+    let known = k.known(&g, P0);
+    for p in [P1, P2] {
+        let (ids, unknown) = &known.owned[p.index()];
+        assert_eq!(
+            ids.values().sum::<u32>() as usize + unknown,
+            g.player(p).owned().count()
+        );
+    }
+}
+
 /// The true identities of `cards`, as `viewer` would name the ones they see.
 fn truth(g: &Game, viewer: PlayerId, cards: &[CardId]) -> CardCount {
     let view = g.view(viewer);

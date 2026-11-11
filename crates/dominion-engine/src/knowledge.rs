@@ -416,19 +416,27 @@ impl Knowledge {
             }
             let owner = zones[0].0.owner();
             let one_owner = zones.iter().all(|(z, _)| z.owner() == owner);
+            // A card is owned as what it is printed as; how many cards each player owns
+            // is public, whoever's they can't be told apart from.
+            match (owner.filter(|_| one_owner), group.ids) {
+                (Some(p), Some(ids)) => {
+                    let owned = &mut out.owned[p.index()].0;
+                    ids.iter().for_each(|(&c, &n)| add(owned, c, n));
+                }
+                _ => {
+                    for &(zone, n) in &zones {
+                        if let Some(p) = zone.owner() {
+                            out.owned[p.index()].1 += n;
+                        }
+                    }
+                }
+            }
             let ids = match (group.cards, group.ids) {
                 ([c], Some(_)) if view.card(*c).is_some() => {
                     view.card(*c).map(|card| CardCount::from([(card, 1)]))
                 }
                 (_, ids) => ids.cloned(),
             };
-            if let Some(p) = owner.filter(|_| one_owner) {
-                let owned = &mut out.owned[p.index()];
-                match &ids {
-                    Some(ids) => ids.iter().for_each(|(&c, &n)| add(&mut owned.0, c, n)),
-                    None => owned.1 += group.cards.len(),
-                }
-            }
             for &(zone, n) in &zones {
                 let z = out.zones.entry(zone).or_default();
                 z.count += n;
