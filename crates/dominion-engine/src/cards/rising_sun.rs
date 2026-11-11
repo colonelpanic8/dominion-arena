@@ -1023,26 +1023,26 @@ fn change(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+/// "You may gain a Gold and get +4 Debt": each part is done as far as it can be, so the Debt
+/// comes even when no Gold does.
 fn gold_mine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            if g.supply_pile(Card::Gold).and_then(|p| g.pile_top(p)).is_none() {
-                return Flow::done();
-            }
             f.pc = 1;
             f.ask_yes_no(Purpose::Gain)
         }
         1 => {
+            if !input.is_yes() {
+                return Flow::done();
+            }
             f.pc = 2;
             match g.supply_pile(Card::Gold) {
-                Some(gold) if input.is_yes() => Flow::Call(Frame::gain(f.player, gold, Dest::Discard)),
-                _ => Flow::done(),
+                Some(gold) => Flow::Call(Frame::gain(f.player, gold, Dest::Discard)),
+                None => Flow::Continue,
             }
         }
         _ => {
-            if !input.cards().is_empty() {
-                g.add_debt(f.player, 4);
-            }
+            g.add_debt(f.player, 4);
             Flow::done()
         }
     }

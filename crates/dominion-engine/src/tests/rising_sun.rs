@@ -577,6 +577,20 @@ fn gold_mine_may_gain_a_gold_for_four_debt() {
     assert_eq!((g.turn().actions, g.turn().buys), (1, 3));
 }
 
+/// With no Gold left, Gold Mine's player may still take the Debt.
+#[test]
+fn gold_mine_gives_the_debt_without_a_gold() {
+    let mut g = setup(&[Card::GoldMine]);
+    let gold = g.supply_pile(Card::Gold).unwrap();
+    replace(&mut g, Zone::Pile(gold), &[]);
+    hand(&mut g, P0, &[Card::GoldMine]);
+    g.start();
+    play(&mut g, Card::GoldMine);
+    yes(&mut g);
+    assert_eq!(g.player(P0).debt, 4);
+    assert_eq!(g.count_owned(P0, Card::Gold), 0);
+}
+
 #[test]
 fn daimyo_replays_the_next_non_command_action() {
     let mut g = setup(&[Card::Daimyo, Card::Craftsman]);
