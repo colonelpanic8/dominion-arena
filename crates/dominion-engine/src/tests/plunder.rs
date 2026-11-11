@@ -2713,3 +2713,52 @@ fn avoid_can_leave_every_shuffled_card_in_the_discard_pile() {
     assert!(g.hand(P0).is_empty());
     assert_eq!(discard_kinds(&g, P0).len(), 2);
 }
+
+#[test]
+#[ignore = "Search compares with the piles empty when it was played, so a pile refilled and emptied again is missed"]
+fn search_counts_a_pile_refilled_and_emptied_again() {
+    let mut g = setup(&[Card::Search, Card::Village]);
+    hand(&mut g, P0, &[Card::Search]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    let village = g.pile_of(Card::Village).unwrap();
+    for c in g.pile(village).cards.clone() {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+    g.start();
+    play(&mut g, Card::Search);
+    let back = g
+        .trash()
+        .iter()
+        .copied()
+        .find(|&c| g.card(c) == Card::Village)
+        .unwrap();
+    g.return_to_pile(back);
+    money(&mut g, 3, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Village);
+    assert_eq!(loot_gained(&g, P0), 1);
+}
+
+#[test]
+fn flagship_after_band_of_misfits_replays_the_card_it_played() {
+    let mut g = setup(&[
+        Card::Flagship,
+        Card::BandOfMisfits,
+        Card::Smithy,
+        Card::Village,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Village, Card::Flagship, Card::BandOfMisfits],
+    );
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Flagship);
+    play(&mut g, Card::BandOfMisfits);
+    choose_pile(&mut g, Card::Smithy);
+    resolve_triggers(&mut g);
+    // Smithy twice, with no second choice.
+    assert_eq!(g.hand(P0).len(), 1 + 6);
+}

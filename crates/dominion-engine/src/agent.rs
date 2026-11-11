@@ -83,7 +83,7 @@ impl<'a> View<'a> {
     }
 
     /// What `id` is, if this player can see it: own hand, anything in play, the trash,
-    /// face-up pile tops, discard tops, own set-aside cards, and cards offered in a decision
+    /// pile tops, discard tops, own set-aside cards, and cards offered in a decision
     /// addressed to this player.
     pub fn card(&self, id: CardId) -> Option<Card> {
         let g = self.game;
