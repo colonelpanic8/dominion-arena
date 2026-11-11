@@ -808,9 +808,8 @@ fn cultist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => each_target_gains(g, f, Card::Ruins, 1),
         1 => {
             let cultists: Vec<CardId> = g
-                .hand(p)
-                .iter()
-                .copied()
+                .playable(p, Types::ACTION)
+                .into_iter()
                 .filter(|&c| g.card(c) == Card::Cultist)
                 .collect();
             if cultists.is_empty() {

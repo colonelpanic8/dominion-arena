@@ -38,7 +38,6 @@ const REACT: u8 = 4;
 const TRASHED: u8 = 5;
 /// A "this turn" or "until your next turn" effect (Insignia, Mining Road, Frigate, ...).
 const THIS_TURN: u8 = 6;
-const AFTER_SHUFFLE: u8 = 7;
 const SHAMAN_GAIN: u8 = 8;
 const TASKMASTER_ARM: u8 = 9;
 /// A Trait's ability other than when-gain (Friendly, Shy, Tireless, ...).
@@ -117,7 +116,6 @@ impl SetRules for Rules {
             (_, Hook::Ability(REACT)) => react(g, f),
             (Card::JewelledEgg, Hook::Ability(TRASHED)) => once(f, |g, f| gain_loot(g, f.player, Dest::Discard), g),
             (_, Hook::Ability(THIS_TURN)) => this_turn(g, f, input),
-            (_, Hook::Ability(AFTER_SHUFFLE)) => after_shuffle(g, f),
             (Card::Shaman, Hook::Ability(SHAMAN_GAIN)) => shaman_gain(g, f, input),
             (Card::Taskmaster, Hook::Ability(TASKMASTER_ARM)) => {
                 if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
@@ -391,27 +389,14 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::JewelledEgg, TRASHED).on(card));
                 }
             }
-            Occasion::WouldShuffle { player } => {
+            Occasion::Shuffled { player, count } => {
                 for l in g.lasting() {
-                    if l.card == Card::Avoid && l.owner == player && l.data.n == 0 {
+                    if l.card == Card::Avoid && l.owner == player {
                         out.push(Trigger::new(player, Card::Avoid, THIS_TURN).via_lasting(l.id));
                     }
                 }
-                let fated = g
-                    .player(player)
-                    .discard
-                    .iter()
-                    .any(|&c| is_traited(g, c, Card::Fated));
-                if fated {
+                if !shuffled_fated(g, player, count).is_empty() {
                     out.push(Trigger::new(player, Card::Fated, THIS_TURN).optional());
-                }
-            }
-            Occasion::AfterShuffle { player } => {
-                for l in g.lasting() {
-                    let held = (l.card == Card::Avoid && l.data.n == 1) || l.card == Card::Fated;
-                    if held && l.owner == player {
-                        out.push(Trigger::new(player, l.card, AFTER_SHUFFLE).via_lasting(l.id));
-                    }
                 }
             }
             _ => {}
@@ -765,7 +750,8 @@ fn search_triggers(g: &Game, out: &mut Vec<Trigger>) {
 fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
     let kind = g.card(card);
     let types = g.types(card);
-    let cost = g.cost_of(card);
+    // What it cost as it was gained (Taskmaster, Cutthroat).
+    let cost = gain_state(g, card).map_or_else(|| g.cost_of(card), |s| s.cost);
     let on = |t: Trigger| t.on(card);
 
     // "When you gain this"
@@ -1559,24 +1545,22 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Flow::done()
             }
         },
-        Card::Avoid => match f.pc {
-            0 => {
+        Card::Avoid => {
+            let Some(Occasion::Shuffled { count, .. }) = f.occ else {
+                return Flow::done();
+            };
+            if f.pc == 0 {
+                f.end_lasting(g);
                 f.pc = 1;
-                let discard = g.player(p).discard.clone();
-                f.ask_cards(discard, 0, 3, Purpose::Move)
+                return f.ask_cards(shuffled_cards(g, p, count), 0, 3, Purpose::Move);
             }
-            _ => {
-                let chosen = input.cards();
-                for &c in &chosen {
-                    g.move_card(c, Zone::SetAside(p), Pos::Top);
+            for c in input.cards() {
+                if g.zone(c) == Zone::Deck(p) {
+                    g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
-                if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
-                    l.data.n = 1;
-                    l.data.cards = chosen;
-                }
-                Flow::done()
             }
-        },
+            Flow::done()
+        }
         Card::Fated => fated(g, f, input),
         Card::Journey => {
             let all = g.in_play(p).to_vec();
@@ -1589,18 +1573,31 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// Fated: put any of the Fated cards about to be shuffled on top or at the bottom.
+/// The cards just shuffled into `p`'s deck: its bottom `count` cards.
+fn shuffled_cards(g: &Game, p: PlayerId, count: usize) -> Vec<CardId> {
+    let deck = &g.player(p).deck;
+    deck[..count.min(deck.len())].to_vec()
+}
+
+fn shuffled_fated(g: &Game, p: PlayerId, count: usize) -> Vec<CardId> {
+    if trait_pile(g, Card::Fated).is_none() {
+        return vec![];
+    }
+    shuffled_cards(g, p, count)
+        .into_iter()
+        .filter(|&c| is_traited(g, c, Card::Fated))
+        .collect()
+}
+
+/// Fated: put any of the Fated cards just shuffled on top of or under the shuffled cards.
 fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
+    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
+        return Flow::done();
+    };
     match f.pc {
         0 => {
-            let fated: Vec<CardId> = g
-                .player(p)
-                .discard
-                .iter()
-                .copied()
-                .filter(|&c| is_traited(g, c, Card::Fated))
-                .collect();
+            let fated = shuffled_fated(g, p, count);
             let n = fated.len();
             f.s.cards = fated.clone();
             f.pc = 1;
@@ -1632,72 +1629,33 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let ordered = input.cards();
                 f.s.cards.splice(..top, ordered);
             }
-            if f.s.cards.is_empty() {
-                return Flow::done();
-            }
-            for &c in &f.s.cards {
+            let chosen: Vec<CardId> = std::mem::take(&mut f.s.cards)
+                .into_iter()
+                .filter(|&c| g.zone(c) == Zone::Deck(p))
+                .collect();
+            let shuffled = shuffled_cards(g, p, count).len();
+            for &c in &chosen {
                 g.emit(Event::Revealed {
                     player: p,
                     card: g.card(c),
                 });
                 g.move_card(c, Zone::SetAside(p), Pos::Top);
             }
-            let data = Scratch {
-                cards: std::mem::take(&mut f.s.cards),
-                n: top as i32,
-                i: g.player(p).deck.len(),
-                ..Scratch::default()
-            };
-            g.add_lasting(Card::Fated, p, None, vec![], Until::EndOfTurn, data);
+            let (on_top, under) = chosen.split_at(top.min(chosen.len()));
+            let at = shuffled - chosen.len() + under.len();
+            for &c in under {
+                g.move_card(c, Zone::Deck(p), Pos::Bottom);
+            }
+            // Inserting each at the same place leaves the first one on top.
+            for &c in on_top {
+                g.move_card(c, Zone::Deck(p), Pos::Top);
+                let deck = &mut g.players[p.index()].deck;
+                let c = deck.pop().expect("just moved");
+                deck.insert(at, c);
+            }
             Flow::done()
         }
     }
-}
-
-fn after_shuffle(g: &mut Game, f: &mut CardFrame) -> Flow {
-    let Some(l) = f.end_lasting(g) else {
-        return Flow::done();
-    };
-    let p = l.owner;
-    let cards: Vec<CardId> = l
-        .data
-        .cards
-        .iter()
-        .copied()
-        .filter(|&c| g.zone(c) == Zone::SetAside(p))
-        .collect();
-    if l.card == Card::Avoid {
-        for c in cards {
-            g.move_card(c, Zone::Discard(p), Pos::Top);
-        }
-        return Flow::done();
-    }
-    // Fated: the first `n` go on top of the shuffled cards (top first), the rest under them.
-    let top = l.data.n as usize;
-    let old = l.data.i.min(g.player(p).deck.len());
-    let shuffled = g.player(p).deck.len() - old;
-    let on_top: Vec<CardId> = l.data.cards[..top]
-        .iter()
-        .copied()
-        .filter(|c| cards.contains(c))
-        .collect();
-    let under: Vec<CardId> = l.data.cards[top..]
-        .iter()
-        .copied()
-        .filter(|c| cards.contains(c))
-        .collect();
-    let at = under.len() + shuffled;
-    for c in under {
-        g.move_card(c, Zone::Deck(p), Pos::Bottom);
-    }
-    // Inserting each at the same place leaves the first one on top.
-    for c in on_top {
-        g.move_card(c, Zone::Deck(p), Pos::Top);
-        let deck = &mut g.players[p.index()].deck;
-        let c = deck.pop().expect("just moved");
-        deck.insert(at, c);
-    }
-    Flow::done()
 }
 
 fn shaman_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

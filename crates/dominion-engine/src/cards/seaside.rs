@@ -441,7 +441,7 @@ fn blockade_curse(g: &mut Game, f: &mut CardFrame) -> Flow {
 
 fn pirate_play(g: &mut Game, f: &mut CardFrame) -> Flow {
     let c = f.this();
-    if f.pc == 0 && g.zone(c) == Zone::Hand(f.player) {
+    if f.pc == 0 && g.zone(c) == Zone::Hand(f.player) && super::can_play(g, f.player, c) {
         f.pc = 1;
         return Flow::Call(Frame::play(f.player, c, true, vec![]));
     }

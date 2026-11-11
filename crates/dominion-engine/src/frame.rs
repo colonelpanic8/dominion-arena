@@ -121,7 +121,7 @@ pub(crate) enum Frame {
         count: usize,
         drawn: Vec<CardId>,
         started: bool,
-        /// A draw shuffles at most once; if that leaves too few cards, it draws what it can.
+        /// One draw shuffles at most once, even if its discard pile refills meanwhile.
         shuffled: bool,
     },
     Shuffle {
@@ -326,11 +326,16 @@ impl Frame {
                     Flow::Call(Frame::window(Occasion::WouldShuffle { player: *player }))
                 }
                 1 => {
-                    if !g.players[player.index()].discard.is_empty() {
-                        g.shuffle_discard_into_deck(*player);
+                    let count = g.players[player.index()].discard.len();
+                    if count == 0 {
+                        return Flow::done();
                     }
+                    g.shuffle_discard_into_deck(*player);
                     *pc = 2;
-                    Flow::Call(Frame::window(Occasion::AfterShuffle { player: *player }))
+                    Flow::Call(Frame::window(Occasion::Shuffled {
+                        player: *player,
+                        count,
+                    }))
                 }
                 _ => Flow::done(),
             },
@@ -470,7 +475,8 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
             let started = g.players.iter().any(|p| p.turns_taken > 0);
             while let Some(extra) = g.extra_turns.pop_front() {
                 // Nobody takes more than two turns in a row.
-                if started && extra.player == prev.0 && prev.1 {
+                if (started && extra.player == prev.0 && prev.1) || g.skips_turn(extra.player, true)
+                {
                     continue;
                 }
                 g.turn = Turn::new(extra.player);
@@ -491,6 +497,9 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                 // Like extra turns, these don't count for the tiebreaker.
                 g.players[p.index()].extra_turns_taken += 1;
             } else {
+                while g.skips_turn(*next, false) {
+                    *next = g.left_of(*next);
+                }
                 g.turn = Turn::new(*next);
                 *next = g.left_of(*next);
             }
@@ -790,6 +799,7 @@ fn resume_gain(
                 bought,
                 cancelled: false,
                 since: g.log.len(),
+                cost: g.cost_of(id),
                 turn_index: None,
             });
             *pc = 1;
@@ -807,6 +817,8 @@ fn resume_gain(
                 Dest::DeckTop => Zone::Deck(st.player),
                 Dest::SetAside => Zone::SetAside(st.player),
             };
+            let cost = g.cost_of(st.card);
+            g.gains.last_mut().expect("gain in progress").cost = cost;
             if let Some(pile) = g.home_pile(g.printed(st.card)) {
                 let pile = &mut g.piles[pile.index()];
                 if pile.trade_route {
@@ -982,6 +994,9 @@ impl PlayFrame {
         let (p, id) = (self.player, self.card);
         match self.pc {
             0 => {
+                if self.move_to_play && g.zone(id) == Zone::Hand(p) && p == g.turn.player {
+                    g.turn.hand_plays += 1;
+                }
                 if self.move_to_play && g.zone(id) != Zone::InPlay(p) {
                     g.move_card(id, Zone::InPlay(p), Pos::Top);
                 }

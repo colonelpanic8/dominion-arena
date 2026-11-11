@@ -90,10 +90,10 @@ pub enum Occasion {
     WouldShuffle {
         player: PlayerId,
     },
-    /// Right after a shuffle (whether or not anything was left to shuffle): cards held out
-    /// of it at `WouldShuffle` go where they belong.
-    AfterShuffle {
+    /// Just shuffled `count` cards, now the bottom `count` cards of the deck.
+    Shuffled {
         player: PlayerId,
+        count: usize,
     },
 }
 

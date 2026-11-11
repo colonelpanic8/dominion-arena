@@ -2680,3 +2680,36 @@ fn harbor_village_ignores_the_coin_of_a_plus_coin_token() {
     play(&mut g, Card::Village);
     assert_eq!(g.turn().coins, 1);
 }
+
+#[test]
+fn taskmaster_counts_the_cost_a_card_had_as_it_was_gained() {
+    // Destrier costs $6, then $5 once it is gained: that doesn't count.
+    let mut g = setup(&[Card::Taskmaster, Card::Destrier]);
+    hand(&mut g, P0, &[Card::Taskmaster]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Taskmaster);
+    money(&mut g, 5, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Destrier);
+    assert_eq!(gain_count(&g, P0, Card::Destrier), 1);
+    assert!(g.in_play(P0).is_empty());
+}
+
+#[test]
+fn avoid_can_leave_every_shuffled_card_in_the_discard_pile() {
+    let mut g = setup_l(&[Card::Village], &[Card::Avoid]);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[Card::Estate, Card::Curse]);
+    g.start();
+    money(&mut g, 2, 1);
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Avoid);
+    g.stack.push(crate::frame::Frame::draw(P0, 2));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+    choose_kinds(&mut g, &[Card::Estate, Card::Curse]);
+    assert!(g.hand(P0).is_empty());
+    assert_eq!(discard_kinds(&g, P0).len(), 2);
+}
