@@ -223,7 +223,7 @@ impl SetRules for Rules {
                     && let Some(pile) = g.home_pile(g.printed(card))
                 {
                     let debt = std::mem::take(&mut g.piles[pile.index()].debt_tokens);
-                    g.players[f.player.index()].debt += debt.max(0) as u32;
+                    g.add_debt(f.player, debt.max(0) as u32);
                 }
                 Flow::done()
             }
@@ -1265,7 +1265,7 @@ fn capital_debt(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if g.zone(f.this()) != Zone::InPlay(p) {
                 return Flow::done();
             }
-            g.players[p.index()].debt += 6;
+            g.add_debt(p, 6);
             let coins = if p == g.turn.player { g.turn.coins } else { 0 };
             let max = coins.min(g.player(p).debt);
             if max == 0 {
@@ -2091,7 +2091,7 @@ fn mountain_pass(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(&bidder) = order.get(f.s.i) else {
                 if let Some(winner) = f.s.player {
                     add_vp(g, winner, 8);
-                    g.players[winner.index()].debt += f.s.n as u32;
+                    g.add_debt(winner, f.s.n as u32);
                 }
                 return Flow::done();
             };

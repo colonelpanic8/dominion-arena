@@ -5,6 +5,7 @@ mod alchemy;
 mod base;
 mod cornucopia_guilds;
 mod dark_ages;
+mod empires;
 mod hinterlands;
 mod intrigue;
 mod promos;
@@ -27,6 +28,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::CornucopiaGuilds,
     Set::Hinterlands,
     Set::DarkAges,
+    Set::Empires,
     Set::Adventures,
     Set::Promos,
 ];
