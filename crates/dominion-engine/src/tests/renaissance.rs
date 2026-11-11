@@ -713,6 +713,26 @@ fn scepter_replaying_a_duration_stays_in_play_with_it() {
 }
 
 #[test]
+#[ignore = "Scepter doesn't know a card left play and came back (a called Duplicate)"]
+fn scepter_cannot_replay_a_card_that_left_play_and_came_back() {
+    let mut g = setup(&[Card::Scepter, Card::Duplicate, Card::Swashbuckler]);
+    g.artifacts.iter_mut().for_each(|a| {
+        if a.0 == Card::TreasureChest {
+            a.1 = Some(P0);
+        }
+    });
+    hand(&mut g, P0, &[Card::Duplicate, Card::Scepter]);
+    g.start();
+    play(&mut g, Card::Duplicate);
+    // The Treasure Chest's Gold; call the Duplicate into play for another.
+    trigger(&mut g, Card::Duplicate);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Duplicate]);
+    play(&mut g, Card::Scepter);
+    mode(&mut g, 1);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Duplicate, Card::Scepter]);
+}
+
+#[test]
 fn scholar_discards_the_hand_and_draws_seven() {
     let mut g = setup(&[Card::Scholar]);
     hand(&mut g, P0, &[Card::Scholar, Card::Estate, Card::Estate]);
