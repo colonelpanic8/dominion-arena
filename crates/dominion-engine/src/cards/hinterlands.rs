@@ -229,8 +229,9 @@ impl SetRules for Rules {
                 gain_one(g, f, Card::Duchess, Dest::Discard)
             }
             (Card::NomadCamp, Hook::Ability(NOMAD_CAMP_TO_DECK)) => {
-                if let Some(Occasion::WouldGain { card, .. }) = f.occ
-                    && let Some(st) = g.gains.iter_mut().rev().find(|s| s.card == card)
+                if let Some(st) = g.gains.last_mut()
+                    && st.card == f.this()
+                    && st.to == Dest::Discard
                 {
                     st.to = Dest::DeckTop;
                 }
@@ -437,7 +438,12 @@ impl SetRules for Rules {
                 }
             }
             Occasion::WouldGain { player, card } => {
-                if g.card(card) == Card::NomadCamp {
+                // Only instead of to the discard pile.
+                let to_discard = g
+                    .gains
+                    .last()
+                    .is_some_and(|st| st.card == card && st.to == Dest::Discard);
+                if g.card(card) == Card::NomadCamp && to_discard {
                     out.push(Trigger::new(player, Card::NomadCamp, NOMAD_CAMP_TO_DECK).on(card));
                 }
             }

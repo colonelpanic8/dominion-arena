@@ -840,6 +840,18 @@ fn nomad_camp_is_gained_onto_the_deck() {
 }
 
 #[test]
+fn nomad_camp_gained_to_hand_stays_in_hand() {
+    let mut g = setup(&[Card::NomadCamp, Card::Artisan]);
+    hand(&mut g, P0, &[Card::Artisan, Card::Estate]);
+    g.start();
+    play(&mut g, Card::Artisan);
+    choose_pile(&mut g, Card::NomadCamp);
+    // Artisan goes on to ask for a card from the hand to put onto the deck.
+    assert_eq!(purpose(&g), Purpose::TopDeck);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate, Card::NomadCamp]);
+}
+
+#[test]
 fn oracle_reveals_for_everyone_then_draws() {
     let mut g = setup(&[Card::Oracle]);
     hand(&mut g, P0, &[Card::Oracle]);
