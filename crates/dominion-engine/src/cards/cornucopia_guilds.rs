@@ -1400,13 +1400,13 @@ fn doctor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, matches))
         }
         3 => {
+            let p = f.player;
+            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
             f.pc = 4;
-            let rest = f.s.cards.clone();
-            f.ask_order(rest, Purpose::TopDeck)
+            f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            let order = input.cards();
-            put_back(g, f.player, &order);
+            put_back(g, f.player, &input.cards());
             Flow::done()
         }
     }

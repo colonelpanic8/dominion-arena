@@ -1054,6 +1054,24 @@ fn doctor_trashes_named_cards_and_overpay_looks_at_the_top() {
 }
 
 #[test]
+fn doctor_does_not_put_back_a_card_that_left_the_deck() {
+    let mut g = setup(&[Card::Doctor, Card::Trail]);
+    hand(&mut g, P0, &[Card::Doctor]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Trail, Card::Gold, Card::Silver, Card::Estate],
+    );
+    g.start();
+    play(&mut g, Card::Doctor);
+    respond(&mut g, Response::Name(Card::Trail));
+    // The trashed Trail is played and draws the revealed Gold.
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Estate]);
+}
+
+#[test]
 fn farming_village_finds_a_treasure_or_action() {
     let mut g = setup(&[Card::FarmingVillage]);
     hand(&mut g, P0, &[Card::FarmingVillage]);
