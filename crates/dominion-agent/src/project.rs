@@ -885,10 +885,10 @@ pub(crate) fn log_entry(seq: usize, event: &Event, cx: &Context<'_>) -> LogEntry
             Some(*card),
             format!("{} discards {card}", name(*player)),
         ),
-        Event::TopDecked { player, card } => (
+        Event::TopDecked { player } => (
             Some(*player),
-            Some(*card),
-            format!("{} puts {card} onto their deck", name(*player)),
+            None,
+            format!("{} puts a card onto their deck", name(*player)),
         ),
         Event::SetAside { player, card } => (
             Some(*player),

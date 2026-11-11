@@ -888,12 +888,8 @@ impl Game {
 
     /// Puts `id` on top of `p`'s deck.
     pub(crate) fn top_deck(&mut self, id: CardId, p: PlayerId) {
-        self.show(id);
         self.move_card(id, Zone::Deck(p), Pos::Top);
-        self.emit(Event::TopDecked {
-            player: p,
-            card: self.card(id),
-        });
+        self.emit(Event::TopDecked { player: p });
     }
 
     pub(crate) fn put_in_hand(&mut self, id: CardId, p: PlayerId) {

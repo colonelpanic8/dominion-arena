@@ -111,6 +111,25 @@ fn a_revealed_card_put_on_a_deck_is_known_when_drawn() {
 }
 
 #[test]
+fn a_card_put_on_a_deck_from_hand_stays_hidden() {
+    let mut g = setup(&[Card::Courtyard]);
+    hand(&mut g, P0, &[Card::Courtyard, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Courtyard);
+    choose_kinds(&mut g, &[Card::Gold]);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::Deck(P0)).known.get(&Card::Gold),
+        None
+    );
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::Deck(P0)).known.get(&Card::Gold),
+        Some(&1)
+    );
+}
+
+#[test]
 fn a_card_leaving_a_hidden_hand_could_be_any_of_its_cards() {
     let mut g = setup(&[Card::Bureaucrat, Card::Haven]);
     hand(&mut g, P0, &[Card::Bureaucrat]);

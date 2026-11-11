@@ -107,10 +107,7 @@ impl SetRules for Rules {
 fn top_deck(g: &mut Game, p: PlayerId, cards: Vec<crate::CardId>) {
     for c in cards {
         g.move_card(c, Zone::Deck(p), Pos::Top);
-        g.emit(Event::TopDecked {
-            player: p,
-            card: g.card(c),
-        });
+        g.emit(Event::TopDecked { player: p });
     }
 }
 

@@ -314,10 +314,7 @@ pub(super) fn where_gained(g: &Game, p: PlayerId, card: CardId) -> bool {
 
 pub(super) fn top_deck(g: &mut Game, p: PlayerId, c: CardId) {
     g.move_card(c, Zone::Deck(p), Pos::Top);
-    g.emit(Event::TopDecked {
-        player: p,
-        card: g.card(c),
-    });
+    g.emit(Event::TopDecked { player: p });
 }
 
 /// A "this turn" effect of the card being played.
