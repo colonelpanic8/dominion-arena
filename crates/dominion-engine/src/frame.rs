@@ -530,6 +530,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 }
                 Input::Response(Response::Move(Move::EndPhase)) => {
                     g.turn.phase = Phase::Buy;
+                    g.turn.buy_phase_start = g.turn.gained.len();
                     *pc = 3;
                     return Flow::Call(Frame::window(Occasion::StartBuyPhase { player: p }));
                 }
