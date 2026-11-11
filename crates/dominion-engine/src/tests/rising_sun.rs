@@ -1171,6 +1171,38 @@ fn obelisk_still_scores_its_pile_after_divine_wind() {
     assert_eq!(g.score(P0), 2);
 }
 
+/// "Tokens on the removed piles are no longer on them"; Adventures tokens go back to their
+/// player, the others are gone (Divine Wind, official FAQ).
+#[test]
+fn divine_wind_takes_the_tokens_off_the_piles_it_removes() {
+    let mut g = before_divine_wind(&[Card::TeaHouse, Card::Smithy], &[], &[]);
+    let smithy = g.supply_pile(Card::Smithy).unwrap();
+    g.players[0].tokens.insert(Token::PlusCard, Some(smithy));
+    let pile = &mut g.piles[smithy.index()];
+    pile.tokens.push((P0, Token::PlusCard));
+    (
+        pile.vp_tokens,
+        pile.debt_tokens,
+        pile.embargo,
+        pile.trade_route,
+    ) = (2, 1, 1, true);
+    g.ext.allies.inventors.push((smithy, 1));
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    let pile = g.pile(smithy);
+    assert!(pile.removed && pile.tokens.is_empty());
+    let left = (
+        pile.vp_tokens,
+        pile.debt_tokens,
+        pile.embargo,
+        pile.trade_route,
+    );
+    assert_eq!(left, (0, 0, 0, false));
+    assert_eq!(g.player(P0).tokens[&Token::PlusCard], None);
+    assert!(g.ext.allies.inventors.is_empty());
+}
+
 #[test]
 fn in_games_using_this_abilities_go_on_after_divine_wind() {
     let mut g = before_divine_wind(&[Card::Shaman, Card::Footpad, Card::TeaHouse], &[], &[]);

@@ -627,13 +627,22 @@ fn remove_sun(g: &mut Game, p: PlayerId) -> Flow {
     }
 }
 
-/// Removes the Kingdom card piles from the Supply and sets up 10 new random ones.
+/// Removes the Kingdom card piles from the Supply and sets up 10 new random ones. Tokens
+/// on the removed piles leave them: Adventures tokens go back to their players.
 fn divine_wind(g: &mut Game) {
-    for pile in &mut g.piles {
-        if pile.in_supply && pile.card.def().kingdom {
-            pile.in_supply = false;
-            pile.removed = true;
+    for i in 0..g.piles.len() {
+        let pile = &mut g.piles[i];
+        if !(pile.in_supply && pile.card.def().kingdom) {
+            continue;
         }
+        pile.in_supply = false;
+        pile.removed = true;
+        (pile.vp_tokens, pile.debt_tokens, pile.embargo, pile.trade_route) = (0, 0, 0, false);
+        for (p, token) in std::mem::take(&mut pile.tokens) {
+            g.players[p.index()].tokens.insert(token, None);
+        }
+        let id = PileId(i as u8);
+        g.ext.allies.inventors.retain(|&(pile, _)| pile != id);
     }
     let mut pool = unused_kingdom_cards(g);
     g.shuffle(&mut pool);
