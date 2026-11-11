@@ -35,7 +35,14 @@ fn zone(count: u32, known: &CardCount, unknown: u32) -> String {
 
 fn player(out: &mut Vec<String>, label: &str, p: &PlayerView) {
     let vp = p.vp.map(|vp| format!(" ({vp} VP)")).unwrap_or_default();
-    out.push(format!("{label}: {}{vp}", p.name));
+    // Seats are referred to as P1, P2, ... elsewhere (and in engine-made labels).
+    let seat = format!("P{}", p.index + 1);
+    let name = if p.name == seat {
+        String::new()
+    } else {
+        format!(": {}", p.name)
+    };
+    out.push(format!("{label} {seat}{name}{vp}"));
     out.push(format!(
         "  hand {}",
         zone(p.hand.count, &p.hand.known, p.hand.unknown)

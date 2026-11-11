@@ -1,10 +1,10 @@
 GAME snap: turn 3, Ada's turn, action phase, actions 0, buys 1, coins 2
-YOU: Bo (3 VP)
+YOU P2: Bo (3 VP)
   hand 5 (3 Copper, Estate, Militia)
   deck 7 (4 Copper, 2 Estate, Silver)
   discard 0
   owns 7 Copper, 3 Estate, Militia, Silver
-OPPONENT: Ada (3 VP)
+OPPONENT P1: Ada (3 VP)
   hand 4 (4 unknown)
   in play 1 (Militia)
   deck 7 (7 unknown)

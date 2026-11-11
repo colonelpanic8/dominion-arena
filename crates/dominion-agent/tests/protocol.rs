@@ -493,3 +493,25 @@ fn the_black_market_deck_is_a_face_down_pile_of_known_cards() {
         .unwrap();
     assert!(line.contains("Black Market (face down) x60"), "{line}");
 }
+
+/// The text names seats P1, P2, ... (as engine-made labels do), so each player's header
+/// says which seat they are.
+#[test]
+fn text_introduces_the_seat_numbers_it_uses() {
+    let t = table(&[Card::Militia], 11, &["Ada", "Bo"]);
+    let mut view = t.view(PlayerId(1));
+    view.lasting.push(dominion_agent::LastingView {
+        card: "Haven".into(),
+        owner: 0,
+        until: "start-of-turn".into(),
+        until_player: Some(0),
+        cards: vec![],
+        count: None,
+    });
+    let rendered = text::render(&view);
+    assert!(rendered.contains("YOU P2: Bo") && rendered.contains("OPPONENT P1: Ada"));
+    assert!(
+        rendered.contains("Haven (P1) until P1's next turn"),
+        "{rendered}"
+    );
+}
