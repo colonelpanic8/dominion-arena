@@ -547,8 +547,8 @@ fn can_buy(g: &Game, p: PlayerId, card: Card, cost: crate::Cost) -> bool {
     let t = &g.turn;
     (t.buys > 0 || (t.actions > 0 && cards::actions_are_buys(g)))
         && g.players[p.index()].debt == 0
-        && cost.coins as u32 <= t.coins
-        && cost.potions as u32 <= t.potions
+        && ((cost.coins as u32 <= t.coins && cost.potions as u32 <= t.potions)
+            || cards::pays_otherwise(g, p, card))
         && cards::can_buy(g, p, card)
 }
 
@@ -581,7 +581,9 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 }
                 Input::Response(Response::Move(Move::Villager)) => {
                     g.players[p.index()].villagers -= 1;
-                    g.turn.actions += 1;
+                    if !g.turn.ignore_plus_actions {
+                        g.turn.actions += 1;
+                    }
                 }
                 Input::Response(Response::Move(Move::PayDebt)) => {
                     g.players[p.index()].debt -= 1;
@@ -855,6 +857,9 @@ fn resume_gain(
 
 /// Overpay is resolved as the bought card's ability with this number.
 pub(crate) const OVERPAY: u8 = 255;
+/// Paying for a card another way than with its cost (Animal Fair) is offered as the card's
+/// ability with this number, which finishes with `Value::Bool(true)` if it was paid that way.
+pub(crate) const PAY_OTHERWISE: u8 = 254;
 
 fn resume_buy(
     g: &mut Game,
@@ -896,7 +901,26 @@ fn resume_buy(
                 return Flow::done();
             };
             *card = Some(top);
-            let cost = g.cost_of(top);
+            *pc = 5;
+            let kind = g.card(top);
+            if cards::pays_otherwise(g, p, kind) {
+                return Flow::Call(Frame::Card(Box::new(CardFrame::new(
+                    kind,
+                    Hook::Ability(PAY_OTHERWISE),
+                    p,
+                    Some(top),
+                ))));
+            }
+            Flow::Continue
+        }
+        5 => {
+            let top = card.expect("set in step 0");
+            let paid_otherwise = matches!(input, Input::Return(Value::Bool(true)));
+            let cost = if paid_otherwise {
+                crate::Cost::ZERO
+            } else {
+                g.cost_of(top)
+            };
             pay(g, p, cost);
             let kind = g.card(top);
             g.turn.bought_cards.push(kind);
@@ -1018,19 +1042,26 @@ impl PlayFrame {
                 }))
             }
             1 => {
+                // Reactions to an Attack (Moat, ...) come before its player picks a Way.
+                let st = g.plays.last().expect("play in progress");
                 self.pc = 2;
+                if st.replaced.is_none() && !st.blocked && g.is(id, Types::ATTACK) {
+                    self.remaining = g.others(p);
+                    self.pc = 3;
+                }
+                Flow::Continue
+            }
+            2 => {
+                self.pc = 6;
                 let st = g.plays.last().expect("play in progress");
                 let ways: Vec<Card> = g
                     .landscapes
                     .iter()
                     .copied()
-                    .filter(|l| l.kind() == Kind::Way)
+                    .filter(|&l| l.kind() == Kind::Way && cards::can_use_way(g, id, l))
                     .collect();
-                if ways.is_empty()
-                    || st.replaced.is_some()
-                    || st.blocked
-                    || !g.is(id, Types::ACTION)
-                {
+                // A Way can be used instead of a replaced effect (Enchantress, Enlightenment).
+                if ways.is_empty() || st.blocked || !g.is(id, Types::ACTION) {
                     return Flow::Continue;
                 }
                 let mut options = vec![Opt::No];
@@ -1051,19 +1082,6 @@ impl PlayFrame {
                     source: Some(g.card(id)),
                 })
             }
-            2 => {
-                if let Some(Opt::Card(way)) = input.opt() {
-                    g.plays.last_mut().expect("play in progress").way = Some(way);
-                }
-                let st = g.plays.last().expect("play in progress");
-                let own = st.way.is_none() && st.replaced.is_none() && !st.blocked;
-                self.pc = 4;
-                if own && g.is(id, Types::ATTACK) {
-                    self.remaining = g.others(p);
-                    self.pc = 3;
-                }
-                Flow::Continue
-            }
             3 => {
                 if let Input::Return(Value::Bool(unaffected)) = input {
                     let target = self.remaining.remove(0);
@@ -1078,10 +1096,17 @@ impl PlayFrame {
                         target,
                     })),
                     None => {
-                        self.pc = 4;
+                        self.pc = 2;
                         Flow::Continue
                     }
                 }
+            }
+            6 => {
+                if let Some(Opt::Card(way)) = input.opt() {
+                    g.plays.last_mut().expect("play in progress").way = Some(way);
+                }
+                self.pc = 4;
+                Flow::Continue
             }
             4 => {
                 let st = g.plays.last().expect("play in progress").clone();
@@ -1090,20 +1115,20 @@ impl PlayFrame {
                     return Flow::Continue;
                 }
                 let mine = p == g.turn.player;
-                if let Some(plus) = st.replaced {
+                if let Some(plus) = st.replaced
+                    && st.way.is_none()
+                {
                     if mine {
-                        g.turn.actions += plus.actions as u32;
+                        if !g.turn.ignore_plus_actions {
+                            g.turn.actions += plus.actions as u32;
+                        }
                         g.turn.buys += plus.buys as u32;
                     }
                     g.add_coins(p, plus.coins as u32);
                     return Flow::Call(Frame::draw(p, plus.cards as usize));
                 }
-                if let Some(way) = st.way {
-                    let mut f = CardFrame::new(way, Hook::Main, p, Some(id));
-                    f.chain = self.chain.clone();
-                    return Flow::Call(Frame::Card(Box::new(f)));
-                }
-                let def = st.behavior.def();
+                // A Way's own +Cards, +Actions, ... replace the card's.
+                let def = st.way.unwrap_or(st.behavior).def();
                 let mut bonus = cards::Bonus {
                     plus: def.plus,
                     coins: def.coins as u32,
@@ -1115,7 +1140,9 @@ impl PlayFrame {
                 pl.coffers += bonus.plus.coffers as u32;
                 pl.favors += bonus.plus.favors as u32;
                 if mine {
-                    g.turn.actions += bonus.plus.actions as u32;
+                    if !g.turn.ignore_plus_actions {
+                        g.turn.actions += bonus.plus.actions as u32;
+                    }
                     g.turn.buys += bonus.plus.buys as u32;
                     g.turn.potions += bonus.potions;
                 }
@@ -1124,8 +1151,9 @@ impl PlayFrame {
                 Flow::Call(Frame::draw(p, bonus.plus.cards as usize))
             }
             5 => {
-                let behavior = g.plays.last().expect("play in progress").behavior;
-                let mut f = CardFrame::new(behavior, Hook::Main, p, Some(id));
+                let st = g.plays.last().expect("play in progress");
+                let source = st.way.unwrap_or(st.behavior);
+                let mut f = CardFrame::new(source, Hook::Main, p, Some(id));
                 f.targets = std::mem::take(&mut self.targets);
                 f.chain = self.chain.clone();
                 self.pc = 7;

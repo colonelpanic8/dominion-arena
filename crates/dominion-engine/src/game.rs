@@ -204,6 +204,8 @@ pub struct Turn {
     pub cleanup_draw: usize,
     /// Whether the player may buy cards (not Events or Projects) this turn.
     pub can_buy_cards: bool,
+    /// No more +Actions this turn (Snowy Village).
+    pub ignore_plus_actions: bool,
 }
 
 impl Turn {
@@ -228,6 +230,7 @@ impl Turn {
             trashed: vec![],
             cleanup_draw: 5,
             can_buy_cards: true,
+            ignore_plus_actions: false,
         }
     }
 }
@@ -539,6 +542,16 @@ impl Game {
         self.pile_of(name).or_else(|| self.pile_of(card))
     }
 
+    /// What `id` cost as it was gained, while its gain is in progress ("when you gain a
+    /// card costing ..." abilities look at this, not at its cost where it landed).
+    pub fn gain_cost(&self, id: CardId) -> Option<Cost> {
+        self.gains
+            .iter()
+            .rev()
+            .find(|st| st.card == id)
+            .map(|st| st.cost)
+    }
+
     /// Where `id` was trashed from, while its "when trashed" abilities resolve.
     pub fn trashed_from(&self, id: CardId) -> Option<Zone> {
         self.trashing
@@ -563,6 +576,9 @@ impl Game {
     }
 
     fn cost_with(&self, card: Card, id: Option<CardId>) -> Cost {
+        if let Some(cost) = cards::fixed_cost(self, card, id) {
+            return cost;
+        }
         let mut cost = card.cost().unwrap_or_default();
         cards::modify_cost(self, card, id, &mut cost);
         cost

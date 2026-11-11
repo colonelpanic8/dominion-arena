@@ -480,7 +480,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         .is_some_and(|pile| g.pile_top(pile).is_some());
     if changelings
         && kind != Card::Changeling
-        && g.cost_of(card).coins >= 3
+        && g.gain_cost(card).unwrap_or_else(|| g.cost_of(card)).coins >= 3
         && g.home_pile(g.printed(card)).is_some()
         && where_gained(g, card)
     {

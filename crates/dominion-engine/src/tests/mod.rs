@@ -9,6 +9,7 @@ mod dark_ages;
 mod empires;
 mod hinterlands;
 mod intrigue;
+mod menagerie;
 mod nocturne;
 mod promos;
 mod prosperity;
@@ -37,6 +38,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::Empires,
     Set::Nocturne,
     Set::Renaissance,
+    Set::Menagerie,
     Set::RisingSun,
     Set::Promos,
 ];
