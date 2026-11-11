@@ -500,8 +500,7 @@ impl SetRules for Rules {
             .iter()
             .filter(|l| {
                 l.card == Card::BridgeTroll
-                    && l.owner == p
-                    && (l.data.n == 1 || player.turns_taken > l.turn)
+                    && (l.data.n == 1 || (l.owner == p && player.turns_taken > l.turn))
             })
             .count() as u8;
         *cost = cost.minus_coins(trolls);

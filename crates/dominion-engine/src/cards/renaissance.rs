@@ -179,16 +179,19 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::Pageant, EFFECT).optional());
                 }
             }
-            Occasion::StartCleanup { player } => {
-                if player != g.turn.player || improvable(g, player).is_empty() {
-                    return;
-                }
-                for l in this_turn(g, Card::Improve, player) {
-                    out.push(
-                        Trigger::new(player, Card::Improve, IMPROVE_TRASH)
-                            .via_lasting(l.id)
-                            .optional(),
-                    );
+            Occasion::StartCleanup { .. } => {
+                // Whoever played it, on whoever's turn.
+                for l in g.lasting() {
+                    if l.card == Card::Improve
+                        && l.until == Until::EndOfTurn
+                        && !improvable(g, l.owner).is_empty()
+                    {
+                        out.push(
+                            Trigger::new(l.owner, Card::Improve, IMPROVE_TRASH)
+                                .via_lasting(l.id)
+                                .optional(),
+                        );
+                    }
                 }
             }
             Occasion::DiscardFromPlay { player } => {
