@@ -318,16 +318,23 @@ impl Setup {
         self.choose_n(g, by, candidates, 1..=1).pop()
     }
 
-    /// Like [`Setup::choose`], with only the candidates `random` accepts chosen at random.
+    /// Like [`Setup::choose_n`], with only the candidates `random` accepts chosen at random.
     pub(crate) fn choose_or_random(
         &mut self,
         g: &mut Game,
         by: Card,
         candidates: Vec<Card>,
+        n: RangeInclusive<usize>,
         random: impl Fn(Card) -> bool,
-    ) -> Option<Card> {
+    ) -> Vec<Card> {
         let pool = candidates.iter().copied().filter(|&c| random(c)).collect();
-        self.pick(g, by, &candidates, pool, 1..=1).pop()
+        self.pick(g, by, &candidates, pool, n)
+    }
+
+    /// Rejects the configured choice `choice` of `by`, which breaks a rule between choices.
+    pub(crate) fn reject(&mut self, by: Card, choice: Card) {
+        self.error
+            .get_or_insert(SetupError::InvalidChoice { by, choice });
     }
 
     /// The different cards `by` chooses among `candidates`: the configured ones (as many as

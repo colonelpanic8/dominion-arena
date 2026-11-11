@@ -401,7 +401,8 @@ fn choose_unused_costing(g: &mut Game, s: &mut Setup, by: Card, lo: u8, hi: u8) 
         })
         .collect();
     let sets: Vec<Set> = g.config.kingdom.iter().map(|c| c.set()).collect();
-    s.choose_or_random(g, by, candidates, |c| sets.contains(&c.set()))
+    s.choose_or_random(g, by, candidates, 1..=1, |c| sets.contains(&c.set()))
+        .pop()
 }
 
 // ---- Helpers shared with other sets ----
@@ -908,7 +909,7 @@ fn jester(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         match f.pc {
             0 => {
                 f.pc = 1;
-                return Flow::Call(Frame::reveal(t, 1));
+                return Flow::Call(Frame::look(t, 1));
             }
             1 => {
                 let Some(c) = input.take().and_then(Input::card) else {

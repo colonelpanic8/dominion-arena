@@ -1195,6 +1195,39 @@ fn sewers_trashes_one_more_per_trashed_card_but_not_its_own() {
     assert!(g.hand(P0).is_empty());
 }
 
+/// Priest played on another player's turn still gives its player +$2 per trash that turn
+/// (nothing to spend there, but the -$1 token takes it).
+#[test]
+fn priest_played_on_another_players_turn_still_pays_for_trashing() {
+    let mut g = setup(&[
+        Card::Priest,
+        Card::ThroneRoom,
+        Card::Ambassador,
+        Card::Gondola,
+    ]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::ThroneRoom,
+            Card::Priest,
+            Card::Copper,
+            Card::Copper,
+            Card::Estate,
+        ],
+    );
+    g.start();
+    play_on_another_players_turn(&mut g);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Priest]);
+    choose_kinds(&mut g, &[Card::Copper]);
+    g.players[1].minus_coin = true;
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert!(!g.player(P1).minus_coin);
+    assert_eq!(g.turn().player, P0);
+}
+
 #[test]
 fn priest_does_not_pay_for_its_own_sewers_trash() {
     let mut g = setup(&[Card::Priest]);

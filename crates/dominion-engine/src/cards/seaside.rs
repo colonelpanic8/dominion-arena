@@ -133,7 +133,9 @@ impl SetRules for Rules {
 
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         for l in due_durations(g, occ) {
-            if l.card.set() == Set::Seaside {
+            if l.card == Card::Outpost {
+                out.push(duration_trigger(l, START).quiet());
+            } else if l.card.set() == Set::Seaside {
                 out.push(duration_trigger(l, START));
             }
         }
@@ -302,6 +304,10 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::done()
         }
         Card::Caravan | Card::Corsair | Card::Monkey => draw_then_done(f, 1, 1),
+        Card::Outpost => {
+            outpost_hand(g, p, f.this);
+            Flow::done()
+        }
         Card::FishingVillage => {
             g.add_actions(p, 1);
             g.add_coins(p, 1);
@@ -637,21 +643,17 @@ fn native_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
     let p = f.player;
     if p == g.turn.player {
-        let reduced = g
-            .lasting()
-            .iter()
-            .any(|l| l.card == Card::Outpost && l.owner == p && l.until == Until::EndOfTurn);
-        if !reduced {
-            g.turn.cleanup_draw = g.turn.cleanup_draw.saturating_sub(2);
-            g.add_lasting(
-                Card::Outpost,
-                p,
-                f.this,
-                vec![],
-                Until::EndOfTurn,
-                Scratch::default(),
-            );
-        }
+        outpost_hand(g, p, f.this);
+    } else {
+        // Played on another player's turn: its player's next Clean-up draws 3.
+        g.add_lasting(
+            Card::Outpost,
+            p,
+            f.this,
+            vec![],
+            Until::Removed,
+            Scratch::default(),
+        );
     }
     if g.third_in_a_row(p) {
         return Flow::done();
@@ -671,6 +673,25 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
         Scratch::default(),
     );
     Flow::done()
+}
+
+/// "You only draw 3 cards for your next hand", for this turn's Clean-up (once a turn).
+fn outpost_hand(g: &mut Game, p: PlayerId, this: Option<CardId>) {
+    let reduced = g
+        .lasting()
+        .iter()
+        .any(|l| l.card == Card::Outpost && l.owner == p && l.until == Until::EndOfTurn);
+    if !reduced {
+        g.turn.cleanup_draw = g.turn.cleanup_draw.saturating_sub(2);
+        g.add_lasting(
+            Card::Outpost,
+            p,
+            this,
+            vec![],
+            Until::EndOfTurn,
+            Scratch::default(),
+        );
+    }
 }
 
 fn salvager(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

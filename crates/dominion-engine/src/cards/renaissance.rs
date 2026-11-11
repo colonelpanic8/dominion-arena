@@ -474,10 +474,8 @@ fn trash_triggers(g: &Game, trasher: PlayerId, card: CardId, out: &mut Vec<Trigg
     if matches!(g.card(card), Card::FlagBearer | Card::SilkMerchant) {
         out.push(Trigger::new(trasher, g.card(card), TRASHED).on(card));
     }
-    if trasher == g.turn.player {
-        for l in this_turn(g, Card::Priest, trasher) {
-            out.push(Trigger::new(trasher, Card::Priest, PRIEST_COINS).via_lasting(l.id));
-        }
+    for l in this_turn(g, Card::Priest, trasher) {
+        out.push(Trigger::new(trasher, Card::Priest, PRIEST_COINS).via_lasting(l.id));
     }
     if has(g, trasher, Card::Sewers)
         && !g.ext.renaissance.sewers.contains(&card)

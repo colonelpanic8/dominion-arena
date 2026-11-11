@@ -585,7 +585,22 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
                 && setup::unused(g, c)
         })
         .collect();
-    let Some(card) = s.choose(g, Card::Riverboat, pool) else {
+    // At random, a pile first, then one of its cards: the Knights randomizer stands for any
+    // of its $5 Knights.
+    let home = |c: Card| c.def().pile.unwrap_or(c);
+    let mut random: Vec<Card> = vec![];
+    for &c in &pool {
+        if random.iter().any(|&r| home(r) == home(c)) {
+            continue;
+        }
+        let cards: Vec<Card> = pool.iter().copied().filter(|&d| home(d) == home(c)).collect();
+        let i = if cards.len() > 1 { g.random_index(cards.len()) } else { 0 };
+        random.push(cards[i]);
+    }
+    let Some(card) = s
+        .choose_or_random(g, Card::Riverboat, pool, 1..=1, |c| random.contains(&c))
+        .pop()
+    else {
         return;
     };
     let pile = PileId(g.piles.len() as u8);
@@ -627,13 +642,22 @@ fn remove_sun(g: &mut Game, p: PlayerId) -> Flow {
     }
 }
 
-/// Removes the Kingdom card piles from the Supply and sets up 10 new random ones.
+/// Removes the Kingdom card piles from the Supply and sets up 10 new random ones. Tokens
+/// on the removed piles leave them: Adventures tokens go back to their players.
 fn divine_wind(g: &mut Game) {
-    for pile in &mut g.piles {
-        if pile.in_supply && pile.card.def().kingdom {
-            pile.in_supply = false;
-            pile.removed = true;
+    for i in 0..g.piles.len() {
+        let pile = &mut g.piles[i];
+        if !(pile.in_supply && pile.card.def().kingdom) {
+            continue;
         }
+        pile.in_supply = false;
+        pile.removed = true;
+        (pile.vp_tokens, pile.debt_tokens, pile.embargo, pile.trade_route) = (0, 0, 0, false);
+        for (p, token) in std::mem::take(&mut pile.tokens) {
+            g.players[p.index()].tokens.insert(token, None);
+        }
+        let id = PileId(i as u8);
+        g.ext.allies.inventors.retain(|&(pile, _)| pile != id);
     }
     let mut pool = unused_kingdom_cards(g);
     g.shuffle(&mut pool);
@@ -1014,26 +1038,26 @@ fn change(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+/// "You may gain a Gold and get +4 Debt": each part is done as far as it can be, so the Debt
+/// comes even when no Gold does.
 fn gold_mine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            if g.supply_pile(Card::Gold).and_then(|p| g.pile_top(p)).is_none() {
-                return Flow::done();
-            }
             f.pc = 1;
             f.ask_yes_no(Purpose::Gain)
         }
         1 => {
+            if !input.is_yes() {
+                return Flow::done();
+            }
             f.pc = 2;
             match g.supply_pile(Card::Gold) {
-                Some(gold) if input.is_yes() => Flow::Call(Frame::gain(f.player, gold, Dest::Discard)),
-                _ => Flow::done(),
+                Some(gold) => Flow::Call(Frame::gain(f.player, gold, Dest::Discard)),
+                None => Flow::Continue,
             }
         }
         _ => {
-            if !input.cards().is_empty() {
-                g.add_debt(f.player, 4);
-            }
+            g.add_debt(f.player, 4);
             Flow::done()
         }
     }
