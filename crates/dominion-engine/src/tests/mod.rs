@@ -3,6 +3,7 @@
 mod base;
 mod dark_ages;
 mod intrigue;
+mod menagerie;
 mod promos;
 mod seaside;
 
@@ -18,6 +19,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::Intrigue,
     Set::Seaside,
     Set::DarkAges,
+    Set::Menagerie,
     Set::Promos,
 ];
 
