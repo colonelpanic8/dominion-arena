@@ -1023,6 +1023,25 @@ fn enlightenment_makes_treasures_actions_that_draw_in_the_action_phase() {
 }
 
 #[test]
+fn enlightenment_applies_to_a_treasure_played_at_the_start_of_a_turn() {
+    let mut g = game(&[Card::Smithy], &[Card::Enlightenment, Card::Summon], 0);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Estate; 12]);
+    g.start();
+    buy_phase_with(&mut g, 5);
+    buy_landscape(&mut g, Card::Summon);
+    choose_pile(&mut g, Card::Silver);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Summon played the Silver: the start of a turn is part of its Action phase.
+    assert_eq!(g.turn().played, [Card::Silver]);
+    assert_eq!(
+        (g.turn().coins, g.turn().actions, g.hand(P0).len()),
+        (0, 2, 6)
+    );
+}
+
+#[test]
 fn flourishing_trade_lowers_costs_and_lets_actions_be_used_as_buys() {
     let mut g = with_prophecy(&[Card::Smithy, Card::Daimyo], Card::FlourishingTrade);
     hand(&mut g, P0, &[Card::Silver, Card::Silver, Card::Silver]);

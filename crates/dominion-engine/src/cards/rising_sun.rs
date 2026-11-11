@@ -395,7 +395,7 @@ impl SetRules for Rules {
                 if !g.is(card, Types::TREASURE) {
                     return;
                 }
-                if active(Card::Enlightenment) && g.turn.phase == crate::Phase::Action {
+                if active(Card::Enlightenment) && g.in_action_phase() {
                     out.push(Trigger::new(player, Card::Enlightenment, ENLIGHTENMENT));
                 }
                 if active(Card::Panic) && player == turn {

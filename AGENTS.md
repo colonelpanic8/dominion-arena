@@ -224,6 +224,7 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
 - A pile's types are those of the card it is named after (`Pile::card`: its randomizer
   or top card), whatever is in it now: that decides an "Action Supply pile".
+- "In an Action phase" asks `g.in_action_phase()`: the start of a turn is part of it.
 - "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
   playable as if in hand (Shadow cards in the deck). "Return to your Action phase" is
   `Frame::return_to_action`, never a write to `turn.phase`: the Buy phase ends there

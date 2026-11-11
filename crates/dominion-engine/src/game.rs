@@ -598,6 +598,11 @@ impl Game {
         self.prophecy
     }
 
+    /// Whether it is an Action phase: the start of a turn is part of its Action phase.
+    pub fn in_action_phase(&self) -> bool {
+        matches!(self.turn.phase, Phase::Start | Phase::Action)
+    }
+
     /// Whether the game's Prophecy is in effect (all its Sun tokens removed).
     pub fn prophecy_active(&self, card: Card) -> bool {
         self.prophecy == Some((card, 0))

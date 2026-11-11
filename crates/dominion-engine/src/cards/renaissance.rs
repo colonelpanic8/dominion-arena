@@ -12,7 +12,7 @@ use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mas
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Opt, PlayerId, Set, Types};
@@ -264,7 +264,7 @@ impl SetRules for Rules {
     }
 
     fn on_event(g: &mut Game, event: &crate::Event) {
-        if g.turn.phase != Phase::Action {
+        if !g.in_action_phase() {
             return;
         }
         let (player, n) = match event {

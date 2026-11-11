@@ -236,16 +236,27 @@ fn patron_revealed_by_border_guard_in_the_action_phase_gives_coffers() {
 }
 
 #[test]
-fn patron_revealed_outside_an_action_phase_gives_nothing() {
+fn patron_revealed_at_the_start_of_a_turn_gives_coffers() {
     let mut g = setup(&[Card::Patron, Card::Smithy]);
     give_project(&mut g, P0, Card::Piazza);
     hand(&mut g, P0, &[]);
     deck(&mut g, P0, &[Card::Patron, Card::Copper]);
     g.start();
-    assert_eq!(g.player(P0).coffers, 0);
-    // Piazza played it.
+    // The start of a turn is part of its Action phase. Piazza then played it.
+    assert_eq!(g.player(P0).coffers, 1);
     assert_eq!(in_play_kinds(&g, P0), [Card::Patron]);
     assert_eq!(g.player(P0).villagers, 1);
+}
+
+#[test]
+fn patron_revealed_outside_an_action_phase_gives_nothing() {
+    let mut g = setup(&[Card::Patron, Card::Venture]);
+    hand(&mut g, P0, &[Card::Venture]);
+    deck(&mut g, P0, &[Card::Patron, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Venture);
+    assert_eq!(g.turn().coins, 2);
+    assert_eq!(g.player(P0).coffers, 0);
 }
 
 #[test]
