@@ -10,6 +10,7 @@ mod hinterlands;
 mod intrigue;
 mod promos;
 mod prosperity;
+mod renaissance;
 mod seaside;
 
 use crate::game::Zone;
@@ -30,6 +31,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::DarkAges,
     Set::Empires,
     Set::Adventures,
+    Set::Renaissance,
     Set::Promos,
 ];
 

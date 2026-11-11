@@ -183,6 +183,8 @@ pub struct Turn {
     pub return_to_action: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
+    /// The physical cards of `played`, in the same order.
+    pub played_ids: Vec<CardId>,
     pub gained: Vec<Card>,
     /// The cards in `gained` that were gained in the Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
@@ -208,6 +210,7 @@ impl Turn {
             bought: false,
             return_to_action: false,
             played: vec![],
+            played_ids: vec![],
             gained: vec![],
             gained_in_buy_phase: vec![],
             bought_cards: vec![],
@@ -321,6 +324,10 @@ pub struct Game {
     pub(crate) lasting: Vec<Lasting>,
     pub(crate) next_lasting: u32,
     pub(crate) extra_turns: VecDeque<ExtraTurn>,
+    /// Set once the game has ended, while an extra round after its end is played.
+    pub(crate) ending: Option<EndReason>,
+    /// The turns of the extra round after the game ended (Fleet) still to be taken.
+    pub(crate) final_round: VecDeque<PlayerId>,
     pub(crate) gains: Vec<GainState>,
     /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
     pub(crate) trashing: Vec<(CardId, Zone)>,
@@ -713,6 +720,7 @@ impl Game {
     }
 
     pub(crate) fn emit(&mut self, event: Event) {
+        cards::on_event(self, &event);
         self.log.push(event);
     }
 

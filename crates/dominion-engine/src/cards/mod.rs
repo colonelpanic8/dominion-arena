@@ -11,6 +11,7 @@
 //! runs.
 
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
+use crate::event::Event;
 use crate::frame::{Flow, Input};
 use crate::game::{Lasting, Scratch, Until};
 use crate::trigger::{Occasion, Trigger};
@@ -80,6 +81,15 @@ pub(crate) trait SetRules {
     /// Who takes the Debt `p` would take, if someone else does (Possession).
     fn debt_taker(g: &Game, p: PlayerId) -> Option<PlayerId> {
         None
+    }
+
+    /// Reacts to `event` as it is logged, for effects that only change counters and
+    /// never move cards or ask anything (Patron's +1 Coffers when revealed).
+    fn on_event(g: &mut Game, event: &Event) {}
+
+    /// Whether `p` takes a turn in an extra round after the game ends (Fleet).
+    fn final_round(g: &Game, p: PlayerId) -> bool {
+        false
     }
 }
 
@@ -162,6 +172,14 @@ macro_rules! sets {
 
         pub(crate) fn debt_taker(g: &Game, p: PlayerId) -> Option<PlayerId> {
             None$(.or_else(|| <$module::Rules as SetRules>::debt_taker(g, p)))*
+        }
+
+        pub(crate) fn on_event(g: &mut Game, event: &Event) {
+            $(<$module::Rules as SetRules>::on_event(g, event);)*
+        }
+
+        pub(crate) fn final_round(g: &Game, p: PlayerId) -> bool {
+            false $(|| <$module::Rules as SetRules>::final_round(g, p))*
         }
     };
 }
