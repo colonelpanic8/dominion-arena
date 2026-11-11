@@ -681,11 +681,18 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     pc: 0,
                 });
             }
-            if g.ending.is_some() {
-                let p = g
-                    .final_round
-                    .pop_front()
-                    .expect("a final-round turn is due");
+            if let Some(reason) = g.ending {
+                // The round after the game's end: a turn Lich skips is one of these too.
+                let mut turn = g.final_round.pop_front();
+                while let Some(p) = turn
+                    && g.skips_turn(p, true)
+                {
+                    turn = g.final_round.pop_front();
+                }
+                let Some(p) = turn else {
+                    g.finish(reason);
+                    return Flow::done();
+                };
                 g.turn = Turn::new(p);
                 g.turn.previous = last;
                 // Like extra turns, these don't count for the tiebreaker.

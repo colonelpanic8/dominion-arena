@@ -2,6 +2,7 @@
 //! effects that last until a turn starts.
 
 use super::*;
+use crate::game::Pos;
 
 fn game(players: u8, kingdom: &[Card], landscapes: &[Card]) -> Game {
     setup_with(GameConfig {
@@ -38,6 +39,99 @@ fn turn(g: &Game) -> (PlayerId, PlayerId, Option<Card>) {
 
 fn in_play_kinds(g: &Game, p: PlayerId) -> Vec<Card> {
     kinds(g, g.in_play(p))
+}
+
+/// Enters the Buy phase, if the Action phase is still on, with `coins` and `buys`.
+fn buy_phase(g: &mut Game, coins: u32, buys: u32) {
+    if let Some(DecisionKind::Turn {
+        phase: Phase::Action,
+        ..
+    }) = g.pending().map(|d| &d.kind)
+    {
+        end_phase(g);
+    }
+    g.turn.coins = coins;
+    g.turn.buys = buys;
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+}
+
+fn leave_one(g: &mut Game, card: Card) {
+    let pile = g.supply_pile(card).unwrap();
+    let all = g.pile(pile).cards.clone();
+    for &c in &all[1..] {
+        g.move_card(c, Zone::Trash, Pos::Top);
+    }
+}
+
+fn buy_the_last_province(g: &mut Game) {
+    buy_phase(g, 8, 1);
+    buy(g, Card::Province);
+}
+
+/// A skipped turn isn't taken, so the turns around it are in a row.
+#[test]
+fn turns_around_another_players_skipped_turn_are_in_a_row() {
+    let mut g = game(2, &[Card::Wizards], &[Card::Mission]);
+    hand(&mut g, P1, &[Card::Lich]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    end_turn(&mut g);
+    play(&mut g, Card::Lich);
+    end_turn(&mut g);
+    end_turn(&mut g);
+    assert_eq!(turn(&g), (P0, P0, None));
+    assert_eq!(g.player(P0).turns_taken, 3);
+    buy_phase(&mut g, 4, 1);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Mission)));
+    // Mission's would be P0's third turn in a row.
+    assert_eq!(turn(&g), (P1, P1, None));
+}
+
+#[test]
+fn lich_skips_a_fleet_turn() {
+    let mut g = game(3, &[Card::Wizards], &[Card::Fleet]);
+    g.players[0].projects.push(Card::Fleet);
+    g.players[1].projects.push(Card::Fleet);
+    leave_one(&mut g, Card::Province);
+    hand(&mut g, P0, &[Card::Lich]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Lich);
+    buy_the_last_province(&mut g);
+    assert_eq!(turn(&g), (P1, P1, None));
+    end_turn(&mut g);
+    let outcome = g.outcome().expect("P0's Fleet turn is skipped");
+    assert_eq!(outcome.turns, [1, 0, 0]);
+}
+
+#[test]
+fn extra_turns_are_taken_between_fleet_turns_but_not_after_the_last() {
+    let mut g = game(2, &[Card::Outpost], &[Card::Fleet]);
+    g.players[1].projects.push(Card::Fleet);
+    leave_one(&mut g, Card::Province);
+    hand(&mut g, P0, &[Card::Outpost]);
+    hand(&mut g, P1, &[Card::Outpost]);
+    g.start();
+    play(&mut g, Card::Outpost);
+    buy_the_last_province(&mut g);
+    assert_eq!(turn(&g), (P0, P0, Some(Card::Outpost)));
+    end_turn(&mut g);
+    assert_eq!(turn(&g), (P1, P1, None));
+    play(&mut g, Card::Outpost);
+    end_turn(&mut g);
+    assert!(g.outcome().is_some());
+}
+
+#[test]
+fn no_extra_turn_is_taken_once_the_game_has_ended() {
+    let mut g = game(2, &[Card::Outpost], &[]);
+    leave_one(&mut g, Card::Province);
+    hand(&mut g, P0, &[Card::Outpost]);
+    g.start();
+    play(&mut g, Card::Outpost);
+    buy_the_last_province(&mut g);
+    assert!(g.outcome().is_some());
 }
 
 #[test]
