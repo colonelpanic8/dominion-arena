@@ -625,7 +625,7 @@ fn city(g: &mut Game, f: &mut CardFrame) -> Flow {
     f.pc = 1;
     let empty = g.empty_supply_piles();
     if empty >= 2 {
-        g.turn.buys += 1;
+        g.add_buys(f.player, 1);
         g.add_coins(f.player, 1);
     }
     if empty >= 1 {

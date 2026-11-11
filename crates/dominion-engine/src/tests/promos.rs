@@ -129,6 +129,38 @@ fn black_market_buys_in_the_action_phase_without_using_a_buy() {
     assert_eq!(g.count_owned(P0, Card::Silver), 2);
 }
 
+/// A player has no $ on another player's turn, and can't spend that player's.
+#[test]
+fn black_market_played_on_another_players_turn_buys_nothing() {
+    let kingdom = vec![
+        Card::BlackMarket,
+        Card::Ambassador,
+        Card::Gondola,
+        Card::Festival,
+    ];
+    let deck = vec![Card::Cellar, Card::Laboratory, Card::Moat];
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        setup_choices: [(Card::BlackMarket, deck)].into(),
+        ..GameConfig::new(2, kingdom, 7)
+    });
+    hand(
+        &mut g,
+        P0,
+        &[Card::Festival, Card::Ambassador, Card::Gondola],
+    );
+    hand(&mut g, P1, &[Card::BlackMarket, Card::Silver]);
+    g.start();
+    play(&mut g, Card::Festival);
+    play_on_another_players_turn(&mut g);
+    // P1 plays the Silver, then is only asked for the order of the revealed cards.
+    choose_kinds(&mut g, &[Card::Silver]);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Move));
+    assert_eq!((g.turn().player, g.turn().coins), (P0, 2));
+}
+
 #[test]
 fn black_market_offers_only_affordable_cards() {
     let mut g = setup(&[Card::BlackMarket]);

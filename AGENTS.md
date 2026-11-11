@@ -180,7 +180,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   gain_card / trash / discard / play / receive / shuffle`. Primitive helpers
   (`g.move_card`, `top_deck`, `put_in_hand`, `set_aside`, `put_on_mat`,
   `return_to_pile`, `add_coins`) trigger nothing.
-- `+$` goes through `g.add_coins(p, n)` (the -$1 token). Decisions are asked with the
+- `+$` goes through `g.add_coins(p, n)` (the -$1 token), +Actions and +Buys through
+  `g.add_actions(p, n)` and `g.add_buys(p, n)`: all three do nothing for a player whose
+  turn it isn't, so never add to `g.turn` directly. Decisions are asked with the
   `CardFrame::ask_*` helpers.
 - "Draw until you have N cards in hand" is `Frame::draw_to(p, n)`, never a draw of
   `n - hand`: the -1 Card token replaces a draw without making the hand smaller.

@@ -1014,7 +1014,7 @@ fn ironmonger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let c = f.s.pick.expect("set in step 1");
             let types = g.types(c);
             if types.contains(Types::ACTION) {
-                g.turn.actions += 1;
+                g.add_actions(p, 1);
             }
             if types.contains(Types::TREASURE) {
                 g.add_coins(p, 1);
@@ -1385,10 +1385,10 @@ fn squire(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let m = mode_mask(input);
             if m & 1 != 0 {
-                g.turn.actions += 2;
+                g.add_actions(p, 2);
             }
             if m & 2 != 0 {
-                g.turn.buys += 2;
+                g.add_buys(p, 2);
             }
             f.pc = 2;
             if m & 4 != 0

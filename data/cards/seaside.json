@@ -1,5 +1,5 @@
 [
-  {"name": "Astrolabe", "set": "seaside", "types": ["Treasure", "Duration"], "cost": {"coins": 3}, "text": "Now and at the start\nof your next turn:\n$1\n+1 Buy", "kingdom": true},
+  {"name": "Astrolabe", "set": "seaside", "types": ["Treasure", "Duration"], "cost": {"coins": 3}, "text": "Now and at the start of your next turn:\n$1\n+1 Buy", "kingdom": true},
   {"name": "Bazaar", "set": "seaside", "types": ["Action"], "cost": {"coins": 5}, "plus": {"cards": 1, "actions": 2, "coins": 1}, "text": "+1 Card\n+2 Actions\n+$1", "kingdom": true},
   {"name": "Blockade", "set": "seaside", "types": ["Action", "Duration", "Attack"], "cost": {"coins": 4}, "text": "Gain a card costing up to $4, setting it aside. At the start of your next turn, put it into your hand. While it's set aside, when another player gains a copy of it on their turn, they gain a Curse.", "kingdom": true},
   {"name": "Caravan", "set": "seaside", "types": ["Action", "Duration"], "cost": {"coins": 4}, "plus": {"cards": 1, "actions": 1}, "text": "+1 Card\n+1 Action\nAt the start of your next turn, +1 Card.", "kingdom": true},

@@ -544,6 +544,31 @@ fn salvager_gives_coins_equal_to_the_trashed_cost() {
     assert_eq!((g.turn().coins, g.turn().buys), (6, 2));
 }
 
+/// A "when you gain" effect set up while a card is being gained applies to that gain.
+#[test]
+fn a_sailor_played_by_a_gained_gondola_can_play_that_gondola() {
+    let mut g = setup(&[Card::Sailor, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Sailor, Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::Gondola);
+    // Gondola's when-gain ability plays the Sailor.
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    let d = g.pending().unwrap();
+    assert_eq!(
+        (d.purpose, d.source),
+        (Purpose::Trigger, Some(Card::Sailor))
+    );
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    // The Gondola, for its +$2 next turn.
+    mode(&mut g, 1);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Sailor, Card::Gondola]);
+}
+
 #[test]
 fn sailor_plays_a_gained_duration_once_and_pays_next_turn() {
     let mut g = setup(&[Card::Sailor, Card::Caravan, Card::Festival]);
@@ -913,6 +938,30 @@ fn treasury_cannot_go_on_the_deck_after_gaining_a_victory_card() {
     assert!(discard_kinds(&g, P0).contains(&Card::Treasury));
 }
 
+/// A Treasury played on another player's turn is discarded in that turn's Clean-up, and
+/// its player had no Buy phase to gain a Victory card in.
+#[test]
+fn treasury_played_on_another_players_turn_may_go_on_the_deck() {
+    let mut g = setup(&[Card::Treasury, Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P1, &[Card::Treasury]);
+    deck(&mut g, P1, &[Card::Copper; 5]);
+    g.start();
+    play_on_another_players_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Gondola);
+    mode(&mut g, 0);
+    buy(&mut g, Card::Estate);
+    let d = g.pending().unwrap();
+    assert_eq!(
+        (d.player, d.purpose, d.source),
+        (P1, Purpose::Trigger, Some(Card::Treasury))
+    );
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(deck_kinds(&g, P1)[0], Card::Treasury);
+}
+
 #[test]
 fn treasury_ignores_victory_cards_gained_outside_the_buy_phase() {
     let mut g = setup(&[Card::Treasury, Card::Workshop]);
@@ -1116,6 +1165,8 @@ fn pearl_diver_may_move_the_bottom_card_to_the_top() {
     let bottom = candidates(&g);
     choose(&mut g, &bottom);
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Estate, Card::Estate]);
+    // Everyone sees that a card was moved, not which one.
+    assert_eq!(g.log().last(), Some(&Event::TopDecked { player: P0 }));
 }
 
 #[test]

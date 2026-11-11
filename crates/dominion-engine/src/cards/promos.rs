@@ -230,12 +230,22 @@ fn trash_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, min: usize) ->
     }
 }
 
+/// `p`'s $ and Potions: none on another player's turn.
+fn funds(g: &Game, p: PlayerId) -> (u32, u32) {
+    if p == g.turn.player {
+        (g.turn.coins, g.turn.potions)
+    } else {
+        (0, 0)
+    }
+}
+
 /// Whether `p` could pay for `id` right now.
 fn affordable(g: &Game, p: PlayerId, id: CardId) -> bool {
     let cost = g.cost_of(id);
+    let (coins, potions) = funds(g, p);
     g.player(p).debt == 0
-        && cost.coins as u32 <= g.turn.coins
-        && cost.potions as u32 <= g.turn.potions
+        && cost.coins as u32 <= coins
+        && cost.potions as u32 <= potions
         && super::can_buy(g, p, g.card(id))
 }
 
@@ -275,7 +285,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         3 => {
-            let (debt, coins) = (g.player(p).debt, g.turn.coins);
+            let (debt, coins) = (g.player(p).debt, funds(g, p).0);
             if debt > 0 && coins > 0 && f.s.m == 0 {
                 f.s.m = 1;
                 f.pc = 13;

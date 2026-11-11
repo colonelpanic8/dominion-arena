@@ -935,6 +935,20 @@ impl Game {
             .collect()
     }
 
+    /// +Actions: nothing for a player whose turn it isn't.
+    pub(crate) fn add_actions(&mut self, p: PlayerId, n: u32) {
+        if p == self.turn.player && !self.turn.ignore_plus_actions {
+            self.turn.actions += n;
+        }
+    }
+
+    /// +Buys: nothing for a player whose turn it isn't.
+    pub(crate) fn add_buys(&mut self, p: PlayerId, n: u32) {
+        if p == self.turn.player {
+            self.turn.buys += n;
+        }
+    }
+
     /// +$, respecting the -$1 token.
     pub(crate) fn add_coins(&mut self, p: PlayerId, n: u32) {
         if n == 0 {
