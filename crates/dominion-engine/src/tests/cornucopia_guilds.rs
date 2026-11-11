@@ -656,12 +656,94 @@ fn stonemason_overpay_gains_two_actions_costing_the_overpay() {
     play_treasures(&mut g);
     buy(&mut g, Card::Stonemason);
     respond(&mut g, Response::Number(3));
-    // Only Village costs exactly $3 among the Actions.
-    let mut owned: Vec<Card> = discard_kinds(&g, P0);
-    owned.sort();
-    assert!(owned.ends_with(&[Card::Village, Card::Village]) || owned.contains(&Card::Village));
+    // Village is the only Action costing exactly $3: two of them, no choice needed.
     assert_eq!(g.count_owned(P0, Card::Village), 2);
     assert_eq!(g.count_owned(P0, Card::Stonemason), 1);
+}
+
+#[test]
+#[ignore = "the engine's overpay decision offers coins only, so a Potion can't be overpaid"]
+fn stonemason_overpay_with_a_potion_gains_potion_cost_actions() {
+    let mut g = setup(&[Card::Stonemason, Card::Golem]);
+    hand(&mut g, P0, &[Card::Gold, Card::Potion]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Stonemason);
+    respond(&mut g, Response::Number(1));
+    assert_eq!(purpose(&g), Purpose::Overpay);
+}
+
+#[test]
+fn overpay_abilities_happen_on_gain_even_if_exchanged() {
+    let mut g = setup(&[Card::Masterpiece, Card::Trader]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Trader]);
+    g.start();
+    end_phase(&mut g);
+    play_treasures(&mut g);
+    buy(&mut g, Card::Masterpiece);
+    respond(&mut g, Response::Number(2));
+    // The overpay and Trader's exchange both trigger on the gain: exchange first.
+    let labels = match &g.pending().unwrap().kind {
+        DecisionKind::Choose { labels, .. } => labels.clone(),
+        k => panic!("{k:?}"),
+    };
+    let trader = labels.iter().position(|l| l.starts_with("Trader")).unwrap();
+    respond(&mut g, Response::option(Opt::Trigger(trader as u16)));
+    // Each Silver the overpay gains could be exchanged too: decline.
+    while g
+        .pending()
+        .is_some_and(|d| d.purpose == Purpose::Trigger && d.player == P0)
+    {
+        no(&mut g);
+    }
+    assert_eq!(g.count_owned(P0, Card::Masterpiece), 0);
+    assert_eq!(g.count_owned(P0, Card::Silver), 1 + 2);
+}
+
+#[test]
+fn footpad_draws_for_any_player_gaining_in_an_action_phase() {
+    let mut g = setup(&[Card::Footpad, Card::Witch]);
+    hand(&mut g, P0, &[Card::Witch]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    let before = g.hand(P1).len();
+    g.start();
+    play(&mut g, Card::Witch);
+    assert_eq!(g.count_owned(P1, Card::Curse), 1);
+    assert_eq!(g.hand(P1).len(), before + 1);
+}
+
+#[test]
+fn moat_comes_before_revealing_a_bane() {
+    let mut g = setup(&[Card::YoungWitch, Card::Moat]);
+    hand(&mut g, P0, &[Card::YoungWitch, Card::Estate, Card::Estate]);
+    hand(&mut g, P1, &[Card::Moat]);
+    deck(&mut g, P0, &[Card::Copper, Card::Copper]);
+    g.start();
+    play(&mut g, Card::YoungWitch);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    choose_kinds(&mut g, &[Card::Estate, Card::Estate]);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+}
+
+#[test]
+fn merchant_guild_ignores_action_phase_gains() {
+    let mut g = setup(&[Card::MerchantGuild, Card::Workshop, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Village, Card::MerchantGuild, Card::Workshop],
+    );
+    deck(&mut g, P0, &[Card::Estate]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::MerchantGuild);
+    play(&mut g, Card::Workshop);
+    choose_pile(&mut g, Card::Silver);
+    buy(&mut g, Card::Copper);
+    end_phase(&mut g);
+    assert_eq!(g.player(P0).coffers, 1);
 }
 
 #[test]
