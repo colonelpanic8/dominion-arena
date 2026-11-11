@@ -480,6 +480,8 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     .pop_front()
                     .expect("a final-round turn is due");
                 g.turn = Turn::new(p);
+                // Like extra turns, these don't count for the tiebreaker.
+                g.players[p.index()].extra_turns_taken += 1;
             } else {
                 g.turn = Turn::new(*next);
                 *next = g.left_of(*next);

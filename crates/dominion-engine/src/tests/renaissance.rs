@@ -1315,7 +1315,8 @@ fn fleet_gives_its_owners_one_more_turn_after_the_game_ends() {
     end_phase(&mut g);
     let outcome = g.outcome().expect("the game is over");
     assert_eq!(outcome.reason, EndReason::ProvincesGone);
-    assert_eq!(outcome.turns, [2, 1, 1]);
+    // Fleet turns, like extra turns, do not count for the tiebreaker.
+    assert_eq!(outcome.turns, [1, 1, 0]);
 }
 
 #[test]
@@ -1443,7 +1444,7 @@ fn an_outpost_turn_comes_before_the_fleet_round() {
     assert_eq!((g.turn().player, g.turn().extra), (P0, None));
     to_buy(&mut g);
     end_phase(&mut g);
-    assert_eq!(g.outcome().expect("game over").turns, [2, 1]);
+    assert_eq!(g.outcome().expect("game over").turns, [1, 1]);
 }
 
 #[test]
