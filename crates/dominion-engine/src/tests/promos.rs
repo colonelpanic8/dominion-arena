@@ -41,9 +41,10 @@ fn black_market_deck_is_unused_kingdom_cards_face_down() {
             ![Card::BlackMarket, Card::Village, Card::Sauna, Card::Avanto].contains(c),
             "{c}"
         );
-        assert!(c.cost().unwrap().potions == 0, "{c}");
+        assert!(!c.is(Types::TRAVELLER | Types::GATHERING), "{c}");
     }
-    assert!(!cards.contains(&Card::YoungWitch) && !cards.contains(&Card::Tournament));
+    let potions = cards.iter().any(|c| c.cost().unwrap().potions > 0);
+    assert_eq!(g.supply_pile(Card::Potion).is_some(), potions);
     let v = g.view(P0);
     assert_eq!((v.pile(bm).top(), v.pile(bm).size()), (None, 60));
     assert!(pile.cards.iter().all(|&c| v.card(c).is_none()));
@@ -75,6 +76,49 @@ fn a_card_in_the_black_market_deck_brings_its_heirloom() {
         assert_eq!(g.count_owned(p, Card::Pasture), 1);
         assert_eq!(g.count_owned(p, Card::Copper), 6);
     }
+}
+
+fn black_market_config(deck: Vec<Card>) -> GameConfig {
+    GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        setup_choices: [(Card::BlackMarket, deck)].into(),
+        ..GameConfig::new(2, vec![Card::BlackMarket, Card::Catapult], 7)
+    }
+}
+
+/// The deck may hold any card of an unused Kingdom pile, one per pile, and setup adds what
+/// they use (Alchemy rulebook: the Potion pile; Knights: "put a Knight directly into the
+/// Black Market deck"; Traveller, Gathering: they may be bought from it).
+#[test]
+fn a_configured_black_market_deck_takes_one_card_of_each_unused_kingdom_pile() {
+    let deck = vec![
+        Card::Familiar,
+        Card::SirMartin,
+        Card::SmallCastle,
+        Card::Emporium,
+        Card::Page,
+        Card::Temple,
+        Card::Vampire,
+    ];
+    let g = crate::setup::build(black_market_config(deck)).expect("a legal deck");
+    for card in [Card::Potion, Card::TreasureHunter, Card::Bat] {
+        assert!(g.pile_of(card).is_some(), "{card}");
+    }
+    let rejected = |deck: Vec<Card>, choice| {
+        let err = crate::setup::build(black_market_config(deck)).unwrap_err();
+        assert_eq!(
+            err,
+            SetupError::InvalidChoice {
+                by: Card::BlackMarket,
+                choice
+            }
+        );
+    };
+    rejected(vec![Card::SirMartin, Card::DameAnna], Card::DameAnna);
+    rejected(vec![Card::Rocks], Card::Rocks);
+    rejected(vec![Card::Knights], Card::Knights);
+    rejected(vec![Card::RuinedVillage], Card::RuinedVillage);
 }
 
 #[test]

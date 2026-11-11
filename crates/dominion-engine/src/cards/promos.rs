@@ -182,33 +182,40 @@ impl SetRules for Rules {
         if g.ext.promos.black_market.is_some() || !setup::in_game(g, |c| c == Card::BlackMarket) {
             return;
         }
-        let pool: Vec<Card> = Card::ALL
+        let legal: Vec<Card> = Card::ALL
             .iter()
             .copied()
             .filter(|&c| black_market_eligible(g, c))
             .collect();
-        let deck = s.choose_n(g, Card::BlackMarket, pool, 1..=BLACK_MARKET_SIZE);
+        let deck = s.choose_or_random(g, Card::BlackMarket, legal, 1..=BLACK_MARKET_SIZE, |c| {
+            c.def().kingdom && !c.is(Types::TRAVELLER | Types::GATHERING) && c != Card::Vampire
+        });
+        let home = |c: Card| c.def().pile.unwrap_or(c);
+        if let Some((i, _)) = deck
+            .iter()
+            .enumerate()
+            .find(|&(i, &c)| deck[..i].iter().any(|&d| home(d) == home(c)))
+        {
+            s.reject(Card::BlackMarket, deck[i]);
+        }
         let pile = setup::add_mixed_pile(g, Card::BlackMarket, &deck, false);
         g.piles[pile.index()].hidden = true;
         g.ext.promos.black_market = Some(pile);
     }
 }
 
-/// Whether `card` can go in the Black Market deck: an unused Kingdom card that needs no
-/// Supply pile of its own (Travellers, Gatherings, Vampire for Bat to become). Setup adds
-/// whatever else it uses, as for any card in the game.
+/// Whether `card` can go in the Black Market deck: a card of an unused Kingdom pile, one per
+/// pile (a Knight, a Castle, either half of a split pile). Setup adds whatever the deck's
+/// cards use, as for any card in the game (the Potion pile, a Bane, Traveller piles), though
+/// a card from the deck has no pile to exchange with or to hold a Gathering's VP. A random
+/// deck takes only cards that name their pile, and leaves out Travellers, Gatherings and
+/// Vampire, whose exchange or Gathering ability never works from there.
 fn black_market_eligible(g: &Game, card: Card) -> bool {
     let def = card.def();
-    if card.kind() != Kind::Card || !def.kingdom || !setup::unused(g, card) {
-        return false;
-    }
-    let Some(cost) = def.cost else {
-        return false;
-    };
-    if cost.potions > 0 && g.supply_pile(Card::Potion).is_none() {
-        return false;
-    }
-    !card.is(Types::TRAVELLER | Types::GATHERING) && card != Card::Vampire
+    card.kind() == Kind::Card
+        && def.cost.is_some()
+        && (def.kingdom || def.pile.is_some_and(|pile| pile.def().kingdom))
+        && setup::unused(g, card)
 }
 
 fn gain_from_supply(g: &Game, p: PlayerId, card: Card, to: Dest) -> Option<Frame> {
