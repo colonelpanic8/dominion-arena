@@ -204,6 +204,9 @@ pub async fn play(
     seat: Option<(String, String)>,
     reconnect: Duration,
 ) -> Result<(), String> {
+    if new.is_none() && seat.is_none() {
+        return Err("give --new, or --game and --token".into());
+    }
     let client = Client::connect(url).await?;
     let ok = |reply: Result<Reply, CallError>| match reply {
         Ok(reply) if reply.ok => Ok(reply),
@@ -240,7 +243,7 @@ pub async fn play(
             let args = json!({ "game_id": game, "token": token });
             (token, Some(ok(client.call("join_game", args).await)?))
         }
-        (None, None) => return Err("give --new, or --game and --token".into()),
+        (None, None) => unreachable!(),
     };
     let mut seat = Seat {
         url: url.to_string(),

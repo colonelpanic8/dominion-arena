@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 use dominion_server::Options;
 use dominion_server::config::Config;
 use dominion_server::hub::{Hub, NewGame};
@@ -45,6 +45,7 @@ enum Command {
 }
 
 #[derive(Args)]
+#[command(group(ArgGroup::new("seat").required(true).args(["new", "game"])))]
 struct PlayArgs {
     /// The server's MCP endpoint (default from the config file, else the local server).
     #[arg(long)]
@@ -61,20 +62,21 @@ struct PlayArgs {
     /// The seat token for --game.
     #[arg(long, requires = "game")]
     token: Option<String>,
-    #[arg(long, default_value_t = 2)]
-    players: u8,
-    /// Kingdom cards, comma separated (default: a random kingdom).
-    #[arg(long, value_delimiter = ',')]
+    /// Number of players in the new game (default 2).
+    #[arg(long, conflicts_with = "game")]
+    players: Option<u8>,
+    /// Kingdom cards of the new game, comma separated (default: a random kingdom).
+    #[arg(long, value_delimiter = ',', conflicts_with = "game")]
     kingdom: Vec<String>,
-    /// Sets to deal a random kingdom from, comma separated.
-    #[arg(long, value_delimiter = ',')]
+    /// Sets to deal the new game's random kingdom from, comma separated.
+    #[arg(long, value_delimiter = ',', conflicts_with_all = ["game", "kingdom"])]
     sets: Vec<String>,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "game")]
     seed: Option<u64>,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "game")]
     turn_limit: Option<u32>,
-    /// Seat names, comma separated.
-    #[arg(long, value_delimiter = ',')]
+    /// Seat names of the new game, comma separated.
+    #[arg(long, value_delimiter = ',', conflicts_with = "game")]
     names: Vec<String>,
 }
 
@@ -153,7 +155,7 @@ async fn main() -> ExitCode {
                 .reconnect
                 .map_or(config.reconnect(), |s| Duration::from_secs(s.into()));
             let new = args.new.then(|| NewGame {
-                players: args.players,
+                players: args.players.unwrap_or(2),
                 names: args.names,
                 kingdom: args.kingdom,
                 sets: args.sets,

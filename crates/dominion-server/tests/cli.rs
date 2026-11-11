@@ -294,3 +294,38 @@ fn play_gives_up_on_a_server_that_stays_away() {
     assert!(!succeeded);
     assert!(error.contains("dominion: lost the server"), "{error}");
 }
+
+#[test]
+fn play_checks_its_flags_before_it_connects() {
+    let home = tempfile::tempdir().unwrap();
+    // Nothing listens here, so a client that connected first would say so instead.
+    let nowhere = ["play", "--server", "http://127.0.0.1:1/mcp"];
+    for (flags, complaint) in [
+        (&[][..], "--new"),
+        (&["--game", "g1"], "--token"),
+        (
+            &["--game", "g1", "--token", "t", "--players", "3"],
+            "--players",
+        ),
+        (
+            &["--game", "g1", "--token", "t", "--kingdom", "Moat"],
+            "--kingdom",
+        ),
+        (&["--new", "--game", "g1", "--token", "t"], "--new"),
+    ] {
+        let run = dominion(&home).args(nowhere).args(flags).output().unwrap();
+        let error = String::from_utf8_lossy(&run.stderr);
+        assert!(!run.status.success(), "{flags:?}");
+        assert!(
+            error.contains(complaint) && !error.contains("connecting"),
+            "{flags:?}: {error}"
+        );
+    }
+    let run = dominion(&home)
+        .args(nowhere)
+        .args(["--new", "--players", "3"])
+        .output()
+        .unwrap();
+    let error = String::from_utf8_lossy(&run.stderr);
+    assert!(error.contains("connecting"), "{error}");
+}
