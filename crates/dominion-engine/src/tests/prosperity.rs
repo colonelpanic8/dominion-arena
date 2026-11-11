@@ -1000,6 +1000,43 @@ fn a_talisman_played_while_a_buy_resolves_copies_the_card_once() {
 }
 
 #[test]
+fn a_buy_gains_its_card_after_talismans_copy_took_others_from_the_pile() {
+    let mut g = setup(&[Card::Talisman, Card::Port]);
+    hand(&mut g, P0, &[Card::Talisman, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Talisman);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Port);
+    // Talisman's copy and the bought Port each come with another Port.
+    assert_eq!(g.count_owned(P0, Card::Port), 4);
+}
+
+#[test]
+fn talisman_gains_no_copy_of_a_card_with_no_other_copy_and_the_buy_still_gains_it() {
+    let mut g = setup(&[Card::Talisman, Card::Knights, Card::Haggler]);
+    let knights = g.supply_pile(Card::Knights).unwrap();
+    let martin = *g
+        .pile(knights)
+        .cards
+        .iter()
+        .find(|&&c| g.card(c) == Card::SirMartin)
+        .unwrap();
+    g.move_card(martin, Zone::Pile(knights), crate::game::Pos::Top);
+    hand(&mut g, P0, &[Card::Haggler, Card::Talisman, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Haggler);
+    play(&mut g, Card::Talisman);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Knights);
+    // The next Knight is no copy of Sir Martin; he is gained as the card bought, so
+    // Haggler applies.
+    let d = g.pending().unwrap();
+    assert_eq!((d.purpose, d.source), (Purpose::Gain, Some(Card::Haggler)));
+    assert_eq!(g.count_owned(P0, Card::SirMartin), 1);
+    assert_eq!(g.pile(knights).cards.len(), 9);
+}
+
+#[test]
 fn trade_route_tokens_move_to_the_mat_when_victory_piles_are_gained_from() {
     let mut g = setup(&[Card::TradeRoute, Card::Gardens]);
     let tokens: Vec<Card> = g

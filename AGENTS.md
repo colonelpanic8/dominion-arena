@@ -106,7 +106,9 @@ them.
   else gained it instead: Possession) rather than assuming the discard pile.
   **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
   (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
-  `f.data` = the $ and `f.s.cost` = all of it), `Buy` window, then gain.
+  `f.data` = the $ and `f.s.cost` = all of it), `Buy` window, then gain the pile's top
+  card if it still has the bought card's name (an on-buy ability may have gained the copy
+  that was on top; what was bought is a card of that name, not one physical copy).
   Events and Projects: pay, `BuyLandscape` window, then the landscape's `Hook::Main`
   (a Project also gets the buyer's cube in `Player::projects`).
 - **Triggers** (`trigger.rs`). Each set's `SetRules::triggers(g, occ, out)` adds the

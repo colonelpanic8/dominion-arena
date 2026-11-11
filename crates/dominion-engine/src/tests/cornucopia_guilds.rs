@@ -1206,6 +1206,25 @@ fn masterpiece_overpay_gains_silvers() {
 }
 
 #[test]
+fn overpay_applies_to_the_bought_card_not_to_a_copy_gained_first() {
+    let mut g = setup(&[Card::Masterpiece, Card::Talisman]);
+    hand(&mut g, P0, &[Card::Talisman, Card::Gold, Card::Gold]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Masterpiece);
+    respond(&mut g, Response::Number(2));
+    assert_eq!(
+        kinds(&g, &g.player(P0).discard[..4]),
+        [
+            Card::Masterpiece,
+            Card::Masterpiece,
+            Card::Silver,
+            Card::Silver
+        ]
+    );
+}
+
+#[test]
 fn taxman_makes_others_discard_a_copy_and_gains_onto_the_deck() {
     let mut g = setup(&[Card::Taxman]);
     hand(&mut g, P0, &[Card::Taxman, Card::Silver]);

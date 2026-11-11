@@ -1226,10 +1226,15 @@ fn resume_buy(
         }
         3 => {
             *pc = 4;
-            let top = card.expect("set in step 0");
-            if g.zone(top) != Zone::Pile(pile) {
+            // What was bought is a card of that name from the pile, not one physical copy:
+            // an on-buy ability may have gained the copy that was on top.
+            let bought = g.printed(card.expect("set in step 0"));
+            let top = g
+                .pile_top(pile)
+                .filter(|&c| !g.pile(pile).removed && g.card(c) == bought);
+            let Some(top) = top else {
                 return Flow::done();
-            }
+            };
             Flow::Call(Frame::Gain {
                 player: p,
                 from: From::Card(top),

@@ -1036,6 +1036,17 @@ fn embargo_trashes_itself_to_add_a_token_that_curses_buyers() {
 }
 
 #[test]
+fn buying_an_embargoed_curse_gains_it_and_another_curse() {
+    let mut g = setup(&[Card::Embargo]);
+    let curses = g.supply_pile(Card::Curse).unwrap();
+    g.piles[curses.index()].embargo = 1;
+    hand(&mut g, P0, &[]);
+    g.start();
+    buy(&mut g, Card::Curse);
+    assert_eq!(g.count_owned(P0, Card::Curse), 2);
+}
+
+#[test]
 fn explorer_gains_gold_for_a_province_else_silver_to_hand() {
     let mut g = setup(&[Card::Explorer]);
     hand(
