@@ -81,8 +81,9 @@ them.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
   card's cost then in `GainState::cost`), `Gain` window.
-  **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay (`Frame::overpay`: $, then Potions; the card's
-  `Hook::Ability(frame::OVERPAY)` with `f.data` = $ and `f.s.cost` = all overpaid), `Buy` window, then gain.
+  **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
+  (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
+  `f.data` = the $ and `f.s.cost` = all of it), `Buy` window, then gain.
   Events and Projects: pay, `BuyLandscape` window, then the landscape's `Hook::Main`
   (a Project also gets the buyer's cube in `Player::projects`).
 - **Triggers** (`trigger.rs`). Each set's `SetRules::triggers(g, occ, out)` adds the
@@ -94,8 +95,7 @@ them.
   trigger with `Value::Bool(true)` makes the target unaffected.
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
   `f.add_duration(g, data)` (keeps the card in play with what played it:
-  `CardFrame::keeps`) only when the play
-  has something left to do, and produce a `StartTurn` trigger from that lasting
+  `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting
   (`cards::due_durations` lists the ones due: made on an earlier turn of the owner's;
   `cards::duration_trigger` builds the trigger), whose ability removes it
   (`f.end_lasting(g)`). "This turn" effects use `Until::EndOfTurn`, "until your next
