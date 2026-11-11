@@ -1604,14 +1604,26 @@ fn invest_stops_drawing_once_the_card_leaves_exile() {
 }
 
 #[test]
-fn march_plays_an_action_from_the_discard_pile() {
+fn march_looks_through_the_discard_pile_and_plays_an_action_from_it() {
     let mut g = setup_with_landscapes(&[Card::Village], &[Card::March]);
     hand(&mut g, P0, &[Card::Gold]);
-    discard(&mut g, P0, &[Card::Village, Card::Estate]);
+    let pile = discard(&mut g, P0, &[Card::Village, Card::Estate]);
+    g.enable_trace();
     g.start();
     g.turn.buys = 2;
     play_treasures(&mut g);
+    g.take_trace();
     buy_event(&mut g, Card::March);
+    // P0 looked at the whole pile, not only at the Action on offer.
+    let looked: Vec<CardId> = g
+        .take_trace()
+        .into_iter()
+        .filter_map(|t| match t {
+            Trace::Shown { card, to } if to == Some(P0) => Some(card),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(looked, pile);
     choose_kinds(&mut g, &[Card::Village]);
     assert_eq!(in_play_kinds(&g, P0), [Card::Gold, Card::Village]);
 }

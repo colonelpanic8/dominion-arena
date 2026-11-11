@@ -252,7 +252,13 @@ impl SetRules for Rules {
             (Card::Gamble, _) => gamble(g, f, input),
             (Card::Invest, _) => invest(g, f, input),
             (Card::March, _) => {
-                let actions = cards_where(g, &g.player(f.player).discard, Types::ACTION);
+                let p = f.player;
+                if f.pc == 0 {
+                    for c in g.player(p).discard.clone() {
+                        g.show_to(c, p);
+                    }
+                }
+                let actions = cards_where(g, &g.player(p).discard, Types::ACTION);
                 play_one_of(f, input, actions, true)
             }
             (Card::Populate, _) => populate(g, f, input),
