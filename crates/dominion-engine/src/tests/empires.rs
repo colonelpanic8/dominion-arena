@@ -1,4 +1,6 @@
+use super::alchemy::possess;
 use super::intrigue::{modes, random_games_with_copies, trigger};
+use super::prosperity::play_from;
 use super::*;
 
 /// Random games over Empires with copies of its cards in every deck, and two random
@@ -744,6 +746,19 @@ fn a_throne_roomed_engineer_trashes_itself_once() {
     assert_eq!(purpose(&g), Purpose::Turn);
 }
 
+/// A possessed player's trashed card is set aside, but it was trashed.
+#[test]
+fn engineer_trashed_on_a_possession_turn_gains_a_second_card() {
+    let mut g = possess(&[Card::Engineer, Card::Village], &[Card::Engineer]);
+    let engineer = find(&g, P1, Card::Engineer);
+    play_from(&mut g, P1, Card::Engineer);
+    choose_pile(&mut g, Card::Village);
+    yes(&mut g);
+    choose_pile(&mut g, Card::Village);
+    assert_eq!(g.count_owned(P0, Card::Village), 2);
+    assert_eq!(g.zone(engineer), Zone::SetAside(P1));
+}
+
 #[test]
 fn farmers_market_gathers_four_times_then_pays_out_and_trashes_itself() {
     let mut g = setup(&[Card::FarmersMarket]);
@@ -1247,6 +1262,13 @@ fn small_castle_trashes_itself_or_a_castle_to_gain_the_top_castle() {
 }
 
 #[test]
+fn small_castle_trashed_on_a_possession_turn_gains_a_castle() {
+    let mut g = possess(&[Card::Castles], &[Card::SmallCastle]);
+    play_from(&mut g, P1, Card::SmallCastle);
+    assert_eq!(g.count_owned(P0, Card::HumbleCastle), 1);
+}
+
+#[test]
 fn haunted_castle_gains_a_gold_and_makes_others_with_five_cards_topdeck_two() {
     let mut g = setup(&[Card::Castles]);
     strip(&mut g, Card::Castles, 3);
@@ -1365,6 +1387,20 @@ fn advance_trashes_an_action_for_an_action_costing_up_to_six() {
     choose_pile(&mut g, Card::Laboratory);
     assert_eq!(g.count_owned(P0, Card::Laboratory), 1);
     assert_eq!(g.count_owned(P0, Card::Village), 0);
+}
+
+/// A Fortress is trashed, then returns to the hand.
+#[test]
+fn advance_trashing_a_fortress_gains_an_action() {
+    let mut g = setup_landscapes(&[Card::Fortress, Card::Smithy], &[Card::Advance]);
+    hand(&mut g, P0, &[Card::Fortress, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Advance);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Fortress]);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(g.count_owned(P0, Card::Smithy), 1);
 }
 
 #[test]

@@ -1389,7 +1389,6 @@ fn engineer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 5;
             Flow::Call(Frame::trash(p, vec![f.this()]))
         }
-        5 if g.zone(f.this()) != Zone::Trash => Flow::done(),
         _ => {
             let piles = if f.pc == 5 { up_to_4(g) } else { vec![] };
             choose_and_gain(f, input, 5, piles, Dest::Discard, DONE)
@@ -1708,15 +1707,12 @@ fn small_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
             f.pc = 3;
-            let trashed = f.s.pick.is_some_and(|c| g.zone(c) == Zone::Trash);
-            if trashed
-                && let Some(pile) = g.supply_pile(Card::Castles)
+            if let Some(pile) = g.supply_pile(Card::Castles)
                 && g.pile_top(pile).is_some_and(|t| g.is(t, Types::CASTLE))
             {
                 return Flow::Call(Frame::gain(p, pile, Dest::Discard));
@@ -1882,11 +1878,9 @@ fn advance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
-        2 if !f.s.pick.is_some_and(|c| g.zone(c) == Zone::Trash) => Flow::done(),
         _ => {
             let piles = if f.pc == 2 {
                 g.supply_piles_where(|t, c| {

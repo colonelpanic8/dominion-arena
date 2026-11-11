@@ -1,3 +1,5 @@
+use super::alchemy::possess;
+use super::prosperity::play_from;
 use super::*;
 use rand::SeedableRng;
 
@@ -1233,6 +1235,16 @@ fn pillage_trashes_itself_gains_spoils_and_takes_a_card_from_a_full_hand() {
     assert_eq!(discard_kinds(&g, P1), [Card::Gold]);
     assert_eq!(g.count_owned(P0, Card::Spoils), 2);
     assert_eq!(trash_kinds(&g).last(), Some(&Card::Pillage));
+}
+
+/// A possessed player's trashed card is set aside, but it was trashed.
+#[test]
+fn pillage_trashed_on_a_possession_turn_gains_the_spoils() {
+    let mut g = possess(&[Card::Pillage], &[Card::Pillage]);
+    let pillage = find(&g, P1, Card::Pillage);
+    play_from(&mut g, P1, Card::Pillage);
+    assert_eq!(g.count_owned(P0, Card::Spoils), 2);
+    assert_eq!(g.zone(pillage), Zone::SetAside(P1));
 }
 
 #[test]

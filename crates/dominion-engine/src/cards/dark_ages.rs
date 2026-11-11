@@ -1156,23 +1156,16 @@ fn pillage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(p, vec![this]))
         }
         1 => {
-            if g.zone(this) != Zone::Trash {
-                return Flow::done();
-            }
-            f.pc = 2;
-            Flow::Continue
-        }
-        2 => {
             if f.s.n < 2 {
                 f.s.n += 1;
                 if let Some(pile) = top_of(g, Card::Spoils) {
                     return Flow::Call(Frame::gain(p, pile, Dest::Discard));
                 }
             }
-            f.pc = 3;
+            f.pc = 2;
             Flow::Continue
         }
-        3 => {
+        2 => {
             while let Some(&target) = f.targets.get(f.s.i) {
                 let hand = g.hand(target).to_vec();
                 if hand.len() >= 5 {
@@ -1181,7 +1174,7 @@ fn pillage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                         player: target,
                         cards,
                     });
-                    f.pc = 4;
+                    f.pc = 3;
                     return f.ask_cards(hand, 1, 1, Purpose::Discard);
                 }
                 f.s.i += 1;
@@ -1191,7 +1184,7 @@ fn pillage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             let target = f.targets[f.s.i];
             f.s.i += 1;
-            f.pc = 3;
+            f.pc = 2;
             Flow::Call(Frame::discard(target, input.cards()))
         }
     }

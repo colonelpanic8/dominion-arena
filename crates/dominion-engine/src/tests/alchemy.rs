@@ -341,7 +341,7 @@ fn vineyard_is_worth_a_vp_per_three_actions() {
 // ---- Possession ----
 
 /// P0 plays Possession and ends their turn; P1's hand is `p1` for the Possession turn.
-fn possess(kingdom: &[Card], p1: &[Card]) -> Game {
+pub(super) fn possess(kingdom: &[Card], p1: &[Card]) -> Game {
     let mut k = vec![Card::Possession];
     k.extend_from_slice(kingdom);
     let mut g = setup(&k);
