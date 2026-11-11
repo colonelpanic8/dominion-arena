@@ -9,7 +9,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Move, Opt, Purpose, Response};
 use crate::event::{Dest, Event};
-use crate::game::{GainState, Phase, PlayState, Pos, Turn, Until, Zone};
+use crate::game::{EndReason, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -369,7 +369,9 @@ impl Frame {
                 if *i == 0 {
                     for &c in cards.iter() {
                         let from = g.zone(c);
-                        g.move_card(c, Zone::Trash, Pos::Top);
+                        if !cards::trash_instead(g, *player, c) {
+                            g.move_card(c, Zone::Trash, Pos::Top);
+                        }
                         g.trashing.push((c, from));
                         let card = g.card(c);
                         if *player == g.turn.player {
@@ -405,15 +407,20 @@ impl Frame {
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
+                // Cards discarded together are all discarded before any reacts.
+                if *i == 0 {
+                    for &c in cards.iter() {
+                        g.move_card(c, Zone::Discard(*player), Pos::Top);
+                        g.emit(Event::Discarded {
+                            player: *player,
+                            card: g.card(c),
+                        });
+                    }
+                }
                 let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 };
                 *i += 1;
-                g.move_card(c, Zone::Discard(*player), Pos::Top);
-                g.emit(Event::Discarded {
-                    player: *player,
-                    card: g.card(c),
-                });
                 Flow::Call(Frame::window(Occasion::Discard {
                     player: *player,
                     card: c,
@@ -467,8 +474,18 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                     pc: 0,
                 });
             }
-            g.turn = Turn::new(*next);
-            *next = g.left_of(*next);
+            if g.ending.is_some() {
+                let p = g
+                    .final_round
+                    .pop_front()
+                    .expect("a final-round turn is due");
+                g.turn = Turn::new(p);
+                // Like extra turns, these don't count for the tiebreaker.
+                g.players[p.index()].extra_turns_taken += 1;
+            } else {
+                g.turn = Turn::new(*next);
+                *next = g.left_of(*next);
+            }
             *pc = 1;
             Flow::Call(Frame::Turn {
                 player: g.turn.player,
@@ -476,7 +493,21 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
             })
         }
         _ => {
-            if let Some(reason) = g.game_over_reason() {
+            if g.ending.is_none()
+                && let Some(reason) = g.game_over_reason()
+            {
+                g.ending = Some(reason);
+                if reason != EndReason::TurnLimit {
+                    let order = g.players_from(g.left_of(g.turn.player));
+                    g.final_round = order
+                        .into_iter()
+                        .filter(|&p| cards::final_round(g, p))
+                        .collect();
+                }
+            }
+            if let Some(reason) = g.ending
+                && g.final_round.is_empty()
+            {
                 g.finish(reason);
                 return Flow::done();
             }
@@ -498,7 +529,7 @@ fn ask_moves(player: PlayerId, phase: Phase, moves: Vec<Move>) -> Flow {
 /// Whether `p` may buy `card` (a card on top of a pile, an Event or a Project) now.
 fn can_buy(g: &Game, p: PlayerId, card: Card, cost: crate::Cost) -> bool {
     let t = &g.turn;
-    t.buys > 0
+    (t.buys > 0 || (t.actions > 0 && cards::actions_are_buys(g)))
         && g.players[p.index()].debt == 0
         && ((cost.coins as u32 <= t.coins && cost.potions as u32 <= t.potions)
             || cards::pays_otherwise(g, p, card))
@@ -512,6 +543,9 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             g.turn.phase = Phase::Start;
             let pl = &mut g.players[p.index()];
             pl.turns_taken += 1;
+            if g.turn.extra.is_some() {
+                pl.extra_turns_taken += 1;
+            }
             let turn = pl.turns_taken;
             g.emit(Event::TurnStart { player: p, turn });
             *pc = 1;
@@ -535,6 +569,10 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                         g.turn.actions += 1;
                     }
                 }
+                Input::Response(Response::Move(Move::PayDebt)) => {
+                    g.players[p.index()].debt -= 1;
+                    g.turn.coins -= 1;
+                }
                 Input::Response(Response::Move(Move::EndPhase)) => {
                     g.turn.phase = Phase::Buy;
                     *pc = 3;
@@ -543,7 +581,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 _ => {}
             }
             let mut moves: Vec<Move> = if g.turn.actions > 0 {
-                g.cards_in_hand_where(p, Types::ACTION)
+                g.playable(p, Types::ACTION)
                     .into_iter()
                     .map(Move::Play)
                     .collect()
@@ -553,16 +591,24 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             if g.players[p.index()].villagers > 0 {
                 moves.push(Move::Villager);
             }
+            if g.players[p.index()].debt > 0 && g.turn.coins > 0 {
+                moves.push(Move::PayDebt);
+            }
             moves.push(Move::EndPhase);
             ask_moves(p, Phase::Action, moves)
         }
         3 => {
             if g.turn.return_to_action {
                 g.turn.return_to_action = false;
-                g.turn.bought = false;
-                g.turn.phase = Phase::Action;
-                *pc = 2;
+                *pc = 11;
                 return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
+            }
+            // An effect already returned to the Action phase itself (Continue, which plays
+            // a card there).
+            if g.turn.phase == Phase::Action {
+                g.turn.bought = false;
+                *pc = 2;
+                return Flow::Continue;
             }
             if let Input::Response(Response::Move(m)) = input {
                 match m {
@@ -602,11 +648,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             }
             let mut moves = vec![];
             if !g.turn.bought {
-                moves.extend(
-                    g.cards_in_hand_where(p, Types::TREASURE)
-                        .into_iter()
-                        .map(Move::Play),
-                );
+                moves.extend(g.playable(p, Types::TREASURE).into_iter().map(Move::Play));
             }
             if g.turn.can_buy_cards {
                 for (i, pile) in g.piles.iter().enumerate() {
@@ -651,7 +693,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 _ => {}
             }
             let mut moves: Vec<Move> = g
-                .cards_in_hand_where(p, Types::NIGHT)
+                .playable(p, Types::NIGHT)
                 .into_iter()
                 .map(Move::Play)
                 .collect();
@@ -664,6 +706,18 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         }
         7 => {
             let kept: Vec<CardId> = g.lasting.iter().flat_map(|l| l.keeps.clone()).collect();
+            // Cards other players played this turn (Guard Dog, ...) are discarded too.
+            for other in g.others(p) {
+                let stray: Vec<CardId> = g.players[other.index()]
+                    .in_play
+                    .iter()
+                    .filter(|c| !kept.contains(c))
+                    .copied()
+                    .collect();
+                for c in stray {
+                    g.move_card(c, Zone::Discard(other), Pos::Top);
+                }
+            }
             let pl = &g.players[p.index()];
             let cards = pl
                 .in_play
@@ -687,6 +741,12 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         9 => {
             *pc = 10;
             Flow::Call(Frame::window(Occasion::EndTurn { player: p }))
+        }
+        11 => {
+            g.turn.phase = Phase::Action;
+            g.turn.bought = false;
+            *pc = 2;
+            Flow::Continue
         }
         _ => {
             g.lasting.retain(|l| l.until != Until::EndOfTurn);
@@ -724,6 +784,7 @@ fn resume_gain(
                 to,
                 bought,
                 cancelled: false,
+                turn_index: None,
             });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
@@ -742,9 +803,18 @@ fn resume_gain(
                 Dest::DeckTop => Zone::Deck(st.player),
                 Dest::SetAside => Zone::SetAside(st.player),
             };
+            if let Some(pile) = g.home_pile(g.printed(st.card)) {
+                let pile = &mut g.piles[pile.index()];
+                if pile.trade_route {
+                    pile.trade_route = false;
+                    g.trade_route_mat += 1;
+                }
+            }
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
+                g.gains.last_mut().expect("gain in progress").turn_index =
+                    Some(g.turn.gained.len());
                 g.turn.gained.push(kind);
                 if g.turn.phase == Phase::Buy {
                     g.turn.gained_in_buy_phase.push(kind);
@@ -903,9 +973,13 @@ fn pay(g: &mut Game, p: PlayerId, cost: crate::Cost) {
     let turn = &mut g.turn;
     turn.coins -= cost.coins as u32;
     turn.potions -= cost.potions as u32;
-    turn.buys -= 1;
+    if turn.buys > 0 {
+        turn.buys -= 1;
+    } else {
+        turn.actions -= 1;
+    }
     turn.bought = true;
-    g.players[p.index()].debt += cost.debt as u32;
+    g.add_debt(p, cost.debt as u32);
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -931,6 +1005,7 @@ impl PlayFrame {
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
+                    g.turn.played_ids.push(id);
                 }
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {
@@ -1023,11 +1098,14 @@ impl PlayFrame {
                 if st.blocked {
                     return Flow::Continue;
                 }
+                let mine = p == g.turn.player;
                 if let Some(plus) = st.replaced {
-                    if !g.turn.ignore_plus_actions {
-                        g.turn.actions += plus.actions as u32;
+                    if mine {
+                        if !g.turn.ignore_plus_actions {
+                            g.turn.actions += plus.actions as u32;
+                        }
+                        g.turn.buys += plus.buys as u32;
                     }
-                    g.turn.buys += plus.buys as u32;
                     g.add_coins(p, plus.coins as u32);
                     return Flow::Call(Frame::draw(p, plus.cards as usize));
                 }
@@ -1043,11 +1121,13 @@ impl PlayFrame {
                 pl.villagers += bonus.plus.villagers as u32;
                 pl.coffers += bonus.plus.coffers as u32;
                 pl.favors += bonus.plus.favors as u32;
-                if !g.turn.ignore_plus_actions {
-                    g.turn.actions += bonus.plus.actions as u32;
+                if mine {
+                    if !g.turn.ignore_plus_actions {
+                        g.turn.actions += bonus.plus.actions as u32;
+                    }
+                    g.turn.buys += bonus.plus.buys as u32;
+                    g.turn.potions += bonus.potions;
                 }
-                g.turn.buys += bonus.plus.buys as u32;
-                g.turn.potions += bonus.potions;
                 g.add_coins(p, bonus.plus.coins as u32 + bonus.coins);
                 self.pc = 5;
                 Flow::Call(Frame::draw(p, bonus.plus.cards as usize))

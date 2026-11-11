@@ -96,6 +96,8 @@ pub struct Player {
     pub minus_coin: bool,
     pub journey_face_up: bool,
     pub turns_taken: u32,
+    /// How many of `turns_taken` were extra turns, which don't count for the tiebreaker.
+    pub extra_turns_taken: u32,
 }
 
 impl Player {
@@ -131,6 +133,9 @@ pub struct Pile {
     /// Adventures tokens on this pile, by owner.
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
+    /// Not a pile any more (Divine Wind removed it from the game) or never one (a holder for
+    /// cards set aside in setup, like Riverboat's): lookups by name skip it.
+    pub removed: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
 }
@@ -147,6 +152,7 @@ impl Pile {
             trade_route: false,
             tokens: vec![],
             traits: vec![],
+            removed: false,
             hidden: false,
         }
     }
@@ -175,10 +181,14 @@ pub struct Turn {
     pub buys: u32,
     pub coins: u32,
     pub potions: u32,
-    /// Bought anything (card, Event or Project) in this Buy phase: no more Treasures then.
+    /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures).
     pub bought: bool,
+    /// Go back to the Action phase from the Buy phase as soon as possible (Villa).
+    pub return_to_action: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
+    /// The physical cards of `played`, in the same order.
+    pub played_ids: Vec<CardId>,
     pub gained: Vec<Card>,
     /// The cards in `gained` that were gained in the Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
@@ -190,8 +200,6 @@ pub struct Turn {
     pub can_buy_cards: bool,
     /// No more +Actions this turn (Snowy Village).
     pub ignore_plus_actions: bool,
-    /// Go back to the Action phase when the current Buy phase step finishes (Cavalry, Villa).
-    pub return_to_action: bool,
 }
 
 impl Turn {
@@ -206,7 +214,9 @@ impl Turn {
             coins: 0,
             potions: 0,
             bought: false,
+            return_to_action: false,
             played: vec![],
+            played_ids: vec![],
             gained: vec![],
             gained_in_buy_phase: vec![],
             bought_cards: vec![],
@@ -214,7 +224,6 @@ impl Turn {
             cleanup_draw: 5,
             can_buy_cards: true,
             ignore_plus_actions: false,
-            return_to_action: false,
         }
     }
 }
@@ -282,6 +291,7 @@ pub enum EndReason {
 pub struct Outcome {
     pub reason: EndReason,
     pub scores: Vec<i32>,
+    /// Turns each player took, not counting extra turns (the tiebreaker).
     pub turns: Vec<u32>,
     /// More than one winner means a tie.
     pub winners: Vec<PlayerId>,
@@ -321,6 +331,10 @@ pub struct Game {
     pub(crate) lasting: Vec<Lasting>,
     pub(crate) next_lasting: u32,
     pub(crate) extra_turns: VecDeque<ExtraTurn>,
+    /// Set once the game has ended, while an extra round after its end is played.
+    pub(crate) ending: Option<EndReason>,
+    /// The turns of the extra round after the game ended (Fleet) still to be taken.
+    pub(crate) final_round: VecDeque<PlayerId>,
     pub(crate) gains: Vec<GainState>,
     /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
     pub(crate) trashing: Vec<(CardId, Zone)>,
@@ -344,6 +358,9 @@ pub struct GainState {
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
+    /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
+    /// you gain", "your second gain this turn").
+    pub turn_index: Option<usize>,
 }
 
 /// A play in progress. "When you play" triggers may change it.
@@ -500,7 +517,7 @@ impl Game {
     pub fn pile_of(&self, card: Card) -> Option<PileId> {
         self.piles
             .iter()
-            .position(|p| p.card == card)
+            .position(|p| p.card == card && !p.removed)
             .map(|i| PileId(i as u8))
     }
 
@@ -715,6 +732,7 @@ impl Game {
     }
 
     pub(crate) fn emit(&mut self, event: Event) {
+        cards::on_event(self, &event);
         self.log.push(event);
     }
 
@@ -731,6 +749,7 @@ impl Game {
         let player = &mut self.players[p.index()];
         let mut cards = std::mem::take(&mut player.discard);
         cards.shuffle(&mut self.rng);
+        cards::arrange_shuffled(self, p, &mut cards);
         for &c in &cards {
             self.zones[c.index()] = Zone::Deck(p);
         }
@@ -738,6 +757,15 @@ impl Game {
         cards.append(&mut player.deck);
         player.deck = cards;
         self.emit(Event::Shuffled { player: p });
+    }
+
+    /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
+    /// elsewhere that can be played as if there (Shadow cards in the deck).
+    pub(crate) fn playable(&self, p: PlayerId, types: Types) -> Vec<CardId> {
+        let mut cards = self.hand(p).to_vec();
+        cards::playable_as_if_in_hand(self, p, &mut cards);
+        cards.retain(|&c| self.is(c, types));
+        cards
     }
 
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {
@@ -763,6 +791,12 @@ impl Game {
         if p == self.turn.player {
             self.turn.coins += n;
         }
+    }
+
+    /// `p` takes `n` Debt (or whoever takes it for them: Possession).
+    pub(crate) fn add_debt(&mut self, p: PlayerId, n: u32) {
+        let taker = cards::debt_taker(self, p).unwrap_or(p);
+        self.players[taker.index()].debt += n;
     }
 
     /// Puts `id` on top of `p`'s deck.
@@ -895,7 +929,11 @@ impl Game {
     pub(crate) fn finish(&mut self, reason: EndReason) {
         let n = self.players.len();
         let scores: Vec<i32> = (0..n).map(|p| self.score(PlayerId(p as u8))).collect();
-        let turns: Vec<u32> = self.players.iter().map(|p| p.turns_taken).collect();
+        let turns: Vec<u32> = self
+            .players
+            .iter()
+            .map(|p| p.turns_taken - p.extra_turns_taken)
+            .collect();
         let best = (0..n)
             .map(|p| (scores[p], std::cmp::Reverse(turns[p])))
             .max()

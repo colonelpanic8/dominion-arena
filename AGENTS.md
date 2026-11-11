@@ -63,8 +63,10 @@ them.
   Debt; `EndBuyPhase`), Night (`StartNight`; play Night cards), Clean-up
   (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Extra turns queue
-  in `Game::extra_turns`; nobody takes more than two turns in a row. `Turn::controller`
-  makes someone else decide (Possession).
+  in `Game::extra_turns`; nobody takes more than two turns in a row, and extra turns
+  don't count for the tiebreaker. `Turn::controller` makes someone else decide and see
+  the player's cards (Possession, which also replaces gains, trashing through
+  `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
   (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`), choose a Way if the
   game has Ways, open an `Attack` window per other player for Attacks, then apply the
@@ -101,7 +103,8 @@ them.
   (Inheritance).
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
   Debt, VP tokens, Projects, States, Adventures tokens, ...), `Pile` (VP / Debt /
-  Embargo / Trade Route / player tokens, Traits) and `Turn`. A set's own state goes in
+  Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with
+  `g.add_debt` (never `debt +=`), so Possession can redirect it. A set's own state goes in
   its `State` struct (`g.ext.<set>`). Everything must stay `Clone + Serialize`.
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
@@ -126,7 +129,14 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   check `g.zone(id)` is still that zone.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `setup` for extra piles
   (`setup::add_pile`, `add_mixed_pile`), decks of Boons/Hexes, tokens and so on,
-  `modify_starting_deck` for Heirlooms/Shelters-like changes.
+  `modify_starting_deck` for Heirlooms/Shelters-like changes. `setup_kingdom` runs
+  before `setup` for setup that adds Kingdom piles or decides what is in the game (the
+  Prophecy, Riverboat's card); `setup_added_piles` does the setup of cards that join
+  later (Divine Wind's piles, Riverboat's card), so only add what is missing there.
+  `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
+- "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
+  playable as if in hand (Shadow cards in the deck). An effect that sets `turn.phase`
+  back to `Action` during the Buy phase returns the turn to its Action phase.
 
 Tests: `src/tests/<set>.rs` (register it in `tests/mod.rs` and add the set to
 `IMPLEMENTED`, which feeds the fuzz test). Give every card with more than vanilla

@@ -11,6 +11,7 @@
 //! runs.
 
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
+use crate::event::Event;
 use crate::frame::{Flow, Input};
 use crate::game::{Lasting, Scratch, Until};
 use crate::trigger::{Occasion, Trigger};
@@ -85,15 +86,51 @@ pub(crate) trait SetRules {
         false
     }
 
-    /// Setup after the Supply is built, before every set's `setup` (Way of the Mouse sets
-    /// aside a Kingdom card, whose own setup must then happen too).
-    fn pre_setup(g: &mut Game) {}
+    /// Setup that adds Kingdom piles or decides what is in the game (a Prophecy, cards set
+    /// aside in setup, ...). Runs after the Kingdom piles are built, before `setup`.
+    fn setup_kingdom(g: &mut Game) {}
 
     /// Setup after the Supply is built: extra piles, decks of Boons, tokens, ...
     fn setup(g: &mut Game) {}
 
+    /// Setup for Kingdom cards that join the game outside the normal setup: piles dealt
+    /// mid-game (Divine Wind) or a card with no pile (Riverboat's). `setup` may already
+    /// have run, so add only what is missing.
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {}
+
+    /// Rearranges `cards`, just shuffled to go under `p`'s deck (bottom first).
+    fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {}
+
+    /// Adds the cards `p` may play as if they were in their hand (Shadow cards in the deck).
+    fn playable_as_if_in_hand(g: &Game, p: PlayerId, out: &mut Vec<CardId>) {}
+
+    /// Whether unused Action plays can be used as Buys.
+    fn actions_are_buys(g: &Game) -> bool {
+        false
+    }
+
     /// Changes a player's starting deck (Heirlooms, ...).
     fn modify_starting_deck(g: &Game, p: PlayerId, deck: &mut Vec<Card>) {}
+
+    /// Replaces moving `id`, which `p` is trashing, to the trash (Possession sets it aside).
+    /// Returns whether it moved the card itself.
+    fn trash_instead(g: &mut Game, p: PlayerId, id: CardId) -> bool {
+        false
+    }
+
+    /// Who takes the Debt `p` would take, if someone else does (Possession).
+    fn debt_taker(g: &Game, p: PlayerId) -> Option<PlayerId> {
+        None
+    }
+
+    /// Reacts to `event` as it is logged, for effects that only change counters and
+    /// never move cards or ask anything (Patron's +1 Coffers when revealed).
+    fn on_event(g: &mut Game, event: &Event) {}
+
+    /// Whether `p` takes a turn in an extra round after the game ends (Fleet).
+    fn final_round(g: &Game, p: PlayerId) -> bool {
+        false
+    }
 }
 
 /// The turn as it was before a step of an ability ran (see [`SetRules::after_step`]).
@@ -192,16 +229,48 @@ macro_rules! sets {
             }
         }
 
-        pub(crate) fn pre_setup(g: &mut Game) {
-            $(<$module::Rules as SetRules>::pre_setup(g);)*
+        pub(crate) fn setup_kingdom(g: &mut Game) {
+            $(<$module::Rules as SetRules>::setup_kingdom(g);)*
         }
 
         pub(crate) fn setup(g: &mut Game) {
             $(<$module::Rules as SetRules>::setup(g);)*
         }
 
+        pub(crate) fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+            $(<$module::Rules as SetRules>::setup_added_piles(g, cards);)*
+        }
+
+        pub(crate) fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {
+            $(<$module::Rules as SetRules>::arrange_shuffled(g, p, cards);)*
+        }
+
+        pub(crate) fn playable_as_if_in_hand(g: &Game, p: PlayerId, out: &mut Vec<CardId>) {
+            $(<$module::Rules as SetRules>::playable_as_if_in_hand(g, p, out);)*
+        }
+
+        pub(crate) fn actions_are_buys(g: &Game) -> bool {
+            false $(|| <$module::Rules as SetRules>::actions_are_buys(g))*
+        }
+
         pub(crate) fn modify_starting_deck(g: &Game, p: PlayerId, deck: &mut Vec<Card>) {
             $(<$module::Rules as SetRules>::modify_starting_deck(g, p, deck);)*
+        }
+
+        pub(crate) fn trash_instead(g: &mut Game, p: PlayerId, id: CardId) -> bool {
+            false $(|| <$module::Rules as SetRules>::trash_instead(g, p, id))*
+        }
+
+        pub(crate) fn debt_taker(g: &Game, p: PlayerId) -> Option<PlayerId> {
+            None$(.or_else(|| <$module::Rules as SetRules>::debt_taker(g, p)))*
+        }
+
+        pub(crate) fn on_event(g: &mut Game, event: &Event) {
+            $(<$module::Rules as SetRules>::on_event(g, event);)*
+        }
+
+        pub(crate) fn final_round(g: &Game, p: PlayerId) -> bool {
+            false $(|| <$module::Rules as SetRules>::final_round(g, p))*
         }
     };
 }

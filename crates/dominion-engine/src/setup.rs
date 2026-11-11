@@ -150,6 +150,8 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         lasting: vec![],
         next_lasting: 0,
         extra_turns: VecDeque::new(),
+        ending: None,
+        final_round: VecDeque::new(),
         gains: vec![],
         trashing: vec![],
         plays: vec![],
@@ -206,7 +208,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         }
     }
 
-    cards::pre_setup(&mut g);
+    cards::setup_kingdom(&mut g);
     cards::setup(&mut g);
 
     let estates = if shelters {

@@ -467,7 +467,7 @@ impl SetRules for Rules {
         }
     }
 
-    fn pre_setup(g: &mut Game) {
+    fn setup_kingdom(g: &mut Game) {
         if !g.landscapes.contains(&Card::WayOfTheMouse) {
             return;
         }

@@ -2301,7 +2301,6 @@ fn a_mastermind_whose_throne_room_plays_a_duration_does_not_stay() {
 }
 
 #[test]
-#[ignore = "Frame::discard opens each card's Discard window before discarding the next (fixed by the engine change on set/cornucopia-hinterlands)"]
 fn village_greens_discarded_to_militia_together_can_each_be_played() {
     let mut g = setup(&[Card::VillageGreen, Card::Militia]);
     hand(&mut g, P0, &[Card::Militia]);
