@@ -8,7 +8,7 @@
 //! wait as `EndOfTurn` lastings of their own, one per play; Priest's and Inventor's
 //! effects are `EndOfTurn` lastings too.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, take_mode};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -756,7 +756,7 @@ fn sinister_plot(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let n = g.ext.renaissance.plot[p.index()];
             let remove = format!("Remove your {n} tokens for +{n} Cards");
             f.pc = 1;
-            f.ask_modes(&["Add a token", &remove], 1, 1)
+            f.ask_either(&["Add a token", &remove])
         }
         1 => {
             let tokens = &mut g.ext.renaissance.plot[p.index()];
@@ -925,7 +925,7 @@ fn border_guard(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 4;
-            f.ask_modes(&["Take the Lantern", "Take the Horn"], 1, 1)
+            f.ask_either(&["Take the Lantern", "Take the Horn"])
         }
         _ => {
             let artifact = match input.opt() {
@@ -1110,8 +1110,11 @@ fn scepter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["+$2", "Replay an Action card you played this turn"], 1, 1)
         }
         1 => {
-            if input.opt() != Some(Opt::Mode(1)) {
+            let m = mode_mask(input);
+            if m & 1 != 0 {
                 g.add_coins(p, 2);
+            }
+            if m & 2 == 0 {
                 return Flow::done();
             }
             let mut candidates: Vec<CardId> = vec![];
@@ -1219,16 +1222,21 @@ fn treasurer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 1,
             )
         }
-        1 => match input.opt() {
-            Some(Opt::Mode(0)) => {
+        1 => {
+            f.s.m = mode_mask(input);
+            f.pc = 2;
+            Flow::Continue
+        }
+        2 => match take_mode(f) {
+            Some(0) => {
                 let treasures = g.cards_in_hand_where(p, Types::TREASURE);
                 if treasures.is_empty() {
-                    return Flow::done();
+                    return Flow::Continue;
                 }
-                f.pc = 2;
+                f.pc = 3;
                 f.ask_cards(treasures, 1, 1, Purpose::Trash)
             }
-            Some(Opt::Mode(1)) => {
+            Some(1) => {
                 let treasures: Vec<CardId> = g
                     .trash()
                     .iter()
@@ -1236,28 +1244,28 @@ fn treasurer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .filter(|&c| g.is(c, Types::TREASURE))
                     .collect();
                 if treasures.is_empty() {
-                    return Flow::done();
+                    return Flow::Continue;
                 }
-                f.pc = 3;
+                f.pc = 4;
                 f.ask_cards(treasures, 1, 1, Purpose::Gain)
             }
-            _ => {
+            Some(_) => {
                 take_artifact(g, p, Card::Key);
-                Flow::done()
+                Flow::Continue
             }
+            None => Flow::done(),
         },
-        2 => {
-            f.pc = 4;
+        3 => {
+            f.pc = 2;
             Flow::Call(Frame::trash(p, input.cards()))
         }
-        3 => {
-            f.pc = 4;
+        _ => {
+            f.pc = 2;
             match input.card() {
                 Some(c) => Flow::Call(Frame::gain_card(p, c, Dest::Hand)),
-                None => Flow::done(),
+                None => Flow::Continue,
             }
         }
-        _ => Flow::done(),
     }
 }
 

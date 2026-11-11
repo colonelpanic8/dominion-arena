@@ -10,7 +10,7 @@
 //! in an `Until::EndOfTurn` lasting's `data.cards`. Traits sit on their pile
 //! (`Pile::traits`); the Loot pile is a face-down non-Supply pile named [`Card::Loot`].
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -2142,7 +2142,7 @@ fn fortune_hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn now_or_next(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     if f.pc == 0 {
         f.pc = 1;
-        return f.ask_modes(&["Now", "At the start of your next turn"], 1, 1);
+        return f.ask_either(&["Now", "At the start of your next turn"]);
     }
     if input.opt() == Some(Opt::Mode(1)) {
         duration(g, f);
@@ -2431,10 +2431,10 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         1 => {
-            if input.opt() == Some(Opt::Mode(1)) {
-                plus_buys(g, p, 1);
-                coins(g, p, 3);
-                return Flow::done();
+            f.s.m = mode_mask(input);
+            if f.s.m & 1 == 0 {
+                f.pc = 3;
+                return Flow::Continue;
             }
             let cards: Vec<CardId> = g
                 .player(p)
@@ -2443,8 +2443,9 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .copied()
                 .filter(|&c| g.is(c, Types::ACTION | Types::TREASURE))
                 .collect();
+            f.pc = 3;
             if cards.is_empty() {
-                return Flow::done();
+                return Flow::Continue;
             }
             f.pc = 2;
             f.ask_cards(cards, 1, 1, Purpose::Play)
@@ -2455,8 +2456,16 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Some(c) if g.zone(c) == Zone::Discard(p) => {
                     Flow::Call(Frame::play(p, c, true, vec![]))
                 }
-                _ => Flow::done(),
+                _ => Flow::Continue,
             }
+        }
+        3 => {
+            f.pc = 4;
+            if f.s.m & 2 != 0 {
+                plus_buys(g, p, 1);
+                coins(g, p, 3);
+            }
+            Flow::done()
         }
         _ => Flow::done(),
     }

@@ -1443,7 +1443,7 @@ fn doctor_overpay(_g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_modes(&["Trash it", "Discard it", "Put it back"], 1, 1)
+            f.ask_either(&["Trash it", "Discard it", "Put it back"])
         }
         _ => {
             let c = f.s.pick.expect("set in step 1");

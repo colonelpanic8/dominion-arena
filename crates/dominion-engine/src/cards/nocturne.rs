@@ -809,7 +809,7 @@ fn boons_in(mask: i32) -> Vec<Card> {
 fn ask_boon(f: &CardFrame, boons: &[Card]) -> Flow {
     let options = boons.iter().map(|&b| Opt::Card(b)).collect();
     let labels = boons.iter().map(|b| b.to_string()).collect();
-    f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Mode)
+    f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Either)
 }
 
 // ---- Boons ----
@@ -1287,11 +1287,7 @@ fn blessed_village_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow
             });
             f.s.card = Some(boon);
             f.pc = 1;
-            f.ask_modes(
-                &["Receive it now", "Receive it at the start of your next turn"],
-                1,
-                1,
-            )
+f.ask_either(&["Receive it now", "Receive it at the start of your next turn"])
         }
         1 => {
             let boon = f.s.card.expect("set in step 0");

@@ -346,6 +346,24 @@ pub(crate) fn duration_trigger(l: &Lasting, ability: u8) -> Trigger {
     }
 }
 
+/// The chosen `Opt::Mode`s as a bit mask, to resolve in printed order with [`take_mode`].
+pub(crate) fn mode_mask(input: Input) -> i32 {
+    input.options().iter().fold(0, |m, o| match o {
+        Opt::Mode(i) => m | 1 << i,
+        _ => m,
+    })
+}
+
+/// Takes the first mode left in `f.s.m`, in printed order.
+pub(crate) fn take_mode(f: &mut CardFrame) -> Option<u8> {
+    if f.s.m == 0 {
+        return None;
+    }
+    let i = f.s.m.trailing_zeros() as u8;
+    f.s.m &= !(1 << i);
+    Some(i)
+}
+
 /// Which ability of a card is running.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Hook {
@@ -520,19 +538,26 @@ impl CardFrame {
 
     /// Ask to pick `min..=max` of the card's numbered choices; answers are `Opt::Mode(i)`.
     pub(crate) fn ask_modes(&self, labels: &[&str], min: usize, max: usize) -> Flow {
-        self.ask_modes_for(self.player, labels, min, max)
+        self.ask_numbered(self.player, labels, min, max, Purpose::Mode)
     }
 
-    pub(crate) fn ask_modes_for(
+    /// Ask to pick one of alternatives that aren't a "choose" (`Purpose::Either`); answers
+    /// are `Opt::Mode(i)`.
+    pub(crate) fn ask_either(&self, labels: &[&str]) -> Flow {
+        self.ask_numbered(self.player, labels, 1, 1, Purpose::Either)
+    }
+
+    pub(crate) fn ask_numbered(
         &self,
         player: PlayerId,
         labels: &[&str],
         min: usize,
         max: usize,
+        purpose: Purpose,
     ) -> Flow {
         let options = (0..labels.len()).map(|i| Opt::Mode(i as u8)).collect();
         let labels = labels.iter().map(|s| s.to_string()).collect();
-        self.ask_choose_for(player, options, labels, min, max, Purpose::Mode)
+        self.ask_choose_for(player, options, labels, min, max, purpose)
     }
 
     pub(crate) fn ask_choose_for(

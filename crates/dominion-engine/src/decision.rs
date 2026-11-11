@@ -78,8 +78,12 @@ pub enum Purpose {
     Reaction,
     /// Order or accept triggered abilities.
     Trigger,
-    /// Choose an effect, mode or way of playing a card.
+    /// Choose among a card's abilities (its "choose" options) or a way of playing a card.
+    /// Elder may add a pick to these.
     Mode,
+    /// Pick one of alternatives that aren't a "choose" ("either ... or", which Boon or
+    /// Artifact to take, now or next turn). Elder doesn't add picks to these.
+    Either,
     Exile,
     Return,
     Pass,

@@ -116,8 +116,9 @@ them.
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
   carries a `Purpose` and its `source` card. Never add a card-specific decision kind.
   `SetRules::modify_decision` may change what a card ability asks: Elder adds one pick
-  to a `Purpose::Mode` "choose", so scripts must handle every chosen mode, in printed
-  order.
+  to a `Purpose::Mode` "choose" (`ask_modes`), so scripts must handle every chosen mode,
+  in printed order (`mode_mask` / `take_mode`). Alternatives that aren't a "choose"
+  ("either ... or", which Artifact) use `ask_either` (`Purpose::Either`).
 - **Agents** get a `View`, never the `Game`.
 
 ## Writing a set

@@ -2,8 +2,8 @@
 //! Governor, Marchland, Sauna / Avanto, Walled Village and the Event Summon.
 
 use super::intrigue::{GainRule, trash_and_gain};
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
-use crate::decision::{Opt, Purpose};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, OVERPAY};
 use crate::game::{Pos, Scratch, Until, Zone};
@@ -545,20 +545,24 @@ fn governor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         );
     }
     if f.pc == 1 {
-        f.s.m = match input.take().and_then(Input::opt) {
-            Some(Opt::Mode(m)) => m as i32,
-            _ => 0,
-        };
+        f.s.m = input.take().map(mode_mask).unwrap_or_default();
         f.s.i = 0;
         f.pc = 10;
     }
     loop {
+        // The lowest mode left is the one resolving; it ends after every player.
+        if f.s.m == 0 {
+            return Flow::done();
+        }
         let order = g.players_from(f.player);
         let Some(&who) = order.get(f.s.i) else {
-            return Flow::done();
+            f.s.m &= f.s.m - 1;
+            f.s.i = 0;
+            f.pc = 10;
+            continue;
         };
         let mine = who == f.player;
-        match f.s.m {
+        match f.s.m.trailing_zeros() {
             0 => {
                 f.s.i += 1;
                 return Flow::Call(Frame::draw(who, if mine { 3 } else { 1 }));

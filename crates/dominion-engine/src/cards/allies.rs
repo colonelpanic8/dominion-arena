@@ -8,7 +8,7 @@
 //! Guildmaster, Skirmisher, Garrison's tokens) are `Until::EndOfTurn` lastings; the
 //! players an Attack affects are a bit mask in the lasting's `data.n`.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, take_mode};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -342,16 +342,20 @@ impl SetRules for Rules {
     }
 
     fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {
-        if d.purpose != Purpose::Mode || f.hook != Hook::Main {
+        if d.purpose != Purpose::Mode || f.hook != Hook::Main || d.player != f.player {
             return;
         }
         let Some(this) = f.this else {
             return;
         };
-        let elder = g
-            .lasting()
-            .iter()
-            .any(|l| l.card == Card::Elder && l.until == Until::Removed && l.data.pick == Some(this));
+        // Only Elder's own play of it, not a replay (Royal Carriage) during that play.
+        let play = g.turn.played_ids.iter().rposition(|&c| c == this);
+        let elder = g.lasting().iter().any(|l| {
+            l.card == Card::Elder
+                && l.until == Until::Removed
+                && l.data.pick == Some(this)
+                && Some(l.data.i) == play
+        });
         if let DecisionKind::Choose { options, max, .. } = &mut d.kind
             && elder
         {
@@ -493,24 +497,6 @@ fn favors(g: &Game, p: PlayerId) -> u32 {
 fn spend(g: &mut Game, p: PlayerId, n: u32) {
     let pl = &mut g.players[p.index()];
     pl.favors = pl.favors.saturating_sub(n);
-}
-
-/// The chosen `Opt::Mode`s as a bit mask.
-fn mode_mask(input: Input) -> i32 {
-    input.options().iter().fold(0, |m, o| match o {
-        Opt::Mode(i) => m | 1 << i,
-        _ => m,
-    })
-}
-
-/// Takes the first mode left in `f.s.m`, in printed order.
-fn take_mode(f: &mut CardFrame) -> Option<u8> {
-    if f.s.m == 0 {
-        return None;
-    }
-    let i = f.s.m.trailing_zeros() as u8;
-    f.s.m &= !(1 << i);
-    Some(i)
 }
 
 fn up_to(coins: u8) -> impl Fn(&Game) -> Vec<PileId> {
@@ -929,7 +915,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             0 => {
                 spend(g, p, 1);
                 f.pc = 1;
-                f.ask_modes(&["+1 Card", "+1 Action", "+1 Buy"], 1, 1)
+                f.ask_either(&["+1 Card", "+1 Action", "+1 Buy"])
             }
             1 => {
                 f.pc = 2;
@@ -1662,19 +1648,21 @@ fn town(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["+1 Card and +2 Actions", "+1 Buy and +$2"], 1, 1)
         }
         1 => {
-            let m = mode_mask(input);
-            if m & 2 != 0 {
+            f.s.m = mode_mask(input);
+            f.pc = 2;
+            if f.s.m & 1 != 0 {
+                plus_actions(g, p, 2);
+                return Flow::Call(Frame::draw(p, 1));
+            }
+            Flow::Continue
+        }
+        _ => {
+            if f.s.m & 2 != 0 {
                 plus_buys(g, p, 1);
                 g.add_coins(p, 2);
             }
-            if m & 1 != 0 {
-                plus_actions(g, p, 2);
-                f.pc = 2;
-                return Flow::Call(Frame::draw(p, 1));
-            }
             Flow::done()
         }
-        _ => Flow::done(),
     }
 }
 
@@ -2165,6 +2153,7 @@ fn elder(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             let data = Scratch {
                 pick: Some(c),
+                i: g.turn.played_ids.len(),
                 ..Scratch::default()
             };
             f.s.n = g.add_lasting(Card::Elder, p, f.this, vec![], Until::Removed, data) as i32;

@@ -1,6 +1,6 @@
 //! Prosperity (2nd edition), its removed 1st-edition cards, Platinum and Colony.
 
-use super::{Bonus, CardFrame, Hook, SetRules};
+use super::{Bonus, CardFrame, Hook, SetRules, mode_mask};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -680,7 +680,7 @@ fn crystal_ball(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             options.push(Opt::Mode(3));
             labels.push("Leave it".into());
-            f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Mode)
+            f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Either)
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
@@ -751,8 +751,11 @@ fn investment(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         3 => {
-            if input.opt() != Some(Opt::Mode(1)) {
+            let m = mode_mask(input);
+            if m & 1 != 0 {
                 g.add_coins(f.player, 1);
+            }
+            if m & 2 == 0 {
                 return Flow::done();
             }
             let this = f.this();
@@ -985,7 +988,7 @@ fn watchtower_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 vec![format!("Trash {name}"), format!("Put {name} onto your deck")],
                 1,
                 1,
-                Purpose::Mode,
+                Purpose::Either,
             )
         }
         1 => {
@@ -1066,7 +1069,7 @@ fn loan(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 vec![format!("Discard {name}"), format!("Trash {name}")],
                 1,
                 1,
-                Purpose::Mode,
+                Purpose::Either,
             )
         }
         3 => {

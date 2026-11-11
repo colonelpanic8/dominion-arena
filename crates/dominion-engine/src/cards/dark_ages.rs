@@ -1,7 +1,7 @@
 //! Dark Ages: its Kingdom cards, the Knights, Ruins, Shelters, Spoils, Madman and
 //! Mercenary.
 
-use super::{CardFrame, Hook, SetRules};
+use super::{CardFrame, Hook, SetRules, mode_mask, take_mode};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -487,7 +487,7 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::HuntingGrounds => match f.pc {
             0 => {
                 f.pc = 1;
-                f.ask_modes(&["Gain a Duchy", "Gain 3 Estates"], 1, 1)
+                f.ask_either(&["Gain a Duchy", "Gain 3 Estates"])
             }
             1 => {
                 f.s.m = match input.opt() {
@@ -655,14 +655,17 @@ fn catacombs(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["Put them into your hand", "Discard them and +3 Cards"], 1, 1)
         }
         2 => {
+            let m = mode_mask(input);
             let cards: Vec<CardId> = std::mem::take(&mut f.s.cards)
                 .into_iter()
                 .filter(|&c| g.zone(c) == Zone::Deck(p))
                 .collect();
-            if input.opt() == Some(crate::Opt::Mode(0)) {
-                for c in cards {
+            if m & 1 != 0 {
+                for &c in &cards {
                     g.put_in_hand(c, p);
                 }
+            }
+            if m & 2 == 0 {
                 return Flow::done();
             }
             f.pc = 3;
@@ -692,55 +695,63 @@ fn count(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         1 => {
+            f.s.m = mode_mask(input);
+            f.pc = 2;
+            Flow::Continue
+        }
+        2 => {
             let hand = g.hand(p).to_vec();
-            match input.opt() {
-                Some(crate::Opt::Mode(0)) => {
-                    f.pc = 2;
+            match take_mode(f) {
+                Some(0) => {
+                    f.pc = 3;
                     f.ask_cards(hand, 2, 2, Purpose::Discard)
                 }
-                Some(crate::Opt::Mode(1)) => {
-                    f.pc = 3;
+                Some(1) => {
+                    f.pc = 4;
                     f.ask_cards(hand, 1, 1, Purpose::TopDeck)
                 }
-                _ => {
-                    f.pc = 4;
-                    match top_of(g, Card::Copper) {
-                        Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
-                        None => Flow::Continue,
-                    }
+                Some(_) => match top_of(g, Card::Copper) {
+                    Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
+                    None => Flow::Continue,
+                },
+                None => {
+                    f.pc = 5;
+                    Flow::Continue
                 }
             }
         }
-        2 => {
-            f.pc = 4;
+        3 => {
+            f.pc = 2;
             Flow::Call(Frame::discard(p, input.cards()))
         }
-        3 => {
+        4 => {
             for c in input.cards() {
                 g.top_deck(c, p);
             }
-            f.pc = 4;
+            f.pc = 2;
             Flow::Continue
-        }
-        4 => {
-            f.pc = 5;
-            f.ask_modes(&["+$3", "Trash your hand", "Gain a Duchy"], 1, 1)
         }
         5 => {
             f.pc = 6;
-            match input.opt() {
-                Some(crate::Opt::Mode(0)) => {
-                    g.add_coins(p, 3);
-                    Flow::done()
-                }
-                Some(crate::Opt::Mode(1)) => Flow::Call(Frame::trash(p, g.hand(p).to_vec())),
-                _ => match top_of(g, Card::Duchy) {
-                    Some(duchy) => Flow::Call(Frame::gain(p, duchy, Dest::Discard)),
-                    None => Flow::done(),
-                },
-            }
+            f.ask_modes(&["+$3", "Trash your hand", "Gain a Duchy"], 1, 1)
         }
-        _ => Flow::done(),
+        6 => {
+            f.s.m = mode_mask(input);
+            f.pc = 7;
+            Flow::Continue
+        }
+        _ => match take_mode(f) {
+            Some(0) => {
+                g.add_coins(p, 3);
+                Flow::Continue
+            }
+            Some(1) => Flow::Call(Frame::trash(p, g.hand(p).to_vec())),
+            Some(_) => match top_of(g, Card::Duchy) {
+                Some(duchy) => Flow::Call(Frame::gain(p, duchy, Dest::Discard)),
+                None => Flow::Continue,
+            },
+            None => Flow::done(),
+        },
     }
 }
 
@@ -911,42 +922,51 @@ fn graverobber(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         1 => {
-            if input.opt() == Some(crate::Opt::Mode(1)) {
+            f.s.m = mode_mask(input);
+            f.pc = 9;
+            Flow::Continue
+        }
+        9 => match take_mode(f) {
+            Some(0) => {
+                let cards: Vec<CardId> = g
+                    .trash()
+                    .iter()
+                    .copied()
+                    .filter(|&c| three_to_six(g.cost_of(c)))
+                    .collect();
+                if cards.is_empty() {
+                    return Flow::Continue;
+                }
+                f.pc = 2;
+                f.ask_cards(cards, 1, 1, Purpose::Gain)
+            }
+            Some(_) => {
                 let actions = g.cards_in_hand_where(p, Types::ACTION);
                 if actions.is_empty() {
-                    return Flow::done();
+                    return Flow::Continue;
                 }
                 f.pc = 3;
-                return f.ask_cards(actions, 1, 1, Purpose::Trash);
+                f.ask_cards(actions, 1, 1, Purpose::Trash)
             }
-            let cards: Vec<CardId> = g
-                .trash()
-                .iter()
-                .copied()
-                .filter(|&c| three_to_six(g.cost_of(c)))
-                .collect();
-            if cards.is_empty() {
-                return Flow::done();
-            }
-            f.pc = 2;
-            f.ask_cards(cards, 1, 1, Purpose::Gain)
-        }
+            None => Flow::done(),
+        },
         2 => {
             f.pc = 9;
             match input.card() {
                 Some(c) => Flow::Call(Frame::gain_card(p, c, Dest::DeckTop)),
-                None => Flow::done(),
+                None => Flow::Continue,
             }
         }
         3 => {
             let Some(c) = input.card() else {
-                return Flow::done();
+                f.pc = 9;
+                return Flow::Continue;
             };
             f.s.cost = g.cost_of(c);
             f.pc = 4;
             Flow::Call(Frame::trash(p, vec![c]))
         }
-        4..=6 => {
+        _ => {
             let limit = f.s.cost.plus_coins(3);
             gain_pile(
                 g,
@@ -959,7 +979,6 @@ fn graverobber(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 9,
             )
         }
-        _ => Flow::done(),
     }
 }
 
@@ -1409,15 +1428,18 @@ fn squire(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_modes(&["+2 Actions", "+2 Buys", "Gain a Silver"], 1, 1)
         }
         1 => {
+            let m = mode_mask(input);
+            if m & 1 != 0 {
+                g.turn.actions += 2;
+            }
+            if m & 2 != 0 {
+                g.turn.buys += 2;
+            }
             f.pc = 2;
-            match input.opt() {
-                Some(crate::Opt::Mode(0)) => g.turn.actions += 2,
-                Some(crate::Opt::Mode(1)) => g.turn.buys += 2,
-                _ => {
-                    if let Some(silver) = top_of(g, Card::Silver) {
-                        return Flow::Call(Frame::gain(p, silver, Dest::Discard));
-                    }
-                }
+            if m & 4 != 0
+                && let Some(silver) = top_of(g, Card::Silver)
+            {
+                return Flow::Call(Frame::gain(p, silver, Dest::Discard));
             }
             Flow::done()
         }
@@ -1464,7 +1486,7 @@ fn survivors(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 2;
-            f.ask_modes(&["Discard them", "Put them back in any order"], 1, 1)
+            f.ask_either(&["Discard them", "Put them back in any order"])
         }
         2 => {
             let cards: Vec<CardId> = std::mem::take(&mut f.s.cards)
