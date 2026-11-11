@@ -331,7 +331,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let cost = g.cost_of(c);
                 g.turn.coins -= cost.coins as u32;
                 g.turn.potions -= cost.potions as u32;
-                g.players[p.index()].debt += cost.debt as u32;
+                g.add_debt(p, cost.debt as u32);
                 let kind = g.card(c);
                 g.turn.bought_cards.push(kind);
                 g.emit(Event::Bought {

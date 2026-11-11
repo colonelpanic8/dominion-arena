@@ -369,7 +369,9 @@ impl Frame {
                 if *i == 0 {
                     for &c in cards.iter() {
                         let from = g.zone(c);
-                        g.move_card(c, Zone::Trash, Pos::Top);
+                        if !cards::trash_instead(g, *player, c) {
+                            g.move_card(c, Zone::Trash, Pos::Top);
+                        }
                         g.trashing.push((c, from));
                         let card = g.card(c);
                         if *player == g.turn.player {
@@ -517,6 +519,9 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             g.turn.phase = Phase::Start;
             let pl = &mut g.players[p.index()];
             pl.turns_taken += 1;
+            if g.turn.extra.is_some() {
+                pl.extra_turns_taken += 1;
+            }
             let turn = pl.turns_taken;
             g.emit(Event::TurnStart { player: p, turn });
             *pc = 1;
@@ -747,6 +752,13 @@ fn resume_gain(
                 Dest::DeckTop => Zone::Deck(st.player),
                 Dest::SetAside => Zone::SetAside(st.player),
             };
+            if let Some(pile) = g.home_pile(g.printed(st.card)) {
+                let pile = &mut g.piles[pile.index()];
+                if pile.trade_route {
+                    pile.trade_route = false;
+                    g.trade_route_mat += 1;
+                }
+            }
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
@@ -888,7 +900,7 @@ fn pay(g: &mut Game, p: PlayerId, cost: crate::Cost) {
     turn.potions -= cost.potions as u32;
     turn.buys -= 1;
     turn.bought = true;
-    g.players[p.index()].debt += cost.debt as u32;
+    g.add_debt(p, cost.debt as u32);
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

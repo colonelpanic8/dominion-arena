@@ -230,7 +230,9 @@ impl SetRules for Rules {
         match *occ {
             Occasion::Gain { player, card, .. } => {
                 for l in g.lasting() {
-                    if l.source == Some(card) && OVERPAY_CARDS.contains(&l.card) {
+                    // Only for the player who overpaid (not a possessor gaining it).
+                    if l.source == Some(card) && l.owner == player && OVERPAY_CARDS.contains(&l.card)
+                    {
                         out.push(Trigger::new(player, l.card, OVERPAID).on(card).via_lasting(l.id));
                     }
                 }
