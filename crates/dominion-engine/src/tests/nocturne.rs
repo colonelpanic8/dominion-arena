@@ -1500,6 +1500,18 @@ fn druid_receives_one_of_its_set_aside_boons_and_leaves_it_there() {
 }
 
 #[test]
+fn druid_joining_mid_game_takes_the_top_three_boons_reshuffling_for_them() {
+    let mut g = setup(&[Card::Bard]);
+    stack_boons(&mut g, &[Card::TheSeasGift]);
+    add_kingdom_piles(&mut g, &[Card::Druid]);
+    let druid = &g.ext.nocturne.druid;
+    assert_eq!(druid.len(), 3);
+    assert!(druid.contains(&Card::TheSeasGift));
+    assert_eq!((g.boons().draw.len(), g.boons().discard.len()), (9, 0));
+    assert!(!g.boons().draw.iter().any(|b| druid.contains(b)));
+}
+
+#[test]
 fn fool_takes_lost_in_the_woods_and_three_boons_in_any_order() {
     let mut g = setup(&[Card::Fool, Card::Village]);
     g.players[1].states.push(Card::LostInTheWoods);

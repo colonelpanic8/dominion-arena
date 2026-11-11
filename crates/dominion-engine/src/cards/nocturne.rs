@@ -415,14 +415,24 @@ impl SetRules for Rules {
         let uses = |g: &Game, cards: &[Card]| setup::in_game(g, |c| cards.contains(&c));
         let fate = setup::in_game(g, |c| c.is(Types::FATE));
         let doom = setup::in_game(g, |c| c.is(Types::DOOM));
-        if fate && g.boons.draw.is_empty() && g.boons.discard.is_empty() {
+        let (boons, druid) = (&g.boons, &g.ext.nocturne.druid);
+        if fate && boons.draw.is_empty() && boons.discard.is_empty() && druid.is_empty() {
             let mut boons = BOONS.to_vec();
             g.shuffle(&mut boons);
             g.boons.draw = boons;
         }
         if g.ext.nocturne.druid.is_empty() && uses(g, &[Card::Druid]) {
-            let boons = g.boons.draw.clone();
-            let druid = s.choose_n(g, Card::Druid, boons, 3..=3);
+            // The top 3 Boons: a deck too small for that (Druid joined mid-game) gives all
+            // of its Boons, and the reshuffled discard pile the rest.
+            let mut druid = vec![];
+            if g.boons.draw.len() < 3 {
+                druid = std::mem::take(&mut g.boons.draw);
+                let mut boons = std::mem::take(&mut g.boons.discard);
+                g.shuffle(&mut boons);
+                g.boons.draw = boons;
+            }
+            let n = 3 - druid.len();
+            druid.extend(s.choose_n(g, Card::Druid, g.boons.draw.clone(), n..=n));
             g.boons.draw.retain(|b| !druid.contains(b));
             g.ext.nocturne.druid = druid;
         }
