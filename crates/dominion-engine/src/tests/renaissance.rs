@@ -1345,6 +1345,134 @@ fn artifacts_are_set_up_with_their_cards() {
     assert!(setup(&[Card::Smithy]).artifacts().is_empty());
 }
 
+#[test]
+fn improve_can_trash_a_cargo_ship_whose_next_set_aside_card_is_stranded() {
+    let mut g = setup(&[
+        Card::Improve,
+        Card::CargoShip,
+        Card::Village,
+        Card::Smithy,
+        Card::Hideout,
+    ]);
+    hand(&mut g, P0, &[Card::Village, Card::CargoShip, Card::Improve]);
+    deck(&mut g, P0, &[Card::Copper; 15]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::CargoShip);
+    play(&mut g, Card::Improve);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    trigger(&mut g, Card::Improve);
+    choose_kinds(&mut g, &[Card::CargoShip]);
+    choose_pile(&mut g, Card::Smithy);
+    // Cargo Ship's ability still sets the Smithy aside, but nothing brings it back.
+    trigger(&mut g, Card::CargoShip);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Smithy]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Smithy]);
+    assert_eq!(g.count_owned(P0, Card::Smithy), 1);
+}
+
+#[test]
+fn the_key_taken_at_the_start_of_turn_gives_its_coin_at_once() {
+    let mut g = setup(&[Card::Treasurer]);
+    give_project(&mut g, P0, Card::Piazza);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Treasurer, Card::Copper]);
+    g.start();
+    // Piazza plays the Treasurer.
+    mode(&mut g, 2);
+    assert_eq!(g.artifact_holder(Card::Key), Some(P0));
+    assert_eq!(g.turn().coins, 4);
+}
+
+#[test]
+fn with_capitalism_treasurer_can_gain_an_improve_from_the_trash() {
+    let mut g = setup(&[Card::Treasurer, Card::Improve]);
+    give_project(&mut g, P0, Card::Capitalism);
+    hand(&mut g, P0, &[Card::Treasurer]);
+    clear_trash(&mut g);
+    let improve = g.create(Card::Improve, Zone::Trash);
+    g.start();
+    play(&mut g, Card::Treasurer);
+    mode(&mut g, 1);
+    assert_eq!(g.zone(improve), Zone::Hand(P0));
+}
+
+#[test]
+fn old_witch_lets_victims_trash_a_curse_when_the_curses_are_gone() {
+    let mut g = setup(&[Card::OldWitch]);
+    let curses = g.supply_pile(Card::Curse).unwrap();
+    for c in g.pile(curses).cards.clone() {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+    hand(&mut g, P0, &[Card::OldWitch]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    hand(&mut g, P1, &[Card::Curse, Card::Copper]);
+    g.start();
+    play(&mut g, Card::OldWitch);
+    choose_kinds(&mut g, &[Card::Curse]);
+    assert_eq!(hand_kinds(&g, P1), [Card::Copper]);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+}
+
+#[test]
+fn an_outpost_turn_comes_before_the_fleet_round() {
+    let mut g = setup(&[Card::Outpost]);
+    give_project(&mut g, P0, Card::Fleet);
+    let provinces = g.supply_pile(Card::Province).unwrap();
+    let all = g.pile(provinces).cards.clone();
+    for &c in &all[1..] {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+    hand(
+        &mut g,
+        P1,
+        &[Card::Outpost, Card::Gold, Card::Gold, Card::Gold],
+    );
+    g.start();
+    next_turn(&mut g);
+    play(&mut g, Card::Outpost);
+    for _ in 0..3 {
+        play(&mut g, Card::Gold);
+    }
+    buy(&mut g, Card::Province);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Outpost)));
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P0, None));
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(g.outcome().expect("game over").turns, [2, 2]);
+}
+
+#[test]
+fn star_chart_puts_its_card_under_the_cards_left_in_the_deck() {
+    let mut g = setup(&[Card::BorderGuard]);
+    give_project(&mut g, P0, Card::StarChart);
+    hand(&mut g, P0, &[Card::BorderGuard]);
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(&mut g, P0, &[Card::Estate, Card::Gold, Card::Estate]);
+    g.start();
+    play(&mut g, Card::BorderGuard);
+    trigger(&mut g, Card::StarChart);
+    choose_kinds(&mut g, &[Card::Gold]);
+    // Border Guard revealed the Copper, then the chosen Gold.
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Copper, Card::Gold]);
+}
+
+#[test]
+fn citadel_replays_an_action_treasure_played_first_in_the_buy_phase() {
+    let mut g = setup(&[Card::FlagBearer]);
+    give_project(&mut g, P0, Card::Citadel);
+    give_project(&mut g, P0, Card::Capitalism);
+    hand(&mut g, P0, &[Card::FlagBearer]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::FlagBearer);
+    assert_eq!(g.turn().coins, 4);
+}
+
 /// Random games over Renaissance with Throne Room and Moat, each player starting with a
 /// copy of the Kingdom cards and a random Project, with two more to buy. Half the games
 /// start with nearly empty Estate, Curse and Copper piles, so that they end (and Fleet
