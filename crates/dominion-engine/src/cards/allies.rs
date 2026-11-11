@@ -165,7 +165,7 @@ impl SetRules for Rules {
             }
             (Card::Bauble, Hook::Ability(REACT)) => {
                 if let Some(Occasion::Gain { card, .. }) = f.occ
-                    && still_landed(g, card)
+                    && g.still_where_gained(card)
                 {
                     g.show(card);
                     g.top_deck(card, f.player);
@@ -506,15 +506,6 @@ fn dest_zone(to: Dest, p: PlayerId) -> Zone {
     }
 }
 
-/// Whether a card being gained is still where its gain put it.
-fn still_landed(g: &Game, card: CardId) -> bool {
-    g.gains
-        .iter()
-        .rev()
-        .find(|st| st.card == card)
-        .is_some_and(|st| g.still_where_put(card, dest_zone(st.to, st.player)))
-}
-
 /// Where `p` gained `card`: the first such gain logged since `since`.
 fn gained_to(g: &Game, p: PlayerId, card: CardId, since: usize) -> Option<Zone> {
     let kind = g.card(card);
@@ -760,7 +751,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN).quiet());
     }
     if let Some(l) = this_turn(Card::Bauble).next()
-        && still_landed(g, card)
+        && g.still_where_gained(card)
         && g.zone(card) != Zone::Deck(player)
     {
         out.push(
@@ -785,11 +776,11 @@ fn ally_trigger(g: &Game, ally: Card, occ: &Occasion) -> Option<Trigger> {
                     n >= 2
                         && player == g.turn.player
                         && g.is(card, Types::ACTION)
-                        && still_landed(g, card)
+                        && g.still_where_gained(card)
                         && (g.zone(card) != Zone::Hand(player) || super::can_play(g, player, card))
                 }
                 Card::TrappersLodge => {
-                    n >= 1 && still_landed(g, card) && g.zone(card) != Zone::Deck(player)
+                    n >= 1 && g.still_where_gained(card) && g.zone(card) != Zone::Deck(player)
                 }
                 _ => false,
             };
@@ -924,7 +915,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(Occasion::Gain { card, .. }) = f.occ else {
                 return Flow::done();
             };
-            if f.pc == 0 && still_landed(g, card) {
+            if f.pc == 0 && g.still_where_gained(card) {
                 spend(g, p, 2);
                 f.pc = 1;
                 return Flow::Call(Frame::play(p, card, true, vec![]));
@@ -933,7 +924,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         Card::TrappersLodge => {
             if let Some(Occasion::Gain { card, .. }) = f.occ
-                && still_landed(g, card)
+                && g.still_where_gained(card)
             {
                 spend(g, p, 1);
                 g.show(card);
