@@ -718,6 +718,7 @@ fn resume_gain(
                 Dest::Discard => Zone::Discard(st.player),
                 Dest::Hand => Zone::Hand(st.player),
                 Dest::DeckTop => Zone::Deck(st.player),
+                Dest::SetAside => Zone::SetAside(st.player),
             };
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
