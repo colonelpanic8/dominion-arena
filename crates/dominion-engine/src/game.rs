@@ -3,6 +3,7 @@ use crate::decision::{Decision, Response, ResponseError};
 use crate::event::Event;
 use crate::frame::{Flow, Frame, Input};
 use crate::setup::GameConfig;
+use crate::trigger::Occasion;
 use crate::{Card, CardId, Cost, Kind, PileId, PlayerId, Types};
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -363,6 +364,9 @@ pub struct GainState {
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
     pub cancelled: bool,
+    /// The log's length when the gain began: effects set up later ("the next time you
+    /// gain ...") don't respond to it.
+    pub since: usize,
     /// What the card cost at the moment it was gained (set as it moves).
     pub cost: Cost,
     /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
@@ -370,7 +374,8 @@ pub struct GainState {
     pub turn_index: Option<usize>,
 }
 
-/// A play in progress. "When you play" triggers may change it.
+/// A play in progress, until its `AfterPlay` window closes. "When you play" triggers may
+/// change it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlayState {
     pub player: PlayerId,
@@ -383,6 +388,12 @@ pub struct PlayState {
     pub replaced: Option<crate::Plus>,
     /// Its own effect does nothing (Highwayman).
     pub blocked: bool,
+    /// The log's length when the play began: effects set up later ("the next time you
+    /// play ...") don't respond to it.
+    pub since: usize,
+    /// The turn's $ when the card's own effect began (after "when you play" effects, such
+    /// as a +$1 token): "if it gave you +$".
+    pub coins: u32,
 }
 
 impl Game {
@@ -397,6 +408,7 @@ impl Game {
             next: PlayerId(0),
             pc: 0,
         });
+        self.stack.push(Frame::window(Occasion::GameStart));
         self.run(Input::Start);
     }
 
