@@ -83,6 +83,8 @@ async fn serve(config: Config) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| format!("listening on {addr}: {e}"))?;
+    // The port asked for may be 0: any free one.
+    let addr = listener.local_addr().map_err(|e| e.to_string())?;
     let mut hosts = config.allowed_hosts.clone();
     if !config.listen().is_loopback() && !config.listen().is_unspecified() {
         hosts.push(config.listen().to_string());

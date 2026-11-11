@@ -81,7 +81,7 @@ persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: delete finished games this old at startup
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
-server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to
+server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 ```
 

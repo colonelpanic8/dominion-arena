@@ -3,8 +3,8 @@
 use dominion_agent::Answer;
 use dominion_server::Options;
 use dominion_server::hub::{Created, Hub, NewGame, Seat};
-use std::io::{Read, Write};
-use std::net::SocketAddr;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
@@ -177,6 +177,32 @@ fn answer(hub: &Hub, seat: &Seat, label: Option<&str>) {
         .unwrap();
     let answer = Answer::indices(&decision.id, vec![option.index]);
     hub.answer(seat, &answer).unwrap();
+}
+
+#[test]
+fn serve_announces_the_port_it_got() {
+    let home = tempfile::tempdir().unwrap();
+    let mut child = dominion(&home)
+        .args(["serve", "--ephemeral", "--listen", "127.0.0.1"])
+        .args(["--port", "0"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    BufReader::new(child.stderr.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let addr = line
+        .trim()
+        .strip_prefix("dominion: MCP endpoint http://")
+        .and_then(|rest| rest.strip_suffix("/mcp"))
+        .and_then(|addr| addr.parse::<SocketAddr>().ok());
+    let reached = addr.map(TcpStream::connect);
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(matches!(reached, Some(Ok(_))), "{line}");
 }
 
 #[test]

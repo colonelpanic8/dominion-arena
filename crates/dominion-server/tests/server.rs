@@ -308,3 +308,16 @@ async fn a_call_fails_when_the_server_goes_away() {
         .unwrap();
     assert!(matches!(outcome, Err(CallError::Lost(_))), "{outcome:?}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_server_on_ipv6_loopback_is_reached_at_its_bracketed_address() {
+    if tokio::net::TcpListener::bind("[::1]:0").await.is_err() {
+        return;
+    }
+    let server = start_on("[::1]:0", Options::default()).await;
+    assert!(server.url.starts_with("http://[::1]:"), "{}", server.url);
+    let client = Client::connect(&server.url).await.unwrap();
+    assert!(call(&client, "list_games", json!({})).await.ok);
+    client.close().await;
+    server.stop.cancel();
+}

@@ -2,7 +2,7 @@
 //! line flags override.
 
 use serde::Deserialize;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -26,7 +26,8 @@ pub struct Config {
     /// also forgets the seat it joined (default 1440; 0 never closes one). Under twenty
     /// minutes it also shortens the longest `wait_for_decision`, to half of it.
     pub session_idle_minutes: Option<u32>,
-    /// The MCP endpoint `dominion play` connects to (default the local server).
+    /// The MCP endpoint `dominion play` connects to (default the local server, at
+    /// `listen` and `port`).
     pub server: Option<String>,
     /// Seconds `dominion play` keeps trying to reach a server it lost before it gives up
     /// (default 30).
@@ -103,9 +104,15 @@ impl Config {
     }
 
     pub fn server(&self) -> String {
-        self.server
-            .clone()
-            .unwrap_or_else(|| format!("http://127.0.0.1:{}/mcp", self.port()))
+        self.server.clone().unwrap_or_else(|| {
+            // A server listening on every address is reached through loopback.
+            let host = match self.listen() {
+                IpAddr::V4(ip) if ip.is_unspecified() => Ipv4Addr::LOCALHOST.into(),
+                IpAddr::V6(ip) if ip.is_unspecified() => Ipv6Addr::LOCALHOST.into(),
+                ip => ip,
+            };
+            format!("http://{}/mcp", SocketAddr::new(host, self.port()))
+        })
     }
 
     pub fn reconnect(&self) -> Duration {
@@ -135,5 +142,21 @@ mod tests {
         assert_eq!(on.state_dir(), Some(PathBuf::from("/x")));
         let sessions: Config = toml::from_str("session_idle_minutes = 0").unwrap();
         assert_eq!(sessions.session_idle(), None);
+    }
+
+    #[test]
+    fn the_default_play_endpoint_is_where_the_server_listens() {
+        let server = |toml: &str| toml::from_str::<Config>(toml).unwrap().server();
+        assert_eq!(server(""), "http://127.0.0.1:7317/mcp");
+        assert_eq!(
+            server("listen = \"::1\"\nport = 9000"),
+            "http://[::1]:9000/mcp"
+        );
+        assert_eq!(server("listen = \"::\""), "http://[::1]:7317/mcp");
+        assert_eq!(server("listen = \"10.1.2.3\""), "http://10.1.2.3:7317/mcp");
+        assert_eq!(
+            server("listen = \"::1\"\nserver = \"http://box/mcp\""),
+            "http://box/mcp"
+        );
     }
 }
