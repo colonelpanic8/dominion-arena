@@ -158,6 +158,7 @@ fn harbinger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
+            g.look_through_discard(f.player);
             let discard = g.player(f.player).discard.clone();
             f.ask_cards(discard, 0, 1, Purpose::TopDeck)
         }

@@ -196,11 +196,16 @@ them.
   its zones), cards mixed where no one can follow them (shuffles, privately ordered
   cards), cards shown to everyone or one player, turns, identity swaps. `Knowledge`
   consumes it and keeps, per player, groups of cards they can't tell apart with each
-  group's known identities (a Stash, with its own back, is always known). Anything that
-  reveals a specific card must record it: `g.reveal(p, id)` instead of emitting
-  `Event::Revealed` by hand, `g.show` / `g.show_to` for other reveals and looks. Cards
-  that change zones must go through `move_card` (or record a `Trace::Moved`); identity
-  changes record `Trace::Changed`. Untraced games pay nothing.
+  group's known identities (a Stash or a Shadow card, with its own back, is always
+  known). Anything that reveals a specific card must record it: `g.reveal(p, id)`
+  instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to` for other
+  reveals and looks, `g.look_through_discard(p)` before a player picks from their
+  discard pile. Cards that change zones must go through `move_card` (or record a
+  `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
+  Only its owner follows a card that leaves cards they hold out of sight: a hand,
+  cards set aside face down together (move them one after the other), the cards of a
+  deck or discard pile they looked through. `g.show` such a card first when everyone
+  knows which it is; other cards of a deck or discard pile are followed by everyone.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The

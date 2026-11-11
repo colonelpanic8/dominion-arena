@@ -985,6 +985,7 @@ fn take_from_discard(g: &mut Game, f: &mut CardFrame, input: Input, card: Card) 
     let p = f.player;
     match f.pc {
         0 => {
+            g.look_through_discard(p);
             let found: Vec<CardId> = g
                 .player(p)
                 .discard
@@ -1879,6 +1880,7 @@ fn annex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
+            g.look_through_discard(p);
             let discard = g.player(p).discard.clone();
             f.pc = 1;
             f.ask_cards(discard, 0, 5, Purpose::Other)

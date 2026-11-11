@@ -1031,6 +1031,7 @@ fn counting_house(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
+            g.look_through_discard(p);
             let coppers: Vec<CardId> = g
                 .player(p)
                 .discard

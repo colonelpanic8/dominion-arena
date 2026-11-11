@@ -1517,6 +1517,7 @@ fn courier(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(p, input.cards()))
         }
         2 => {
+            g.look_through_discard(p);
             let cards: Vec<CardId> = g
                 .player(p)
                 .discard
@@ -1824,7 +1825,6 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 => {
             for c in input.cards() {
                 f.s.cards.retain(|&x| x != c);
-                g.show(c);
                 g.put_in_hand(c, p);
             }
             f.s.i += 1;
@@ -2275,6 +2275,7 @@ fn herb_gatherer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             for c in deck {
                 g.move_card(c, Zone::Discard(p), Pos::Top);
             }
+            g.look_through_discard(p);
             let treasures: Vec<CardId> = g
                 .player(p)
                 .discard

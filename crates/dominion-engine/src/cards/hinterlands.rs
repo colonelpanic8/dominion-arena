@@ -703,6 +703,7 @@ fn inn_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             let p = f.player;
+            g.look_through_discard(p);
             let actions: Vec<CardId> = g
                 .player(p)
                 .discard

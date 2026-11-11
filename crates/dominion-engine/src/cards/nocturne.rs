@@ -861,6 +861,7 @@ fn boon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::TheFlamesGift => trash_from_hand(g, f, input, 1, 1),
         Card::TheMoonsGift => match f.pc {
             1 => {
+                g.look_through_discard(p);
                 let discard = g.player(p).discard.clone();
                 if discard.is_empty() {
                     return Flow::done();
@@ -921,6 +922,7 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             for c in deck {
                 g.move_card(c, Zone::Discard(p), Pos::Top);
             }
+            g.look_through_discard(p);
             let coppers: Vec<CardId> = g
                 .player(p)
                 .discard
@@ -935,7 +937,9 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     g.reveal(p, c);
                 }
             }
+            // Everyone knows what they are.
             for c in coppers {
+                g.show(c);
                 g.top_deck(c, p);
             }
             Flow::done()

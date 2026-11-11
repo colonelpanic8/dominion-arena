@@ -958,6 +958,7 @@ fn hermit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
+            g.look_through_discard(p);
             let pl = g.player(p);
             let candidates: Vec<CardId> = pl
                 .discard
@@ -1363,6 +1364,7 @@ fn scavenger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         2 => {
+            g.look_through_discard(p);
             let discard = g.player(p).discard.clone();
             f.pc = 3;
             f.ask_cards(discard, 1, 1, Purpose::TopDeck)
