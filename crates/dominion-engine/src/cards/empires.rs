@@ -787,7 +787,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
 fn enchant_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
     let first_action = player == g.turn.player
         && g.is(card, Types::ACTION)
-        && g.turn.played_of(Types::ACTION) == 1;
+        && g.turn.played_of(player, Types::ACTION) == 1;
     let open = g
         .plays
         .last()

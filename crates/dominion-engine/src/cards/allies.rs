@@ -303,7 +303,7 @@ impl SetRules for Rules {
                 if player == g.turn.player
                     && g.is(card, Types::TREASURE)
                     && highwayman_attacks(g, player)
-                    && g.turn.played_of(Types::TREASURE) == 1
+                    && g.turn.played_of(player, Types::TREASURE) == 1
                 {
                     out.push(Trigger::new(player, Card::Highwayman, HIGHWAYMAN_BLOCK).on(card));
                 }

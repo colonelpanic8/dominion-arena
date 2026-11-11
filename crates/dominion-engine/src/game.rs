@@ -208,8 +208,11 @@ pub struct Turn {
     pub potions: u32,
     /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures).
     pub bought: bool,
-    /// Every play this turn, in order. A card played twice appears twice.
+    /// Every play this turn, by any player, in order. A card played twice appears twice.
     pub played: Vec<Card>,
+    /// Who made each of `played`.
+    #[serde(default)]
+    pub played_by: Vec<PlayerId>,
     /// How many of this turn's plays by its player were from their hand.
     pub hand_plays: u32,
     /// The physical cards of `played`, in the same order.
@@ -254,6 +257,7 @@ impl Turn {
             potions: 0,
             bought: false,
             played: vec![],
+            played_by: vec![],
             hand_plays: 0,
             played_ids: vec![],
             stayed_in_play: vec![],
@@ -276,9 +280,27 @@ impl Turn {
         &self.gained_in_buy_phase[self.earlier_buy_phase_gains..]
     }
 
-    /// How many of this turn's plays were of a card that had any of `types` as it was played.
-    pub fn played_of(&self, types: Types) -> usize {
-        count_of(&self.played_types, types)
+    /// `p`'s plays this turn, in order: each card and the types it had as it was played.
+    pub fn plays_by(&self, p: PlayerId) -> impl Iterator<Item = (Card, Types)> + '_ {
+        self.played
+            .iter()
+            .zip(&self.played_types)
+            .zip(&self.played_by)
+            .filter(move |(_, q)| **q == p)
+            .map(|((&c, &t), _)| (c, t))
+    }
+
+    /// How many of `p`'s plays this turn were of a card that had any of `types` as it was
+    /// played.
+    pub fn played_of(&self, p: PlayerId, types: Types) -> usize {
+        self.plays_by(p)
+            .filter(|(_, t)| t.intersects(types))
+            .count()
+    }
+
+    /// How many times `p` played a `card` this turn.
+    pub fn played_count(&self, p: PlayerId, card: Card) -> usize {
+        self.plays_by(p).filter(|&(c, _)| c == card).count()
     }
 
     /// How many of this turn's gains were of a card that had any of `types` as it was gained.

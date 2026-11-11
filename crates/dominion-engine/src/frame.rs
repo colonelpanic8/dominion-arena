@@ -1383,12 +1383,11 @@ impl PlayFrame {
                 let card = g.card(id);
                 let since = g.log.len();
                 g.emit(Event::Played { player: p, card });
-                if p == g.turn.player {
-                    g.turn.played.push(card);
-                    g.turn.played_types.push(g.types(id));
-                    g.turn.played_ids.push(id);
-                    g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
-                }
+                g.turn.played.push(card);
+                g.turn.played_by.push(p);
+                g.turn.played_types.push(g.types(id));
+                g.turn.played_ids.push(id);
+                g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {
                     player: p,

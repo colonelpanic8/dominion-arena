@@ -270,12 +270,7 @@ impl SetRules for Rules {
                     Flow::Call(Frame::draw(f.player, n))
                 }
                 _ => {
-                    let plays = g
-                        .turn
-                        .played
-                        .iter()
-                        .filter(|&&c| c == Card::Crossroads)
-                        .count();
+                    let plays = g.turn.played_count(f.player, Card::Crossroads);
                     if plays == 1 && f.player == g.turn.player {
                         g.turn.actions += 3;
                     }
@@ -284,12 +279,7 @@ impl SetRules for Rules {
             },
             (Card::Develop, _) => develop(g, f, input),
             (Card::FoolsGold, _) => {
-                let plays = g
-                    .turn
-                    .played
-                    .iter()
-                    .filter(|&&c| c == Card::FoolsGold)
-                    .count();
+                let plays = g.turn.played_count(f.player, Card::FoolsGold);
                 g.add_coins(f.player, if plays <= 1 { 1 } else { 4 });
                 Flow::done()
             }

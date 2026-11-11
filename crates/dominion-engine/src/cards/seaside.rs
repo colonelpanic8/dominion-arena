@@ -149,7 +149,7 @@ impl SetRules for Rules {
                 let silver_or_gold = |c: &Card| matches!(c, Card::Silver | Card::Gold);
                 let first = player == g.turn.player
                     && silver_or_gold(&g.card(card))
-                    && g.turn.played.iter().filter(|c| silver_or_gold(c)).count() == 1;
+                    && g.turn.plays_by(player).filter(|(c, _)| silver_or_gold(c)).count() == 1;
                 if first
                     && active(g, Card::Corsair)
                         .any(|l| l.owner != player && in_mask(l.data.n, player))

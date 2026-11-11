@@ -345,7 +345,7 @@ fn first_action_play(g: &Game, p: PlayerId, card: CardId) -> bool {
         .iter()
         .filter(|e| matches!(e, Event::Played { player, .. } if *player == p))
         .count();
-    let first = g.turn.played_types.iter().position(|t| t.contains(Types::ACTION));
+    let first = g.turn.plays_by(p).position(|(_, t)| t.contains(Types::ACTION));
     first == Some(earlier)
 }
 
