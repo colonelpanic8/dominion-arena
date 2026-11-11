@@ -405,15 +405,20 @@ impl Frame {
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
+                // Cards discarded together are all discarded before any reacts.
+                if *i == 0 {
+                    for &c in cards.iter() {
+                        g.move_card(c, Zone::Discard(*player), Pos::Top);
+                        g.emit(Event::Discarded {
+                            player: *player,
+                            card: g.card(c),
+                        });
+                    }
+                }
                 let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 };
                 *i += 1;
-                g.move_card(c, Zone::Discard(*player), Pos::Top);
-                g.emit(Event::Discarded {
-                    player: *player,
-                    card: g.card(c),
-                });
                 Flow::Call(Frame::window(Occasion::Discard {
                     player: *player,
                     card: c,
@@ -655,6 +660,18 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         }
         7 => {
             let kept: Vec<CardId> = g.lasting.iter().flat_map(|l| l.keeps.clone()).collect();
+            // Cards other players played this turn (Guard Dog, ...) are discarded too.
+            for other in g.others(p) {
+                let stray: Vec<CardId> = g.players[other.index()]
+                    .in_play
+                    .iter()
+                    .filter(|c| !kept.contains(c))
+                    .copied()
+                    .collect();
+                for c in stray {
+                    g.move_card(c, Zone::Discard(other), Pos::Top);
+                }
+            }
             let pl = &g.players[p.index()];
             let cards = pl
                 .in_play
