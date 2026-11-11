@@ -205,6 +205,21 @@ fn farrier_gained_without_buying_draws_nothing_extra() {
 }
 
 #[test]
+fn ferryman_discards_a_card() {
+    let mut g = setup(&[Card::Ferryman]);
+    hand(&mut g, P0, &[Card::Ferryman, Card::Estate, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Ferryman);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P0, Purpose::Discard));
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
+    assert_eq!(g.hand(P0).len(), 3);
+    assert_eq!(g.turn().actions, 1);
+}
+
+#[test]
 fn ferryman_gains_a_card_from_its_pile() {
     let mut g = setup(&[Card::Ferryman, Card::Workshop]);
     let pile = g

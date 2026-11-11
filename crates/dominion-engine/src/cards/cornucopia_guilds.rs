@@ -157,6 +157,7 @@ impl SetRules for Rules {
             (Card::Advisor, _) => advisor(g, f, input),
             (Card::Butcher, _) => butcher(g, f, input),
             (Card::Carnival, _) => carnival(g, f, input),
+            (Card::Ferryman, _) => discard_n(g, f, input, 1),
             (Card::Footpad, _) => discard_down(g, f, input, 3, 0).unwrap_or_else(Flow::done),
             (Card::Hamlet, _) => hamlet(g, f, input),
             (Card::Herald, _) => herald(g, f, input),
