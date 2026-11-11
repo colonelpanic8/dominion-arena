@@ -1240,6 +1240,26 @@ fn panic_gives_buys_for_treasures_and_returns_them_to_their_piles() {
 }
 
 #[test]
+fn capitals_debt_is_taken_though_panic_returns_it_to_its_pile() {
+    let mut g = with_prophecy(&[Card::Capital], Card::Panic);
+    hand(&mut g, P0, &[Card::Capital]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Capital);
+    g.turn.coins = 0;
+    reask(&mut g);
+    let n = turn_starts(&g);
+    while turn_starts(&g) == n {
+        // The Debt is not something to order after Panic's return.
+        assert_eq!(purpose(&g), Purpose::Turn);
+        end_phase(&mut g);
+    }
+    assert_eq!(g.count_owned(P0, Card::Capital), 0);
+    assert_eq!(g.player(P0).debt, 6);
+}
+
+#[test]
 fn progress_puts_every_gained_card_onto_the_deck() {
     let mut g = with_prophecy(&[Card::Smithy, Card::Witch], Card::Progress);
     hand(&mut g, P0, &[Card::Witch]);
