@@ -1,5 +1,5 @@
 use super::alchemy::possess;
-use super::prosperity::play_from;
+use super::prosperity::{next_turn, play_from};
 use super::*;
 use rand::SeedableRng;
 
@@ -1530,6 +1530,26 @@ fn graverobber_options_can_be_chosen_when_they_cannot_be_done() {
     play(&mut g, Card::Graverobber);
     mode(&mut g, 1);
     assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+}
+
+#[test]
+fn a_fortress_trashed_on_a_possession_turn_goes_to_hand_or_is_set_aside() {
+    for take in [true, false] {
+        let kingdom = [Card::Fortress, Card::JunkDealer];
+        let mut g = possess(&kingdom, &[Card::JunkDealer, Card::Fortress]);
+        play_from(&mut g, P1, Card::JunkDealer);
+        choose_kinds(&mut g, &[Card::Fortress]);
+        // Possession sets it aside and Fortress puts it into the hand: the possessor
+        // picks which happens.
+        assert_eq!(purpose(&g), Purpose::Either);
+        mode(&mut g, if take { 0 } else { 1 });
+        assert_eq!(hand_kinds(&g, P1).contains(&Card::Fortress), take);
+        assert_eq!(g.player(P1).set_aside.is_empty(), take);
+        // Set aside, it comes back at the end of the turn like any other trashed card.
+        next_turn(&mut g);
+        assert!(g.player(P1).set_aside.is_empty());
+        assert!(discard_kinds(&g, P1).contains(&Card::Fortress));
+    }
 }
 
 #[test]

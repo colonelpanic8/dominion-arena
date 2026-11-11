@@ -8,7 +8,7 @@ use crate::frame::{Flow, Frame, Input};
 use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_mixed_pile, add_pile};
 use crate::trigger::{Occasion, Trigger};
-use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Types};
+use crate::{Card, CardId, Cost, Game, Opt, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -422,7 +422,18 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::draw(p, 1))
         }
         Card::Fortress => {
-            if g.zone(this) == Zone::Trash {
+            // Possession set it aside: taking it from there is its controller's choice.
+            let possessed = matches!(g.zone(this), Zone::SetAside(_))
+                && g.ext.alchemy.possessed_trash.contains(&this);
+            if f.pc == 0 && possessed {
+                f.pc = 1;
+                return f.ask_either(&["Put it into your hand", "Leave it set aside"]);
+            }
+            let take = match f.pc {
+                0 => g.zone(this) == Zone::Trash,
+                _ => possessed && input.opt() == Some(Opt::Mode(0)),
+            };
+            if take {
                 g.put_in_hand(this, p);
                 g.emit(Event::Moved {
                     player: p,
@@ -462,7 +473,7 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             1 => {
                 f.s.m = match input.opt() {
-                    Some(crate::Opt::Mode(1)) => 3,
+                    Some(Opt::Mode(1)) => 3,
                     _ => 1,
                 };
                 f.s.card = Some(if f.s.m == 3 {
