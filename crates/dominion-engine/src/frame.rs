@@ -725,7 +725,7 @@ fn resume_gain(
                 Dest::DeckTop => Zone::Deck(st.player),
                 Dest::SetAside => Zone::SetAside(st.player),
             };
-            if let Zone::Pile(pile) = g.zone(st.card) {
+            if let Some(pile) = g.home_pile(g.printed(st.card)) {
                 let pile = &mut g.piles[pile.index()];
                 if pile.trade_route {
                     pile.trade_route = false;
