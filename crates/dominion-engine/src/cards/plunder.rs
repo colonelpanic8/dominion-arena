@@ -4,12 +4,12 @@
 //! (see Seaside). "Next time" Durations (Cage, Search, Secluded Shrine, Abundance,
 //! Cutthroat, Flagship, Landing Party) wait in play until their event, and resolve as
 //! their `WAITED` ability. Effects that wait record the log's length when they were set
-//! up in `data.i`; "the next time" ones ignore a play that began before that
-//! (`PlayState::since`) and answer the first gain to begin after it (`GainState::since`;
-//! see [`next_gain`]). Cards held until the end of the turn (Cage, Puzzle Box, Deliver,
-//! Trickster, Tireless) sit in their owner's `SetAside` zone, listed in an
-//! `Until::EndOfTurn` lasting's `data.cards`. Traits sit on their pile (`Pile::traits`);
-//! the Loot pile is a face-down non-Supply pile named [`Card::Loot`].
+//! up in `data.i`; "the next time" ones answer the first gain or play to begin after that
+//! (`GainState::since`, `PlayState::since`; see [`next_gain`] and [`next_play`]). Cards
+//! held until the end of the turn (Cage, Puzzle Box, Deliver, Trickster, Tireless) sit in
+//! their owner's `SetAside` zone, listed in an `Until::EndOfTurn` lasting's `data.cards`.
+//! Traits sit on their pile (`Pile::traits`); the Loot pile is a face-down non-Supply pile
+//! named [`Card::Loot`].
 
 use super::{CardFrame, Hook, SetRules, duration_trigger, mode_mask, turn_durations};
 use crate::decision::{Opt, Purpose};
@@ -600,6 +600,22 @@ fn next_gain_of(g: &Game, l: &Lasting, card: CardId, types: Types) -> bool {
     next_gain(g, l, card, |s| s.player == l.owner && g.is(s.card, types))
 }
 
+/// Whether the play of `card` in progress is the next one by its player, of a card whose
+/// types `wanted` accepts, since lasting `l` was set up: it began after that, and not
+/// while an earlier such play was still being resolved (Throne Room, not the card it
+/// plays).
+fn next_play(g: &Game, l: &Lasting, card: CardId, wanted: impl Fn(Types) -> bool) -> bool {
+    let Some(i) = g.plays.iter().rposition(|s| s.card == card) else {
+        return false;
+    };
+    let st = &g.plays[i];
+    l.data.i <= st.since
+        && wanted(g.types(card))
+        && !g.plays[..i]
+            .iter()
+            .any(|s| s.player == st.player && l.data.i <= s.since && wanted(g.types(s.card)))
+}
+
 /// The play of `card` in progress (up to its AfterPlay window), if any.
 fn play_state(g: &Game, card: CardId) -> Option<&crate::game::PlayState> {
     g.plays.iter().rev().find(|s| s.card == card)
@@ -862,24 +878,25 @@ fn after_play_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<T
     let types = g.types(card);
     let action = types.contains(Types::ACTION);
     for l in g.lasting() {
-        let next = l.data.i <= since;
         let via = |ability| duration_trigger(l, ability);
         match l.card {
             Card::Flagship
                 if l.owner == player
-                    && next
                     && l.until == Until::Removed
-                    && action
-                    && !types.contains(Types::COMMAND) =>
+                    && next_play(g, l, card, |t| {
+                        t.contains(Types::ACTION) && !t.contains(Types::COMMAND)
+                    }) =>
             {
                 out.push(via(WAITED));
             }
-            Card::HarborVillage if l.owner == player && next && action => {
+            Card::HarborVillage
+                if l.owner == player && next_play(g, l, card, |t| t.contains(Types::ACTION)) =>
+            {
                 out.push(via(THIS_TURN));
             }
             Card::LandingParty
                 if l.owner == player
-                    && next
+                    && l.data.i <= since
                     && l.until == Until::Removed
                     && types.contains(Types::TREASURE)
                     && first_play_of_turn(g, player, since) =>

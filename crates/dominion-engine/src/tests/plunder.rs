@@ -2920,6 +2920,66 @@ fn prosper_with_an_empty_loot_pile_still_gains_treasures() {
 }
 
 #[test]
+fn flagship_replays_the_throne_room_played_next_not_the_card_it_plays() {
+    let mut g = setup(&[
+        Card::Flagship,
+        Card::ThroneRoom,
+        Card::Smithy,
+        Card::Village,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Flagship,
+            Card::ThroneRoom,
+            Card::Smithy,
+            Card::Village,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Flagship);
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    // The Smithy finishes first, but the next Action played was the Throne Room.
+    assert_eq!(g.pending().unwrap().source, Some(Card::ThroneRoom));
+    choose_kinds(&mut g, &[Card::Village]);
+    assert_eq!(
+        g.turn().played,
+        [
+            Card::Flagship,
+            Card::ThroneRoom,
+            Card::Smithy,
+            Card::Smithy,
+            Card::ThroneRoom,
+            Card::Village,
+            Card::Village,
+        ]
+    );
+}
+
+#[test]
+fn harbor_village_looks_at_the_next_action_played_not_one_that_action_plays() {
+    // Vassal gives +$2 and plays a Village, which finishes first.
+    let mut g = setup(&[Card::HarborVillage, Card::Vassal, Card::Village]);
+    hand(&mut g, P0, &[Card::HarborVillage, Card::Vassal]);
+    let mut cards = vec![Card::Estate, Card::Village];
+    cards.extend([Card::Estate; 3]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::Vassal);
+    yes(&mut g);
+    assert_eq!(
+        g.turn().played,
+        [Card::HarborVillage, Card::Vassal, Card::Village]
+    );
+    assert_eq!(g.turn().coins, 3);
+}
+
+#[test]
 fn rush_and_mirror_apply_to_the_next_action_gained_not_one_gained_because_of_it() {
     for event in [Card::Rush, Card::Mirror] {
         let mut g = setup_l(&[Card::BorderVillage, Card::Village], &[event]);
