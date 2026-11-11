@@ -360,16 +360,7 @@ impl SetRules for Rules {
                 if !traited_in_hand(g, player, Card::Patient).is_empty() {
                     out.push(Trigger::new(player, Card::Patient, TRAIT).optional());
                 }
-                if let Some(l) = this_turn_lasting(g, Card::Journey, player) {
-                    let all = g.in_play(player).to_vec();
-                    if all.iter().any(|c| !l.keeps.contains(c)) {
-                        out.push(
-                            Trigger::new(player, Card::Journey, THIS_TURN)
-                                .via_lasting(l.id)
-                                .quiet(),
-                        );
-                    }
-                }
+                journey_trigger(g, player, out);
             }
             Occasion::DiscardFromPlay { player } => discard_from_play_triggers(g, player, out),
             Occasion::EndTurn { .. } => {
@@ -951,9 +942,24 @@ fn first_play_of_turn(g: &Game, p: PlayerId, since: usize) -> bool {
             .any(|e| matches!(e, Event::Played { player, .. } if *player == p))
 }
 
+/// Journey keeps in play everything its buyer has there: asked at the start of Clean-up
+/// (for effects about cards that would be discarded) and again as cards are discarded,
+/// for cards played in between.
+fn journey_trigger(g: &Game, player: PlayerId, out: &mut Vec<Trigger>) {
+    if let Some(l) = this_turn_lasting(g, Card::Journey, player)
+        && g.in_play(player).iter().any(|c| !l.keeps.contains(c))
+    {
+        out.push(
+            Trigger::new(player, Card::Journey, THIS_TURN)
+                .via_lasting(l.id)
+                .quiet(),
+        );
+    }
+}
+
 fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>) {
-    if this_turn_lasting(g, Card::Journey, player).is_some() {
-        return;
+    if g.cleaning_up(player) {
+        journey_trigger(g, player, out);
     }
     let leaving = g.leaving_play(player);
     for &c in &leaving {

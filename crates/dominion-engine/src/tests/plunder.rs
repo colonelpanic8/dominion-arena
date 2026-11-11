@@ -2144,11 +2144,11 @@ fn journey_keeps_cards_in_play_and_takes_an_extra_turn_but_not_a_third() {
     to_buy(&mut g);
     money(&mut g, 4, 1);
     buy_event(&mut g, Card::Journey);
-    // No third turn in a row; the cards still stay in play until P0's next Clean-up.
+    // No third turn in a row; the cards still stay in play, until the next Clean-up.
     assert_eq!(g.turn().player, P1);
     assert_eq!(in_play_kinds(&g, P0), [Card::Village, Card::Copper]);
     next_turn(&mut g);
-    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
     assert!(g.in_play(P0).is_empty());
 }
 
@@ -3152,4 +3152,24 @@ fn taskmaster_played_while_a_five_is_being_gained_counts_it() {
     next_turn(&mut g);
     resolve_triggers(&mut g);
     assert_eq!((g.turn().actions, g.turn().coins), (3, 2));
+}
+
+#[test]
+fn journey_keeps_a_card_played_at_the_start_of_clean_up() {
+    let mut g = setup_l(&[Card::Village, Card::Sheepdog], &[Card::Journey]);
+    set_trait(&mut g, Card::Friendly, Card::Village);
+    hand(&mut g, P0, &[Card::Village, Card::Sheepdog, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    money(&mut g, 3, 1);
+    buy_event(&mut g, Card::Journey);
+    // Start of Clean-up: Friendly discards the Village for another; Sheepdog is played.
+    assert_eq!(g.pending().unwrap().source, Some(Card::Friendly));
+    yes_trigger(&mut g);
+    assert_eq!(g.pending().unwrap().source, Some(Card::Sheepdog));
+    yes_trigger(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Journey)));
+    assert_eq!(in_play_kinds(&g, P0), [Card::Copper, Card::Sheepdog]);
 }
