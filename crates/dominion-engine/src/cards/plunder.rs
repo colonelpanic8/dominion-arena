@@ -952,16 +952,10 @@ fn first_play_of_turn(g: &Game, p: PlayerId, since: usize) -> bool {
 }
 
 fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>) {
-    if player != g.turn.player || this_turn_lasting(g, Card::Journey, player).is_some() {
+    if this_turn_lasting(g, Card::Journey, player).is_some() {
         return;
     }
-    let kept: Vec<CardId> = g.lasting().iter().flat_map(|l| l.keeps.clone()).collect();
-    let leaving: Vec<CardId> = g
-        .in_play(player)
-        .iter()
-        .copied()
-        .filter(|c| !kept.contains(c))
-        .collect();
+    let leaving = g.leaving_play(player);
     for &c in &leaving {
         for t in [Card::Tireless, Card::Reckless] {
             if is_traited(g, c, t) {
@@ -1555,12 +1549,10 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Frigate => discard_down_one(g, f, input, p, 4),
         Card::Trickster => match f.pc {
             0 => {
-                let kept: Vec<CardId> = g.lasting().iter().flat_map(|l| l.keeps.clone()).collect();
                 let treasures: Vec<CardId> = g
-                    .in_play(p)
-                    .iter()
-                    .copied()
-                    .filter(|&c| !kept.contains(&c) && g.is(c, Types::TREASURE))
+                    .leaving_play(p)
+                    .into_iter()
+                    .filter(|&c| g.is(c, Types::TREASURE))
                     .collect();
                 if treasures.is_empty() {
                     return Flow::done();

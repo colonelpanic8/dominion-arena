@@ -694,14 +694,9 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
 
 /// The Treasures `p` is about to discard from play.
 fn panic_returns(g: &Game, p: PlayerId) -> Vec<CardId> {
-    g.in_play(p)
-        .iter()
-        .copied()
-        .filter(|&c| {
-            g.is(c, Types::TREASURE)
-                && !g.lasting().iter().any(|l| l.keeps.contains(&c))
-                && g.home_pile(g.printed(c)).is_some()
-        })
+    g.leaving_play(p)
+        .into_iter()
+        .filter(|&c| g.is(c, Types::TREASURE) && g.home_pile(g.printed(c)).is_some())
         .collect()
 }
 

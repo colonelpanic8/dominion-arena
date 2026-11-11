@@ -195,15 +195,12 @@ impl SetRules for Rules {
                 }
             }
             Occasion::DiscardFromPlay { player } => {
-                if player != g.turn.player {
-                    return;
-                }
-                if holds(g, player, Card::Flag) {
+                if holds(g, player, Card::Flag) && g.cleaning_up(player) {
                     out.push(Trigger::new(player, Card::Flag, EFFECT));
                 }
                 if holds(g, player, Card::Horn) && !used(g, Card::Horn, player) {
-                    for &c in g.in_play(player) {
-                        if g.card(c) == Card::BorderGuard && !kept(g, c) {
+                    for c in g.leaving_play(player) {
+                        if g.card(c) == Card::BorderGuard {
                             out.push(Trigger::new(player, Card::Horn, EFFECT).on(c).optional());
                         }
                     }

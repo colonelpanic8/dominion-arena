@@ -67,7 +67,8 @@ them.
   Action (moves: play an Action, spend a Villager, end), Buy (`StartBuyPhase`; play
   Treasures until something is bought, buy cards / Events / Projects; `EndBuyPhase`),
   Night (`StartNight`; play Night cards), Clean-up
-  (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
+  (`StartCleanup`, `DiscardFromPlay` for each player with cards in play to discard,
+  discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Spending Coffers
   and paying off Debt are moves in the Action, Buy and Night phases alike. Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
@@ -196,6 +197,11 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   gain_card / trash / discard / play / receive / shuffle`. Primitive helpers
   (`g.move_card`, `top_deck`, `put_in_hand`, `set_aside`, `put_on_mat`,
   `return_to_pile`, `add_coins`) trigger nothing.
+- "When you discard ... from play" abilities answer `DiscardFromPlay { player }` for the
+  cards in `g.leaving_play(player)`: in Clean-up the cards nothing keeps in play (each
+  player's, not only the turn's), at other times the cards given to
+  `Frame::discard_from_play` (Highwayman). Effects that only use that window as a
+  moment of Clean-up check `g.cleaning_up(player)`.
 - `+$` goes through `g.add_coins(p, n)` (the -$1 token), +Actions and +Buys through
   `g.add_actions(p, n)` and `g.add_buys(p, n)`: all three do nothing for a player whose
   turn it isn't, so never add to `g.turn` directly. Decisions are asked with the

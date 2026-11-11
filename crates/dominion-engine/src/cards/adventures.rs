@@ -459,8 +459,7 @@ impl SetRules for Rules {
                 }
             }
             Occasion::DiscardFromPlay { player } => {
-                let kept: Vec<CardId> = g.lasting().iter().flat_map(|l| l.keeps.clone()).collect();
-                for &c in g.in_play(player) {
+                for c in g.leaving_play(player) {
                     let printed = g.printed(c);
                     let Some(next) = upgrade(printed) else {
                         continue;
@@ -470,7 +469,7 @@ impl SetRules for Rules {
                         && g
                             .pile_of(next)
                             .is_some_and(|p| !g.pile(p).cards.is_empty());
-                    if g.card(c) == printed && !kept.contains(&c) && available {
+                    if g.card(c) == printed && available {
                         out.push(Trigger::new(player, printed, EXCHANGE).on(c).optional());
                     }
                 }

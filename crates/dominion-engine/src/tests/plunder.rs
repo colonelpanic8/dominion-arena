@@ -3028,6 +3028,71 @@ fn harbor_village_does_not_pay_for_the_coins_of_a_card_the_next_action_played() 
     assert_eq!(g.turn().coins, 4);
 }
 
+/// P0 buys an Estate; P1 plays a Mapmaker with Trait `t` from their hand in response,
+/// and P0's turn ends.
+fn off_turn_mapmaker(t: Card) -> (Game, CardId) {
+    let mut g = setup(&[Card::Mapmaker]);
+    set_trait(&mut g, t, Card::Mapmaker);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    let mapmaker = hand(&mut g, P1, &[Card::Mapmaker])[0];
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    money(&mut g, 2, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Estate);
+    assert_eq!(g.pending().unwrap().player, P1);
+    resolve_triggers(&mut g);
+    assert_eq!(g.turn().player, P1);
+    (g, mapmaker)
+}
+
+#[test]
+fn a_reckless_card_played_on_another_players_turn_returns_to_its_pile() {
+    let (g, mapmaker) = off_turn_mapmaker(Card::Reckless);
+    let pile = g.pile_of(Card::Mapmaker).unwrap();
+    assert_eq!(g.zone(mapmaker), Zone::Pile(pile));
+}
+
+#[test]
+fn a_tireless_card_played_on_another_players_turn_goes_onto_the_deck() {
+    let (g, mapmaker) = off_turn_mapmaker(Card::Tireless);
+    assert_eq!(g.player(P1).deck.last(), Some(&mapmaker));
+}
+
+/// P0 plays a Highwayman with Trait `t`, which discards itself from play at the start
+/// of their next turn.
+fn highwayman_leaving_play(t: Card) -> (Game, CardId) {
+    let mut g = setup(&[Card::Highwayman]);
+    set_trait(&mut g, t, Card::Highwayman);
+    let highwayman = hand(&mut g, P0, &[Card::Highwayman])[0];
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    (g, highwayman)
+}
+
+#[test]
+fn a_tireless_highwayman_discarded_at_the_start_of_the_turn_goes_onto_the_deck() {
+    let (mut g, highwayman) = highwayman_leaving_play(Card::Tireless);
+    assert_eq!(g.zone(highwayman), Zone::SetAside(P0));
+    assert_eq!(g.hand(P0).len(), 8);
+    next_turn(&mut g);
+    assert_eq!(g.player(P0).deck.last(), Some(&highwayman));
+}
+
+#[test]
+fn a_reckless_highwayman_discarded_at_the_start_of_the_turn_returns_to_its_pile() {
+    let (g, highwayman) = highwayman_leaving_play(Card::Reckless);
+    let pile = g.pile_of(Card::Highwayman).unwrap();
+    assert_eq!(g.zone(highwayman), Zone::Pile(pile));
+    // Its instructions were followed twice: +3 Cards twice.
+    assert_eq!(g.hand(P0).len(), 11);
+}
+
 #[test]
 fn rush_and_mirror_apply_to_the_next_action_gained_not_one_gained_because_of_it() {
     for event in [Card::Rush, Card::Mirror] {

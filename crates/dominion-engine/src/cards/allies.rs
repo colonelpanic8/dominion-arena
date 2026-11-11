@@ -309,10 +309,9 @@ impl SetRules for Rules {
                 }
             }
             Occasion::DiscardFromPlay { player } => {
-                for &c in g.in_play(player) {
+                for c in g.leaving_play(player) {
                     let kind = g.card(c);
-                    let kept = g.lasting().iter().any(|l| l.keeps.contains(&c));
-                    if matches!(kind, Card::MerchantCamp | Card::Tent) && !kept {
+                    if matches!(kind, Card::MerchantCamp | Card::Tent) {
                         out.push(Trigger::new(player, kind, REACT).on(c).optional());
                     }
                 }
@@ -848,7 +847,7 @@ fn ally_trigger(g: &Game, ally: Card, occ: &Occasion) -> Option<Trigger> {
         }
         Occasion::DiscardFromPlay { player } if ally == Card::CoastalHaven => (
             player,
-            favors(g, player) >= 1 && !g.hand(player).is_empty(),
+            g.cleaning_up(player) && favors(g, player) >= 1 && !g.hand(player).is_empty(),
         ),
         Occasion::EndTurn { player } if ally == Card::IslandFolk => (
             player,
@@ -1288,7 +1287,7 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 let this = f.this();
                 if g.zone(this) == Zone::InPlay(p) {
-                    return Flow::Call(Frame::discard(p, vec![this]));
+                    return Flow::Call(Frame::discard_from_play(p, vec![this]));
                 }
                 Flow::Continue
             }

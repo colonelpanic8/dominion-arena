@@ -38,13 +38,11 @@ fn potion_in_play(g: &Game, p: PlayerId) -> bool {
     g.in_play(p).iter().any(|&c| g.card(c) == Card::Potion)
 }
 
-/// Treasures `p` has in play that will be discarded (not kept in play by a lasting effect).
+/// The Treasures `p` is discarding from play.
 fn treasures_leaving_play(g: &Game, p: PlayerId) -> Vec<CardId> {
-    let kept: Vec<CardId> = g.lasting().iter().flat_map(|l| l.keeps.clone()).collect();
-    g.in_play(p)
-        .iter()
-        .copied()
-        .filter(|&c| g.is(c, Types::TREASURE) && !kept.contains(&c))
+    g.leaving_play(p)
+        .into_iter()
+        .filter(|&c| g.is(c, Types::TREASURE))
         .collect()
 }
 

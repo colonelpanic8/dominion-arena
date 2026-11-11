@@ -407,11 +407,9 @@ impl SetRules for Rules {
             Occasion::DiscardFromPlay { player } => {
                 for l in g.lasting() {
                     let Some(c) = l.source else { continue };
-                    let kept = g.lasting().iter().any(|k| k.keeps.contains(&c));
                     if l.card == Card::WayOfTheFrog
                         && l.owner == player
-                        && g.zone(c) == Zone::InPlay(player)
-                        && !kept
+                        && g.leaving_play(player).contains(&c)
                     {
                         // Differently named cards go onto the deck in a chosen order.
                         let kind = g.card(c);

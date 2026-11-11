@@ -481,9 +481,8 @@ impl SetRules for Rules {
                 }
             }
             Occasion::DiscardFromPlay { player } => {
-                for &c in g.in_play(player) {
-                    let kept = g.lasting().iter().any(|l| l.keeps.contains(&c));
-                    if g.card(c) == Card::Capital && !kept {
+                for c in g.leaving_play(player) {
+                    if g.card(c) == Card::Capital {
                         // Taken whatever else happens to the card as it is discarded.
                         out.push(Trigger::new(player, Card::Capital, CAPITAL_DEBT).on(c).quiet());
                     }

@@ -187,6 +187,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         last_gain: None,
         trashing: vec![],
         plays: vec![],
+        leaving: vec![],
         ext: Ext::default(),
         stack: vec![],
         pending: None,

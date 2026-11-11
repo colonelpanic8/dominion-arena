@@ -34,7 +34,8 @@ pub enum Occasion {
     StartCleanup {
         player: PlayerId,
     },
-    /// In Clean-up, before cards are discarded from play: "when you discard this from play".
+    /// Before `player` discards the cards of [`Game::leaving_play`] from play, in Clean-up
+    /// or at another time: "when you discard this from play".
     DiscardFromPlay {
         player: PlayerId,
     },

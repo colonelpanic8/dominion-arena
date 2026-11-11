@@ -908,6 +908,25 @@ fn highwayman_counts_an_action_that_capitalism_makes_a_treasure() {
 }
 
 #[test]
+fn a_highwayman_leaving_play_at_the_start_of_the_turn_is_not_a_clean_up() {
+    let mut g = game(&[Card::Highwayman, Card::FlagBearer]);
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    for a in g.artifacts.iter_mut().filter(|a| a.0 == Card::Flag) {
+        a.1 = Some(P0);
+    }
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+    assert_eq!(g.hand(P0).len(), 6 + 3);
+    next_turn(&mut g);
+    // The Flag's extra card comes once, with the hand drawn in Clean-up.
+    assert_eq!(g.hand(P0).len(), 6);
+}
+
+#[test]
 fn highwayman_is_not_cumulative_and_moat_blocks_it() {
     let mut g = game(&[Card::Highwayman, Card::Moat]);
     hand(

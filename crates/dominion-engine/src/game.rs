@@ -408,6 +408,10 @@ pub struct Game {
     /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
     pub(crate) trashing: Vec<(CardId, Zone)>,
     pub(crate) plays: Vec<PlayState>,
+    /// The cards being discarded from play other than in Clean-up, innermost last (see
+    /// [`Game::leaving_play`]).
+    #[serde(default)]
+    pub(crate) leaving: Vec<Vec<CardId>>,
     pub(crate) ext: Ext,
     pub(crate) stack: Vec<Frame>,
     pub(crate) pending: Option<Decision>,
@@ -953,6 +957,25 @@ impl Game {
         cards::playable_as_if_in_hand(self, p, &mut cards);
         cards.retain(|&c| self.is(c, types) && cards::can_play(self, p, c));
         cards
+    }
+
+    /// The cards `p` is discarding from play while a `DiscardFromPlay` window is open: the
+    /// ones being discarded now or, in Clean-up, all of theirs that no lasting effect keeps
+    /// in play.
+    pub(crate) fn leaving_play(&self, p: PlayerId) -> Vec<CardId> {
+        let in_play = self.in_play(p).iter().copied();
+        match self.leaving.last() {
+            Some(cards) => in_play.filter(|c| cards.contains(c)).collect(),
+            None => in_play
+                .filter(|c| !self.lasting.iter().any(|l| l.keeps.contains(c)))
+                .collect(),
+        }
+    }
+
+    /// Whether the open `DiscardFromPlay` window is `p`'s own Clean-up, rather than cards
+    /// leaving play at another time or another player's cards leaving in this Clean-up.
+    pub(crate) fn cleaning_up(&self, p: PlayerId) -> bool {
+        p == self.turn.player && self.turn.phase == Phase::Cleanup && self.leaving.is_empty()
     }
 
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {
