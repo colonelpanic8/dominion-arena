@@ -1125,12 +1125,6 @@ fn black_cat(g: &mut Game, f: &mut CardFrame) -> Flow {
     if f.player == g.turn.player {
         return Flow::done();
     }
-    if f.pc == 0 {
-        let order = g.players_from(g.turn.player);
-        f.targets
-            .sort_by_key(|t| order.iter().position(|p| p == t));
-        f.pc = 1;
-    }
     let Some(&target) = f.targets.get(f.s.i) else {
         return Flow::done();
     };

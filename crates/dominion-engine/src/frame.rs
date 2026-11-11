@@ -1293,7 +1293,9 @@ impl PlayFrame {
                 // answer the card being played, whatever it ends up doing.
                 self.pc = 2;
                 if g.is(id, Types::ATTACK) {
-                    self.remaining = g.others(p);
+                    // In turn order from the player whose turn it is.
+                    self.remaining = g.players_from(g.turn.player);
+                    self.remaining.retain(|&q| q != p);
                     self.pc = 3;
                 }
                 Flow::Continue

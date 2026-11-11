@@ -114,6 +114,15 @@ pub(crate) fn play(g: &mut Game, card: Card) {
     respond(g, Response::Move(Move::Play(id)));
 }
 
+/// Has `p` play `card` from their hand right now, as an effect would on another
+/// player's turn.
+pub(crate) fn play_out_of_turn(g: &mut Game, p: PlayerId, card: Card) {
+    let id = find(g, p, card);
+    g.stack.push(crate::frame::Frame::play(p, id, true, vec![]));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+}
+
 pub(crate) fn end_phase(g: &mut Game) {
     respond(g, Response::Move(Move::EndPhase));
 }
@@ -655,6 +664,25 @@ fn actions_and_buys_do_nothing_on_another_players_turn() {
     check(Card::Stables, &[Card::Copper], |g| {
         choose_kinds(g, &[Card::Copper])
     });
+}
+
+#[test]
+fn an_attack_played_on_another_players_turn_starts_with_the_turn_player() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(3, vec![Card::Witch], 7)
+    });
+    let curses = g.supply_pile(Card::Curse).unwrap();
+    for c in g.pile(curses).cards.clone().into_iter().skip(1) {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+    hand(&mut g, P1, &[Card::Witch]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Witch);
+    // The last Curse goes to the player whose turn it is, not the one to P1's left.
+    assert_eq!(g.count_owned(P0, Card::Curse), 1);
+    assert_eq!(g.count_owned(P2, Card::Curse), 0);
 }
 
 #[test]
