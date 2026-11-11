@@ -973,14 +973,12 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             if !g.turn.bought {
                 moves.extend(g.playable(p, Types::TREASURE).into_iter().map(Move::Play));
             }
-            if g.turn.can_buy_cards {
-                for (i, pile) in g.piles.iter().enumerate() {
-                    if let Some(&top) = pile.cards.last()
-                        && pile.in_supply
-                        && can_buy(g, p, g.card(top), g.cost_of(top))
-                    {
-                        moves.push(Move::Buy(PileId(i as u8)));
-                    }
+            for (i, pile) in g.piles.iter().enumerate() {
+                if let Some(&top) = pile.cards.last()
+                    && pile.in_supply
+                    && can_buy(g, p, g.card(top), g.cost_of(top))
+                {
+                    moves.push(Move::Buy(PileId(i as u8)));
                 }
             }
             for &l in &g.landscapes {

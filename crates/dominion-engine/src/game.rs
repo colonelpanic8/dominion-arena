@@ -236,8 +236,6 @@ pub struct Turn {
     pub trashed: Vec<Card>,
     /// Cards drawn in Clean-up.
     pub cleanup_draw: usize,
-    /// Whether the player may buy cards (not Events or Projects) this turn.
-    pub can_buy_cards: bool,
     /// No more +Actions this turn (Snowy Village).
     pub ignore_plus_actions: bool,
 }
@@ -268,7 +266,6 @@ impl Turn {
             bought_cards: vec![],
             trashed: vec![],
             cleanup_draw: 5,
-            can_buy_cards: true,
             ignore_plus_actions: false,
         }
     }
