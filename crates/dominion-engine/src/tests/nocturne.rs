@@ -644,6 +644,24 @@ fn cheap_cards_cannot_be_exchanged_for_a_changeling() {
 }
 
 #[test]
+fn a_gained_card_covered_on_the_deck_cannot_be_exchanged_for_a_changeling() {
+    let mut g = setup(&[Card::Changeling, Card::NomadCamp, Card::HauntedWoods]);
+    hand(&mut g, P0, &[Card::HauntedWoods]);
+    hand(&mut g, P1, &[Card::Gold, Card::Copper, Card::Estate]);
+    g.start();
+    play(&mut g, Card::HauntedWoods);
+    next_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::NomadCamp);
+    // Haunted Woods first: the Estate goes onto the deck, on top of the Nomad Camp.
+    super::intrigue::trigger(&mut g, Card::HauntedWoods);
+    assert_ne!(purpose(&g), Purpose::Trigger);
+    assert_eq!(g.count_owned(P1, Card::NomadCamp), 1);
+}
+
+#[test]
 fn devils_workshop_depends_on_the_cards_gained_this_turn() {
     let mut g = setup(&[Card::DevilsWorkshop]);
     hand(&mut g, P0, &[Card::DevilsWorkshop]);

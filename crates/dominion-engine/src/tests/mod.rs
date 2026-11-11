@@ -494,6 +494,25 @@ fn buying_a_card_pays_and_gains_it() {
 }
 
 #[test]
+fn a_buy_gains_nothing_once_another_card_tops_the_pile() {
+    let mut g = setup(&[Card::Augurs, Card::Talisman]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Talisman, Card::Silver]);
+    deck(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Talisman);
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::Augurs);
+    // Talisman's copy, played with Innovation, rotates the Augurs.
+    intrigue::trigger(&mut g, Card::Innovation);
+    yes(&mut g);
+    let augurs = g.supply_pile(Card::Augurs).unwrap();
+    assert_eq!(g.pile_top(augurs).map(|c| g.card(c)), Some(Card::Acolyte));
+    assert_eq!(g.count_owned(P0, Card::HerbGatherer), 1);
+    assert_eq!(g.count_owned(P0, Card::Acolyte), 0);
+}
+
+#[test]
 fn coffers_and_debt_can_be_used_in_every_phase() {
     let mut g = setup(&[Card::Smithy]);
     hand(&mut g, P0, &[]);

@@ -76,7 +76,7 @@ impl SetRules for Rules {
                     return Some(Flow::done());
                 }
                 f.pc = 1;
-                match copy_in_supply(g, g.card(bought), Some(bought)) {
+                match another_copy_in_supply(g, g.printed(bought)) {
                     Some(copy) => Flow::Call(Frame::gain_card(f.player, copy, Dest::Discard)),
                     None => Flow::done(),
                 }
@@ -203,8 +203,8 @@ impl SetRules for Rules {
                     }
                 }
             }
-            Occasion::Buy { player, card } => {
-                let copies = !g.is(card, Types::VICTORY) && g.cost_of(card).at_most(Cost::coins(4));
+            Occasion::Buy { player, card, cost } => {
+                let copies = !g.is(card, Types::VICTORY) && cost.at_most(Cost::coins(4));
                 for &c in g.in_play(player) {
                     match g.card(c) {
                         Card::Talisman if copies => {
@@ -296,17 +296,8 @@ pub(super) fn occ_card(f: &CardFrame) -> CardId {
 
 /// Whether `card`, being gained by `p`, is still where it was gained to.
 pub(super) fn where_gained(g: &Game, p: PlayerId, card: CardId) -> bool {
-    g.gains.last().is_some_and(|st| {
-        st.card == card
-            && st.player == p
-            && g.zone(card)
-                == match st.to {
-                    Dest::Discard => Zone::Discard(p),
-                    Dest::Hand => Zone::Hand(p),
-                    Dest::DeckTop => Zone::Deck(p),
-                    Dest::SetAside => Zone::SetAside(p),
-                }
-    })
+    g.gains.last().is_some_and(|st| st.card == card && st.player == p)
+        && g.still_where_gained(card)
 }
 
 pub(super) fn top_deck(g: &mut Game, p: PlayerId, c: CardId) {
@@ -319,18 +310,20 @@ pub(super) fn this_turn(g: &mut Game, f: &CardFrame, data: Scratch) -> u32 {
     g.add_lasting(f.card, f.player, f.this, vec![], Until::EndOfTurn, data)
 }
 
-/// The top card of the Supply pile holding copies of `card`, if it is one, skipping
-/// `except` (a card already on its way out of the pile).
-pub(super) fn copy_in_supply(g: &Game, card: Card, except: Option<CardId>) -> Option<CardId> {
+/// The top card of the Supply pile holding copies of `card`, if it is one.
+pub(super) fn copy_in_supply(g: &Game, card: Card) -> Option<CardId> {
     let pile = g.home_pile(card).filter(|&p| g.pile(p).in_supply)?;
-    let top = g
-        .pile(pile)
-        .cards
-        .iter()
-        .rev()
-        .copied()
-        .find(|&c| Some(c) != except)?;
-    (g.card(top) == card).then_some(top)
+    g.pile_top(pile).filter(|&top| g.card(top) == card)
+}
+
+/// A copy of `card` in the Supply besides the one on top of its pile, which the buy in
+/// progress gains: the card under it, if that is one too.
+fn another_copy_in_supply(g: &Game, card: Card) -> Option<CardId> {
+    let pile = g.home_pile(card).filter(|&p| g.pile(p).in_supply)?;
+    match g.pile(pile).cards[..] {
+        [.., under, top] if g.card(top) == card && g.card(under) == card => Some(under),
+        _ => None,
+    }
 }
 
 /// Supply piles whose top card passes `ok`.
@@ -809,7 +802,7 @@ fn mint(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let card = g.card(c);
             g.reveal(f.player, c);
             f.pc = 2;
-            match copy_in_supply(g, card, None) {
+            match copy_in_supply(g, card) {
                 Some(copy) => Flow::Call(Frame::gain_card(f.player, copy, Dest::Discard)),
                 None => Flow::done(),
             }

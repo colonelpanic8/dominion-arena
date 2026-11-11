@@ -1057,6 +1057,26 @@ fn bureaucracy_gains_a_copper_with_every_card_that_does_not_cost_zero() {
 }
 
 #[test]
+fn bureaucracy_looks_at_what_the_card_cost_as_it_was_gained() {
+    let mut g = with_prophecy(&[Card::Destrier], Card::Bureaucracy);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 4;
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Silver);
+    buy(&mut g, Card::Silver);
+    buy(&mut g, Card::Copper);
+    // After five gains Destrier costs $1, and $0 once it is gained itself.
+    assert_eq!(g.turn().gained.len(), 5);
+    let coppers = g.count_owned(P0, Card::Copper);
+    buy(&mut g, Card::Destrier);
+    assert_eq!(g.count_owned(P0, Card::Copper), coppers + 1);
+}
+
+#[test]
 fn divine_wind_replaces_the_kingdom_piles_with_ten_new_ones() {
     let kingdom = [Card::TeaHouse, Card::Smithy, Card::Village];
     let mut g = game(&kingdom, &[Card::DivineWind], 1);

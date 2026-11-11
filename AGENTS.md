@@ -101,12 +101,17 @@ them.
   plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
-  card's cost then in `GainState::cost`), `Gain` window. An effect that goes on with the
-  card it gained asks `g.gained_to(p, id)` where `p` gained it to (`None` if someone
-  else gained it instead: Possession) rather than assuming the discard pile.
+  card's cost then in `GainState::cost` and the phase in `GainState::phase`: a gain
+  "in your Buy phase" is tested with `g.gain_phase(id)`, because Cavalry and Villa change
+  `turn.phase` while their gain's window is open), `Gain` window. An effect that goes on
+  with the card it gained asks `g.gained_to(p, id)` where `p` gained it to (`None` if
+  someone else gained it instead: Possession) rather than assuming the discard pile.
   **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
   (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
-  `f.data` = the $ and `f.s.cost` = all of it), `Buy` window, then gain.
+  `f.data` = the $ and `f.s.cost` = all of it), `Buy` window (`Occasion::Buy` carries
+  what the card cost when bought), then gain the pile's top card if it still has the
+  bought card's name (an on-buy ability may have gained the copy that was on top; what
+  was bought is a card of that name, not one physical copy).
   Events and Projects: pay, `BuyLandscape` window, then the landscape's `Hook::Main`
   (a Project also gets the buyer's cube in `Player::projects`).
 - **Triggers** (`trigger.rs`). Each set's `SetRules::triggers(g, occ, out)` adds the
@@ -214,7 +219,8 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
 - Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
   check `g.zone(id)` is still that zone. That includes cards from `Frame::look` /
   `Frame::reveal`: they stay on the deck, where a "when trashed" draw in the middle of
-  the effect can take one.
+  the effect can take one. An on-gain ability that moves the gained card (or plays it)
+  checks `g.still_where_gained(id)`.
 - `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
   "discard / trash the top card" takes it with `Frame::look`.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
@@ -232,7 +238,8 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   `g.origin_pile(card)`. "In games using this" asks `setup::in_game`, not for a pile.
 - A pile's types are those of the card it is named after (`Pile::card`: its randomizer
   or top card), whatever is in it now: that decides an "Action Supply pile".
-- "In an Action phase" asks `g.in_action_phase()`: the start of a turn is part of it.
+- "In an Action phase" asks `g.in_action_phase()`: the start of a turn is part of it
+  (for a gain, `g.gain_phase(id)` and `Phase::is_action`).
 - "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
   playable as if in hand (Shadow cards in the deck). "Return to your Action phase" is
   `Frame::return_to_action`, never a write to `turn.phase`: the Buy phase ends there

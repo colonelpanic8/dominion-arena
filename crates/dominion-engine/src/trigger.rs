@@ -10,7 +10,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose, Response};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::{Card, CardId, Game, PlayerId};
+use crate::{Card, CardId, Cost, Game, PlayerId};
 use serde::{Deserialize, Serialize};
 
 /// Something that happened, or is about to, that abilities can respond to.
@@ -61,9 +61,13 @@ pub enum Occasion {
         card: CardId,
         target: PlayerId,
     },
+    /// `player` bought `card`, the top card of its pile, when it cost `cost`. The buy's own
+    /// gain follows the window.
     Buy {
         player: PlayerId,
         card: CardId,
+        #[serde(default)]
+        cost: Cost,
     },
     BuyLandscape {
         player: PlayerId,

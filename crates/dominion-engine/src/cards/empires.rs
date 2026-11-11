@@ -690,7 +690,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         .find(|st| st.card == card)
         .and_then(|st| st.turn_index);
     let my_turn = player == g.turn.player;
-    let buy_phase = my_turn && g.turn.phase == Phase::Buy;
+    let buy_phase = my_turn && g.gain_phase(card) == Some(Phase::Buy);
     let own = match kind {
         Card::Rocks
         | Card::CrumblingCastle
@@ -902,15 +902,6 @@ fn emit_hand(g: &mut Game, p: PlayerId) {
 fn emit_revealed(g: &mut Game, p: PlayerId, cards: &[CardId]) {
     for &c in cards {
         g.reveal(p, c);
-    }
-}
-
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
     }
 }
 
@@ -1798,13 +1789,7 @@ fn villa_gained(g: &mut Game, f: &mut CardFrame) -> Flow {
     }
     f.pc = 1;
     let c = f.this();
-    let landed = g
-        .gains
-        .iter()
-        .rev()
-        .find(|st| st.card == c)
-        .map(|st| dest_zone(st.to, st.player));
-    if landed == Some(g.zone(c)) {
+    if g.still_where_gained(c) {
         g.put_in_hand(c, p);
     }
     plus_actions(g, p, 1);

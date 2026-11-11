@@ -533,15 +533,6 @@ fn this_turn(g: &Game, card: Card, p: PlayerId) -> impl Iterator<Item = &crate::
         .filter(move |l| l.card == card && l.owner == p && l.until == Until::EndOfTurn)
 }
 
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
-    }
-}
-
 /// From step `pc`: gain a card from a Supply pile whose top card satisfies `pred` (if any
 /// does), then finish.
 fn gain_where(
@@ -658,14 +649,11 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     let Some((prophecy, 0)) = g.prophecy else {
         return;
     };
-    let landed = g
-        .gains
-        .last()
-        .filter(|st| st.card == card)
-        .map(|st| dest_zone(st.to, st.player));
-    let still_there = landed == Some(g.zone(card));
+    let still_there = g.still_where_gained(card);
     match prophecy {
-        Card::Bureaucracy if g.cost_of(card) != Cost::ZERO => {
+        Card::Bureaucracy
+            if g.gain_cost(card).unwrap_or_else(|| g.cost_of(card)) != Cost::ZERO =>
+        {
             out.push(Trigger::new(player, Card::Bureaucracy, BUREAUCRACY));
         }
         Card::Growth if g.is(card, Types::TREASURE) => {
@@ -676,7 +664,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
                 out.push(Trigger::new(player, Card::HarshWinter, HARSH_WINTER).data(pile.0 as i32));
             }
         }
-        Card::Progress if still_there && landed != Some(Zone::Deck(player)) => {
+        Card::Progress if still_there && g.zone(card) != Zone::Deck(player) => {
             out.push(Trigger::new(player, Card::Progress, PROGRESS));
         }
         Card::RapidExpansion

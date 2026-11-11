@@ -351,21 +351,9 @@ fn kept(g: &Game, c: CardId) -> bool {
     g.lasting().iter().any(|l| l.keeps.contains(&c))
 }
 
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
-    }
-}
-
 /// Whether `card`, being gained, is still where it was gained to.
 fn where_gained(g: &Game, card: CardId) -> bool {
-    g.gains
-        .last()
-        .filter(|st| st.card == card)
-        .is_some_and(|st| dest_zone(st.to, st.player) == g.zone(card))
+    g.still_where_gained(card)
 }
 
 fn hand_where(g: &Game, p: PlayerId, pred: impl Fn(CardId) -> bool) -> Vec<CardId> {

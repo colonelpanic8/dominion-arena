@@ -156,12 +156,13 @@ impl SetRules for Rules {
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
-            Occasion::Buy { player, card } => {
-                if let Zone::Pile(pile) = g.zone(card) {
-                    let tokens = g.pile(pile).embargo;
-                    if tokens > 0 {
+            Occasion::Buy { player, card, .. } => {
+                // The pile bought from: the copy that was on top may have left it since.
+                if let Some(pile) = g.home_pile(g.printed(card)) {
+                    for token in 1..=g.pile(pile).embargo {
                         out.push(
-                            Trigger::new(player, Card::Embargo, EMBARGO_CURSE).data(tokens as i32),
+                            Trigger::new(player, Card::Embargo, EMBARGO_CURSE)
+                                .labelled(format!("Embargo token {token}")),
                         );
                     }
                 }
@@ -216,12 +217,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             }
         }
     }
-    let landed = g
-        .gains
-        .last()
-        .filter(|st| st.card == card)
-        .map(|st| dest_zone(st.to, st.player));
-    if g.is(card, Types::DURATION) && landed == Some(g.zone(card)) {
+    if g.is(card, Types::DURATION) && g.still_where_gained(card) {
         for l in g.lasting() {
             if l.card == Card::Sailor && l.until == Until::EndOfTurn && l.owner == gainer {
                 out.push(
@@ -231,15 +227,6 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 );
             }
         }
-    }
-}
-
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
     }
 }
 
@@ -449,10 +436,10 @@ fn sailor_play(g: &mut Game, f: &mut CardFrame) -> Flow {
 }
 
 fn embargo_curse(g: &mut Game, f: &mut CardFrame) -> Flow {
-    if f.s.i < f.data as usize
+    if f.pc == 0
         && let Some(curse) = g.supply_pile(Card::Curse)
     {
-        f.s.i += 1;
+        f.pc = 1;
         return Flow::Call(Frame::gain(f.player, curse, Dest::Discard));
     }
     Flow::done()

@@ -1074,6 +1074,7 @@ fn resume_gain(
                 cancelled: false,
                 since: g.log.len(),
                 cost: g.cost_of(id),
+                phase: g.turn.phase,
                 turn_index: None,
                 buy_index: None,
             });
@@ -1093,7 +1094,9 @@ fn resume_gain(
                 Dest::SetAside => Zone::SetAside(st.player),
             };
             let cost = g.cost_of(st.card);
-            g.gains.last_mut().expect("gain in progress").cost = cost;
+            let gain = g.gains.last_mut().expect("gain in progress");
+            gain.cost = cost;
+            gain.phase = g.turn.phase;
             if let Some(pile) = g.home_pile(g.printed(st.card)) {
                 let pile = &mut g.piles[pile.index()];
                 if pile.trade_route {
@@ -1219,17 +1222,24 @@ fn resume_buy(
         }
         2 => {
             *pc = 3;
+            let card = card.expect("set in step 0");
             Flow::Call(Frame::window(Occasion::Buy {
                 player: p,
-                card: card.expect("set in step 0"),
+                card,
+                cost: g.cost_of(card),
             }))
         }
         3 => {
             *pc = 4;
-            let top = card.expect("set in step 0");
-            if g.zone(top) != Zone::Pile(pile) {
+            // What was bought is a card of that name from the pile, not one physical copy:
+            // an on-buy ability may have gained the copy that was on top.
+            let bought = g.printed(card.expect("set in step 0"));
+            let top = g
+                .pile_top(pile)
+                .filter(|&c| !g.pile(pile).removed && g.card(c) == bought);
+            let Some(top) = top else {
                 return Flow::done();
-            }
+            };
             Flow::Call(Frame::Gain {
                 player: p,
                 from: From::Card(top),

@@ -468,7 +468,7 @@ impl SetRules for Rules {
                     _ => {}
                 }
             }
-            Occasion::Buy { player, card } => {
+            Occasion::Buy { player, card, .. } => {
                 if g.card(card) == Card::NobleBrigand {
                     out.push(Trigger::new(player, Card::NobleBrigand, NOBLE_BRIGAND_BUY).on(card));
                 }

@@ -168,14 +168,22 @@ impl Pile {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
+    #[default]
     Start,
     Action,
     Buy,
     Night,
     Cleanup,
     End,
+}
+
+impl Phase {
+    /// The start of a turn is part of its Action phase.
+    pub fn is_action(self) -> bool {
+        matches!(self, Phase::Start | Phase::Action)
+    }
 }
 
 /// State that lasts for one turn.
@@ -439,6 +447,9 @@ pub struct GainState {
     pub since: usize,
     /// What the card cost at the moment it was gained (set as it moves).
     pub cost: Cost,
+    /// The turn's phase at the moment it was gained (set as it moves).
+    #[serde(default)]
+    pub phase: Phase,
     /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
     /// you gain", "your second gain this turn").
     pub turn_index: Option<usize>,
@@ -446,6 +457,18 @@ pub struct GainState {
     /// gained in that Buy phase ("the first card you gain in your Buy phase").
     #[serde(default)]
     pub buy_index: Option<usize>,
+}
+
+impl GainState {
+    /// Where the card is gained to.
+    pub fn zone(&self) -> Zone {
+        match self.to {
+            crate::Dest::Discard => Zone::Discard(self.player),
+            crate::Dest::Hand => Zone::Hand(self.player),
+            crate::Dest::DeckTop => Zone::Deck(self.player),
+            crate::Dest::SetAside => Zone::SetAside(self.player),
+        }
+    }
 }
 
 /// A play in progress, until its `AfterPlay` window closes. "When you play" triggers may
@@ -607,9 +630,9 @@ impl Game {
         self.prophecy
     }
 
-    /// Whether it is an Action phase: the start of a turn is part of its Action phase.
+    /// Whether it is an Action phase.
     pub fn in_action_phase(&self) -> bool {
-        matches!(self.turn.phase, Phase::Start | Phase::Action)
+        self.turn.phase.is_action()
     }
 
     /// Whether the game's Prophecy is in effect (all its Sun tokens removed).
@@ -682,12 +705,27 @@ impl Game {
     /// had `p` gain.
     pub(crate) fn gained_to(&self, p: PlayerId, id: CardId) -> Option<Zone> {
         let st = self.last_gain.as_ref()?;
-        (st.card == id && st.player == p).then_some(match st.to {
-            crate::Dest::Discard => Zone::Discard(p),
-            crate::Dest::Hand => Zone::Hand(p),
-            crate::Dest::DeckTop => Zone::Deck(p),
-            crate::Dest::SetAside => Zone::SetAside(p),
-        })
+        (st.card == id && st.player == p).then_some(st.zone())
+    }
+
+    /// Whether `id`, whose gain is in progress, is still where it was gained to: the
+    /// stop-moving rule lets an on-gain ability move the card only then.
+    pub(crate) fn still_where_gained(&self, id: CardId) -> bool {
+        self.gains
+            .iter()
+            .rev()
+            .find(|st| st.card == id)
+            .is_some_and(|st| self.still_where_put(id, st.zone()))
+    }
+
+    /// The phase `id` was gained in, while its gain is in progress ("when you gain a card in
+    /// your Buy phase" abilities look at this: resolving the gain may change the phase).
+    pub fn gain_phase(&self, id: CardId) -> Option<Phase> {
+        self.gains
+            .iter()
+            .rev()
+            .find(|st| st.card == id)
+            .map(|st| st.phase)
     }
 
     /// Where `id` was trashed from, while its "when trashed" abilities resolve.

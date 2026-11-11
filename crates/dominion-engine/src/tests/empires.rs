@@ -587,6 +587,18 @@ fn encampment_covers_plunder_when_it_returns_and_throne_room_returns_it_once() {
 }
 
 #[test]
+fn encampment_with_no_pile_to_return_to_stays_set_aside_as_its_owners_card() {
+    let mut g = setup(&[Card::Village]);
+    hand(&mut g, P0, &[Card::Encampment]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Encampment);
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Encampment]);
+    assert_eq!(g.count_owned(P0, Card::Encampment), 1);
+}
+
+#[test]
 fn enchantress_turns_the_first_action_of_each_other_players_turn_into_a_cantrip() {
     let mut g = setup(&[Card::Enchantress, Card::Smithy]);
     hand(&mut g, P0, &[Card::Enchantress]);
@@ -1640,6 +1652,20 @@ fn tax_puts_debt_on_every_pile_and_a_gain_in_the_buy_phase_takes_it() {
     assert_eq!(g.player(P0).debt, 3);
     assert_eq!(g.pile(g.pile_of(Card::Silver).unwrap()).debt_tokens, 0);
     assert_eq!(g.pile(g.pile_of(Card::Village).unwrap()).debt_tokens, 1);
+}
+
+#[test]
+fn tax_debt_is_taken_for_a_gain_that_ends_the_buy_phase() {
+    let mut g = setup_landscapes(&[Card::Cavalry], &[Card::Tax]);
+    let pile = g.supply_pile(Card::Cavalry).unwrap();
+    hand(&mut g, P0, &[Card::Silver, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play_all(&mut g, Card::Silver);
+    buy(&mut g, Card::Cavalry);
+    // Cavalry first: it was still gained in the Buy phase.
+    trigger(&mut g, Card::Cavalry);
+    assert_eq!((g.player(P0).debt, g.pile(pile).debt_tokens), (1, 0));
 }
 
 #[test]

@@ -346,7 +346,12 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         11 => {
             f.pc = 12;
             let card = f.s.pick.expect("set in step 4");
-            Flow::Call(Frame::window(Occasion::Buy { player: p, card }))
+            let cost = g.cost_of(card);
+            Flow::Call(Frame::window(Occasion::Buy {
+                player: p,
+                card,
+                cost,
+            }))
         }
         12 => {
             f.pc = 5;

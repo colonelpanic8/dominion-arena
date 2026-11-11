@@ -8,7 +8,7 @@ use crate::frame::{Flow, Frame, Input, OVERPAY, Value};
 use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
-use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::{Card, CardId, Cost, Game, Kind, Phase, PileId, PlayerId, Set, Types};
 use crate::Note;
 use serde::{Deserialize, Serialize};
 
@@ -76,6 +76,7 @@ impl SetRules for Rules {
                 let data = Scratch {
                     n: f.data,
                     cost: f.s.cost,
+                    i: g.turn.bought_cards.len(),
                     ..Scratch::default()
                 };
                 g.add_lasting(c, f.player, f.this, vec![], Until::EndOfTurn, data);
@@ -241,10 +242,20 @@ impl SetRules for Rules {
 
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         match *occ {
-            Occasion::Gain { player, card, .. } => {
+            Occasion::Gain {
+                player,
+                card,
+                bought,
+            } => {
                 for l in g.lasting() {
-                    // Only for the player who overpaid (not a possessor gaining it).
-                    if l.source == Some(card) && l.owner == player && OVERPAY_CARDS.contains(&l.card)
+                    // The gain of the buy that was overpaid for (`data.i`: which buy of the
+                    // turn), whichever copy it takes, and only by the player who overpaid
+                    // (not a possessor gaining it).
+                    if bought
+                        && l.card == g.card(card)
+                        && l.data.i == g.turn.bought_cards.len()
+                        && l.owner == player
+                        && OVERPAY_CARDS.contains(&l.card)
                     {
                         out.push(Trigger::new(player, l.card, OVERPAID).on(card).via_lasting(l.id));
                     }
@@ -267,7 +278,9 @@ impl SetRules for Rules {
                     _ => {}
                 }
                 // "In games using this": wherever its cards are (the Black Market deck).
-                if g.in_action_phase() && setup::in_game(g, |c| c == Card::Footpad) {
+                if g.gain_phase(card).is_some_and(Phase::is_action)
+                    && setup::in_game(g, |c| c == Card::Footpad)
+                {
                     out.push(Trigger::new(player, Card::Footpad, FOOTPAD_DRAW));
                 }
             }
@@ -408,20 +421,9 @@ pub(crate) fn copy_pile(g: &Game, card: Card) -> Option<PileId> {
     })
 }
 
-/// Where a gain in progress is putting `card`.
-pub(crate) fn gained_to(g: &Game, card: CardId) -> Option<Zone> {
-    let st = g.gains.iter().rev().find(|s| s.card == card)?;
-    Some(match st.to {
-        Dest::Discard => Zone::Discard(st.player),
-        Dest::Hand => Zone::Hand(st.player),
-        Dest::DeckTop => Zone::Deck(st.player),
-        Dest::SetAside => Zone::SetAside(st.player),
-    })
-}
-
 /// Whether a card being gained is still where it was gained to.
 pub(crate) fn still_gained(g: &Game, card: CardId) -> bool {
-    gained_to(g, card) == Some(g.zone(card))
+    g.still_where_gained(card)
 }
 
 pub(crate) fn reveal_hand(g: &mut Game, p: PlayerId) {
