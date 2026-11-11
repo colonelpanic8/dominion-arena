@@ -341,6 +341,46 @@ fn cargo_ship_sets_aside_a_gained_card_for_next_turn() {
     assert!(g.in_play(P0).is_empty());
 }
 
+/// Each Cargo Ship says what keeps it in play, and once one has set the card aside the
+/// others aren't offered.
+#[test]
+fn cargo_ships_say_what_keeps_them_in_play() {
+    let mut g = setup(&[Card::CargoShip, Card::ThroneRoom, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::ThroneRoom,
+            Card::CargoShip,
+            Card::CargoShip,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::CargoShip]);
+    play(&mut g, Card::CargoShip);
+    to_buy(&mut g);
+    buy(&mut g, Card::Silver);
+    let DecisionKind::Choose { labels, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending());
+    };
+    assert_eq!(
+        labels,
+        &[
+            "Cargo Ship played by Throne Room (optional)",
+            "Cargo Ship played by Throne Room (optional)",
+            "Cargo Ship (optional)",
+            "Done"
+        ]
+    );
+    respond(&mut g, Response::option(Opt::Trigger(2)));
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
+}
+
 #[test]
 fn cargo_ship_that_sets_nothing_aside_is_discarded() {
     let mut g = setup(&[Card::CargoShip, Card::Smithy]);

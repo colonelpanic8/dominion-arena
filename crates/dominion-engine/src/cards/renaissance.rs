@@ -468,12 +468,19 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
     {
         out.push(Trigger::new(gainer, Card::Innovation, EFFECT).optional());
     }
+    if !where_gained(g, card) {
+        return;
+    }
     for l in this_turn(g, Card::CargoShip, gainer) {
-        out.push(
-            Trigger::new(gainer, Card::CargoShip, CARGO_SET_ASIDE)
-                .via_lasting(l.id)
-                .optional(),
-        );
+        let mut t = Trigger::new(gainer, Card::CargoShip, CARGO_SET_ASIDE)
+            .via_lasting(l.id)
+            .optional();
+        // Which Cargo Ship stays in play: one played by a Throne Room keeps that too.
+        let by: Vec<String> = l.data.cards.iter().skip(1).map(|&c| g.card(c).to_string()).collect();
+        if !by.is_empty() {
+            t = t.labelled(format!("Cargo Ship played by {}", by.join(", ")));
+        }
+        out.push(t);
     }
 }
 
