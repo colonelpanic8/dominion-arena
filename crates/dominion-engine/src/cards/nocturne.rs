@@ -937,7 +937,9 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     g.reveal(p, c);
                 }
             }
+            // Everyone knows what they are.
             for c in coppers {
+                g.show(c);
                 g.top_deck(c, p);
             }
             Flow::done()

@@ -264,6 +264,36 @@ fn looking_through_a_discard_pile_shows_all_of_it() {
     assert_eq!(looked, pile);
 }
 
+/// Bad Omens leaves two Coppers as the deck, as everyone knows.
+#[test]
+fn everyone_knows_the_coppers_bad_omens_leaves_on_the_deck() {
+    let mut g = setup(&[Card::Skulk]);
+    hand(&mut g, P0, &[Card::Skulk]);
+    hand(&mut g, P1, &[]);
+    deck(
+        &mut g,
+        P1,
+        &[
+            Card::Copper,
+            Card::Estate,
+            Card::Copper,
+            Card::Silver,
+            Card::Copper,
+        ],
+    );
+    discard(&mut g, P1, &[]);
+    g.hexes.draw = vec![Card::BadOmens];
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Skulk);
+    k.update(&mut g);
+    for viewer in [P0, P1] {
+        assert_eq!(
+            k.known(&g, viewer).zone(Zone::Deck(P1)).known,
+            count(&[(Card::Copper, 2)])
+        );
+    }
+}
+
 /// Shadow cards go to the bottom when shuffled, and each shows what it is from its back.
 #[test]
 fn everyone_knows_where_a_shadow_card_is() {
