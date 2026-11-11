@@ -121,6 +121,8 @@ pub(crate) enum Frame {
         count: usize,
         drawn: Vec<CardId>,
         started: bool,
+        /// A draw shuffles at most once; if that leaves too few cards, it draws what it can.
+        shuffled: bool,
     },
     Shuffle {
         player: PlayerId,
@@ -173,6 +175,7 @@ impl Frame {
             count,
             drawn: vec![],
             started: false,
+            shuffled: false,
         }
     }
 
@@ -284,6 +287,7 @@ impl Frame {
                 count,
                 drawn,
                 started,
+                shuffled,
             } => {
                 let p = *player;
                 if !*started {
@@ -297,9 +301,10 @@ impl Frame {
                 while drawn.len() < *count {
                     let pl = &g.players[p.index()];
                     if pl.deck.is_empty() {
-                        if pl.discard.is_empty() {
+                        if pl.discard.is_empty() || *shuffled {
                             break;
                         }
+                        *shuffled = true;
                         return Flow::Call(Frame::shuffle(p));
                     }
                     let top = *pl.deck.last().expect("deck is not empty");
@@ -319,12 +324,14 @@ impl Frame {
                     *pc = 1;
                     Flow::Call(Frame::window(Occasion::WouldShuffle { player: *player }))
                 }
-                _ => {
+                1 => {
                     if !g.players[player.index()].discard.is_empty() {
                         g.shuffle_discard_into_deck(*player);
                     }
-                    Flow::done()
+                    *pc = 2;
+                    Flow::Call(Frame::window(Occasion::AfterShuffle { player: *player }))
                 }
+                _ => Flow::done(),
             },
             Frame::TopCards {
                 player,

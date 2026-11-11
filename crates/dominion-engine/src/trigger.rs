@@ -88,6 +88,11 @@ pub enum Occasion {
     WouldShuffle {
         player: PlayerId,
     },
+    /// Right after a shuffle (whether or not anything was left to shuffle): cards held out
+    /// of it at `WouldShuffle` go where they belong.
+    AfterShuffle {
+        player: PlayerId,
+    },
 }
 
 /// One triggered ability that could resolve.
