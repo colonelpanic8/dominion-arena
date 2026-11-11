@@ -12,7 +12,7 @@
 //! [`Knowledge`] consumes a traced game's [`Trace`]; build it before the game's first
 //! [`Game::take_trace`] and call [`Knowledge::update`] after every response.
 
-use crate::game::{Mat, Zone};
+use crate::game::{Mat, Pile, Zone};
 use crate::{Card, CardId, Game, PlayerId, Trace, Types};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -210,6 +210,12 @@ fn marked(card: Card) -> bool {
     card == Card::Stash || card.is(Types::SHADOW)
 }
 
+/// Whether nobody saw which cards went into `pile`: the Ruins are dealt out face down,
+/// unless all of them are used.
+fn secret(game: &Game, pile: &Pile) -> bool {
+    pile.card == Card::Ruins && game.num_players() < 6
+}
+
 fn public(game: &Game, zone: Zone) -> bool {
     match zone {
         Zone::InPlay(_) | Zone::Trash => true,
@@ -308,10 +314,6 @@ impl Knowledge {
             Some(p) => Container::Player(p),
             None => Container::Zone(zone),
         };
-        let pile = match zone {
-            Zone::Pile(pile) => Some(game.pile(pile)),
-            _ => None,
-        };
         if marked(is) {
             for mind in &mut self.minds {
                 mind.new_group(vec![card], Some(CardCount::from([(is, 1)])));
@@ -319,23 +321,15 @@ impl Knowledge {
             return;
         }
         let joins = self.created_in.filter(|&(c, _)| c == container);
+        // Which cards a pile is made of is public, even when its order isn't.
+        let known = match zone {
+            Zone::Pile(pile) => !secret(game, game.pile(pile)),
+            _ => true,
+        };
         for mind in &mut self.minds {
             match joins {
-                Some((_, last)) => {
-                    // A pile's identities are public only if all its cards are the same.
-                    let g = mind.group_of[last.index()];
-                    let group = &mut mind.groups[g];
-                    if pile.is_some()
-                        && group.ids.as_ref().is_some_and(|ids| !ids.contains_key(&is))
-                    {
-                        group.ids = None;
-                    }
-                    mind.add_to(g, card, is);
-                }
-                None => {
-                    let known = !pile.is_some_and(|p| p.hidden);
-                    mind.new_group(vec![card], known.then(|| CardCount::from([(is, 1)])));
-                }
+                Some((_, last)) => mind.add_to(mind.group_of[last.index()], card, is),
+                None => mind.new_group(vec![card], known.then(|| CardCount::from([(is, 1)]))),
             }
         }
         self.created_in = Some((container, card));

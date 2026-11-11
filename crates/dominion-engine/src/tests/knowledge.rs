@@ -274,6 +274,22 @@ fn everyone_knows_where_a_shadow_card_is() {
     assert_eq!(known.zone(Zone::Hand(P0)).unknown, 3);
 }
 
+/// Which cards a pile holds is public even when their order isn't: the face-down Black
+/// Market deck, the shuffled Knights.
+#[test]
+fn everyone_knows_what_a_shuffled_pile_is_made_of() {
+    let (g, k) = start(setup(&[Card::BlackMarket, Card::Knights]));
+    let market = (0..g.piles().len())
+        .map(|i| PileId(i as u8))
+        .find(|&p| g.pile(p).hidden)
+        .unwrap();
+    for pile in [market, g.supply_pile(Card::Knights).unwrap()] {
+        let known = k.known(&g, P0).zone(Zone::Pile(pile));
+        let held = printed(&g, &g.pile(pile).cards);
+        assert_eq!((known.known, known.unknown), (held, 0));
+    }
+}
+
 /// After a card passes between two other players, a viewer can't say whose each of their
 /// cards is, but still knows how many each of them owns.
 #[test]
@@ -441,4 +457,12 @@ fn everyone_knows_where_a_stash_is() {
     let hand = k.known(&g, P1).zone(Zone::Hand(P0));
     assert_eq!((hand.known, hand.unknown), (count(&[(Card::Stash, 1)]), 2));
     assert_eq!(k.known(&g, P1).zone(Zone::Deck(P0)).unknown, 2);
+}
+
+fn printed(g: &Game, cards: &[CardId]) -> CardCount {
+    let mut count = CardCount::new();
+    for &c in cards {
+        *count.entry(g.printed(c)).or_default() += 1;
+    }
+    count
 }
