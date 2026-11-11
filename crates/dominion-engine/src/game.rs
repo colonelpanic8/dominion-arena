@@ -179,6 +179,8 @@ pub struct Turn {
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
     pub gained: Vec<Card>,
+    /// The cards in `gained` that were gained in the Buy phase.
+    pub gained_in_buy_phase: Vec<Card>,
     pub bought_cards: Vec<Card>,
     pub trashed: Vec<Card>,
     /// Cards drawn in Clean-up.
@@ -201,6 +203,7 @@ impl Turn {
             bought: false,
             played: vec![],
             gained: vec![],
+            gained_in_buy_phase: vec![],
             bought_cards: vec![],
             trashed: vec![],
             cleanup_draw: 5,
@@ -247,6 +250,8 @@ pub struct Lasting {
     /// Cards that stay in play (are not discarded in Clean-up) while this lasts.
     pub keeps: Vec<CardId>,
     pub until: Until,
+    /// The owner's [`Player::turns_taken`] when it was created.
+    pub turn: u32,
     pub data: Scratch,
 }
 
@@ -806,6 +811,7 @@ impl Game {
     ) -> u32 {
         let id = self.next_lasting;
         self.next_lasting += 1;
+        let turn = self.players[owner.index()].turns_taken;
         self.lasting.push(Lasting {
             id,
             card,
@@ -813,6 +819,7 @@ impl Game {
             source,
             keeps,
             until,
+            turn,
             data,
         });
         id

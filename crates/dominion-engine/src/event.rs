@@ -7,6 +7,8 @@ pub enum Dest {
     Discard,
     Hand,
     DeckTop,
+    /// Set aside by the effect that gains it (Blockade, ...), which tracks it.
+    SetAside,
 }
 
 /// Something that happened, in order. The log holds only public information; e.g.
