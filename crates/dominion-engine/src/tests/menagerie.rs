@@ -1532,6 +1532,22 @@ fn populate_gains_one_card_from_each_action_supply_pile_in_a_chosen_order() {
 }
 
 #[test]
+fn populate_skips_treasure_piles_under_enlightenment() {
+    let mut g = setup_with_landscapes(&[Card::Village], &[Card::Populate]);
+    g.prophecy = Some((Card::Enlightenment, 0));
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Gold, Card::Copper],
+    );
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Populate);
+    // Enlightenment changes cards, not piles: the Treasure piles are no Action piles.
+    assert_eq!(gained(&g, P0), [Card::Village]);
+}
+
+#[test]
 fn pursue_keeps_the_named_cards_on_the_deck_and_discards_the_rest() {
     let mut g = setup_with_landscapes(&[Card::Village], &[Card::Pursue]);
     hand(&mut g, P0, &[Card::Silver]);

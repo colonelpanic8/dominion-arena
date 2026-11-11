@@ -1793,6 +1793,8 @@ fn populate(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         .map(|i| PileId(i as u8))
         .filter(|&id| {
             let pile = g.pile(id);
+            // By the pile's card as printed: Enlightenment and Inheritance change cards,
+            // not piles.
             pile.in_supply && pile.card.is(Types::ACTION) && !pile.cards.is_empty() && !done(f, id)
         })
         .collect();
