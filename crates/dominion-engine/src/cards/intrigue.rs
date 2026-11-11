@@ -150,7 +150,7 @@ impl GainRule {
 
 /// Trash a card from `who`'s hand, then gain a Supply card whose cost follows `rule`.
 /// Uses `f.pc` from `base` to `base + 5`. Returns `None` once finished, with `f.s.n` = 1 if
-/// a card was trashed (0 if not), `f.s.cost` its cost and `f.s.pick` the gained card.
+/// a card was trashed (0 if not), `f.s.cost` its cost and `f.s.pick` the card `who` gained.
 pub(crate) fn trash_and_gain(
     g: &mut Game,
     f: &mut CardFrame,
@@ -203,7 +203,7 @@ pub(crate) fn trash_and_gain(
             }
         },
         4 => {
-            f.s.pick = input.card();
+            f.s.pick = input.card().filter(|&c| g.gained_to(who, c).is_some());
             f.pc = base + 5;
             None
         }
@@ -387,7 +387,8 @@ fn ironworks(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             None => Flow::done(),
         },
         2 => {
-            let Some(c) = input.card() else {
+            // No bonus for a card someone else gained instead (Possession).
+            let Some(c) = input.card().filter(|&c| g.gained_to(f.player, c).is_some()) else {
                 return Flow::done();
             };
             let types = g.types(c);
