@@ -415,14 +415,24 @@ impl SetRules for Rules {
         let uses = |g: &Game, cards: &[Card]| setup::in_game(g, |c| cards.contains(&c));
         let fate = setup::in_game(g, |c| c.is(Types::FATE));
         let doom = setup::in_game(g, |c| c.is(Types::DOOM));
-        if fate && g.boons.draw.is_empty() && g.boons.discard.is_empty() {
+        let (boons, druid) = (&g.boons, &g.ext.nocturne.druid);
+        if fate && boons.draw.is_empty() && boons.discard.is_empty() && druid.is_empty() {
             let mut boons = BOONS.to_vec();
             g.shuffle(&mut boons);
             g.boons.draw = boons;
         }
         if g.ext.nocturne.druid.is_empty() && uses(g, &[Card::Druid]) {
-            let boons = g.boons.draw.clone();
-            let druid = s.choose_n(g, Card::Druid, boons, 3..=3);
+            // The top 3 Boons: a deck too small for that (Druid joined mid-game) gives all
+            // of its Boons, and the reshuffled discard pile the rest.
+            let mut druid = vec![];
+            if g.boons.draw.len() < 3 {
+                druid = std::mem::take(&mut g.boons.draw);
+                let mut boons = std::mem::take(&mut g.boons.discard);
+                g.shuffle(&mut boons);
+                g.boons.draw = boons;
+            }
+            let n = 3 - druid.len();
+            druid.extend(s.choose_n(g, Card::Druid, g.boons.draw.clone(), n..=n));
             g.boons.draw.retain(|b| !druid.contains(b));
             g.ext.nocturne.druid = druid;
         }
@@ -456,7 +466,7 @@ impl SetRules for Rules {
 
     fn modify_starting_deck(g: &Game, _p: PlayerId, deck: &mut Vec<Card>) {
         for (kingdom, heirloom) in HEIRLOOMS {
-            if g.pile_of(kingdom).is_some()
+            if setup::in_game(g, |c| c == kingdom)
                 && let Some(i) = deck.iter().position(|&c| c == Card::Copper)
             {
                 deck[i] = heirloom;
@@ -820,11 +830,9 @@ fn boon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         plus_actions(g, p, plus.actions as u32);
         plus_buys(g, p, plus.buys as u32);
         plus_coins(g, p, plus.coins as u32);
-        if kept_boon(f.card) && p == g.turn.player {
-            let kept = &mut g.players[p.index()].boons_kept;
-            if !kept.contains(&f.card) {
-                kept.push(f.card);
-            }
+        // In front of its first receiver, whoever's turn it is.
+        if kept_boon(f.card) && !g.players.iter().any(|pl| pl.boons_kept.contains(&f.card)) {
+            g.players[p.index()].boons_kept.push(f.card);
         }
         if f.card == Card::TheRiversGift {
             g.add_lasting(

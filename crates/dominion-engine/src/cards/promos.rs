@@ -195,9 +195,8 @@ impl SetRules for Rules {
 }
 
 /// Whether `card` can go in the Black Market deck: an unused Kingdom card that needs no
-/// Supply pile of its own (Travellers, Gatherings, Vampire for Bat to become) and doesn't
-/// change the starting decks (Heirlooms). Setup adds whatever else it uses, as for any
-/// card in the game.
+/// Supply pile of its own (Travellers, Gatherings, Vampire for Bat to become). Setup adds
+/// whatever else it uses, as for any card in the game.
 fn black_market_eligible(g: &Game, card: Card) -> bool {
     let def = card.def();
     if card.kind() != Kind::Card || !def.kingdom || !setup::unused(g, card) {
@@ -209,18 +208,7 @@ fn black_market_eligible(g: &Game, card: Card) -> bool {
     if cost.potions > 0 && g.supply_pile(Card::Potion).is_none() {
         return false;
     }
-    !card.is(Types::TRAVELLER | Types::GATHERING)
-        && card != Card::Vampire
-        && !mentions(def.text, "Heirloom")
-}
-
-/// Whether `text` contains `word` as a whole word.
-fn mentions(text: &str, word: &str) -> bool {
-    text.match_indices(word).any(|(i, _)| {
-        let before = text[..i].chars().next_back();
-        let after = text[i + word.len()..].chars().next();
-        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
-    })
+    !card.is(Types::TRAVELLER | Types::GATHERING) && card != Card::Vampire
 }
 
 fn gain_from_supply(g: &Game, p: PlayerId, card: Card, to: Dest) -> Option<Frame> {

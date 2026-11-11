@@ -945,8 +945,9 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         }
         _ => {
             g.lasting.retain(|l| l.until != Until::EndOfTurn);
-            let kept = std::mem::take(&mut g.players[p.index()].boons_kept);
-            g.boons.discard.extend(kept);
+            for pl in &mut g.players {
+                g.boons.discard.append(&mut pl.boons_kept);
+            }
             g.turn.phase = Phase::End;
             Flow::done()
         }

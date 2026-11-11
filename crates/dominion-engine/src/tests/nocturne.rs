@@ -192,6 +192,34 @@ fn heirlooms_replace_starting_coppers_and_the_coppers_go_to_the_pile() {
     assert_eq!(g.pile(copper).cards.len(), 60 - 14 + 4);
 }
 
+/// A card set aside in setup is in the game: it brings its Heirloom.
+#[test]
+fn cards_set_aside_in_setup_bring_their_heirlooms() {
+    let heirloom = |by: Card, kingdom: &[Card], landscapes: &[Card], card: Card, heirloom: Card| {
+        let g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            landscapes: landscapes.to_vec(),
+            setup_choices: [(by, vec![card])].into_iter().collect(),
+            ..GameConfig::new(2, kingdom.to_vec(), 3)
+        });
+        for p in [P0, P1] {
+            assert_eq!(g.count_owned(p, heirloom), 1, "{by}");
+            assert_eq!(g.count_owned(p, Card::Copper), 6, "{by}");
+        }
+    };
+    let mouse = Card::WayOfTheMouse;
+    heirloom(
+        mouse,
+        &[Card::Smithy],
+        &[mouse],
+        Card::Fool,
+        Card::LuckyCoin,
+    );
+    let riverboat = Card::Riverboat;
+    heirloom(riverboat, &[riverboat], &[], Card::Pooka, Card::CursedGold);
+}
+
 #[test]
 fn setup_adds_boons_hexes_and_the_piles_the_cards_use() {
     let g = setup(&[
@@ -1319,6 +1347,40 @@ fn the_rivers_gift_draws_a_card_after_the_cleanup_draw() {
     assert_eq!(g.boons().discard.last(), Some(&Card::TheRiversGift));
 }
 
+/// Swindler makes P1 gain a Blessed Village on P0's turn; P1 receives `boon` at once.
+fn swindled_into(boon: Card) -> Game {
+    let mut g = setup(&[Card::BlessedVillage, Card::Swindler, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Swindler]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    deck(&mut g, P1, &[Card::Smithy, Card::Copper]);
+    stack_boons(&mut g, &[boon]);
+    g.start();
+    play(&mut g, Card::Swindler);
+    choose_pile(&mut g, Card::BlessedVillage);
+    assert_eq!(g.pending().unwrap().player, P1);
+    mode(&mut g, 0);
+    assert_eq!(g.turn().player, P0);
+    g
+}
+
+#[test]
+fn a_boon_kept_on_another_players_turn_stays_until_that_turns_cleanup() {
+    let mut g = swindled_into(Card::TheFieldsGift);
+    assert_eq!(g.player(P1).boons_kept, [Card::TheFieldsGift]);
+    assert!(!g.boons().discard.contains(&Card::TheFieldsGift));
+    assert_eq!((g.turn().actions, g.turn().coins), (0, 2));
+    next_turn(&mut g);
+    assert!(g.player(P1).boons_kept.is_empty());
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheFieldsGift));
+
+    let mut g = swindled_into(Card::TheRiversGift);
+    assert_eq!(g.player(P1).boons_kept, [Card::TheRiversGift]);
+    next_turn(&mut g);
+    assert_eq!((g.hand(P0).len(), g.hand(P1).len()), (5, 6));
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheRiversGift));
+}
+
 #[test]
 fn the_seas_and_winds_gifts() {
     let g = bard_receives(Card::TheSeasGift, &[], &[Card::Copper; 3]);
@@ -1435,6 +1497,18 @@ fn druid_receives_one_of_its_set_aside_boons_and_leaves_it_there() {
     assert!(g.player(P0).boons_kept.is_empty());
     assert_eq!(g.ext.nocturne.druid.len(), 3);
     assert_eq!(g.boons().discard.len(), discards);
+}
+
+#[test]
+fn druid_joining_mid_game_takes_the_top_three_boons_reshuffling_for_them() {
+    let mut g = setup(&[Card::Bard]);
+    stack_boons(&mut g, &[Card::TheSeasGift]);
+    add_kingdom_piles(&mut g, &[Card::Druid]);
+    let druid = &g.ext.nocturne.druid;
+    assert_eq!(druid.len(), 3);
+    assert!(druid.contains(&Card::TheSeasGift));
+    assert_eq!((g.boons().draw.len(), g.boons().discard.len()), (9, 0));
+    assert!(!g.boons().draw.iter().any(|b| druid.contains(b)));
 }
 
 #[test]
@@ -1669,6 +1743,23 @@ fn deluded_stops_buying_cards_that_are_actions_by_an_effect() {
     let moves = buy_moves(&g);
     assert!(moves.contains(&Card::Estate));
     assert!(!moves.contains(&Card::Silver));
+}
+
+/// A player who Inherited an Action can't buy Estates either.
+#[test]
+fn deluded_stops_buying_inherited_estates() {
+    let mut g = setup(&[Card::Village]);
+    let top = g.pile_top(g.supply_pile(Card::Village).unwrap()).unwrap();
+    g.move_card(top, Zone::SetAside(P0), crate::game::Pos::Top);
+    g.ext.adventures.inherited.push((P0, Some(top)));
+    g.players[0].states.push(Card::Deluded);
+    hand(&mut g, P0, &[Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    let moves = buy_moves(&g);
+    assert!(moves.contains(&Card::Silver));
+    assert!(!moves.contains(&Card::Estate));
 }
 
 #[test]

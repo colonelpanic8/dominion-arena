@@ -1,5 +1,5 @@
 [
-  {"name": "Bad Omens", "set": "nocturne", "types": ["Hex"], "text": "Put your deck into your discard pile. Put 2 Coppers from it onto your deck (or reveal you can't).", "kingdom": false},
+  {"name": "Bad Omens", "set": "nocturne", "types": ["Hex"], "text": "Put your deck into your discard pile. Look through it and put 2 Coppers from it onto your deck (or reveal you can't).", "kingdom": false},
   {"name": "Bard", "set": "nocturne", "types": ["Action", "Fate"], "cost": {"coins": 4}, "plus": {"coins": 2}, "text": "+$2\nReceive a Boon.", "kingdom": true},
   {"name": "Bat", "set": "nocturne", "types": ["Night"], "cost": {"coins": 2, "variable": true}, "text": "Trash up to 2 cards from your hand. If you trashed at least one, exchange this for a Vampire.\n(This is not in the Supply.)", "kingdom": false},
   {"name": "Blessed Village", "set": "nocturne", "types": ["Action", "Fate"], "cost": {"coins": 4}, "plus": {"cards": 1, "actions": 2}, "text": "+1 Card\n+2 Actions\n---\nWhen you gain this, take a Boon. Receive it now or at the start of your next turn.", "kingdom": true},
