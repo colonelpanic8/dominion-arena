@@ -1281,15 +1281,15 @@ impl PlayFrame {
             }
             2 => {
                 self.pc = 6;
-                let st = g.plays.last().expect("play in progress");
                 let ways: Vec<Card> = g
                     .landscapes
                     .iter()
                     .copied()
                     .filter(|&l| l.kind() == Kind::Way && cards::can_use_way(g, id, l))
                     .collect();
-                // A Way can be used instead of a replaced effect (Enchantress, Enlightenment).
-                if ways.is_empty() || st.blocked || !g.is(id, Types::ACTION) {
+                // A Way can be used instead of a replaced or blocked effect (Enchantress,
+                // Enlightenment, Highwayman).
+                if ways.is_empty() || !g.is(id, Types::ACTION) {
                     return Flow::Continue;
                 }
                 let mut options = vec![Opt::No];
@@ -1343,7 +1343,7 @@ impl PlayFrame {
             4 => {
                 let st = g.plays.last().expect("play in progress").clone();
                 self.pc = 7;
-                if st.blocked {
+                if st.blocked && st.way.is_none() {
                     return Flow::Continue;
                 }
                 let mine = p == g.turn.player;

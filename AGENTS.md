@@ -77,8 +77,9 @@ them.
   the player's cards (Possession, which also replaces gains, trashing through
   `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
-  (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`), choose a Way if the
-  game has Ways, open an `Attack` window per other player for Attacks (also when the
+  (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`: they are the card's
+  player's, and the one resolved last applies), choose a Way if the game has Ways (it
+  can be used instead of either), open an `Attack` window per other player for Attacks (also when the
   play is replaced or blocked: Reactions answer the card being played), then apply the
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
   `SetRules::modify_bonus`) and run the card's `Hook::Main`, then the `AfterPlay`

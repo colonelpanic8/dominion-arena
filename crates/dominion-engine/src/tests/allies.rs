@@ -2455,6 +2455,91 @@ fn highwayman_or_enlightenment_applies_as_the_player_orders_them() {
     assert_eq!(g.hand(P1).len(), 1);
 }
 
+/// A game in which P0 has played Highwayman and Enchantress and P1 plays a Crown, their
+/// first Treasure and first Action.
+fn crown_under_highwayman_and_enchantress() -> Game {
+    let mut g = setup(&[
+        Card::Highwayman,
+        Card::Enchantress,
+        Card::Crown,
+        Card::Village,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Village, Card::Highwayman, Card::Enchantress],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Crown, Card::Copper, Card::Copper]);
+    deck(&mut g, P1, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Highwayman);
+    play(&mut g, Card::Enchantress);
+    next_turn(&mut g);
+    play(&mut g, Card::Crown);
+    g
+}
+
+#[test]
+fn highwayman_or_enchantress_applies_as_the_player_orders_them() {
+    let mut g = crown_under_highwayman_and_enchantress();
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    accept(&mut g, Card::Highwayman);
+    // Enchantress resolved last: +1 Card +1 Action.
+    assert_eq!(g.turn().actions, 1);
+    assert_eq!(g.hand(P1).len(), 3);
+
+    let mut g = crown_under_highwayman_and_enchantress();
+    accept(&mut g, Card::Enchantress);
+    // Highwayman resolved last: the Crown does nothing.
+    assert_eq!(g.turn().actions, 0);
+    assert_eq!(hand_kinds(&g, P1), [Card::Copper, Card::Copper]);
+    assert!(matches!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn { .. }
+    ));
+}
+
+/// A game with Way of the Sheep in which P0 has played Highwayman; P1 is in their Action
+/// phase with a Crown and a Village.
+fn crown_under_highwayman_with_a_way() -> Game {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::WayOfTheSheep],
+        ..GameConfig::new(2, vec![Card::Highwayman, Card::Crown], 7)
+    });
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Crown, Card::Village, Card::Copper]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    respond(&mut g, Response::option(Opt::No));
+    next_turn(&mut g);
+    g
+}
+
+#[test]
+fn an_action_treasure_highwayman_stops_can_still_be_played_as_a_way() {
+    let mut g = crown_under_highwayman_with_a_way();
+    play(&mut g, Card::Crown);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheSheep)));
+    assert_eq!(g.turn().coins, 2);
+
+    let mut g = crown_under_highwayman_with_a_way();
+    play(&mut g, Card::Crown);
+    respond(&mut g, Response::option(Opt::No));
+    // Played as itself it does nothing: no Action to play twice.
+    assert!(matches!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn { .. }
+    ));
+    assert_eq!(in_play_kinds(&g, P1), [Card::Crown]);
+}
+
 #[test]
 fn a_liaison_joining_mid_game_brings_an_ally_and_its_favors() {
     let mut g = setup_with(GameConfig::new(2, vec![Card::Smithy], 1));

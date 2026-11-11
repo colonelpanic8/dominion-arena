@@ -1952,6 +1952,10 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
     match f.pc {
         0 => {
             let play = g.plays.last().filter(|st| st.card == id);
+            // The card's instructions do nothing (Highwayman).
+            if play.is_some_and(|st| st.blocked) {
+                return Flow::done();
+            }
             // The card's instructions were replaced (Enlightenment, Enchantress): follow
             // the replacement, unchanged.
             if let Some(plus) = play.and_then(|st| st.replaced) {

@@ -94,8 +94,8 @@ impl SetRules for Rules {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if DURATIONS.contains(&c) => start(g, f, input),
             (Card::Highwayman, Hook::Ability(HIGHWAYMAN_BLOCK)) => {
-                // Resolved after a replacement (Enlightenment), it overrides it: the
-                // player picks which applies by ordering them.
+                // Resolved after a replacement (Enlightenment, Enchantress), it overrides
+                // it: the player picks which applies by ordering them.
                 let c = f.this();
                 if let Some(st) = g.plays.last_mut()
                     && st.card == c
