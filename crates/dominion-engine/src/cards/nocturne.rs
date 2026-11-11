@@ -931,9 +931,8 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .take(2)
                 .collect();
             if coppers.len() < 2 {
-                let cards: Vec<Card> = g.player(p).discard.iter().map(|&c| g.card(c)).collect();
-                for card in cards {
-                    g.emit(Event::Revealed { player: p, card });
+                for c in g.player(p).discard.clone() {
+                    g.reveal(p, c);
                 }
             }
             for c in coppers {
@@ -1993,10 +1992,7 @@ fn shepherd(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let chosen = input.cards();
             for &c in &chosen {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
             }
             f.s.n = chosen.len() as i32;
             f.pc = 2;

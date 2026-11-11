@@ -21,6 +21,9 @@ impl SetRules for Rules {
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (Card::Moat, Hook::Ability(MOAT_REACT)) => {
+                if let Some(c) = f.this {
+                    g.show(c);
+                }
                 g.emit(Event::Revealed {
                     player: f.player,
                     card: Card::Moat,
@@ -244,10 +247,7 @@ fn bureaucrat(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let target = f.targets[f.s.i];
                 let chosen = input.cards();
                 for &c in &chosen {
-                    g.emit(Event::Revealed {
-                        player: target,
-                        card: g.card(c),
-                    });
+                    g.reveal(target, c);
                 }
                 top_deck(g, target, chosen);
                 f.s.i += 1;

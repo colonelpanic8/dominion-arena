@@ -261,10 +261,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let pile = &g.pile(bm).cards;
             let revealed: Vec<CardId> = pile.iter().rev().take(3).copied().collect();
             for &c in &revealed {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
             }
             f.s.cards = revealed;
             f.pc = 1;

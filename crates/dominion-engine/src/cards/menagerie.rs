@@ -731,10 +731,7 @@ fn play_from(g: &mut Game, f: &mut CardFrame, zone: Zone) -> Flow {
     if f.pc == 0 && g.zone(this) == zone && allowed {
         f.pc = 1;
         if let Zone::Discard(p) = zone {
-            g.emit(Event::Revealed {
-                player: p,
-                card: g.card(this),
-            });
+            g.reveal(p, this);
         }
         return Flow::Call(Frame::play(f.player, this, true, vec![]));
     }
@@ -948,10 +945,7 @@ fn hostelry_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let chosen = input.cards();
             for &c in &chosen {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
             }
             f.s.n = chosen.len() as i32;
             f.pc = 2;

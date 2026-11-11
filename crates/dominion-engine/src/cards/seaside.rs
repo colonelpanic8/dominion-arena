@@ -879,7 +879,7 @@ fn ambassador(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 };
                 let card = g.card(c);
                 f.s.card = Some(card);
-                g.emit(Event::Revealed { player: p, card });
+                g.reveal(p, c);
                 let returnable = g
                     .home_pile(g.printed(c))
                     .is_some_and(|pile| g.pile(pile).in_supply);
@@ -966,12 +966,8 @@ fn explorer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_cards(provinces, 0, 1, Purpose::Reveal)
         }
         1 => {
-            let revealed = !input.cards().is_empty();
-            let card = if revealed {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: Card::Province,
-                });
+            let card = if let Some(&province) = input.cards().first() {
+                g.reveal(p, province);
                 Card::Gold
             } else {
                 Card::Silver

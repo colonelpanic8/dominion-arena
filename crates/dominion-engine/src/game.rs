@@ -1,5 +1,5 @@
 use crate::cards::{self, Ext};
-use crate::decision::{Decision, Response, ResponseError};
+use crate::decision::{Decision, DecisionKind, Response, ResponseError};
 use crate::event::Event;
 use crate::frame::{Flow, Frame, Input};
 use crate::setup::GameConfig;
@@ -376,6 +376,8 @@ pub struct Game {
     pub(crate) rng: ChaCha8Rng,
     pub(crate) log: Vec<Event>,
     pub(crate) outcome: Option<Outcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) trace: Option<Vec<crate::Trace>>,
 }
 
 /// A gain in progress. "Would gain" triggers may change it.
@@ -706,6 +708,13 @@ impl Game {
             .as_ref()
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
+        if let (DecisionKind::Cards { ordered: true, .. }, Response::Cards(cards)) =
+            (&decision.kind, &response)
+            && cards.len() > 1
+        {
+            let cards = cards.clone();
+            self.record(|| crate::Trace::Mixed { cards });
+        }
         self.pending = None;
         self.run(Input::Response(response));
         Ok(())
@@ -751,6 +760,11 @@ impl Game {
         self.cards.push(card);
         self.zones.push(zone);
         self.zone_vec(zone).push(id);
+        self.record(|| crate::Trace::Created {
+            card: id,
+            is: card,
+            zone,
+        });
         id
     }
 
@@ -774,7 +788,14 @@ impl Game {
             .iter()
             .rposition(|&c| c == id)
             .expect("card missing from its recorded zone");
+        let top = i + 1 == src.len();
         src.remove(i);
+        self.record(|| crate::Trace::Moved {
+            card: id,
+            from,
+            to,
+            top,
+        });
         if let Zone::Pile(pile) = from {
             let pile = &mut self.piles[pile.index()];
             if pile.cards.is_empty() && pile.in_supply {
@@ -805,6 +826,13 @@ impl Game {
     }
 
     pub(crate) fn emit(&mut self, event: Event) {
+        if let Event::RevealedHand { player, .. } = event
+            && self.trace.is_some()
+        {
+            for c in self.players[player.index()].hand.clone() {
+                self.show(c);
+            }
+        }
         cards::on_event(self, &event);
         self.log.push(event);
     }
@@ -860,6 +888,7 @@ impl Game {
 
     /// Puts `id` on top of `p`'s deck.
     pub(crate) fn top_deck(&mut self, id: CardId, p: PlayerId) {
+        self.show(id);
         self.move_card(id, Zone::Deck(p), Pos::Top);
         self.emit(Event::TopDecked {
             player: p,
@@ -883,6 +912,7 @@ impl Game {
 
     /// Sets aside a card that was just revealed: face up, with no event of its own.
     pub(crate) fn set_aside_revealed(&mut self, id: CardId, p: PlayerId) {
+        self.show(id);
         self.move_card(id, Zone::SetAside(p), Pos::Top);
         self.players[p.index()].face_up.push(id);
     }
@@ -905,6 +935,7 @@ impl Game {
             return false;
         };
         let owner = self.zone(id).owner();
+        self.show(id);
         self.move_card(id, Zone::Pile(pile), Pos::Top);
         if let Some(player) = owner {
             self.emit(Event::Moved {

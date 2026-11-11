@@ -813,10 +813,7 @@ fn mint(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             let card = g.card(c);
-            g.emit(Event::Revealed {
-                player: f.player,
-                card,
-            });
+            g.reveal(f.player, c);
             f.pc = 2;
             match copy_in_supply(g, card, None) {
                 Some(copy) => Flow::Call(Frame::gain_card(f.player, copy, Dest::Discard)),
@@ -979,6 +976,9 @@ fn watchtower_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if !where_gained(g, f.player, card) {
                 return Flow::done();
             }
+            if let Some(c) = f.this {
+                g.show(c);
+            }
             g.emit(Event::Revealed {
                 player: f.player,
                 card: Card::Watchtower,
@@ -1043,10 +1043,7 @@ fn counting_house(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             for c in input.cards() {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
                 g.put_in_hand(c, p);
             }
             Flow::done()

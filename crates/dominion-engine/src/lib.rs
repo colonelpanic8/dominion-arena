@@ -17,6 +17,7 @@ mod frame;
 mod game;
 mod ids;
 mod setup;
+mod trace;
 mod trigger;
 
 #[cfg(test)]
@@ -32,4 +33,5 @@ pub use game::{
 };
 pub use ids::{CardId, PileId, PlayerId};
 pub use setup::{GameConfig, SetupError};
+pub use trace::Trace;
 pub use trigger::{Occasion, Trigger};

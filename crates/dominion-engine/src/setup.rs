@@ -181,6 +181,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         pending: None,
         log: vec![],
         outcome: None,
+        trace: None,
         config,
     };
 
