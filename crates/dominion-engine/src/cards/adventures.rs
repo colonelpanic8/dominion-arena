@@ -9,6 +9,7 @@ use crate::game::{ExtraTurn, Mat, Phase, Pos, Scratch, Token, Until, Zone};
 use crate::setup::add_pile;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -54,6 +55,14 @@ const START_CALLS: [Card; 4] = [
 ];
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        for &(p, c) in &g.ext.adventures.inherited {
+            if let Some(c) = c {
+                out.push(Note::new(Card::Inheritance).player(p).card(g.card(c)));
+            }
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (_, Hook::Ability(PLAY_BONUS)) => play_bonus(g, f),

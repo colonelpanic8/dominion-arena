@@ -292,6 +292,11 @@ fn cargo_ship_sets_aside_a_gained_card_for_next_turn() {
     buy(&mut g, Card::Smithy);
     trigger(&mut g, Card::CargoShip);
     assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Smithy]);
+    // Set aside face up.
+    let v = g.view(P1);
+    let smithy = v.player(P0).set_aside();
+    assert_eq!(smithy.len(), 1);
+    assert_eq!(v.card(smithy[0]), Some(Card::Smithy));
     // P0's turn ended with no Buys left; P1's turn now.
     assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
     next_turn(&mut g);

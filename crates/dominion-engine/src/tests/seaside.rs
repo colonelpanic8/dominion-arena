@@ -65,6 +65,12 @@ fn haven_sets_a_card_aside_until_next_turn_and_stays_in_play() {
     assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Gold]);
     let gold = g.player(P0).set_aside[0];
     assert_eq!(g.view(P1).card(gold), None);
+    let theirs = g.view(P1);
+    assert!(theirs.player(P0).set_aside().is_empty());
+    assert_eq!(theirs.player(P0).set_aside_size(), 1);
+    assert!(theirs.lasting().iter().all(|l| l.data.pick.is_none()));
+    assert_eq!(g.view(P0).player(P0).set_aside(), [gold]);
+    assert_eq!(g.view(P0).lasting()[0].data.pick, Some(gold));
     next_turn(&mut g);
     assert_eq!(in_play_kinds(&g, P0), [Card::Haven]);
     next_turn(&mut g);
@@ -93,6 +99,10 @@ fn throne_roomed_havens_holding_different_cards_are_ordered() {
     next_turn(&mut g);
     next_turn(&mut g);
     assert_eq!(purpose(&g), Purpose::Trigger);
+    let triggers = g.view(P0).pending_triggers();
+    assert_eq!(triggers.len(), 2);
+    assert!(triggers.iter().all(|t| t.card == Card::Haven));
+    assert!(g.view(P1).pending_triggers().is_empty());
     respond(&mut g, Response::option(Opt::Trigger(0)));
     let hand = hand_kinds(&g, P0);
     assert!(hand.contains(&Card::Gold) && hand.contains(&Card::Estate));
@@ -237,6 +247,13 @@ fn native_village_stores_cards_privately_and_takes_them_all_back() {
     let gold = g.player(P0).mat(Mat::NativeVillage)[0];
     assert_eq!(g.view(P1).card(gold), None);
     assert_eq!(g.view(P0).card(gold), Some(Card::Gold));
+    let theirs = g.view(P1).player(P0);
+    assert_eq!(theirs.mat(Mat::NativeVillage), None);
+    assert_eq!(theirs.mat_size(Mat::NativeVillage), 1);
+    assert_eq!(
+        g.view(P0).player(P0).mat(Mat::NativeVillage),
+        Some(&[gold][..])
+    );
     play(&mut g, Card::NativeVillage);
     mode(&mut g, 1);
     assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
@@ -508,6 +525,13 @@ fn island_moves_itself_and_a_card_to_the_mat_and_scores() {
     );
     assert_eq!(g.score(P0), before);
     assert_eq!(Card::Island.def().vp, 2);
+    let v = g.view(P1);
+    let island = v.player(P0).mat(Mat::Island).unwrap();
+    let seen: Vec<Option<Card>> = island.iter().map(|&c| v.card(c)).collect();
+    assert_eq!(
+        seen,
+        [Some(Card::Island), Some(Card::Estate), Some(Card::Copper)]
+    );
 }
 
 #[test]

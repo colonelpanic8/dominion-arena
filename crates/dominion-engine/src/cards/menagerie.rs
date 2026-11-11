@@ -21,6 +21,7 @@ use crate::game::{ExtraTurn, Mat, Phase, Pos, Scratch, Until, Zone};
 use crate::setup;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -90,6 +91,18 @@ const STARTS: &[Card] = &[
 ];
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        let s = &g.ext.menagerie;
+        if let Some(c) = s.mouse {
+            out.push(Note::new(Card::WayOfTheMouse).card(g.card(c)));
+        }
+        for &c in &s.invested {
+            if let Zone::Mat(p, Mat::Exile) = g.zone(c) {
+                out.push(Note::new(Card::Invest).player(p).card(g.card(c)));
+            }
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if STARTS.contains(&c) => start(g, f, input),

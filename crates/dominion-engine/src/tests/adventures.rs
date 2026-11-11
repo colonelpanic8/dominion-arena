@@ -1593,6 +1593,14 @@ fn inheritance_sets_an_action_aside_and_makes_estates_play_it() {
     choose_pile(&mut g, Card::Village);
     let village = g.player(P0).set_aside[0];
     assert_eq!(g.card(village), Card::Village);
+    assert_eq!(g.view(P1).card(village), Some(Card::Village));
+    assert!(g.view(P1).notes().contains(&Note {
+        source: Card::Inheritance,
+        player: Some(P0),
+        pile: None,
+        card: Some(Card::Village),
+        count: 0,
+    }));
     assert_eq!(g.turn().player, P1);
     let estate = find(&g, P1, Card::Estate);
     // Not Actions on another player's turn.

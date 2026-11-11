@@ -9,6 +9,7 @@ use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{add_pile, victory_pile_size};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -59,6 +60,16 @@ const OVERPAY_CARDS: [Card; 6] = [
 ];
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        let s = &g.ext.cornucopia_guilds;
+        if let Some(pile) = s.bane {
+            out.push(Note::new(Card::YoungWitch).pile(pile));
+        }
+        if let Some(pile) = s.ferryman {
+            out.push(Note::new(Card::Ferryman).pile(pile));
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(OVERPAY)) if OVERPAY_CARDS.contains(&c) => {

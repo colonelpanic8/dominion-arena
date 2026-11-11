@@ -16,6 +16,7 @@ use crate::game::{Pile, Pos, Scratch, Until, Zone};
 use crate::setup::{add_pile, victory_pile_size};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -52,6 +53,12 @@ const RAPID_EXPANSION_SET_ASIDE: u8 = 1;
 const SICKNESS: u8 = 0;
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        if let Some(c) = g.ext.rising_sun.riverboat {
+            out.push(Note::new(Card::Riverboat).card(g.card(c)));
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (Card::Riverboat | Card::RapidExpansion | Card::BidingTime, Hook::Ability(START)) => {

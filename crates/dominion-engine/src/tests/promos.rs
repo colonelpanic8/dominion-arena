@@ -44,8 +44,14 @@ fn black_market_deck_is_unused_kingdom_cards_face_down() {
         assert!(c.cost().unwrap().potions == 0, "{c}");
     }
     assert!(!cards.contains(&Card::YoungWitch) && !cards.contains(&Card::Tournament));
-    assert_eq!(g.view(P0).pile_top(bm), None);
-    assert_eq!(g.view(P0).card(pile.cards[59]), None);
+    let v = g.view(P0);
+    assert_eq!((v.pile(bm).top(), v.pile(bm).size()), (None, 60));
+    assert!(pile.cards.iter().all(|&c| v.card(c).is_none()));
+    assert!(
+        v.notes()
+            .iter()
+            .any(|n| n.source == Card::BlackMarket && n.pile == Some(bm))
+    );
     assert_eq!(
         g.supply_pile(Card::BlackMarket),
         g.pile_of(Card::BlackMarket)

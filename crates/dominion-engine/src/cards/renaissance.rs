@@ -15,6 +15,7 @@ use crate::frame::{Flow, Frame, Input};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Opt, PlayerId, Set, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -51,6 +52,15 @@ const ARTIFACTS: [(Card, Card); 5] = [
 ];
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        for (i, &n) in g.ext.renaissance.plot.iter().enumerate() {
+            let p = PlayerId(i as u8);
+            if g.player(p).projects.contains(&Card::SinisterPlot) {
+                out.push(Note::new(Card::SinisterPlot).player(p).count(n as i32));
+            }
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (Card::CargoShip | Card::Research, Hook::Ability(START)) => start(g, f),

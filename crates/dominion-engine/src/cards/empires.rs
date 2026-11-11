@@ -16,6 +16,7 @@ use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::setup::add_mixed_pile;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Set, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -91,6 +92,16 @@ impl Game {
 }
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        let s = &g.ext.empires;
+        for &(card, vp) in &s.landmark_vp {
+            out.push(Note::new(card).count(vp));
+        }
+        if let Some(pile) = s.obelisk {
+            out.push(Note::new(Card::Obelisk).pile(pile));
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (Card::Archive, Hook::Ability(START)) => archive_start(g, f, input),

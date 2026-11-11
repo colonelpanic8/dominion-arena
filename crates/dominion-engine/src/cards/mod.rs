@@ -80,6 +80,10 @@ pub(crate) trait SetRules {
         0
     }
 
+    /// Adds the public state this set keeps outside the generic structures (Young Witch's
+    /// Bane pile, Druid's Boons, ...), for agents.
+    fn notes(g: &Game, out: &mut Vec<crate::Note>) {}
+
     /// Changes a decision a card ability asks (Elder: one more pick from a "choose").
     fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {}
 
@@ -234,6 +238,12 @@ macro_rules! sets {
 
         pub(crate) fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
             0 $(+ <$module::Rules as SetRules>::bonus_vp(g, p))*
+        }
+
+        pub(crate) fn notes(g: &Game) -> Vec<crate::Note> {
+            let mut out = vec![];
+            $(<$module::Rules as SetRules>::notes(g, &mut out);)*
+            out
         }
 
         pub(crate) fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {

@@ -16,6 +16,7 @@ use crate::game::{ExtraTurn, Pos, Scratch, Until, Zone};
 use crate::setup::add_mixed_pile;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -83,6 +84,12 @@ const DURATIONS: [Card; 8] = [
 ];
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        for &(pile, n) in &g.ext.allies.inventors {
+            out.push(Note::new(Card::FamilyOfInventors).pile(pile).count(n as i32));
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if DURATIONS.contains(&c) => start(g, f, input),
