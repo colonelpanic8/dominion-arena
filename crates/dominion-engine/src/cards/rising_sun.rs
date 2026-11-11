@@ -281,12 +281,9 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::Ronin, _) => {
-                if f.pc == 1 && input.cards().is_empty() {
-                    return Some(Flow::done());
-                }
-                if g.hand(f.player).len() < 7 {
+                if f.pc == 0 {
                     f.pc = 1;
-                    return Some(Flow::Call(Frame::draw(f.player, 1)));
+                    return Some(Flow::Call(Frame::draw_to(f.player, 7)));
                 }
                 Flow::done()
             }

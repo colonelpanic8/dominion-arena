@@ -771,8 +771,7 @@ fn jack_of_all_trades(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         4 => {
             f.pc = 5;
-            let n = 5usize.saturating_sub(g.hand(f.player).len());
-            Flow::Call(Frame::draw(f.player, n))
+            Flow::Call(Frame::draw_to(f.player, 5))
         }
         5 => {
             f.pc = 6;

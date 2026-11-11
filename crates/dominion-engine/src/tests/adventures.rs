@@ -1147,6 +1147,62 @@ fn moat_blocks_relic() {
     assert!(!g.player(P1).minus_card);
 }
 
+/// "Draw until you have N cards in hand" removes the -1 Card token instead of its first
+/// draw, then goes on until the hand has N cards.
+#[test]
+fn the_minus_card_token_does_not_shorten_a_draw_up_to_a_hand_size() {
+    type Answer = fn(&mut Game);
+    let cases: [(Card, usize, Answer); 9] = [
+        (Card::Library, 7, |_| {}),
+        (Card::Watchtower, 6, |_| {}),
+        (Card::JackOfAllTrades, 5, no),
+        (Card::Blacksmith, 6, |g| mode(g, 0)),
+        (Card::CursedVillage, 6, |_| {}),
+        (Card::FirstMate, 6, |_| {}),
+        (Card::Ronin, 7, |_| {}),
+        (Card::Village, 6, |g| {
+            respond(g, Response::option(Opt::Card(Card::WayOfTheOwl)));
+        }),
+        // Siren draws at the start of its player's next turn.
+        (Card::Siren, 8, |g| {
+            g.players[0].minus_card = false;
+            finish_turn(g);
+            g.players[0].minus_card = true;
+            finish_turn(g);
+        }),
+    ];
+    for (card, size, answer) in cases {
+        let mut g = setup(&[card.def().pile.unwrap_or(card)]);
+        if card == Card::Village {
+            g.landscapes.push(Card::WayOfTheOwl);
+        }
+        hand(&mut g, P0, &[card, Card::Estate]);
+        deck(&mut g, P0, &[Card::Copper; 20]);
+        g.players[0].minus_card = true;
+        g.start();
+        play(&mut g, card);
+        answer(&mut g);
+        assert!(!g.player(P0).minus_card, "{card}");
+        assert_eq!(g.hand(P0).len(), size, "{card}");
+    }
+}
+
+#[test]
+fn library_with_the_minus_card_token_still_skips_actions() {
+    let mut g = game(&[Card::Library, Card::Village], &[]);
+    hand(&mut g, P0, &[Card::Library]);
+    let mut cards = vec![Card::Village];
+    cards.extend([Card::Copper; 10]);
+    deck(&mut g, P0, &cards);
+    g.players[0].minus_card = true;
+    g.start();
+    play(&mut g, Card::Library);
+    assert_eq!(purpose(&g), Purpose::SetAside);
+    yes(&mut g);
+    assert_eq!(g.hand(P0).len(), 7);
+    assert_eq!(discard_kinds(&g, P0), [Card::Village]);
+}
+
 #[test]
 fn storyteller_plays_treasures_and_turns_all_coins_into_cards() {
     let mut g = game(&[Card::Storyteller], &[]);

@@ -230,8 +230,7 @@ impl SetRules for Rules {
             (Card::CursedVillage, _) => {
                 if f.pc == 0 {
                     f.pc = 1;
-                    let n = 6usize.saturating_sub(g.hand(f.player).len());
-                    return Some(Flow::Call(Frame::draw(f.player, n)));
+                    return Some(Flow::Call(Frame::draw_to(f.player, 6)));
                 }
                 Flow::done()
             }

@@ -93,7 +93,7 @@ pub struct Player {
     pub boons_kept: Vec<Card>,
     /// Adventures tokens and the pile each is on (`None` for ones not on a pile).
     pub tokens: BTreeMap<Token, Option<PileId>>,
-    /// The -1 Card token: the next draw draws one less.
+    /// The -1 Card token: the next draw removes it instead of drawing its first card.
     pub minus_card: bool,
     /// The -$1 token: the next time this player gets $, they get $1 less.
     pub minus_coin: bool,

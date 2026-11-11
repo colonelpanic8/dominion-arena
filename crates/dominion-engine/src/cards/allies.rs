@@ -2080,10 +2080,7 @@ fn blacksmith(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         _ => match take_mode(f) {
-            Some(0) => {
-                let n = 6usize.saturating_sub(g.hand(p).len());
-                Flow::Call(Frame::draw(p, n))
-            }
+            Some(0) => Flow::Call(Frame::draw_to(p, 6)),
             Some(1) => Flow::Call(Frame::draw(p, 2)),
             Some(_) => {
                 plus_actions(g, p, 1);

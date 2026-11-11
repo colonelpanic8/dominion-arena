@@ -748,6 +748,23 @@ fn watchtower_draws_to_six() {
 }
 
 #[test]
+fn watchtower_shuffles_once_and_stops_when_the_cards_run_out() {
+    let mut g = setup(&[Card::Watchtower]);
+    hand(&mut g, P0, &[Card::Watchtower]);
+    deck(&mut g, P0, &[Card::Estate]);
+    discard(&mut g, P0, &[Card::Copper, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Watchtower);
+    assert_eq!(g.hand(P0).len(), 3);
+    assert!(g.player(P0).deck.is_empty() && g.player(P0).discard.is_empty());
+    let shuffles = g
+        .log()
+        .iter()
+        .filter(|e| matches!(e, Event::Shuffled { .. }));
+    assert_eq!(shuffles.count(), 1);
+}
+
+#[test]
 fn watchtower_trashes_a_curse_gained_on_another_players_turn() {
     let mut g = setup(&[Card::Watchtower, Card::Charlatan]);
     hand(&mut g, P0, &[Card::Charlatan]);
