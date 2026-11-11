@@ -2280,7 +2280,6 @@ fn way_of_the_squirrel_used_out_of_turn_draws_at_the_end_of_that_turn() {
 }
 
 #[test]
-#[ignore = "a Duration played by a Throne Room that Mastermind played keeps the whole chain in play"]
 fn a_mastermind_whose_throne_room_plays_a_duration_does_not_stay() {
     let mut g = setup(&[Card::Mastermind, Card::ThroneRoom, Card::Barge]);
     hand(&mut g, P0, &[Card::Mastermind]);
@@ -2291,6 +2290,50 @@ fn a_mastermind_whose_throne_room_plays_a_duration_does_not_stay() {
     play(&mut g, Card::Mastermind);
     next_turn(&mut g);
     next_turn(&mut g);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Barge]);
+    modes(&mut g, &[1]);
+    modes(&mut g, &[1]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Barge]);
+}
+
+#[test]
+fn a_throne_room_whose_mastermind_plays_a_duration_stays_with_the_mastermind() {
+    let mut g = setup(&[Card::Mastermind, Card::ThroneRoom, Card::Barge]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Mastermind]);
+    let mut cards = vec![Card::Barge];
+    cards.extend([Card::Copper; 40]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Mastermind]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // The first Mastermind plays Barge three times; the second has nothing to play.
+    trigger(&mut g, Card::Mastermind);
+    choose_kinds(&mut g, &[Card::Barge]);
+    for _ in 0..3 {
+        modes(&mut g, &[1]);
+    }
+    next_turn(&mut g);
+    assert_eq!(
+        in_play_kinds(&g, P0),
+        [Card::ThroneRoom, Card::Mastermind, Card::Barge]
+    );
+}
+
+#[test]
+fn a_throne_room_whose_throne_room_plays_a_duration_does_not_stay() {
+    let mut g = setup(&[Card::ThroneRoom, Card::Barge]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::ThroneRoom, Card::ThroneRoom, Card::Barge],
+    );
+    deck(&mut g, P0, &[Card::Copper; 40]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
     choose_kinds(&mut g, &[Card::ThroneRoom]);
     choose_kinds(&mut g, &[Card::Barge]);
     modes(&mut g, &[1]);

@@ -695,7 +695,7 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
         Card::Outpost,
         p,
         f.this,
-        f.keeps(),
+        f.keeps(g),
         Until::StartOfTurn(p),
         Scratch::default(),
     );

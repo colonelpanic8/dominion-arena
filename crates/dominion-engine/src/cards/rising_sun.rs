@@ -290,7 +290,7 @@ impl SetRules for Rules {
                     Card::Samurai,
                     f.player,
                     f.this,
-                    f.keeps(),
+                    f.keeps(g),
                     Until::Removed,
                     Scratch::default(),
                 );

@@ -204,7 +204,7 @@ impl SetRules for Rules {
             }
             (Card::Garrison, _) => {
                 let data = Scratch {
-                    cards: f.keeps(),
+                    cards: f.keeps(g),
                     ..Scratch::default()
                 };
                 g.add_lasting(
@@ -1642,7 +1642,7 @@ fn royal_galley(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             let c = f.s.pick.expect("set in step 1");
             if g.zone(c) == Zone::InPlay(p) {
-                let mut keeps = f.keeps();
+                let mut keeps = f.keeps(g);
                 keeps.push(c);
                 let data = Scratch {
                     pick: Some(c),
@@ -2503,7 +2503,7 @@ fn voyage(g: &mut Game, f: &mut CardFrame) {
         Card::Voyage,
         p,
         f.this,
-        f.keeps(),
+        f.keeps(g),
         Until::StartOfTurn(p),
         Scratch::default(),
     );

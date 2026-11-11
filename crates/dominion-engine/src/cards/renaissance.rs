@@ -79,7 +79,7 @@ impl SetRules for Rules {
             (Card::BorderGuard, _) => border_guard(g, f, input),
             (Card::CargoShip, _) => {
                 let data = Scratch {
-                    cards: f.keeps(),
+                    cards: f.keeps(g),
                     ..Scratch::default()
                 };
                 g.add_lasting(

@@ -155,7 +155,7 @@ impl SetRules for Rules {
             (Card::Taskmaster, _) => {
                 plus_actions(g, f.player, 1);
                 coins(g, f.player, 1);
-                taskmaster_watch(g, f.player, f.this, f.keeps());
+                taskmaster_watch(g, f.player, f.this, f.keeps(g));
                 Flow::done()
             }
             (Card::Crucible, _) => crucible(g, f, input),
@@ -203,7 +203,7 @@ impl SetRules for Rules {
                         Card::Frigate,
                         f.player,
                         f.this,
-                        f.keeps(),
+                        f.keeps(g),
                         Until::StartOfTurn(f.player),
                         data,
                     );
@@ -1226,7 +1226,6 @@ fn waited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 _ => None,
             };
             f.s.player = Some(p);
-            f.chain = l.keeps;
         }
         f.pc = 1;
     }
@@ -1288,7 +1287,7 @@ fn waited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 && let Some(c) = f.s.pick
             {
                 f.pc = 2;
-                return Flow::Call(Frame::play(p, c, false, f.chain.clone()));
+                return Flow::Call(Frame::play(p, c, false, f.chain_for_child()));
             }
             Flow::done()
         }

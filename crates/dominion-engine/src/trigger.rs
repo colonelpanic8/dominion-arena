@@ -188,7 +188,7 @@ impl Window {
             Input::Response(Response::Options(chosen)) => match chosen.first() {
                 Some(Opt::Trigger(i)) => {
                     let t = self.asked[*i as usize].clone();
-                    return self.run(t);
+                    return self.run(g, t);
                 }
                 _ => {
                     let declined: Vec<(usize, Trigger)> = self
@@ -232,7 +232,7 @@ impl Window {
                 == (u.card, u.ability, false, u.lasting, u.data)
         };
         if (mine.len() == 1 || self.occs.len() > 1) && mine.iter().all(|(_, t)| same(t)) {
-            return self.run(mine[0].clone());
+            return self.run(g, mine[0].clone());
         }
         let mut options: Vec<Opt> = (0..mine.len()).map(|i| Opt::Trigger(i as u16)).collect();
         let mut labels: Vec<String> = mine
@@ -264,11 +264,20 @@ impl Window {
         })
     }
 
-    fn run(&mut self, (i, t): (usize, Trigger)) -> Flow {
+    fn run(&mut self, g: &Game, (i, t): (usize, Trigger)) -> Flow {
         self.done.push((i, t.clone()));
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
         f.occ = Some(self.occs[i].clone());
         f.lasting = t.lasting;
+        // A Duration's later ability is still played by what kept it in play.
+        if let Some(l) = t
+            .lasting
+            .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+            && t.source.is_some()
+            && l.keeps.first() == t.source.as_ref()
+        {
+            f.chain = l.keeps[1..].iter().rev().copied().collect();
+        }
         f.data = t.data;
         Flow::Call(Frame::Card(Box::new(f)))
     }

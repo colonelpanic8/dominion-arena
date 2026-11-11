@@ -416,22 +416,33 @@ impl CardFrame {
         self.this.expect("ability has a physical card")
     }
 
-    /// The cards that stay in play while a Duration effect of this play lasts.
-    pub(crate) fn keeps(&self) -> Vec<CardId> {
-        self.this
-            .into_iter()
-            .chain(self.chain.iter().copied())
-            .collect()
+    /// The cards that stay in play while a Duration effect of this play lasts, innermost
+    /// first: this card, the card that played it, and further up the chain only while the
+    /// card played is a Duration (a Throne Room that plays a Throne Room that plays a
+    /// Duration doesn't stay; one that plays a Mastermind that plays a Duration does).
+    pub(crate) fn keeps(&self, g: &Game) -> Vec<CardId> {
+        let mut keeps: Vec<CardId> = self.this.into_iter().collect();
+        for &c in self.chain.iter().rev() {
+            if keeps
+                .last()
+                .is_some_and(|&inner| !g.is(inner, Types::DURATION))
+            {
+                break;
+            }
+            keeps.push(c);
+        }
+        keeps
     }
 
     /// Schedules this play's Duration effect: a [`crate::Lasting`] that keeps this card
     /// (and whatever played it) in play until removed.
     pub(crate) fn add_duration(&self, g: &mut Game, data: Scratch) -> u32 {
+        let keeps = self.keeps(g);
         g.add_lasting(
             self.card,
             self.player,
             self.this,
-            self.keeps(),
+            keeps,
             Until::Removed,
             data,
         )
@@ -444,7 +455,7 @@ impl CardFrame {
 
     /// The chain to pass when this card plays another card.
     pub(crate) fn chain_for_child(&self) -> Vec<CardId> {
-        self.keeps()
+        self.chain.iter().copied().chain(self.this).collect()
     }
 
     fn ask(&self, player: PlayerId, kind: DecisionKind, purpose: Purpose) -> Flow {
