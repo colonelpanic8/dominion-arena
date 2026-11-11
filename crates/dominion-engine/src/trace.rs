@@ -1,5 +1,5 @@
 //! An opt-in, id-level record of what happens to physical cards, for tracking what each
-//! player can know (see `Knowledge`). [`Game::new_traced`] turns it on; untraced
+//! player can know (see [`crate::Knowledge`]). [`Game::new_traced`] turns it on; untraced
 //! games record nothing.
 
 use crate::game::{Player, Zone};
