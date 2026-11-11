@@ -292,6 +292,27 @@ fn hermit_is_exchanged_for_a_madman_if_nothing_was_gained_in_the_buy_phase() {
     assert_eq!(g.count_owned(P0, Card::Madman), 0);
 }
 
+/// Played in the Buy phase (Market Towns), Hermit's own gain is a gain in it.
+#[test]
+fn hermit_played_in_the_buy_phase_counts_the_card_it_gains() {
+    let mut g = setup_with(GameConfig {
+        landscapes: vec![Card::MarketTowns],
+        ..GameConfig::new(2, vec![Card::Hermit, Card::Underling], 7)
+    });
+    g.players[0].favors = 1;
+    hand(&mut g, P0, &[Card::Hermit]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    end_phase(&mut g);
+    trigger(&mut g, 0);
+    choose_kinds(&mut g, &[Card::Hermit]);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(g.turn().phase, Phase::Buy);
+    end_phase(&mut g);
+    assert_eq!(g.count_owned(P0, Card::Hermit), 1);
+    assert_eq!(g.count_owned(P0, Card::Madman), 0);
+}
+
 #[test]
 fn a_throne_roomed_hermit_exchanges_once() {
     let mut g = setup(&[Card::Hermit, Card::ThroneRoom, Card::Sage]);

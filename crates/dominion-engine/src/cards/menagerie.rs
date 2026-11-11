@@ -17,7 +17,7 @@ use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Mat, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -922,12 +922,12 @@ fn cavalry_gain(g: &mut Game, f: &mut CardFrame) -> Flow {
         f.pc = 1;
         return Flow::Call(Frame::draw(p, 2));
     }
-    if p == g.turn.player {
-        g.turn.buys += 1;
-        if g.turn.phase == Phase::Buy {
-            g.turn.phase = Phase::Action;
-            g.turn.return_to_action = true;
+    if f.pc == 1 {
+        f.pc = 2;
+        if p == g.turn.player {
+            g.turn.buys += 1;
         }
+        return Flow::Call(Frame::return_to_action(p));
     }
     Flow::done()
 }

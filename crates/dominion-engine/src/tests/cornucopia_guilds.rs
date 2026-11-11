@@ -834,6 +834,28 @@ fn merchant_guild_ignores_action_phase_gains() {
     assert_eq!(g.player(P0).coffers, 1);
 }
 
+/// The Buy phase ends each time the turn leaves it (Villa), and Merchant Guild counts the
+/// cards gained in that Buy phase.
+#[test]
+fn merchant_guild_counts_each_buy_phase_separately() {
+    let mut g = setup(&[Card::MerchantGuild, Card::Villa]);
+    hand(&mut g, P0, &[Card::MerchantGuild, Card::Gold]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::MerchantGuild);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Villa);
+    assert_eq!(g.turn().phase, Phase::Action);
+    assert_eq!(g.player(P0).coffers, 1);
+    play(&mut g, Card::Villa);
+    end_phase(&mut g);
+    buy(&mut g, Card::Copper);
+    while g.turn().player == P0 {
+        end_phase(&mut g);
+    }
+    assert_eq!(g.player(P0).coffers, 2);
+}
+
 #[test]
 fn young_witch_bane_in_hand_blocks_the_curse() {
     let mut g = setup(&[Card::YoungWitch]);

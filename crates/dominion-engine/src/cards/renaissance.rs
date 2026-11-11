@@ -172,7 +172,7 @@ impl SetRules for Rules {
                 }
             }
             Occasion::EndBuyPhase { player } => {
-                if has(g, player, Card::Exploration) && g.turn.gained_in_buy_phase.is_empty() {
+                if has(g, player, Card::Exploration) && g.turn.gained_this_buy_phase().is_empty() {
                     out.push(Trigger::new(player, Card::Exploration, EFFECT).quiet());
                 }
                 if has(g, player, Card::Pageant) && g.turn.coins >= 1 {

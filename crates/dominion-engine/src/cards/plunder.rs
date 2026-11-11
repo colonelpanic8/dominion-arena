@@ -2688,10 +2688,9 @@ fn launch(g: &mut Game, f: &mut CardFrame) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }))
+            Flow::Call(Frame::return_to_action(p))
         }
         1 => {
-            g.turn.phase = Phase::Action;
             f.pc = 2;
             Flow::Call(Frame::draw(p, 1))
         }

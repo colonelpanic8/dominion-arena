@@ -13,12 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct State {
-    /// How many cards the turn's player had gained this turn when their current Buy
-    /// phase started: (player, their turn number, count). Kept only while a Hermit
-    /// waits for the end of the Buy phase.
-    buy_base: Option<(PlayerId, u32, usize)>,
-}
+pub(crate) struct State {}
 
 pub(crate) struct Rules;
 
@@ -29,8 +24,7 @@ const HOVEL_REACT: u8 = 0;
 const BEGGAR_REACT: u8 = 0;
 const URCHIN_REACT: u8 = 0;
 const DEATH_CART_GAINED: u8 = 0;
-const HERMIT_BUY_START: u8 = 0;
-const HERMIT_EXCHANGE: u8 = 1;
+const HERMIT_EXCHANGE: u8 = 0;
 
 /// A helper's `next` that finishes the ability instead of continuing.
 const DONE: u8 = u8::MAX;
@@ -78,12 +72,6 @@ impl SetRules for Rules {
             (Card::Urchin, Hook::Ability(URCHIN_REACT)) => urchin_react(g, f),
             (Card::DeathCart, Hook::Ability(DEATH_CART_GAINED)) => {
                 gain_copies(g, f, Card::Ruins, 2, Dest::Discard)
-            }
-            (Card::Hermit, Hook::Ability(HERMIT_BUY_START)) => {
-                let p = f.player;
-                g.ext.dark_ages.buy_base =
-                    Some((p, g.player(p).turns_taken, g.turn.gained.len()));
-                Flow::done()
             }
             (Card::Hermit, Hook::Ability(HERMIT_EXCHANGE)) => {
                 hermit_exchange(g, f);
@@ -185,19 +173,11 @@ impl SetRules for Rules {
                     }
                 }
             }
-            Occasion::StartBuyPhase { player } => {
-                if hermits(g, player).next().is_some() {
-                    out.push(Trigger::new(player, Card::Hermit, HERMIT_BUY_START).quiet());
-                }
-            }
             Occasion::EndBuyPhase { player } => {
-                let base = g.ext.dark_ages.buy_base;
-                let gained_none = base
-                    == Some((player, g.player(player).turns_taken, g.turn.gained.len()));
                 let madman_left = g
                     .pile_of(Card::Madman)
                     .is_some_and(|m| g.pile_top(m).is_some());
-                if gained_none && madman_left {
+                if g.turn.gained_this_buy_phase().is_empty() && madman_left {
                     let mut seen = vec![];
                     for (id, source) in hermits(g, player) {
                         // A Hermit played twice is still one card to exchange.
@@ -994,15 +974,6 @@ fn hermit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2..=4 => gain_pile(g, f, input, &up_to(3), false, Dest::Discard, 2, 5),
         _ => {
-            let stamp = (p, g.player(p).turns_taken);
-            let fresh = g
-                .ext
-                .dark_ages
-                .buy_base
-                .is_some_and(|(q, t, _)| (q, t) == stamp);
-            if g.turn.phase == crate::Phase::Buy && !fresh {
-                g.ext.dark_ages.buy_base = Some((p, stamp.1, g.turn.gained.len()));
-            }
             g.add_lasting(
                 Card::Hermit,
                 p,

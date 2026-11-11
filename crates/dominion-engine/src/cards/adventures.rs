@@ -861,7 +861,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
         Card::Port => !g.ext.adventures.extra_ports.contains(&card),
         Card::Messenger => {
             let t = &g.turn;
-            player == t.player && t.phase == Phase::Buy && t.gained_in_buy_phase.len() == 1
+            player == t.player && t.phase == Phase::Buy && t.gained_this_buy_phase().len() == 1
         }
         _ => false,
     };

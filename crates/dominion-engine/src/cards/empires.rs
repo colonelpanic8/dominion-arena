@@ -183,10 +183,7 @@ impl SetRules for Rules {
                 }
                 Flow::done()
             }
-            (Card::Villa, Hook::Ability(GAINED)) => {
-                villa_gained(g, f);
-                Flow::done()
-            }
+            (Card::Villa, Hook::Ability(GAINED)) => villa_gained(g, f),
             (Card::Capital, Hook::Ability(CAPITAL_DEBT)) => capital_debt(g, f, input),
             (Card::Charm, Hook::Ability(CHARM_GAIN)) => charm_gain(g, f, input),
             (Card::Encampment, Hook::Ability(ENCAMPMENT_RETURN)) => {
@@ -1795,8 +1792,12 @@ fn temple(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-fn villa_gained(g: &mut Game, f: &mut CardFrame) {
+fn villa_gained(g: &mut Game, f: &mut CardFrame) -> Flow {
     let p = f.player;
+    if f.pc != 0 {
+        return Flow::done();
+    }
+    f.pc = 1;
     let c = f.this();
     let landed = g
         .gains
@@ -1807,12 +1808,8 @@ fn villa_gained(g: &mut Game, f: &mut CardFrame) {
     if landed == Some(g.zone(c)) {
         g.put_in_hand(c, p);
     }
-    if p == g.turn.player {
-        g.turn.actions += 1;
-        if g.turn.phase == Phase::Buy {
-            g.turn.return_to_action = true;
-        }
-    }
+    plus_actions(g, p, 1);
+    Flow::Call(Frame::return_to_action(p))
 }
 
 fn wild_hunt(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

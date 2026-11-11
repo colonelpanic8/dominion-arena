@@ -1758,6 +1758,22 @@ fn messenger_does_nothing_extra_when_it_is_not_the_first_gain_in_the_buy_phase()
 }
 
 #[test]
+fn messenger_can_be_the_first_gain_of_a_second_buy_phase() {
+    let mut g = game(&[Card::Messenger, Card::Villa], &[]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Silver]);
+    g.start();
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::Villa);
+    play(&mut g, Card::Villa);
+    assert_eq!(g.turn().phase, Phase::Buy);
+    buy(&mut g, Card::Messenger);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(g.count_owned(P1, Card::Silver), 1);
+}
+
+#[test]
 fn messenger_gained_in_the_action_phase_does_nothing_extra() {
     let mut g = game(&[Card::Messenger, Card::Workshop], &[]);
     hand(&mut g, P0, &[Card::Workshop]);

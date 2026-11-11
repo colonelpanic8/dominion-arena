@@ -1177,6 +1177,29 @@ fn villa_gained_in_the_action_phase_stays_in_it() {
     play(&mut g, Card::Villa);
 }
 
+/// The Buy phase ends as Villa's ability resolves: what is gained after it in the same
+/// buy is not gained in the Buy phase.
+#[test]
+fn villa_leaves_the_buy_phase_as_its_ability_resolves() {
+    let mut g = setup(&[Card::Villa, Card::Charm, Card::Catapult]);
+    strip(&mut g, Card::Catapult, 5);
+    hand(&mut g, P0, &[Card::Charm, Card::Gold, Card::Copper]);
+    deck(&mut g, P0, &[Card::Estate; 5]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Charm);
+    modes(&mut g, &[1]);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Villa);
+    trigger(&mut g, Card::Villa);
+    // Charm: also gain a Rocks, whose Silver goes to the hand outside the Buy phase.
+    let rocks = top_pile(&g, Card::Rocks);
+    respond(&mut g, Response::Pile(Some(rocks)));
+    assert_eq!(phase(&g), Phase::Action);
+    assert_eq!(hand_kinds(&g, P0), [Card::Villa, Card::Silver]);
+}
+
 #[test]
 fn wild_hunt_draws_and_adds_a_token_or_gains_an_estate_and_takes_them() {
     let mut g = setup(&[Card::WildHunt, Card::Village]);

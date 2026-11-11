@@ -265,6 +265,25 @@ fn river_shrine_gains_in_cleanup_unless_a_card_was_gained_in_the_buy_phase() {
     assert_eq!(g.count_owned(P0, Card::Silver), 0);
 }
 
+/// "In your Buy phase this turn" is any of the turn's Buy phases.
+#[test]
+fn river_shrine_counts_every_buy_phase_of_the_turn() {
+    let mut g = setup(&[Card::RiverShrine, Card::Villa]);
+    hand(&mut g, P0, &[Card::RiverShrine, Card::Gold, Card::Copper]);
+    deck(&mut g, P0, &coppers(10));
+    g.start();
+    play(&mut g, Card::RiverShrine);
+    choose(&mut g, &[]);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Villa);
+    // The second Buy phase, with nothing to do in it, passes by itself.
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.count_owned(P0, Card::Silver), 0);
+}
+
 #[test]
 fn rustic_village_may_discard_two_cards_for_a_card() {
     let mut g = setup(&[Card::RusticVillage]);
