@@ -1,6 +1,4 @@
-use super::alchemy::possess;
 use super::intrigue::{modes, random_games_with_copies, trigger};
-use super::prosperity::play_from;
 use super::*;
 
 /// Random games over Empires with copies of its cards in every deck, and two random
@@ -758,19 +756,6 @@ fn a_throne_roomed_engineer_trashes_itself_once() {
     assert_eq!(purpose(&g), Purpose::Turn);
 }
 
-/// A possessed player's trashed card is set aside, but it was trashed.
-#[test]
-fn engineer_trashed_on_a_possession_turn_gains_a_second_card() {
-    let mut g = possess(&[Card::Engineer, Card::Village], &[Card::Engineer]);
-    let engineer = find(&g, P1, Card::Engineer);
-    play_from(&mut g, P1, Card::Engineer);
-    choose_pile(&mut g, Card::Village);
-    yes(&mut g);
-    choose_pile(&mut g, Card::Village);
-    assert_eq!(g.count_owned(P0, Card::Village), 2);
-    assert_eq!(g.zone(engineer), Zone::SetAside(P1));
-}
-
 #[test]
 fn farmers_market_gathers_four_times_then_pays_out_and_trashes_itself() {
     let mut g = setup(&[Card::FarmersMarket]);
@@ -1311,13 +1296,6 @@ fn small_castle_trashes_itself_or_a_castle_to_gain_the_top_castle() {
     assert_eq!(g.count_owned(P0, Card::SmallCastle), 1);
     assert_eq!(g.count_owned(P0, Card::CrumblingCastle), 1);
     assert_eq!(vp(&g, P0), 2);
-}
-
-#[test]
-fn small_castle_trashed_on_a_possession_turn_gains_a_castle() {
-    let mut g = possess(&[Card::Castles], &[Card::SmallCastle]);
-    play_from(&mut g, P1, Card::SmallCastle);
-    assert_eq!(g.count_owned(P0, Card::HumbleCastle), 1);
 }
 
 #[test]

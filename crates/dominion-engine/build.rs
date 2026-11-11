@@ -214,7 +214,7 @@ fn main() {
             out,
             "    CardDef {{ name: {name:?}, set: Set::{set}, cost: {cost}, variable_cost: {}, overpay: {}, types: {types_expr}, \
              plus: Plus {{ cards: {}, actions: {}, buys: {}, coins: {}, villagers: {}, coffers: {}, favors: {} }}, \
-             coins: {}, potions: {}, vp: {}, kingdom: {}, basic: {}, removed: {}, pile: {pile}, text: {:?} }},",
+             coins: {}, potions: {}, vp: {}, kingdom: {}, unimplemented: {}, basic: {}, removed: {}, pile: {pile}, text: {:?} }},",
             flag(&cost_flags, "variable"),
             flag(&cost_flags, "overpay"),
             num(&plus, "cards"),
@@ -227,7 +227,8 @@ fn main() {
             num(c, "coins"),
             num(c, "potions"),
             num(c, "vp"),
-            flag(c, "kingdom"),
+            flag(c, "kingdom") && !flag(c, "unimplemented"),
+            flag(c, "unimplemented"),
             flag(c, "basic"),
             flag(c, "removed"),
             c["text"].as_str().unwrap_or(""),

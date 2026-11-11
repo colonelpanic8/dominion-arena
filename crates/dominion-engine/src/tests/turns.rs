@@ -2,7 +2,7 @@
 //! effects that last until a turn starts.
 
 use super::*;
-use crate::game::{ExtraLimit, ExtraTurn, Pos};
+use crate::game::Pos;
 
 fn game(players: u8, kingdom: &[Card], landscapes: &[Card]) -> Game {
     setup_with(GameConfig {
@@ -138,34 +138,6 @@ fn an_outpost_whose_turn_fails_is_discarded_in_the_next_clean_up() {
     end_turn(&mut g);
     assert_eq!(turn(&g), (P1, P1, None));
     assert!(g.in_play(P0).is_empty());
-}
-
-/// Possession doesn't pass control between turns: the possessed player chooses among their
-/// own extra turns, and the Possession turn can't be their second extra turn in a row.
-#[test]
-fn a_player_about_to_be_possessed_chooses_among_their_own_extra_turns() {
-    for taken in [Card::Possession, Card::Mission] {
-        let mut g = game(2, &[Card::Possession], &[Card::Mission]);
-        hand(&mut g, P0, &[Card::Possession]);
-        g.start();
-        play(&mut g, Card::Possession);
-        // As if P1 had set up an extra turn of their own during P0's turn.
-        g.extra_turns.push_back(ExtraTurn {
-            player: P1,
-            source: Card::Mission,
-            controller: P1,
-            limit: ExtraLimit::ThirdInARow,
-        });
-        end_turn(&mut g);
-        take_turn(&mut g, P1, taken);
-        if taken == Card::Possession {
-            assert_eq!(turn(&g), (P1, P0, Some(Card::Possession)));
-            end_turn(&mut g);
-        }
-        assert_eq!(turn(&g), (P1, P1, Some(Card::Mission)));
-        end_turn(&mut g);
-        assert_eq!(turn(&g), (P1, P1, None));
-    }
 }
 
 #[test]

@@ -242,35 +242,6 @@ fn a_passed_card_is_known_to_both_players() {
     assert_eq!(p1.zone(Zone::Hand(P1)).known.get(&Card::Gold), Some(&1));
 }
 
-#[test]
-fn the_possessor_sees_and_remembers_the_possessed_hand() {
-    let mut g = setup(&[Card::Possession, Card::Village]);
-    hand(&mut g, P0, &[Card::Possession]);
-    deck(&mut g, P0, &[Card::Copper; 10]);
-    hand(&mut g, P1, &[Card::Village, Card::Gold, Card::Duchy]);
-    deck(&mut g, P1, &[Card::Estate; 10]);
-    let (mut g, mut k) = start(g);
-    play(&mut g, Card::Possession);
-    k.update(&mut g);
-    next_turn(&mut g);
-    k.update(&mut g);
-    assert_eq!(g.turn().controller, P0);
-    let seen = k.known(&g, P0).zone(Zone::Hand(P1));
-    assert_eq!(
-        seen.known,
-        count(&[(Card::Village, 1), (Card::Gold, 1), (Card::Duchy, 1)])
-    );
-    play_from(&mut g, P1, Card::Village);
-    k.update(&mut g);
-    next_turn(&mut g);
-    k.update(&mut g);
-    // P1's own turn: P0 no longer sees the hand, but remembers the cards discarded in
-    // the possessed turn's Clean-up and the hand they drew then.
-    assert_eq!(g.turn().controller, P1);
-    let hand = k.known(&g, P0).zone(Zone::Hand(P1));
-    assert_eq!(hand.known, count(&[(Card::Estate, 5)]));
-}
-
 /// The true identities of `cards`, as `viewer` would name the ones they see.
 fn truth(g: &Game, viewer: PlayerId, cards: &[CardId]) -> CardCount {
     let view = g.view(viewer);

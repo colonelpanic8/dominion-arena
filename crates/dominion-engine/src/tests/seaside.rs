@@ -982,15 +982,19 @@ fn lich_skips_the_first_of_two_outpost_turns_and_the_second_happens() {
 }
 
 #[test]
-fn outpost_on_a_turn_after_a_possession_turn_is_a_third_turn_in_a_row() {
-    let mut g = setup(&[Card::Outpost, Card::Possession]);
-    hand(&mut g, P0, &[Card::Possession]);
-    deck(&mut g, P0, &[Card::Copper; 10]);
+fn outpost_on_a_turn_right_after_an_extra_turn_of_its_player_is_a_third_turn_in_a_row() {
+    let mut g = setup(&[Card::Outpost]);
     deck(&mut g, P1, &[Card::Outpost; 10]);
     g.start();
-    play(&mut g, Card::Possession);
+    // As if P1 had set up an extra turn of their own during P0's turn.
+    g.extra_turns.push_back(ExtraTurn {
+        player: P1,
+        source: Card::Mission,
+        controller: P1,
+        limit: ExtraLimit::ThirdInARow,
+    });
     next_turn(&mut g);
-    assert_eq!((g.turn().player, g.turn().controller), (P1, P0));
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Mission)));
     next_turn(&mut g);
     assert_eq!((g.turn().player, g.turn().extra), (P1, None));
     play(&mut g, Card::Outpost);

@@ -22,6 +22,16 @@ fn next_turn(g: &mut Game) {
     finish_turn(g);
 }
 
+/// A game with Black Market, whose deck is a lone Village until a test replaces it.
+pub(super) fn setup_black_market() -> Game {
+    setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        setup_choices: [(Card::BlackMarket, vec![Card::Village])].into(),
+        ..GameConfig::new(2, vec![Card::BlackMarket], 7)
+    })
+}
+
 fn black_market_deck(g: &Game) -> PileId {
     g.ext.promos.black_market.expect("Black Market deck")
 }
@@ -130,7 +140,7 @@ fn a_configured_black_market_deck_takes_one_card_of_each_unused_kingdom_pile() {
 /// in that phase: no Treasures can be played after it.
 #[test]
 fn black_market_bought_in_the_buy_phase_ends_playing_treasures() {
-    let mut g = setup(&[Card::BlackMarket]);
+    let mut g = setup_black_market();
     let bm = black_market_deck(&g);
     replace(
         &mut g,
@@ -156,7 +166,7 @@ fn black_market_bought_in_the_buy_phase_ends_playing_treasures() {
 
 #[test]
 fn debt_can_be_paid_off_before_playing_black_market() {
-    let mut g = setup(&[Card::BlackMarket]);
+    let mut g = setup_black_market();
     let bm = black_market_deck(&g);
     replace(
         &mut g,
@@ -176,7 +186,7 @@ fn debt_can_be_paid_off_before_playing_black_market() {
 
 #[test]
 fn black_market_buys_in_the_action_phase_without_using_a_buy() {
-    let mut g = setup(&[Card::BlackMarket]);
+    let mut g = setup_black_market();
     let bm = black_market_deck(&g);
     // Listed bottom first: Laboratory is on top.
     replace(
@@ -260,7 +270,7 @@ fn black_market_played_on_another_players_turn_buys_nothing() {
 
 #[test]
 fn black_market_offers_only_affordable_cards() {
-    let mut g = setup(&[Card::BlackMarket]);
+    let mut g = setup_black_market();
     let bm = black_market_deck(&g);
     replace(
         &mut g,
@@ -282,7 +292,7 @@ fn black_market_offers_only_affordable_cards() {
 
 #[test]
 fn black_market_lets_debt_be_paid_off_first() {
-    let mut g = setup(&[Card::BlackMarket]);
+    let mut g = setup_black_market();
     let bm = black_market_deck(&g);
     replace(&mut g, Zone::Pile(bm), &[Card::Cellar]);
     hand(&mut g, P0, &[Card::BlackMarket, Card::Silver]);
@@ -302,7 +312,7 @@ fn black_market_lets_debt_be_paid_off_first() {
 
 #[test]
 fn black_market_sells_animal_fair_for_an_action_trashed_from_the_hand() {
-    let mut g = setup(&[Card::BlackMarket]);
+    let mut g = setup_black_market();
     let bm = black_market_deck(&g);
     replace(&mut g, Zone::Pile(bm), &[Card::Smithy, Card::AnimalFair]);
     hand(&mut g, P0, &[Card::BlackMarket, Card::Village]);

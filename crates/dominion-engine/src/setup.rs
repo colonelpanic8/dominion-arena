@@ -95,6 +95,8 @@ pub enum SetupError {
     PlayerCount(u8),
     #[error("{0} is not a Kingdom pile")]
     NotKingdom(Card),
+    #[error("{0} is not implemented and can't be in a game")]
+    Unimplemented(Card),
     #[error("{0} is not a landscape")]
     NotLandscape(Card),
     #[error("{0} appears more than once")]
@@ -121,6 +123,9 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         return Err(SetupError::PlayerCount(n));
     }
     for (i, card) in config.kingdom.iter().enumerate() {
+        if card.def().unimplemented {
+            return Err(SetupError::Unimplemented(*card));
+        }
         if !card.def().kingdom {
             return Err(SetupError::NotKingdom(*card));
         }
@@ -361,7 +366,9 @@ impl Setup {
     ) -> Vec<Card> {
         self.made.push(by);
         if let Some(chosen) = g.config.setup_choices.get(&by).cloned() {
-            let err = if n.contains(&chosen.len()) {
+            let err = if let Some(&c) = chosen.iter().find(|c| c.def().unimplemented) {
+                Some(SetupError::Unimplemented(c))
+            } else if n.contains(&chosen.len()) {
                 chosen
                     .iter()
                     .enumerate()
