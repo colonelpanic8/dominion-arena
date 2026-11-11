@@ -119,6 +119,15 @@ fn gained(g: &Game, p: PlayerId) -> Vec<Card> {
         .collect()
 }
 
+/// Takes the offer to discard the gained card's copies from Exile.
+fn discard_from_exile(g: &mut Game) {
+    let i = trigger_labels(g)
+        .iter()
+        .position(|l| l.ends_with("from Exile (optional)"))
+        .expect("an offer to discard from Exile");
+    respond(g, Response::option(Opt::Trigger(i as u16)));
+}
+
 /// Puts `cards` on `p`'s Exile mat.
 fn exiled(g: &mut Game, p: PlayerId, cards: &[Card]) -> Vec<CardId> {
     replace(g, Zone::Mat(p, Mat::Exile), cards)
@@ -195,7 +204,7 @@ fn a_falconer_cannot_gain_a_horse_from_its_non_supply_pile() {
 
 #[test]
 fn gaining_a_card_lets_you_discard_its_copies_from_exile() {
-    let mut g = setup(&[Card::Sanctuary]);
+    let mut g = setup(&[Card::BountyHunter]);
     let exile = exiled(&mut g, P0, &[Card::Silver, Card::Silver, Card::Estate]);
     hand(&mut g, P0, &[Card::Gold]);
     g.start();
@@ -206,8 +215,17 @@ fn gaining_a_card_lets_you_discard_its_copies_from_exile() {
     g.turn.buys = 2;
     play_treasures(&mut g);
     buy(&mut g, Card::Silver);
-    assert_eq!(purpose(&g), Purpose::Trigger);
-    trigger(&mut g, Card::Sanctuary);
+    // The offer is about the gained card, whatever put its copies into Exile.
+    let d = g.pending().unwrap();
+    assert_eq!(
+        (d.purpose, d.source),
+        (Purpose::Trigger, Some(Card::Silver))
+    );
+    assert_eq!(
+        trigger_labels(&g),
+        ["Discard Silver from Exile (optional)", "Done"]
+    );
+    discard_from_exile(&mut g);
     assert_eq!(exile_kinds(&g, P0), [Card::Estate]);
     assert_eq!(discard_kinds(&g, P0), [Card::Silver; 3]);
 }
@@ -612,7 +630,7 @@ fn gatekeeper_exiles_actions_and_treasures_others_gain_until_its_owners_next_tur
     assert_eq!(exile_kinds(&g, P1), [Card::Silver]);
     // Having an exiled Silver, the next one is not Exiled and may bring it back.
     buy(&mut g, Card::Silver);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P1).is_empty());
     next_turn(&mut g);
     assert_eq!(g.turn().coins, 3);
@@ -630,7 +648,7 @@ fn gatekeeper_exiles_the_first_of_two_horses_but_not_the_second() {
     play(&mut g, Card::Sleigh);
     assert_eq!(exile_kinds(&g, P1), [Card::Horse]);
     // The second Horse finds a copy in Exile: P1 may discard it.
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P1).is_empty());
     assert_eq!(discard_kinds(&g, P1), [Card::Horse, Card::Horse]);
 }
@@ -649,7 +667,7 @@ fn gatekeeper_exiles_a_horse_gained_again_after_its_first_gain_discarded_exiled_
     next_turn(&mut g);
     // P1 gains a Horse onto the deck and discards the Exiled one.
     play_treasures(&mut g);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P1).is_empty());
     next_turn(&mut g);
     play(&mut g, Card::Gatekeeper);
@@ -1169,7 +1187,7 @@ fn stockpile_gives_three_and_a_buy_and_exiles_itself() {
     assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
     assert_eq!(exile_kinds(&g, P0), [Card::Stockpile; 2]);
     buy(&mut g, Card::Stockpile);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P0).is_empty());
     assert_eq!(discard_kinds(&g, P0), [Card::Stockpile; 3]);
 }
@@ -1266,7 +1284,7 @@ fn village_green_discarded_during_clean_up_cannot_be_played() {
     // Friendly, at the start of Clean-up, discards the one in hand to gain another,
     // which lets the Exiled one be discarded.
     trigger(&mut g, Card::Friendly);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P0).is_empty());
     assert_eq!(g.count_owned(P0, Card::VillageGreen), 3);
     assert!(in_play_kinds(&g, P0).is_empty());
@@ -1580,7 +1598,7 @@ fn invest_stops_drawing_once_the_card_leaves_exile() {
     play_treasures(&mut g);
     buy_event(&mut g, Card::Invest);
     buy(&mut g, Card::Smithy);
-    trigger(&mut g, Card::Sanctuary);
+    discard_from_exile(&mut g);
     assert!(exile_kinds(&g, P0).is_empty());
     assert!(g.ext.menagerie.invested.is_empty());
 }

@@ -1,9 +1,9 @@
 //! Menagerie: its Kingdom cards, the Horse pile, Exile, Events and Ways.
 //!
 //! Exile is each player's `Mat::Exile`; the cards on it are still theirs. When a player
-//! gains a card, they may discard every copy of it from their Exile mat (an optional
-//! trigger hosted on [`EXILE_HOST`]). Cards Exiled by Invest are listed in
-//! [`State::invested`] while they stay on the mat.
+//! gains a card, they may discard every copy of it from their Exile mat (the optional
+//! [`EXILE_DISCARD`] trigger). Cards Exiled by Invest are listed in [`State::invested`]
+//! while they stay on the mat.
 //!
 //! Ways run as the Way's `Hook::Main` with `f.this` = the card played; the engine applies
 //! a Way's own vanilla bonuses. Way of the Chameleon plays the card's own ability as a
@@ -45,16 +45,15 @@ pub(crate) struct State {
 
 pub(crate) struct Rules;
 
-/// The card the Exile rule ("when you gain a card, you may discard its copies from Exile")
-/// is resolved as.
-pub(crate) const EXILE_HOST: Card = Card::Sanctuary;
+/// The Exile rule ("when you gain a card, you may discard its copies from Exile"), as an
+/// ability of the gained card, whatever its set: `cards::resume` sends it to this module.
+pub(crate) const EXILE_DISCARD: u8 = 253;
 
 /// Durations and "at the start of your next turn" effects.
 const START: u8 = 0;
 /// Reactions and when-gain abilities of cards.
 const REACT: u8 = 1;
 const ON_GAIN: u8 = 2;
-const EXILE_DISCARD: u8 = 10;
 const GATEKEEPER_EXILE: u8 = 1;
 const INVEST_DRAW: u8 = 0;
 const KILN_COPY: u8 = 1;
@@ -105,8 +104,8 @@ impl SetRules for Rules {
 
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
+            (_, Hook::Ability(EXILE_DISCARD)) => exile_discard(g, f),
             (c, Hook::Ability(START)) if STARTS.contains(&c) => start(g, f, input),
-            (EXILE_HOST, Hook::Ability(EXILE_DISCARD)) => exile_discard(g, f),
             (Card::BlackCat | Card::Sheepdog | Card::Falconer, Hook::Ability(REACT)) => {
                 play_from(g, f, Zone::Hand(f.player))
             }
@@ -783,9 +782,10 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         .collect();
     if !copies.is_empty() {
         out.push(
-            Trigger::new(gainer, EXILE_HOST, EXILE_DISCARD)
+            Trigger::new(gainer, kind, EXILE_DISCARD)
                 .on(card)
-                .optional(),
+                .optional()
+                .labelled(format!("Discard {kind} from Exile")),
         );
     }
     let in_place = still_where_gained(g, card);
