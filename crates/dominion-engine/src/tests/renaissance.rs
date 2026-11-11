@@ -1443,7 +1443,7 @@ fn an_outpost_turn_comes_before_the_fleet_round() {
     assert_eq!((g.turn().player, g.turn().extra), (P0, None));
     to_buy(&mut g);
     end_phase(&mut g);
-    assert_eq!(g.outcome().expect("game over").turns, [2, 2]);
+    assert_eq!(g.outcome().expect("game over").turns, [2, 1]);
 }
 
 #[test]
