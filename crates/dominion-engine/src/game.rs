@@ -704,6 +704,7 @@ impl Game {
     }
 
     pub(crate) fn emit(&mut self, event: Event) {
+        cards::on_event(self, &event);
         self.log.push(event);
     }
 

@@ -11,6 +11,7 @@
 //! runs.
 
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
+use crate::event::Event;
 use crate::frame::{Flow, Input};
 use crate::game::{Lasting, Scratch, Until};
 use crate::trigger::{Occasion, Trigger};
@@ -70,6 +71,10 @@ pub(crate) trait SetRules {
 
     /// Changes a player's starting deck (Heirlooms, ...).
     fn modify_starting_deck(g: &Game, p: PlayerId, deck: &mut Vec<Card>) {}
+
+    /// Reacts to `event` as it is logged, for effects that only change counters and
+    /// never move cards or ask anything (Patron's +1 Coffers when revealed).
+    fn on_event(g: &mut Game, event: &Event) {}
 }
 
 /// The bonuses a play gives before the card's script runs.
@@ -143,6 +148,10 @@ macro_rules! sets {
 
         pub(crate) fn modify_starting_deck(g: &Game, p: PlayerId, deck: &mut Vec<Card>) {
             $(<$module::Rules as SetRules>::modify_starting_deck(g, p, deck);)*
+        }
+
+        pub(crate) fn on_event(g: &mut Game, event: &Event) {
+            $(<$module::Rules as SetRules>::on_event(g, event);)*
         }
     };
 }
