@@ -830,6 +830,14 @@ impl Game {
         (1..n).map(|i| PlayerId((p.0 + i) % n)).collect()
     }
 
+    /// The players other than `p`, in turn order from the player whose turn it is: the
+    /// order an effect on several players resolves in, also off-turn.
+    pub fn others_in_turn_order(&self, p: PlayerId) -> Vec<PlayerId> {
+        let mut v = self.players_from(self.turn.player);
+        v.retain(|&q| q != p);
+        v
+    }
+
     /// All players in turn order, starting with `p`.
     pub fn players_from(&self, p: PlayerId) -> Vec<PlayerId> {
         let mut v = vec![p];

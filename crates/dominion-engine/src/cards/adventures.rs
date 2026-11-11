@@ -318,7 +318,7 @@ impl SetRules for Rules {
                         .iter()
                         .filter(|&&c| g.card(c) == Card::Silver)
                         .count() as i32;
-                    for o in g.others(f.player) {
+                    for o in g.others_in_turn_order(f.player) {
                         g.players[o.index()].minus_card = true;
                         g.emit(Event::Received {
                             player: o,
@@ -1143,7 +1143,7 @@ fn call(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
 fn on_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
     let p = f.player;
     Some(match f.card {
-        Card::LostCity => match g.others(p).get(f.s.i) {
+        Card::LostCity => match g.others_in_turn_order(p).get(f.s.i) {
             Some(&o) => {
                 f.s.i += 1;
                 Flow::Call(Frame::draw(o, 1))
@@ -1187,7 +1187,7 @@ fn on_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
                 let Some(card) = f.s.card else {
                     return Some(Flow::done());
                 };
-                while let Some(&o) = g.others(p).get(f.s.i) {
+                while let Some(&o) = g.others_in_turn_order(p).get(f.s.i) {
                     f.s.i += 1;
                     if let Some(pile) = copy_pile(g, card) {
                         return Some(Flow::Call(Frame::gain(o, pile, Dest::Discard)));

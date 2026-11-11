@@ -1918,7 +1918,7 @@ fn sacred_grove(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let boon = f.s.card.expect("set in step 0");
             let gives_coin = matches!(boon, Card::TheFieldsGift | Card::TheForestsGift);
-            let others = g.others(p);
+            let others = g.others_in_turn_order(p);
             match others.get(f.s.i) {
                 Some(&other) if !gives_coin => {
                     f.pc = 2;
@@ -1931,7 +1931,7 @@ fn sacred_grove(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         }
         _ => {
-            let other = g.others(p)[f.s.i];
+            let other = g.others_in_turn_order(p)[f.s.i];
             f.s.i += 1;
             f.pc = 1;
             if input.is_yes() {

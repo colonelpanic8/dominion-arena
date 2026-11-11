@@ -1589,7 +1589,7 @@ fn taxman(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 fn tournament(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
-    let players = g.players_from(f.player);
+    let players = g.players_from(g.turn.player);
     match f.pc {
         0 => {
             while let Some(&q) = players.get(f.s.i) {

@@ -803,6 +803,26 @@ fn an_attack_played_on_another_players_turn_starts_with_the_turn_player() {
     assert_eq!(g.count_owned(P2, Card::Curse), 0);
 }
 
+/// Non-Attacks too: "each (other) player" goes in turn order from the turn's player.
+#[test]
+fn effects_on_several_players_start_with_the_turn_player_off_turn() {
+    let check = |card: Card, rest: &[Card], answer: fn(&mut Game), first: PlayerId| {
+        let mut g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            ..GameConfig::new(3, vec![card], 7)
+        });
+        hand(&mut g, P1, &[&[card], rest].concat());
+        g.start();
+        play_out_of_turn(&mut g, P1, card);
+        answer(&mut g);
+        assert_eq!(g.pending().unwrap().player, first, "{card}");
+    };
+    check(Card::Bishop, &[Card::Copper], |_| {}, P0);
+    check(Card::Vault, &[Card::Copper], |g| choose(g, &[]), P0);
+    check(Card::Duchess, &[], |_| {}, P0);
+}
+
 #[test]
 fn the_game_ends_when_provinces_run_out() {
     let mut g = setup(&[Card::Smithy]);

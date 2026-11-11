@@ -155,7 +155,7 @@ impl SetRules for Rules {
                     .map_or(0, |l| l.data.n);
                 if f.pc == 0 {
                     f.targets = g
-                        .others(f.player)
+                        .others_in_turn_order(f.player)
                         .into_iter()
                         .filter(|&p| in_mask(mask, p))
                         .collect();
@@ -1138,7 +1138,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::CircleOfWitches => {
             if f.pc == 0 {
                 spend(g, p, 3);
-                f.targets = g.others(p);
+                f.targets = g.others_in_turn_order(p);
                 f.pc = 1;
             }
             each_target_gains_curse(g, f, DONE)

@@ -472,7 +472,7 @@ fn bandit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 fn council_room(g: &mut Game, f: &mut CardFrame) -> Flow {
-    match g.others(f.player).get(f.s.i) {
+    match g.others_in_turn_order(f.player).get(f.s.i) {
         Some(&other) => {
             f.s.i += 1;
             Flow::Call(Frame::draw(other, 1))

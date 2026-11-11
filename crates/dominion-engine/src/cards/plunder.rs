@@ -2836,7 +2836,7 @@ fn maelstrom(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(p, input.cards()))
         }
         2 => {
-            let others = g.others(p);
+            let others = g.others_in_turn_order(p);
             while let Some(&other) = others.get(f.s.i) {
                 let hand = g.hand(other).to_vec();
                 if hand.len() >= 5 {
@@ -2848,7 +2848,7 @@ fn maelstrom(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::done()
         }
         3 => {
-            let other = g.others(p)[f.s.i];
+            let other = g.others_in_turn_order(p)[f.s.i];
             f.pc = 4;
             Flow::Call(Frame::trash(other, input.cards()))
         }

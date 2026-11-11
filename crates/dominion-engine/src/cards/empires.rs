@@ -1478,7 +1478,7 @@ fn haunted_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 }
             }
             1 => {
-                let Some(&other) = g.others(p).get(f.s.i) else {
+                let Some(&other) = g.others_in_turn_order(p).get(f.s.i) else {
                     return Flow::done();
                 };
                 let hand = g.hand(other).to_vec();
@@ -1490,7 +1490,7 @@ fn haunted_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return f.ask_cards_for(other, hand, 2, 2, Purpose::TopDeck);
             }
             _ => {
-                let other = g.others(p)[f.s.i];
+                let other = g.others_in_turn_order(p)[f.s.i];
                 let chosen = input.cards();
                 for &c in chosen.iter().rev() {
                     if g.zone(c) == Zone::Hand(other) {

@@ -552,7 +552,7 @@ fn governor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         if f.s.m == 0 {
             return Flow::done();
         }
-        let order = g.players_from(f.player);
+        let order = g.players_from(g.turn.player);
         let Some(&who) = order.get(f.s.i) else {
             f.s.m &= f.s.m - 1;
             f.s.i = 0;
