@@ -52,8 +52,9 @@ pub enum Occasion {
         player: PlayerId,
         card: CardId,
     },
-    /// `card`, an Attack played by `attacker`, is about to affect `target`. A trigger that
-    /// finishes with `Value::Bool(true)` makes `target` unaffected.
+    /// `attacker` played `card`, an Attack, and `target` may answer it, even if the play was
+    /// replaced or blocked. A trigger that finishes with `Value::Bool(true)` makes `target`
+    /// unaffected.
     Attack {
         attacker: PlayerId,
         card: CardId,

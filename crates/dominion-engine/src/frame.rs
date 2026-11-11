@@ -1242,10 +1242,10 @@ impl PlayFrame {
             }
             1 => {
                 g.plays.last_mut().expect("play in progress").coins = g.turn.coins;
-                // Reactions to an Attack (Moat, ...) come before its player picks a Way.
-                let st = g.plays.last().expect("play in progress");
+                // Reactions to an Attack (Moat, ...) come before its player picks a Way, and
+                // answer the card being played, whatever it ends up doing.
                 self.pc = 2;
-                if st.replaced.is_none() && !st.blocked && g.is(id, Types::ATTACK) {
+                if g.is(id, Types::ATTACK) {
                     self.remaining = g.others(p);
                     self.pc = 3;
                 }
