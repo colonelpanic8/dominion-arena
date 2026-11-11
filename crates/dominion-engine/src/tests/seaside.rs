@@ -752,6 +752,25 @@ fn outpost_gives_an_extra_turn_with_a_three_card_hand_but_not_a_third() {
     assert!(g.in_play(P0).is_empty());
 }
 
+/// Outpost played on another player's turn: "you'll draw 3 cards whenever your next
+/// Clean-up phase is" (wiki, Outpost), the one of its extra turn.
+#[test]
+fn outpost_played_on_another_players_turn_shrinks_its_players_next_hand() {
+    let mut g = setup(&[Card::Outpost, Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P1, &[Card::Outpost]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play_on_another_players_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Outpost)));
+    assert_eq!(in_play_kinds(&g, P1), [Card::Outpost]);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+    assert_eq!(g.hand(P1).len(), 3);
+    assert!(g.in_play(P1).is_empty());
+}
+
 #[test]
 fn outpost_turn_is_the_next_turn_for_durations() {
     let mut g = setup(&[Card::Outpost, Card::MerchantShip, Card::Village]);
