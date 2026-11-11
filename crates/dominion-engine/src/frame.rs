@@ -365,19 +365,29 @@ impl Frame {
                 pc,
             } => resume_buy(g, *player, *pile, *landscape, card, pc, input),
             Frame::Trash { player, cards, i } => {
+                // Cards trashed together are all trashed before any "when trashed" ability.
+                if *i == 0 {
+                    for &c in cards.iter() {
+                        let from = g.zone(c);
+                        g.move_card(c, Zone::Trash, Pos::Top);
+                        g.trashing.push((c, from));
+                        let card = g.card(c);
+                        if *player == g.turn.player {
+                            g.turn.trashed.push(card);
+                        }
+                        g.emit(Event::Trashed {
+                            player: *player,
+                            card,
+                        });
+                    }
+                } else if let Some(pos) = g.trashing.iter().rposition(|(c, _)| *c == cards[*i - 1])
+                {
+                    g.trashing.remove(pos);
+                }
                 let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 };
                 *i += 1;
-                g.move_card(c, Zone::Trash, Pos::Top);
-                let card = g.card(c);
-                if *player == g.turn.player {
-                    g.turn.trashed.push(card);
-                }
-                g.emit(Event::Trashed {
-                    player: *player,
-                    card,
-                });
                 Flow::Call(Frame::window(Occasion::Trash {
                     player: *player,
                     card: c,
@@ -718,11 +728,15 @@ fn resume_gain(
                 Dest::Discard => Zone::Discard(st.player),
                 Dest::Hand => Zone::Hand(st.player),
                 Dest::DeckTop => Zone::Deck(st.player),
+                Dest::SetAside => Zone::SetAside(st.player),
             };
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
                 g.turn.gained.push(kind);
+                if g.turn.phase == Phase::Buy {
+                    g.turn.gained_in_buy_phase.push(kind);
+                }
             }
             g.emit(Event::Gained {
                 player: st.player,

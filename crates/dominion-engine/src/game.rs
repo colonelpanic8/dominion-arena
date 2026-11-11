@@ -177,6 +177,8 @@ pub struct Turn {
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
     pub gained: Vec<Card>,
+    /// The cards in `gained` that were gained in the Buy phase.
+    pub gained_in_buy_phase: Vec<Card>,
     pub bought_cards: Vec<Card>,
     pub trashed: Vec<Card>,
     /// Cards drawn in Clean-up.
@@ -199,6 +201,7 @@ impl Turn {
             bought: false,
             played: vec![],
             gained: vec![],
+            gained_in_buy_phase: vec![],
             bought_cards: vec![],
             trashed: vec![],
             cleanup_draw: 5,
@@ -245,6 +248,8 @@ pub struct Lasting {
     /// Cards that stay in play (are not discarded in Clean-up) while this lasts.
     pub keeps: Vec<CardId>,
     pub until: Until,
+    /// The owner's [`Player::turns_taken`] when it was created.
+    pub turn: u32,
     pub data: Scratch,
 }
 
@@ -308,6 +313,8 @@ pub struct Game {
     pub(crate) next_lasting: u32,
     pub(crate) extra_turns: VecDeque<ExtraTurn>,
     pub(crate) gains: Vec<GainState>,
+    /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
+    pub(crate) trashing: Vec<(CardId, Zone)>,
     pub(crate) plays: Vec<PlayState>,
     pub(crate) ext: Ext,
     pub(crate) stack: Vec<Frame>,
@@ -498,6 +505,15 @@ impl Game {
     pub fn home_pile(&self, card: Card) -> Option<PileId> {
         let name = card.def().pile.unwrap_or(card);
         self.pile_of(name).or_else(|| self.pile_of(card))
+    }
+
+    /// Where `id` was trashed from, while its "when trashed" abilities resolve.
+    pub fn trashed_from(&self, id: CardId) -> Option<Zone> {
+        self.trashing
+            .iter()
+            .rev()
+            .find(|(c, _)| *c == id)
+            .map(|(_, z)| *z)
     }
 
     pub fn pile_top(&self, id: PileId) -> Option<CardId> {
@@ -797,6 +813,7 @@ impl Game {
     ) -> u32 {
         let id = self.next_lasting;
         self.next_lasting += 1;
+        let turn = self.players[owner.index()].turns_taken;
         self.lasting.push(Lasting {
             id,
             card,
@@ -804,6 +821,7 @@ impl Game {
             source,
             keeps,
             until,
+            turn,
             data,
         });
         id

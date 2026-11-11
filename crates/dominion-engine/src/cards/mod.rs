@@ -12,7 +12,7 @@
 
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::frame::{Flow, Input};
-use crate::game::{Scratch, Until};
+use crate::game::{Lasting, Scratch, Until};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Plus, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -168,6 +168,31 @@ sets! {
     Promos => promos,
 }
 
+/// The Duration effects (from [`CardFrame::add_duration`]) due now, if `occ` is a
+/// `StartTurn`: the turn player's, made on an earlier turn of theirs (one played during
+/// this start of turn waits for the next).
+pub(crate) fn due_durations<'a>(g: &'a Game, occ: &Occasion) -> impl Iterator<Item = &'a Lasting> {
+    let player = match *occ {
+        Occasion::StartTurn { player } => Some(player),
+        _ => None,
+    };
+    g.lasting().iter().filter(move |l| {
+        Some(l.owner) == player
+            && l.until == Until::Removed
+            && l.turn < g.player(l.owner).turns_taken
+    })
+}
+
+/// The start-of-turn trigger that resolves Duration effect `l` as its card's `ability`.
+/// The ability calls [`CardFrame::end_lasting`].
+pub(crate) fn duration_trigger(l: &Lasting, ability: u8) -> Trigger {
+    let t = Trigger::new(l.owner, l.card, ability).via_lasting(l.id);
+    match l.source {
+        Some(c) => t.on(c),
+        None => t,
+    }
+}
+
 /// Which ability of a card is running.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Hook {
@@ -242,6 +267,11 @@ impl CardFrame {
             Until::Removed,
             data,
         )
+    }
+
+    /// Ends the lasting effect this triggered ability comes from, returning it.
+    pub(crate) fn end_lasting(&self, g: &mut Game) -> Option<Lasting> {
+        self.lasting.and_then(|id| g.remove_lasting(id))
     }
 
     /// The chain to pass when this card plays another card.

@@ -1,6 +1,8 @@
 //! Engine tests and shared helpers. Each set's card tests live in `tests/<set>.rs`.
 
 mod base;
+mod dark_ages;
+mod seaside;
 
 use crate::game::Zone;
 use crate::*;
@@ -9,7 +11,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 /// Sets whose cards are implemented; the fuzz test deals kingdoms from these.
-pub(crate) const IMPLEMENTED: &[Set] = &[Set::Base];
+pub(crate) const IMPLEMENTED: &[Set] = &[Set::Base, Set::Seaside, Set::DarkAges];
 
 pub(crate) const P0: PlayerId = PlayerId(0);
 pub(crate) const P1: PlayerId = PlayerId(1);
