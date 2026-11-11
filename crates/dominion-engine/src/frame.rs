@@ -530,7 +530,6 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 }
                 Input::Response(Response::Move(Move::EndPhase)) => {
                     g.turn.phase = Phase::Buy;
-                    g.turn.buy_phase_start = g.turn.gained.len();
                     *pc = 3;
                     return Flow::Call(Frame::window(Occasion::StartBuyPhase { player: p }));
                 }
@@ -736,11 +735,15 @@ fn resume_gain(
                 Dest::Discard => Zone::Discard(st.player),
                 Dest::Hand => Zone::Hand(st.player),
                 Dest::DeckTop => Zone::Deck(st.player),
+                Dest::SetAside => Zone::SetAside(st.player),
             };
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
                 g.turn.gained.push(kind);
+                if g.turn.phase == Phase::Buy {
+                    g.turn.gained_in_buy_phase.push(kind);
+                }
             }
             g.emit(Event::Gained {
                 player: st.player,

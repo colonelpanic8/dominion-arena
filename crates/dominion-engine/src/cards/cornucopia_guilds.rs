@@ -98,7 +98,7 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::MerchantGuild, Hook::Ability(MERCHANT_GUILD_COFFERS)) => {
-                let n = g.turn.gained.len() - g.turn.buy_phase_start.min(g.turn.gained.len());
+                let n = g.turn.gained_in_buy_phase.len();
                 g.players[f.player.index()].coffers += n as u32;
                 Flow::done()
             }
@@ -416,6 +416,7 @@ pub(crate) fn gained_to(g: &Game, card: CardId) -> Option<Zone> {
         Dest::Discard => Zone::Discard(st.player),
         Dest::Hand => Zone::Hand(st.player),
         Dest::DeckTop => Zone::Deck(st.player),
+        Dest::SetAside => Zone::SetAside(st.player),
     })
 }
 
