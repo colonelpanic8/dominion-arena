@@ -302,6 +302,20 @@ fn footpad_draws_on_gains_in_action_phases_only() {
 }
 
 #[test]
+fn footpad_in_the_black_market_deck_draws_on_gains() {
+    let mut g = setup_with(GameConfig {
+        setup_choices: [(Card::BlackMarket, vec![Card::Footpad])].into(),
+        ..GameConfig::new(2, vec![Card::BlackMarket, Card::Workshop], 7)
+    });
+    hand(&mut g, P0, &[Card::Workshop]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Workshop);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+}
+
+#[test]
 fn footpad_attacks_and_gives_coffers() {
     let mut g = setup(&[Card::Footpad]);
     hand(&mut g, P0, &[Card::Footpad]);

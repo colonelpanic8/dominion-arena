@@ -266,7 +266,8 @@ impl SetRules for Rules {
                     }
                     _ => {}
                 }
-                if g.turn.phase == Phase::Action && g.pile_of(Card::Footpad).is_some() {
+                // "In games using this": wherever its cards are (the Black Market deck).
+                if g.turn.phase == Phase::Action && setup::in_game(g, |c| c == Card::Footpad) {
                     out.push(Trigger::new(player, Card::Footpad, FOOTPAD_DRAW));
                 }
             }
