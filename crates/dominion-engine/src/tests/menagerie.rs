@@ -2076,6 +2076,45 @@ fn way_of_the_frog_puts_the_card_onto_the_deck_when_discarded_from_play() {
 }
 
 #[test]
+fn cards_played_with_way_of_the_frog_go_onto_the_deck_in_a_chosen_order() {
+    let mut g = way_game(Card::WayOfTheFrog, &[Card::Village, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Village, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    g.turn.cleanup_draw = 1;
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheFrog);
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheFrog);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(
+        trigger_labels(&g),
+        ["Way of the Frog (Village)", "Way of the Frog (Smithy)"]
+    );
+    respond(&mut g, Response::option(Opt::Trigger(1)));
+    // The Village went on last, so it is the card drawn.
+    assert_eq!(hand_kinds(&g, P0), [Card::Village]);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Smithy);
+}
+
+// A card played on another player's turn is discarded from play in that turn's Clean-up.
+#[test]
+#[ignore = "needs the off-turn discard-from-play window"]
+fn way_of_the_frog_used_out_of_turn_puts_the_card_onto_its_owners_deck() {
+    let mut g = way_game(Card::WayOfTheFrog, &[Card::BlackCat]);
+    hand(&mut g, P0, &[Card::Copper, Card::Copper]);
+    hand(&mut g, P1, &[Card::BlackCat]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Estate);
+    trigger(&mut g, Card::BlackCat);
+    way(&mut g, Card::WayOfTheFrog);
+    next_turn(&mut g);
+    assert_eq!(deck_kinds(&g, P1).first(), Some(&Card::BlackCat));
+}
+
+#[test]
 fn way_of_the_frog_on_a_throned_duration_does_not_topdeck_it() {
     let mut g = way_game(Card::WayOfTheFrog, &[Card::ThroneRoom, Card::Barge]);
     hand(&mut g, P0, &[Card::ThroneRoom, Card::Barge]);
@@ -2284,6 +2323,26 @@ fn way_of_the_turtle_sets_the_card_aside_and_plays_it_next_turn() {
     next_turn(&mut g);
     own(&mut g);
     assert_eq!((g.turn().actions, g.hand(P0).len()), (3, 6));
+}
+
+#[test]
+fn cards_set_aside_by_way_of_the_turtle_are_told_apart_when_ordering_their_plays() {
+    let mut g = way_game(Card::WayOfTheTurtle, &[Card::Village, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Village, Card::Village, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Village);
+    own(&mut g);
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheTurtle);
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheTurtle);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(
+        trigger_labels(&g),
+        ["Way of the Turtle (Village)", "Way of the Turtle (Smithy)"]
+    );
 }
 
 #[test]

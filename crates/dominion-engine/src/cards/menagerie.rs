@@ -371,7 +371,14 @@ impl SetRules for Rules {
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         for l in due_durations(g, occ) {
             if STARTS.contains(&l.card) {
-                out.push(duration_trigger(l, START));
+                let t = duration_trigger(l, START);
+                out.push(match l.data.pick {
+                    // Delay, Reap, Way of the Turtle: which set-aside card it plays.
+                    Some(c) if l.source.is_none() => {
+                        t.labelled(format!("{} ({})", l.card, g.card(c)))
+                    }
+                    _ => t,
+                });
             }
         }
         match *occ {
@@ -400,7 +407,14 @@ impl SetRules for Rules {
                         && g.zone(c) == Zone::InPlay(player)
                         && !kept
                     {
-                        out.push(Trigger::new(player, Card::WayOfTheFrog, FROG_TOPDECK).via_lasting(l.id));
+                        // Differently named cards go onto the deck in a chosen order.
+                        let kind = g.card(c);
+                        out.push(
+                            Trigger::new(player, Card::WayOfTheFrog, FROG_TOPDECK)
+                                .via_lasting(l.id)
+                                .data(kind as i32)
+                                .labelled(format!("Way of the Frog ({kind})")),
+                        );
                     }
                 }
             }
