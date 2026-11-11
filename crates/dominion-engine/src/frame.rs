@@ -382,12 +382,11 @@ impl Frame {
                     return Flow::Call(Frame::shuffle(p));
                 }
                 let cards: Vec<CardId> = pl.deck.iter().rev().take(*count).copied().collect();
-                if *reveal {
-                    for &c in &cards {
-                        g.emit(Event::Revealed {
-                            player: p,
-                            card: g.card(c),
-                        });
+                for &c in &cards {
+                    if *reveal {
+                        g.reveal(p, c);
+                    } else {
+                        g.show_to(c, p);
                     }
                 }
                 Flow::Done(Value::Cards(cards))
@@ -421,6 +420,7 @@ impl Frame {
                 *i = 1;
                 for &c in cards.iter() {
                     let from = g.zone(c);
+                    g.show(c);
                     if !cards::trash_instead(g, *player, c) {
                         g.move_card(c, Zone::Trash, Pos::Top);
                     }
@@ -458,6 +458,7 @@ impl Frame {
                 // Cards discarded together are all discarded before any reacts.
                 if *i == 0 {
                     for &c in cards.iter() {
+                        g.show(c);
                         g.move_card(c, Zone::Discard(*player), Pos::Top);
                         g.emit(Event::Discarded {
                             player: *player,
@@ -540,8 +541,17 @@ fn resume_shuffle(
             *bottom = under.clone();
             under.extend(rest);
             for &c in &under {
+                let from = g.zones[c.index()];
                 g.zones[c.index()] = Zone::Deck(p);
+                g.record(|| crate::Trace::Moved {
+                    card: c,
+                    from,
+                    to: Zone::Deck(p),
+                    top: false,
+                });
             }
+            let mixed = under.clone();
+            g.record(|| crate::Trace::Mixed { cards: mixed });
             *count = under.len();
             let pl = &mut g.players[p.index()];
             under.append(&mut pl.deck);
@@ -615,6 +625,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                 g.turn.previous = last;
                 g.turn.controller = extra.controller;
                 g.turn.extra = Some(extra.source);
+                g.record_turn();
                 *pc = 1;
                 return Flow::Call(Frame::Turn {
                     player: extra.player,
@@ -638,6 +649,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
                 g.turn.previous = last;
                 *next = g.left_of(*next);
             }
+            g.record_turn();
             *pc = 1;
             Flow::Call(Frame::Turn {
                 player: g.turn.player,
@@ -963,6 +975,7 @@ fn resume_gain(
                     g.trade_route_mat += 1;
                 }
             }
+            g.show(st.card);
             g.move_card(st.card, zone, Pos::Top);
             if let Zone::SetAside(p) = zone {
                 g.players[p.index()].face_up.push(st.card);

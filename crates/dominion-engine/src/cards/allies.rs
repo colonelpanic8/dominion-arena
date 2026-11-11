@@ -2315,10 +2315,7 @@ fn battle_plan(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.pc = 2;
             if let Some(c) = input.card() {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
                 return Flow::Call(Frame::draw(p, 1));
             }
             Flow::Continue
@@ -2366,10 +2363,7 @@ fn archer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .filter(|c| !hidden.contains(c))
                 .collect();
             for &c in &revealed {
-                g.emit(Event::Revealed {
-                    player: target,
-                    card: g.card(c),
-                });
+                g.reveal(target, c);
             }
             f.pc = 2;
             f.ask_cards(revealed, 1, 1, Purpose::Discard)

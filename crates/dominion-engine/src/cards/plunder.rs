@@ -17,7 +17,7 @@ use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{ExtraLimit, ExtraTurn, Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
-use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Trace, Types};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1393,6 +1393,9 @@ fn gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn react(g: &mut Game, f: &mut CardFrame) -> Flow {
     let c = f.this();
     if f.card == Card::Shield {
+        if let Some(c) = f.this {
+            g.show(c);
+        }
         g.emit(Event::Revealed {
             player: f.player,
             card: Card::Shield,
@@ -1629,10 +1632,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let under: Vec<CardId> = f.s.cards[top..].iter().copied().filter(in_deck).collect();
             for &c in on_top.iter().chain(&under) {
                 if is_traited(g, c, Card::Fated) {
-                    g.emit(Event::Revealed {
-                        player: p,
-                        card: g.card(c),
-                    });
+                    g.reveal(p, c);
                 }
             }
             let rest = shuffled.len() - shuffled.iter().filter(|c| f.s.cards.contains(c)).count();
@@ -1831,18 +1831,25 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     g.create(default, Zone::Deck(p));
                 } else {
                     // The chosen card goes back to the box and the default one comes back.
+                    let from = g.cards[x.index()];
                     g.cards[x.index()] = default;
+                    g.record(|| Trace::Changed {
+                        card: x,
+                        from,
+                        to: default,
+                    });
                 }
             }
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
             g.shuffle(&mut deck);
+            let mixed = deck.clone();
+            g.record(|| Trace::Mixed { cards: mixed });
             g.players[p.index()].deck = deck;
             for _ in 0..5 {
-                let Some(top) = g.players[p.index()].deck.pop() else {
+                let Some(&top) = g.players[p.index()].deck.last() else {
                     break;
                 };
-                g.zones[top.index()] = Zone::Hand(p);
-                g.players[p.index()].hand.push(top);
+                g.move_card(top, Zone::Hand(p), Pos::Top);
             }
             Flow::done()
         }
@@ -2602,6 +2609,7 @@ fn bury(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
     for c in input.cards() {
         if g.zone(c) == Zone::Discard(p) {
+            g.show(c);
             g.move_card(c, Zone::Deck(p), Pos::Bottom);
             g.emit(Event::Moved {
                 player: p,
@@ -2655,10 +2663,7 @@ fn foray(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let chosen = input.cards();
             for &c in &chosen {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
             }
             let mut names: Vec<Card> = chosen.iter().map(|&c| g.card(c)).collect();
             names.sort();

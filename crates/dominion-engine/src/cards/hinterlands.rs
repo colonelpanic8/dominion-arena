@@ -124,6 +124,9 @@ impl SetRules for Rules {
             }
             (Card::Tunnel, Hook::Ability(TUNNEL_GOLD)) => {
                 if f.pc == 0 {
+                    if let Some(c) = f.this {
+                        g.show(c);
+                    }
                     g.emit(Event::Revealed {
                         player: f.player,
                         card: Card::Tunnel,
@@ -163,6 +166,9 @@ impl SetRules for Rules {
                     && let Some(silvers) = g.supply_pile(Card::Silver)
                     && let Some(silver) = g.pile_top(silvers)
                 {
+                    if let Some(c) = f.this {
+                        g.show(c);
+                    }
                     g.emit(Event::Revealed {
                         player: f.player,
                         card: Card::Trader,
@@ -721,10 +727,7 @@ fn inn_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let p = f.player;
             for c in input.cards() {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
                 g.move_card(c, Zone::Deck(p), Pos::Top);
             }
             f.pc = 2;
@@ -983,10 +986,7 @@ fn witchs_hut(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let chosen = input.cards();
             for &c in &chosen {
-                g.emit(Event::Revealed {
-                    player: f.player,
-                    card: g.card(c),
-                });
+                g.reveal(f.player, c);
             }
             f.s.n = (chosen.len() == 2 && chosen.iter().all(|&c| g.is(c, Types::ACTION))) as i32;
             f.pc = 2;

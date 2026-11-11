@@ -307,10 +307,7 @@ fn bauble_chooses_two_different_options_and_can_topdeck_gains() {
     decline(&mut g);
     // Clean-up drew the Silver from the deck; the Copper was discarded.
     assert!(hand_kinds(&g, P0).contains(&Card::Silver));
-    assert!(!g.log().contains(&Event::TopDecked {
-        player: P0,
-        card: Card::Copper
-    }));
+    assert!(discard_kinds(&g, P0).contains(&Card::Copper));
 }
 
 #[test]

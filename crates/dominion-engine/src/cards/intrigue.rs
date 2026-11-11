@@ -307,10 +307,7 @@ fn courtier(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            g.emit(Event::Revealed {
-                player: f.player,
-                card: g.card(c),
-            });
+            g.reveal(f.player, c);
             let n = g.types(c).bits().count_ones() as usize;
             f.pc = 2;
             f.ask_modes(&["+1 Action", "+1 Buy", "+$3", "Gain a Gold"], n, n)
@@ -356,6 +353,9 @@ fn diplomat_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             g.ext.intrigue.reveals += 1;
+            if let Some(c) = f.this {
+                g.show(c);
+            }
             g.emit(Event::Revealed {
                 player: f.player,
                 card: Card::Diplomat,
@@ -1039,6 +1039,9 @@ fn secret_chamber_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             g.ext.intrigue.reveals += 1;
+            if let Some(c) = f.this {
+                g.show(c);
+            }
             g.emit(Event::Revealed {
                 player: f.player,
                 card: Card::SecretChamber,

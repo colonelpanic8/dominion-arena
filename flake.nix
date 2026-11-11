@@ -42,6 +42,7 @@
         version = workspace.workspace.package.version;
         inherit src;
         cargoLock.lockFile = ./Cargo.lock;
+        meta.mainProgram = "dominion";
       };
     in {
       packages.default = dominion;

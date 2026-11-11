@@ -19,3 +19,7 @@ build:
     cargo build --workspace
 
 check: fmt-check clippy test
+
+# Copy the agent-view@2 schema from a dominion-agents checkout.
+sync-protocol agents="../dominion-agents":
+    cp {{agents}}/protocol/agent-view.schema.json crates/dominion-agent/protocol/

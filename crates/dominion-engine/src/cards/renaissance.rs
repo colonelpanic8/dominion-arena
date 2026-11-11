@@ -740,10 +740,7 @@ fn silos(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let chosen = input.cards();
             for &c in &chosen {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
+                g.reveal(p, c);
             }
             f.s.n = chosen.len() as i32;
             f.pc = 2;

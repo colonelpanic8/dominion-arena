@@ -42,6 +42,41 @@ println!("{:?}", game.outcome());
 
 A `Game` can be cloned or serialized at any point, including mid-decision.
 
+## Playing over the agent protocol
+
+`crates/dominion-agent` implements `dominion/agent-view@2`, the protocol defined in
+[dominion-agents](https://github.com/colonelpanic8/dominion-agents) (`protocol/`): each
+seat gets a JSON view of everything it may know, with perfect recall (cards it has seen
+stay known until it can no longer tell them apart), plus its open decision as indexed
+options; it answers with option indices. A `Table` hosts a game this way; the crate also
+renders views as compact text for language models.
+
+The `dominion` binary (`crates/dominion-server`) serves games over MCP (streamable HTTP):
+
+```sh
+nix run . -- serve                 # or: cargo run -p dominion-server -- serve
+claude mcp add --transport http dominion http://127.0.0.1:7317/mcp
+```
+
+Tools: `create_game` (returns one secret token per seat), `join_game`, `view`,
+`wait_for_decision`, `answer`, `card`, `list_games`. A seat's token is the only way to see
+or act for it; pass it to each call (or `join_game` once, in clients that keep MCP
+sessions). Views come back as structured JSON plus their text rendering.
+
+Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
+
+```toml
+listen = "127.0.0.1"           # serve: address to listen on
+port = 7317                    # serve: port
+allowed_hosts = []             # serve: extra Host header values to accept
+server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to
+```
+
+`dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
+its first seat in the terminal and prints the other seats' tokens;
+`dominion play --game ID --token T` plays a seat of an existing game. `dominion card NAME`
+prints a card's text.
+
 ## Development
 
 `nix develop` (or direnv) provides the toolchain. Run `just check` before

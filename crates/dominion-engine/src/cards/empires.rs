@@ -905,10 +905,7 @@ fn emit_hand(g: &mut Game, p: PlayerId) {
 
 fn emit_revealed(g: &mut Game, p: PlayerId, cards: &[CardId]) {
     for &c in cards {
-        g.emit(Event::Revealed {
-            player: p,
-            card: g.card(c),
-        });
+        g.reveal(p, c);
     }
 }
 

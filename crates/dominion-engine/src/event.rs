@@ -49,9 +49,9 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
+    /// A card went onto the deck. Which card is public only if it was revealed.
     TopDecked {
         player: PlayerId,
-        card: Card,
     },
     SetAside {
         player: PlayerId,

@@ -16,7 +16,9 @@ mod event;
 mod frame;
 mod game;
 mod ids;
+mod knowledge;
 mod setup;
+mod trace;
 mod trigger;
 
 #[cfg(test)]
@@ -31,5 +33,7 @@ pub use game::{
     Scratch, Token, Turn, Until, Zone,
 };
 pub use ids::{CardId, PileId, PlayerId};
+pub use knowledge::{CardCount, GroupView, Knowledge, KnownCards, UncertainCards, ZoneKnowledge};
 pub use setup::{GameConfig, SetupError};
+pub use trace::Trace;
 pub use trigger::{Occasion, Trigger};

@@ -1230,10 +1230,7 @@ fn young_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let t = f.targets[f.s.i];
             if input.is_yes() {
                 let c = f.s.pick.expect("set in step 2");
-                g.emit(Event::Revealed {
-                    player: t,
-                    card: g.card(c),
-                });
+                g.reveal(t, c);
                 f.s.i += 1;
                 f.pc = 2;
                 return Flow::Continue;
@@ -1583,10 +1580,7 @@ fn tournament(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .iter()
                     .find(|&&c| g.card(c) == Card::Province)
                     .expect("checked in step 0");
-                g.emit(Event::Revealed {
-                    player: q,
-                    card: Card::Province,
-                });
+                g.reveal(q, province);
                 if q == f.player {
                     f.s.pick = Some(province);
                 } else {

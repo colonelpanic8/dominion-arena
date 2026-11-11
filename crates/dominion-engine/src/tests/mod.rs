@@ -10,6 +10,7 @@ mod elder;
 mod empires;
 mod hinterlands;
 mod intrigue;
+mod knowledge;
 mod menagerie;
 mod nocturne;
 mod plunder;
