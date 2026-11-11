@@ -445,6 +445,10 @@ pub struct PlayState {
     /// The turn's $ when the card's own effect began (after "when you play" effects, such
     /// as a +$1 token): "if it gave you +$".
     pub coins: u32,
+    /// The log's length when the card's instructions were last begun (they are followed
+    /// more than once for a Reckless card): "if this made you shuffle".
+    #[serde(default)]
+    pub run_since: usize,
 }
 
 impl Game {

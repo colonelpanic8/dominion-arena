@@ -1788,16 +1788,13 @@ fn contract(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// +1 Action and +2 Favors if this play's +3 Cards made its player shuffle.
+/// +1 Action and +2 Favors if the +3 Cards it just gave made its player shuffle.
 fn emissary(g: &mut Game, f: &mut CardFrame) {
     let p = f.player;
-    let card = g.card(f.this());
-    let played = g
-        .log()
-        .iter()
-        .rposition(|e| matches!(e, Event::Played { player, card: c } if *player == p && *c == card));
-    let shuffled = played.is_some_and(|i| {
-        g.log()[i..]
+    let this = f.this();
+    let run = g.plays.iter().rev().find(|st| st.card == this);
+    let shuffled = run.is_some_and(|st| {
+        g.log()[st.run_since..]
             .iter()
             .any(|e| matches!(e, Event::Shuffled { player } if *player == p))
     });

@@ -761,6 +761,37 @@ fn emissary_with_an_empty_discard_pile_does_not_shuffle() {
 }
 
 #[test]
+fn emissary_is_rewarded_only_for_a_shuffle_its_own_three_cards_caused() {
+    // Followed twice, only its first +3 Cards shuffles.
+    let mut g = game(&[Card::Emissary]);
+    let pile = g.pile_of(Card::Emissary).unwrap();
+    g.landscapes.push(Card::Reckless);
+    g.piles[pile.index()].traits.push(Card::Reckless);
+    set_favors(&mut g, P0, 0);
+    hand(&mut g, P0, &[Card::Emissary]);
+    deck(&mut g, P0, &[Card::Copper; 2]);
+    discard(&mut g, P0, &[Card::Estate; 6]);
+    g.start();
+    play(&mut g, Card::Emissary);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!((g.turn().actions, favors(&g, P0)), (1, 2));
+
+    // The +1 Card token's draw shuffles before the +3 Cards.
+    let mut g = game(&[Card::Emissary]);
+    let pile = g.pile_of(Card::Emissary).unwrap();
+    g.players[0].tokens.insert(Token::PlusCard, Some(pile));
+    g.piles[pile.index()].tokens.push((P0, Token::PlusCard));
+    set_favors(&mut g, P0, 0);
+    hand(&mut g, P0, &[Card::Emissary]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[Card::Estate; 6]);
+    g.start();
+    play(&mut g, Card::Emissary);
+    assert_eq!(g.hand(P0).len(), 4);
+    assert_eq!((g.turn().actions, favors(&g, P0)), (0, 0));
+}
+
+#[test]
 fn galleria_gives_a_buy_for_each_gain_costing_three_or_four() {
     let mut g = game(&[Card::Galleria, Card::Smithy]);
     hand(&mut g, P0, &[Card::Galleria, Card::Gold, Card::Gold]);

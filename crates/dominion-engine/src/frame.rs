@@ -1267,6 +1267,7 @@ impl PlayFrame {
                     blocked: false,
                     since,
                     coins: g.turn.coins,
+                    run_since: since,
                 });
                 self.pc = 1;
                 Flow::Call(Frame::window(Occasion::Play {
@@ -1347,7 +1348,9 @@ impl PlayFrame {
                 Flow::Continue
             }
             4 => {
-                let st = g.plays.last().expect("play in progress").clone();
+                let st = g.plays.last_mut().expect("play in progress");
+                st.run_since = g.log.len();
+                let st = st.clone();
                 self.pc = 7;
                 if st.blocked && st.way.is_none() {
                     return Flow::Continue;
