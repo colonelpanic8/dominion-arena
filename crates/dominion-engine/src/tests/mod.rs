@@ -488,3 +488,28 @@ pub(crate) fn random_game_with_kingdom_decks(config: GameConfig, seed: u64) -> G
     g.start();
     drive_randomly(g, seed)
 }
+
+/// Kingdoms (and landscapes) dealt from every implemented set, with every player's deck
+/// seeded with the Kingdom cards so cross-set interactions actually happen.
+#[test]
+fn cross_set_games_keep_invariants() {
+    for seed in 0..fuzz_seeds(100) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xc0ffee);
+        let players = rng.random_range(2..=4);
+        let mut config = GameConfig::random(players, IMPLEMENTED, seed);
+        config.turn_limit = Some(60);
+        let g = random_game_with_kingdom_decks(config, seed);
+        if std::env::var("FUZZ_STATS").is_ok() {
+            let plays = g
+                .log()
+                .iter()
+                .filter(|e| matches!(e, Event::Played { .. }))
+                .count();
+            let turns: u32 = g.outcome().unwrap().turns.iter().sum();
+            eprintln!(
+                "seed {seed}: {turns} turns, {plays} plays, {:?}",
+                g.outcome().unwrap().reason
+            );
+        }
+    }
+}
