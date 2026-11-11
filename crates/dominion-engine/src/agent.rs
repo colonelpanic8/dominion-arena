@@ -129,6 +129,10 @@ impl<'a> View<'a> {
         self.game.player(p).discard.len()
     }
 
+    pub fn favors(&self, p: PlayerId) -> u32 {
+        self.game.player(p).favors
+    }
+
     pub fn discard_top(&self, p: PlayerId) -> Option<Card> {
         self.game
             .player(p)

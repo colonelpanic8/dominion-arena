@@ -422,7 +422,11 @@ impl CardFrame {
     }
 
     pub(crate) fn ask_name(&self) -> Flow {
-        self.ask(self.player, DecisionKind::NameCard, Purpose::Name)
+        self.ask_name_for(self.player)
+    }
+
+    pub(crate) fn ask_name_for(&self, player: PlayerId) -> Flow {
+        self.ask(player, DecisionKind::NameCard, Purpose::Name)
     }
 
     pub(crate) fn ask_number(&self, min: i32, max: i32, purpose: Purpose) -> Flow {
