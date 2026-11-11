@@ -828,7 +828,7 @@ fn swindler(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 1;
-                return Flow::Call(Frame::reveal(target, 1));
+                return Flow::Call(Frame::look(target, 1));
             }
             1 => {
                 let Some(c) = input.take().and_then(Input::card) else {

@@ -172,7 +172,7 @@ fn vassal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 1))
+            Flow::Call(Frame::look(f.player, 1))
         }
         1 => {
             let Some(c) = input.card() else {

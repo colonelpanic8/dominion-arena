@@ -218,6 +218,22 @@ fn vassal_shuffles_and_plays_the_discarded_action() {
     assert_eq!(kinds(&g, g.in_play(P0)), [Card::Vassal, Card::Smithy]);
 }
 
+/// Vassal discards the top card without revealing it, so a Patron gives no Coffers.
+#[test]
+fn vassal_does_not_reveal_the_card_it_discards() {
+    let mut g = setup(&[Card::Vassal, Card::Patron]);
+    hand(&mut g, P0, &[Card::Vassal]);
+    deck(&mut g, P0, &[Card::Patron, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Vassal);
+    assert_eq!(purpose(&g), Purpose::Play);
+    assert!(g.log().contains(&Event::Discarded {
+        player: P0,
+        card: Card::Patron
+    }));
+    assert_eq!(g.player(P0).coffers, 0);
+}
+
 #[test]
 fn gardens_count_owned_cards() {
     let mut g = setup(&[Card::Gardens]);

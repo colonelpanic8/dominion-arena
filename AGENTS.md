@@ -189,6 +189,8 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   check `g.zone(id)` is still that zone. That includes cards from `Frame::look` /
   `Frame::reveal`: they stay on the deck, where a "when trashed" draw in the middle of
   the effect can take one.
+- `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
+  "discard / trash the top card" takes it with `Frame::look`.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
   Heirlooms/Shelters-like changes, and two phases (`setup::complete`). `ensure` adds
   what the cards in the game need (extra piles, Boons/Hexes, set-aside cards, an Ally
