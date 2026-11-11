@@ -60,6 +60,23 @@ fn black_market_deck_is_unused_kingdom_cards_face_down() {
     assert_eq!(no_bm.ext.promos.black_market, None);
 }
 
+/// A card in the Black Market deck is in the game.
+#[test]
+fn a_card_in_the_black_market_deck_brings_its_heirloom() {
+    let g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        setup_choices: [(Card::BlackMarket, vec![Card::Shepherd, Card::Village])]
+            .into_iter()
+            .collect(),
+        ..GameConfig::new(2, vec![Card::BlackMarket], 3)
+    });
+    for p in [P0, P1] {
+        assert_eq!(g.count_owned(p, Card::Pasture), 1);
+        assert_eq!(g.count_owned(p, Card::Copper), 6);
+    }
+}
+
 #[test]
 fn black_market_buys_in_the_action_phase_without_using_a_buy() {
     let mut g = setup(&[Card::BlackMarket]);
