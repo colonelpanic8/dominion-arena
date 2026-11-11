@@ -721,6 +721,13 @@ fn resume_gain(
                 Dest::Hand => Zone::Hand(st.player),
                 Dest::DeckTop => Zone::Deck(st.player),
             };
+            if let Zone::Pile(pile) = g.zone(st.card) {
+                let pile = &mut g.piles[pile.index()];
+                if pile.trade_route {
+                    pile.trade_route = false;
+                    g.trade_route_mat += 1;
+                }
+            }
             g.move_card(st.card, zone, Pos::Top);
             let kind = g.card(st.card);
             if st.player == g.turn.player {
