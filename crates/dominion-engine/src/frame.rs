@@ -897,6 +897,7 @@ impl PlayFrame {
                 g.emit(Event::Played { player: p, card });
                 if p == g.turn.player {
                     g.turn.played.push(card);
+                    g.turn.played_ids.push(id);
                 }
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {
