@@ -1063,7 +1063,7 @@ fn pearl_diver(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             for c in input.cards() {
                 if g.zone(c) == Zone::Deck(p) {
-                    g.move_card(c, Zone::Deck(p), Pos::Top);
+                    g.top_deck(c, p);
                 }
             }
             Flow::done()

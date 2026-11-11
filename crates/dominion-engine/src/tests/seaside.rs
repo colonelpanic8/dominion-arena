@@ -1165,6 +1165,8 @@ fn pearl_diver_may_move_the_bottom_card_to_the_top() {
     let bottom = candidates(&g);
     choose(&mut g, &bottom);
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Estate, Card::Estate]);
+    // Everyone sees that a card was moved, not which one.
+    assert_eq!(g.log().last(), Some(&Event::TopDecked { player: P0 }));
 }
 
 #[test]
