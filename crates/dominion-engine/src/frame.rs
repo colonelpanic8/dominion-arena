@@ -562,6 +562,12 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             ask_moves(p, Phase::Action, moves)
         }
         3 => {
+            // An effect returned to the Action phase (Launch, ...).
+            if g.turn.phase == Phase::Action {
+                g.turn.bought = false;
+                *pc = 2;
+                return Flow::Continue;
+            }
             if let Input::Response(Response::Move(m)) = input {
                 match m {
                     Move::Play(c) => return Flow::Call(Frame::play(p, c, true, vec![])),

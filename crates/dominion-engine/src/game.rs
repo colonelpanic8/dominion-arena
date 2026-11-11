@@ -175,7 +175,8 @@ pub struct Turn {
     pub buys: u32,
     pub coins: u32,
     pub potions: u32,
-    /// Bought anything (card, Event or Project) this turn.
+    /// Bought anything (card, Event or Project) in this Buy phase (Treasures can't be played
+    /// after that).
     pub bought: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
