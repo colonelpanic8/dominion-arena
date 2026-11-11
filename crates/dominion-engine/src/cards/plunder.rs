@@ -11,7 +11,7 @@
 //! Traits sit on their pile (`Pile::traits`); the Loot pile is a face-down non-Supply pile
 //! named [`Card::Loot`].
 
-use super::{CardFrame, Hook, SetRules, duration_trigger, mode_mask, turn_durations};
+use super::{CardFrame, Hook, SetRules, Step, duration_trigger, mode_mask, turn_durations};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -420,6 +420,24 @@ impl SetRules for Rules {
 
     fn extra_runs(g: &Game, _p: PlayerId, id: CardId) -> u32 {
         u32::from(is_traited(g, id, Card::Reckless))
+    }
+
+    /// Notes +$ a step gave on the play in progress of the card whose ability it is
+    /// (Harbor Village). Way of the Chameleon's exchange (Menagerie's, which runs first)
+    /// counts as what the step gave.
+    fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, _flow: &mut Flow) {
+        if f.player != g.turn.player || g.turn.coins <= before.coins {
+            return;
+        }
+        let this = f.this.or_else(|| {
+            let id = f.lasting?;
+            g.lasting().iter().find(|l| l.id == id)?.source
+        });
+        if let Some(st) = g.plays.iter_mut().rev().find(|st| Some(st.card) == this)
+            && (f.card == st.behavior || Some(f.card) == st.way)
+        {
+            st.gave_coins = true;
+        }
     }
 
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {
@@ -1529,8 +1547,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.end_lasting(g);
-            let gave = play_state(g, card).is_some_and(|st| g.turn.coins > st.coins);
-            if gave {
+            if play_state(g, card).is_some_and(|st| st.gave_coins) {
                 coins(g, p, 1);
             }
             Flow::done()

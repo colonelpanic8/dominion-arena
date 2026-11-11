@@ -2961,6 +2961,37 @@ fn flagship_replays_the_throne_room_played_next_not_the_card_it_plays() {
 }
 
 #[test]
+fn harbor_village_pays_for_coins_the_next_action_gave_and_then_lost() {
+    let mut g = setup(&[Card::HarborVillage, Card::PoorHouse]);
+    let mut cards = vec![Card::HarborVillage, Card::PoorHouse];
+    cards.extend([Card::Copper; 4]);
+    hand(&mut g, P0, &cards);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::PoorHouse);
+    // +$4, then -$1 per Treasure in hand.
+    assert_eq!(g.turn().coins, 1);
+}
+
+#[test]
+fn harbor_village_ignores_the_coin_of_a_boon_the_next_action_received() {
+    let mut g = setup(&[Card::HarborVillage, Card::Druid]);
+    g.ext.nocturne.druid = vec![
+        Card::TheForestsGift,
+        Card::TheSeasGift,
+        Card::TheMountainsGift,
+    ];
+    hand(&mut g, P0, &[Card::HarborVillage, Card::Druid]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::Druid);
+    pick(&mut g, Card::TheForestsGift);
+    assert_eq!(g.turn().coins, 1);
+}
+
+#[test]
 fn harbor_village_looks_at_the_next_action_played_not_one_that_action_plays() {
     // Vassal gives +$2 and plays a Village, which finishes first.
     let mut g = setup(&[Card::HarborVillage, Card::Vassal, Card::Village]);
@@ -2977,6 +3008,24 @@ fn harbor_village_looks_at_the_next_action_played_not_one_that_action_plays() {
         [Card::HarborVillage, Card::Vassal, Card::Village]
     );
     assert_eq!(g.turn().coins, 3);
+}
+
+#[test]
+fn harbor_village_does_not_pay_for_the_coins_of_a_card_the_next_action_played() {
+    // Throne Room gives no +$ itself; the Militia it plays is a later Action.
+    let mut g = setup(&[Card::HarborVillage, Card::ThroneRoom, Card::Militia]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::HarborVillage, Card::ThroneRoom, Card::Militia],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    hand(&mut g, P1, &[Card::Copper; 3]);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Militia]);
+    assert_eq!(g.turn().coins, 4);
 }
 
 #[test]

@@ -458,9 +458,11 @@ pub struct PlayState {
     /// The log's length when the play began: effects set up later ("the next time you
     /// play ...") don't respond to it.
     pub since: usize,
-    /// The turn's $ when the card's own effect began (after "when you play" effects, such
-    /// as a +$1 token): "if it gave you +$".
-    pub coins: u32,
+    /// Whether the card's own instructions (its bonuses and abilities, or those of the Way
+    /// used instead) have given +$ during this play, whatever became of the $ since: "if it
+    /// gave you +$". Not the +$ of cards it played, tokens or Boons.
+    #[serde(default)]
+    pub gave_coins: bool,
     /// The log's length when the card's instructions were last begun (they are followed
     /// more than once for a Reckless card): "if this made you shuffle".
     #[serde(default)]

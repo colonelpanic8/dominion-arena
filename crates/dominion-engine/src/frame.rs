@@ -1337,7 +1337,7 @@ impl PlayFrame {
                     replaced: None,
                     blocked: false,
                     since,
-                    coins: g.turn.coins,
+                    gave_coins: false,
                     run_since: since,
                 });
                 self.pc = 1;
@@ -1347,7 +1347,6 @@ impl PlayFrame {
                 }))
             }
             1 => {
-                g.plays.last_mut().expect("play in progress").coins = g.turn.coins;
                 // Reactions to an Attack (Moat, ...) come before its player picks a Way, and
                 // answer the card being played, whatever it ends up doing.
                 self.pc = 2;
@@ -1473,7 +1472,9 @@ impl PlayFrame {
                     g.turn.buys += bonus.plus.buys as u32;
                     g.turn.potions += bonus.potions;
                 }
+                let had = g.turn.coins;
                 g.add_coins(p, bonus.plus.coins as u32 + bonus.coins);
+                g.plays.last_mut().expect("play in progress").gave_coins |= g.turn.coins > had;
                 self.pc = 5;
                 Flow::Call(Frame::draw(p, bonus.plus.cards as usize))
             }
