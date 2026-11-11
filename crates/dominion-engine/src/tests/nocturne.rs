@@ -1243,3 +1243,573 @@ fn the_zombies() {
     assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
     assert_eq!(g.turn().actions, 1);
 }
+
+// ---- Fate cards and Boons ----
+
+/// A game where P0 plays Bard and receives `boon`.
+fn bard_receives(boon: Card, hand_cards: &[Card], deck_cards: &[Card]) -> Game {
+    let mut g = setup(&[Card::Bard, Card::Smithy]);
+    let mut cards = vec![Card::Bard];
+    cards.extend(hand_cards);
+    hand(&mut g, P0, &cards);
+    deck(&mut g, P0, deck_cards);
+    stack_boons(&mut g, &[boon]);
+    g.start();
+    play(&mut g, Card::Bard);
+    g
+}
+
+#[test]
+fn bard_gives_two_coins_and_a_boon() {
+    let g = bard_receives(Card::TheMountainsGift, &[], &[]);
+    assert_eq!(g.turn().coins, 2);
+    assert_eq!(discard_kinds(&g, P0), [Card::Silver]);
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheMountainsGift));
+}
+
+#[test]
+fn the_earths_gift_discards_a_treasure_to_gain_a_card_up_to_four() {
+    let mut g = bard_receives(Card::TheEarthsGift, &[Card::Copper, Card::Estate], &[]);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert!(!pile_options(&g).contains(&Card::Gold));
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(discard_kinds(&g, P0), [Card::Copper, Card::Smithy]);
+}
+
+#[test]
+fn the_fields_and_forests_gifts_are_kept_until_cleanup() {
+    let mut g = bard_receives(Card::TheFieldsGift, &[], &[Card::Copper; 10]);
+    assert_eq!((g.turn().actions, g.turn().coins), (1, 3));
+    assert_eq!(g.player(P0).boons_kept, [Card::TheFieldsGift]);
+    assert!(!g.boons().discard.contains(&Card::TheFieldsGift));
+    next_turn(&mut g);
+    assert!(g.player(P0).boons_kept.is_empty());
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheFieldsGift));
+
+    let g = bard_receives(Card::TheForestsGift, &[], &[]);
+    assert_eq!((g.turn().buys, g.turn().coins), (2, 3));
+    assert_eq!(g.player(P0).boons_kept, [Card::TheForestsGift]);
+}
+
+#[test]
+fn the_flames_gift_may_trash_a_card() {
+    let mut g = bard_receives(Card::TheFlamesGift, &[Card::Estate], &[]);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(trash_kinds(&g).last(), Some(&Card::Estate));
+}
+
+#[test]
+fn the_moons_gift_puts_a_card_from_the_discard_pile_onto_the_deck() {
+    let mut g = setup(&[Card::Bard]);
+    hand(&mut g, P0, &[Card::Bard]);
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(&mut g, P0, &[Card::Gold, Card::Estate]);
+    stack_boons(&mut g, &[Card::TheMoonsGift]);
+    g.start();
+    play(&mut g, Card::Bard);
+    choose_kinds(&mut g, &[Card::Gold]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Copper]);
+}
+
+#[test]
+fn the_rivers_gift_draws_a_card_after_the_cleanup_draw() {
+    let mut g = bard_receives(Card::TheRiversGift, &[], &[Card::Copper; 10]);
+    assert_eq!(g.player(P0).boons_kept, [Card::TheRiversGift]);
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheRiversGift));
+}
+
+#[test]
+fn the_seas_and_winds_gifts() {
+    let g = bard_receives(Card::TheSeasGift, &[], &[Card::Copper; 3]);
+    assert_eq!(g.hand(P0).len(), 1);
+
+    let mut g = bard_receives(Card::TheWindsGift, &[Card::Estate], &[Card::Copper; 3]);
+    choose_kinds(&mut g, &[Card::Estate, Card::Copper]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+}
+
+#[test]
+fn the_skys_gift_discards_three_cards_for_a_gold() {
+    let mut g = bard_receives(
+        Card::TheSkysGift,
+        &[Card::Estate, Card::Estate, Card::Estate, Card::Copper],
+        &[],
+    );
+    yes(&mut g);
+    choose_kinds(&mut g, &[Card::Estate, Card::Estate, Card::Estate]);
+    assert_eq!(discard_kinds(&g, P0)[3..], [Card::Gold]);
+
+    let mut g = bard_receives(Card::TheSkysGift, &[Card::Estate, Card::Estate], &[]);
+    yes(&mut g);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate, Card::Estate]);
+}
+
+#[test]
+fn the_suns_gift_sifts_the_top_four() {
+    let mut g = bard_receives(
+        Card::TheSunsGift,
+        &[],
+        &[
+            Card::Estate,
+            Card::Copper,
+            Card::Silver,
+            Card::Gold,
+            Card::Duchy,
+        ],
+    );
+    choose_kinds(&mut g, &[Card::Estate]);
+    choose_kinds(&mut g, &[Card::Gold, Card::Copper, Card::Silver]);
+    assert_eq!(
+        deck_kinds(&g, P0),
+        [Card::Gold, Card::Copper, Card::Silver, Card::Duchy]
+    );
+}
+
+#[test]
+fn the_swamps_gift_gains_a_will_o_wisp() {
+    let g = bard_receives(Card::TheSwampsGift, &[], &[]);
+    assert_eq!(discard_kinds(&g, P0), [Card::WillOWisp]);
+}
+
+#[test]
+fn the_boons_deck_reshuffles_its_discards() {
+    let mut g = setup(&[Card::Bard]);
+    hand(&mut g, P0, &[Card::Bard]);
+    g.boons.draw.clear();
+    g.boons.discard = vec![Card::TheSwampsGift];
+    g.start();
+    play(&mut g, Card::Bard);
+    assert_eq!(discard_kinds(&g, P0), [Card::WillOWisp]);
+    assert_eq!(g.boons().discard, [Card::TheSwampsGift]);
+}
+
+#[test]
+fn blessed_village_takes_a_boon_when_gained_to_receive_now_or_next_turn() {
+    let mut g = setup(&[Card::BlessedVillage]);
+    hand(&mut g, P0, &[Card::Silver, Card::Copper, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 15]);
+    stack_boons(&mut g, &[Card::TheSeasGift]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::Copper);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::BlessedVillage);
+    assert_eq!(g.pending().unwrap().source, Some(Card::BlessedVillage));
+    mode(&mut g, 1);
+    assert_eq!(g.lasting()[0].data.card, Some(Card::TheSeasGift));
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert!(g.lasting().is_empty());
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheSeasGift));
+
+    let mut g = setup(&[Card::BlessedVillage]);
+    hand(&mut g, P0, &[Card::Silver, Card::Silver]);
+    stack_boons(&mut g, &[Card::TheMountainsGift]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::BlessedVillage);
+    mode(&mut g, 0);
+    assert_eq!(g.count_owned(P0, Card::Silver), 3);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn druid_receives_one_of_its_set_aside_boons_and_leaves_it_there() {
+    let mut g = setup(&[Card::Druid]);
+    g.ext.nocturne.druid = vec![
+        Card::TheFieldsGift,
+        Card::TheSeasGift,
+        Card::TheMountainsGift,
+    ];
+    hand(&mut g, P0, &[Card::Druid]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    let discards = g.boons().discard.len();
+    g.start();
+    play(&mut g, Card::Druid);
+    pick(&mut g, Card::TheFieldsGift);
+    assert_eq!((g.turn().actions, g.turn().buys, g.turn().coins), (1, 2, 1));
+    assert!(g.player(P0).boons_kept.is_empty());
+    assert_eq!(g.ext.nocturne.druid.len(), 3);
+    assert_eq!(g.boons().discard.len(), discards);
+}
+
+#[test]
+fn fool_takes_lost_in_the_woods_and_three_boons_in_any_order() {
+    let mut g = setup(&[Card::Fool, Card::Village]);
+    g.players[1].states.push(Card::LostInTheWoods);
+    hand(&mut g, P0, &[Card::Fool, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper; 15]);
+    stack_boons(
+        &mut g,
+        &[
+            Card::TheSeasGift,
+            Card::TheFieldsGift,
+            Card::TheMountainsGift,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Fool);
+    assert_eq!(g.player(P0).states, [Card::LostInTheWoods]);
+    assert!(g.player(P1).states.is_empty());
+    pick(&mut g, Card::TheFieldsGift);
+    pick(&mut g, Card::TheMountainsGift);
+    assert_eq!((g.turn().actions, g.turn().coins), (1, 1));
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate, Card::Copper]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Silver]);
+
+    // Lost in the Woods: discard a card at the start of each turn for a Boon.
+    next_turn(&mut g);
+    next_turn(&mut g);
+    stack_boons(&mut g, &[Card::TheSwampsGift]);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    trigger(&mut g, 0);
+    assert_eq!(g.hand(P0).len(), 4);
+    assert_eq!(discard_kinds(&g, P0).last(), Some(&Card::WillOWisp));
+
+    // A Fool played while having Lost in the Woods does nothing.
+    let mut g = setup(&[Card::Fool]);
+    g.players[0].states.push(Card::LostInTheWoods);
+    hand(&mut g, P0, &[Card::Fool]);
+    let boons = g.boons().draw.len();
+    g.start();
+    decline(&mut g);
+    play(&mut g, Card::Fool);
+    assert_eq!(g.boons().draw.len(), boons);
+}
+
+#[test]
+fn idol_alternates_between_a_boon_and_curses() {
+    let mut g = setup(&[Card::Idol]);
+    hand(&mut g, P0, &[Card::Idol, Card::Idol]);
+    stack_boons(&mut g, &[Card::TheMountainsGift]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Idol);
+    assert_eq!(discard_kinds(&g, P0), [Card::Silver]);
+    play(&mut g, Card::Idol);
+    assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
+    assert_eq!(g.turn().coins, 4);
+}
+
+#[test]
+fn pixie_discards_the_top_boon_and_may_be_trashed_to_receive_it_twice() {
+    let mut g = setup(&[Card::Pixie]);
+    hand(&mut g, P0, &[Card::Pixie]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    stack_boons(&mut g, &[Card::TheFieldsGift]);
+    g.start();
+    play(&mut g, Card::Pixie);
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheFieldsGift));
+    yes(&mut g);
+    assert_eq!(trash_kinds(&g).last(), Some(&Card::Pixie));
+    assert_eq!((g.turn().actions, g.turn().coins), (3, 2));
+    assert_eq!(g.player(P0).boons_kept, [Card::TheFieldsGift]);
+    assert!(!g.boons().discard.contains(&Card::TheFieldsGift));
+
+    let mut g = setup(&[Card::Pixie]);
+    hand(&mut g, P0, &[Card::Pixie]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    stack_boons(&mut g, &[Card::TheSeasGift]);
+    g.start();
+    play(&mut g, Card::Pixie);
+    no(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Pixie]);
+    assert_eq!(g.hand(P0).len(), 1);
+}
+
+#[test]
+fn a_throne_roomed_pixie_is_trashed_at_most_once() {
+    let mut g = setup(&[Card::Pixie, Card::ThroneRoom]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Pixie]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    stack_boons(&mut g, &[Card::TheSeasGift, Card::TheMountainsGift]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Pixie]);
+    yes(&mut g);
+    assert_eq!(g.hand(P0).len(), 4);
+    assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom]);
+    assert!(
+        g.boons()
+            .discard
+            .ends_with(&[Card::TheSeasGift, Card::TheMountainsGift])
+    );
+    assert!(g.player(P0).discard.is_empty());
+}
+
+#[test]
+fn sacred_grove_shares_its_boon_unless_it_gives_a_coin() {
+    let mut g = setup(&[Card::SacredGrove]);
+    hand(&mut g, P0, &[Card::SacredGrove]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    deck(&mut g, P1, &[Card::Copper; 5]);
+    stack_boons(&mut g, &[Card::TheSeasGift]);
+    g.start();
+    play(&mut g, Card::SacredGrove);
+    assert_eq!(g.hand(P0).len(), 1);
+    assert_eq!(g.pending().unwrap().player, P1);
+    yes(&mut g);
+    assert_eq!(g.hand(P1).len(), 6);
+    assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheSeasGift));
+
+    let mut g = setup(&[Card::SacredGrove]);
+    hand(&mut g, P0, &[Card::SacredGrove]);
+    stack_boons(&mut g, &[Card::TheForestsGift]);
+    g.start();
+    play(&mut g, Card::SacredGrove);
+    assert_eq!(g.pending().unwrap().player, P0);
+    assert_eq!((g.turn().coins, g.turn().buys), (4, 3));
+}
+
+#[test]
+fn sacred_groves_rivers_gift_draws_for_each_player_who_took_it() {
+    let mut g = setup(&[Card::SacredGrove]);
+    hand(&mut g, P0, &[Card::SacredGrove]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    stack_boons(&mut g, &[Card::TheRiversGift]);
+    g.start();
+    play(&mut g, Card::SacredGrove);
+    yes(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!(g.hand(P1).len(), 6);
+    assert!(g.player(P1).boons_kept.is_empty());
+    assert_eq!(g.boons().discard.last(), Some(&Card::TheRiversGift));
+}
+
+#[test]
+fn tracker_may_put_gained_cards_onto_the_deck_this_turn() {
+    let mut g = setup(&[Card::Tracker]);
+    hand(&mut g, P0, &[Card::Tracker]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    stack_boons(&mut g, &[Card::TheMountainsGift]);
+    g.start();
+    play(&mut g, Card::Tracker);
+    trigger(&mut g, 0);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Silver);
+    assert_eq!(g.turn().coins, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Copper);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    decline(&mut g);
+    assert_eq!(g.turn().player, P1);
+}
+
+// ---- Hexes and States ----
+
+/// A game where P0 plays Skulk and P1 receives `hex`.
+fn hexed(hex: Card, p1_hand: &[Card], p1_deck: &[Card]) -> Game {
+    let mut g = setup(&[Card::Skulk, Card::Village, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Skulk]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, p1_hand);
+    deck(&mut g, P1, p1_deck);
+    discard(&mut g, P1, &[]);
+    stack_hexes(&mut g, &[hex]);
+    g.start();
+    play(&mut g, Card::Skulk);
+    g
+}
+
+#[test]
+fn bad_omens_puts_the_deck_away_but_two_coppers() {
+    let g = hexed(
+        Card::BadOmens,
+        &[],
+        &[
+            Card::Copper,
+            Card::Estate,
+            Card::Copper,
+            Card::Silver,
+            Card::Copper,
+        ],
+    );
+    assert_eq!(deck_kinds(&g, P1), [Card::Copper, Card::Copper]);
+    assert_eq!(g.player(P1).discard.len(), 3);
+}
+
+#[test]
+fn delusion_stops_buying_actions_for_a_turn() {
+    let mut g = hexed(
+        Card::Delusion,
+        &[Card::Gold, Card::Copper],
+        &[Card::Copper; 10],
+    );
+    assert_eq!(g.player(P1).states, [Card::Deluded]);
+    next_turn(&mut g);
+    to_buy(&mut g);
+    assert!(g.player(P1).states.is_empty());
+    play(&mut g, Card::Gold);
+    let moves = buy_moves(&g);
+    assert!(moves.contains(&Card::Silver));
+    assert!(!moves.contains(&Card::Village));
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn envy_makes_silver_and_gold_worth_one_for_a_turn() {
+    let mut g = hexed(
+        Card::Envy,
+        &[Card::Gold, Card::Silver, Card::Copper],
+        &[Card::Copper; 10],
+    );
+    assert_eq!(g.player(P1).states, [Card::Envious]);
+    next_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::Copper);
+    assert_eq!(g.turn().coins, 3);
+}
+
+/// Like [`hexed`], with P1 holding `states` first.
+fn hexed_with_states(hex: Card, states: &[Card]) -> Game {
+    let mut g = setup(&[Card::Skulk]);
+    hand(&mut g, P0, &[Card::Skulk]);
+    g.players[1].states = states.to_vec();
+    stack_hexes(&mut g, &[hex]);
+    g.start();
+    play(&mut g, Card::Skulk);
+    g
+}
+
+#[test]
+fn a_player_has_at_most_one_of_deluded_and_envious() {
+    let g = hexed_with_states(Card::Envy, &[Card::Deluded]);
+    assert_eq!(g.player(P1).states, [Card::Deluded]);
+    let g = hexed_with_states(Card::Delusion, &[Card::Envious]);
+    assert_eq!(g.player(P1).states, [Card::Envious]);
+}
+
+#[test]
+fn famine_discards_the_revealed_actions_and_shuffles_the_rest_back() {
+    let g = hexed(
+        Card::Famine,
+        &[],
+        &[Card::Village, Card::Copper, Card::Smithy, Card::Estate],
+    );
+    assert_eq!(discard_kinds(&g, P1), [Card::Village, Card::Smithy]);
+    let mut deck = deck_kinds(&g, P1);
+    deck.sort();
+    assert_eq!(deck, [Card::Copper, Card::Estate]);
+}
+
+#[test]
+fn fear_discards_an_action_or_treasure_from_five_cards() {
+    let g = hexed(
+        Card::Fear,
+        &[
+            Card::Copper,
+            Card::Estate,
+            Card::Estate,
+            Card::Estate,
+            Card::Estate,
+        ],
+        &[],
+    );
+    assert_eq!(discard_kinds(&g, P1), [Card::Copper]);
+
+    let g = hexed(Card::Fear, &[Card::Estate; 5], &[]);
+    assert_eq!(g.hand(P1).len(), 5);
+    assert!(
+        g.log()
+            .iter()
+            .any(|e| matches!(e, Event::RevealedHand { player, .. } if *player == P1))
+    );
+
+    let g = hexed(Card::Fear, &[Card::Copper; 4], &[]);
+    assert_eq!(g.hand(P1).len(), 4);
+}
+
+#[test]
+fn greed_plague_haunting_and_poverty() {
+    let g = hexed(Card::Greed, &[], &[Card::Estate]);
+    assert_eq!(deck_kinds(&g, P1), [Card::Copper, Card::Estate]);
+
+    let g = hexed(Card::Plague, &[], &[]);
+    assert_eq!(hand_kinds(&g, P1), [Card::Curse]);
+
+    let mut g = hexed(
+        Card::Haunting,
+        &[Card::Copper, Card::Silver, Card::Estate, Card::Estate],
+        &[],
+    );
+    choose_kinds(&mut g, &[Card::Silver]);
+    assert_eq!(deck_kinds(&g, P1), [Card::Silver]);
+
+    let g = hexed(
+        Card::Haunting,
+        &[Card::Copper, Card::Silver, Card::Estate],
+        &[],
+    );
+    assert_eq!(g.hand(P1).len(), 3);
+
+    let mut g = hexed(
+        Card::Poverty,
+        &[
+            Card::Copper,
+            Card::Silver,
+            Card::Estate,
+            Card::Estate,
+            Card::Gold,
+        ],
+        &[],
+    );
+    choose_kinds(&mut g, &[Card::Estate, Card::Estate]);
+    assert_eq!(hand_kinds(&g, P1), [Card::Copper, Card::Silver, Card::Gold]);
+}
+
+#[test]
+fn locusts_trashes_the_top_card_for_a_cheaper_card_sharing_a_type() {
+    let g = hexed(Card::Locusts, &[], &[Card::Silver]);
+    assert_eq!(trash_kinds(&g).last(), Some(&Card::Silver));
+    assert_eq!(discard_kinds(&g, P1), [Card::Copper]);
+
+    let g = hexed(Card::Locusts, &[], &[Card::Estate]);
+    assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
+
+    let g = hexed(Card::Locusts, &[], &[Card::Smithy]);
+    assert_eq!(discard_kinds(&g, P1), [Card::Village]);
+}
+
+#[test]
+fn misery_makes_a_player_miserable_then_twice_miserable() {
+    let score_without_states = |g: &Game| {
+        let mut h = g.clone();
+        h.players[1].states.clear();
+        h.score(P1)
+    };
+    let g = hexed_with_states(Card::Misery, &[]);
+    assert_eq!(g.player(P1).states, [Card::Miserable]);
+    assert_eq!(g.score(P1), score_without_states(&g) - 2);
+    let g = hexed_with_states(Card::Misery, &[Card::Miserable]);
+    assert_eq!(g.player(P1).states, [Card::TwiceMiserable]);
+    assert_eq!(g.score(P1), score_without_states(&g) - 4);
+    let g = hexed_with_states(Card::Misery, &[Card::TwiceMiserable]);
+    assert_eq!(g.player(P1).states, [Card::TwiceMiserable]);
+}
+
+#[test]
+fn war_trashes_the_first_card_costing_three_or_four() {
+    let g = hexed(
+        Card::War,
+        &[],
+        &[Card::Copper, Card::Estate, Card::Silver, Card::Gold],
+    );
+    assert_eq!(trash_kinds(&g).last(), Some(&Card::Silver));
+    assert_eq!(discard_kinds(&g, P1), [Card::Copper, Card::Estate]);
+    assert_eq!(deck_kinds(&g, P1), [Card::Gold]);
+
+    let g = hexed(Card::War, &[], &[Card::Copper, Card::Gold]);
+    assert!(g.player(P1).deck.is_empty());
+    assert_eq!(g.player(P1).discard.len(), 2);
+}
