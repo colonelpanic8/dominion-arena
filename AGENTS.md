@@ -218,7 +218,8 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
 - Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
   check `g.zone(id)` is still that zone. That includes cards from `Frame::look` /
   `Frame::reveal`: they stay on the deck, where a "when trashed" draw in the middle of
-  the effect can take one.
+  the effect can take one. An on-gain ability that moves the gained card (or plays it)
+  checks `g.still_where_gained(id)`.
 - `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
   "discard / trash the top card" takes it with `Frame::look`.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for

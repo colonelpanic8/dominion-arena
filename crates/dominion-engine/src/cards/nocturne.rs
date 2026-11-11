@@ -523,20 +523,9 @@ fn goto(f: &mut CardFrame, next: u8) -> Flow {
     Flow::Continue
 }
 
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
-    }
-}
-
 /// Whether `card`, being gained, is still where it was gained to.
 fn where_gained(g: &Game, card: CardId) -> bool {
-    g.gains
-        .last()
-        .is_some_and(|st| st.card == card && dest_zone(st.to, st.player) == g.zone(card))
+    g.still_where_gained(card)
 }
 
 fn has_state(g: &Game, p: PlayerId, state: Card) -> bool {

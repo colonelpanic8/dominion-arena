@@ -421,20 +421,9 @@ pub(crate) fn copy_pile(g: &Game, card: Card) -> Option<PileId> {
     })
 }
 
-/// Where a gain in progress is putting `card`.
-pub(crate) fn gained_to(g: &Game, card: CardId) -> Option<Zone> {
-    let st = g.gains.iter().rev().find(|s| s.card == card)?;
-    Some(match st.to {
-        Dest::Discard => Zone::Discard(st.player),
-        Dest::Hand => Zone::Hand(st.player),
-        Dest::DeckTop => Zone::Deck(st.player),
-        Dest::SetAside => Zone::SetAside(st.player),
-    })
-}
-
 /// Whether a card being gained is still where it was gained to.
 pub(crate) fn still_gained(g: &Game, card: CardId) -> bool {
-    gained_to(g, card) == Some(g.zone(card))
+    g.still_where_gained(card)
 }
 
 pub(crate) fn reveal_hand(g: &mut Game, p: PlayerId) {

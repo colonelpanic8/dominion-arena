@@ -572,15 +572,6 @@ fn coins(g: &mut Game, p: PlayerId, n: u32) {
     }
 }
 
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
-    }
-}
-
 /// The gain of `card` in progress, if any.
 fn gain_state(g: &Game, card: CardId) -> Option<&crate::game::GainState> {
     g.gains.iter().rev().find(|s| s.card == card)
@@ -588,7 +579,7 @@ fn gain_state(g: &Game, card: CardId) -> Option<&crate::game::GainState> {
 
 /// Whether `card`, being gained, is still where it was gained to.
 fn where_gained(g: &Game, card: CardId) -> bool {
-    gain_state(g, card).is_some_and(|s| dest_zone(s.to, s.player) == g.zone(card))
+    g.still_where_gained(card)
 }
 
 /// Whether the gain of `card` is the next one `wanted` accepts since lasting `l` was set

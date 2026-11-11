@@ -97,7 +97,9 @@ impl SetRules for Rules {
                 _ => Flow::done(),
             },
             (Card::TravellingFair, Hook::Ability(FAIR)) => {
-                if let Some(Occasion::Gain { card, .. }) = f.occ {
+                if let Some(Occasion::Gain { card, .. }) = f.occ
+                    && g.still_where_gained(card)
+                {
                     g.top_deck(card, f.player);
                 }
                 Flow::done()
@@ -892,7 +894,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
         .lasting()
         .iter()
         .any(|l| l.card == Card::TravellingFair && l.owner == player);
-    let movable = matches!(g.zone(card), Zone::Discard(p) | Zone::Hand(p) if p == player);
+    let movable = g.still_where_gained(card) && g.zone(card) != Zone::Deck(player);
     if fair && movable && player == g.turn.player {
         out.push(Trigger::new(player, Card::TravellingFair, FAIR).optional());
     }

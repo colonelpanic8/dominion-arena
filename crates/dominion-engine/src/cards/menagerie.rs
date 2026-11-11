@@ -583,25 +583,9 @@ fn gain_of(g: &Game, card: CardId) -> Option<&GainState> {
     g.gains.iter().rev().find(|st| st.card == card)
 }
 
-/// Where the gain of `card` in progress put it.
-fn gain_zone(g: &Game, card: CardId) -> Option<Zone> {
-    let st = gain_of(g, card)?;
-    Some(match st.to {
-        Dest::Discard => Zone::Discard(st.player),
-        Dest::Hand => Zone::Hand(st.player),
-        Dest::DeckTop => Zone::Deck(st.player),
-        Dest::SetAside => Zone::SetAside(st.player),
-    })
-}
-
 /// Whether a card being gained is still where it was gained to (the stop-moving rule).
 fn still_where_gained(g: &Game, card: CardId) -> bool {
-    let zone = g.zone(card);
-    gain_zone(g, card) == Some(zone)
-        && match zone {
-            Zone::Deck(p) => g.player(p).deck.last() == Some(&card),
-            _ => true,
-        }
+    g.still_where_gained(card)
 }
 
 /// Puts `id` on `p`'s Exile mat.

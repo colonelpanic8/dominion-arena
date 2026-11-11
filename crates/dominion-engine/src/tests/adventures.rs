@@ -1416,6 +1416,17 @@ fn travelling_fair_lets_gained_cards_go_onto_the_deck_this_turn() {
 }
 
 #[test]
+fn travelling_fair_cannot_move_a_card_that_moved_itself() {
+    let mut g = buy_phase(&[Card::Villa], &[Card::TravellingFair], 6);
+    buy_event(&mut g, Card::TravellingFair);
+    buy(&mut g, Card::Villa);
+    // Villa's own ability first: in the hand, Travelling Fair has lost track of it.
+    accept(&mut g, Card::Villa);
+    assert_eq!(hand_kinds(&g, P0), [Card::Villa]);
+    assert_eq!(purpose(&g), Purpose::Turn);
+}
+
+#[test]
 fn bonfire_trashes_coppers_in_play_and_keeps_their_coins() {
     let mut g = game(&[Card::Smithy], &[Card::Bonfire]);
     hand(&mut g, P0, &[Card::Copper; 5]);

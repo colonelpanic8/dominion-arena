@@ -217,12 +217,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             }
         }
     }
-    let landed = g
-        .gains
-        .last()
-        .filter(|st| st.card == card)
-        .map(|st| dest_zone(st.to, st.player));
-    if g.is(card, Types::DURATION) && landed == Some(g.zone(card)) {
+    if g.is(card, Types::DURATION) && g.still_where_gained(card) {
         for l in g.lasting() {
             if l.card == Card::Sailor && l.until == Until::EndOfTurn && l.owner == gainer {
                 out.push(
@@ -232,15 +227,6 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 );
             }
         }
-    }
-}
-
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
     }
 }
 

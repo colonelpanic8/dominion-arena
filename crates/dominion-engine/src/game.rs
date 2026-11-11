@@ -459,6 +459,18 @@ pub struct GainState {
     pub buy_index: Option<usize>,
 }
 
+impl GainState {
+    /// Where the card is gained to.
+    pub fn zone(&self) -> Zone {
+        match self.to {
+            crate::Dest::Discard => Zone::Discard(self.player),
+            crate::Dest::Hand => Zone::Hand(self.player),
+            crate::Dest::DeckTop => Zone::Deck(self.player),
+            crate::Dest::SetAside => Zone::SetAside(self.player),
+        }
+    }
+}
+
 /// A play in progress, until its `AfterPlay` window closes. "When you play" triggers may
 /// change it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -693,12 +705,17 @@ impl Game {
     /// had `p` gain.
     pub(crate) fn gained_to(&self, p: PlayerId, id: CardId) -> Option<Zone> {
         let st = self.last_gain.as_ref()?;
-        (st.card == id && st.player == p).then_some(match st.to {
-            crate::Dest::Discard => Zone::Discard(p),
-            crate::Dest::Hand => Zone::Hand(p),
-            crate::Dest::DeckTop => Zone::Deck(p),
-            crate::Dest::SetAside => Zone::SetAside(p),
-        })
+        (st.card == id && st.player == p).then_some(st.zone())
+    }
+
+    /// Whether `id`, whose gain is in progress, is still where it was gained to: the
+    /// stop-moving rule lets an on-gain ability move the card only then.
+    pub(crate) fn still_where_gained(&self, id: CardId) -> bool {
+        self.gains
+            .iter()
+            .rev()
+            .find(|st| st.card == id)
+            .is_some_and(|st| self.still_where_put(id, st.zone()))
     }
 
     /// The phase `id` was gained in, while its gain is in progress ("when you gain a card in

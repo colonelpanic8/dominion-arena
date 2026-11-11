@@ -905,15 +905,6 @@ fn emit_revealed(g: &mut Game, p: PlayerId, cards: &[CardId]) {
     }
 }
 
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
-    }
-}
-
 /// Gains `n` copies of `card` from the Supply one at a time, counting the ones gained in
 /// `f.s.m`, then continues at `next`. Start it with `f.s.i == 0` and `f.s.m == 0`.
 fn gain_copies(
@@ -1798,13 +1789,7 @@ fn villa_gained(g: &mut Game, f: &mut CardFrame) -> Flow {
     }
     f.pc = 1;
     let c = f.this();
-    let landed = g
-        .gains
-        .iter()
-        .rev()
-        .find(|st| st.card == c)
-        .map(|st| dest_zone(st.to, st.player));
-    if landed == Some(g.zone(c)) {
+    if g.still_where_gained(c) {
         g.put_in_hand(c, p);
     }
     plus_actions(g, p, 1);

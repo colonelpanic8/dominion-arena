@@ -296,17 +296,8 @@ pub(super) fn occ_card(f: &CardFrame) -> CardId {
 
 /// Whether `card`, being gained by `p`, is still where it was gained to.
 pub(super) fn where_gained(g: &Game, p: PlayerId, card: CardId) -> bool {
-    g.gains.last().is_some_and(|st| {
-        st.card == card
-            && st.player == p
-            && g.zone(card)
-                == match st.to {
-                    Dest::Discard => Zone::Discard(p),
-                    Dest::Hand => Zone::Hand(p),
-                    Dest::DeckTop => Zone::Deck(p),
-                    Dest::SetAside => Zone::SetAside(p),
-                }
-    })
+    g.gains.last().is_some_and(|st| st.card == card && st.player == p)
+        && g.still_where_gained(card)
 }
 
 pub(super) fn top_deck(g: &mut Game, p: PlayerId, c: CardId) {
