@@ -5,7 +5,7 @@ use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -19,16 +19,19 @@ use tokio::sync::watch;
 pub struct NewGame {
     /// Number of players, 2 to 6.
     pub players: u8,
-    /// Seat names, in turn order (default P1, P2, ...).
+    /// Seat names, in turn order (default P1, P2, ...). Each is at most 32 characters on
+    /// one line, and no two seats share a name.
     #[serde(default)]
     pub names: Vec<String>,
     /// Kingdom piles by name. Without it, a random kingdom is dealt from `sets`.
     #[serde(default)]
     pub kingdom: Vec<String>,
-    /// Events, Landmarks, Projects, Ways, ... by name (with `kingdom`).
+    /// Events, Landmarks, Projects, Ways, ... by name. With a random kingdom they replace
+    /// the landscapes it would deal.
     #[serde(default)]
     pub landscapes: Vec<String>,
-    /// Sets to deal a random kingdom from (default: every released set).
+    /// Sets to deal a random kingdom from (default: every released set). Not with
+    /// `kingdom`.
     #[serde(default)]
     pub sets: Vec<String>,
     pub seed: Option<u64>,
@@ -191,57 +194,133 @@ pub struct Hub {
     store: Option<Store>,
 }
 
-fn card(name: &str, want: impl Fn(Card) -> bool) -> Result<Card, HubError> {
-    Card::from_name(name)
-        .filter(|&c| want(c))
-        .ok_or_else(|| HubError::BadRequest(format!("{name:?} is not a known card here")))
+fn bad(message: String) -> HubError {
+    HubError::BadRequest(message)
 }
 
-fn released_sets() -> Vec<Set> {
+fn card(name: &str, what: &str, want: impl Fn(Card) -> bool) -> Result<Card, HubError> {
+    Card::from_name(name)
+        .filter(|&c| want(c))
+        .ok_or_else(|| bad(format!("{name:?} is not a {what}")))
+}
+
+/// The sets a random kingdom can be dealt from: the ones with Kingdom cards.
+fn dealable_sets() -> Vec<Set> {
+    let with_kingdom: BTreeSet<Set> = Card::ALL
+        .iter()
+        .filter(|c| c.def().kingdom && !c.def().removed)
+        .map(|c| c.set())
+        .collect();
     Set::ALL
         .iter()
         .copied()
-        .filter(|&s| s != Set::Arcana)
+        .filter(|s| with_kingdom.contains(s))
         .collect()
+}
+
+fn set(name: &str) -> Result<Set, HubError> {
+    let key = |s: &str| s.to_lowercase().replace(['&', ' ', '-', '_'], "");
+    let sets = dealable_sets();
+    sets.iter()
+        .copied()
+        .find(|s| key(s.name()) == key(name))
+        .ok_or_else(|| {
+            let names: Vec<&str> = sets.iter().map(|s| s.name()).collect();
+            bad(format!(
+                "{name:?} is not a set a kingdom can be dealt from; those are {}",
+                names.join(", ")
+            ))
+        })
 }
 
 pub fn config(req: &NewGame) -> Result<GameConfig, HubError> {
     let seed = req.seed.unwrap_or_else(|| rand::rng().random());
-    let mut config = if req.kingdom.is_empty() {
-        let sets = if req.sets.is_empty() {
-            released_sets()
+    let sets: Vec<Set> = req.sets.iter().map(|n| set(n)).collect::<Result<_, _>>()?;
+    let kingdom: Vec<Card> = req
+        .kingdom
+        .iter()
+        .map(|n| card(n, "Kingdom pile", |c| c.def().kingdom))
+        .collect::<Result<_, _>>()?;
+    let landscapes: Vec<Card> = req
+        .landscapes
+        .iter()
+        .map(|n| card(n, "landscape", |c| c.kind().is_landscape()))
+        .collect::<Result<_, _>>()?;
+    let mut config = if kingdom.is_empty() {
+        let sets = if sets.is_empty() {
+            dealable_sets()
         } else {
-            req.sets
-                .iter()
-                .map(|name| {
-                    let key = |s: &str| s.to_lowercase().replace(['&', ' ', '-', '_'], "");
-                    Set::ALL
-                        .iter()
-                        .copied()
-                        .find(|s| key(s.name()) == key(name))
-                        .ok_or_else(|| HubError::BadRequest(format!("unknown set {name:?}")))
-                })
-                .collect::<Result<_, _>>()?
+            sets
         };
-        GameConfig::random(req.players, &sets, seed)
+        let mut config = GameConfig::random(req.players, &sets, seed);
+        if !landscapes.is_empty() {
+            config.landscapes = landscapes;
+        }
+        config
     } else {
-        let kingdom = req
-            .kingdom
-            .iter()
-            .map(|n| card(n, |c| c.def().kingdom))
-            .collect::<Result<_, _>>()?;
+        if !sets.is_empty() {
+            return Err(bad(
+                "`sets` deals a random kingdom: give it or `kingdom`, not both".into(),
+            ));
+        }
         let mut config = GameConfig::new(req.players, kingdom, seed);
-        config.landscapes = req
-            .landscapes
-            .iter()
-            .map(|n| card(n, |c| c.kind().is_landscape()))
-            .collect::<Result<_, _>>()?;
+        config.landscapes = landscapes;
         config
     };
     config.turn_limit = req.turn_limit;
     config.colonies = req.colonies;
     config.shelters = req.shelters;
     Ok(config)
+}
+
+const MAX_NAME_CHARS: usize = 32;
+
+/// Every seat's name: the ones given, then the defaults. Names go into every client's
+/// text, so each must be one printable line, and seats must be told apart by them.
+fn names(req: &NewGame) -> Result<Vec<String>, HubError> {
+    let players = usize::from(req.players);
+    if req.names.len() > players {
+        return Err(bad(format!(
+            "{} names for {players} players",
+            req.names.len()
+        )));
+    }
+    let mut names: Vec<String> = Vec::with_capacity(players);
+    for i in 0..players {
+        let name = match req.names.get(i) {
+            None => PlayerId(i as u8).to_string(),
+            Some(given) => {
+                let name = given.trim();
+                if name.is_empty() {
+                    return Err(bad(format!("seat {i}'s name is empty")));
+                }
+                if name.chars().count() > MAX_NAME_CHARS {
+                    return Err(bad(format!(
+                        "seat {i}'s name is longer than {MAX_NAME_CHARS} characters"
+                    )));
+                }
+                if name
+                    .chars()
+                    .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
+                {
+                    return Err(bad(format!(
+                        "seat {i}'s name has a line break or control character"
+                    )));
+                }
+                name.to_string()
+            }
+        };
+        if names
+            .iter()
+            .any(|n| n.to_lowercase() == name.to_lowercase())
+        {
+            return Err(bad(format!(
+                "two seats are named {name:?}; seat names must differ"
+            )));
+        }
+        names.push(name);
+    }
+    Ok(names)
 }
 
 fn token() -> String {
@@ -313,13 +392,13 @@ impl Hub {
 
     pub fn create(&self, req: &NewGame) -> Result<Created, HubError> {
         let config = config(req)?;
+        let names = names(req)?;
         let id = {
             let mut index = lock(&self.index);
             index.next += 1;
             format!("g{}", index.next)
         };
-        let table = engine(|| Table::new(&id, config, req.names.clone()))?
-            .map_err(|e| HubError::BadRequest(e.to_string()))?;
+        let table = engine(|| Table::new(&id, config, names))?.map_err(|e| bad(e.to_string()))?;
         let tokens: Vec<String> = (0..table.names().len()).map(|_| token()).collect();
         let seats = tokens
             .iter()
@@ -363,7 +442,7 @@ impl Hub {
             .seats
             .get(token)
             .cloned()
-            .ok_or_else(|| HubError::BadRequest("unknown seat token".into()))
+            .ok_or_else(|| bad("unknown seat token".into()))
     }
 
     pub fn list(&self) -> Vec<GameSummary> {
