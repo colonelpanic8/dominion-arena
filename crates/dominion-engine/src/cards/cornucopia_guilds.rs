@@ -1221,7 +1221,7 @@ fn young_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .hand(t)
                 .iter()
                 .copied()
-                .filter(|&c| bane.is_some() && g.home_pile(g.card(c)) == bane)
+                .filter(|&c| bane.is_some() && g.origin_pile(g.card(c)) == bane)
                 .collect();
             if banes.is_empty() {
                 f.pc = 4;

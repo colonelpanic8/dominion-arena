@@ -465,9 +465,11 @@ impl SetRules for Rules {
                     let Some(next) = upgrade(printed) else {
                         continue;
                     };
-                    let available = g
-                        .pile_of(next)
-                        .is_some_and(|p| !g.pile(p).cards.is_empty());
+                    // An exchange needs both cards to move: a pile to return this one to.
+                    let available = g.home_pile(printed).is_some()
+                        && g
+                            .pile_of(next)
+                            .is_some_and(|p| !g.pile(p).cards.is_empty());
                     if g.card(c) == printed && !kept.contains(&c) && available {
                         out.push(Trigger::new(player, printed, EXCHANGE).on(c).optional());
                     }
@@ -944,7 +946,9 @@ fn exchange(g: &mut Game, f: &mut CardFrame) -> Flow {
     let Some(top) = top else {
         return Flow::done();
     };
-    g.return_to_pile(this);
+    if !g.return_to_pile(this) {
+        return Flow::done();
+    }
     g.move_card(top, Zone::Discard(p), Pos::Top);
     g.emit(Event::Moved {
         player: p,

@@ -345,7 +345,7 @@ impl SetRules for Rules {
                 }
             }
             Occasion::StartTurn { player } => {
-                if g.pile_of(Card::Shaman).is_some() {
+                if setup::in_game(g, |c| c == Card::Shaman) {
                     out.push(Trigger::new(player, Card::Shaman, SHAMAN_GAIN));
                 }
                 if !traited_in_hand(g, player, Card::Shy).is_empty() {
@@ -611,7 +611,7 @@ fn trait_pile(g: &Game, t: Card) -> Option<PileId> {
 /// Whether cards named `card` are from the pile with Trait `t` (even once that pile is
 /// out of the game).
 fn is_trait(g: &Game, card: Card, t: Card) -> bool {
-    trait_pile(g, t).is_some_and(|pile| g.pile(pile).card == card.def().pile.unwrap_or(card))
+    trait_pile(g, t).is_some_and(|pile| g.origin_pile(card) == Some(pile))
 }
 
 fn is_traited(g: &Game, id: CardId, t: Card) -> bool {

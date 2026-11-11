@@ -1004,6 +1004,93 @@ fn divine_wind_replaces_the_kingdom_piles_with_ten_new_ones() {
     check_zones(&g);
 }
 
+/// A game one Sun away from Divine Wind, with setup choices (by the card that makes them).
+fn before_divine_wind(kingdom: &[Card], landscapes: &[Card], choices: &[(Card, Card)]) -> Game {
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: landscapes.to_vec(),
+        ..GameConfig::new(2, kingdom.to_vec(), 7)
+    };
+    config.landscapes.push(Card::DivineWind);
+    for &(by, choice) in choices {
+        config.setup_choices.insert(by, vec![choice]);
+    }
+    let mut g = setup_with(config);
+    g.prophecy = Some((Card::DivineWind, 1));
+    g
+}
+
+#[test]
+fn a_card_from_a_pile_divine_wind_removed_cannot_be_exchanged() {
+    let mut g = before_divine_wind(&[Card::Page, Card::TeaHouse], &[], &[]);
+    hand(&mut g, P0, &[Card::TeaHouse, Card::Page]);
+    deck(&mut g, P0, &coppers(12));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Page), None);
+    play(&mut g, Card::Page);
+    // It can't return to its pile, so it is discarded like any card.
+    next_turn(&mut g);
+    assert_eq!(g.count_owned(P0, Card::Page), 1);
+    assert_eq!(g.count_owned(P0, Card::TreasureHunter), 0);
+}
+
+#[test]
+fn the_bane_is_still_the_bane_after_divine_wind() {
+    let mut g = before_divine_wind(
+        &[Card::YoungWitch, Card::TeaHouse],
+        &[],
+        &[(Card::YoungWitch, Card::Aristocrat)],
+    );
+    hand(
+        &mut g,
+        P0,
+        &[Card::TeaHouse, Card::YoungWitch, Card::Copper, Card::Copper],
+    );
+    deck(&mut g, P0, &coppers(10));
+    hand(&mut g, P1, &[Card::Aristocrat, Card::Copper]);
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Aristocrat), None);
+    // Its discard isn't asked: the hand is all Coppers.
+    play(&mut g, Card::YoungWitch);
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(purpose(&g), Purpose::Reveal);
+    yes(&mut g);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+}
+
+#[test]
+fn obelisk_still_scores_its_pile_after_divine_wind() {
+    let mut g = before_divine_wind(
+        &[Card::TeaHouse, Card::Smithy],
+        &[Card::Obelisk],
+        &[(Card::Obelisk, Card::Smithy)],
+    );
+    hand(&mut g, P0, &[Card::TeaHouse, Card::Smithy]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    assert_eq!(g.score(P0), 2);
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Smithy), None);
+    assert_eq!(g.score(P0), 2);
+}
+
+#[test]
+fn in_games_using_this_abilities_go_on_after_divine_wind() {
+    let mut g = before_divine_wind(&[Card::Shaman, Card::Footpad, Card::TeaHouse], &[], &[]);
+    g.create(Card::TeaHouse, Zone::Hand(P0));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Shaman), None);
+    g.create(Card::Gold, Zone::Trash);
+    next_turn(&mut g);
+    // Shaman's gain at the start of P1's turn, and Footpad's +1 Card for it.
+    assert_eq!(g.count_owned(P1, Card::Gold), 1);
+    assert_eq!(g.hand(P1).len(), 6);
+}
+
 #[test]
 fn enlightenment_makes_treasures_actions_that_draw_in_the_action_phase() {
     let mut g = with_prophecy(&[Card::RiceBroker], Card::Enlightenment);

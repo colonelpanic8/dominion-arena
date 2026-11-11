@@ -570,7 +570,7 @@ impl SetRules for Rules {
                     Some(pile) => {
                         let n = owned
                             .iter()
-                            .filter(|&&c| g.home_pile(g.printed(c)) == Some(pile))
+                            .filter(|&&c| g.origin_pile(g.printed(c)) == Some(pile))
                             .count();
                         2 * n as i32
                     }

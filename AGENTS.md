@@ -222,6 +222,8 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   card the rules allow (a configured choice can be any of them; a random one is never
   an unused removed card), and narrow only the random pick with `choose_or_random`.
   `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
+  What marks a pile keeps applying to its cards (the Bane, Obelisk, Traits): ask
+  `g.origin_pile(card)`. "In games using this" asks `setup::in_game`, not for a pile.
 - A pile's types are those of the card it is named after (`Pile::card`: its randomizer
   or top card), whatever is in it now: that decides an "Action Supply pile".
 - "In an Action phase" asks `g.in_action_phase()`: the start of a turn is part of it.

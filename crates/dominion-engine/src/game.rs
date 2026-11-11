@@ -646,6 +646,18 @@ impl Game {
         self.pile_of(name).or_else(|| self.pile_of(card))
     }
 
+    /// The pile `card` is from, even one no longer in the game (Divine Wind): its cards are
+    /// still that pile's for what marks the pile (the Bane, Obelisk).
+    pub fn origin_pile(&self, card: Card) -> Option<PileId> {
+        self.home_pile(card).or_else(|| {
+            let name = card.def().pile.unwrap_or(card);
+            self.piles
+                .iter()
+                .position(|p| p.card == name)
+                .map(|i| PileId(i as u8))
+        })
+    }
+
     /// What `id` cost as it was gained, while its gain is in progress ("when you gain a
     /// card costing ..." abilities look at this, not at its cost where it landed).
     pub fn gain_cost(&self, id: CardId) -> Option<Cost> {
