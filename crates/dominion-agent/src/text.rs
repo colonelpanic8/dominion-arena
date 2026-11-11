@@ -136,6 +136,9 @@ fn pile(p: &PileView) -> String {
     if let Some(top) = &p.top {
         let _ = write!(s, " (top {top})");
     }
+    if p.hidden {
+        s.push_str(" (face down)");
+    }
     if let Some(c) = &p.cost {
         let _ = write!(s, " {}", cost_text(c));
     }
@@ -368,11 +371,12 @@ pub fn render(v: &AgentView) -> String {
         out.push(format!("EXTRA TURNS {}", list.join(", ")));
     }
     if !v.notes.is_empty() {
+        // Consecutive notes of one source about the same player and pile share a head.
         let list: Vec<String> = v
             .notes
-            .iter()
-            .map(|n| {
-                let mut s = n.source.clone();
+            .chunk_by(|a, b| (&a.source, a.player, &a.pile) == (&b.source, b.player, &b.pile))
+            .map(|group| {
+                let n = &group[0];
                 let mut parts = vec![];
                 if let Some(p) = n.player {
                     parts.push(format!("P{}", p + 1));
@@ -380,12 +384,21 @@ pub fn render(v: &AgentView) -> String {
                 if let Some(pile) = &n.pile {
                     parts.push(format!("{pile} pile"));
                 }
-                if let Some(card) = &n.card {
-                    parts.push(card.clone());
+                let items: Vec<String> = group
+                    .iter()
+                    .map(|n| {
+                        let mut item: Vec<String> = n.card.iter().cloned().collect();
+                        if n.count != 0 {
+                            item.push(n.count.to_string());
+                        }
+                        item.join(" ")
+                    })
+                    .filter(|item| !item.is_empty())
+                    .collect();
+                if !items.is_empty() {
+                    parts.push(items.join(", "));
                 }
-                if n.count != 0 {
-                    parts.push(n.count.to_string());
-                }
+                let mut s = n.source.clone();
                 if !parts.is_empty() {
                     let _ = write!(s, ": {}", parts.join(" "));
                 }

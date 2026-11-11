@@ -1,5 +1,5 @@
 use dominion_agent::{
-    AgentDecision, AgentOption, Answer, AnswerError, JSON_SCHEMA, Table, glossary_for,
+    AgentDecision, AgentOption, Answer, AnswerError, JSON_SCHEMA, Table, glossary_for, text,
 };
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use jsonschema::Validator;
@@ -462,4 +462,34 @@ fn divine_wind_replaces_the_kingdom() {
     assert_eq!(flagged.len(), 10);
     assert!(!flagged.contains(&"Poet"));
     assert_eq!(view.game.kingdom, flagged);
+}
+
+#[test]
+fn the_black_market_deck_is_a_face_down_pile_of_known_cards() {
+    let t = table(&[Card::BlackMarket], 4, &[]);
+    let view = t.view(PlayerId(0));
+    let deck = view
+        .non_supply
+        .iter()
+        .find(|p| p.hidden)
+        .expect("the Black Market deck");
+    assert!(!deck.kingdom && deck.cost.is_none() && deck.types.is_empty());
+    let mut listed: Vec<&str> = view
+        .notes
+        .iter()
+        .filter(|n| n.source == "Black Market" && n.count == 1)
+        .filter_map(|n| n.card.as_deref())
+        .collect();
+    let g = t.game();
+    let pile = g.piles().iter().find(|p| p.hidden).unwrap();
+    let mut cards: Vec<&str> = pile.cards.iter().map(|&c| g.card(c).name()).collect();
+    listed.sort();
+    cards.sort();
+    assert_eq!(listed, cards);
+    let rendered = text::render(&view);
+    let line = rendered
+        .lines()
+        .find(|l| l.starts_with("NON-SUPPLY"))
+        .unwrap();
+    assert!(line.contains("Black Market (face down) x60"), "{line}");
 }

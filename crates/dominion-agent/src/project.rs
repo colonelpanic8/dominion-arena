@@ -138,11 +138,13 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
         let shown = top.unwrap_or(pile.card());
         let types: Vec<String> = match pile.top() {
             Some(c) => v.types(c).map(|t| t.names().map(String::from).collect()),
+            None if pile.hidden() => Some(vec![]),
             None => None,
         }
         .unwrap_or_else(|| shown.type_names().into_iter().map(String::from).collect());
         let pile_cost = match pile.top() {
             Some(c) => v.cost_of(c),
+            None if pile.hidden() => None,
             None => shown.cost().map(|_| v.cost(shown)),
         };
         let pv = PileView {
