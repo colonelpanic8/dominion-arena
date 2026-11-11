@@ -13,6 +13,10 @@ pub struct Decision {
     pub purpose: Purpose,
     /// The card whose effect is asking, if any.
     pub source: Option<Card>,
+    /// Cards the question is about that the deciding player may see though they aren't
+    /// its options (cards they look at while asked what to do with them).
+    #[serde(default)]
+    pub about: Vec<CardId>,
 }
 
 /// Something a player can do in one of their turn's phases.

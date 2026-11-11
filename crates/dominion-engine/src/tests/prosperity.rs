@@ -775,6 +775,8 @@ fn war_chest_cannot_gain_cards_named_for_war_chests_this_turn() {
     name(&mut g, Card::Village);
     let piles = pile_choices(&g);
     assert!(!piles.contains(&Card::Smithy) && !piles.contains(&Card::Village));
+    let named: Vec<Option<Card>> = g.view(P1).notes().iter().map(|n| n.card).collect();
+    assert_eq!(named, [Some(Card::Smithy), Some(Card::Village)]);
 }
 
 #[test]
@@ -852,6 +854,8 @@ fn contraband_stops_the_player_buying_the_named_card() {
     play(&mut g, Card::Contraband);
     assert_eq!(g.pending().unwrap().player, P1);
     name(&mut g, Card::Gold);
+    let named = Note::new(Card::Contraband).player(P0).card(Card::Gold);
+    assert!(g.view(P1).notes().contains(&named));
     assert_eq!((g.turn().coins, g.turn().buys), (3, 2));
     play(&mut g, Card::Gold);
     assert!(!can_buy(&g, Card::Gold));
@@ -1082,6 +1086,8 @@ fn trade_route_tokens_move_to_the_mat_when_victory_piles_are_gained_from() {
     buy(&mut g, Card::Estate);
     // One token per pile, however many cards were gained from it.
     assert_eq!(g.trade_route_mat(), 1);
+    let mat = Note::new(Card::TradeRoute).count(1);
+    assert!(g.view(P1).notes().contains(&mat));
     let estates = g.supply_pile(Card::Estate).unwrap();
     assert!(!g.pile(estates).trade_route);
 }

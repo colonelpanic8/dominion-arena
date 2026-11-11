@@ -36,8 +36,14 @@ const WALLED_VILLAGE_TOPDECK: u8 = 0;
 
 impl SetRules for Rules {
     fn notes(g: &Game, out: &mut Vec<Note>) {
+        // Which cards are in the Black Market deck is public, not their order.
         if let Some(pile) = g.ext.promos.black_market {
-            out.push(Note::new(Card::BlackMarket).pile(pile));
+            let mut cards: Vec<Card> = g.pile(pile).cards.iter().map(|&c| g.card(c)).collect();
+            cards.sort_by_key(|c| c.name());
+            for chunk in cards.chunk_by(|a, b| a == b) {
+                let note = Note::new(Card::BlackMarket).pile(pile).card(chunk[0]);
+                out.push(note.count(chunk.len() as i32));
+            }
         }
     }
 
@@ -714,7 +720,9 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 2;
+            let deck = g.player(p).deck[..shuffled].iter().rev().copied().collect();
             f.ask_number(0, shuffled as i32 - 1, Purpose::Move)
+                .about(deck)
         }
         _ => {
             let stash = f.s.cards[f.s.i];

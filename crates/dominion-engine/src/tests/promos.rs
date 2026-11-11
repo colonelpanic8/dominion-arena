@@ -48,11 +48,16 @@ fn black_market_deck_is_unused_kingdom_cards_face_down() {
     let v = g.view(P0);
     assert_eq!((v.pile(bm).top(), v.pile(bm).size()), (None, 60));
     assert!(pile.cards.iter().all(|&c| v.card(c).is_none()));
-    assert!(
-        v.notes()
-            .iter()
-            .any(|n| n.source == Card::BlackMarket && n.pile == Some(bm))
-    );
+    let mut listed: Vec<Card> = v
+        .notes()
+        .iter()
+        .filter(|n| n.source == Card::BlackMarket && n.pile == Some(bm) && n.count == 1)
+        .filter_map(|n| n.card)
+        .collect();
+    let mut sorted = cards.clone();
+    sorted.sort_by_key(|c| c.name());
+    listed.sort_by_key(|c| c.name());
+    assert_eq!(listed, sorted);
     assert_eq!(
         g.supply_pile(Card::BlackMarket),
         g.pile_of(Card::BlackMarket)

@@ -1867,6 +1867,11 @@ fn simple_ways_give_their_bonuses_instead_of_the_card() {
         g.start();
         play(&mut g, Card::Smithy);
         way(&mut g, w);
+        assert!(g.log().contains(&Event::UsedWay {
+            player: P0,
+            card: Card::Smithy,
+            way: w
+        }));
         let t = g.turn();
         let got = (t.actions, t.buys, t.coins, g.hand(P0).len() - 1);
         assert_eq!(got, (actions, buys, coins, cards), "{w}");

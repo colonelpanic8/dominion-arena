@@ -529,6 +529,7 @@ impl CardFrame {
             kind,
             purpose,
             source: Some(self.card),
+            about: vec![],
         })
     }
 

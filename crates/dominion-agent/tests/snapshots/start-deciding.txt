@@ -1,10 +1,10 @@
 GAME snap: turn 1, your turn, buy phase, actions 1, buys 1, coins 0
-YOU: Ada (3 VP)
+YOU P1: Ada (3 VP)
   hand 5 (3 Copper, 2 Estate)
   deck 5 (4 Copper, Estate)
   discard 0
   owns 7 Copper, 3 Estate
-OPPONENT: Bo (3 VP)
+OPPONENT P2: Bo (3 VP)
   hand 5 (5 unknown)
   deck 5 (5 unknown)
   discard 0

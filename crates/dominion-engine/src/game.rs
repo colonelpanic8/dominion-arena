@@ -166,6 +166,11 @@ impl Pile {
             emptied: 0,
         }
     }
+
+    /// A Kingdom pile: a Supply pile of a Kingdom card (or randomizer).
+    pub fn is_kingdom(&self) -> bool {
+        self.in_supply && !self.removed && self.card.def().kingdom
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -873,12 +878,16 @@ impl Game {
             .as_ref()
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
+        let player = decision.player;
         if let (DecisionKind::Cards { ordered: true, .. }, Response::Cards(cards)) =
             (&decision.kind, &response)
             && cards.len() > 1
         {
             let cards = cards.clone();
             self.record(|| crate::Trace::Mixed { cards });
+        }
+        if let Response::Name(card) = response {
+            self.emit(Event::Named { player, card });
         }
         self.pending = None;
         self.run(Input::Response(response));

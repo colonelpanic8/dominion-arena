@@ -226,7 +226,7 @@ fn play_shows_the_game_whenever_it_has_to_wait() {
     let game = hub.create(&two_players()).unwrap();
     let mut play = Play::start(&server, &game, 1, &[]);
     let joined = play.until("Waiting for the other players...");
-    assert!(joined.contains("YOU: P2"), "{joined}");
+    assert!(joined.contains("YOU P2"), "{joined}");
 
     answer(&hub, &seat(&game, 0), Some("End your Buy phase"));
     let turn = play.until("> ");

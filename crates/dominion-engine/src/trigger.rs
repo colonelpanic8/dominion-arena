@@ -293,6 +293,7 @@ impl Window {
             },
             purpose: Purpose::Trigger,
             source,
+            about: vec![],
         })
     }
 

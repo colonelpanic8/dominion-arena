@@ -1,4 +1,6 @@
-use dominion_agent::{AgentDecision, Answer, AnswerError, JSON_SCHEMA, Table, glossary_for};
+use dominion_agent::{
+    AgentDecision, AgentOption, Answer, AnswerError, JSON_SCHEMA, Table, glossary_for, text,
+};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use jsonschema::Validator;
 use rand::seq::SliceRandom;
@@ -255,4 +257,261 @@ fn bad_answers_are_rejected_with_reasons() {
         err(&mut table, 0, Answer::indices(&d.id, vec![0])),
         AnswerError::StaleDecision { .. }
     ));
+}
+
+/// A 2-player game of `kingdom` filled up with Base cards.
+fn table(kingdom: &[Card], seed: u64, names: &[&str]) -> Table {
+    let mut cards = kingdom.to_vec();
+    for filler in [
+        Card::Cellar,
+        Card::Market,
+        Card::Mine,
+        Card::Moat,
+        Card::Remodel,
+        Card::Smithy,
+        Card::Village,
+        Card::Workshop,
+        Card::Festival,
+        Card::Laboratory,
+    ] {
+        if cards.len() < 10 {
+            cards.push(filler);
+        }
+    }
+    let config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, cards, seed)
+    };
+    Table::new("t", config, names.iter().map(|s| s.to_string()).collect()).unwrap()
+}
+
+fn pick(d: &AgentDecision, wanted: impl Fn(&AgentOption) -> bool) -> Option<Answer> {
+    d.options
+        .iter()
+        .find(|o| wanted(o))
+        .map(|o| Answer::indices(&d.id, vec![o.index]))
+}
+
+fn first(d: &AgentDecision) -> Answer {
+    let min = d.min.unwrap_or(1) as usize;
+    Answer::indices(&d.id, d.options.iter().take(min).map(|o| o.index).collect())
+}
+
+/// Seat 0 plays whatever it can and buys `card` once (Silver otherwise); the other seat
+/// does nothing. Stops at the first decision `stop` accepts, returning its seat.
+fn play_to(
+    table: &mut Table,
+    card: &str,
+    stop: impl Fn(PlayerId, &AgentDecision) -> bool,
+) -> Option<PlayerId> {
+    let mut bought = false;
+    for _ in 0..600 {
+        let seat = table.deciding()?;
+        let d = table.view(seat).decision.unwrap();
+        if stop(seat, &d) {
+            return Some(seat);
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 {
+            end.unwrap()
+        } else if let Some(play) = pick(&d, |o| o.action == "play") {
+            play
+        } else if let Some(buy) = pick(&d, |o| {
+            !bought && o.label.starts_with(&format!("Buy {card}"))
+        }) {
+            bought = true;
+            buy
+        } else if let Some(silver) = pick(&d, |o| !bought && o.label.starts_with("Buy Silver")) {
+            silver
+        } else {
+            end.unwrap()
+        };
+        table.answer(seat, &answer).unwrap();
+    }
+    None
+}
+
+#[test]
+fn a_question_about_looked_at_cards_names_them() {
+    let mut t = table(&[Card::Navigator], 1, &[]);
+    let asked = |_: PlayerId, d: &AgentDecision| d.source.as_deref() == Some("Navigator");
+    assert_eq!(play_to(&mut t, "Navigator", asked), Some(PlayerId(0)));
+    let g = t.game();
+    let top: Vec<&str> = g
+        .player(PlayerId(0))
+        .deck
+        .iter()
+        .rev()
+        .take(5)
+        .map(|&c| g.card(c).name())
+        .collect();
+    let d = t.view(PlayerId(0)).decision.unwrap();
+    assert!(
+        d.prompt
+            .starts_with(&format!("Navigator (looking at {}): ", top.join(", "))),
+        "{}",
+        d.prompt
+    );
+}
+
+#[test]
+fn everyone_sees_the_card_named_for_contraband() {
+    let mut t = table(&[Card::Contraband], 0, &[]);
+    let naming = |_: PlayerId, d: &AgentDecision| d.name_any;
+    assert_eq!(play_to(&mut t, "Contraband", naming), Some(PlayerId(1)));
+    let d = t.view(PlayerId(1)).decision.unwrap();
+    assert_eq!(d.source.as_deref(), Some("Contraband"));
+    t.answer(PlayerId(1), &Answer::name(&d.id, "Duchy"))
+        .unwrap();
+    for seat in [PlayerId(0), PlayerId(1)] {
+        let view = t.view(seat);
+        assert!(
+            view.notes
+                .iter()
+                .any(|n| n.source == "Contraband" && n.card.as_deref() == Some("Duchy")),
+            "{seat}: {:?}",
+            view.notes
+        );
+        assert!(
+            view.since_last_decision
+                .iter()
+                .any(|e| e.kind == "named" && e.card.as_deref() == Some("Duchy")),
+            "{seat}: {:?}",
+            view.since_last_decision
+        );
+    }
+}
+
+#[test]
+fn the_kingdom_is_the_kingdom_piles_in_the_game() {
+    let t = table(&[Card::YoungWitch], 0, &[]);
+    let view = t.view(PlayerId(0));
+    let bane = view
+        .notes
+        .iter()
+        .find(|n| n.source == "Young Witch")
+        .and_then(|n| n.pile.clone())
+        .expect("the Bane pile");
+    let flagged: Vec<&str> = view
+        .supply
+        .iter()
+        .filter(|p| p.kingdom)
+        .map(|p| p.card.as_str())
+        .collect();
+    assert_eq!(flagged.len(), 11);
+    assert!(flagged.contains(&bane.as_str()));
+    assert_eq!(view.game.kingdom, flagged);
+}
+
+#[test]
+fn divine_wind_replaces_the_kingdom() {
+    let config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::DivineWind],
+        ..GameConfig::new(
+            2,
+            vec![
+                Card::Poet,
+                Card::Cellar,
+                Card::Market,
+                Card::Mine,
+                Card::Moat,
+                Card::Remodel,
+                Card::Smithy,
+                Card::Village,
+                Card::Workshop,
+                Card::Festival,
+            ],
+            3,
+        )
+    };
+    let mut t = Table::new("t", config, vec![]).unwrap();
+    let suns = |t: &Table| {
+        let view = t.view(PlayerId(1));
+        let wind = view.landscapes.iter().find(|l| l.card == "Divine Wind");
+        wind.and_then(|l| l.suns).expect("Divine Wind's Sun tokens")
+    };
+    // Seat 0 buys and plays Poets until the last Sun is gone; seat 1 does nothing.
+    while suns(&t) > 0 {
+        let seat = t.deciding().expect("the game goes on");
+        let d = t.view(seat).decision.unwrap();
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 {
+            end.unwrap()
+        } else {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| pick(&d, |o| o.label.starts_with("Buy Poet")))
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    let view = t.view(PlayerId(1));
+    let flagged: Vec<&str> = view
+        .supply
+        .iter()
+        .filter(|p| p.kingdom)
+        .map(|p| p.card.as_str())
+        .collect();
+    assert_eq!(flagged.len(), 10);
+    assert!(!flagged.contains(&"Poet"));
+    assert_eq!(view.game.kingdom, flagged);
+}
+
+#[test]
+fn the_black_market_deck_is_a_face_down_pile_of_known_cards() {
+    let t = table(&[Card::BlackMarket], 4, &[]);
+    let view = t.view(PlayerId(0));
+    let deck = view
+        .non_supply
+        .iter()
+        .find(|p| p.hidden)
+        .expect("the Black Market deck");
+    assert!(!deck.kingdom && deck.cost.is_none() && deck.types.is_empty());
+    let mut listed: Vec<&str> = view
+        .notes
+        .iter()
+        .filter(|n| n.source == "Black Market" && n.count == 1)
+        .filter_map(|n| n.card.as_deref())
+        .collect();
+    let g = t.game();
+    let pile = g.piles().iter().find(|p| p.hidden).unwrap();
+    let mut cards: Vec<&str> = pile.cards.iter().map(|&c| g.card(c).name()).collect();
+    listed.sort();
+    cards.sort();
+    assert_eq!(listed, cards);
+    let rendered = text::render(&view);
+    let line = rendered
+        .lines()
+        .find(|l| l.starts_with("NON-SUPPLY"))
+        .unwrap();
+    assert!(line.contains("Black Market (face down) x60"), "{line}");
+}
+
+/// The text names seats P1, P2, ... (as engine-made labels do), so each player's header
+/// says which seat they are.
+#[test]
+fn text_introduces_the_seat_numbers_it_uses() {
+    let t = table(&[Card::Militia], 11, &["Ada", "Bo"]);
+    let mut view = t.view(PlayerId(1));
+    view.lasting.push(dominion_agent::LastingView {
+        card: "Haven".into(),
+        owner: 0,
+        until: "start-of-turn".into(),
+        until_player: Some(0),
+        cards: vec![],
+        count: None,
+    });
+    let rendered = text::render(&view);
+    assert!(rendered.contains("YOU P2: Bo") && rendered.contains("OPPONENT P1: Ada"));
+    assert!(
+        rendered.contains("Haven (P1) until P1's next turn"),
+        "{rendered}"
+    );
 }

@@ -1027,6 +1027,7 @@ fn navigator(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             f.ask_either(&["Discard them all", "Put them back in any order"])
+                .about(f.s.cards.clone())
         }
         2 => {
             if input.opt() == Some(crate::Opt::Mode(0)) {

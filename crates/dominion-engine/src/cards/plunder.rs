@@ -456,8 +456,7 @@ impl SetRules for Rules {
                 .piles
                 .iter()
                 .filter(|p| {
-                    p.in_supply
-                        && p.card.def().kingdom
+                    p.is_kingdom()
                         && p.traits.is_empty()
                         && p.card.is(Types::ACTION | Types::TREASURE)
                 })
@@ -2496,6 +2495,7 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 1,
                 1,
             )
+            .about(g.player(p).discard.clone())
         }
         1 => {
             f.s.m = mode_mask(input);

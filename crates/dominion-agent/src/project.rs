@@ -138,11 +138,13 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
         let shown = top.unwrap_or(pile.card());
         let types: Vec<String> = match pile.top() {
             Some(c) => v.types(c).map(|t| t.names().map(String::from).collect()),
+            None if pile.hidden() => Some(vec![]),
             None => None,
         }
         .unwrap_or_else(|| shown.type_names().into_iter().map(String::from).collect());
         let pile_cost = match pile.top() {
             Some(c) => v.cost_of(c),
+            None if pile.hidden() => None,
             None => shown.cost().map(|_| v.cost(shown)),
         };
         let pv = PileView {
@@ -153,7 +155,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
                 .map(|t| t.name().to_string()),
             cost: pile_cost.map(cost),
             types,
-            kingdom: game.config().kingdom.contains(&pile.card()),
+            kingdom: pile.kingdom(),
             hidden: pile.hidden(),
             tokens: PileTokens {
                 embargo: pile.embargo(),
@@ -353,7 +355,12 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
         id: cx.game_id.map(String::from),
         running: game.outcome().is_none(),
         result,
-        kingdom: names(&game.config().kingdom),
+        kingdom: game
+            .piles()
+            .iter()
+            .filter(|p| p.is_kingdom())
+            .map(|p| p.card.name().to_string())
+            .collect(),
         landscapes: names(game.landscapes()),
     }
 }
@@ -556,7 +563,18 @@ pub(crate) fn decision(
 ) -> (AgentDecision, Vec<Target>) {
     let v = game.view(d.player);
     let source = d.source.map(|c| c.name().to_string());
-    let prefix = d.source.map(|c| format!("{c}: ")).unwrap_or_default();
+    let about: Vec<&str> = d
+        .about
+        .iter()
+        .filter_map(|&c| v.card(c))
+        .map(|c| c.name())
+        .collect();
+    let prefix = match (d.source, about.is_empty()) {
+        (Some(c), true) => format!("{c}: "),
+        (Some(c), false) => format!("{c} (looking at {}): ", about.join(", ")),
+        (None, false) => format!("Looking at {}: ", about.join(", ")),
+        (None, true) => String::new(),
+    };
     let mut items: Vec<(AgentOption, Target)> = vec![];
     let card_option = |i: usize, c: CardId, action: &str| {
         let name = v
@@ -841,6 +859,16 @@ pub(crate) fn log_entry(seq: usize, event: &Event, cx: &Context<'_>) -> LogEntry
             Some(*player),
             Some(*card),
             format!("{} plays {card}", name(*player)),
+        ),
+        Event::UsedWay { player, card, way } => (
+            Some(*player),
+            Some(*way),
+            format!("{} uses {way} for {card}", name(*player)),
+        ),
+        Event::Named { player, card } => (
+            Some(*player),
+            Some(*card),
+            format!("{} names {card}", name(*player)),
         ),
         Event::Bought { player, card } | Event::BoughtLandscape { player, card } => (
             Some(*player),

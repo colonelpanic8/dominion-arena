@@ -635,6 +635,7 @@ fn catacombs(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.cards = input.cards();
             f.pc = 2;
             f.ask_modes(&["Put them into your hand", "Discard them and +3 Cards"], 1, 1)
+                .about(f.s.cards.clone())
         }
         2 => {
             let m = mode_mask(input);
@@ -1453,6 +1454,7 @@ fn survivors(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             f.ask_either(&["Discard them", "Put them back in any order"])
+                .about(f.s.cards.clone())
         }
         2 => {
             let cards: Vec<CardId> = std::mem::take(&mut f.s.cards)

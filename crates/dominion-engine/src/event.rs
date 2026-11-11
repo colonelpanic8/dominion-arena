@@ -23,6 +23,17 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
+    /// Used a Way instead of following the played card's instructions.
+    UsedWay {
+        player: PlayerId,
+        card: Card,
+        way: Card,
+    },
+    /// Named a card (Wishing Well, Contraband, ...), which everyone hears.
+    Named {
+        player: PlayerId,
+        card: Card,
+    },
     Bought {
         player: PlayerId,
         card: Card,
