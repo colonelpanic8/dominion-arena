@@ -13,7 +13,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
-use crate::setup::add_mixed_pile;
+use crate::setup::{Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Set, Types};
 use crate::Note;
@@ -633,7 +633,7 @@ impl SetRules for Rules {
         true
     }
 
-    fn setup(g: &mut Game) {
+    fn setup(g: &mut Game, s: &mut Setup) {
         let players = g.num_players() as i32;
         let supply: Vec<PileId> = (0..g.piles.len())
             .map(|i| PileId(i as u8))
@@ -644,7 +644,8 @@ impl SetRules for Rules {
             .copied()
             .filter(|&id| g.pile_top(id).is_some_and(|top| g.is(top, Types::ACTION)))
             .collect();
-        for l in g.landscapes.clone() {
+        let joined: Vec<Card> = g.landscapes.iter().copied().filter(|&l| s.joined(l)).collect();
+        for l in joined {
             match l {
                 _ if TOKEN_LANDMARKS.contains(&l) => {
                     g.ext.empires.landmark_vp.push((l, 6 * players));
@@ -666,9 +667,11 @@ impl SetRules for Rules {
                         }
                     }
                 }
-                Card::Obelisk if !action_piles.is_empty() => {
-                    let i = g.random_index(action_piles.len());
-                    g.ext.empires.obelisk = Some(action_piles[i]);
+                Card::Obelisk => {
+                    let names = action_piles.iter().map(|&p| g.pile(p).card).collect();
+                    g.ext.empires.obelisk = s
+                        .choose(g, Card::Obelisk, names)
+                        .and_then(|name| g.supply_pile(name));
                 }
                 Card::Tax => {
                     for &pile in &supply {

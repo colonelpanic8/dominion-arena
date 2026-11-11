@@ -13,7 +13,7 @@ use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{Pile, Pos, Scratch, Until, Zone};
-use crate::setup::{add_pile, victory_pile_size};
+use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Types};
 use crate::Note;
@@ -25,6 +25,8 @@ pub(crate) struct State {
     pub riverboat: Option<CardId>,
     /// Who last bought Continue, and on which of their turns.
     pub continued: Option<(PlayerId, u32)>,
+    /// Approaching Army's Attack pile has been added.
+    pub army_added: bool,
 }
 
 pub(crate) struct Rules;
@@ -464,54 +466,46 @@ impl SetRules for Rules {
         );
     }
 
-    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
-        if cards.contains(&Card::Riverboat) && g.ext.rising_sun.riverboat.is_none() {
-            set_aside_riverboat_card(g);
+    fn ensure(g: &mut Game, s: &mut Setup) {
+        if g.ext.rising_sun.riverboat.is_none() && setup::in_game(g, |c| c == Card::Riverboat) {
+            set_aside_riverboat_card(g, s);
         }
-    }
-
-    fn setup_kingdom(g: &mut Game) {
-        if g.supply_pile(Card::Riverboat).is_some() {
-            set_aside_riverboat_card(g);
+        if g.prophecy.is_none() {
+            let configured = g
+                .landscapes
+                .iter()
+                .copied()
+                .find(|l| l.kind() == Kind::Prophecy);
+            let omen = setup::in_game(g, |c| c.is(Types::OMEN));
+            let prophecy = configured.or_else(|| {
+                omen.then(|| {
+                    let all: Vec<Card> = Card::ALL
+                        .iter()
+                        .copied()
+                        .filter(|c| c.kind() == Kind::Prophecy)
+                        .collect();
+                    let card = all[g.random_index(all.len())];
+                    g.landscapes.push(card);
+                    card
+                })
+            });
+            if let Some(prophecy) = prophecy {
+                let suns = match g.num_players() {
+                    2 => 5,
+                    3 => 8,
+                    4 => 10,
+                    5 => 12,
+                    _ => 13,
+                };
+                g.prophecy = Some((prophecy, suns));
+            }
         }
-        let configured = g
-            .landscapes
-            .iter()
-            .copied()
-            .find(|l| l.kind() == Kind::Prophecy);
-        let omen = g
-            .piles
-            .iter()
-            .any(|pile| pile.cards.iter().any(|&c| g.printed(c).is(Types::OMEN)));
-        let prophecy = configured.or_else(|| {
-            omen.then(|| {
-                let all: Vec<Card> = Card::ALL
-                    .iter()
-                    .copied()
-                    .filter(|c| c.kind() == Kind::Prophecy)
-                    .collect();
-                let card = all[g.random_index(all.len())];
-                g.landscapes.push(card);
-                card
-            })
-        });
-        let Some(prophecy) = prophecy else {
-            return;
-        };
-        let suns = match g.num_players() {
-            2 => 5,
-            3 => 8,
-            4 => 10,
-            5 => 12,
-            _ => 13,
-        };
-        g.prophecy = Some((prophecy, suns));
-        if prophecy == Card::ApproachingArmy {
+        if g.has_landscape(Card::ApproachingArmy) && !g.ext.rising_sun.army_added {
+            g.ext.rising_sun.army_added = true;
             let mut pool = unused_kingdom_cards(g);
             pool.retain(|c| c.is(Types::ATTACK));
-            if !pool.is_empty() {
-                let card = pool[g.random_index(pool.len())];
-                add_kingdom_pile(g, card);
+            if let Some(card) = s.choose(g, Card::ApproachingArmy, pool) {
+                setup::add_kingdom_pile(g, card);
             }
         }
     }
@@ -578,33 +572,14 @@ fn gain_where(
     })
 }
 
-/// Kingdom cards not used in this game (no pile of theirs, not Riverboat's card).
+/// Kingdom cards not used in this game.
 fn unused_kingdom_cards(g: &Game) -> Vec<Card> {
-    let riverboat = g.ext.rising_sun.riverboat.map(|c| home_name(g.printed(c)));
     Card::kingdom_cards()
-        .filter(|c| !c.def().removed && Some(*c) != riverboat)
-        .filter(|&c| !g.piles().iter().any(|p| p.card == c))
+        .filter(|&c| !c.def().removed && setup::unused(g, c))
         .collect()
 }
 
-fn home_name(card: Card) -> Card {
-    card.def().pile.unwrap_or(card)
-}
-
-/// Adds a Kingdom pile mid-setup (Approaching Army, Divine Wind).
-fn add_kingdom_pile(g: &mut Game, card: Card) {
-    if !super::build_kingdom_pile(g, card) {
-        let size = if card.is(Types::VICTORY) {
-            victory_pile_size(g.num_players())
-        } else {
-            10
-        };
-        add_pile(g, card, size, true);
-    }
-}
-
-fn set_aside_riverboat_card(g: &mut Game) {
-    let used = |g: &Game, c: Card| g.piles().iter().any(|p| p.card == home_name(c));
+fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
     let pool: Vec<Card> = Card::ALL
         .iter()
         .copied()
@@ -616,20 +591,18 @@ fn set_aside_riverboat_card(g: &mut Game) {
                 && c.is(Types::ACTION)
                 && !c.is(Types::DURATION)
                 && def.cost == Some(Cost::coins(5))
-                && !used(g, c)
+                && setup::unused(g, c)
         })
         .collect();
-    if pool.is_empty() {
+    let Some(card) = s.choose(g, Card::Riverboat, pool) else {
         return;
-    }
-    let card = pool[g.random_index(pool.len())];
+    };
     let pile = PileId(g.piles.len() as u8);
     let mut holder = Pile::new(card, false);
     holder.removed = true;
     g.piles.push(holder);
     let id = g.create(card, Zone::Pile(pile));
     g.ext.rising_sun.riverboat = Some(id);
-    super::setup_added_piles(g, &[card]);
 }
 
 /// "+1 Sun": removes a Sun token; the last one makes the Prophecy happen.
@@ -674,19 +647,11 @@ fn divine_wind(g: &mut Game) {
     let mut pool = unused_kingdom_cards(g);
     g.shuffle(&mut pool);
     pool.truncate(10);
-    for &card in &pool {
-        add_kingdom_pile(g, card);
+    let since = setup::mark(g);
+    for card in pool {
+        setup::add_kingdom_pile(g, card);
     }
-    let potions = pool.iter().any(|&k| {
-        k.pile_members()
-            .iter()
-            .chain(std::iter::once(&k))
-            .any(|c| c.cost().is_some_and(|c| c.potions > 0))
-    });
-    if potions && g.supply_pile(Card::Potion).is_none() {
-        add_pile(g, Card::Potion, 16, true);
-    }
-    super::setup_added_piles(g, &pool);
+    setup::complete(g, since);
 }
 
 fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger>) {

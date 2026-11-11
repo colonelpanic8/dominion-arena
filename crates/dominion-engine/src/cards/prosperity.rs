@@ -5,6 +5,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::setup::Setup;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -264,8 +265,8 @@ impl SetRules for Rules {
         !contraband && !grand_market_blocked
     }
 
-    fn setup(g: &mut Game) {
-        if g.pile_of(Card::TradeRoute).is_none() {
+    fn setup(g: &mut Game, s: &mut Setup) {
+        if !s.joined(Card::TradeRoute) {
             return;
         }
         for i in 0..g.piles.len() {

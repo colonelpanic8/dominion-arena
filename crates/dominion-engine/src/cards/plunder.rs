@@ -15,7 +15,7 @@ use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{ExtraTurn, Lasting, Phase, Pos, Scratch, Until, Zone};
-use crate::setup::add_mixed_pile;
+use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -421,66 +421,47 @@ impl SetRules for Rules {
         card != Card::Launch || this_turn_lasting(g, Card::Launch, p).is_none()
     }
 
-    fn setup(g: &mut Game) {
+    fn ensure(g: &mut Game, _s: &mut Setup) {
+        let gainer = setup::in_game(g, |c| LOOT_GAINERS.contains(&c))
+            || g.landscapes.contains(&Card::Cursed);
+        if gainer {
+            add_loot_pile(g);
+        }
+    }
+
+    fn setup(g: &mut Game, s: &mut Setup) {
         let traits: Vec<Card> = g
             .landscapes
             .iter()
             .copied()
-            .filter(|l| l.kind() == Kind::Trait)
+            .filter(|&l| l.kind() == Kind::Trait && s.joined(l))
             .collect();
         for t in traits {
-            if trait_pile(g, t).is_some() {
-                continue;
-            }
-            let eligible: Vec<PileId> = g
-                .config
-                .kingdom
+            let eligible: Vec<Card> = g
+                .piles
                 .iter()
-                .filter_map(|&k| g.supply_pile(k))
-                .filter(|&pile| {
-                    let p = g.pile(pile);
-                    p.traits.is_empty() && p.card.is(Types::ACTION | Types::TREASURE)
+                .filter(|p| {
+                    p.in_supply
+                        && p.card.def().kingdom
+                        && p.traits.is_empty()
+                        && p.card.is(Types::ACTION | Types::TREASURE)
                 })
+                .map(|p| p.card)
                 .collect();
-            if eligible.is_empty() {
-                continue;
+            if let Some(pile) = s.choose(g, t, eligible).and_then(|c| g.supply_pile(c)) {
+                g.piles[pile.index()].traits.push(t);
             }
-            let pile = eligible[g.random_index(eligible.len())];
-            g.piles[pile.index()].traits.push(t);
-        }
-
-        let gainer = g
-            .piles
-            .iter()
-            .any(|pile| pile.cards.iter().any(|&c| LOOT_GAINERS.contains(&g.printed(c))))
-            || g.landscapes.iter().any(|l| LOOT_GAINERS.contains(l))
-            || trait_pile(g, Card::Cursed).is_some();
-        if gainer {
-            add_loot_pile(g);
         }
 
         // Inherited: each player in turn order takes a card of its pile for their deck.
-        let fresh = g.players.iter().all(|p| p.owned().next().is_none());
-        if let Some(pile) = trait_pile(g, Card::Inherited)
-            && fresh
+        if s.joined(Card::Inherited)
+            && let Some(pile) = trait_pile(g, Card::Inherited)
         {
             for p in g.players_from(PlayerId(0)) {
                 if let Some(top) = g.pile_top(pile) {
                     g.move_card(top, Zone::Deck(p), Pos::Top);
                 }
             }
-        }
-    }
-
-    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
-        let gainer = cards.iter().any(|&c| {
-            c.pile_members()
-                .iter()
-                .chain([&c])
-                .any(|m| LOOT_GAINERS.contains(m))
-        });
-        if gainer {
-            add_loot_pile(g);
         }
     }
 

@@ -13,6 +13,7 @@ use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Opt, PlayerId, Set, Types};
 use crate::Note;
@@ -257,10 +258,10 @@ impl SetRules for Rules {
         card.kind() != Kind::Project || (projects.len() < 2 && !projects.contains(&card))
     }
 
-    fn setup(g: &mut Game) {
-        g.ext.renaissance.plot = vec![0; g.num_players()];
+    fn ensure(g: &mut Game, _s: &mut Setup) {
+        g.ext.renaissance.plot.resize(g.num_players(), 0);
         for (artifact, card) in ARTIFACTS {
-            if g.pile_of(card).is_some() && !g.artifacts.iter().any(|(a, _)| *a == artifact) {
+            if setup::in_game(g, |c| c == card) && !g.artifacts.iter().any(|(a, _)| *a == artifact) {
                 g.artifacts.push((artifact, None));
             }
         }

@@ -16,7 +16,7 @@ use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
-use crate::setup::add_pile;
+use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
 use crate::Note;
@@ -408,22 +408,20 @@ impl SetRules for Rules {
             && returned_state(g, p, Card::Deluded))
     }
 
-    fn setup(g: &mut Game) {
-        let present = |g: &Game, pred: &dyn Fn(Card) -> bool| {
-            g.piles
-                .iter()
-                .any(|pile| pred(pile.card) || pile.cards.iter().any(|&c| pred(g.printed(c))))
-        };
-        let uses = |g: &Game, cards: &[Card]| present(g, &|c| cards.contains(&c));
-        let fate = present(g, &|c| c.is(Types::FATE));
-        let doom = present(g, &|c| c.is(Types::DOOM));
+    fn ensure(g: &mut Game, s: &mut Setup) {
+        let uses = |g: &Game, cards: &[Card]| setup::in_game(g, |c| cards.contains(&c));
+        let fate = setup::in_game(g, |c| c.is(Types::FATE));
+        let doom = setup::in_game(g, |c| c.is(Types::DOOM));
         if fate && g.boons.draw.is_empty() && g.boons.discard.is_empty() {
             let mut boons = BOONS.to_vec();
             g.shuffle(&mut boons);
-            if uses(g, &[Card::Druid]) {
-                g.ext.nocturne.druid = boons.split_off(boons.len() - 3);
-            }
             g.boons.draw = boons;
+        }
+        if g.ext.nocturne.druid.is_empty() && uses(g, &[Card::Druid]) {
+            let boons = g.boons.draw.clone();
+            let druid = s.choose_n(g, Card::Druid, boons, 3..=3);
+            g.boons.draw.retain(|b| !druid.contains(b));
+            g.ext.nocturne.druid = druid;
         }
         if doom && g.hexes.draw.is_empty() && g.hexes.discard.is_empty() {
             let mut hexes = HEXES.to_vec();
@@ -446,19 +444,9 @@ impl SetRules for Rules {
                 add_pile(g, card, size, false);
             }
         }
-        if uses(g, &[Card::Necromancer]) {
+        if uses(g, &[Card::Necromancer]) && !uses(g, &[Card::ZombieApprentice]) {
             for z in [Card::ZombieApprentice, Card::ZombieMason, Card::ZombieSpy] {
                 g.create(z, Zone::Trash);
-            }
-        }
-        // The starting Coppers that Heirlooms replace go to the Copper pile.
-        let heirlooms = HEIRLOOMS
-            .iter()
-            .filter(|(k, _)| g.pile_of(*k).is_some())
-            .count();
-        if let Some(copper) = g.supply_pile(Card::Copper) {
-            for _ in 0..heirlooms * g.num_players() {
-                g.create(Card::Copper, Zone::Pile(copper));
             }
         }
     }

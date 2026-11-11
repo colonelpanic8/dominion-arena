@@ -18,6 +18,7 @@ mod prosperity;
 mod renaissance;
 mod rising_sun;
 mod seaside;
+mod setup;
 
 use crate::game::Zone;
 use crate::*;
@@ -61,6 +62,15 @@ pub(crate) fn setup(kingdom: &[Card]) -> Game {
 
 pub(crate) fn setup_with(config: GameConfig) -> Game {
     crate::setup::build(config).unwrap()
+}
+
+/// Adds Kingdom piles mid-game, as Divine Wind does, with what they need.
+pub(crate) fn add_kingdom_piles(g: &mut Game, cards: &[Card]) {
+    let since = crate::setup::mark(g);
+    for &card in cards {
+        crate::setup::add_kingdom_pile(g, card);
+    }
+    crate::setup::complete(g, since);
 }
 
 /// Replaces the cards in `zone` with new copies of `cards`; old ones go to the trash.

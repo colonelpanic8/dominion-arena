@@ -6,7 +6,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, OVERPAY, Value};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
-use crate::setup::{add_pile, victory_pile_size};
+use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
 use crate::Note;
@@ -333,89 +333,59 @@ impl SetRules for Rules {
         }
     }
 
-    fn build_kingdom_pile(g: &mut Game, card: Card) -> bool {
-        match card {
-            Card::YoungWitch => {
-                add_pile(g, Card::YoungWitch, 10, true);
-                if let Some(bane) = choose_unused(g, 2, 3) {
-                    g.ext.cornucopia_guilds.bane = Some(add_kingdom_pile(g, bane, true));
-                }
-                true
-            }
-            Card::Ferryman => {
-                add_pile(g, Card::Ferryman, 10, true);
-                if let Some(c) = choose_unused(g, 3, 4) {
-                    g.ext.cornucopia_guilds.ferryman = Some(add_kingdom_pile(g, c, false));
-                }
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn setup(g: &mut Game) {
-        let cards = [Card::Baker, Card::Tournament, Card::Joust]
-            .into_iter()
-            .filter(|&c| g.pile_of(c).is_some())
-            .collect::<Vec<_>>();
-        Self::setup_added_piles(g, &cards);
-    }
-
-    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
-        if cards.contains(&Card::Baker) {
-            for p in &mut g.players {
-                p.coffers += 1;
+    fn ensure(g: &mut Game, s: &mut Setup) {
+        let st = &g.ext.cornucopia_guilds;
+        if st.bane.is_none() && setup::in_game(g, |c| c == Card::YoungWitch) {
+            let candidates = unused_costing(g, 2, 3);
+            if let Some(bane) = s.choose(g, Card::YoungWitch, candidates) {
+                g.ext.cornucopia_guilds.bane = Some(setup::add_kingdom_pile(g, bane));
             }
         }
-        if cards.contains(&Card::Tournament) && g.pile_of(PRIZES[0]).is_none() {
+        let st = &g.ext.cornucopia_guilds;
+        if st.ferryman.is_none() && setup::in_game(g, |c| c == Card::Ferryman) {
+            let candidates = unused_costing(g, 3, 4);
+            if let Some(card) = s.choose(g, Card::Ferryman, candidates) {
+                let pile = setup::add_kingdom_pile(g, card);
+                g.piles[pile.index()].in_supply = false;
+                g.ext.cornucopia_guilds.ferryman = Some(pile);
+            }
+        }
+        if setup::in_game(g, |c| c == Card::Tournament) && g.pile_of(PRIZES[0]).is_none() {
             for prize in PRIZES {
                 add_pile(g, prize, 1, false);
             }
         }
-        if cards.contains(&Card::Joust) && g.pile_of(REWARDS[0]).is_none() {
+        if setup::in_game(g, |c| c == Card::Joust) && g.pile_of(REWARDS[0]).is_none() {
             let n = if g.num_players() == 2 { 1 } else { 2 };
             for reward in REWARDS {
                 add_pile(g, reward, n, false);
             }
         }
     }
+
+    fn setup(g: &mut Game, s: &mut Setup) {
+        if s.joined(Card::Baker) {
+            for p in &mut g.players {
+                p.coffers += 1;
+            }
+        }
+    }
 }
 
-/// A random Kingdom card costing $`lo` to $`hi` from the sets in use whose pile isn't in
-/// the game (Young Witch's Bane, Ferryman's pile).
-fn choose_unused(g: &mut Game, lo: u8, hi: u8) -> Option<Card> {
+/// The unused Kingdom cards costing $`lo` to $`hi` from the sets in use (Young Witch's
+/// Bane, Ferryman's pile).
+fn unused_costing(g: &Game, lo: u8, hi: u8) -> Vec<Card> {
     let sets: Vec<Set> = g.config.kingdom.iter().map(|c| c.set()).collect();
-    let candidates: Vec<Card> = Card::kingdom_cards()
-        .filter(|c| {
+    Card::kingdom_cards()
+        .filter(|&c| {
             sets.contains(&c.set())
                 && !c.def().removed
-                && !g.config.kingdom.contains(c)
-                && g.pile_of(*c).is_none()
+                && setup::unused(g, c)
                 && c.cost().is_some_and(|k| {
                     k.potions == 0 && k.debt == 0 && (lo..=hi).contains(&k.coins)
                 })
         })
-        .collect();
-    if candidates.is_empty() {
-        return None;
-    }
-    let i = g.random_index(candidates.len());
-    Some(candidates[i])
-}
-
-/// Builds the Kingdom pile of `card` (with anything its own setup adds) and returns it.
-fn add_kingdom_pile(g: &mut Game, card: Card, in_supply: bool) -> PileId {
-    let id = PileId(g.piles.len() as u8);
-    if !crate::cards::build_kingdom_pile(g, card) {
-        let size = if card.is(Types::VICTORY) {
-            victory_pile_size(g.num_players())
-        } else {
-            10
-        };
-        add_pile(g, card, size, true);
-    }
-    g.piles[id.index()].in_supply = in_supply;
-    id
+        .collect()
 }
 
 // ---- Helpers shared with other sets ----

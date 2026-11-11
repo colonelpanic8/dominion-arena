@@ -14,6 +14,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::Event;
 use crate::frame::{Flow, Input};
 use crate::game::{Lasting, Scratch, Until};
+use crate::setup::Setup;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Plus, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -103,17 +104,15 @@ pub(crate) trait SetRules {
         false
     }
 
-    /// Setup that adds Kingdom piles or decides what is in the game (a Prophecy, cards set
-    /// aside in setup, ...). Runs after the Kingdom piles are built, before `setup`.
-    fn setup_kingdom(g: &mut Game) {}
+    /// Adds what the cards and landscapes in the game need: piles, decks, set-aside cards,
+    /// an Ally, ... Look at the whole game (`setup::in_game`), not at who added what, and
+    /// add only what is missing: this runs until nothing changes, at the start and again
+    /// whenever cards join mid-game (Divine Wind).
+    fn ensure(g: &mut Game, s: &mut Setup) {}
 
-    /// Setup after the Supply is built: extra piles, decks of Boons, tokens, ...
-    fn setup(g: &mut Game) {}
-
-    /// Setup for Kingdom cards that join the game outside the normal setup: piles dealt
-    /// mid-game (Divine Wind) or a card with no pile (Riverboat's). `setup` may already
-    /// have run, so add only what is missing.
-    fn setup_added_piles(g: &mut Game, cards: &[Card]) {}
+    /// One-shot setup for the cards and landscapes that joined (`s.joined`), once `ensure`
+    /// has settled: tokens on piles, starting resources, choices among the piles, ...
+    fn setup(g: &mut Game, s: &mut Setup) {}
 
     /// Rearranges `cards`, just shuffled to go under `p`'s deck (bottom first).
     fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {}
@@ -264,16 +263,12 @@ macro_rules! sets {
             }
         }
 
-        pub(crate) fn setup_kingdom(g: &mut Game) {
-            $(<$module::Rules as SetRules>::setup_kingdom(g);)*
+        pub(crate) fn ensure(g: &mut Game, s: &mut Setup) {
+            $(<$module::Rules as SetRules>::ensure(g, s);)*
         }
 
-        pub(crate) fn setup(g: &mut Game) {
-            $(<$module::Rules as SetRules>::setup(g);)*
-        }
-
-        pub(crate) fn setup_added_piles(g: &mut Game, cards: &[Card]) {
-            $(<$module::Rules as SetRules>::setup_added_piles(g, cards);)*
+        pub(crate) fn setup(g: &mut Game, s: &mut Setup) {
+            $(<$module::Rules as SetRules>::setup(g, s);)*
         }
 
         pub(crate) fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {

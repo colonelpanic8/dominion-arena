@@ -6,7 +6,7 @@ use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{ExtraTurn, Mat, Phase, Pos, Scratch, Token, Until, Zone};
-use crate::setup::add_pile;
+use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
 use crate::Note;
@@ -550,18 +550,7 @@ impl SetRules for Rules {
         true
     }
 
-    fn setup(g: &mut Game) {
-        for p in &mut g.players {
-            p.journey_face_up = true;
-        }
-        let starts: Vec<Card> = [Card::Page, Card::Peasant]
-            .into_iter()
-            .filter(|&c| g.supply_pile(c).is_some())
-            .collect();
-        Self::setup_added_piles(g, &starts);
-    }
-
-    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+    fn ensure(g: &mut Game, _s: &mut Setup) {
         let lines = [
             (
                 Card::Page,
@@ -578,7 +567,7 @@ impl SetRules for Rules {
             ),
         ];
         for (start, line) in lines {
-            if cards.contains(&start) && g.pile_of(line[0]).is_none() {
+            if setup::in_game(g, |c| c == start) && g.pile_of(line[0]).is_none() {
                 for card in line {
                     add_pile(g, card, 5, false);
                 }

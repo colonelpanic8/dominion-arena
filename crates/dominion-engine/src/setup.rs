@@ -8,6 +8,7 @@ use rand::seq::{IndexedRandom, SliceRandom};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
+use std::ops::RangeInclusive;
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +29,13 @@ pub struct GameConfig {
     /// Use Shelters instead of starting Estates. `None` follows the usual rule (a random
     /// Kingdom card is from Dark Ages).
     pub shelters: Option<bool>,
+    /// Choices setup otherwise makes at random, by the card that makes them: the unused
+    /// Kingdom card Young Witch (its Bane), Ferryman, Way of the Mouse, Riverboat and
+    /// Approaching Army add; the Black Market deck (top first); Druid's three Boons; and
+    /// the Kingdom pile Obelisk or each Trait goes on. The Ally and Prophecy are chosen by
+    /// listing them in `landscapes`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub setup_choices: BTreeMap<Card, Vec<Card>>,
 }
 
 impl GameConfig {
@@ -40,6 +48,7 @@ impl GameConfig {
             turn_limit: None,
             colonies: None,
             shelters: None,
+            setup_choices: BTreeMap::new(),
         }
     }
 
@@ -88,6 +97,12 @@ pub enum SetupError {
     NotLandscape(Card),
     #[error("{0} appears more than once")]
     Duplicate(Card),
+    #[error("{choice} is not a legal setup choice for {by}")]
+    InvalidChoice { by: Card, choice: Card },
+    #[error("wrong number of setup choices for {0}")]
+    ChoiceCount(Card),
+    #[error("a setup choice is given for {0}, which makes none in this game")]
+    UnusedChoice(Card),
 }
 
 /// Number of copies a Victory pile starts with.
@@ -137,7 +152,13 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         cards: vec![],
         zones: vec![],
         masks: BTreeMap::new(),
-        players: vec![Player::default(); n as usize],
+        players: vec![
+            Player {
+                journey_face_up: true,
+                ..Player::default()
+            };
+            n as usize
+        ],
         piles: vec![],
         trash: vec![],
         turn: Turn::new(PlayerId(0)),
@@ -188,39 +209,38 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         basics.push((Card::Colony, victory));
     }
     basics.push((Card::Curse, 10 * (n - 1)));
-    let potions = g.config.kingdom.iter().any(|&k| {
-        k.pile_members()
-            .iter()
-            .chain(std::iter::once(&k))
-            .any(|c| c.cost().is_some_and(|c| c.potions > 0))
-    });
-    if potions {
-        basics.push((Card::Potion, 16));
-    }
     for (card, size) in basics {
         add_pile(&mut g, card, size, true);
     }
-
     for card in g.config.kingdom.clone() {
-        if !cards::build_kingdom_pile(&mut g, card) {
-            let size = if card.is(Types::VICTORY) { victory } else { 10 };
-            add_pile(&mut g, card, size, true);
-        }
+        add_kingdom_pile(&mut g, card);
     }
 
-    cards::setup_kingdom(&mut g);
-    cards::setup(&mut g);
+    let s = complete(&mut g, Mark::default());
+    if let Some(err) = s.error {
+        return Err(err);
+    }
+    if let Some(&by) = g
+        .config
+        .setup_choices
+        .keys()
+        .find(|by| !s.made.contains(by))
+    {
+        return Err(SetupError::UnusedChoice(by));
+    }
 
     let estates = if shelters {
         vec![Card::Hovel, Card::Necropolis, Card::OvergrownEstate]
     } else {
         vec![Card::Estate; 3]
     };
+    let mut coppers_dealt = 0;
     for p in 0..n {
         let p = PlayerId(p as u8);
         let mut deck = vec![Card::Copper; 7];
         deck.extend(estates.iter().copied());
         cards::modify_starting_deck(&g, p, &mut deck);
+        coppers_dealt += deck.iter().filter(|&&c| c == Card::Copper).count();
         for card in deck {
             g.create(card, Zone::Deck(p));
         }
@@ -233,7 +253,151 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
             g.players[p.index()].hand.push(top);
         }
     }
+    // Starting Coppers something replaced (Heirlooms, Inherited) stay in the pile.
+    if let Some(copper) = g.supply_pile(Card::Copper) {
+        for _ in coppers_dealt..7 * n {
+            g.create(Card::Copper, Zone::Pile(copper));
+        }
+    }
     Ok(g)
+}
+
+/// Where the cards and landscapes in the game ended at some point, so that setup can
+/// tell what joined since.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Mark {
+    cards: usize,
+    landscapes: usize,
+}
+
+pub(crate) fn mark(g: &Game) -> Mark {
+    Mark {
+        cards: g.cards.len(),
+        landscapes: g.landscapes.len(),
+    }
+}
+
+/// Setup in progress: what joined the game, and the configured choices made.
+#[derive(Debug, Default)]
+pub(crate) struct Setup {
+    joined: Vec<Card>,
+    made: Vec<Card>,
+    error: Option<SetupError>,
+}
+
+impl Setup {
+    /// Whether a copy of `card` (or the landscape `card`) joined the game in this setup.
+    pub(crate) fn joined(&self, card: Card) -> bool {
+        self.joined.contains(&card)
+    }
+
+    /// The cards and landscapes that joined the game in this setup.
+    pub(crate) fn joined_cards(&self) -> &[Card] {
+        &self.joined
+    }
+
+    /// The choice `by` makes among `candidates`: the configured one, or a random one.
+    pub(crate) fn choose(&mut self, g: &mut Game, by: Card, candidates: Vec<Card>) -> Option<Card> {
+        self.choose_n(g, by, candidates, 1..=1).pop()
+    }
+
+    /// The different cards `by` chooses among `candidates`: the configured ones (as many as
+    /// `n` allows), or as many as possible up to `n.end()` at random.
+    pub(crate) fn choose_n(
+        &mut self,
+        g: &mut Game,
+        by: Card,
+        mut candidates: Vec<Card>,
+        n: RangeInclusive<usize>,
+    ) -> Vec<Card> {
+        self.made.push(by);
+        if let Some(chosen) = g.config.setup_choices.get(&by).cloned() {
+            let err = if n.contains(&chosen.len()) {
+                chosen
+                    .iter()
+                    .enumerate()
+                    .find(|&(i, c)| !candidates.contains(c) || chosen[..i].contains(c))
+                    .map(|(_, &choice)| SetupError::InvalidChoice { by, choice })
+            } else {
+                Some(SetupError::ChoiceCount(by))
+            };
+            match err {
+                None => return chosen,
+                Some(err) => {
+                    self.error.get_or_insert(err);
+                }
+            }
+        }
+        // A card configured for another choice isn't free for a random one.
+        let reserved = |c: &Card| {
+            g.home_pile(*c).is_none() && g.config.setup_choices.values().flatten().any(|r| r == c)
+        };
+        candidates.retain(|c| !reserved(c));
+        g.shuffle(&mut candidates);
+        candidates.truncate(*n.end());
+        candidates
+    }
+}
+
+/// Completes setup for whatever joined the game since `since` (everything, at the start):
+/// runs every set's `ensure` until nothing changes, then their `setup` once.
+pub(crate) fn complete(g: &mut Game, since: Mark) -> Setup {
+    let footprint = |g: &Game| {
+        (
+            g.cards.len(),
+            g.piles.len(),
+            g.landscapes.len(),
+            g.artifacts.len(),
+            g.boons.draw.len(),
+            g.hexes.draw.len(),
+            g.prophecy.is_some(),
+        )
+    };
+    let mut s = Setup::default();
+    for pass in 0.. {
+        assert!(pass < 32, "setup does not settle");
+        let before = footprint(g);
+        cards::ensure(g, &mut s);
+        if footprint(g) == before {
+            break;
+        }
+    }
+    let mut joined: Vec<Card> = g.cards[since.cards..]
+        .iter()
+        .chain(&g.landscapes[since.landscapes..])
+        .copied()
+        .collect();
+    joined.sort();
+    joined.dedup();
+    s.joined = joined;
+    cards::setup(g, &mut s);
+    s
+}
+
+/// Whether a card matching `pred` is in the game, anywhere, or a landscape matches it.
+pub(crate) fn in_game(g: &Game, pred: impl Fn(Card) -> bool) -> bool {
+    g.cards.iter().chain(&g.landscapes).any(|&c| pred(c))
+}
+
+/// Whether neither a copy of the Kingdom card `card` nor its pile is in the game.
+pub(crate) fn unused(g: &Game, card: Card) -> bool {
+    let home = |c: Card| c.def().pile.unwrap_or(c);
+    let name = home(card);
+    !g.piles.iter().any(|p| p.card == name) && !g.cards.iter().any(|&c| home(c) == name)
+}
+
+/// Adds the Kingdom pile named `card` to the Supply.
+pub(crate) fn add_kingdom_pile(g: &mut Game, card: Card) -> PileId {
+    let id = PileId(g.piles.len() as u8);
+    if !cards::build_kingdom_pile(g, card) {
+        let size = if card.is(Types::VICTORY) {
+            victory_pile_size(g.num_players())
+        } else {
+            10
+        };
+        add_pile(g, card, size, true);
+    }
+    id
 }
 
 /// Adds a pile of `size` copies of `card`.

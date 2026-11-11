@@ -18,7 +18,7 @@ use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
 use crate::game::{ExtraTurn, Mat, Phase, Pos, Scratch, Until, Zone};
-use crate::setup;
+use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
 use crate::Note;
@@ -480,58 +480,35 @@ impl SetRules for Rules {
         }
     }
 
-    fn setup_kingdom(g: &mut Game) {
-        if !g.landscapes.contains(&Card::WayOfTheMouse) {
-            return;
-        }
-        let pool: Vec<Card> = Card::ALL
-            .iter()
-            .copied()
-            .filter(|&c| {
-                let def = c.def();
-                c.kind() == Kind::Card
-                    && def.kingdom
-                    && !def.removed
-                    && def.pile.is_none()
-                    && c.is(Types::ACTION)
-                    && !c.is(Types::DURATION)
-                    && matches!(def.cost, Some(cost) if cost == Cost::coins(2) || cost == Cost::coins(3))
-                    && g.home_pile(c).is_none()
-            })
-            .collect();
-        if pool.is_empty() {
-            return;
-        }
-        let card = pool[g.random_index(pool.len())];
-        let pile = setup::add_pile(g, card, 1, false);
-        g.ext.menagerie.mouse = g.pile_top(pile);
-    }
-
-    fn setup(g: &mut Game) {
-        let uses_horses = g.landscapes.iter().any(|l| HORSE_USERS.contains(l))
-            || g
-                .piles
+    fn ensure(g: &mut Game, s: &mut Setup) {
+        if g.ext.menagerie.mouse.is_none() && g.landscapes.contains(&Card::WayOfTheMouse) {
+            let candidates: Vec<Card> = Card::ALL
                 .iter()
-                .any(|pile| pile.cards.iter().any(|&c| HORSE_USERS.contains(&g.printed(c))));
-        if uses_horses {
-            add_horses(g);
+                .copied()
+                .filter(|&c| {
+                    let def = c.def();
+                    c.kind() == Kind::Card
+                        && def.kingdom
+                        && !def.removed
+                        && def.pile.is_none()
+                        && c.is(Types::ACTION)
+                        && !c.is(Types::DURATION)
+                        && matches!(def.cost, Some(cost) if cost == Cost::coins(2) || cost == Cost::coins(3))
+                        && setup::unused(g, c)
+                })
+                .collect();
+            if let Some(card) = s.choose(g, Card::WayOfTheMouse, candidates) {
+                let pile = setup::add_pile(g, card, 1, false);
+                g.ext.menagerie.mouse = g.pile_top(pile);
+            }
         }
-    }
-
-    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
-        if cards.iter().any(|c| HORSE_USERS.contains(c)) {
-            add_horses(g);
+        if setup::in_game(g, |c| HORSE_USERS.contains(&c)) && g.pile_of(Card::Horse).is_none() {
+            setup::add_pile(g, Card::Horse, 30, false);
         }
     }
 }
 
 // ---- Helpers ----
-
-fn add_horses(g: &mut Game) {
-    if g.pile_of(Card::Horse).is_none() {
-        setup::add_pile(g, Card::Horse, 30, false);
-    }
-}
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
     if p == g.turn.player && !g.turn.ignore_plus_actions {

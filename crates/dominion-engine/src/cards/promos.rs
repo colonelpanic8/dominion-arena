@@ -7,7 +7,7 @@ use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, OVERPAY};
 use crate::game::{Pos, Scratch, Until, Zone};
-use crate::setup;
+use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
 use crate::Note;
@@ -179,32 +179,29 @@ impl SetRules for Rules {
         true
     }
 
-    fn setup(g: &mut Game) {
-        if g.supply_pile(Card::BlackMarket).is_none() {
+    fn ensure(g: &mut Game, s: &mut Setup) {
+        if g.ext.promos.black_market.is_some() || !setup::in_game(g, |c| c == Card::BlackMarket) {
             return;
         }
-        let mut pool: Vec<Card> = Card::ALL
+        let pool: Vec<Card> = Card::ALL
             .iter()
             .copied()
             .filter(|&c| black_market_eligible(g, c))
             .collect();
-        g.shuffle(&mut pool);
-        pool.truncate(BLACK_MARKET_SIZE);
-        let pile = setup::add_mixed_pile(g, Card::BlackMarket, &pool, false);
+        let deck = s.choose_n(g, Card::BlackMarket, pool, 1..=BLACK_MARKET_SIZE);
+        let pile = setup::add_mixed_pile(g, Card::BlackMarket, &deck, false);
         g.piles[pile.index()].hidden = true;
         g.ext.promos.black_market = Some(pile);
     }
 }
 
 /// Whether `card` can go in the Black Market deck: an unused Kingdom card that needs no
-/// setup or components of its own (non-Supply cards, Boons, Hexes, Ruins, Heirlooms, ...),
-/// which the deck does not provide.
+/// Supply pile of its own (Travellers, Gatherings, Vampire for Bat to become) and doesn't
+/// change the starting decks (Heirlooms). Setup adds whatever else it uses, as for any
+/// card in the game.
 fn black_market_eligible(g: &Game, card: Card) -> bool {
-    const KEYWORDS: &[&str] = &[
-        "Setup", "Heirloom", "Prize", "Reward", "Boon", "Hex", "Ruins", "Loot", "Favor", "Sun",
-    ];
     let def = card.def();
-    if card.kind() != Kind::Card || !def.kingdom || def.removed || g.home_pile(card).is_some() {
+    if card.kind() != Kind::Card || !def.kingdom || def.removed || !setup::unused(g, card) {
         return false;
     }
     let Some(cost) = def.cost else {
@@ -213,26 +210,9 @@ fn black_market_eligible(g: &Game, card: Card) -> bool {
     if cost.potions > 0 && g.supply_pile(Card::Potion).is_none() {
         return false;
     }
-    if card.is(Types::LOOTER
-        | Types::FATE
-        | Types::DOOM
-        | Types::LIAISON
-        | Types::OMEN
-        | Types::TRAVELLER
-        | Types::GATHERING)
-    {
-        return false;
-    }
-    let text = def.text;
-    if KEYWORDS.iter().any(|k| mentions(text, k)) {
-        return false;
-    }
-    !Card::ALL.iter().any(|&other| {
-        let d = other.def();
-        let component = (other.kind() == Kind::Card && !d.kingdom && !d.basic && d.pile.is_none())
-            || matches!(other.kind(), Kind::Artifact | Kind::State);
-        component && mentions(text, d.name)
-    })
+    !card.is(Types::TRAVELLER | Types::GATHERING)
+        && card != Card::Vampire
+        && !mentions(def.text, "Heirloom")
 }
 
 /// Whether `text` contains `word` as a whole word.
