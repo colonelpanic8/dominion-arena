@@ -381,3 +381,33 @@ fn knowledge_matches_the_truth_and_does_not_leak_in_random_games() {
         drive_traced(g, seed);
     }
 }
+
+/// Stash has its own back, so everyone follows it through a shuffle and into a hand.
+#[test]
+fn everyone_knows_where_a_stash_is() {
+    let mut g = setup(&[Card::Stash, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    discard(
+        &mut g,
+        P0,
+        &[
+            Card::Stash,
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+            Card::Silver,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Smithy);
+    k.update(&mut g);
+    super::intrigue::trigger(&mut g, Card::Stash);
+    k.update(&mut g);
+    respond(&mut g, Response::Number(0));
+    k.update(&mut g);
+    assert!(hand_kinds(&g, P0).contains(&Card::Stash));
+    let hand = k.known(&g, P1).zone(Zone::Hand(P0));
+    assert_eq!((hand.known, hand.unknown), (count(&[(Card::Stash, 1)]), 2));
+    assert_eq!(k.known(&g, P1).zone(Zone::Deck(P0)).unknown, 2);
+}

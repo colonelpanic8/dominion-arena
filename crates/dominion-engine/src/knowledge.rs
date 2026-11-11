@@ -6,7 +6,7 @@
 //! becomes a group of its own. Shuffles and other rearrangements no one can follow merge
 //! groups, and so does a card leaving a place where the viewer couldn't tell which card
 //! it was (an opponent's hand, the middle of a deck or discard pile). Deck order is never
-//! tracked.
+//! tracked. A Stash has its own back, so everyone always knows which card it is.
 //!
 //! [`Knowledge`] consumes a traced game's [`Trace`]; build it before the game's first
 //! [`Game::take_trace`] and call [`Knowledge::update`] after every response.
@@ -205,6 +205,11 @@ impl Mind {
     }
 }
 
+/// Whether everyone can tell this card from its back.
+fn marked(card: Card) -> bool {
+    card == Card::Stash
+}
+
 /// Whether `v` sees what `p` sees: their own cards, or those of a player whose turn they
 /// control.
 fn sees_for(turn: (PlayerId, PlayerId), v: PlayerId, p: PlayerId) -> bool {
@@ -264,8 +269,12 @@ impl Knowledge {
             }
             Trace::Mixed { cards } => {
                 self.created_in = None;
+                let mixed = cards
+                    .iter()
+                    .copied()
+                    .filter(|c| !marked(self.is[c.index()]));
                 for mind in &mut self.minds {
-                    mind.merge(cards.iter().copied());
+                    mind.merge(mixed.clone());
                 }
             }
             Trace::Shown { card, to } => {
@@ -288,6 +297,9 @@ impl Knowledge {
                         remove(ids, from);
                         add(ids, to, 1);
                     }
+                    if marked(to) {
+                        mind.identify(card, to);
+                    }
                 }
             }
         }
@@ -309,6 +321,12 @@ impl Knowledge {
             Zone::Pile(pile) => Some(game.pile(pile)),
             _ => None,
         };
+        if marked(is) {
+            for mind in &mut self.minds {
+                mind.new_group(vec![card], Some(CardCount::from([(is, 1)])));
+            }
+            return;
+        }
         let joins = self.created_in.filter(|&(c, _)| c == container);
         for mind in &mut self.minds {
             match joins {
@@ -339,7 +357,7 @@ impl Knowledge {
         }
         self.members.entry(to).or_default().push(card);
         let is = self.is[card.index()];
-        let shown = public(game, from) || public(game, to);
+        let shown = public(game, from) || public(game, to) || marked(is);
         for (v, mind) in self.minds.iter_mut().enumerate() {
             let v = PlayerId(v as u8);
             if shown || private_to(self.turn, from, v) || private_to(self.turn, to, v) {
@@ -356,7 +374,8 @@ impl Knowledge {
                 _ => false,
             };
             if lost && let Some(rest) = self.members.get(&from) {
-                mind.merge(rest.iter().copied().chain([card]));
+                let rest = rest.iter().copied().filter(|c| !marked(self.is[c.index()]));
+                mind.merge(rest.chain([card]));
             }
         }
     }
