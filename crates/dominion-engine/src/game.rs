@@ -359,8 +359,6 @@ pub struct Game {
 pub struct GainState {
     pub player: PlayerId,
     pub card: CardId,
-    /// What the card cost as it was gained, just before it moved.
-    pub cost: Cost,
     pub to: crate::Dest,
     pub bought: bool,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.

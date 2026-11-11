@@ -796,7 +796,6 @@ fn resume_gain(
             g.gains.push(GainState {
                 player,
                 card: id,
-                cost: crate::Cost::ZERO,
                 to,
                 bought,
                 cancelled: false,
@@ -812,8 +811,6 @@ fn resume_gain(
                 g.gains.pop();
                 return Flow::Done(Value::Cards(vec![]));
             }
-            let cost = g.cost_of(st.card);
-            g.gains.last_mut().expect("gain in progress").cost = cost;
             let zone = match st.to {
                 Dest::Discard => Zone::Discard(st.player),
                 Dest::Hand => Zone::Hand(st.player),
