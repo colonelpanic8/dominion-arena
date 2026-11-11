@@ -1525,8 +1525,8 @@ fn the_abilities_of_cards_trashed_together_resolve_in_the_players_order() {
     deck(&mut g, P0, &[Card::Copper; 6]);
     g.start();
     play(&mut g, Card::Mercenary);
+    // Both cards in hand are trashed.
     yes(&mut g);
-    choose_kinds(&mut g, &[Card::Rats, Card::Cultist]);
     // Rats' +1 Card and Cultist's +3 Cards are both pending: the player picks the order.
     assert_eq!(purpose(&g), Purpose::Trigger);
 }
