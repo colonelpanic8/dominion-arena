@@ -5,34 +5,21 @@ use super::prosperity::{
 };
 use super::{CardFrame, Hook, SetRules};
 use crate::decision::Purpose;
-use crate::event::{Dest, Event};
+use crate::event::Dest;
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{ExtraLimit, ExtraTurn, Pos, Scratch, Zone};
+use crate::game::{Scratch, Zone};
 use crate::trigger::{Occasion, Trigger};
 use crate::setup::{self, Setup};
 use crate::{Card, CardId, Cost, Game, Kind, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub(crate) struct State {
-    /// Cards of a possessed player trashed during the Possession turn, set aside until it
-    /// ends.
-    pub possessed_trash: Vec<CardId>,
-}
+pub(crate) struct State {}
 
 pub(crate) struct Rules;
 
 const ALCHEMIST_TOPDECK: u8 = 0;
 const HERBALIST_TOPDECK: u8 = 0;
-const POSSESSION_GAIN: u8 = 0;
-const POSSESSION_END_TURN: u8 = 1;
-
-/// During a Possession turn: (the possessed player, the possessor).
-fn possession(g: &Game) -> Option<(PlayerId, PlayerId)> {
-    let t = g.turn();
-    (t.extra == Some(Card::Possession) && t.controller != t.player)
-        .then_some((t.player, t.controller))
-}
 
 fn potion_in_play(g: &Game, p: PlayerId) -> bool {
     g.in_play(p).iter().any(|&c| g.card(c) == Card::Potion)
@@ -81,21 +68,8 @@ impl SetRules for Rules {
                     Flow::done()
                 }
             },
-            (Card::Possession, Hook::Ability(POSSESSION_GAIN)) => {
-                if let Some((_, possessor)) = possession(g)
-                    && let Some(st) = g.gains.last_mut()
-                {
-                    st.player = possessor;
-                    st.to = Dest::Discard;
-                }
-                Flow::done()
-            }
-            (Card::Possession, Hook::Ability(POSSESSION_END_TURN)) => {
-                possession_end_turn(g, f.player);
-                Flow::done()
-            }
             (_, Hook::Ability(_)) => return None,
-            (Card::Alchemist | Card::Herbalist | Card::Possession, _) => {
+            (Card::Alchemist | Card::Herbalist, _) => {
                 this_turn(g, f, Scratch::default());
                 Flow::done()
             }
@@ -160,32 +134,6 @@ impl SetRules for Rules {
                     }
                 }
             }
-            Occasion::WouldGain { player, .. } => {
-                if let Some((possessed, _)) = possession(g)
-                    && player == possessed
-                    && g.gains.last().is_some_and(|st| st.player == possessed)
-                {
-                    out.push(Trigger::new(possessed, Card::Possession, POSSESSION_GAIN));
-                }
-            }
-            Occasion::EndTurn { player } => {
-                let returns = possession(g).is_some_and(|(possessed, _)| possessed == player)
-                    && !g.ext.alchemy.possessed_trash.is_empty();
-                let mut owners: Vec<PlayerId> = g
-                    .lasting()
-                    .iter()
-                    .filter(|l| l.card == Card::Possession)
-                    .map(|l| l.owner)
-                    .collect();
-                if returns {
-                    owners.push(player);
-                }
-                owners.sort();
-                owners.dedup();
-                for p in owners {
-                    out.push(Trigger::new(p, Card::Possession, POSSESSION_END_TURN));
-                }
-            }
             _ => {}
         }
     }
@@ -199,56 +147,6 @@ impl SetRules for Rules {
                 .count();
             actions as i32 / 3
         })
-    }
-
-    fn trash_instead(g: &mut Game, _p: PlayerId, id: CardId) -> bool {
-        let Some((possessed, _)) = possession(g) else {
-            return false;
-        };
-        if g.zone(id).owner() != Some(possessed) {
-            return false;
-        }
-        g.set_aside_revealed(id, possessed);
-        g.ext.alchemy.possessed_trash.push(id);
-        true
-    }
-
-    fn debt_taker(g: &Game, p: PlayerId) -> Option<PlayerId> {
-        possession(g)
-            .filter(|&(possessed, _)| possessed == p)
-            .map(|(_, possessor)| possessor)
-    }
-}
-
-/// At the end of a turn: the possessed player gets back their trashed cards, and each
-/// Possession played this turn queues its extra turn (after any Outpost turn).
-fn possession_end_turn(g: &mut Game, p: PlayerId) {
-    if possession(g).is_some_and(|(possessed, _)| possessed == p) {
-        for c in std::mem::take(&mut g.ext.alchemy.possessed_trash) {
-            if g.zone(c) == Zone::SetAside(p) {
-                g.move_card(c, Zone::Discard(p), Pos::Top);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: Some(g.card(c)),
-                    to: Zone::Discard(p),
-                });
-            }
-        }
-    }
-    let plays: Vec<u32> = g
-        .lasting()
-        .iter()
-        .filter(|l| l.card == Card::Possession && l.owner == p)
-        .map(|l| l.id)
-        .collect();
-    for id in plays {
-        g.remove_lasting(id);
-        g.extra_turns.push_back(ExtraTurn {
-            player: g.left_of(p),
-            source: Card::Possession,
-            controller: p,
-            limit: ExtraLimit::SecondExtraInARow,
-        });
     }
 }
 

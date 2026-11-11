@@ -377,7 +377,6 @@ fn turn_view(game: &Game, seat: PlayerId, cx: &Context<'_>) -> TurnView {
         active_player: Some(cx.name(t.player)),
         your_turn: t.player == seat,
         phase: Some(phase_name(t.phase)),
-        controller: (t.controller != t.player).then_some(t.controller.0),
         extra: t.extra.map(|c| c.name().to_string()),
         actions: Some(t.actions),
         buys: Some(t.buys),

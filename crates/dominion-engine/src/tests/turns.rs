@@ -38,10 +38,10 @@ fn take_turn(g: &mut Game, p: PlayerId, source: Card) {
     respond(g, Response::option(Opt::Card(source)));
 }
 
-/// What the next turn is: its player, who controls it and the extra turn's source.
-fn turn(g: &Game) -> (PlayerId, PlayerId, Option<Card>) {
+/// What the next turn is: its player and the extra turn's source.
+fn turn(g: &Game) -> (PlayerId, Option<Card>) {
     let t = g.turn();
-    (t.player, t.controller, t.extra)
+    (t.player, t.extra)
 }
 
 fn in_play_kinds(g: &Game, p: PlayerId) -> Vec<Card> {
@@ -100,18 +100,18 @@ fn seize_the_days_turn_can_follow_missions_but_not_the_other_way_round() {
     ] {
         let mut g = first_turn(&[], &[], &events);
         take_turn(&mut g, P0, Card::Mission);
-        assert_eq!(turn(&g), (P0, P0, Some(Card::Mission)));
+        assert_eq!(turn(&g), (P0, Some(Card::Mission)));
         end_turn(&mut g);
-        assert_eq!(turn(&g), (P0, P0, Some(Card::SeizeTheDay)));
+        assert_eq!(turn(&g), (P0, Some(Card::SeizeTheDay)));
         end_turn(&mut g);
-        assert_eq!(turn(&g), (P1, P1, None));
+        assert_eq!(turn(&g), (P1, None));
 
         let mut g = first_turn(&[], &[], &events);
         take_turn(&mut g, P0, Card::SeizeTheDay);
-        assert_eq!(turn(&g), (P0, P0, Some(Card::SeizeTheDay)));
+        assert_eq!(turn(&g), (P0, Some(Card::SeizeTheDay)));
         end_turn(&mut g);
         // Mission's would be a third turn in a row.
-        assert_eq!(turn(&g), (P1, P1, None));
+        assert_eq!(turn(&g), (P1, None));
         assert!(g.extra_turns().is_empty());
     }
 }
@@ -121,9 +121,9 @@ fn of_missions_and_journeys_turns_the_player_takes_one_and_the_other_fails() {
     for taken in [Card::Mission, Card::Journey] {
         let mut g = first_turn(&[], &[], &[Card::Mission, Card::Journey]);
         take_turn(&mut g, P0, taken);
-        assert_eq!(turn(&g), (P0, P0, Some(taken)));
+        assert_eq!(turn(&g), (P0, Some(taken)));
         end_turn(&mut g);
-        assert_eq!(turn(&g), (P1, P1, None));
+        assert_eq!(turn(&g), (P1, None));
     }
 }
 
@@ -131,12 +131,12 @@ fn of_missions_and_journeys_turns_the_player_takes_one_and_the_other_fails() {
 fn an_outpost_whose_turn_fails_is_discarded_in_the_next_clean_up() {
     let mut g = first_turn(&[Card::Outpost], &[Card::Outpost], &[Card::Mission]);
     take_turn(&mut g, P0, Card::Mission);
-    assert_eq!(turn(&g), (P0, P0, Some(Card::Mission)));
+    assert_eq!(turn(&g), (P0, Some(Card::Mission)));
     // Outpost still left only 3 cards for this hand.
     assert_eq!(g.hand(P0).len(), 3);
     assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
     end_turn(&mut g);
-    assert_eq!(turn(&g), (P1, P1, None));
+    assert_eq!(turn(&g), (P1, None));
     assert!(g.in_play(P0).is_empty());
 }
 
@@ -148,10 +148,10 @@ fn lich_skips_the_extra_turn_its_player_takes_first() {
         &[Card::Mission],
     );
     take_turn(&mut g, P0, Card::Voyage);
-    assert_eq!(turn(&g), (P0, P0, Some(Card::Mission)));
+    assert_eq!(turn(&g), (P0, Some(Card::Mission)));
     assert_eq!(g.player(P0).skip_turns, 0);
     end_turn(&mut g);
-    assert_eq!(turn(&g), (P1, P1, None));
+    assert_eq!(turn(&g), (P1, None));
     assert!(g.in_play(P0).is_empty());
 }
 
@@ -166,12 +166,12 @@ fn turns_around_another_players_skipped_turn_are_in_a_row() {
     play(&mut g, Card::Lich);
     end_turn(&mut g);
     end_turn(&mut g);
-    assert_eq!(turn(&g), (P0, P0, None));
+    assert_eq!(turn(&g), (P0, None));
     assert_eq!(g.player(P0).turns_taken, 3);
     buy_phase(&mut g, 4, 1);
     respond(&mut g, Response::Move(Move::BuyLandscape(Card::Mission)));
     // Mission's would be P0's third turn in a row.
-    assert_eq!(turn(&g), (P1, P1, None));
+    assert_eq!(turn(&g), (P1, None));
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn lich_skips_a_fleet_turn() {
     g.start();
     play(&mut g, Card::Lich);
     buy_the_last_province(&mut g);
-    assert_eq!(turn(&g), (P1, P1, None));
+    assert_eq!(turn(&g), (P1, None));
     end_turn(&mut g);
     let outcome = g.outcome().expect("P0's Fleet turn is skipped");
     assert_eq!(outcome.turns, [1, 0, 0]);
@@ -201,9 +201,9 @@ fn extra_turns_are_taken_between_fleet_turns_but_not_after_the_last() {
     g.start();
     play(&mut g, Card::Outpost);
     buy_the_last_province(&mut g);
-    assert_eq!(turn(&g), (P0, P0, Some(Card::Outpost)));
+    assert_eq!(turn(&g), (P0, Some(Card::Outpost)));
     end_turn(&mut g);
-    assert_eq!(turn(&g), (P1, P1, None));
+    assert_eq!(turn(&g), (P1, None));
     play(&mut g, Card::Outpost);
     end_turn(&mut g);
     assert!(g.outcome().is_some());
@@ -240,7 +240,7 @@ fn frigate_played_at_the_start_of_a_turn_lasts_until_the_next_turn() {
     assert_eq!(g.hand(P1).len(), 4);
     end_turn(&mut g);
     end_turn(&mut g);
-    assert_eq!(turn(&g), (P1, P1, None));
+    assert_eq!(turn(&g), (P1, None));
     assert!(g.in_play(P0).is_empty());
 }
 
@@ -256,7 +256,7 @@ fn outpost_played_at_the_start_of_a_turn_stays_in_play_through_its_extra_turn() 
     g.start();
     assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
     end_turn(&mut g);
-    assert_eq!(turn(&g), (P0, P0, Some(Card::Outpost)));
+    assert_eq!(turn(&g), (P0, Some(Card::Outpost)));
     assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
     end_turn(&mut g);
     assert!(g.in_play(P0).is_empty());

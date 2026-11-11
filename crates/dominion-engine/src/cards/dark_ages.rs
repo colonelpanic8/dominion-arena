@@ -422,18 +422,7 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::draw(p, 1))
         }
         Card::Fortress => {
-            // Possession set it aside: taking it from there is its controller's choice.
-            let possessed = matches!(g.zone(this), Zone::SetAside(_))
-                && g.ext.alchemy.possessed_trash.contains(&this);
-            if f.pc == 0 && possessed {
-                f.pc = 1;
-                return f.ask_either(&["Put it into your hand", "Leave it set aside"]);
-            }
-            let take = match f.pc {
-                0 => g.zone(this) == Zone::Trash,
-                _ => possessed && input.opt() == Some(Opt::Mode(0)),
-            };
-            if take {
+            if g.zone(this) == Zone::Trash {
                 g.put_in_hand(this, p);
                 g.emit(Event::Moved {
                     player: p,

@@ -249,8 +249,7 @@ impl SetRules for Rules {
             } => {
                 for l in g.lasting() {
                     // The gain of the buy that was overpaid for (`data.i`: which buy of the
-                    // turn), whichever copy it takes, and only by the player who overpaid
-                    // (not a possessor gaining it).
+                    // turn), whichever copy it takes, and only by the player who overpaid.
                     let buy = g.gains.iter().rev().find(|s| s.card == card).and_then(|s| s.buy);
                     if bought
                         && l.card == g.card(card)

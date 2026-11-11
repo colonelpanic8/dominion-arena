@@ -682,7 +682,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         Card::Growth if g.is(card, Types::TREASURE) => {
             out.push(Trigger::new(player, Card::Growth, GROWTH));
         }
-        Card::HarshWinter if player == g.turn.player && g.turn.controller == player => {
+        Card::HarshWinter if player == g.turn.player => {
             if let Some(pile) = g.home_pile(g.printed(card)) {
                 out.push(Trigger::new(player, Card::HarshWinter, HARSH_WINTER).data(pile.0 as i32));
             }

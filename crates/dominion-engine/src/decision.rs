@@ -7,7 +7,7 @@ use thiserror::Error;
 /// A choice the engine is waiting on. Answer it with [`Game::respond`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
-    /// Who decides. Usually the player affected; under Possession, the possessor.
+    /// Who decides: the player affected.
     pub player: PlayerId,
     pub kind: DecisionKind,
     pub purpose: Purpose,

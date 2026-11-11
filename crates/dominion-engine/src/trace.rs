@@ -22,14 +22,10 @@ pub enum Trace {
     /// These cards were rearranged where no one could follow them (a shuffle, or cards put
     /// back in an order their owner chose).
     Mixed { cards: Vec<CardId> },
-    /// `card` was shown to everyone (`to: None`) or to one player and whoever sees what
-    /// they see (`Some`).
+    /// `card` was shown to everyone (`to: None`) or to one player (`Some`).
     Shown { card: CardId, to: Option<PlayerId> },
-    /// A turn began: `player`'s, with `controller` making its decisions.
-    Turn {
-        player: PlayerId,
-        controller: PlayerId,
-    },
+    /// A turn began: `player`'s.
+    Turn { player: PlayerId },
     /// `card` became another card, publicly (Inherited's setup swap).
     Changed { card: CardId, from: Card, to: Card },
 }
@@ -69,8 +65,8 @@ impl Game {
     }
 
     pub(crate) fn record_turn(&mut self) {
-        let (player, controller) = (self.turn.player, self.turn.controller);
-        self.record(|| Trace::Turn { player, controller });
+        let player = self.turn.player;
+        self.record(|| Trace::Turn { player });
     }
 
     pub(crate) fn record(&mut self, entry: impl FnOnce() -> Trace) {

@@ -297,7 +297,6 @@ impl SetRules for Rules {
                 g.extra_turns.push_back(ExtraTurn {
                     player: f.player,
                     source: Card::Mission,
-                    controller: f.player,
                     limit: ExtraLimit::ThirdInARow,
                 });
                 Flow::done()

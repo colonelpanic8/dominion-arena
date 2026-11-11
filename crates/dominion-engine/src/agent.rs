@@ -54,8 +54,7 @@ pub fn play<'g>(
 
 /// The game as one player is allowed to see it: everything public, plus what that player
 /// may look at (their hand, their face-down set-aside cards, their Native Village mat,
-/// cards offered to them in a decision). Under Possession the possessor also sees what
-/// the possessed player sees.
+/// cards offered to them in a decision).
 ///
 /// A deck's order is never shown, nor which cards are in a discard pile under its top,
 /// nor any card of a face-down pile (the Black Market deck, Loot).
@@ -138,22 +137,15 @@ impl<'a> View<'a> {
     fn visible(&self, id: CardId) -> bool {
         let g = self.game;
         let seen = match g.zone(id) {
-            Zone::Hand(p) => self.sees_for(p),
-            Zone::SetAside(p) => self.sees_for(p) || g.player(p).face_up.contains(&id),
+            Zone::Hand(p) => p == self.me,
+            Zone::SetAside(p) => p == self.me || g.player(p).face_up.contains(&id),
             Zone::InPlay(_) | Zone::Trash => true,
             Zone::Discard(p) => g.player(p).discard.last() == Some(&id),
             Zone::Pile(pile) => !g.pile(pile).hidden && g.pile_top(pile) == Some(id),
-            Zone::Mat(p, mat) => mat != Mat::NativeVillage || self.sees_for(p),
+            Zone::Mat(p, mat) => mat != Mat::NativeVillage || p == self.me,
             Zone::Deck(_) => false,
         };
         seen || self.offered(id)
-    }
-
-    /// Whether this player sees what `p` sees: their own cards, or those of a player
-    /// whose turn they control (Possession).
-    fn sees_for(&self, p: PlayerId) -> bool {
-        let turn = self.game.turn();
-        p == self.me || (turn.player == p && turn.controller == self.me)
     }
 
     fn offered(&self, id: CardId) -> bool {
@@ -290,7 +282,7 @@ impl<'a> PlayerView<'a> {
 
     /// Their hand, if the viewer may see it.
     pub fn hand(&self) -> Option<&'a [CardId]> {
-        self.view.sees_for(self.id).then_some(&self.player.hand[..])
+        (self.id == self.view.me).then_some(&self.player.hand[..])
     }
 
     pub fn hand_size(&self) -> usize {
@@ -331,7 +323,7 @@ impl<'a> PlayerView<'a> {
     /// The cards on one of their mats, if the viewer may see them (the Native Village mat
     /// is its owner's only).
     pub fn mat(&self, mat: Mat) -> Option<&'a [CardId]> {
-        (mat != Mat::NativeVillage || self.view.sees_for(self.id)).then(|| self.player.mat(mat))
+        (mat != Mat::NativeVillage || self.id == self.view.me).then(|| self.player.mat(mat))
     }
 
     pub fn mat_size(&self, mat: Mat) -> usize {

@@ -990,7 +990,6 @@ fn outpost_on_a_turn_right_after_an_extra_turn_of_its_player_is_a_third_turn_in_
     g.extra_turns.push_back(ExtraTurn {
         player: P1,
         source: Card::Mission,
-        controller: P1,
         limit: ExtraLimit::ThirdInARow,
     });
     next_turn(&mut g);

@@ -197,8 +197,6 @@ pub struct Turn {
     pub player: PlayerId,
     /// Who took the turn before this one (skipped turns aren't taken).
     pub previous: Option<PlayerId>,
-    /// Who makes this turn's decisions (differs under Possession).
-    pub controller: PlayerId,
     /// The card that granted this as an extra turn, if it is one.
     pub extra: Option<Card>,
     pub phase: Phase,
@@ -248,7 +246,6 @@ impl Turn {
         Turn {
             player,
             previous: None,
-            controller: player,
             extra: None,
             phase: Phase::Start,
             actions: 1,
@@ -377,8 +374,6 @@ impl Lasting {
 pub struct ExtraTurn {
     pub player: PlayerId,
     pub source: Card,
-    /// Who controls it (Possession).
-    pub controller: PlayerId,
     pub limit: ExtraLimit,
 }
 
@@ -389,8 +384,6 @@ pub enum ExtraLimit {
     None,
     /// Not as a third turn in a row (Outpost, Voyage, Mission, ...).
     ThirdInARow,
-    /// Not right after another extra turn of its player's (Possession).
-    SecondExtraInARow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -748,9 +741,8 @@ impl Game {
             .map(|st| st.cost)
     }
 
-    /// Where `p` gained `id` to, if that is the gain that just finished (`None` if someone
-    /// else gained it instead): for effects that go on to do something with the card they
-    /// had `p` gain.
+    /// Where `p` gained `id` to, if that is the gain that just finished: for effects that go
+    /// on to do something with the card they had `p` gain.
     pub(crate) fn gained_to(&self, p: PlayerId, id: CardId) -> Option<Zone> {
         let st = self.last_gain.as_ref()?;
         (st.card == id && st.player == p).then_some(st.zone())
@@ -1001,9 +993,6 @@ impl Game {
                         cards::modify_decision(self, f, &mut decision);
                     }
                     self.stack.push(frame);
-                    if decision.player == self.turn.player {
-                        decision.player = self.turn.controller;
-                    }
                     if let Some(response) = decision.forced(self) {
                         input = Input::Response(response);
                     } else {
@@ -1189,10 +1178,9 @@ impl Game {
         }
     }
 
-    /// `p` takes `n` Debt (or whoever takes it for them: Possession).
+    /// `p` takes `n` Debt.
     pub(crate) fn add_debt(&mut self, p: PlayerId, n: u32) {
-        let taker = cards::debt_taker(self, p).unwrap_or(p);
-        self.players[taker.index()].debt += n;
+        self.players[p.index()].debt += n;
     }
 
     /// Puts `id` on top of `p`'s deck.

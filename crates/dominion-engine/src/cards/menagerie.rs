@@ -268,7 +268,6 @@ impl SetRules for Rules {
                 g.extra_turns.push_back(ExtraTurn {
                     player: p,
                     source: Card::SeizeTheDay,
-                    controller: p,
                     limit: ExtraLimit::None,
                 });
                 Flow::done()

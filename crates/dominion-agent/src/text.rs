@@ -227,9 +227,6 @@ pub fn render(v: &AgentView) -> String {
     if let Some(extra) = &t.extra {
         status.push(format!("extra turn from {extra}"));
     }
-    if let Some(c) = t.controller {
-        status.push(format!("controlled by P{}", c + 1));
-    }
     if let Some(phase) = &t.phase {
         status.push(format!("{phase} phase"));
     }
