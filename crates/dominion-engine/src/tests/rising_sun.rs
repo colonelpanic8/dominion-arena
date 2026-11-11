@@ -1159,7 +1159,7 @@ fn random_rising_sun_games_keep_invariants() {
         .filter(|c| c.kind() == Kind::Prophecy)
         .collect();
     let mut seen = std::collections::HashSet::new();
-    for seed in 0..fuzz_seeds(150) {
+    for seed in 0..fuzz_seeds(200) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut cards = pool.clone();
         cards.shuffle(&mut rng);
