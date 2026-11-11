@@ -241,12 +241,12 @@ impl SetRules for Rules {
             (Card::Desperation, _) => desperation(g, f, input),
             (Card::Enclave, _) => {
                 if f.pc == 0 {
-                    exile_from_supply(g, f.player, Card::Duchy);
                     f.pc = 1;
                     if let Some(gold) = g.supply_pile(Card::Gold) {
                         return Some(Flow::Call(Frame::gain(f.player, gold, Dest::Discard)));
                     }
                 }
+                exile_from_supply(g, f.player, Card::Duchy);
                 Flow::done()
             }
             (Card::Enhance, _) => enhance(g, f, input),

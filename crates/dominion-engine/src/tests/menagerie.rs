@@ -1489,12 +1489,20 @@ fn desperation_with_no_curse_left_gives_nothing() {
 }
 
 #[test]
-fn enclave_gains_a_gold_and_exiles_a_duchy() {
-    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Enclave]);
-    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Silver]);
+fn enclave_gains_a_gold_then_exiles_a_duchy() {
+    let mut g = setup_with_landscapes(&[Card::Sleigh], &[Card::Enclave]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Silver, Card::Sleigh],
+    );
     g.start();
     play_treasures(&mut g);
     buy_event(&mut g, Card::Enclave);
+    // Sleigh may react to the Gold, before the Duchy is Exiled.
+    assert_eq!(trigger_labels(&g), ["Sleigh (optional)", "Done"]);
+    assert!(exile_kinds(&g, P0).is_empty());
+    no(&mut g);
     assert_eq!(gained(&g, P0), [Card::Gold]);
     assert_eq!(exile_kinds(&g, P0), [Card::Duchy]);
 }
