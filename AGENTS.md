@@ -34,6 +34,7 @@ crates/dominion-engine/
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
+crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

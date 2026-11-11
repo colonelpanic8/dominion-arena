@@ -1,0 +1,29 @@
+[package]
+name = "dominion-server"
+description = "MCP server and terminal client for playing Dominion through the agent-view@2 protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "dominion"
+path = "src/main.rs"
+
+[dependencies]
+dominion-agent = { path = "../dominion-agent" }
+dominion-engine = { path = "../dominion-engine" }
+rmcp = { version = "3.9.0", features = ["server", "client", "macros", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
+axum = "0.8.9"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "sync", "time", "signal", "io-std"] }
+clap = { version = "4.6.7", features = ["derive"] }
+schemars = "1.2.3"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml = "0.9"
+tokio-util = "0.7"
+rand.workspace = true
+
+[lints]
+workspace = true
