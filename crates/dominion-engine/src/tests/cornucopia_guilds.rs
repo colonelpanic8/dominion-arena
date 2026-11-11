@@ -561,6 +561,19 @@ fn jester_curses_on_victory_and_lets_the_attacker_choose_otherwise() {
     assert_eq!(discard_kinds(&g, P1), [Card::Silver]);
 }
 
+/// Jester has its victims discard, not reveal: a Patron discarded that way gives nothing.
+#[test]
+fn jester_does_not_reveal_the_discarded_card() {
+    let mut g = setup(&[Card::Jester, Card::Patron]);
+    hand(&mut g, P0, &[Card::Jester]);
+    deck(&mut g, P1, &[Card::Patron]);
+    g.start();
+    play(&mut g, Card::Jester);
+    pick(&mut g, Opt::Player(P0));
+    assert_eq!(discard_kinds(&g, P1), [Card::Patron]);
+    assert_eq!(g.player(P1).coffers, 0);
+}
+
 #[test]
 fn moat_blocks_jester() {
     let mut g = setup(&[Card::Jester, Card::Moat]);

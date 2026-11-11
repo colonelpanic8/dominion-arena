@@ -909,7 +909,7 @@ fn jester(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         match f.pc {
             0 => {
                 f.pc = 1;
-                return Flow::Call(Frame::reveal(t, 1));
+                return Flow::Call(Frame::look(t, 1));
             }
             1 => {
                 let Some(c) = input.take().and_then(Input::card) else {
