@@ -93,7 +93,8 @@ them.
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
   trigger with `Value::Bool(true)` makes the target unaffected.
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
-  `f.add_duration(g, data)` (keeps the card and its `chain` in play) only when the play
+  `f.add_duration(g, data)` (keeps the card in play with what played it:
+  `CardFrame::keeps`) only when the play
   has something left to do, and produce a `StartTurn` trigger from that lasting
   (`cards::due_durations` lists the ones due: made on an earlier turn of the owner's;
   `cards::duration_trigger` builds the trigger), whose ability removes it
