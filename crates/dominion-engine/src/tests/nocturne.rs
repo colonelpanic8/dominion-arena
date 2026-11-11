@@ -920,6 +920,20 @@ fn necromancer_plays_an_action_from_the_trash_once_per_turn() {
 }
 
 #[test]
+fn necromancer_stays_in_play_with_a_duration_its_throne_room_played() {
+    let mut g = setup(&[Card::Necromancer, Card::ThroneRoom, Card::Caravan]);
+    g.create(Card::ThroneRoom, Zone::Trash);
+    hand(&mut g, P0, &[Card::Necromancer, Card::Caravan]);
+    deck(&mut g, P0, &[Card::Copper; 15]);
+    g.start();
+    play(&mut g, Card::Necromancer);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Caravan]);
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Necromancer, Card::Caravan]);
+}
+
+#[test]
 fn necromancer_cannot_trash_a_pixie_it_plays_but_tragic_hero_still_gains() {
     let mut g = setup(&[Card::Necromancer, Card::Pixie]);
     hand(&mut g, P0, &[Card::Necromancer]);

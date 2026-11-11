@@ -930,9 +930,6 @@ fn embargo(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, vec![this]))
         }
         1 => {
-            if g.zone(this) != Zone::Trash {
-                return Flow::done();
-            }
             let piles: Vec<PileId> = (0..g.piles().len())
                 .map(|i| PileId(i as u8))
                 .filter(|&id| g.pile(id).in_supply)

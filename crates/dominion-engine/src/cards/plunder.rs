@@ -1106,9 +1106,6 @@ fn cabin_boy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(p, vec![c]))
         }
         3 => {
-            if g.zone(f.this()) != Zone::Trash {
-                return Flow::done();
-            }
             let piles = g.supply_piles_where(|t, _| t.contains(Types::DURATION));
             if piles.is_empty() {
                 return Flow::done();
@@ -2551,9 +2548,6 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(p, vec![this]))
         }
         1 => {
-            if g.zone(this) != Zone::Trash {
-                return Flow::done();
-            }
             let limit = f.s.cost;
             let piles = g.supply_piles_where(|_, cost| cost.less_than(limit));
             if piles.is_empty() {
@@ -2635,16 +2629,12 @@ fn peril(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if chosen.is_empty() {
                 return Flow::done();
             }
-            f.s.cards = chosen.clone();
             f.pc = 2;
             Flow::Call(Frame::trash(p, chosen))
         }
         2 => {
             f.pc = 3;
-            if f.s.cards.iter().any(|&c| g.zone(c) == Zone::Trash) {
-                return gain_loot(g, p, Dest::Discard);
-            }
-            Flow::done()
+            gain_loot(g, p, Dest::Discard)
         }
         _ => Flow::done(),
     }
@@ -2698,10 +2688,9 @@ fn launch(g: &mut Game, f: &mut CardFrame) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }))
+            Flow::Call(Frame::return_to_action(p))
         }
         1 => {
-            g.turn.phase = Phase::Action;
             f.pc = 2;
             Flow::Call(Frame::draw(p, 1))
         }

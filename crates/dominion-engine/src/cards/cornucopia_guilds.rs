@@ -115,7 +115,7 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::MerchantGuild, Hook::Ability(MERCHANT_GUILD_COFFERS)) => {
-                let n = g.turn.gained_in_buy_phase.len();
+                let n = g.turn.gained_this_buy_phase().len();
                 g.players[f.player.index()].coffers += n as u32;
                 Flow::done()
             }

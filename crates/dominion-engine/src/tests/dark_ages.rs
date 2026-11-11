@@ -1,3 +1,5 @@
+use super::alchemy::possess;
+use super::prosperity::play_from;
 use super::*;
 use rand::SeedableRng;
 
@@ -286,6 +288,27 @@ fn hermit_is_exchanged_for_a_madman_if_nothing_was_gained_in_the_buy_phase() {
     play(&mut g, Card::Hermit);
     choose_pile(&mut g, Card::Sage);
     buy(&mut g, Card::Copper);
+    assert_eq!(g.count_owned(P0, Card::Hermit), 1);
+    assert_eq!(g.count_owned(P0, Card::Madman), 0);
+}
+
+/// Played in the Buy phase (Market Towns), Hermit's own gain is a gain in it.
+#[test]
+fn hermit_played_in_the_buy_phase_counts_the_card_it_gains() {
+    let mut g = setup_with(GameConfig {
+        landscapes: vec![Card::MarketTowns],
+        ..GameConfig::new(2, vec![Card::Hermit, Card::Underling], 7)
+    });
+    g.players[0].favors = 1;
+    hand(&mut g, P0, &[Card::Hermit]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    end_phase(&mut g);
+    trigger(&mut g, 0);
+    choose_kinds(&mut g, &[Card::Hermit]);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(g.turn().phase, Phase::Buy);
+    end_phase(&mut g);
     assert_eq!(g.count_owned(P0, Card::Hermit), 1);
     assert_eq!(g.count_owned(P0, Card::Madman), 0);
 }
@@ -1233,6 +1256,16 @@ fn pillage_trashes_itself_gains_spoils_and_takes_a_card_from_a_full_hand() {
     assert_eq!(discard_kinds(&g, P1), [Card::Gold]);
     assert_eq!(g.count_owned(P0, Card::Spoils), 2);
     assert_eq!(trash_kinds(&g).last(), Some(&Card::Pillage));
+}
+
+/// A possessed player's trashed card is set aside, but it was trashed.
+#[test]
+fn pillage_trashed_on_a_possession_turn_gains_the_spoils() {
+    let mut g = possess(&[Card::Pillage], &[Card::Pillage]);
+    let pillage = find(&g, P1, Card::Pillage);
+    play_from(&mut g, P1, Card::Pillage);
+    assert_eq!(g.count_owned(P0, Card::Spoils), 2);
+    assert_eq!(g.zone(pillage), Zone::SetAside(P1));
 }
 
 #[test]

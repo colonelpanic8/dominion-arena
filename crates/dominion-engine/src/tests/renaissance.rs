@@ -1086,6 +1086,23 @@ fn exploration_rewards_a_buy_phase_without_gains() {
 }
 
 #[test]
+fn exploration_looks_at_each_buy_phase_on_its_own() {
+    let mut g = setup(&[Card::Villa]);
+    give_project(&mut g, P0, Card::Exploration);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Villa);
+    assert_eq!(phase(&g), Some(Phase::Action));
+    assert_eq!((g.player(P0).coffers, g.player(P0).villagers), (0, 0));
+    // The second Buy phase, with nothing to do in it, passes by itself.
+    end_phase(&mut g);
+    assert_eq!((g.player(P0).coffers, g.player(P0).villagers), (1, 1));
+}
+
+#[test]
 fn sewers_trashes_one_more_per_trashed_card_but_not_its_own() {
     let mut g = setup(&[Card::Chapel]);
     give_project(&mut g, P0, Card::Sewers);

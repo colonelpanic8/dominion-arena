@@ -1,4 +1,6 @@
+use super::alchemy::possess;
 use super::intrigue::{modes, random_games_with_copies, trigger};
+use super::prosperity::play_from;
 use super::*;
 
 /// Random games over Empires with copies of its cards in every deck, and two random
@@ -744,6 +746,19 @@ fn a_throne_roomed_engineer_trashes_itself_once() {
     assert_eq!(purpose(&g), Purpose::Turn);
 }
 
+/// A possessed player's trashed card is set aside, but it was trashed.
+#[test]
+fn engineer_trashed_on_a_possession_turn_gains_a_second_card() {
+    let mut g = possess(&[Card::Engineer, Card::Village], &[Card::Engineer]);
+    let engineer = find(&g, P1, Card::Engineer);
+    play_from(&mut g, P1, Card::Engineer);
+    choose_pile(&mut g, Card::Village);
+    yes(&mut g);
+    choose_pile(&mut g, Card::Village);
+    assert_eq!(g.count_owned(P0, Card::Village), 2);
+    assert_eq!(g.zone(engineer), Zone::SetAside(P1));
+}
+
 #[test]
 fn farmers_market_gathers_four_times_then_pays_out_and_trashes_itself() {
     let mut g = setup(&[Card::FarmersMarket]);
@@ -948,6 +963,24 @@ fn overlord_playing_encampment_or_farmers_market_cannot_move_them() {
     choose_pile(&mut g, Card::FarmersMarket);
     assert_eq!(vp(&g, P0), 4);
     assert_eq!(pile_kinds(&g, Card::FarmersMarket).len(), 10);
+}
+
+/// The Throne Room is in the Supply and can't stay in play with the Duration it played,
+/// so the Overlord that played it does.
+#[test]
+fn overlord_stays_in_play_with_a_duration_its_throne_room_played() {
+    let mut g = setup(&[Card::Overlord, Card::ThroneRoom, Card::Caravan]);
+    hand(&mut g, P0, &[Card::Overlord, Card::Caravan]);
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    g.start();
+    // Throne Room is the only card Overlord can play.
+    play(&mut g, Card::Overlord);
+    choose_kinds(&mut g, &[Card::Caravan]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Overlord, Card::Caravan]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
 }
 
 #[test]
@@ -1162,6 +1195,29 @@ fn villa_gained_in_the_action_phase_stays_in_it() {
     play(&mut g, Card::Villa);
 }
 
+/// The Buy phase ends as Villa's ability resolves: what is gained after it in the same
+/// buy is not gained in the Buy phase.
+#[test]
+fn villa_leaves_the_buy_phase_as_its_ability_resolves() {
+    let mut g = setup(&[Card::Villa, Card::Charm, Card::Catapult]);
+    strip(&mut g, Card::Catapult, 5);
+    hand(&mut g, P0, &[Card::Charm, Card::Gold, Card::Copper]);
+    deck(&mut g, P0, &[Card::Estate; 5]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Charm);
+    modes(&mut g, &[1]);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Villa);
+    trigger(&mut g, Card::Villa);
+    // Charm: also gain a Rocks, whose Silver goes to the hand outside the Buy phase.
+    let rocks = top_pile(&g, Card::Rocks);
+    respond(&mut g, Response::Pile(Some(rocks)));
+    assert_eq!(phase(&g), Phase::Action);
+    assert_eq!(hand_kinds(&g, P0), [Card::Villa, Card::Silver]);
+}
+
 #[test]
 fn wild_hunt_draws_and_adds_a_token_or_gains_an_estate_and_takes_them() {
     let mut g = setup(&[Card::WildHunt, Card::Village]);
@@ -1244,6 +1300,13 @@ fn small_castle_trashes_itself_or_a_castle_to_gain_the_top_castle() {
     assert_eq!(g.count_owned(P0, Card::SmallCastle), 1);
     assert_eq!(g.count_owned(P0, Card::CrumblingCastle), 1);
     assert_eq!(vp(&g, P0), 2);
+}
+
+#[test]
+fn small_castle_trashed_on_a_possession_turn_gains_a_castle() {
+    let mut g = possess(&[Card::Castles], &[Card::SmallCastle]);
+    play_from(&mut g, P1, Card::SmallCastle);
+    assert_eq!(g.count_owned(P0, Card::HumbleCastle), 1);
 }
 
 #[test]
@@ -1365,6 +1428,20 @@ fn advance_trashes_an_action_for_an_action_costing_up_to_six() {
     choose_pile(&mut g, Card::Laboratory);
     assert_eq!(g.count_owned(P0, Card::Laboratory), 1);
     assert_eq!(g.count_owned(P0, Card::Village), 0);
+}
+
+/// A Fortress is trashed, then returns to the hand.
+#[test]
+fn advance_trashing_a_fortress_gains_an_action() {
+    let mut g = setup_landscapes(&[Card::Fortress, Card::Smithy], &[Card::Advance]);
+    hand(&mut g, P0, &[Card::Fortress, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Advance);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Fortress]);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(g.count_owned(P0, Card::Smithy), 1);
 }
 
 #[test]

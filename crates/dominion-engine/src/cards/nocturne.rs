@@ -1792,7 +1792,7 @@ fn necromancer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             g.add_lasting(Card::Necromancer, p, f.this, vec![], Until::EndOfTurn, data);
             f.pc = 2;
-            Flow::Call(Frame::play(p, c, false, vec![]))
+            Flow::Call(Frame::play(p, c, false, f.chain_for_child()))
         }
         _ => Flow::done(),
     }

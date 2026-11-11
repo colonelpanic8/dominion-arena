@@ -1232,15 +1232,9 @@ fn continue_event(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         3 => {
             f.pc = 4;
-            if g.turn.phase == crate::Phase::Buy && p == g.turn.player {
-                return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
-            }
-            Flow::Continue
+            Flow::Call(Frame::return_to_action(p))
         }
         4 => {
-            if p == g.turn.player {
-                g.turn.phase = crate::Phase::Action;
-            }
             f.pc = 5;
             if let Some(c) = f.s.pick
                 && matches!(g.zone(c), Zone::Discard(o) | Zone::Hand(o) if o == p)

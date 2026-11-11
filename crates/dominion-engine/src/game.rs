@@ -195,8 +195,6 @@ pub struct Turn {
     pub potions: u32,
     /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures).
     pub bought: bool,
-    /// Go back to the Action phase from the Buy phase as soon as possible (Villa).
-    pub return_to_action: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
     /// How many of this turn's plays by its player were from their hand.
@@ -212,11 +210,15 @@ pub struct Turn {
     /// The types each of `gained` had as it was gained.
     #[serde(default)]
     pub gained_types: Vec<Types>,
-    /// The cards in `gained` that were gained in the Buy phase.
+    /// The cards in `gained` that were gained in a Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
     /// The types each of `gained_in_buy_phase` had as it was gained.
     #[serde(default)]
     pub gained_in_buy_phase_types: Vec<Types>,
+    /// How many of `gained_in_buy_phase` were gained in Buy phases the turn has since left
+    /// (Villa).
+    #[serde(default)]
+    pub earlier_buy_phase_gains: usize,
     pub bought_cards: Vec<Card>,
     pub trashed: Vec<Card>,
     /// Cards drawn in Clean-up.
@@ -240,7 +242,6 @@ impl Turn {
             coins: 0,
             potions: 0,
             bought: false,
-            return_to_action: false,
             played: vec![],
             hand_plays: 0,
             played_ids: vec![],
@@ -250,12 +251,19 @@ impl Turn {
             gained_types: vec![],
             gained_in_buy_phase: vec![],
             gained_in_buy_phase_types: vec![],
+            earlier_buy_phase_gains: 0,
             bought_cards: vec![],
             trashed: vec![],
             cleanup_draw: 5,
             can_buy_cards: true,
             ignore_plus_actions: false,
         }
+    }
+
+    /// The cards gained in the current Buy phase: none yet after a return to the Action
+    /// phase.
+    pub fn gained_this_buy_phase(&self) -> &[Card] {
+        &self.gained_in_buy_phase[self.earlier_buy_phase_gains..]
     }
 
     /// How many of this turn's plays were of a card that had any of `types` as it was played.

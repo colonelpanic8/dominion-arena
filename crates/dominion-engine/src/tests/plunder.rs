@@ -1976,6 +1976,16 @@ fn peril_trashes_an_action_from_hand_for_a_loot() {
     assert_eq!(loot_gained(&g, P0), 1);
 }
 
+/// A Fortress is trashed, then returns to the hand.
+#[test]
+fn peril_trashing_a_fortress_gains_a_loot() {
+    let mut g = event_game(&[Card::Fortress], &[Card::Peril], &[Card::Fortress], 2, 2);
+    buy_event(&mut g, Card::Peril);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    assert_eq!(loot_gained(&g, P0), 1);
+    assert_eq!(hand_kinds(&g, P0), [Card::Fortress]);
+}
+
 #[test]
 fn rush_plays_the_next_action_gained_once_even_if_bought_twice() {
     let mut g = event_game(&[Card::Smithy], &[Card::Rush], &[], 12, 4);

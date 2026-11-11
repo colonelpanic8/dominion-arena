@@ -193,8 +193,10 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   an unused removed card), and narrow only the random pick with `choose_or_random`.
   `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
 - "Play a card from your hand" offers `g.playable(p, types)`, which includes cards
-  playable as if in hand (Shadow cards in the deck). An effect that sets `turn.phase`
-  back to `Action` during the Buy phase returns the turn to its Action phase.
+  playable as if in hand (Shadow cards in the deck). "Return to your Action phase" is
+  `Frame::return_to_action`, never a write to `turn.phase`: the Buy phase ends there
+  (`EndBuyPhase`), and a turn can have several. `Turn::gained_this_buy_phase` is the
+  current one's gains, `Turn::gained_in_buy_phase` every Buy phase's.
 
 Tests: `src/tests/<set>.rs` (register it in `tests/mod.rs` and add the set to
 `IMPLEMENTED`, which feeds the fuzz test). Give every card with more than vanilla

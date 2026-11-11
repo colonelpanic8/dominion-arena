@@ -184,6 +184,11 @@ pub(crate) enum Frame {
         card: Card,
         pc: u8,
     },
+    /// "Return to your Action phase": ends `player`'s Buy phase, if it is on.
+    ReturnToAction {
+        player: PlayerId,
+        pc: u8,
+    },
 }
 
 impl Frame {
@@ -308,6 +313,12 @@ impl Frame {
             card,
             pc: 0,
         }
+    }
+
+    /// Return to the Action phase if it is `player`'s Buy phase, which ends first. The
+    /// only way back there.
+    pub(crate) fn return_to_action(player: PlayerId) -> Frame {
+        Frame::ReturnToAction { player, pc: 0 }
     }
 
     /// Play `card`, moving it into play first if `move_to_play`. `chain` lists the cards
@@ -529,6 +540,20 @@ impl Frame {
                     Flow::done()
                 }
             },
+            Frame::ReturnToAction { player, pc } => {
+                if *pc == 0 {
+                    if *player != g.turn.player || g.turn.phase != Phase::Buy {
+                        return Flow::done();
+                    }
+                    *pc = 1;
+                    return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: *player }));
+                }
+                let turn = &mut g.turn;
+                turn.phase = Phase::Action;
+                turn.bought = false;
+                turn.earlier_buy_phase_gains = turn.gained_in_buy_phase.len();
+                Flow::done()
+            }
         }
     }
 }
@@ -802,15 +827,8 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             ask_moves(p, Phase::Action, moves)
         }
         3 => {
-            if g.turn.return_to_action {
-                g.turn.return_to_action = false;
-                *pc = 11;
-                return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
-            }
-            // An effect already returned to the Action phase itself (Continue, which plays
-            // a card there).
+            // An effect returned to the Action phase (`Frame::return_to_action`).
             if g.turn.phase == Phase::Action {
-                g.turn.bought = false;
                 *pc = 2;
                 return Flow::Continue;
             }
@@ -936,12 +954,6 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         9 => {
             *pc = 10;
             Flow::Call(Frame::window(Occasion::EndTurn { player: p }))
-        }
-        11 => {
-            g.turn.phase = Phase::Action;
-            g.turn.bought = false;
-            *pc = 2;
-            Flow::Continue
         }
         _ => {
             g.lasting.retain(|l| l.until != Until::EndOfTurn);

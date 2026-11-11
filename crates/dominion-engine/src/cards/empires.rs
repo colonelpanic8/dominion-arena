@@ -183,10 +183,7 @@ impl SetRules for Rules {
                 }
                 Flow::done()
             }
-            (Card::Villa, Hook::Ability(GAINED)) => {
-                villa_gained(g, f);
-                Flow::done()
-            }
+            (Card::Villa, Hook::Ability(GAINED)) => villa_gained(g, f),
             (Card::Capital, Hook::Ability(CAPITAL_DEBT)) => capital_debt(g, f, input),
             (Card::Charm, Hook::Ability(CHARM_GAIN)) => charm_gain(g, f, input),
             (Card::Encampment, Hook::Ability(ENCAMPMENT_RETURN)) => {
@@ -1389,7 +1386,6 @@ fn engineer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 5;
             Flow::Call(Frame::trash(p, vec![f.this()]))
         }
-        5 if g.zone(f.this()) != Zone::Trash => Flow::done(),
         _ => {
             let piles = if f.pc == 5 { up_to_4(g) } else { vec![] };
             choose_and_gain(f, input, 5, piles, Dest::Discard, DONE)
@@ -1708,15 +1704,12 @@ fn small_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
             f.pc = 3;
-            let trashed = f.s.pick.is_some_and(|c| g.zone(c) == Zone::Trash);
-            if trashed
-                && let Some(pile) = g.supply_pile(Card::Castles)
+            if let Some(pile) = g.supply_pile(Card::Castles)
                 && g.pile_top(pile).is_some_and(|t| g.is(t, Types::CASTLE))
             {
                 return Flow::Call(Frame::gain(p, pile, Dest::Discard));
@@ -1799,8 +1792,12 @@ fn temple(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-fn villa_gained(g: &mut Game, f: &mut CardFrame) {
+fn villa_gained(g: &mut Game, f: &mut CardFrame) -> Flow {
     let p = f.player;
+    if f.pc != 0 {
+        return Flow::done();
+    }
+    f.pc = 1;
     let c = f.this();
     let landed = g
         .gains
@@ -1811,12 +1808,8 @@ fn villa_gained(g: &mut Game, f: &mut CardFrame) {
     if landed == Some(g.zone(c)) {
         g.put_in_hand(c, p);
     }
-    if p == g.turn.player {
-        g.turn.actions += 1;
-        if g.turn.phase == Phase::Buy {
-            g.turn.return_to_action = true;
-        }
-    }
+    plus_actions(g, p, 1);
+    Flow::Call(Frame::return_to_action(p))
 }
 
 fn wild_hunt(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
@@ -1882,11 +1875,9 @@ fn advance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
-        2 if !f.s.pick.is_some_and(|c| g.zone(c) == Zone::Trash) => Flow::done(),
         _ => {
             let piles = if f.pc == 2 {
                 g.supply_piles_where(|t, c| {
