@@ -610,7 +610,9 @@ fn says_plus_cards(card: Card) -> bool {
     let bytes = text.as_bytes();
     for (i, _) in text.match_indices('+') {
         let digits = bytes[i + 1..].iter().take_while(|b| b.is_ascii_digit()).count();
-        if digits > 0 && text[i + 1 + digits..].starts_with(" Card") {
+        // Governor's is "+1 (+3) Cards".
+        let rest = text[i + 1 + digits..].trim_start_matches(')');
+        if digits > 0 && rest.starts_with(" Card") {
             count += 1;
         }
     }
