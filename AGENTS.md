@@ -67,7 +67,8 @@ them.
   Action (moves: play an Action, spend a Villager, end), Buy (`StartBuyPhase`; play
   Treasures until something is bought, buy cards / Events / Projects; `EndBuyPhase`),
   Night (`StartNight`; play Night cards), Clean-up
-  (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
+  (`StartCleanup`, `DiscardFromPlay` for each player with cards in play to discard,
+  discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Spending Coffers
   and paying off Debt are moves in the Action, Buy and Night phases alike. Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
@@ -152,9 +153,9 @@ them.
 - **Shuffling** goes through `Frame::shuffle` (a discard pile into its deck) or
   `Frame::shuffle_deck` (a whole deck: Inn, Famine), never by hand: `WouldShuffle`,
   shuffle, cards `SetRules::bottom_when_shuffled` says go to the bottom (Shadow cards, in
-  their owner's order), then `Shuffled { count }` (the bottom `count` cards of the deck are
-  the shuffled ones; "when you shuffle" placements such as Stash, Star Chart and Fated
-  resolve there). One draw shuffles at most once. A script step that must draw before its
+  their owner's order), then `Shuffled { count }` (`g.shuffled(p)`, the bottom cards of
+  the deck, is the shuffled ones still in it; "when you shuffle" placements such as Stash,
+  Star Chart and Fated resolve there). One draw shuffles at most once. A script step that must draw before its
   own flow goes on calls the draw and `CardFrame::hold`s that flow (Way of the Chameleon).
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
@@ -196,6 +197,11 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   gain_card / trash / discard / play / receive / shuffle`. Primitive helpers
   (`g.move_card`, `top_deck`, `put_in_hand`, `set_aside`, `put_on_mat`,
   `return_to_pile`, `add_coins`) trigger nothing.
+- "When you discard ... from play" abilities answer `DiscardFromPlay { player }` for the
+  cards in `g.leaving_play(player)`: in Clean-up the cards nothing keeps in play (each
+  player's, not only the turn's), at other times the cards given to
+  `Frame::discard_from_play` (Highwayman). Effects that only use that window as a
+  moment of Clean-up check `g.cleaning_up(player)`.
 - `+$` goes through `g.add_coins(p, n)` (the -$1 token), +Actions and +Buys through
   `g.add_actions(p, n)` and `g.add_buys(p, n)`: all three do nothing for a player whose
   turn it isn't, so never add to `g.turn` directly. Decisions are asked with the

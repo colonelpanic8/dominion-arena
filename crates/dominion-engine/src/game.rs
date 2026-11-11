@@ -408,6 +408,13 @@ pub struct Game {
     /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
     pub(crate) trashing: Vec<(CardId, Zone)>,
     pub(crate) plays: Vec<PlayState>,
+    /// The cards being discarded from play other than in Clean-up, innermost last (see
+    /// [`Game::leaving_play`]).
+    #[serde(default)]
+    pub(crate) leaving: Vec<Vec<CardId>>,
+    /// The cards of the latest shuffle (see [`Game::shuffled`]).
+    #[serde(default)]
+    pub(crate) last_shuffle: Vec<CardId>,
     pub(crate) ext: Ext,
     pub(crate) stack: Vec<Frame>,
     pub(crate) pending: Option<Decision>,
@@ -458,9 +465,11 @@ pub struct PlayState {
     /// The log's length when the play began: effects set up later ("the next time you
     /// play ...") don't respond to it.
     pub since: usize,
-    /// The turn's $ when the card's own effect began (after "when you play" effects, such
-    /// as a +$1 token): "if it gave you +$".
-    pub coins: u32,
+    /// Whether the card's own instructions (its bonuses and abilities, or those of the Way
+    /// used instead) have given +$ during this play, whatever became of the $ since: "if it
+    /// gave you +$". Not the +$ of cards it played, tokens or Boons.
+    #[serde(default)]
+    pub gave_coins: bool,
     /// The log's length when the card's instructions were last begun (they are followed
     /// more than once for a Reckless card): "if this made you shuffle".
     #[serde(default)]
@@ -951,6 +960,38 @@ impl Game {
         cards::playable_as_if_in_hand(self, p, &mut cards);
         cards.retain(|&c| self.is(c, types) && cards::can_play(self, p, c));
         cards
+    }
+
+    /// The cards `p` is discarding from play while a `DiscardFromPlay` window is open: the
+    /// ones being discarded now or, in Clean-up, all of theirs that no lasting effect keeps
+    /// in play.
+    pub(crate) fn leaving_play(&self, p: PlayerId) -> Vec<CardId> {
+        let in_play = self.in_play(p).iter().copied();
+        match self.leaving.last() {
+            Some(cards) => in_play.filter(|c| cards.contains(c)).collect(),
+            None => in_play
+                .filter(|c| !self.lasting.iter().any(|l| l.keeps.contains(c)))
+                .collect(),
+        }
+    }
+
+    /// Whether the open `DiscardFromPlay` window is `p`'s own Clean-up, rather than cards
+    /// leaving play at another time or another player's cards leaving in this Clean-up.
+    pub(crate) fn cleaning_up(&self, p: PlayerId) -> bool {
+        p == self.turn.player && self.turn.phase == Phase::Cleanup && self.leaving.is_empty()
+    }
+
+    /// The cards just shuffled into `p`'s deck that are still in it, while the `Shuffled`
+    /// window is open: the bottom cards of the deck, fewer than were shuffled once some
+    /// have been put elsewhere (Avoid, Order of Masons).
+    pub(crate) fn shuffled(&self, p: PlayerId) -> &[CardId] {
+        let left = self
+            .last_shuffle
+            .iter()
+            .filter(|c| self.zones[c.index()] == Zone::Deck(p))
+            .count();
+        let deck = &self.players[p.index()].deck;
+        &deck[..left.min(deck.len())]
     }
 
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {

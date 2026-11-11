@@ -172,21 +172,17 @@ impl SetRules for Rules {
                     .gained_in_buy_phase_types
                     .iter()
                     .any(|t| t.contains(Types::VICTORY));
-                // Clean-up also discards what the other players played this turn; they
-                // had no Buy phase.
-                for p in g.players_from(player) {
-                    if p == g.turn.player && victory {
-                        continue;
-                    }
-                    for &c in g.in_play(p) {
-                        let kept = g.lasting().iter().any(|l| l.keeps.contains(&c));
-                        if g.card(c) == Card::Treasury && !kept {
-                            out.push(
-                                Trigger::new(p, Card::Treasury, TREASURY_TOPDECK)
-                                    .on(c)
-                                    .optional(),
-                            );
-                        }
+                // Other players, whose cards this Clean-up discards too, had no Buy phase.
+                if victory && player == g.turn.player {
+                    return;
+                }
+                for c in g.leaving_play(player) {
+                    if g.card(c) == Card::Treasury {
+                        out.push(
+                            Trigger::new(player, Card::Treasury, TREASURY_TOPDECK)
+                                .on(c)
+                                .optional(),
+                        );
                     }
                 }
             }

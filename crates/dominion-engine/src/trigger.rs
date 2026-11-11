@@ -34,7 +34,8 @@ pub enum Occasion {
     StartCleanup {
         player: PlayerId,
     },
-    /// In Clean-up, before cards are discarded from play: "when you discard this from play".
+    /// Before `player` discards the cards of [`Game::leaving_play`] from play, in Clean-up
+    /// or at another time: "when you discard this from play".
     DiscardFromPlay {
         player: PlayerId,
     },
@@ -91,7 +92,8 @@ pub enum Occasion {
     WouldShuffle {
         player: PlayerId,
     },
-    /// Just shuffled `count` cards, now the bottom `count` cards of the deck.
+    /// Just shuffled `count` cards, put under the deck: [`Game::shuffled`] is those still
+    /// there.
     Shuffled {
         player: PlayerId,
         count: usize,

@@ -121,9 +121,9 @@ impl SetRules for Rules {
             Occasion::Gain { player, card, .. } if g.card(card) == Card::Marchland => {
                 out.push(Trigger::new(player, Card::Marchland, MARCHLAND_GAIN).on(card));
             }
-            Occasion::Shuffled { player, count } => {
-                let deck = &g.player(player).deck;
-                if let Some(&stash) = deck[..count.min(deck.len())]
+            Occasion::Shuffled { player, .. } => {
+                if let Some(&stash) = g
+                    .shuffled(player)
                     .iter()
                     .find(|&&c| g.card(c) == Card::Stash)
                 {
@@ -683,10 +683,7 @@ fn sauna_avanto(g: &mut Game, f: &mut CardFrame, input: Input, other: Card) -> F
 /// (0: on top of them).
 fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
-    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
-        return Flow::done();
-    };
-    let shuffled = count.min(g.player(p).deck.len());
+    let shuffled = g.shuffled(p).len();
     match f.pc {
         0 => {
             f.s.cards = g.player(p).deck[..shuffled]

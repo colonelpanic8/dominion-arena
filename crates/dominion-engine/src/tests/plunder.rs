@@ -2144,11 +2144,11 @@ fn journey_keeps_cards_in_play_and_takes_an_extra_turn_but_not_a_third() {
     to_buy(&mut g);
     money(&mut g, 4, 1);
     buy_event(&mut g, Card::Journey);
-    // No third turn in a row; the cards still stay in play until P0's next Clean-up.
+    // No third turn in a row; the cards still stay in play, until the next Clean-up.
     assert_eq!(g.turn().player, P1);
     assert_eq!(in_play_kinds(&g, P0), [Card::Village, Card::Copper]);
     next_turn(&mut g);
-    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
     assert!(g.in_play(P0).is_empty());
 }
 
@@ -2821,4 +2821,554 @@ fn flagship_after_band_of_misfits_replays_the_card_it_played() {
     resolve_triggers(&mut g);
     // Smithy twice, with no second choice.
     assert_eq!(g.hand(P0).len(), 1 + 6);
+}
+
+/// Moves every card of `card`'s pile to the trash.
+fn empty_pile(g: &mut Game, card: Card) {
+    let pile = g.pile_of(card).expect("pile exists");
+    for c in g.pile(pile).cards.clone() {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+}
+
+/// Which of the triggers being asked about is `card`'s.
+fn trigger_index(g: &Game, card: Card) -> u16 {
+    let p = g.pending().expect("a decision is pending").player;
+    g.view(p)
+        .pending_triggers()
+        .iter()
+        .position(|t| t.card == card)
+        .unwrap_or_else(|| panic!("no {card} trigger pending")) as u16
+}
+
+fn play_count(g: &Game, card: Card) -> usize {
+    g.log()
+        .iter()
+        .filter(|e| matches!(e, Event::Played { card: c, .. } if *c == card))
+        .count()
+}
+
+#[test]
+fn prepare_plays_an_encampment_that_sets_itself_aside_only_once() {
+    let mut g = setup_l(&[Card::Encampment], &[Card::Prepare]);
+    hand(&mut g, P0, &[Card::Encampment]);
+    let mut cards = vec![Card::Gold];
+    cards.extend([Card::Copper; 30]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 3, 1);
+    buy_event(&mut g, Card::Prepare);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    // Encampment, played by Prepare: don't reveal the Gold, so it is set aside again.
+    assert_eq!(
+        (purpose(&g), g.pending().unwrap().source),
+        (Purpose::Reveal, Some(Card::Encampment))
+    );
+    choose(&mut g, &[]);
+    assert_eq!(purpose(&g), Purpose::Turn);
+    assert_eq!(play_count(&g, Card::Encampment), 1);
+    // It is Encampment's now, not one of the rest Prepare discards.
+    assert_eq!(aside_kinds(&g, P0), [Card::Encampment]);
+}
+
+#[test]
+fn invasion_with_no_duchies_left_still_gains_an_action_and_a_loot() {
+    let mut g = setup_l(&[Card::Smithy], &[Card::Invasion]);
+    empty_pile(&mut g, Card::Duchy);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 10, 2);
+    loot_top(&mut g, Card::Doubloons);
+    buy_event(&mut g, Card::Invasion);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Smithy);
+    assert_eq!(loot_gained(&g, P0), 1);
+    assert!(in_play_kinds(&g, P0).contains(&Card::Doubloons));
+}
+
+#[test]
+fn cursed_with_an_empty_loot_pile_still_gains_a_curse() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Cursed, Card::Village);
+    add_kingdom_piles(&mut g, &[]);
+    empty_pile(&mut g, Card::Loot);
+    hand(&mut g, P0, &[]);
+    g.start();
+    money(&mut g, 3, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Village);
+    assert_eq!(gain_count(&g, P0, Card::Village), 1);
+    assert_eq!(gain_count(&g, P0, Card::Curse), 1);
+}
+
+#[test]
+fn prosper_with_an_empty_loot_pile_still_gains_treasures() {
+    let mut g = setup_l(&[Card::Village], &[Card::Prosper]);
+    empty_pile(&mut g, Card::Loot);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 10, 1);
+    buy_event(&mut g, Card::Prosper);
+    assert_eq!(purpose(&g), Purpose::Gain);
+    choose_pile(&mut g, Card::Gold);
+    assert_eq!(gain_count(&g, P0, Card::Gold), 1);
+}
+
+#[test]
+fn flagship_replays_the_throne_room_played_next_not_the_card_it_plays() {
+    let mut g = setup(&[
+        Card::Flagship,
+        Card::ThroneRoom,
+        Card::Smithy,
+        Card::Village,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Flagship,
+            Card::ThroneRoom,
+            Card::Smithy,
+            Card::Village,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Flagship);
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    // The Smithy finishes first, but the next Action played was the Throne Room.
+    assert_eq!(g.pending().unwrap().source, Some(Card::ThroneRoom));
+    choose_kinds(&mut g, &[Card::Village]);
+    assert_eq!(
+        g.turn().played,
+        [
+            Card::Flagship,
+            Card::ThroneRoom,
+            Card::Smithy,
+            Card::Smithy,
+            Card::ThroneRoom,
+            Card::Village,
+            Card::Village,
+        ]
+    );
+}
+
+#[test]
+fn harbor_village_pays_for_coins_the_next_action_gave_and_then_lost() {
+    let mut g = setup(&[Card::HarborVillage, Card::PoorHouse]);
+    let mut cards = vec![Card::HarborVillage, Card::PoorHouse];
+    cards.extend([Card::Copper; 4]);
+    hand(&mut g, P0, &cards);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::PoorHouse);
+    // +$4, then -$1 per Treasure in hand.
+    assert_eq!(g.turn().coins, 1);
+}
+
+#[test]
+fn harbor_village_ignores_the_coin_of_a_boon_the_next_action_received() {
+    let mut g = setup(&[Card::HarborVillage, Card::Druid]);
+    g.ext.nocturne.druid = vec![
+        Card::TheForestsGift,
+        Card::TheSeasGift,
+        Card::TheMountainsGift,
+    ];
+    hand(&mut g, P0, &[Card::HarborVillage, Card::Druid]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::Druid);
+    pick(&mut g, Card::TheForestsGift);
+    assert_eq!(g.turn().coins, 1);
+}
+
+#[test]
+fn harbor_village_looks_at_the_next_action_played_not_one_that_action_plays() {
+    // Vassal gives +$2 and plays a Village, which finishes first.
+    let mut g = setup(&[Card::HarborVillage, Card::Vassal, Card::Village]);
+    hand(&mut g, P0, &[Card::HarborVillage, Card::Vassal]);
+    let mut cards = vec![Card::Estate, Card::Village];
+    cards.extend([Card::Estate; 3]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::Vassal);
+    yes(&mut g);
+    assert_eq!(
+        g.turn().played,
+        [Card::HarborVillage, Card::Vassal, Card::Village]
+    );
+    assert_eq!(g.turn().coins, 3);
+}
+
+#[test]
+fn harbor_village_does_not_pay_for_the_coins_of_a_card_the_next_action_played() {
+    // Throne Room gives no +$ itself; the Militia it plays is a later Action.
+    let mut g = setup(&[Card::HarborVillage, Card::ThroneRoom, Card::Militia]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::HarborVillage, Card::ThroneRoom, Card::Militia],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    hand(&mut g, P1, &[Card::Copper; 3]);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Militia]);
+    assert_eq!(g.turn().coins, 4);
+}
+
+/// P0 buys an Estate; P1 plays a Mapmaker with Trait `t` from their hand in response,
+/// and P0's turn ends.
+fn off_turn_mapmaker(t: Card) -> (Game, CardId) {
+    let mut g = setup(&[Card::Mapmaker]);
+    set_trait(&mut g, t, Card::Mapmaker);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    let mapmaker = hand(&mut g, P1, &[Card::Mapmaker])[0];
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    money(&mut g, 2, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Estate);
+    assert_eq!(g.pending().unwrap().player, P1);
+    resolve_triggers(&mut g);
+    assert_eq!(g.turn().player, P1);
+    (g, mapmaker)
+}
+
+#[test]
+fn a_reckless_card_played_on_another_players_turn_returns_to_its_pile() {
+    let (g, mapmaker) = off_turn_mapmaker(Card::Reckless);
+    let pile = g.pile_of(Card::Mapmaker).unwrap();
+    assert_eq!(g.zone(mapmaker), Zone::Pile(pile));
+}
+
+#[test]
+fn a_tireless_card_played_on_another_players_turn_goes_onto_the_deck() {
+    let (g, mapmaker) = off_turn_mapmaker(Card::Tireless);
+    assert_eq!(g.player(P1).deck.last(), Some(&mapmaker));
+}
+
+/// P0 plays a Highwayman with Trait `t`, which discards itself from play at the start
+/// of their next turn.
+fn highwayman_leaving_play(t: Card) -> (Game, CardId) {
+    let mut g = setup(&[Card::Highwayman]);
+    set_trait(&mut g, t, Card::Highwayman);
+    let highwayman = hand(&mut g, P0, &[Card::Highwayman])[0];
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    (g, highwayman)
+}
+
+#[test]
+fn a_tireless_highwayman_discarded_at_the_start_of_the_turn_goes_onto_the_deck() {
+    let (mut g, highwayman) = highwayman_leaving_play(Card::Tireless);
+    assert_eq!(g.zone(highwayman), Zone::SetAside(P0));
+    assert_eq!(g.hand(P0).len(), 8);
+    next_turn(&mut g);
+    assert_eq!(g.player(P0).deck.last(), Some(&highwayman));
+}
+
+#[test]
+fn a_reckless_highwayman_discarded_at_the_start_of_the_turn_returns_to_its_pile() {
+    let (g, highwayman) = highwayman_leaving_play(Card::Reckless);
+    let pile = g.pile_of(Card::Highwayman).unwrap();
+    assert_eq!(g.zone(highwayman), Zone::Pile(pile));
+    // Its instructions were followed twice: +3 Cards twice.
+    assert_eq!(g.hand(P0).len(), 11);
+}
+
+#[test]
+fn a_reckless_card_played_as_way_of_the_chameleon_follows_its_instructions_twice() {
+    let mut g = setup_l(&[Card::Smithy], &[Card::WayOfTheChameleon]);
+    set_trait(&mut g, Card::Reckless, Card::Smithy);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    pick(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (6, 0));
+}
+
+#[test]
+fn rush_and_mirror_apply_to_the_next_action_gained_not_one_gained_because_of_it() {
+    for event in [Card::Rush, Card::Mirror] {
+        let mut g = setup_l(&[Card::BorderVillage, Card::Village], &[event]);
+        hand(&mut g, P0, &[]);
+        deck(&mut g, P0, &[Card::Copper; 30]);
+        g.start();
+        to_buy(&mut g);
+        money(&mut g, 9, 2);
+        buy_event(&mut g, event);
+        buy(&mut g, Card::BorderVillage);
+        // Border Village's own ability first: the Village it gains is not the next Action.
+        let i = trigger_index(&g, Card::BorderVillage);
+        respond(&mut g, Response::option(Opt::Trigger(i)));
+        choose_pile(&mut g, Card::Village);
+        if event == Card::Rush {
+            assert_eq!(g.turn().played, [Card::BorderVillage]);
+        } else {
+            choose_pile(&mut g, Card::Village);
+            assert_eq!(gain_count(&g, P0, Card::BorderVillage), 2);
+            assert_eq!(gain_count(&g, P0, Card::Village), 2);
+        }
+    }
+}
+
+#[test]
+fn taskmaster_played_while_a_five_is_being_gained_counts_it() {
+    // Rush plays the gained Specialist, which plays the Taskmaster twice, all while the
+    // Specialist's gain is still being resolved.
+    let mut g = setup_l(&[Card::Taskmaster, Card::Specialist], &[Card::Rush]);
+    hand(&mut g, P0, &[Card::Taskmaster]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 7, 2);
+    buy_event(&mut g, Card::Rush);
+    buy(&mut g, Card::Specialist);
+    choose_kinds(&mut g, &[Card::Taskmaster]);
+    mode(&mut g, 0);
+    assert_eq!(
+        g.turn().played,
+        [Card::Specialist, Card::Taskmaster, Card::Taskmaster]
+    );
+    next_turn(&mut g);
+    next_turn(&mut g);
+    resolve_triggers(&mut g);
+    assert_eq!((g.turn().actions, g.turn().coins), (3, 2));
+}
+
+#[test]
+fn journey_keeps_a_card_played_at_the_start_of_clean_up() {
+    let mut g = setup_l(&[Card::Village, Card::Sheepdog], &[Card::Journey]);
+    set_trait(&mut g, Card::Friendly, Card::Village);
+    hand(&mut g, P0, &[Card::Village, Card::Sheepdog, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    money(&mut g, 3, 1);
+    buy_event(&mut g, Card::Journey);
+    // Start of Clean-up: Friendly discards the Village for another; Sheepdog is played.
+    assert_eq!(g.pending().unwrap().source, Some(Card::Friendly));
+    yes_trigger(&mut g);
+    assert_eq!(g.pending().unwrap().source, Some(Card::Sheepdog));
+    yes_trigger(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Journey)));
+    assert_eq!(in_play_kinds(&g, P0), [Card::Copper, Card::Sheepdog]);
+}
+
+#[test]
+fn bury_does_not_reveal_the_buried_card() {
+    let mut g = setup_l(&[Card::Village], &[Card::Bury]);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    let buried = discard(&mut g, P0, &[Card::Gold, Card::Estate])[0];
+    g.enable_trace();
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 1, 2);
+    buy_event(&mut g, Card::Bury);
+    choose(&mut g, &[buried]);
+    assert_eq!(g.player(P0).deck.first(), Some(&buried));
+    let named = |e: &Event| {
+        matches!(
+            e,
+            Event::Moved {
+                card: Some(Card::Gold),
+                ..
+            }
+        )
+    };
+    assert!(!g.log().iter().any(named));
+    let shown = Trace::Shown {
+        card: buried,
+        to: None,
+    };
+    assert!(!g.trace().unwrap().contains(&shown));
+}
+
+#[test]
+fn orb_looks_through_the_discard_pile_before_asking_which_option() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Orb]);
+    let under = discard(&mut g, P0, &[Card::Village, Card::Estate])[0];
+    g.enable_trace();
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Orb);
+    assert_eq!(purpose(&g), Purpose::Mode);
+    let looked = Trace::Shown {
+        card: under,
+        to: Some(P0),
+    };
+    assert!(g.trace().unwrap().contains(&looked));
+}
+
+#[test]
+fn a_hasty_card_gained_with_quartermaster_is_not_on_the_quartermaster() {
+    let mut g = setup(&[Card::Quartermaster, Card::Village]);
+    set_trait(&mut g, Card::Hasty, Card::Village);
+    hand(&mut g, P0, &[Card::Quartermaster]);
+    deck(&mut g, P0, &[Card::Copper; 40]);
+    g.start();
+    play(&mut g, Card::Quartermaster);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Village);
+    assert_eq!(aside_kinds(&g, P0), [Card::Village]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Quartermaster first: it has no card to put into the hand.
+    let i = trigger_index(&g, Card::Quartermaster);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    mode(&mut g, 1);
+    assert!(!hand_kinds(&g, P0).contains(&Card::Village));
+    assert!(in_play_kinds(&g, P0).contains(&Card::Village));
+}
+
+#[test]
+fn a_second_avoid_picks_from_the_shuffled_cards_only() {
+    let mut g = setup_l(&[Card::Village], &[Card::Avoid]);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Province; 2]);
+    discard(&mut g, P0, &[Card::Estate; 6]);
+    g.start();
+    money(&mut g, 4, 3);
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Avoid);
+    buy_event(&mut g, Card::Avoid);
+    // Looking at 4 cards shuffles the discard pile under the two Provinces.
+    g.stack.push(crate::frame::Frame::look(P0, 4));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+    resolve_triggers(&mut g);
+    choose_kinds(&mut g, &[Card::Estate; 3]);
+    resolve_triggers(&mut g);
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Estate; 3]);
+}
+
+#[test]
+fn star_chart_after_avoid_picks_from_the_shuffled_cards_only() {
+    let mut g = setup_l(&[Card::Village], &[Card::Avoid, Card::StarChart]);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[]);
+    let gold = deck(&mut g, P0, &[Card::Gold])[0];
+    let mut cards = vec![Card::Estate; 3];
+    cards.extend([Card::Silver, Card::Duchy]);
+    discard(&mut g, P0, &cards);
+    g.start();
+    money(&mut g, 2, 2);
+    to_buy(&mut g);
+    buy_event(&mut g, Card::Avoid);
+    // Looking at 5 cards shuffles the discard pile under the Gold.
+    g.stack.push(crate::frame::Frame::look(P0, 5));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+    let i = trigger_index(&g, Card::Avoid);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    choose_kinds(&mut g, &[Card::Estate; 3]);
+    let i = trigger_index(&g, Card::StarChart);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    assert!(!candidates(&g).contains(&gold));
+    choose_kinds(&mut g, &[Card::Silver]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Silver, Card::Duchy]);
+}
+
+#[test]
+fn differently_named_fated_cards_put_under_are_ordered() {
+    let mut g = setup(&[Card::Encampment, Card::Smithy]);
+    set_trait(&mut g, Card::Fated, Card::Encampment);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    let mut cards = vec![Card::Encampment, Card::Plunder];
+    cards.extend([Card::Copper; 4]);
+    discard(&mut g, P0, &cards);
+    g.start();
+    play(&mut g, Card::Smithy);
+    resolve_triggers(&mut g);
+    choose(&mut g, &[]);
+    choose_kinds(&mut g, &[Card::Encampment, Card::Plunder]);
+    choose_kinds(&mut g, &[Card::Plunder, Card::Encampment]);
+    assert_eq!(
+        deck_kinds(&g, P0),
+        [Card::Copper, Card::Plunder, Card::Encampment]
+    );
+}
+
+/// Capital's "when you discard this from play" and Tireless both happen when the Capital
+/// is discarded from play.
+#[test]
+fn a_tireless_capital_still_takes_its_debt() {
+    let mut g = setup(&[Card::Capital]);
+    set_trait(&mut g, Card::Tireless, Card::Capital);
+    let capital = hand(&mut g, P0, &[Card::Capital])[0];
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Capital);
+    g.turn.coins = 0;
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.player(P0).deck.last(), Some(&capital));
+    assert_eq!(g.player(P0).debt, 6);
+}
+
+#[test]
+fn a_capital_set_aside_by_trickster_still_takes_its_debt() {
+    let mut g = setup(&[Card::Capital, Card::Trickster]);
+    hand(&mut g, P0, &[Card::Trickster, Card::Capital]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Trickster);
+    play(&mut g, Card::Capital);
+    g.turn.coins = 0;
+    end_phase(&mut g);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    let i = trigger_index(&g, Card::Trickster);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    assert_eq!(g.turn().player, P1);
+    assert!(hand_kinds(&g, P0).contains(&Card::Capital));
+    assert_eq!(g.player(P0).debt, 6);
+}
+
+/// Divine Wind's FAQ: "In games using this" abilities keep working for the removed piles.
+#[test]
+fn shaman_still_gains_from_the_trash_after_divine_wind_removed_its_pile() {
+    let mut g = setup_l(&[Card::TeaHouse, Card::Shaman], &[Card::DivineWind]);
+    g.prophecy = Some((Card::DivineWind, 1));
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    // The cards `hand` and `deck` replaced are in the trash.
+    g.start();
+    assert_eq!(
+        (purpose(&g), g.pending().unwrap().source),
+        (Purpose::Gain, Some(Card::Shaman))
+    );
+    choose_kinds(&mut g, &[Card::Copper]);
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Shaman), None);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(
+        (purpose(&g), g.pending().unwrap().source),
+        (Purpose::Gain, Some(Card::Shaman))
+    );
 }

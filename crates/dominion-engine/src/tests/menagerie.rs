@@ -2157,7 +2157,6 @@ fn cards_played_with_way_of_the_frog_go_onto_the_deck_in_a_chosen_order() {
 
 // A card played on another player's turn is discarded from play in that turn's Clean-up.
 #[test]
-#[ignore = "needs the off-turn discard-from-play window"]
 fn way_of_the_frog_used_out_of_turn_puts_the_card_onto_its_owners_deck() {
     let mut g = way_game(Card::WayOfTheFrog, &[Card::BlackCat]);
     hand(&mut g, P0, &[Card::Copper, Card::Copper]);
@@ -2167,7 +2166,7 @@ fn way_of_the_frog_used_out_of_turn_puts_the_card_onto_its_owners_deck() {
     buy(&mut g, Card::Estate);
     trigger(&mut g, Card::BlackCat);
     way(&mut g, Card::WayOfTheFrog);
-    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
     assert_eq!(deck_kinds(&g, P1).first(), Some(&Card::BlackCat));
 }
 

@@ -309,10 +309,9 @@ impl SetRules for Rules {
                 }
             }
             Occasion::DiscardFromPlay { player } => {
-                for &c in g.in_play(player) {
+                for c in g.leaving_play(player) {
                     let kind = g.card(c);
-                    let kept = g.lasting().iter().any(|l| l.keeps.contains(&c));
-                    if matches!(kind, Card::MerchantCamp | Card::Tent) && !kept {
+                    if matches!(kind, Card::MerchantCamp | Card::Tent) {
                         out.push(Trigger::new(player, kind, REACT).on(c).optional());
                     }
                 }
@@ -848,7 +847,7 @@ fn ally_trigger(g: &Game, ally: Card, occ: &Occasion) -> Option<Trigger> {
         }
         Occasion::DiscardFromPlay { player } if ally == Card::CoastalHaven => (
             player,
-            favors(g, player) >= 1 && !g.hand(player).is_empty(),
+            g.cleaning_up(player) && favors(g, player) >= 1 && !g.hand(player).is_empty(),
         ),
         Occasion::EndTurn { player } if ally == Card::IslandFolk => (
             player,
@@ -1219,14 +1218,10 @@ fn again(g: &Game, f: &mut CardFrame) -> Flow {
 /// left out of the shuffle, into the discard pile).
 fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
-    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
-        return Flow::done();
-    };
     let astrologers = f.card == Card::OrderOfAstrologers;
     match f.pc {
         0 => {
-            let deck = &g.player(p).deck;
-            let mut shuffled: Vec<CardId> = deck[..count.min(deck.len())].to_vec();
+            let mut shuffled = g.shuffled(p).to_vec();
             shuffled.sort();
             let n = favors(g, p) as usize;
             let max = if astrologers { n } else { 2 * n };
@@ -1254,8 +1249,8 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             let chosen = input.cards();
+            let base = g.shuffled(p).len();
             let deck = &mut g.players[p.index()].deck;
-            let base = count.min(deck.len());
             let rest: Vec<CardId> = deck[..base]
                 .iter()
                 .copied()
@@ -1288,7 +1283,7 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 let this = f.this();
                 if g.zone(this) == Zone::InPlay(p) {
-                    return Flow::Call(Frame::discard(p, vec![this]));
+                    return Flow::Call(Frame::discard_from_play(p, vec![this]));
                 }
                 Flow::Continue
             }

@@ -531,13 +531,11 @@ fn actions_gained(g: &Game) -> usize {
     g.turn.gained_of(Types::ACTION)
 }
 
-/// Action cards `p` has in play that Clean-up will discard.
+/// The Action cards `p` is discarding from play.
 fn scheme_candidates(g: &Game, p: PlayerId) -> Vec<CardId> {
-    let kept: Vec<CardId> = g.lasting().iter().flat_map(|l| l.keeps.clone()).collect();
-    g.in_play(p)
-        .iter()
-        .copied()
-        .filter(|&c| g.is(c, Types::ACTION) && !kept.contains(&c))
+    g.leaving_play(p)
+        .into_iter()
+        .filter(|&c| g.is(c, Types::ACTION))
         .collect()
 }
 

@@ -173,6 +173,13 @@ pub(crate) enum Frame {
         cleanup: bool,
         i: usize,
     },
+    /// Discards cards from play other than in Clean-up: "when you discard this from
+    /// play", then an ordinary discard of those still there.
+    DiscardFromPlay {
+        player: PlayerId,
+        cards: Vec<CardId>,
+        pc: u8,
+    },
     /// Offer to overpay for `card`, just bought: $, then Potions; then its overpay ability.
     Overpay {
         player: PlayerId,
@@ -297,6 +304,14 @@ impl Frame {
             cards,
             cleanup: false,
             i: 0,
+        }
+    }
+
+    pub(crate) fn discard_from_play(player: PlayerId, cards: Vec<CardId>) -> Frame {
+        Frame::DiscardFromPlay {
+            player,
+            cards,
+            pc: 0,
         }
     }
 
@@ -512,6 +527,20 @@ impl Frame {
                     card: c,
                 }))
             }
+            Frame::DiscardFromPlay { player, cards, pc } => match pc {
+                0 => {
+                    *pc = 1;
+                    g.leaving.push(cards.clone());
+                    Flow::Call(Frame::window(Occasion::DiscardFromPlay { player: *player }))
+                }
+                1 => {
+                    *pc = 2;
+                    g.leaving.pop();
+                    cards.retain(|&c| g.zone(c) == Zone::InPlay(*player));
+                    Flow::Call(Frame::discard(*player, std::mem::take(cards)))
+                }
+                _ => Flow::Done(Value::Cards(input.cards())),
+            },
             Frame::Overpay {
                 player,
                 card,
@@ -604,6 +633,7 @@ fn resume_shuffle(
             let mixed = under.clone();
             g.record(|| crate::Trace::Mixed { cards: mixed });
             *count = under.len();
+            g.last_shuffle = under.clone();
             let pl = &mut g.players[p.index()];
             under.append(&mut pl.deck);
             pl.deck = under;
@@ -973,30 +1003,23 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         }
         6 => {
             *pc = 7;
-            Flow::Call(Frame::window(Occasion::DiscardFromPlay { player: p }))
+            // Cards other players played this turn (Guard Dog, ...) are discarded too.
+            let occs = g
+                .players_from(p)
+                .into_iter()
+                .filter(|&q| q == p || !g.leaving_play(q).is_empty())
+                .map(|player| Occasion::DiscardFromPlay { player })
+                .collect();
+            Flow::Call(Window::open_all(occs))
         }
         7 => {
-            let kept: Vec<CardId> = g.lasting.iter().flat_map(|l| l.keeps.clone()).collect();
-            // Cards other players played this turn (Guard Dog, ...) are discarded too.
             for other in g.others(p) {
-                let stray: Vec<CardId> = g.players[other.index()]
-                    .in_play
-                    .iter()
-                    .filter(|c| !kept.contains(c))
-                    .copied()
-                    .collect();
-                for c in stray {
+                for c in g.leaving_play(other) {
                     g.move_card(c, Zone::Discard(other), Pos::Top);
                 }
             }
-            let pl = &g.players[p.index()];
-            let cards = pl
-                .in_play
-                .iter()
-                .filter(|c| !kept.contains(c))
-                .chain(&pl.hand)
-                .copied()
-                .collect();
+            let mut cards = g.leaving_play(p);
+            cards.extend(&g.players[p.index()].hand);
             *pc = 8;
             Flow::Call(Frame::Discard {
                 player: p,
@@ -1337,7 +1360,7 @@ impl PlayFrame {
                     replaced: None,
                     blocked: false,
                     since,
-                    coins: g.turn.coins,
+                    gave_coins: false,
                     run_since: since,
                 });
                 self.pc = 1;
@@ -1347,7 +1370,6 @@ impl PlayFrame {
                 }))
             }
             1 => {
-                g.plays.last_mut().expect("play in progress").coins = g.turn.coins;
                 // Reactions to an Attack (Moat, ...) come before its player picks a Way, and
                 // answer the card being played, whatever it ends up doing.
                 self.pc = 2;
@@ -1473,7 +1495,9 @@ impl PlayFrame {
                     g.turn.buys += bonus.plus.buys as u32;
                     g.turn.potions += bonus.potions;
                 }
+                let had = g.turn.coins;
                 g.add_coins(p, bonus.plus.coins as u32 + bonus.coins);
+                g.plays.last_mut().expect("play in progress").gave_coins |= g.turn.coins > had;
                 self.pc = 5;
                 Flow::Call(Frame::draw(p, bonus.plus.cards as usize))
             }

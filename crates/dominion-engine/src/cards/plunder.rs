@@ -4,17 +4,18 @@
 //! (see Seaside). "Next time" Durations (Cage, Search, Secluded Shrine, Abundance,
 //! Cutthroat, Flagship, Landing Party) wait in play until their event, and resolve as
 //! their `WAITED` ability. Effects that wait record the log's length when they were set
-//! up in `data.i`; "the next time" ones ignore a gain or play that began before that
-//! (`GainState::since`, `PlayState::since`). Cards held until the end of the turn (Cage,
-//! Puzzle Box, Deliver, Trickster, Tireless) sit in their owner's `SetAside` zone, listed
-//! in an `Until::EndOfTurn` lasting's `data.cards`. Traits sit on their pile
-//! (`Pile::traits`); the Loot pile is a face-down non-Supply pile named [`Card::Loot`].
+//! up in `data.i`; "the next time" ones answer the first gain or play to begin after that
+//! (`GainState::since`, `PlayState::since`; see [`next_gain`] and [`next_play`]). Cards
+//! held until the end of the turn (Cage, Puzzle Box, Deliver, Trickster, Tireless) sit in
+//! their owner's `SetAside` zone, listed in an `Until::EndOfTurn` lasting's `data.cards`.
+//! Traits sit on their pile (`Pile::traits`); the Loot pile is a face-down non-Supply pile
+//! named [`Card::Loot`].
 
-use super::{CardFrame, Hook, SetRules, duration_trigger, mode_mask, turn_durations};
+use super::{CardFrame, Hook, SetRules, Step, duration_trigger, mode_mask, turn_durations};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Lasting, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Trace, Types};
@@ -359,16 +360,7 @@ impl SetRules for Rules {
                 if !traited_in_hand(g, player, Card::Patient).is_empty() {
                     out.push(Trigger::new(player, Card::Patient, TRAIT).optional());
                 }
-                if let Some(l) = this_turn_lasting(g, Card::Journey, player) {
-                    let all = g.in_play(player).to_vec();
-                    if all.iter().any(|c| !l.keeps.contains(c)) {
-                        out.push(
-                            Trigger::new(player, Card::Journey, THIS_TURN)
-                                .via_lasting(l.id)
-                                .quiet(),
-                        );
-                    }
-                }
+                journey_trigger(g, player, out);
             }
             Occasion::DiscardFromPlay { player } => discard_from_play_triggers(g, player, out),
             Occasion::EndTurn { .. } => {
@@ -397,13 +389,13 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::JewelledEgg, TRASHED).on(card));
                 }
             }
-            Occasion::Shuffled { player, count } => {
+            Occasion::Shuffled { player, .. } => {
                 for l in g.lasting() {
                     if l.card == Card::Avoid && l.owner == player {
                         out.push(Trigger::new(player, Card::Avoid, THIS_TURN).via_lasting(l.id));
                     }
                 }
-                if !shuffled_fated(g, player, count).is_empty() {
+                if !shuffled_fated(g, player).is_empty() {
                     out.push(Trigger::new(player, Card::Fated, THIS_TURN).optional());
                 }
             }
@@ -419,6 +411,24 @@ impl SetRules for Rules {
 
     fn extra_runs(g: &Game, _p: PlayerId, id: CardId) -> u32 {
         u32::from(is_traited(g, id, Card::Reckless))
+    }
+
+    /// Notes +$ a step gave on the play in progress of the card whose ability it is
+    /// (Harbor Village). Way of the Chameleon's exchange (Menagerie's, which runs first)
+    /// counts as what the step gave.
+    fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, _flow: &mut Flow) {
+        if f.player != g.turn.player || g.turn.coins <= before.coins {
+            return;
+        }
+        let this = f.this.or_else(|| {
+            let id = f.lasting?;
+            g.lasting().iter().find(|l| l.id == id)?.source
+        });
+        if let Some(st) = g.plays.iter_mut().rev().find(|st| Some(st.card) == this)
+            && (f.card == st.behavior || Some(f.card) == st.way)
+        {
+            st.gave_coins = true;
+        }
     }
 
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {
@@ -581,9 +591,38 @@ fn where_gained(g: &Game, card: CardId) -> bool {
     gain_state(g, card).is_some_and(|s| dest_zone(s.to, s.player) == g.zone(card))
 }
 
-/// Whether lasting `l` was set up before the gain of `card` began.
-fn before_gain(g: &Game, l: &Lasting, card: CardId) -> bool {
-    gain_state(g, card).is_some_and(|s| l.data.i <= s.since)
+/// Whether the gain of `card` is the next one `wanted` accepts since lasting `l` was set
+/// up: it began after that, and not while an earlier such gain was still being resolved
+/// (that one is the next, whichever of its abilities are resolved first).
+fn next_gain(g: &Game, l: &Lasting, card: CardId, wanted: impl Fn(&GainState) -> bool) -> bool {
+    let Some(i) = g.gains.iter().rposition(|s| s.card == card) else {
+        return false;
+    };
+    l.data.i <= g.gains[i].since
+        && !g.gains[..i]
+            .iter()
+            .any(|s| l.data.i <= s.since && wanted(s))
+}
+
+/// [`next_gain`] for a card of `types` gained by `l`'s owner.
+fn next_gain_of(g: &Game, l: &Lasting, card: CardId, types: Types) -> bool {
+    next_gain(g, l, card, |s| s.player == l.owner && g.is(s.card, types))
+}
+
+/// Whether the play of `card` in progress is the next one by its player, of a card whose
+/// types `wanted` accepts, since lasting `l` was set up: it began after that, and not
+/// while an earlier such play was still being resolved (Throne Room, not the card it
+/// plays).
+fn next_play(g: &Game, l: &Lasting, card: CardId, wanted: impl Fn(Types) -> bool) -> bool {
+    let Some(i) = g.plays.iter().rposition(|s| s.card == card) else {
+        return false;
+    };
+    let st = &g.plays[i];
+    l.data.i <= st.since
+        && wanted(g.types(card))
+        && !g.plays[..i]
+            .iter()
+            .any(|s| s.player == st.player && l.data.i <= s.since && wanted(g.types(s.card)))
 }
 
 /// The play of `card` in progress (up to its AfterPlay window), if any.
@@ -633,19 +672,20 @@ fn loot_pile(g: &Game) -> Option<PileId> {
     g.pile_of(Card::Loot).filter(|&p| g.pile_top(p).is_some())
 }
 
-/// Gains a Loot (the top card of the Loot pile).
+/// Gains a Loot (the top card of the Loot pile), as one step of an ability: with none
+/// left, the ability goes on to its next step. Set `f.pc` first.
 fn gain_loot(g: &Game, p: PlayerId, to: Dest) -> Flow {
     match loot_pile(g) {
         Some(pile) => Flow::Call(Frame::gain(p, pile, to)),
-        None => Flow::done(),
+        None => Flow::Continue,
     }
 }
 
-/// Gains `card` from its Supply pile.
+/// Gains `card` from its Supply pile, as one step of an ability (see [`gain_loot`]).
 fn gain_basic(g: &Game, p: PlayerId, card: Card) -> Flow {
     match g.supply_pile(card).filter(|&s| g.pile_top(s).is_some()) {
         Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
-        None => Flow::done(),
+        None => Flow::Continue,
     }
 }
 
@@ -764,21 +804,26 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
     let mut mirror = false;
     for l in g.lasting() {
         let mine = l.owner == gainer;
-        let next = before_gain(g, l, card);
+        let next =
+            |wanted| mine && types.contains(wanted) && next_gain_of(g, l, card, wanted);
         let via = |ability| duration_trigger(l, ability);
         match l.card {
-            Card::Cage if mine && next && l.until == Until::Removed && types.contains(Types::VICTORY) => {
+            Card::Cage if l.until == Until::Removed && next(Types::VICTORY) => {
                 out.push(via(WAITED));
             }
-            Card::SecludedShrine
-                if mine && next && l.until == Until::Removed && types.contains(Types::TREASURE) =>
+            Card::SecludedShrine if l.until == Until::Removed && next(Types::TREASURE) => {
+                out.push(via(WAITED));
+            }
+            Card::Abundance if next(Types::ACTION) => {
+                out.push(via(WAITED));
+            }
+            Card::Cutthroat
+                if types.contains(Types::TREASURE)
+                    && cost.coins >= 5
+                    && next_gain(g, l, card, |s| {
+                        g.is(s.card, Types::TREASURE) && s.cost.coins >= 5
+                    }) =>
             {
-                out.push(via(WAITED));
-            }
-            Card::Abundance if mine && next && types.contains(Types::ACTION) => {
-                out.push(via(WAITED));
-            }
-            Card::Cutthroat if next && types.contains(Types::TREASURE) && cost.coins >= 5 => {
                 out.push(via(WAITED));
             }
             Card::Taskmaster
@@ -803,11 +848,11 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             Card::Deliver if mine && where_gained(g, card) => {
                 out.push(via(THIS_TURN));
             }
-            Card::Rush if mine && next && types.contains(Types::ACTION) && !rush => {
+            Card::Rush if next(Types::ACTION) && !rush => {
                 rush = true;
                 out.push(via(THIS_TURN));
             }
-            Card::Mirror if mine && next && types.contains(Types::ACTION) && !mirror => {
+            Card::Mirror if next(Types::ACTION) && !mirror => {
                 mirror = true;
                 out.push(via(THIS_TURN));
             }
@@ -842,24 +887,25 @@ fn after_play_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<T
     let types = g.types(card);
     let action = types.contains(Types::ACTION);
     for l in g.lasting() {
-        let next = l.data.i <= since;
         let via = |ability| duration_trigger(l, ability);
         match l.card {
             Card::Flagship
                 if l.owner == player
-                    && next
                     && l.until == Until::Removed
-                    && action
-                    && !types.contains(Types::COMMAND) =>
+                    && next_play(g, l, card, |t| {
+                        t.contains(Types::ACTION) && !t.contains(Types::COMMAND)
+                    }) =>
             {
                 out.push(via(WAITED));
             }
-            Card::HarborVillage if l.owner == player && next && action => {
+            Card::HarborVillage
+                if l.owner == player && next_play(g, l, card, |t| t.contains(Types::ACTION)) =>
+            {
                 out.push(via(THIS_TURN));
             }
             Card::LandingParty
                 if l.owner == player
-                    && next
+                    && l.data.i <= since
                     && l.until == Until::Removed
                     && types.contains(Types::TREASURE)
                     && first_play_of_turn(g, player, since) =>
@@ -896,17 +942,26 @@ fn first_play_of_turn(g: &Game, p: PlayerId, since: usize) -> bool {
             .any(|e| matches!(e, Event::Played { player, .. } if *player == p))
 }
 
-fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>) {
-    if player != g.turn.player || this_turn_lasting(g, Card::Journey, player).is_some() {
-        return;
+/// Journey keeps in play everything its buyer has there: asked at the start of Clean-up
+/// (for effects about cards that would be discarded) and again as cards are discarded,
+/// for cards played in between.
+fn journey_trigger(g: &Game, player: PlayerId, out: &mut Vec<Trigger>) {
+    if let Some(l) = this_turn_lasting(g, Card::Journey, player)
+        && g.in_play(player).iter().any(|c| !l.keeps.contains(c))
+    {
+        out.push(
+            Trigger::new(player, Card::Journey, THIS_TURN)
+                .via_lasting(l.id)
+                .quiet(),
+        );
     }
-    let kept: Vec<CardId> = g.lasting().iter().flat_map(|l| l.keeps.clone()).collect();
-    let leaving: Vec<CardId> = g
-        .in_play(player)
-        .iter()
-        .copied()
-        .filter(|c| !kept.contains(c))
-        .collect();
+}
+
+fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>) {
+    if g.cleaning_up(player) {
+        journey_trigger(g, player, out);
+    }
+    let leaving = g.leaving_play(player);
     for &c in &leaving {
         for t in [Card::Tireless, Card::Reckless] {
             if is_traited(g, c, t) {
@@ -1049,7 +1104,8 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 /// Patient and Prepare: play the set-aside cards in any order (Prepare: its Actions and
-/// Treasures, then discard the rest).
+/// Treasures, then discard the rest). Each is played once: one set aside again by its own
+/// play (Encampment, Way of the Turtle) is no longer theirs.
 fn play_held(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
@@ -1073,7 +1129,10 @@ fn play_held(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         2 => {
             f.pc = 1;
             match input.card() {
-                Some(c) => Flow::Call(Frame::play(p, c, true, vec![])),
+                Some(c) => {
+                    f.s.cards.retain(|&x| x != c);
+                    Flow::Call(Frame::play(p, c, true, vec![]))
+                }
                 None => Flow::Continue,
             }
         }
@@ -1130,6 +1189,16 @@ fn cabin_boy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+/// Whether an effect other than a Quartermaster holds set-aside card `c`: one that set it
+/// aside again as it was gained (Hasty, Rapid Expansion, ...), so it is no longer on the
+/// Quartermaster.
+fn held_elsewhere(g: &Game, c: CardId) -> bool {
+    g.lasting().iter().any(|l| {
+        l.card != Card::Quartermaster
+            && (l.source == Some(c) || l.data.pick == Some(c) || l.data.cards.contains(&c))
+    })
+}
+
 fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     let this = f.this();
@@ -1179,6 +1248,7 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         4 => {
             if let Some(c) = input.card()
                 && g.zone(c) == Zone::SetAside(p)
+                && !held_elsewhere(g, c)
                 && let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id))
             {
                 l.data.cards.push(c);
@@ -1457,7 +1527,9 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let used: Vec<u32> = g
                     .lasting()
                     .iter()
-                    .filter(|l| l.card == f.card && l.owner == p && before_gain(g, l, c))
+                    .filter(|l| {
+                        l.card == f.card && l.owner == p && next_gain_of(g, l, c, Types::ACTION)
+                    })
                     .map(|l| l.id)
                     .collect();
                 for id in &used {
@@ -1486,8 +1558,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.end_lasting(g);
-            let gave = play_state(g, card).is_some_and(|st| g.turn.coins > st.coins);
-            if gave {
+            if play_state(g, card).is_some_and(|st| st.gave_coins) {
                 coins(g, p, 1);
             }
             Flow::done()
@@ -1495,12 +1566,10 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Frigate => discard_down_one(g, f, input, p, 4),
         Card::Trickster => match f.pc {
             0 => {
-                let kept: Vec<CardId> = g.lasting().iter().flat_map(|l| l.keeps.clone()).collect();
                 let treasures: Vec<CardId> = g
-                    .in_play(p)
-                    .iter()
-                    .copied()
-                    .filter(|&c| !kept.contains(&c) && g.is(c, Types::TREASURE))
+                    .leaving_play(p)
+                    .into_iter()
+                    .filter(|&c| g.is(c, Types::TREASURE))
                     .collect();
                 if treasures.is_empty() {
                     return Flow::done();
@@ -1522,13 +1591,12 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         Card::Avoid => {
-            let Some(Occasion::Shuffled { count, .. }) = f.occ else {
-                return Flow::done();
-            };
             if f.pc == 0 {
                 f.end_lasting(g);
                 f.pc = 1;
-                return f.ask_cards(shuffled_cards(g, p, count), 0, 3, Purpose::Move);
+                let mut shuffled = g.shuffled(p).to_vec();
+                shuffled.sort();
+                return f.ask_cards(shuffled, 0, 3, Purpose::Move);
             }
             for c in input.cards() {
                 if g.zone(c) == Zone::Deck(p) {
@@ -1549,33 +1617,28 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// The cards just shuffled into `p`'s deck: its bottom `count` cards.
-fn shuffled_cards(g: &Game, p: PlayerId, count: usize) -> Vec<CardId> {
-    let deck = &g.player(p).deck;
-    deck[..count.min(deck.len())].to_vec()
-}
-
-fn shuffled_fated(g: &Game, p: PlayerId, count: usize) -> Vec<CardId> {
+fn shuffled_fated(g: &Game, p: PlayerId) -> Vec<CardId> {
     if trait_pile(g, Card::Fated).is_none() {
         return vec![];
     }
-    shuffled_cards(g, p, count)
-        .into_iter()
+    let mut fated: Vec<CardId> = g
+        .shuffled(p)
+        .iter()
+        .copied()
         .filter(|&c| is_traited(g, c, Card::Fated))
-        .collect()
+        .collect();
+    fated.sort();
+    fated
 }
 
 /// Fated: put any of the Fated cards just shuffled on top of or under the shuffled cards.
 /// Those put under can go among the cards the shuffle put on the bottom (Shadow cards).
 fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
-    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
-        return Flow::done();
-    };
-    let shuffled = shuffled_cards(g, p, count);
+    let shuffled = g.shuffled(p).to_vec();
     match f.pc {
         0 => {
-            let fated = shuffled_fated(g, p, count);
+            let fated = shuffled_fated(g, p);
             let n = fated.len();
             f.s.cards = fated.clone();
             f.pc = 1;
@@ -1619,7 +1682,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 4;
             let under = f.s.cards[top..].to_vec();
-            if under.len() > 1 && under.iter().any(|&c| !is_traited(g, c, Card::Fated)) {
+            if under.iter().any(|&c| g.card(c) != g.card(under[0])) {
                 return f.ask_order(under, Purpose::Move);
             }
             Flow::Continue
@@ -2422,6 +2485,9 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
+            for c in g.player(p).discard.clone() {
+                g.show_to(c, p);
+            }
             f.pc = 1;
             f.ask_modes(
                 &["Play an Action or Treasure from your discard pile", "+1 Buy and +$3"],
@@ -2607,11 +2673,10 @@ fn bury(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
     for c in input.cards() {
         if g.zone(c) == Zone::Discard(p) {
-            g.show(c);
             g.move_card(c, Zone::Deck(p), Pos::Bottom);
             g.emit(Event::Moved {
                 player: p,
-                card: Some(g.card(c)),
+                card: None,
                 to: Zone::Deck(p),
             });
         }

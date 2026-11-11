@@ -284,7 +284,7 @@ impl SetRules for Rules {
                     }
                 }
             }
-            Occasion::DiscardFromPlay { .. } => {
+            Occasion::DiscardFromPlay { player } if g.cleaning_up(player) => {
                 for l in g.lasting() {
                     if l.card == Card::Joust {
                         out.push(Trigger::new(l.owner, Card::Joust, JOUST_DISCARD).via_lasting(l.id));
