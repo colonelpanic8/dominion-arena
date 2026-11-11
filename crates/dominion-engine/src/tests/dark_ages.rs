@@ -1517,8 +1517,6 @@ fn a_hermit_that_left_play_is_not_exchanged() {
 }
 
 #[test]
-#[ignore = "each trashed card's abilities resolve in its own window, in trash order; the \
-            player can't interleave the abilities of cards trashed together"]
 fn the_abilities_of_cards_trashed_together_resolve_in_the_players_order() {
     let mut g = setup(&[Card::Urchin, Card::Rats, Card::Cultist]);
     hand(&mut g, P0, &[Card::Mercenary, Card::Rats, Card::Cultist]);
@@ -1528,7 +1526,16 @@ fn the_abilities_of_cards_trashed_together_resolve_in_the_players_order() {
     // Both cards in hand are trashed.
     yes(&mut g);
     // Rats' +1 Card and Cultist's +3 Cards are both pending: the player picks the order.
-    assert_eq!(purpose(&g), Purpose::Trigger);
+    let d = g.pending().unwrap();
+    let DecisionKind::Choose { labels, .. } = &d.kind else {
+        panic!("expected the trigger order, got {d:?}");
+    };
+    assert_eq!(d.purpose, Purpose::Trigger);
+    let cultist = labels.iter().position(|l| l == "Cultist").unwrap();
+    assert!(labels.contains(&"Rats".to_string()));
+    respond(&mut g, Response::option(Opt::Trigger(cultist as u16)));
+    // +3 Cards, +1 Card, then Mercenary's +2 Cards.
+    assert_eq!(g.hand(P0).len(), 6);
 }
 
 // ---- Random games ----

@@ -392,35 +392,40 @@ impl Frame {
                 pc,
             } => resume_buy(g, *player, *pile, *landscape, card, pc, input),
             Frame::Trash { player, cards, i } => {
-                // Cards trashed together are all trashed before any "when trashed" ability.
-                if *i == 0 {
-                    for &c in cards.iter() {
-                        let from = g.zone(c);
-                        if !cards::trash_instead(g, *player, c) {
-                            g.move_card(c, Zone::Trash, Pos::Top);
+                // Cards trashed together are all trashed before any "when trashed" ability,
+                // and their abilities share one window.
+                if *i > 0 {
+                    for c in cards.iter() {
+                        if let Some(pos) = g.trashing.iter().rposition(|(x, _)| x == c) {
+                            g.trashing.remove(pos);
                         }
-                        g.trashing.push((c, from));
-                        let card = g.card(c);
-                        if *player == g.turn.player {
-                            g.turn.trashed.push(card);
-                        }
-                        g.emit(Event::Trashed {
-                            player: *player,
-                            card,
-                        });
                     }
-                } else if let Some(pos) = g.trashing.iter().rposition(|(c, _)| *c == cards[*i - 1])
-                {
-                    g.trashing.remove(pos);
-                }
-                let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
-                };
-                *i += 1;
-                Flow::Call(Frame::window(Occasion::Trash {
-                    player: *player,
-                    card: c,
-                }))
+                }
+                *i = 1;
+                for &c in cards.iter() {
+                    let from = g.zone(c);
+                    if !cards::trash_instead(g, *player, c) {
+                        g.move_card(c, Zone::Trash, Pos::Top);
+                    }
+                    g.trashing.push((c, from));
+                    let card = g.card(c);
+                    if *player == g.turn.player {
+                        g.turn.trashed.push(card);
+                    }
+                    g.emit(Event::Trashed {
+                        player: *player,
+                        card,
+                    });
+                }
+                let occs = cards
+                    .iter()
+                    .map(|&card| Occasion::Trash {
+                        player: *player,
+                        card,
+                    })
+                    .collect();
+                Flow::Call(Window::open_all(occs))
             }
             Frame::Discard {
                 player,
