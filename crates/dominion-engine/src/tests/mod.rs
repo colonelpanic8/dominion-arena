@@ -294,7 +294,7 @@ fn card_data_is_consistent() {
         }
         if let Some(pile) = def.pile {
             assert!(
-                pile.def().kingdom || pile == Card::Ruins,
+                pile.def().kingdom || matches!(pile, Card::Ruins | Card::Loot),
                 "{card}'s pile {pile}"
             );
         }
