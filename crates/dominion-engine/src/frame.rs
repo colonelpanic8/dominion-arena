@@ -555,6 +555,11 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             ask_moves(p, Phase::Action, moves)
         }
         3 => {
+            if g.turn.return_to_action {
+                g.turn.return_to_action = false;
+                *pc = 11;
+                return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: p }));
+            }
             if let Input::Response(Response::Move(m)) = input {
                 match m {
                     Move::Play(c) => return Flow::Call(Frame::play(p, c, true, vec![])),
@@ -678,6 +683,12 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         9 => {
             *pc = 10;
             Flow::Call(Frame::window(Occasion::EndTurn { player: p }))
+        }
+        11 => {
+            g.turn.phase = Phase::Action;
+            g.turn.bought = false;
+            *pc = 2;
+            Flow::Continue
         }
         _ => {
             g.lasting.retain(|l| l.until != Until::EndOfTurn);

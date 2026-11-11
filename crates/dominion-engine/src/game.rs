@@ -175,8 +175,10 @@ pub struct Turn {
     pub buys: u32,
     pub coins: u32,
     pub potions: u32,
-    /// Bought anything (card, Event or Project) this turn.
+    /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures).
     pub bought: bool,
+    /// Go back to the Action phase from the Buy phase as soon as possible (Villa).
+    pub return_to_action: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
     pub gained: Vec<Card>,
@@ -202,6 +204,7 @@ impl Turn {
             coins: 0,
             potions: 0,
             bought: false,
+            return_to_action: false,
             played: vec![],
             gained: vec![],
             gained_in_buy_phase: vec![],
