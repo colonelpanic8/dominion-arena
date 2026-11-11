@@ -648,6 +648,9 @@ impl Game {
                     input = Input::Start;
                 }
                 Flow::Ask(mut decision) => {
+                    if let Frame::Card(f) = &frame {
+                        cards::modify_decision(self, f, &mut decision);
+                    }
                     self.stack.push(frame);
                     if decision.player == self.turn.player {
                         decision.player = self.turn.controller;

@@ -54,6 +54,9 @@ pub(crate) trait SetRules {
         0
     }
 
+    /// Changes a decision a card ability asks (Elder: one more pick from a "choose").
+    fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {}
+
     /// Whether `p` may play `id` from their hand now.
     fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {
         true
@@ -130,6 +133,10 @@ macro_rules! sets {
 
         pub(crate) fn bonus_vp(g: &Game, p: PlayerId) -> i32 {
             0 $(+ <$module::Rules as SetRules>::bonus_vp(g, p))*
+        }
+
+        pub(crate) fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {
+            $(<$module::Rules as SetRules>::modify_decision(g, f, d);)*
         }
 
         pub(crate) fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {
