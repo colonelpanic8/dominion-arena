@@ -820,6 +820,30 @@ fn continue_returns_to_the_action_phase_and_plays_the_card_gained() {
 }
 
 #[test]
+fn continue_plays_the_card_where_it_was_gained_to_unless_it_has_moved() {
+    let mut g = game(&[Card::NomadCamp], &[Card::Continue], 0);
+    hand(&mut g, P0, &[]);
+    g.start();
+    // Nomad Camp is gained onto the deck.
+    buy_landscape(&mut g, Card::Continue);
+    assert_eq!(in_play_kinds(&g, P0), [Card::NomadCamp]);
+    assert_eq!(g.turn().coins, 2);
+
+    let mut g = game(&[Card::Village, Card::Watchtower], &[Card::Continue], 0);
+    hand(&mut g, P0, &[Card::Watchtower]);
+    g.start();
+    end_phase(&mut g);
+    buy_landscape(&mut g, Card::Continue);
+    choose_pile(&mut g, Card::Village);
+    // Watchtower puts the Village onto the deck: Continue has lost track of it.
+    resolve_triggers(&mut g);
+    modes(&mut g, &[1]);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Village);
+    assert_eq!(g.turn().phase, Phase::Action);
+    assert_eq!((g.turn().actions, g.turn().buys), (2, 1));
+}
+
+#[test]
 fn credit_gains_an_action_or_treasure_and_takes_debt_equal_to_its_cost() {
     let mut g = game(&[Card::Smithy], &[Card::Credit], 0);
     g.start();

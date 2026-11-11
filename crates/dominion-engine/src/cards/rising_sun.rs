@@ -1242,8 +1242,11 @@ fn continue_event(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         4 => {
             f.pc = 5;
+            // Wherever it was gained to (Nomad Camp: the deck), if it is still there.
             if let Some(c) = f.s.pick
-                && matches!(g.zone(c), Zone::Discard(o) | Zone::Hand(o) if o == p)
+                && g
+                    .gained_to(p, c)
+                    .is_some_and(|zone| g.still_where_put(c, zone))
             {
                 return Flow::Call(Frame::play(p, c, true, vec![]));
             }
