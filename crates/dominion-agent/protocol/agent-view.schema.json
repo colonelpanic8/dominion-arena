@@ -1,0 +1,632 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/colonelpanic8/dominion-agents/protocol/agent-view.schema.json",
+  "title": "dominion/agent-view@2",
+  "description": "A Dominion game as one seat may know it, the decision it must make, and its answer. The root validates a view; $defs/decision, $defs/answer and $defs/glossaryEntry validate those on their own. See README.md.",
+  "$ref": "#/$defs/view",
+  "$defs": {
+    "cardName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "seat": {
+      "description": "A player's index in turn order, from 0.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "cardCount": {
+      "description": "Cards by name, each with how many.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "coins": { "$ref": "#/$defs/count" },
+        "potions": { "$ref": "#/$defs/count" },
+        "debt": { "$ref": "#/$defs/count" }
+      },
+      "required": ["coins"],
+      "additionalProperties": false
+    },
+    "zone": {
+      "description": "What the seat knows about one zone: `count` cards, of which `known` are identified; `unknown` is how many are not.",
+      "type": "object",
+      "properties": {
+        "count": { "$ref": "#/$defs/count" },
+        "known": { "$ref": "#/$defs/cardCount" },
+        "unknown": { "$ref": "#/$defs/count" }
+      },
+      "required": ["count", "known", "unknown"],
+      "additionalProperties": false
+    },
+    "deck": {
+      "type": "object",
+      "properties": {
+        "count": { "$ref": "#/$defs/count" },
+        "known": { "$ref": "#/$defs/cardCount" },
+        "unknown": { "$ref": "#/$defs/count" },
+        "orderKnown": { "const": false }
+      },
+      "required": ["count", "known", "unknown", "orderKnown"],
+      "additionalProperties": false
+    },
+    "uncertain": {
+      "description": "Cards spread over several of one player's zones: together these zones hold `count` cards that are exactly `candidates` (when `outside` is 0), in some arrangement. `outside` is how many of the candidates are elsewhere.",
+      "type": "object",
+      "properties": {
+        "zones": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2
+        },
+        "count": { "$ref": "#/$defs/count" },
+        "candidates": { "$ref": "#/$defs/cardCount" },
+        "outside": { "$ref": "#/$defs/count" }
+      },
+      "required": ["zones", "count", "candidates", "outside"],
+      "additionalProperties": false
+    },
+    "sharedUncertain": {
+      "description": "Like `uncertain`, for cards spread over more than one player's zones (or a pile or the trash).",
+      "type": "object",
+      "properties": {
+        "zones": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "properties": {
+              "player": { "$ref": "#/$defs/seat" },
+              "pile": { "$ref": "#/$defs/cardName" },
+              "zone": { "type": "string" },
+              "count": { "$ref": "#/$defs/count" }
+            },
+            "required": ["zone", "count"],
+            "additionalProperties": false
+          }
+        },
+        "count": { "$ref": "#/$defs/count" },
+        "candidates": { "$ref": "#/$defs/cardCount" }
+      },
+      "required": ["zones", "count", "candidates"],
+      "additionalProperties": false
+    },
+    "tokens": {
+      "type": "object",
+      "properties": {
+        "coffers": { "$ref": "#/$defs/count" },
+        "villagers": { "$ref": "#/$defs/count" },
+        "favors": { "$ref": "#/$defs/count" },
+        "debt": { "$ref": "#/$defs/count" },
+        "vpTokens": { "type": "integer" },
+        "pirateShip": { "$ref": "#/$defs/count" },
+        "minusCard": { "type": "boolean" },
+        "minusCoin": { "type": "boolean" },
+        "journeyFaceUp": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "player": {
+      "type": "object",
+      "properties": {
+        "index": { "$ref": "#/$defs/seat" },
+        "name": { "type": "string" },
+        "vp": { "type": "integer" },
+        "hand": { "$ref": "#/$defs/zone" },
+        "inPlay": { "$ref": "#/$defs/zone" },
+        "deck": { "$ref": "#/$defs/deck" },
+        "discard": { "$ref": "#/$defs/zone" },
+        "otherZones": {
+          "description": "Set-aside cards (`setAside`) and mats (`tavern`, `island`, `nativeVillage`, `exile`, ...), when not empty.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/zone" }
+        },
+        "owned": {
+          "type": "object",
+          "properties": {
+            "known": { "$ref": "#/$defs/cardCount" },
+            "unknown": { "$ref": "#/$defs/count" }
+          },
+          "required": ["known", "unknown"],
+          "additionalProperties": false
+        },
+        "uncertain": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/uncertain" }
+        },
+        "unlocated": {
+          "description": "Known owned cards whose zone the producer doesn't track.",
+          "$ref": "#/$defs/cardCount"
+        },
+        "tokens": { "$ref": "#/$defs/tokens" },
+        "adventureTokens": {
+          "description": "Adventures tokens (`+card`, `+action`, `+buy`, `+coin`, `-cost`, `trashing`, `estate`) and the pile each is on (null: not on a pile).",
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [{ "$ref": "#/$defs/cardName" }, { "type": "null" }]
+          }
+        },
+        "projects": { "type": "array", "items": { "$ref": "#/$defs/cardName" } },
+        "states": { "type": "array", "items": { "$ref": "#/$defs/cardName" } },
+        "boons": {
+          "description": "Boons kept until Clean-up.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/cardName" }
+        },
+        "artifacts": { "type": "array", "items": { "$ref": "#/$defs/cardName" } },
+        "turnsTaken": { "$ref": "#/$defs/count" },
+        "counters": {
+          "description": "Anything else, by name.",
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      },
+      "required": [
+        "index",
+        "name",
+        "hand",
+        "inPlay",
+        "deck",
+        "discard",
+        "otherZones",
+        "owned",
+        "uncertain",
+        "counters"
+      ],
+      "additionalProperties": false
+    },
+    "pile": {
+      "type": "object",
+      "properties": {
+        "card": {
+          "description": "The pile's name: its card, or the randomizer of a mixed pile.",
+          "$ref": "#/$defs/cardName"
+        },
+        "count": { "$ref": "#/$defs/count" },
+        "top": {
+          "description": "The top card, when it differs from `card` or the pile is mixed.",
+          "$ref": "#/$defs/cardName"
+        },
+        "cost": { "$ref": "#/$defs/cost" },
+        "types": { "type": "array", "items": { "type": "string" } },
+        "kingdom": { "type": "boolean" },
+        "hidden": {
+          "description": "Face down: no card of it is visible.",
+          "type": "boolean"
+        },
+        "tokens": {
+          "type": "object",
+          "properties": {
+            "embargo": { "$ref": "#/$defs/count" },
+            "tradeRoute": { "type": "boolean" },
+            "vp": { "type": "integer" },
+            "debt": { "type": "integer" },
+            "players": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "player": { "$ref": "#/$defs/seat" },
+                  "token": { "type": "string" }
+                },
+                "required": ["player", "token"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "traits": { "type": "array", "items": { "$ref": "#/$defs/cardName" } }
+      },
+      "required": ["card", "count", "types"],
+      "additionalProperties": false
+    },
+    "landscape": {
+      "type": "object",
+      "properties": {
+        "card": { "$ref": "#/$defs/cardName" },
+        "kind": {
+          "enum": ["event", "landmark", "project", "way", "ally", "trait", "prophecy", "study", "other"]
+        },
+        "cost": { "$ref": "#/$defs/cost" },
+        "types": { "type": "array", "items": { "type": "string" } },
+        "vp": {
+          "description": "VP tokens on it (Landmarks).",
+          "type": "integer"
+        },
+        "suns": {
+          "description": "Sun tokens left on a Prophecy; it is active at 0.",
+          "$ref": "#/$defs/count"
+        },
+        "active": { "type": "boolean" },
+        "owners": {
+          "description": "Players with a cube on this Project.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/seat" }
+        }
+      },
+      "required": ["card", "kind", "types"],
+      "additionalProperties": false
+    },
+    "cardDeck": {
+      "description": "Boons or Hexes: how many are left to draw, and the face-up discards (top last).",
+      "type": "object",
+      "properties": {
+        "count": { "$ref": "#/$defs/count" },
+        "discard": { "type": "array", "items": { "$ref": "#/$defs/cardName" } }
+      },
+      "required": ["count", "discard"],
+      "additionalProperties": false
+    },
+    "phase": {
+      "enum": ["start", "action", "buy", "night", "cleanup", "end"]
+    },
+    "turn": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "description": "The active player's turn number, extra turns included.",
+          "$ref": "#/$defs/count"
+        },
+        "player": { "$ref": "#/$defs/seat" },
+        "activePlayer": { "type": "string" },
+        "yourTurn": { "type": "boolean" },
+        "phase": {
+          "oneOf": [{ "$ref": "#/$defs/phase" }, { "type": "null" }]
+        },
+        "controller": {
+          "description": "Who makes this turn's decisions, when not its player (Possession).",
+          "$ref": "#/$defs/seat"
+        },
+        "extra": {
+          "description": "The card that granted this extra turn.",
+          "$ref": "#/$defs/cardName"
+        },
+        "actions": { "$ref": "#/$defs/count" },
+        "buys": { "$ref": "#/$defs/count" },
+        "coins": { "$ref": "#/$defs/count" },
+        "potions": { "$ref": "#/$defs/count" },
+        "debt": { "$ref": "#/$defs/count" }
+      },
+      "required": ["yourTurn", "phase"],
+      "additionalProperties": false
+    },
+    "lasting": {
+      "description": "An effect that outlives the play that made it.",
+      "type": "object",
+      "properties": {
+        "card": { "$ref": "#/$defs/cardName" },
+        "owner": { "$ref": "#/$defs/seat" },
+        "until": { "enum": ["end-of-turn", "start-of-turn", "removed"] },
+        "untilPlayer": {
+          "description": "Whose next turn `start-of-turn` waits for.",
+          "$ref": "#/$defs/seat"
+        },
+        "cards": {
+          "description": "Visible cards it holds or keeps in play.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/cardName" }
+        },
+        "count": {
+          "description": "A number the effect keeps (tokens, a cost reduction, ...).",
+          "type": "integer"
+        }
+      },
+      "required": ["card", "owner", "until"],
+      "additionalProperties": false
+    },
+    "note": {
+      "description": "Public state a card or landscape (`source`) keeps outside the fields above.",
+      "type": "object",
+      "properties": {
+        "source": { "$ref": "#/$defs/cardName" },
+        "player": { "$ref": "#/$defs/seat" },
+        "pile": { "$ref": "#/$defs/cardName" },
+        "card": { "$ref": "#/$defs/cardName" },
+        "count": { "type": "integer" }
+      },
+      "required": ["source", "count"],
+      "additionalProperties": false
+    },
+    "logEntry": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "description": "Position in the game's log, from 0.",
+          "$ref": "#/$defs/count"
+        },
+        "type": {
+          "description": "Kebab-case event kind: turn-start, played, bought, gained, trashed, discarded, revealed, drew, shuffled, ...",
+          "type": "string"
+        },
+        "player": { "$ref": "#/$defs/seat" },
+        "card": { "$ref": "#/$defs/cardName" },
+        "text": { "type": "string" }
+      },
+      "required": ["seq", "type", "text"],
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "reason": { "type": "string" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "index": { "$ref": "#/$defs/seat" },
+              "name": { "type": "string" },
+              "vp": { "type": "integer" },
+              "rank": { "type": "integer", "minimum": 1 },
+              "turns": { "$ref": "#/$defs/count" },
+              "resigned": { "type": "boolean" }
+            },
+            "required": ["index", "name", "vp", "rank", "turns"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["players"],
+      "additionalProperties": false
+    },
+    "purpose": {
+      "enum": [
+        "turn",
+        "discard",
+        "trash",
+        "gain",
+        "top-deck",
+        "move",
+        "play",
+        "set-aside",
+        "reveal",
+        "reaction",
+        "trigger",
+        "mode",
+        "either",
+        "exile",
+        "return",
+        "pass",
+        "overpay",
+        "name",
+        "other"
+      ]
+    },
+    "action": {
+      "enum": [
+        "play",
+        "buy",
+        "buy-landscape",
+        "spend-coffers",
+        "spend-villager",
+        "pay-debt",
+        "end-phase",
+        "select",
+        "pile",
+        "decline",
+        "yes",
+        "no",
+        "mode",
+        "player",
+        "trigger",
+        "name",
+        "number"
+      ]
+    },
+    "option": {
+      "type": "object",
+      "properties": {
+        "index": { "$ref": "#/$defs/count" },
+        "group": { "$ref": "#/$defs/count" },
+        "action": { "$ref": "#/$defs/action" },
+        "label": { "type": "string" },
+        "card": { "$ref": "#/$defs/cardName" },
+        "zone": {
+          "description": "Where a selectable card is (hand, deck, discard, inPlay, setAside, a mat, pile, trash).",
+          "type": "string"
+        },
+        "cost": { "$ref": "#/$defs/cost" },
+        "value": {
+          "description": "The number for `number` options, the mode's position for `mode` options.",
+          "type": "integer"
+        },
+        "player": { "$ref": "#/$defs/seat" }
+      },
+      "required": ["index", "group", "action", "label"],
+      "additionalProperties": false
+    },
+    "group": {
+      "type": "object",
+      "properties": {
+        "group": { "$ref": "#/$defs/count" },
+        "kind": { "type": "string" },
+        "prompt": { "type": "string" },
+        "min": { "$ref": "#/$defs/count" },
+        "max": { "$ref": "#/$defs/count" }
+      },
+      "required": ["group", "kind", "prompt", "min", "max"],
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Opaque; answer with it. A new decision gets a new id.",
+          "type": "string",
+          "minLength": 1
+        },
+        "player": { "$ref": "#/$defs/seat" },
+        "prompt": { "type": "string" },
+        "kind": {
+          "description": "turn, cards, pile, choose, name or number; other producers may use other kebab-case kinds.",
+          "type": "string"
+        },
+        "purpose": { "$ref": "#/$defs/purpose" },
+        "source": {
+          "description": "The card whose effect asks, if any.",
+          "$ref": "#/$defs/cardName"
+        },
+        "phase": { "$ref": "#/$defs/phase" },
+        "ordered": {
+          "description": "The order of the answered indices is the resulting order, top first.",
+          "type": "boolean"
+        },
+        "nameAny": {
+          "description": "The answer may be `name` (any card) instead of indices.",
+          "type": "boolean"
+        },
+        "min": { "$ref": "#/$defs/count" },
+        "max": { "$ref": "#/$defs/count" },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/group" },
+          "minItems": 1
+        },
+        "options": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/option" }
+        }
+      },
+      "required": ["id", "prompt", "kind", "purpose", "ordered", "nameAny", "groups", "options"],
+      "additionalProperties": false
+    },
+    "answer": {
+      "type": "object",
+      "properties": {
+        "decision": { "type": "string", "minLength": 1 },
+        "indices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/count" }
+        },
+        "name": { "$ref": "#/$defs/cardName" }
+      },
+      "required": ["decision"],
+      "oneOf": [{ "required": ["indices"] }, { "required": ["name"] }],
+      "additionalProperties": false
+    },
+    "glossaryEntry": {
+      "type": "object",
+      "properties": {
+        "name": { "$ref": "#/$defs/cardName" },
+        "types": { "type": "array", "items": { "type": "string" } },
+        "set": { "type": "string" },
+        "cost": { "$ref": "#/$defs/cost" },
+        "text": { "type": "string" }
+      },
+      "required": ["name", "types", "text"],
+      "additionalProperties": false
+    },
+    "game": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "running": { "type": "boolean" },
+        "result": { "$ref": "#/$defs/result" },
+        "kingdom": {
+          "description": "The Kingdom piles, by name.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/cardName" }
+        },
+        "landscapes": { "type": "array", "items": { "$ref": "#/$defs/cardName" } }
+      },
+      "required": ["running"],
+      "additionalProperties": false
+    },
+    "view": {
+      "type": "object",
+      "properties": {
+        "schema": { "const": "dominion/agent-view@2" },
+        "game": { "$ref": "#/$defs/game" },
+        "seat": {
+          "oneOf": [{ "$ref": "#/$defs/seat" }, { "type": "null" }]
+        },
+        "spectating": { "type": "boolean" },
+        "turn": { "$ref": "#/$defs/turn" },
+        "you": {
+          "oneOf": [{ "$ref": "#/$defs/player" }, { "type": "null" }]
+        },
+        "opponents": {
+          "description": "The other players in turn order, starting to your left.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/player" }
+        },
+        "supply": { "type": "array", "items": { "$ref": "#/$defs/pile" } },
+        "nonSupply": { "type": "array", "items": { "$ref": "#/$defs/pile" } },
+        "landscapes": { "type": "array", "items": { "$ref": "#/$defs/landscape" } },
+        "trash": { "$ref": "#/$defs/zone" },
+        "uncertain": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sharedUncertain" }
+        },
+        "boons": { "$ref": "#/$defs/cardDeck" },
+        "hexes": { "$ref": "#/$defs/cardDeck" },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "card": { "$ref": "#/$defs/cardName" },
+              "holder": {
+                "oneOf": [{ "$ref": "#/$defs/seat" }, { "type": "null" }]
+              }
+            },
+            "required": ["card", "holder"],
+            "additionalProperties": false
+          }
+        },
+        "lasting": { "type": "array", "items": { "$ref": "#/$defs/lasting" } },
+        "extraTurns": {
+          "description": "Extra turns waiting to be taken, next first.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "player": { "$ref": "#/$defs/seat" },
+              "source": { "$ref": "#/$defs/cardName" }
+            },
+            "required": ["player", "source"],
+            "additionalProperties": false
+          }
+        },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/note" } },
+        "counters": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        },
+        "decision": {
+          "oneOf": [{ "$ref": "#/$defs/decision" }, { "type": "null" }]
+        },
+        "sinceLastDecision": {
+          "description": "Log entries since this seat's previous decision.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/logEntry" }
+        }
+      },
+      "required": [
+        "schema",
+        "game",
+        "seat",
+        "spectating",
+        "turn",
+        "you",
+        "opponents",
+        "supply",
+        "nonSupply",
+        "landscapes",
+        "trash",
+        "decision",
+        "sinceLastDecision"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

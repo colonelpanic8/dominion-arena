@@ -1,0 +1,24 @@
+GAME snap: turn 1, your turn, buy phase, actions 1, buys 1, coins 0
+YOU: Ada (3 VP)
+  hand 5 (3 Copper, 2 Estate)
+  deck 5 (4 Copper, Estate)
+  discard 0
+  owns 7 Copper, 3 Estate
+OPPONENT: Bo (3 VP)
+  hand 5 (5 unknown)
+  deck 5 (5 unknown)
+  discard 0
+  deck+hand hold 10 of: 7 Copper, 3 Estate
+  owns 7 Copper, 3 Estate
+SUPPLY Copper $0 x46, Silver $3 x40, Gold $6 x30, Estate $2 x8, Duchy $5 x8, Province $8 x8, Curse $0 x10, Cellar $2 x10, Market $5 x10, Militia $4 x10, Mine $5 x10, Moat $2 x10, Remodel $4 x10, Smithy $4 x10, Village $3 x10, Workshop $3 x10, Witch $5 x10
+TRASH empty
+LOG
+  Ada starts turn 1
+DECISION d1: Buy phase: choose a move
+  choose 1
+    0: Play Copper
+    1: Play Copper
+    2: Play Copper
+    3: Buy Copper ($0)
+    4: Buy Curse ($0)
+    5: End your Buy phase

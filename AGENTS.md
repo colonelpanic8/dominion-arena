@@ -30,6 +30,10 @@ crates/dominion-engine/
   src/cards/<set>.rs      one module per set: its State, Rules and card scripts
   src/tests/mod.rs        engine tests, shared helpers, the random-game fuzz test
   src/tests/<set>.rs      each set's card tests
+  src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
+  src/knowledge.rs        per-player perfect-recall knowledge built from the trace
+crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
+  protocol/               the vendored JSON Schema (`just sync-protocol`)
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 
@@ -136,6 +140,20 @@ them.
   extra turns, sets' `SetRules::notes`), plus what that player may look at. Never hand
   out card ids from hidden places: ids are allocated deterministically, so an id gives
   its card away.
+
+- **Knowledge.** `Game::new_traced` records a `Trace`: every card created and moved (with
+  its zones), cards mixed where no one can follow them (shuffles, privately ordered
+  cards), cards shown to everyone or one player, turns, identity swaps. `Knowledge`
+  consumes it and keeps, per player, groups of cards they can't tell apart with each
+  group's known identities. Anything that reveals a specific card must record it:
+  `g.reveal(p, id)` instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to`
+  for other reveals and looks. Cards that change zones must go through `move_card` (or
+  record a `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay
+  nothing.
+- **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
+  agent-view@2 and maps option indices back to `Response`s. The schema is owned by
+  `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
+  tests validate every view, decision and answer against the vendored copy.
 
 ## Writing a set
 
