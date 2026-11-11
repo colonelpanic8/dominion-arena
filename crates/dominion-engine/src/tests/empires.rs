@@ -587,6 +587,18 @@ fn encampment_covers_plunder_when_it_returns_and_throne_room_returns_it_once() {
 }
 
 #[test]
+fn encampment_with_no_pile_to_return_to_stays_set_aside_as_its_owners_card() {
+    let mut g = setup(&[Card::Village]);
+    hand(&mut g, P0, &[Card::Encampment]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Encampment);
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Encampment]);
+    assert_eq!(g.count_owned(P0, Card::Encampment), 1);
+}
+
+#[test]
 fn enchantress_turns_the_first_action_of_each_other_players_turn_into_a_cantrip() {
     let mut g = setup(&[Card::Enchantress, Card::Smithy]);
     hand(&mut g, P0, &[Card::Enchantress]);
