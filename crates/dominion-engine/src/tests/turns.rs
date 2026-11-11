@@ -2,7 +2,7 @@
 //! effects that last until a turn starts.
 
 use super::*;
-use crate::game::Pos;
+use crate::game::{ExtraLimit, ExtraTurn, Pos};
 
 fn game(players: u8, kingdom: &[Card], landscapes: &[Card]) -> Game {
     setup_with(GameConfig {
@@ -31,6 +31,13 @@ fn end_turn(g: &mut Game) {
     }
 }
 
+/// Answers `p`'s choice among their extra turns with the one from `source`.
+fn take_turn(g: &mut Game, p: PlayerId, source: Card) {
+    let d = g.pending().expect("a decision is pending");
+    assert_eq!((d.player, d.purpose), (p, Purpose::Either), "{d:?}");
+    respond(g, Response::option(Opt::Card(source)));
+}
+
 /// What the next turn is: its player, who controls it and the extra turn's source.
 fn turn(g: &Game) -> (PlayerId, PlayerId, Option<Card>) {
     let t = g.turn();
@@ -56,6 +63,22 @@ fn buy_phase(g: &mut Game, coins: u32, buys: u32) {
     g.run(crate::frame::Input::Start);
 }
 
+/// P0 plays `actions`, then buys `events` with their Buys, which ends their first turn.
+fn first_turn(kingdom: &[Card], actions: &[Card], events: &[Card]) -> Game {
+    let mut g = game(2, kingdom, events);
+    hand(&mut g, P0, actions);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    for &card in actions {
+        play(&mut g, card);
+    }
+    buy_phase(&mut g, 4 * events.len() as u32, events.len() as u32);
+    for &event in events {
+        respond(&mut g, Response::Move(Move::BuyLandscape(event)));
+    }
+    g
+}
+
 fn leave_one(g: &mut Game, card: Card) {
     let pile = g.supply_pile(card).unwrap();
     let all = g.pile(pile).cards.clone();
@@ -67,6 +90,97 @@ fn leave_one(g: &mut Game, card: Card) {
 fn buy_the_last_province(g: &mut Game) {
     buy_phase(g, 8, 1);
     buy(g, Card::Province);
+}
+
+#[test]
+fn seize_the_days_turn_can_follow_missions_but_not_the_other_way_round() {
+    for events in [
+        [Card::SeizeTheDay, Card::Mission],
+        [Card::Mission, Card::SeizeTheDay],
+    ] {
+        let mut g = first_turn(&[], &[], &events);
+        take_turn(&mut g, P0, Card::Mission);
+        assert_eq!(turn(&g), (P0, P0, Some(Card::Mission)));
+        end_turn(&mut g);
+        assert_eq!(turn(&g), (P0, P0, Some(Card::SeizeTheDay)));
+        end_turn(&mut g);
+        assert_eq!(turn(&g), (P1, P1, None));
+
+        let mut g = first_turn(&[], &[], &events);
+        take_turn(&mut g, P0, Card::SeizeTheDay);
+        assert_eq!(turn(&g), (P0, P0, Some(Card::SeizeTheDay)));
+        end_turn(&mut g);
+        // Mission's would be a third turn in a row.
+        assert_eq!(turn(&g), (P1, P1, None));
+        assert!(g.extra_turns().is_empty());
+    }
+}
+
+#[test]
+fn of_missions_and_journeys_turns_the_player_takes_one_and_the_other_fails() {
+    for taken in [Card::Mission, Card::Journey] {
+        let mut g = first_turn(&[], &[], &[Card::Mission, Card::Journey]);
+        take_turn(&mut g, P0, taken);
+        assert_eq!(turn(&g), (P0, P0, Some(taken)));
+        end_turn(&mut g);
+        assert_eq!(turn(&g), (P1, P1, None));
+    }
+}
+
+#[test]
+fn an_outpost_whose_turn_fails_is_discarded_in_the_next_clean_up() {
+    let mut g = first_turn(&[Card::Outpost], &[Card::Outpost], &[Card::Mission]);
+    take_turn(&mut g, P0, Card::Mission);
+    assert_eq!(turn(&g), (P0, P0, Some(Card::Mission)));
+    // Outpost still left only 3 cards for this hand.
+    assert_eq!(g.hand(P0).len(), 3);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
+    end_turn(&mut g);
+    assert_eq!(turn(&g), (P1, P1, None));
+    assert!(g.in_play(P0).is_empty());
+}
+
+/// Possession doesn't pass control between turns: the possessed player chooses among their
+/// own extra turns, and the Possession turn can't be their second extra turn in a row.
+#[test]
+fn a_player_about_to_be_possessed_chooses_among_their_own_extra_turns() {
+    for taken in [Card::Possession, Card::Mission] {
+        let mut g = game(2, &[Card::Possession], &[Card::Mission]);
+        hand(&mut g, P0, &[Card::Possession]);
+        g.start();
+        play(&mut g, Card::Possession);
+        // As if P1 had set up an extra turn of their own during P0's turn.
+        g.extra_turns.push_back(ExtraTurn {
+            player: P1,
+            source: Card::Mission,
+            controller: P1,
+            limit: ExtraLimit::ThirdInARow,
+        });
+        end_turn(&mut g);
+        take_turn(&mut g, P1, taken);
+        if taken == Card::Possession {
+            assert_eq!(turn(&g), (P1, P0, Some(Card::Possession)));
+            end_turn(&mut g);
+        }
+        assert_eq!(turn(&g), (P1, P1, Some(Card::Mission)));
+        end_turn(&mut g);
+        assert_eq!(turn(&g), (P1, P1, None));
+    }
+}
+
+#[test]
+fn lich_skips_the_extra_turn_its_player_takes_first() {
+    let mut g = first_turn(
+        &[Card::Wizards, Card::Odysseys],
+        &[Card::Voyage, Card::Lich],
+        &[Card::Mission],
+    );
+    take_turn(&mut g, P0, Card::Voyage);
+    assert_eq!(turn(&g), (P0, P0, Some(Card::Mission)));
+    assert_eq!(g.player(P0).skip_turns, 0);
+    end_turn(&mut g);
+    assert_eq!(turn(&g), (P1, P1, None));
+    assert!(g.in_play(P0).is_empty());
 }
 
 /// A skipped turn isn't taken, so the turns around it are in a row.

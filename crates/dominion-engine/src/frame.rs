@@ -9,7 +9,9 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Move, Opt, Purpose, Response};
 use crate::event::{Dest, Event};
-use crate::game::{EndReason, ExtraLimit, GainState, Phase, PlayState, Pos, Turn, Until, Zone};
+use crate::game::{
+    EndReason, ExtraLimit, ExtraTurn, GainState, Phase, PlayState, Pos, Turn, Until, Zone,
+};
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -348,7 +350,7 @@ impl Frame {
 
     pub(crate) fn resume(&mut self, g: &mut Game, input: Input) -> Flow {
         match self {
-            Frame::Game { next, pc } => resume_game(g, next, pc),
+            Frame::Game { next, pc } => resume_game(g, next, pc, input),
             Frame::Turn { player, pc } => resume_turn(g, *player, pc, input),
             Frame::Play(f) => f.resume(g, input),
             Frame::Card(f) => cards::resume(g, f, input),
@@ -645,41 +647,86 @@ fn resume_shuffle(
     }
 }
 
-fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
+/// Whether `extra` can't be the turn after the one that just ended.
+fn fails(g: &Game, extra: &ExtraTurn) -> bool {
+    match extra.limit {
+        ExtraLimit::None => false,
+        ExtraLimit::ThirdInARow => g.third_in_a_row(extra.player),
+        ExtraLimit::SecondExtraInARow => g.turn.player == extra.player && g.turn.extra.is_some(),
+    }
+}
+
+fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> Flow {
     match pc {
-        0 => {
+        0 | 2 => {
             let started = g.players.iter().any(|p| p.turns_taken > 0);
             let last = started.then_some(g.turn.player);
-            while let Some(extra) = g.extra_turns.pop_front() {
-                let ruled_out = match extra.limit {
-                    ExtraLimit::None => false,
-                    ExtraLimit::ThirdInARow => g.third_in_a_row(extra.player),
-                    ExtraLimit::SecondExtraInARow => {
-                        g.turn.player == extra.player && g.turn.extra.is_some()
-                    }
+            let mut chosen = match input.opt() {
+                Some(Opt::Card(source)) if *pc == 2 => Some(source),
+                _ => None,
+            };
+            loop {
+                // An extra turn that can't follow the turn that just ended is lost.
+                let mut pending = std::mem::take(&mut g.extra_turns);
+                pending.retain(|e| !fails(g, e));
+                g.extra_turns = pending;
+                // The player who just took a turn takes theirs first, then the others in
+                // turn order; each chooses among their own.
+                let Some(p) = g
+                    .players_from(g.turn.player)
+                    .into_iter()
+                    .find(|&p| g.extra_turns.iter().any(|e| e.player == p))
+                else {
+                    break;
                 };
-                if started && ruled_out {
-                    continue;
+                let mut sources: Vec<Card> = vec![];
+                for e in g.extra_turns.iter().filter(|e| e.player == p) {
+                    if !sources.contains(&e.source) {
+                        sources.push(e.source);
+                    }
                 }
-                if g.skips_turn(extra.player, true) {
+                let source = match chosen.take() {
+                    Some(source) => source,
+                    None if sources.len() > 1 => {
+                        *pc = 2;
+                        return Flow::Ask(Decision {
+                            player: p,
+                            kind: DecisionKind::Choose {
+                                labels: sources
+                                    .iter()
+                                    .map(|s| format!("Take the extra turn from {s}"))
+                                    .collect(),
+                                options: sources.into_iter().map(Opt::Card).collect(),
+                                min: 1,
+                                max: 1,
+                            },
+                            purpose: Purpose::Either,
+                            source: None,
+                        });
+                    }
+                    None => sources[0],
+                };
+                let i = g
+                    .extra_turns
+                    .iter()
+                    .position(|e| e.player == p && e.source == source)
+                    .expect("the chosen extra turn is pending");
+                let extra = g.extra_turns.remove(i).expect("in range");
+                if g.skips_turn(p, true) {
                     // What kept its card in play for that turn (Voyage, Outpost) ends, so
                     // the card is discarded in the next Clean-up.
-                    let until = Until::StartOfTurn(extra.player);
-                    g.lasting.retain(|l| {
-                        !(l.owner == extra.player && l.card == extra.source && l.until == until)
-                    });
+                    let until = Until::StartOfTurn(p);
+                    g.lasting
+                        .retain(|l| !(l.owner == p && l.card == source && l.until == until));
                     continue;
                 }
-                g.turn = Turn::new(extra.player);
+                g.turn = Turn::new(p);
                 g.turn.previous = last;
                 g.turn.controller = extra.controller;
-                g.turn.extra = Some(extra.source);
+                g.turn.extra = Some(source);
                 g.record_turn();
                 *pc = 1;
-                return Flow::Call(Frame::Turn {
-                    player: extra.player,
-                    pc: 0,
-                });
+                return Flow::Call(Frame::Turn { player: p, pc: 0 });
             }
             if let Some(reason) = g.ending {
                 // The round after the game's end: a turn Lich skips is one of these too.

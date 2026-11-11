@@ -73,8 +73,13 @@ them.
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
   in a row: check `g.third_in_a_row(p)` before queuing one; Possession: not a second
   extra turn in a row; Seize the Day: never), and extra turns
-  don't count for the tiebreaker. `Player::skip_turns` skips the next turns a player
-  would take (Lich), Fleet's included; skipped regular turns count for the tiebreaker. `Turn::controller` makes someone else decide and see
+  don't count for the tiebreaker. Between turns the player who just took a turn takes
+  their extra turns first, then the others in turn order; one with different extra turns
+  pending chooses which to take (`Purpose::Either`, `Opt::Card(source)`), and an extra
+  turn that can't follow the last turn is lost. Once the game has ended, extra turns
+  happen only before a turn of Fleet's round. `Player::skip_turns` skips the next turns
+  a player would take (Lich), Fleet's included; skipped regular turns count for the
+  tiebreaker. `Turn::controller` makes someone else decide and see
   the player's cards (Possession, which also replaces gains, trashing through
   `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
