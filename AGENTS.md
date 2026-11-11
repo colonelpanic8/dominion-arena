@@ -110,8 +110,13 @@ them.
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with
   `g.add_debt` (never `debt +=`), so Possession can redirect it. A set's own state goes in
   its `State` struct (`g.ext.<set>`). Everything must stay `Clone + Serialize`.
-- **Shuffling** opens `WouldShuffle`, shuffles, then `Shuffled { count }` (the bottom
-  `count` cards of the deck are the shuffled ones). One draw shuffles at most once.
+- **Shuffling** goes through `Frame::shuffle` (a discard pile into its deck) or
+  `Frame::shuffle_deck` (a whole deck: Inn, Famine), never by hand: `WouldShuffle`,
+  shuffle, cards `SetRules::bottom_when_shuffled` says go to the bottom (Shadow cards, in
+  their owner's order), then `Shuffled { count }` (the bottom `count` cards of the deck are
+  the shuffled ones; "when you shuffle" placements such as Stash, Star Chart and Fated
+  resolve there). One draw shuffles at most once. A script step that must draw before its
+  own flow goes on calls the draw and `CardFrame::hold`s that flow (Way of the Chameleon).
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
   carries a `Purpose` and its `source` card. Never add a card-specific decision kind.

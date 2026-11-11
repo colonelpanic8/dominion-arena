@@ -776,21 +776,6 @@ impl Game {
         self.rng.random_range(0..n)
     }
 
-    /// Shuffles `p`'s discard pile and puts it under their deck.
-    pub(crate) fn shuffle_discard_into_deck(&mut self, p: PlayerId) {
-        let player = &mut self.players[p.index()];
-        let mut cards = std::mem::take(&mut player.discard);
-        cards.shuffle(&mut self.rng);
-        cards::arrange_shuffled(self, p, &mut cards);
-        for &c in &cards {
-            self.zones[c.index()] = Zone::Deck(p);
-        }
-        let player = &mut self.players[p.index()];
-        cards.append(&mut player.deck);
-        player.deck = cards;
-        self.emit(Event::Shuffled { player: p });
-    }
-
     /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
     /// elsewhere that can be played as if there (Shadow cards in the deck), less those
     /// `SetRules::can_play` forbids (Warlord, Voyage).

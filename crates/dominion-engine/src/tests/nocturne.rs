@@ -1704,6 +1704,27 @@ fn famine_discards_the_revealed_actions_and_shuffles_the_rest_back() {
 }
 
 #[test]
+fn famine_shuffling_the_deck_lets_stash_go_anywhere() {
+    let mut g = hexed(
+        Card::Famine,
+        &[],
+        &[
+            Card::Village,
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+            Card::Stash,
+        ],
+    );
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.source), (P1, Some(Card::Stash)));
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    respond(&mut g, Response::Number(0));
+    assert_eq!(deck_kinds(&g, P1)[0], Card::Stash);
+    assert!(g.log().contains(&Event::Shuffled { player: P1 }));
+}
+
+#[test]
 fn fear_discards_an_action_or_treasure_from_five_cards() {
     let g = hexed(
         Card::Fear,

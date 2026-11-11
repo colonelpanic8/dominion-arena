@@ -971,12 +971,11 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 Flow::Call(Frame::discard(p, actions))
             }
-            _ => {
-                let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-                g.shuffle(&mut deck);
-                g.players[p.index()].deck = deck;
-                Flow::done()
+            2 => {
+                f.pc = 3;
+                Flow::Call(Frame::shuffle_deck(p))
             }
+            _ => Flow::done(),
         },
         Card::Fear => match f.pc {
             0 => {

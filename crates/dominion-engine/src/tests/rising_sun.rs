@@ -288,7 +288,8 @@ fn shadow_cards_go_to_the_bottom_when_shuffled_and_play_from_the_deck() {
     let mut cards = vec![Card::Estate; 6];
     cards.extend([Card::Alley, Card::Ninja]);
     discard(&mut g, P0, &cards);
-    g.shuffle_discard_into_deck(P0);
+    shuffle(&mut g, P0);
+    choose_kinds(&mut g, &[Card::Alley, Card::Ninja]);
     let bottom: Vec<Card> = deck_kinds(&g, P0).into_iter().rev().take(2).collect();
     assert!(bottom.iter().all(|c| c.is(Types::SHADOW)));
     g.start();
@@ -1272,15 +1273,40 @@ fn riverboats_baker_gives_everyone_a_coffers() {
     panic!("no seed set aside Baker");
 }
 
+/// Shuffles `p`'s discard pile into their deck, outside any turn.
+fn shuffle(g: &mut Game, p: PlayerId) {
+    g.stack.push(crate::frame::Frame::shuffle(p));
+    g.run(crate::frame::Input::Start);
+}
+
 #[test]
-#[ignore = "shuffled Shadow cards go to the bottom in shuffled order; the player doesn't choose it"]
 fn the_player_orders_shadow_cards_put_on_the_bottom_by_a_shuffle() {
     let mut g = setup(&[Card::Alley, Card::Ninja]);
     deck(&mut g, P0, &[]);
     discard(&mut g, P0, &[Card::Alley, Card::Ninja, Card::Copper]);
-    g.stack.push(crate::frame::Frame::draw(P0, 1));
-    g.run(crate::frame::Input::Start);
-    assert!(g.pending().is_some());
+    shuffle(&mut g, P0);
+    match &g.pending().unwrap().kind {
+        DecisionKind::Cards { ordered, .. } => assert!(ordered),
+        k => panic!("expected an order, got {k:?}"),
+    }
+    choose_kinds(&mut g, &[Card::Ninja, Card::Alley]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Ninja, Card::Alley]);
+
+    discard(&mut g, P0, &[Card::Alley, Card::Ninja, Card::Copper]);
+    deck(&mut g, P0, &[]);
+    shuffle(&mut g, P0);
+    choose_kinds(&mut g, &[Card::Alley, Card::Ninja]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Alley, Card::Ninja]);
+}
+
+#[test]
+fn identical_shadow_cards_need_no_order() {
+    let mut g = setup(&[Card::Ninja]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[Card::Ninja, Card::Copper, Card::Ninja]);
+    shuffle(&mut g, P0);
+    assert!(g.pending().is_none());
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Ninja, Card::Ninja]);
 }
 
 #[test]

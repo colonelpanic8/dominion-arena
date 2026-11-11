@@ -718,7 +718,7 @@ fn inn_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let n = actions.len();
             f.ask_cards(actions, 0, n, Purpose::Move)
         }
-        _ => {
+        1 => {
             let p = f.player;
             for c in input.cards() {
                 g.emit(Event::Revealed {
@@ -727,12 +727,10 @@ fn inn_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 });
                 g.move_card(c, Zone::Deck(p), Pos::Top);
             }
-            let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-            g.shuffle(&mut deck);
-            g.players[p.index()].deck = deck;
-            g.emit(Event::Shuffled { player: p });
-            Flow::done()
+            f.pc = 2;
+            Flow::Call(Frame::shuffle_deck(p))
         }
+        _ => Flow::done(),
     }
 }
 

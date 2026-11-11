@@ -74,7 +74,7 @@ impl Input {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) enum Value {
     #[default]
     None,
@@ -82,6 +82,7 @@ pub(crate) enum Value {
     Bool(bool),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) enum Flow {
     Done(Value),
     /// Resume this frame again immediately with [`Input::Start`].
@@ -124,8 +125,15 @@ pub(crate) enum Frame {
         /// One draw shuffles at most once, even if its discard pile refills meanwhile.
         shuffled: bool,
     },
+    /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
+    /// are shuffled.
     Shuffle {
         player: PlayerId,
+        /// Shuffle the whole deck rather than the discard pile.
+        deck: bool,
+        count: usize,
+        /// The shuffled cards put on the bottom (Shadow cards), for their owner to order.
+        bottom: Vec<CardId>,
         pc: u8,
     },
     TopCards {
@@ -199,8 +207,26 @@ impl Frame {
         }
     }
 
+    /// Shuffle `player`'s discard pile and put it under their deck.
     pub(crate) fn shuffle(player: PlayerId) -> Frame {
-        Frame::Shuffle { player, pc: 0 }
+        Frame::Shuffle {
+            player,
+            deck: false,
+            count: 0,
+            bottom: vec![],
+            pc: 0,
+        }
+    }
+
+    /// Shuffle `player`'s deck.
+    pub(crate) fn shuffle_deck(player: PlayerId) -> Frame {
+        Frame::Shuffle {
+            player,
+            deck: true,
+            count: 0,
+            bottom: vec![],
+            pc: 0,
+        }
     }
 
     /// Gain the top card of `pile`.
@@ -320,25 +346,13 @@ impl Frame {
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))
             }
-            Frame::Shuffle { player, pc } => match pc {
-                0 => {
-                    *pc = 1;
-                    Flow::Call(Frame::window(Occasion::WouldShuffle { player: *player }))
-                }
-                1 => {
-                    let count = g.players[player.index()].discard.len();
-                    if count == 0 {
-                        return Flow::done();
-                    }
-                    g.shuffle_discard_into_deck(*player);
-                    *pc = 2;
-                    Flow::Call(Frame::window(Occasion::Shuffled {
-                        player: *player,
-                        count,
-                    }))
-                }
-                _ => Flow::done(),
-            },
+            Frame::Shuffle {
+                player,
+                deck,
+                count,
+                bottom,
+                pc,
+            } => resume_shuffle(g, *player, *deck, count, bottom, pc, input),
             Frame::TopCards {
                 player,
                 count,
@@ -465,6 +479,83 @@ impl Frame {
                 }
             },
         }
+    }
+}
+
+fn resume_shuffle(
+    g: &mut Game,
+    p: PlayerId,
+    whole_deck: bool,
+    count: &mut usize,
+    bottom: &mut Vec<CardId>,
+    pc: &mut u8,
+    input: Input,
+) -> Flow {
+    match pc {
+        0 => {
+            *pc = 1;
+            Flow::Call(Frame::window(Occasion::WouldShuffle { player: p }))
+        }
+        1 => {
+            let pl = &mut g.players[p.index()];
+            let mut cards = std::mem::take(if whole_deck {
+                &mut pl.deck
+            } else {
+                &mut pl.discard
+            });
+            if cards.is_empty() {
+                return Flow::done();
+            }
+            g.shuffle(&mut cards);
+            let (mut under, rest): (Vec<CardId>, Vec<CardId>) = cards
+                .iter()
+                .partition(|&&c| cards::bottom_when_shuffled(g, p, c));
+            *bottom = under.clone();
+            under.extend(rest);
+            for &c in &under {
+                g.zones[c.index()] = Zone::Deck(p);
+            }
+            *count = under.len();
+            let pl = &mut g.players[p.index()];
+            under.append(&mut pl.deck);
+            pl.deck = under;
+            g.emit(Event::Shuffled { player: p });
+            *pc = 3;
+            if bottom.len() > 1 {
+                *pc = 2;
+                let n = bottom.len();
+                return Flow::Ask(Decision {
+                    player: p,
+                    kind: DecisionKind::Cards {
+                        candidates: bottom.iter().rev().copied().collect(),
+                        min: n,
+                        max: n,
+                        ordered: true,
+                    },
+                    purpose: Purpose::Move,
+                    source: None,
+                });
+            }
+            Flow::Continue
+        }
+        2 => {
+            // Top first, so the last one is the bottom card of the deck.
+            let order = input.cards();
+            let deck = &mut g.players[p.index()].deck;
+            for (i, c) in order.into_iter().rev().enumerate() {
+                deck[i] = c;
+            }
+            *pc = 3;
+            Flow::Continue
+        }
+        3 => {
+            *pc = 4;
+            Flow::Call(Frame::window(Occasion::Shuffled {
+                player: p,
+                count: *count,
+            }))
+        }
+        _ => Flow::done(),
     }
 }
 

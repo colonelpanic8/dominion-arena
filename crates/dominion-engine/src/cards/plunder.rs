@@ -1590,11 +1590,13 @@ fn shuffled_fated(g: &Game, p: PlayerId, count: usize) -> Vec<CardId> {
 }
 
 /// Fated: put any of the Fated cards just shuffled on top of or under the shuffled cards.
+/// Those put under can go among the cards the shuffle put on the bottom (Shadow cards).
 fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     let Some(Occasion::Shuffled { count, .. }) = f.occ else {
         return Flow::done();
     };
+    let shuffled = shuffled_cards(g, p, count);
     match f.pc {
         0 => {
             let fated = shuffled_fated(g, p, count);
@@ -1613,46 +1615,64 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_cards(rest, 0, n, Purpose::Move)
         }
         2 => {
-            let bottom = input.cards();
+            let mut bottom = input.cards();
+            let top = f.s.cards.len();
+            if !bottom.is_empty() {
+                // Top first, so the shuffle's bottom cards go under the Fated ones.
+                let mut low: Vec<CardId> = shuffled
+                    .iter()
+                    .copied()
+                    .take_while(|&c| super::bottom_when_shuffled(g, p, c))
+                    .filter(|c| !bottom.contains(c) && !f.s.cards.contains(c))
+                    .collect();
+                low.reverse();
+                bottom.extend(low);
+            }
             f.s.m = bottom.len() as i32;
             f.s.cards.extend(bottom);
             f.pc = 3;
-            let top = f.s.cards.len() - f.s.m as usize;
             if top > 1 {
                 return f.ask_order(f.s.cards[..top].to_vec(), Purpose::TopDeck);
+            }
+            Flow::Continue
+        }
+        3 => {
+            let top = f.s.cards.len() - f.s.m as usize;
+            if let Input::Response(_) = input {
+                f.s.cards.splice(..top, input.cards());
+            }
+            f.pc = 4;
+            let under = f.s.cards[top..].to_vec();
+            if under.len() > 1 && under.iter().any(|&c| !is_traited(g, c, Card::Fated)) {
+                return f.ask_order(under, Purpose::Move);
             }
             Flow::Continue
         }
         _ => {
             let top = f.s.cards.len() - f.s.m as usize;
             if let Input::Response(_) = input {
-                let ordered = input.cards();
-                f.s.cards.splice(..top, ordered);
+                f.s.cards.splice(top.., input.cards());
             }
-            let chosen: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                .into_iter()
-                .filter(|&c| g.zone(c) == Zone::Deck(p))
-                .collect();
-            let shuffled = shuffled_cards(g, p, count).len();
-            for &c in &chosen {
-                g.emit(Event::Revealed {
-                    player: p,
-                    card: g.card(c),
-                });
-                g.move_card(c, Zone::SetAside(p), Pos::Top);
+            let in_deck = |c: &CardId| g.zone(*c) == Zone::Deck(p);
+            let on_top: Vec<CardId> = f.s.cards[..top].iter().copied().filter(in_deck).collect();
+            let under: Vec<CardId> = f.s.cards[top..].iter().copied().filter(in_deck).collect();
+            for &c in on_top.iter().chain(&under) {
+                if is_traited(g, c, Card::Fated) {
+                    g.emit(Event::Revealed {
+                        player: p,
+                        card: g.card(c),
+                    });
+                }
             }
-            let (on_top, under) = chosen.split_at(top.min(chosen.len()));
-            let at = shuffled - chosen.len() + under.len();
-            for &c in under {
-                g.move_card(c, Zone::Deck(p), Pos::Bottom);
-            }
-            // Inserting each at the same place leaves the first one on top.
-            for &c in on_top {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
-                let deck = &mut g.players[p.index()].deck;
-                let c = deck.pop().expect("just moved");
-                deck.insert(at, c);
-            }
+            let rest = shuffled.len() - shuffled.iter().filter(|c| f.s.cards.contains(c)).count();
+            f.s.cards.clear();
+            let deck = &mut g.players[p.index()].deck;
+            deck.retain(|c| !on_top.contains(c) && !under.contains(c));
+            let mut new: Vec<CardId> = under.iter().rev().copied().collect();
+            new.extend(&deck[..rest]);
+            new.extend(on_top.iter().rev());
+            new.extend(&deck[rest..]);
+            *deck = new;
             Flow::done()
         }
     }

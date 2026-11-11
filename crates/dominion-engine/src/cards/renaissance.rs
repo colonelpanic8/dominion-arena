@@ -211,9 +211,7 @@ impl SetRules for Rules {
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
             Occasion::Trash { player, card } => trash_triggers(g, player, card, out),
-            Occasion::WouldShuffle { player }
-                if has(g, player, Card::StarChart) && g.player(player).discard.len() >= 2 =>
-            {
+            Occasion::Shuffled { player, count } if has(g, player, Card::StarChart) && count >= 2 => {
                 out.push(Trigger::new(player, Card::StarChart, EFFECT).optional());
             }
             _ => {}
@@ -848,34 +846,30 @@ fn sewers(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// Picks a card of the discard pile, then does the shuffle itself so that the card ends
-/// up on top of the shuffled cards (under any cards still in the deck).
+/// Puts the chosen one of the cards just shuffled on top of them (under any cards still in
+/// the deck).
 fn star_chart(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
+    let Some(Occasion::Shuffled { count, .. }) = f.occ else {
+        return Flow::done();
+    };
     match f.pc {
         0 => {
-            let discard = g.player(p).discard.clone();
-            if discard.is_empty() {
-                return Flow::done();
-            }
+            let deck = &g.player(p).deck;
+            let mut shuffled = deck[..count.min(deck.len())].to_vec();
+            shuffled.sort();
             f.pc = 1;
-            f.ask_cards(discard, 1, 1, Purpose::TopDeck)
+            f.ask_cards(shuffled, 1, 1, Purpose::TopDeck)
         }
         _ => {
-            let Some(c) = input.card() else {
-                return Flow::done();
-            };
-            if g.zone(c) != Zone::Discard(p) {
-                return Flow::done();
+            let deck = &mut g.players[p.index()].deck;
+            let count = count.min(deck.len());
+            if let Some(c) = input.card()
+                && let Some(i) = deck[..count].iter().position(|&x| x == c)
+            {
+                deck.remove(i);
+                deck.insert(count - 1, c);
             }
-            g.move_card(c, Zone::SetAside(p), Pos::Top);
-            let unshuffled = g.player(p).deck.len();
-            g.shuffle_discard_into_deck(p);
-            let pl = &mut g.players[p.index()];
-            let shuffled = pl.deck.len() - unshuffled;
-            pl.set_aside.retain(|&x| x != c);
-            pl.deck.insert(shuffled, c);
-            g.zones[c.index()] = Zone::Deck(p);
             Flow::done()
         }
     }

@@ -52,7 +52,8 @@ pub(crate) trait SetRules {
 
     /// Called after each step of ability `f`, with the turn as it was before the step;
     /// may adjust what the step did and the flow it returned (Way of the Chameleon).
-    fn after_step(g: &mut Game, f: &CardFrame, before: &Step, flow: &mut Flow) {}
+    /// [`CardFrame::hold`] defers the step's flow until after a frame it calls instead.
+    fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, flow: &mut Flow) {}
 
     /// Applies this set's type-changing effects to `id`.
     fn modify_types(g: &Game, id: CardId, types: &mut Types) {}
@@ -111,8 +112,11 @@ pub(crate) trait SetRules {
     /// have run, so add only what is missing.
     fn setup_added_piles(g: &mut Game, cards: &[Card]) {}
 
-    /// Rearranges `cards`, just shuffled to go under `p`'s deck (bottom first).
-    fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {}
+    /// Whether `id`, being shuffled into `p`'s deck, goes on the bottom of the shuffled
+    /// cards (Shadow cards). The player orders the cards that do.
+    fn bottom_when_shuffled(g: &Game, p: PlayerId, id: CardId) -> bool {
+        false
+    }
 
     /// Adds the cards `p` may play as if they were in their hand (Shadow cards in the deck).
     fn playable_as_if_in_hand(g: &Game, p: PlayerId, out: &mut Vec<CardId>) {}
@@ -174,6 +178,9 @@ macro_rules! sets {
         }
 
         pub(crate) fn resume(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
+            if let Some(held) = f.held.take() {
+                return *held;
+            }
             let before = Step {
                 coins: g.turn.coins,
                 actions: g.turn.actions,
@@ -266,8 +273,8 @@ macro_rules! sets {
             $(<$module::Rules as SetRules>::setup_added_piles(g, cards);)*
         }
 
-        pub(crate) fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {
-            $(<$module::Rules as SetRules>::arrange_shuffled(g, p, cards);)*
+        pub(crate) fn bottom_when_shuffled(g: &Game, p: PlayerId, id: CardId) -> bool {
+            false $(|| <$module::Rules as SetRules>::bottom_when_shuffled(g, p, id))*
         }
 
         pub(crate) fn playable_as_if_in_hand(g: &Game, p: PlayerId, out: &mut Vec<CardId>) {
@@ -377,6 +384,8 @@ pub(crate) struct CardFrame {
     pub pc: u8,
     /// Free for the script's use between steps.
     pub s: Scratch,
+    /// A step's flow, deferred until the frame called in its place returns.
+    pub held: Option<Box<Flow>>,
 }
 
 impl CardFrame {
@@ -393,7 +402,13 @@ impl CardFrame {
             data: 0,
             pc: 0,
             s: Scratch::default(),
+            held: None,
         }
+    }
+
+    /// Defers `flow` until this frame is next resumed (after the frame called instead).
+    pub(crate) fn hold(&mut self, flow: Flow) {
+        self.held = Some(Box::new(flow));
     }
 
     /// The card this ability is on. Panics for abilities that have none.
