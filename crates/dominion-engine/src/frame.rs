@@ -121,6 +121,8 @@ pub(crate) enum Frame {
         count: usize,
         drawn: Vec<CardId>,
         started: bool,
+        /// One draw shuffles at most once, even if its discard pile refills meanwhile.
+        shuffled: bool,
     },
     Shuffle {
         player: PlayerId,
@@ -173,6 +175,7 @@ impl Frame {
             count,
             drawn: vec![],
             started: false,
+            shuffled: false,
         }
     }
 
@@ -284,6 +287,7 @@ impl Frame {
                 count,
                 drawn,
                 started,
+                shuffled,
             } => {
                 let p = *player;
                 if !*started {
@@ -297,9 +301,10 @@ impl Frame {
                 while drawn.len() < *count {
                     let pl = &g.players[p.index()];
                     if pl.deck.is_empty() {
-                        if pl.discard.is_empty() {
+                        if pl.discard.is_empty() || *shuffled {
                             break;
                         }
+                        *shuffled = true;
                         return Flow::Call(Frame::shuffle(p));
                     }
                     let top = *pl.deck.last().expect("deck is not empty");
@@ -319,12 +324,19 @@ impl Frame {
                     *pc = 1;
                     Flow::Call(Frame::window(Occasion::WouldShuffle { player: *player }))
                 }
-                _ => {
-                    if !g.players[player.index()].discard.is_empty() {
-                        g.shuffle_discard_into_deck(*player);
+                1 => {
+                    let count = g.players[player.index()].discard.len();
+                    if count == 0 {
+                        return Flow::done();
                     }
-                    Flow::done()
+                    g.shuffle_discard_into_deck(*player);
+                    *pc = 2;
+                    Flow::Call(Frame::window(Occasion::Shuffled {
+                        player: *player,
+                        count,
+                    }))
                 }
+                _ => Flow::done(),
             },
             Frame::TopCards {
                 player,

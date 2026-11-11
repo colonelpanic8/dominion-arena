@@ -88,6 +88,11 @@ pub enum Occasion {
     WouldShuffle {
         player: PlayerId,
     },
+    /// Just shuffled `count` cards, now the bottom `count` cards of the deck.
+    Shuffled {
+        player: PlayerId,
+        count: usize,
+    },
 }
 
 /// One triggered ability that could resolve.
