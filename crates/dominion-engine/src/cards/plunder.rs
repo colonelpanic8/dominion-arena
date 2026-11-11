@@ -10,7 +10,7 @@
 //! in an `Until::EndOfTurn` lasting's `data.cards`. Traits sit on their pile
 //! (`Pile::traits`); the Loot pile is a face-down non-Supply pile named [`Card::Loot`].
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{CardFrame, Hook, SetRules, duration_trigger, mode_mask, turn_durations};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -82,6 +82,12 @@ fn has_start(card: Card) -> bool {
             | Card::Patient
             | Card::Prepare
     )
+}
+
+/// Cards whose start-of-turn effect is "at the start of each of your turns for the rest of
+/// the game": it resolves on every turn, the one it is played at the start of included.
+fn permanent(card: Card) -> bool {
+    matches!(card, Card::Quartermaster | Card::EndlessChalice)
 }
 
 /// Cards whose Duration waits for "the next time" something happens.
@@ -317,8 +323,9 @@ impl SetRules for Rules {
     }
 
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
-        for l in due_durations(g, occ) {
-            if l.card.set() == Set::Plunder && has_start(l.card) {
+        for l in turn_durations(g, occ) {
+            let due = permanent(l.card) || l.turn < g.player(l.owner).turns_taken;
+            if due && l.card.set() == Set::Plunder && has_start(l.card) {
                 out.push(duration_trigger(l, START));
             }
         }
@@ -925,8 +932,7 @@ fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>
 fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     if f.pc == 0 {
-        let permanent = matches!(f.card, Card::Quartermaster | Card::EndlessChalice);
-        let l = if permanent {
+        let l = if permanent(f.card) {
             f.lasting
                 .and_then(|id| g.lasting().iter().find(|l| l.id == id).cloned())
         } else {

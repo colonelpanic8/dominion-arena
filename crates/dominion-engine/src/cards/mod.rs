@@ -339,19 +339,24 @@ sets! {
     Promos => promos,
 }
 
-/// The Duration effects (from [`CardFrame::add_duration`]) due now, if `occ` is a
-/// `StartTurn`: the turn player's, made on an earlier turn of theirs (one played during
-/// this start of turn waits for the next).
-pub(crate) fn due_durations<'a>(g: &'a Game, occ: &Occasion) -> impl Iterator<Item = &'a Lasting> {
+/// The turn player's Duration effects (from [`CardFrame::add_duration`]), if `occ` is a
+/// `StartTurn`: what happens "at the start of each of your turns" (Hireling) does so on
+/// every one, the turn it is played at the start of included.
+pub(crate) fn turn_durations<'a>(g: &'a Game, occ: &Occasion) -> impl Iterator<Item = &'a Lasting> {
     let player = match *occ {
         Occasion::StartTurn { player } => Some(player),
         _ => None,
     };
-    g.lasting().iter().filter(move |l| {
-        Some(l.owner) == player
-            && l.until == Until::Removed
-            && l.turn < g.player(l.owner).turns_taken
-    })
+    g.lasting()
+        .iter()
+        .filter(move |l| Some(l.owner) == player && l.until == Until::Removed)
+}
+
+/// The Duration effects due "at the start of your next turn", if `occ` is a `StartTurn`:
+/// the turn player's, made on an earlier turn of theirs (one played during this start of
+/// turn waits for the next).
+pub(crate) fn due_durations<'a>(g: &'a Game, occ: &Occasion) -> impl Iterator<Item = &'a Lasting> {
+    turn_durations(g, occ).filter(|l| l.turn < g.player(l.owner).turns_taken)
 }
 
 /// The start-of-turn trigger that resolves Duration effect `l` as its card's `ability`.

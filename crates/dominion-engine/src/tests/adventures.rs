@@ -928,6 +928,18 @@ fn hireling_draws_a_card_every_turn_for_the_rest_of_the_game() {
     }
 }
 
+#[test]
+fn hireling_played_at_the_start_of_a_turn_draws_that_turn() {
+    let mut g = game(&[Card::Hireling], &[Card::Piazza]);
+    g.players[0].projects.push(Card::Piazza);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Hireling, Card::Copper, Card::Copper]);
+    g.start();
+    // Piazza played it; it is still the start of the turn.
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Hireling]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+}
+
 // ---- Other Kingdom cards ----
 
 #[test]

@@ -665,6 +665,23 @@ fn samurai_attacks_once_and_gives_a_coin_at_the_start_of_every_turn() {
 }
 
 #[test]
+fn samurai_played_at_the_start_of_a_turn_gives_its_coin_that_turn() {
+    let mut g = with_prophecy(&[Card::Samurai], Card::RapidExpansion);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &coppers(12));
+    g.start();
+    buy_phase_with(&mut g, 6);
+    buy(&mut g, Card::Samurai);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    // Rapid Expansion plays it; P1 discards down to 3.
+    let discards = candidates(&g)[..2].to_vec();
+    choose(&mut g, &discards);
+    assert_eq!(g.turn().played, [Card::Samurai]);
+    assert_eq!(g.turn().coins, 1);
+}
+
+#[test]
 fn snake_witch_returns_to_its_pile_to_curse_when_the_hand_has_no_duplicates() {
     let mut g = setup(&[Card::SnakeWitch]);
     hand(&mut g, P0, &[Card::SnakeWitch, Card::Estate]);

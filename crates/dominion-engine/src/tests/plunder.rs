@@ -1478,6 +1478,22 @@ fn quartermaster_gains_cards_aside_and_hands_them_out_on_later_turns() {
 }
 
 #[test]
+fn quartermaster_played_at_the_start_of_a_turn_acts_that_turn() {
+    let mut g = setup_with(GameConfig {
+        landscapes: vec![Card::Piazza],
+        ..GameConfig::new(2, vec![Card::Quartermaster], 7)
+    });
+    g.players[0].projects.push(Card::Piazza);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Quartermaster, Card::Copper]);
+    g.start();
+    // Piazza played it; it is still the start of the turn.
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(aside_kinds(&g, P0), [Card::Silver]);
+}
+
+#[test]
 fn silver_mine_gains_a_cheaper_treasure_to_hand() {
     let mut g = setup(&[Card::SilverMine, Card::Gondola]);
     hand(&mut g, P0, &[Card::SilverMine]);

@@ -8,7 +8,7 @@
 //! Foresight last until the end of the turn. Riverboat's card sits alone in a removed
 //! holder pile, so it has no pile of its own.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, turn_durations};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -330,14 +330,17 @@ impl SetRules for Rules {
 
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         for l in due_durations(g, occ) {
-            match l.card {
-                Card::Riverboat | Card::RapidExpansion | Card::BidingTime => {
-                    out.push(duration_trigger(l, START));
-                }
-                Card::Samurai if l.source.is_some_and(|c| g.zone(c) == Zone::InPlay(l.owner)) => {
-                    out.push(duration_trigger(l, SAMURAI_COIN).quiet());
-                }
-                _ => {}
+            if matches!(
+                l.card,
+                Card::Riverboat | Card::RapidExpansion | Card::BidingTime
+            ) {
+                out.push(duration_trigger(l, START));
+            }
+        }
+        for l in turn_durations(g, occ) {
+            if l.card == Card::Samurai && l.source.is_some_and(|c| g.zone(c) == Zone::InPlay(l.owner))
+            {
+                out.push(duration_trigger(l, SAMURAI_COIN).quiet());
             }
         }
         let active = |card| g.prophecy_active(card);

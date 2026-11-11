@@ -1,7 +1,9 @@
 //! Adventures: Durations, Reserve cards and the Tavern mat, Travellers, Events and the
 //! Adventures tokens.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, turn_durations,
+};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -818,10 +820,15 @@ fn start_turn_triggers(g: &Game, occ: &Occasion, player: PlayerId, out: &mut Vec
             | Card::HauntedWoods
             | Card::SwampHag => true,
             Card::BridgeTroll => l.data.n == 0,
-            Card::Hireling => l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player)),
             _ => false,
         };
         if fires {
+            out.push(duration_trigger(l, DURATION));
+        }
+    }
+    for l in turn_durations(g, occ) {
+        if l.card == Card::Hireling && l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player))
+        {
             out.push(duration_trigger(l, DURATION));
         }
     }

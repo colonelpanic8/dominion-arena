@@ -127,6 +127,8 @@ them.
   `f.add_duration(g, data)` (keeps the card in play with what played it:
   `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting
   (`cards::due_durations` lists the ones due: made on an earlier turn of the owner's;
+  `cards::turn_durations` lists them all, for "at the start of each of your turns",
+  which includes a turn the card is played at the start of;
   `cards::duration_trigger` builds the trigger), whose ability removes it
   (`f.end_lasting(g)`). "This turn" effects use `Until::EndOfTurn`, "until your next
   turn" `Until::StartOfTurn(owner)`. Sets read `g.lasting()` for cost changes, triggers,
