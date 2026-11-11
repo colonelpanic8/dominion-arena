@@ -17,7 +17,7 @@ use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -30,8 +30,8 @@ pub(crate) struct State {
     pub mouse: Option<CardId>,
     /// Cards Exiled by Invest.
     pub invested: Vec<CardId>,
-    /// Gains (the card and its place in `Game::gains`) during which the gainer discarded
-    /// copies of the card from Exile.
+    /// Gains in progress (the card and its `GainState::since`, which no other gain of
+    /// that card shares) during which the gainer discarded copies of the card from Exile.
     pub exile_discarded: Vec<(CardId, usize)>,
     /// Cards being played using Way of the Chameleon, innermost last.
     pub chameleon: Vec<CardId>,
@@ -558,9 +558,14 @@ fn supply_pile_topped_by(g: &Game, card: Card) -> Option<PileId> {
         .find(|&id| g.pile(id).in_supply && g.pile_top(id).is_some_and(|t| g.card(t) == card))
 }
 
+/// The gain of `card` in progress.
+fn gain_of(g: &Game, card: CardId) -> Option<&GainState> {
+    g.gains.iter().rev().find(|st| st.card == card)
+}
+
 /// Where the gain of `card` in progress put it.
 fn gain_zone(g: &Game, card: CardId) -> Option<Zone> {
-    let st = g.gains.iter().rev().find(|st| st.card == card)?;
+    let st = gain_of(g, card)?;
     Some(match st.to {
         Dest::Discard => Zone::Discard(st.player),
         Dest::Hand => Zone::Hand(st.player),
@@ -784,10 +789,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
 
     // Gatekeeper: only if the gainer had no Exiled copy when they gained it.
     let action_or_treasure = g.is(card, Types::ACTION | Types::TREASURE);
-    let had_copies = st
-        .exile_discarded
-        .iter()
-        .any(|&(c, i)| c == card && g.gains.get(i).is_some_and(|s| s.card == c));
+    let had_copies = gain_of(g, card)
+        .is_some_and(|gain| st.exile_discarded.contains(&(card, gain.since)));
     if action_or_treasure && in_place && copies.is_empty() && !had_copies {
         for l in g.lasting() {
             let active = l.until == Until::Removed && g.player(l.owner).turns_taken == l.turn;
@@ -874,13 +877,12 @@ fn exile_discard(g: &mut Game, f: &mut CardFrame) -> Flow {
         .into_iter()
         .filter(|&c| c != card)
         .collect();
+    let since = gain_of(g, card).map(|gain| gain.since);
     let st = &mut g.ext.menagerie;
     let gains = &g.gains;
     st.exile_discarded
-        .retain(|&(c, i)| gains.get(i).is_some_and(|s| s.card == c));
-    if let Some(i) = gains.iter().rposition(|s| s.card == card) {
-        st.exile_discarded.push((card, i));
-    }
+        .retain(|&(c, since)| gains.iter().any(|s| s.card == c && s.since == since));
+    st.exile_discarded.extend(since.map(|since| (card, since)));
     st.invested.retain(|c| !copies.contains(c));
     f.pc = 1;
     Flow::Call(Frame::discard(p, copies))

@@ -636,6 +636,31 @@ fn gatekeeper_exiles_the_first_of_two_horses_but_not_the_second() {
 }
 
 #[test]
+fn gatekeeper_exiles_a_horse_gained_again_after_its_first_gain_discarded_exiled_horses() {
+    let mut g = setup(&[Card::Gatekeeper, Card::Supplies]);
+    hand(&mut g, P0, &[Card::Copper]);
+    deck(&mut g, P0, &[Card::Gatekeeper]);
+    hand(&mut g, P1, &[Card::Supplies]);
+    let mut cards = vec![Card::Supplies];
+    cards.extend([Card::Copper; 5]);
+    deck(&mut g, P1, &cards);
+    exiled(&mut g, P1, &[Card::Horse]);
+    g.start();
+    next_turn(&mut g);
+    // P1 gains a Horse onto the deck and discards the Exiled one.
+    play_treasures(&mut g);
+    trigger(&mut g, Card::Sanctuary);
+    assert!(exile_kinds(&g, P1).is_empty());
+    next_turn(&mut g);
+    play(&mut g, Card::Gatekeeper);
+    next_turn(&mut g);
+    // That Horse returns to its pile and is the one gained again.
+    play(&mut g, Card::Horse);
+    play_treasures(&mut g);
+    assert_eq!(exile_kinds(&g, P1), [Card::Horse]);
+}
+
+#[test]
 fn a_sleigh_beats_gatekeeper_by_moving_the_gained_card_first() {
     let mut g = setup(&[Card::Gatekeeper, Card::Sleigh]);
     hand(&mut g, P0, &[Card::Gatekeeper]);
