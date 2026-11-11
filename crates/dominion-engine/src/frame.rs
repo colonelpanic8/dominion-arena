@@ -571,8 +571,16 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8) -> Flow {
             let started = g.players.iter().any(|p| p.turns_taken > 0);
             while let Some(extra) = g.extra_turns.pop_front() {
                 // Nobody takes more than two turns in a row.
-                if (started && extra.player == prev.0 && prev.1) || g.skips_turn(extra.player, true)
-                {
+                if started && extra.player == prev.0 && prev.1 {
+                    continue;
+                }
+                if g.skips_turn(extra.player, true) {
+                    // What kept its card in play for that turn (Voyage, Outpost) ends, so
+                    // the card is discarded in the next Clean-up.
+                    let until = Until::StartOfTurn(extra.player);
+                    g.lasting.retain(|l| {
+                        !(l.owner == extra.player && l.card == extra.source && l.until == until)
+                    });
                     continue;
                 }
                 g.turn = Turn::new(extra.player);
