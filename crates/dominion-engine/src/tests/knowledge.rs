@@ -161,6 +161,69 @@ fn a_card_leaving_a_hidden_hand_could_be_any_of_its_cards() {
 }
 
 #[test]
+fn a_player_knows_the_cards_they_picked_out_of_a_shuffle() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::OrderOfMasons],
+        ..GameConfig::new(2, vec![Card::Underling, Card::Smithy], 7)
+    });
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    discard(
+        &mut g,
+        P0,
+        &[
+            Card::Province,
+            Card::Province,
+            Card::Curse,
+            Card::Gold,
+            Card::Gold,
+            Card::Gold,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Smithy);
+    k.update(&mut g);
+    // Order of Masons: the shuffled cards P0 chooses go into the discard pile.
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    k.update(&mut g);
+    choose_kinds(&mut g, &[Card::Province, Card::Curse]);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::Discard(P0)),
+        ZoneKnowledge {
+            count: 2,
+            known: count(&[(Card::Province, 1), (Card::Curse, 1)]),
+            unknown: 0
+        }
+    );
+    // The other player sees only the top one.
+    assert_eq!(k.known(&g, P1).zone(Zone::Discard(P0)).unknown, 1);
+}
+
+#[test]
+fn everyone_follows_a_revealed_card_picked_from_under_the_top_of_a_deck() {
+    let mut g = setup(&[Card::Hunter]);
+    hand(&mut g, P0, &[Card::Hunter]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Copper, Card::Silver, Card::Estate, Card::Gold],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Hunter);
+    k.update(&mut g);
+    // Of the revealed Treasures, the Silver; the Estate is the only Victory card.
+    choose_kinds(&mut g, &[Card::Silver]);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::Hand(P0)).known,
+        count(&[(Card::Silver, 1), (Card::Estate, 1)])
+    );
+}
+
+#[test]
 fn a_passed_card_is_known_to_both_players() {
     let mut g = setup(&[Card::Masquerade]);
     hand(&mut g, P0, &[Card::Masquerade, Card::Gold]);

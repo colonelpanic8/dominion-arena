@@ -475,7 +475,7 @@ impl SetRules for Rules {
             }
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
-                    if g.card(c) == Card::GuardDog {
+                    if g.card(c) == Card::GuardDog && super::can_play(g, target, c) {
                         out.push(
                             Trigger::new(target, Card::GuardDog, GUARD_DOG_PLAY)
                                 .on(c)

@@ -210,7 +210,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
     if g.is(card, Types::TREASURE) {
         for p in g.players_from(g.turn.player) {
             for &c in g.hand(p) {
-                if g.card(c) == Card::Pirate {
+                if g.card(c) == Card::Pirate && super::can_play(g, p, c) {
                     out.push(Trigger::new(p, Card::Pirate, PIRATE_PLAY).on(c).optional());
                 }
             }

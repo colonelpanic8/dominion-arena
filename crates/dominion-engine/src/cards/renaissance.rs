@@ -237,7 +237,7 @@ impl SetRules for Rules {
         if card.kind() != Kind::Card {
             return;
         }
-        let canal = has(g, g.turn.player, Card::Canal) as usize;
+        let canal = g.turn_player().is_some_and(|p| has(g, p, Card::Canal)) as usize;
         let inventors = g
             .lasting()
             .iter()
@@ -248,7 +248,7 @@ impl SetRules for Rules {
 
     fn modify_types(g: &Game, id: CardId, types: &mut Types) {
         if types.contains(Types::ACTION)
-            && has(g, g.turn.player, Card::Capitalism)
+            && g.turn_player().is_some_and(|p| has(g, p, Card::Capitalism))
             && g.card(id).text().contains("+$")
         {
             *types |= Types::TREASURE;

@@ -761,6 +761,37 @@ fn emissary_with_an_empty_discard_pile_does_not_shuffle() {
 }
 
 #[test]
+fn emissary_is_rewarded_only_for_a_shuffle_its_own_three_cards_caused() {
+    // Followed twice, only its first +3 Cards shuffles.
+    let mut g = game(&[Card::Emissary]);
+    let pile = g.pile_of(Card::Emissary).unwrap();
+    g.landscapes.push(Card::Reckless);
+    g.piles[pile.index()].traits.push(Card::Reckless);
+    set_favors(&mut g, P0, 0);
+    hand(&mut g, P0, &[Card::Emissary]);
+    deck(&mut g, P0, &[Card::Copper; 2]);
+    discard(&mut g, P0, &[Card::Estate; 6]);
+    g.start();
+    play(&mut g, Card::Emissary);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!((g.turn().actions, favors(&g, P0)), (1, 2));
+
+    // The +1 Card token's draw shuffles before the +3 Cards.
+    let mut g = game(&[Card::Emissary]);
+    let pile = g.pile_of(Card::Emissary).unwrap();
+    g.players[0].tokens.insert(Token::PlusCard, Some(pile));
+    g.piles[pile.index()].tokens.push((P0, Token::PlusCard));
+    set_favors(&mut g, P0, 0);
+    hand(&mut g, P0, &[Card::Emissary]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[Card::Estate; 6]);
+    g.start();
+    play(&mut g, Card::Emissary);
+    assert_eq!(g.hand(P0).len(), 4);
+    assert_eq!((g.turn().actions, favors(&g, P0)), (0, 0));
+}
+
+#[test]
 fn galleria_gives_a_buy_for_each_gain_costing_three_or_four() {
     let mut g = game(&[Card::Galleria, Card::Smithy]);
     hand(&mut g, P0, &[Card::Galleria, Card::Gold, Card::Gold]);
@@ -1098,6 +1129,25 @@ fn specialist_plays_a_card_and_plays_it_again_or_gains_a_copy() {
 }
 
 #[test]
+fn specialist_stays_in_play_only_with_a_duration_it_played_again() {
+    let mut g = game(&[Card::Specialist, Card::Wharf]);
+    hand(&mut g, P0, &[Card::Specialist, Card::Wharf]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Specialist);
+    choose_kinds(&mut g, &[Card::Wharf]);
+    let mut again = g.clone();
+    // Having gained a copy, it played the Wharf once.
+    modes(&mut g, &[1]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Wharf]);
+
+    modes(&mut again, &[0]);
+    next_turn(&mut again);
+    assert_eq!(in_play_kinds(&again, P0), [Card::Specialist, Card::Wharf]);
+}
+
+#[test]
 fn swap_returns_an_action_and_gains_a_different_one_to_the_hand() {
     let mut g = game(&[Card::Swap, Card::Village, Card::Smithy]);
     hand(&mut g, P0, &[Card::Swap, Card::Village]);
@@ -1377,6 +1427,57 @@ fn warlord_stops_others_playing_an_action_they_have_two_copies_of_in_play() {
 }
 
 #[test]
+fn warlord_stops_a_third_clerk_played_at_the_start_of_the_turn() {
+    let mut g = game(&[Card::Clashes, Card::Clerk]);
+    hand(&mut g, P0, &[Card::Warlord]);
+    deck(&mut g, P0, &[Card::Copper; 2]);
+    discard(&mut g, P0, &[]);
+    hand(&mut g, P1, &[Card::Clerk, Card::Clerk, Card::Clerk]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Warlord);
+    next_turn(&mut g);
+    accept(&mut g, Card::Clerk);
+    accept(&mut g, Card::Clerk);
+    assert_eq!(in_play_kinds(&g, P1), [Card::Clerk, Card::Clerk]);
+    assert!(!offered(&g, Card::Clerk));
+    assert!(!can_play(&g, Card::Clerk));
+}
+
+#[test]
+fn warlord_stops_a_third_caravan_guard_played_in_reaction_on_another_turn() {
+    let mut g = game(&[
+        Card::Clashes,
+        Card::CaravanGuard,
+        Card::Militia,
+        Card::Village,
+    ]);
+    hand(&mut g, P0, &[Card::Village, Card::Warlord, Card::Militia]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    replace(
+        &mut g,
+        Zone::InPlay(P1),
+        &[Card::CaravanGuard, Card::CaravanGuard],
+    );
+    hand(
+        &mut g,
+        P1,
+        &[Card::CaravanGuard, Card::Copper, Card::Copper],
+    );
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Warlord);
+    // Warlord is not in effect yet when it is played.
+    assert!(offered(&g, Card::CaravanGuard));
+    decline(&mut g);
+    play(&mut g, Card::Militia);
+    assert!(!offered(&g, Card::CaravanGuard));
+    assert_eq!(g.hand(P1).len(), 3);
+    assert_eq!(g.turn().coins, 2);
+}
+
+#[test]
 fn warlord_lets_throne_room_play_a_card_with_one_copy_in_play() {
     let mut g = game(&[Card::Clashes, Card::Village, Card::ThroneRoom]);
     hand(&mut g, P0, &[Card::Warlord]);
@@ -1509,6 +1610,31 @@ fn hill_fort_gains_a_card_into_hand_or_gives_a_card_and_an_action() {
 }
 
 #[test]
+fn hill_fort_takes_a_card_from_where_it_was_gained_to_only() {
+    // Nomad Camp is gained onto the deck.
+    let mut g = game(&[Card::Forts, Card::NomadCamp]);
+    hand(&mut g, P0, &[Card::HillFort]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::HillFort);
+    choose_pile(&mut g, Card::NomadCamp);
+    modes(&mut g, &[0]);
+    assert_eq!(hand_kinds(&g, P0), [Card::NomadCamp]);
+
+    // A Silver that Trappers' Lodge then put onto the deck has moved.
+    let mut g = game_with(&[Card::Forts, Card::Underling], Card::TrappersLodge);
+    hand(&mut g, P0, &[Card::HillFort]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::HillFort);
+    choose_pile(&mut g, Card::Silver);
+    accept(&mut g, Card::TrappersLodge);
+    modes(&mut g, &[0]);
+    assert!(g.hand(P0).is_empty());
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Silver);
+}
+
+#[test]
 fn stronghold_gives_three_coins_or_three_cards_next_turn_and_two_vp() {
     let mut g = game(&[Card::Forts]);
     hand(&mut g, P0, &[Card::Stronghold]);
@@ -1591,6 +1717,39 @@ fn voyage_on_an_extra_turn_gives_no_third_turn() {
     play(&mut g, Card::Voyage);
     next_turn(&mut g);
     assert_eq!(g.turn().player, P1);
+}
+
+#[test]
+fn voyage_counts_the_cards_sauna_and_avanto_play_from_the_hand() {
+    let mut g = game(&[Card::Odysseys, Card::Sauna]);
+    hand(&mut g, P0, &[Card::Voyage]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Sauna,
+            Card::Avanto,
+            Card::Sauna,
+            Card::Avanto,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Voyage);
+    next_turn(&mut g);
+    assert_eq!(g.turn().extra, Some(Card::Voyage));
+    play(&mut g, Card::Sauna);
+    choose_kinds(&mut g, &[Card::Avanto]);
+    choose_kinds(&mut g, &[Card::Sauna]);
+    // The second Sauna was the third card played from the hand: it offers no Avanto.
+    assert!(hand_kinds(&g, P0).contains(&Card::Avanto));
+    assert!(moves(&g).iter().all(|m| !matches!(m, Move::Play(_))));
+    assert_eq!(g.turn().hand_plays, 3);
 }
 
 #[test]
@@ -2232,6 +2391,49 @@ fn plateau_shepherds_pairs_favors_with_cards_costing_two() {
     assert_eq!(g.score(P0), 3 + 6);
 }
 
+/// A Plateau Shepherds game that ends after P0's first turn.
+fn one_turn_game(kingdom: &[Card]) -> Game {
+    setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::PlateauShepherds],
+        turn_limit: Some(1),
+        ..GameConfig::new(2, kingdom.to_vec(), 7)
+    })
+}
+
+fn score_after_the_turn(g: &mut Game, p: PlayerId) -> i32 {
+    while g.outcome().is_none() {
+        end_phase(g);
+    }
+    g.outcome().unwrap().scores[p.index()]
+}
+
+#[test]
+fn plateau_shepherds_scores_without_canal() {
+    let mut g = one_turn_game(&[Card::Underling]);
+    g.players[0].projects.push(Card::Canal);
+    set_favors(&mut g, P0, 3);
+    g.start();
+    let estate = find(&g, P0, Card::Estate);
+    assert_eq!(g.cost_of(estate), Cost::coins(1));
+    // "During your turns" is over: three Estates and three pairs with them.
+    assert_eq!(score_after_the_turn(&mut g, P0), 3 + 6);
+}
+
+#[test]
+fn plateau_shepherds_scores_fisherman_at_its_printed_cost() {
+    let mut g = one_turn_game(&[Card::Underling, Card::Fisherman]);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Fisherman; 5]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    assert_eq!(g.cost(Card::Fisherman), Cost::coins(2));
+    assert_eq!(score_after_the_turn(&mut g, P0), 0);
+    assert!(g.player(P0).discard.is_empty());
+}
+
 #[test]
 fn trappers_lodge_puts_a_gained_card_onto_the_deck_for_a_favor() {
     let mut g = game_with(&[Card::Underling], Card::TrappersLodge);
@@ -2410,6 +2612,91 @@ fn highwayman_or_enlightenment_applies_as_the_player_orders_them() {
     // Highwayman resolved last: the Silver does nothing.
     assert_eq!((g.turn().actions, g.turn().coins), (0, 0));
     assert_eq!(g.hand(P1).len(), 1);
+}
+
+/// A game in which P0 has played Highwayman and Enchantress and P1 plays a Crown, their
+/// first Treasure and first Action.
+fn crown_under_highwayman_and_enchantress() -> Game {
+    let mut g = setup(&[
+        Card::Highwayman,
+        Card::Enchantress,
+        Card::Crown,
+        Card::Village,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Village, Card::Highwayman, Card::Enchantress],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Crown, Card::Copper, Card::Copper]);
+    deck(&mut g, P1, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Highwayman);
+    play(&mut g, Card::Enchantress);
+    next_turn(&mut g);
+    play(&mut g, Card::Crown);
+    g
+}
+
+#[test]
+fn highwayman_or_enchantress_applies_as_the_player_orders_them() {
+    let mut g = crown_under_highwayman_and_enchantress();
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    accept(&mut g, Card::Highwayman);
+    // Enchantress resolved last: +1 Card +1 Action.
+    assert_eq!(g.turn().actions, 1);
+    assert_eq!(g.hand(P1).len(), 3);
+
+    let mut g = crown_under_highwayman_and_enchantress();
+    accept(&mut g, Card::Enchantress);
+    // Highwayman resolved last: the Crown does nothing.
+    assert_eq!(g.turn().actions, 0);
+    assert_eq!(hand_kinds(&g, P1), [Card::Copper, Card::Copper]);
+    assert!(matches!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn { .. }
+    ));
+}
+
+/// A game with Way of the Sheep in which P0 has played Highwayman; P1 is in their Action
+/// phase with a Crown and a Village.
+fn crown_under_highwayman_with_a_way() -> Game {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::WayOfTheSheep],
+        ..GameConfig::new(2, vec![Card::Highwayman, Card::Crown], 7)
+    });
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Crown, Card::Village, Card::Copper]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    respond(&mut g, Response::option(Opt::No));
+    next_turn(&mut g);
+    g
+}
+
+#[test]
+fn an_action_treasure_highwayman_stops_can_still_be_played_as_a_way() {
+    let mut g = crown_under_highwayman_with_a_way();
+    play(&mut g, Card::Crown);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheSheep)));
+    assert_eq!(g.turn().coins, 2);
+
+    let mut g = crown_under_highwayman_with_a_way();
+    play(&mut g, Card::Crown);
+    respond(&mut g, Response::option(Opt::No));
+    // Played as itself it does nothing: no Action to play twice.
+    assert!(matches!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn { .. }
+    ));
+    assert_eq!(in_play_kinds(&g, P1), [Card::Crown]);
 }
 
 #[test]

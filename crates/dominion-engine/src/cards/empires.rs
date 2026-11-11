@@ -781,7 +781,8 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     }
 }
 
-/// Enchantress: the first Action card each affected player plays on their turn.
+/// Enchantress: the first Action card each affected player plays on their turn. It is that
+/// player's to resolve, so they order it with what else changes the play (Highwayman).
 fn enchant_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
     let first_action = player == g.turn.player
         && g.is(card, Types::ACTION)
@@ -789,18 +790,15 @@ fn enchant_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trig
     let open = g
         .plays
         .last()
-        .is_some_and(|st| st.card == card && st.replaced.is_none() && !st.blocked);
-    if !first_action || !open {
-        return;
-    }
-    for l in g.lasting() {
-        if l.card == Card::Enchantress
+        .is_some_and(|st| st.card == card && st.replaced.is_none());
+    let enchanted = g.lasting().iter().any(|l| {
+        l.card == Card::Enchantress
             && l.until == Until::Removed
             && l.owner != player
             && in_mask(l.data.n, player)
-        {
-            out.push(Trigger::new(l.owner, Card::Enchantress, ENCHANT).via_lasting(l.id));
-        }
+    });
+    if first_action && open && enchanted {
+        out.push(Trigger::new(player, Card::Enchantress, ENCHANT));
     }
 }
 
@@ -808,9 +806,9 @@ fn enchant(g: &mut Game, f: &mut CardFrame) -> Flow {
     if let Some(Occasion::Play { card, .. }) = f.occ
         && let Some(st) = g.plays.last_mut()
         && st.card == card
-        && st.replaced.is_none()
-        && !st.blocked
     {
+        // Overrides a Highwayman resolved before it.
+        st.blocked = false;
         st.replaced = Some(Plus {
             cards: 1,
             actions: 1,

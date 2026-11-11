@@ -77,15 +77,19 @@ them.
   the player's cards (Possession, which also replaces gains, trashing through
   `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
-  (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`), choose a Way if the
-  game has Ways, open an `Attack` window per other player for Attacks (also when the
+  (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`: they are the card's
+  player's, and the one resolved last applies), choose a Way if the game has Ways (it
+  can be used instead of either), open an `Attack` window per other player for Attacks (also when the
   play is replaced or blocked: Reactions answer the card being played), then apply the
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
   `SetRules::modify_bonus`) and run the card's `Hook::Main`, then the `AfterPlay`
   window. `chain` lists the cards playing it (Throne Room ...); pass
-  `f.chain_for_child()` when a card plays another. `SetRules::can_play` can forbid a
-  play from the hand (Warlord, Voyage; `g.playable` applies it); `Turn::hand_plays`
-  counts the turn's plays from the hand.
+  `f.chain_for_child()` when a card plays another more than once (only then does it stay
+  in play with a Duration).
+  `SetRules::can_play` can forbid a play from the hand (Warlord, Voyage): `Frame::play`
+  then does nothing, so offer only what may be played (`g.playable`; `cards::can_play`
+  for a Reaction that plays itself from the hand). `Turn::hand_plays` counts the turn's
+  plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
   card's cost then in `GainState::cost`), `Gain` window.
@@ -120,6 +124,8 @@ them.
   (Inheritance). Effects that look back at the turn ("the first Action you play", "the
   third Action you gain") count the types cards had then: `Turn::played_types` /
   `gained_types` (`played_of`, `gained_of`), never `Card::is` on `played` / `gained`.
+  "During your turns" and "this turn" modifiers ask `g.turn_player()`, which is no one
+  between turns and when the game is scored, never `g.turn.player`.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
   Debt, VP tokens, Projects, States, Adventures tokens, ...), `Pile` (VP / Debt /
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with

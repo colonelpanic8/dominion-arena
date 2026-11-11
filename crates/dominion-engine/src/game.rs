@@ -453,6 +453,10 @@ pub struct PlayState {
     /// The turn's $ when the card's own effect began (after "when you play" effects, such
     /// as a +$1 token): "if it gave you +$".
     pub coins: u32,
+    /// The log's length when the card's instructions were last begun (they are followed
+    /// more than once for a Reckless card): "if this made you shuffle".
+    #[serde(default)]
+    pub run_since: usize,
 }
 
 impl Game {
@@ -506,6 +510,16 @@ impl Game {
         self.zones[id.index()]
     }
 
+    /// Whether `id` is still where it was put (gained to, put onto a deck) for an effect
+    /// that expects it there: in `zone` and, on a deck, not covered by another card.
+    pub(crate) fn still_where_put(&self, id: CardId, zone: Zone) -> bool {
+        self.zone(id) == zone
+            && match zone {
+                Zone::Deck(p) => self.players[p.index()].deck.last() == Some(&id),
+                _ => true,
+            }
+    }
+
     /// Total number of physical cards in the game.
     pub fn card_count(&self) -> usize {
         self.cards.len()
@@ -541,6 +555,12 @@ impl Game {
 
     pub fn turn(&self) -> &Turn {
         &self.turn
+    }
+
+    /// Whose turn is in progress. No one's between turns and once the game is over, when
+    /// "during your turns" and "this turn" effects apply to nobody (scoring).
+    pub(crate) fn turn_player(&self) -> Option<PlayerId> {
+        (self.turn.phase != Phase::End).then_some(self.turn.player)
     }
 
     pub fn landscapes(&self) -> &[Card] {
@@ -722,6 +742,8 @@ impl Game {
             .count()
     }
 
+    /// `p`'s VP as the cards stand. During a turn its cost and type changes count; the
+    /// final scores are taken after the last turn, when none apply.
     pub fn score(&self, p: PlayerId) -> i32 {
         let player = &self.players[p.index()];
         let cards: i32 = player

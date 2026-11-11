@@ -94,8 +94,8 @@ impl SetRules for Rules {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if DURATIONS.contains(&c) => start(g, f, input),
             (Card::Highwayman, Hook::Ability(HIGHWAYMAN_BLOCK)) => {
-                // Resolved after a replacement (Enlightenment), it overrides it: the
-                // player picks which applies by ordering them.
+                // Resolved after a replacement (Enlightenment, Enchantress), it overrides
+                // it: the player picks which applies by ordering them.
                 let c = f.this();
                 if let Some(st) = g.plays.last_mut()
                     && st.card == c
@@ -167,6 +167,7 @@ impl SetRules for Rules {
                 if let Some(Occasion::Gain { card, .. }) = f.occ
                     && still_landed(g, card)
                 {
+                    g.show(card);
                     g.top_deck(card, f.player);
                 }
                 Flow::done()
@@ -512,7 +513,18 @@ fn still_landed(g: &Game, card: CardId) -> bool {
         .iter()
         .rev()
         .find(|st| st.card == card)
-        .is_some_and(|st| dest_zone(st.to, st.player) == g.zone(card))
+        .is_some_and(|st| g.still_where_put(card, dest_zone(st.to, st.player)))
+}
+
+/// Where `p` gained `card`: the first such gain logged since `since`.
+fn gained_to(g: &Game, p: PlayerId, card: CardId, since: usize) -> Option<Zone> {
+    let kind = g.card(card);
+    g.log()[since..].iter().find_map(|e| match e {
+        Event::Gained { player, card, to } if *player == p && *card == kind => {
+            Some(dest_zone(*to, p))
+        }
+        _ => None,
+    })
 }
 
 /// What a card being gained cost when it was gained.
@@ -931,6 +943,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 && still_landed(g, card)
             {
                 spend(g, p, 1);
+                g.show(card);
                 g.top_deck(card, p);
             }
             Flow::done()
@@ -1231,6 +1244,7 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             spend(g, p, if astrologers { k } else { k.div_ceil(2) }.max(1));
             if !astrologers {
                 for c in chosen {
+                    g.show_to(c, p);
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
                 return Flow::done();
@@ -1777,16 +1791,13 @@ fn contract(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// +1 Action and +2 Favors if this play's +3 Cards made its player shuffle.
+/// +1 Action and +2 Favors if the +3 Cards it just gave made its player shuffle.
 fn emissary(g: &mut Game, f: &mut CardFrame) {
     let p = f.player;
-    let card = g.card(f.this());
-    let played = g
-        .log()
-        .iter()
-        .rposition(|e| matches!(e, Event::Played { player, card: c } if *player == p && *c == card));
-    let shuffled = played.is_some_and(|i| {
-        g.log()[i..]
+    let this = f.this();
+    let run = g.plays.iter().rev().find(|st| st.card == this);
+    let shuffled = run.is_some_and(|st| {
+        g.log()[st.run_since..]
             .iter()
             .any(|e| matches!(e, Event::Shuffled { player } if *player == p))
     });
@@ -1834,6 +1845,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 => {
             for c in input.cards() {
                 f.s.cards.retain(|&x| x != c);
+                g.show(c);
                 g.put_in_hand(c, p);
             }
             f.s.i += 1;
@@ -1945,8 +1957,9 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.s.card = Some(g.card(c));
+            f.s.n = g.next_lasting as i32;
             f.pc = 2;
-            Flow::Call(Frame::play(p, c, true, f.chain_for_child()))
+            Flow::Call(Frame::play(p, c, true, vec![]))
         }
         2 => {
             f.pc = 3;
@@ -1960,6 +1973,16 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => match take_mode(f) {
             Some(0) => {
                 let c = f.s.pick.expect("set in step 1");
+                // Only a Duration played again keeps this in play with it, and then for
+                // what its first play left to do as well.
+                if g.is(c, Types::DURATION) {
+                    let (first, keeps) = (f.s.n as u32, f.keeps(g));
+                    for l in &mut g.lasting {
+                        if l.id >= first && l.keeps.last() == Some(&c) {
+                            l.keeps.extend(&keeps);
+                        }
+                    }
+                }
                 Flow::Call(Frame::play(p, c, false, f.chain_for_child()))
             }
             Some(_) => {
@@ -2378,6 +2401,7 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             f.pc = 2;
+            f.s.i = g.log().len();
             match input.pile() {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
                 None => {
@@ -2397,10 +2421,14 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         4 => {
             let m = mode_mask(input);
+            // The card is expected where it was gained to, which need not be the discard
+            // pile.
             if m & 1 != 0
                 && let Some(c) = f.s.pick
-                && g.zone(c) == Zone::Discard(p)
+                && gained_to(g, p, c, f.s.i)
+                    .is_some_and(|zone| zone != Zone::Hand(p) && g.still_where_put(c, zone))
             {
+                g.show(c);
                 g.put_in_hand(c, p);
             }
             if m & 2 != 0 {

@@ -417,11 +417,12 @@ impl SetRules for Rules {
     }
 
     fn modify_cost(g: &Game, card: Card, _id: Option<CardId>, cost: &mut Cost) {
+        let turn_player = g.turn_player();
         match card {
-            Card::Fisherman if g.player(g.turn.player).discard.is_empty() => {
+            Card::Fisherman if turn_player.is_some_and(|p| g.player(p).discard.is_empty()) => {
                 *cost = cost.minus_coins(3);
             }
-            Card::Destrier => {
+            Card::Destrier if turn_player.is_some() => {
                 *cost = cost.minus_coins(g.turn.gained.len().min(255) as u8);
             }
             _ => {}
@@ -429,7 +430,7 @@ impl SetRules for Rules {
     }
 
     fn fixed_cost(g: &Game, card: Card, _id: Option<CardId>) -> Option<Cost> {
-        if card != Card::Wayfarer {
+        if card != Card::Wayfarer || g.turn_player().is_none() {
             return None;
         }
         let log = g.log();
@@ -846,7 +847,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 Card::Falconer => two_types,
                 _ => false,
             };
-            if react && super::can_play(g, p, c) {
+            // Sleigh is discarded, not played.
+            if react && (g.card(c) == Card::Sleigh || super::can_play(g, p, c)) {
                 out.push(
                     Trigger::new(p, g.card(c), REACT)
                         .on(c)
@@ -1951,6 +1953,10 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
     match f.pc {
         0 => {
             let play = g.plays.last().filter(|st| st.card == id);
+            // The card's instructions do nothing (Highwayman).
+            if play.is_some_and(|st| st.blocked) {
+                return Flow::done();
+            }
             // The card's instructions were replaced (Enlightenment, Enchantress): follow
             // the replacement, unchanged.
             if let Some(plus) = play.and_then(|st| st.replaced) {

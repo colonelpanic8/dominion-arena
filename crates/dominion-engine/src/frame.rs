@@ -322,7 +322,8 @@ impl Frame {
     }
 
     /// Play `card`, moving it into play first if `move_to_play`. `chain` lists the cards
-    /// that are playing it (Throne Room, ...), which stay in play as long as it does.
+    /// that are playing it (Throne Room, ...), which stay in play as long as it does. A
+    /// play from the hand that `SetRules::can_play` forbids does nothing.
     pub(crate) fn play(
         player: PlayerId,
         card: CardId,
@@ -1248,8 +1249,13 @@ impl PlayFrame {
         let (p, id) = (self.player, self.card);
         match self.pc {
             0 => {
-                if self.move_to_play && g.zone(id) == Zone::Hand(p) && p == g.turn.player {
-                    g.turn.hand_plays += 1;
+                if self.move_to_play && g.zone(id) == Zone::Hand(p) {
+                    if !cards::can_play(g, p, id) {
+                        return Flow::done();
+                    }
+                    if p == g.turn.player {
+                        g.turn.hand_plays += 1;
+                    }
                 }
                 if self.move_to_play && g.zone(id) != Zone::InPlay(p) {
                     g.move_card(id, Zone::InPlay(p), Pos::Top);
@@ -1273,6 +1279,7 @@ impl PlayFrame {
                     blocked: false,
                     since,
                     coins: g.turn.coins,
+                    run_since: since,
                 });
                 self.pc = 1;
                 Flow::Call(Frame::window(Occasion::Play {
@@ -1293,15 +1300,15 @@ impl PlayFrame {
             }
             2 => {
                 self.pc = 6;
-                let st = g.plays.last().expect("play in progress");
                 let ways: Vec<Card> = g
                     .landscapes
                     .iter()
                     .copied()
                     .filter(|&l| l.kind() == Kind::Way && cards::can_use_way(g, id, l))
                     .collect();
-                // A Way can be used instead of a replaced effect (Enchantress, Enlightenment).
-                if ways.is_empty() || st.blocked || !g.is(id, Types::ACTION) {
+                // A Way can be used instead of a replaced or blocked effect (Enchantress,
+                // Enlightenment, Highwayman).
+                if ways.is_empty() || !g.is(id, Types::ACTION) {
                     return Flow::Continue;
                 }
                 let mut options = vec![Opt::No];
@@ -1353,9 +1360,11 @@ impl PlayFrame {
                 Flow::Continue
             }
             4 => {
-                let st = g.plays.last().expect("play in progress").clone();
+                let st = g.plays.last_mut().expect("play in progress");
+                st.run_since = g.log.len();
+                let st = st.clone();
                 self.pc = 7;
-                if st.blocked {
+                if st.blocked && st.way.is_none() {
                     return Flow::Continue;
                 }
                 let mine = p == g.turn.player;

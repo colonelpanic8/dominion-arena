@@ -256,7 +256,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         1 => {
-            let treasures = g.cards_in_hand_where(p, Types::TREASURE);
+            let treasures = g.playable(p, Types::TREASURE);
             if treasures.is_empty() {
                 f.pc = 3;
                 return Flow::Continue;
@@ -623,9 +623,8 @@ fn sauna_avanto(g: &mut Game, f: &mut CardFrame, input: Input, other: Card) -> F
     match f.pc {
         0 => {
             let candidates: Vec<CardId> = g
-                .hand(f.player)
-                .iter()
-                .copied()
+                .playable(f.player, Types::ACTION)
+                .into_iter()
                 .filter(|&c| g.card(c) == other)
                 .collect();
             f.pc = 1;
