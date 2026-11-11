@@ -3203,3 +3203,20 @@ fn bury_does_not_reveal_the_buried_card() {
     };
     assert!(!g.trace().unwrap().contains(&shown));
 }
+
+#[test]
+fn orb_looks_through_the_discard_pile_before_asking_which_option() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Orb]);
+    let under = discard(&mut g, P0, &[Card::Village, Card::Estate])[0];
+    g.enable_trace();
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Orb);
+    assert_eq!(purpose(&g), Purpose::Mode);
+    let looked = Trace::Shown {
+        card: under,
+        to: Some(P0),
+    };
+    assert!(g.trace().unwrap().contains(&looked));
+}

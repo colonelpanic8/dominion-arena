@@ -2480,6 +2480,9 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
+            for c in g.player(p).discard.clone() {
+                g.show_to(c, p);
+            }
             f.pc = 1;
             f.ask_modes(
                 &["Play an Action or Treasure from your discard pile", "+1 Buy and +$3"],
