@@ -729,6 +729,10 @@ fn wishing_well_takes_the_named_card() {
     g.start();
     play(&mut g, Card::WishingWell);
     respond(&mut g, Response::Name(Card::Gold));
+    assert!(g.log().contains(&Event::Named {
+        player: P0,
+        card: Card::Gold
+    }));
     assert_eq!(
         hand_kinds(&g, P0),
         [Card::WishingWell, Card::Copper, Card::Gold]

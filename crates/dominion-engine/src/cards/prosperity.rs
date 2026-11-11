@@ -7,7 +7,7 @@ use crate::frame::{Flow, Frame, Input};
 use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::setup::Setup;
 use crate::trigger::{Occasion, Trigger};
-use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Types};
+use crate::{Card, CardId, Cost, Game, Note, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -26,6 +26,14 @@ const TALISMAN_COPY: u8 = 0;
 const GOONS_VP: u8 = 0;
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        for l in g.lasting() {
+            if let (Card::Contraband | Card::WarChest, Some(named)) = (l.card, l.data.card) {
+                out.push(Note::new(l.card).player(l.owner).card(named));
+            }
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (Card::Watchtower, Hook::Ability(WATCHTOWER_REACT)) => watchtower_react(g, f, input),

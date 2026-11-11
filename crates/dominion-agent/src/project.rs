@@ -853,6 +853,16 @@ pub(crate) fn log_entry(seq: usize, event: &Event, cx: &Context<'_>) -> LogEntry
             Some(*card),
             format!("{} plays {card}", name(*player)),
         ),
+        Event::UsedWay { player, card, way } => (
+            Some(*player),
+            Some(*way),
+            format!("{} uses {way} for {card}", name(*player)),
+        ),
+        Event::Named { player, card } => (
+            Some(*player),
+            Some(*card),
+            format!("{} names {card}", name(*player)),
+        ),
         Event::Bought { player, card } | Event::BoughtLandscape { player, card } => (
             Some(*player),
             Some(*card),

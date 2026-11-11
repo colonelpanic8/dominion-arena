@@ -1468,6 +1468,11 @@ impl PlayFrame {
             6 => {
                 if let Some(Opt::Card(way)) = input.opt() {
                     g.plays.last_mut().expect("play in progress").way = Some(way);
+                    g.emit(Event::UsedWay {
+                        player: p,
+                        card: g.card(id),
+                        way,
+                    });
                 }
                 let st = g.plays.last().expect("play in progress");
                 if st.way.is_none() && st.replaced.is_none() && !st.blocked {

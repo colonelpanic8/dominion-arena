@@ -356,3 +356,31 @@ fn a_question_about_looked_at_cards_names_them() {
         d.prompt
     );
 }
+
+#[test]
+fn everyone_sees_the_card_named_for_contraband() {
+    let mut t = table(&[Card::Contraband], 0, &[]);
+    let naming = |_: PlayerId, d: &AgentDecision| d.name_any;
+    assert_eq!(play_to(&mut t, "Contraband", naming), Some(PlayerId(1)));
+    let d = t.view(PlayerId(1)).decision.unwrap();
+    assert_eq!(d.source.as_deref(), Some("Contraband"));
+    t.answer(PlayerId(1), &Answer::name(&d.id, "Duchy"))
+        .unwrap();
+    for seat in [PlayerId(0), PlayerId(1)] {
+        let view = t.view(seat);
+        assert!(
+            view.notes
+                .iter()
+                .any(|n| n.source == "Contraband" && n.card.as_deref() == Some("Duchy")),
+            "{seat}: {:?}",
+            view.notes
+        );
+        assert!(
+            view.since_last_decision
+                .iter()
+                .any(|e| e.kind == "named" && e.card.as_deref() == Some("Duchy")),
+            "{seat}: {:?}",
+            view.since_last_decision
+        );
+    }
+}

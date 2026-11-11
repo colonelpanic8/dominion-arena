@@ -873,12 +873,16 @@ impl Game {
             .as_ref()
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
+        let player = decision.player;
         if let (DecisionKind::Cards { ordered: true, .. }, Response::Cards(cards)) =
             (&decision.kind, &response)
             && cards.len() > 1
         {
             let cards = cards.clone();
             self.record(|| crate::Trace::Mixed { cards });
+        }
+        if let Response::Name(card) = response {
+            self.emit(Event::Named { player, card });
         }
         self.pending = None;
         self.run(Input::Response(response));
