@@ -267,7 +267,7 @@ impl SetRules for Rules {
                 if f.pc == 0 {
                     plus_buys(g, f.player, 1);
                 }
-                let actions = g.cards_in_hand_where(f.player, Types::ACTION);
+                let actions = g.playable(f.player, Types::ACTION);
                 play_one_of(f, input, actions, true)
             }
             (Card::Transport, _) => transport(g, f, input),
@@ -500,13 +500,25 @@ impl SetRules for Rules {
                 .piles
                 .iter()
                 .any(|pile| pile.cards.iter().any(|&c| HORSE_USERS.contains(&g.printed(c))));
-        if uses_horses && g.pile_of(Card::Horse).is_none() {
-            setup::add_pile(g, Card::Horse, 30, false);
+        if uses_horses {
+            add_horses(g);
+        }
+    }
+
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+        if cards.iter().any(|c| HORSE_USERS.contains(c)) {
+            add_horses(g);
         }
     }
 }
 
 // ---- Helpers ----
+
+fn add_horses(g: &mut Game) {
+    if g.pile_of(Card::Horse).is_none() {
+        setup::add_pile(g, Card::Horse, 30, false);
+    }
+}
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
     if p == g.turn.player && !g.turn.ignore_plus_actions {
@@ -747,7 +759,8 @@ fn play_one_of(
 /// A reaction that plays this card from `zone` if it is still there.
 fn play_from(g: &mut Game, f: &mut CardFrame, zone: Zone) -> Flow {
     let this = f.this();
-    if f.pc == 0 && g.zone(this) == zone {
+    let allowed = !matches!(zone, Zone::Hand(_)) || super::can_play(g, f.player, this);
+    if f.pc == 0 && g.zone(this) == zone && allowed {
         f.pc = 1;
         if let Zone::Discard(p) = zone {
             g.emit(Event::Revealed {
@@ -825,8 +838,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         }
         match l.card {
             Card::Livery => {
-                let cost = g.gains.iter().rev().find(|s| s.card == card).map(|s| s.cost);
-                if cost.is_some_and(|c| c.coins >= 4) {
+                if g.gain_cost(card).is_some_and(|c| c.coins >= 4) {
                     out.push(Trigger::new(gainer, Card::Livery, LIVERY_HORSE).via_lasting(l.id).on(card));
                 }
             }
@@ -867,7 +879,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 Card::Falconer => two_types,
                 _ => false,
             };
-            if react {
+            if react && super::can_play(g, p, c) {
                 out.push(
                     Trigger::new(p, g.card(c), REACT)
                         .on(c)
@@ -1077,7 +1089,7 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         Card::Mastermind => match f.pc {
             1 => {
-                let actions = g.cards_in_hand_where(p, Types::ACTION);
+                let actions = g.playable(p, Types::ACTION);
                 if actions.is_empty() {
                     return Flow::done();
                 }
@@ -1974,11 +1986,17 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
     let id = f.this();
     match f.pc {
         0 => {
-            let behavior = g
-                .plays
-                .last()
-                .filter(|st| st.card == id)
-                .map_or(g.card(id), |st| st.behavior);
+            let play = g.plays.last().filter(|st| st.card == id);
+            // The card's instructions were replaced (Enlightenment, Enchantress): follow
+            // the replacement, unchanged.
+            if let Some(plus) = play.and_then(|st| st.replaced) {
+                plus_actions(g, p, plus.actions as u32);
+                plus_buys(g, p, plus.buys as u32);
+                g.add_coins(p, plus.coins as u32);
+                f.pc = 3;
+                return Flow::Call(Frame::draw(p, plus.cards as usize));
+            }
+            let behavior = play.map_or(g.card(id), |st| st.behavior);
             f.s.card = Some(behavior);
             f.s.n = g.next_lasting as i32;
             let def = behavior.def();
@@ -2005,6 +2023,7 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
             f.pc = 2;
             Flow::Call(Frame::Card(Box::new(child)))
         }
+        3 => Flow::done(),
         _ => {
             let st = &mut g.ext.menagerie;
             if let Some(i) = st.chameleon.iter().rposition(|&c| c == id) {

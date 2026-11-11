@@ -2320,4 +2320,102 @@ fn village_greens_discarded_to_militia_together_can_each_be_played() {
     choose_kinds(&mut g, &[Card::VillageGreen, Card::VillageGreen]);
     // Both are in the discard pile before either reacts.
     assert_eq!(discard_kinds(&g, P1), [Card::VillageGreen; 2]);
+    trigger(&mut g, Card::VillageGreen);
+    modes(&mut g, &[1]);
+    trigger(&mut g, Card::VillageGreen);
+    modes(&mut g, &[1]);
+    assert_eq!(in_play_kinds(&g, P1), [Card::VillageGreen; 2]);
+}
+
+// ---- Other sets ----
+
+fn enlightened(way: Card) -> Game {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[way, Card::Enlightenment]);
+    g.prophecy = Some((Card::Enlightenment, 0));
+    g
+}
+
+#[test]
+fn a_way_can_be_used_on_a_treasure_enlightenment_lets_you_play_as_an_action() {
+    let mut g = enlightened(Card::WayOfTheOx);
+    hand(&mut g, P0, &[Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Gold);
+    way(&mut g, Card::WayOfTheOx);
+    assert_eq!(
+        (g.turn().actions, g.turn().coins, g.hand(P0).len()),
+        (2, 0, 0)
+    );
+}
+
+#[test]
+fn enlightenment_still_replaces_a_treasure_played_with_way_of_the_chameleon() {
+    let mut g = enlightened(Card::WayOfTheChameleon);
+    hand(&mut g, P0, &[Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Gold);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!(
+        (g.turn().actions, g.turn().coins, g.hand(P0).len()),
+        (1, 0, 1)
+    );
+}
+
+#[test]
+fn changeling_cannot_exchange_a_fisherman_that_cost_two_when_gained() {
+    let mut g = setup(&[Card::Changeling, Card::Fisherman]);
+    hand(&mut g, P0, &[Card::Silver]);
+    g.start();
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy(&mut g, Card::Fisherman);
+    assert_eq!(purpose(&g), Purpose::Turn);
+    assert_eq!(discard_kinds(&g, P0), [Card::Fisherman]);
+}
+
+#[test]
+fn changeling_can_exchange_a_destrier_that_cost_three_when_gained() {
+    let mut g = setup(&[Card::Changeling, Card::Destrier]);
+    hand(&mut g, P0, &[Card::Gold]);
+    g.start();
+    g.turn.buys = 5;
+    play_treasures(&mut g);
+    for _ in 0..3 {
+        buy(&mut g, Card::Copper);
+    }
+    assert_eq!(g.cost(Card::Destrier), Cost::coins(3));
+    buy(&mut g, Card::Destrier);
+    trigger(&mut g, Card::Changeling);
+    assert_eq!(discard_kinds(&g, P0).last(), Some(&Card::Changeling));
+}
+
+#[test]
+fn horse_users_joining_the_game_late_bring_the_horse_pile() {
+    let mut g = setup(&[Card::Smithy]);
+    assert!(g.pile_of(Card::Horse).is_none());
+    crate::cards::setup_added_piles(&mut g, &[Card::Smithy]);
+    assert!(g.pile_of(Card::Horse).is_none());
+    crate::cards::setup_added_piles(&mut g, &[Card::Supplies]);
+    let horses = g.pile_of(Card::Horse).expect("a Horse pile");
+    assert!(!g.pile(horses).in_supply);
+    crate::cards::setup_added_piles(&mut g, &[Card::Sleigh]);
+    assert_eq!(
+        g.piles().iter().filter(|p| p.card == Card::Horse).count(),
+        1
+    );
+}
+
+#[test]
+fn toil_may_play_a_shadow_card_from_the_deck() {
+    let mut g = setup_with_landscapes(&[Card::Fishmonger], &[Card::Toil]);
+    hand(&mut g, P0, &[Card::Silver]);
+    deck(&mut g, P0, &[Card::Fishmonger, Card::Copper]);
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Toil);
+    choose_kinds(&mut g, &[Card::Fishmonger]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Silver, Card::Fishmonger]);
+    assert_eq!((g.turn().buys, g.turn().coins), (2, 1));
 }
