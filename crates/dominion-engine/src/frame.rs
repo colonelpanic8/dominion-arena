@@ -1011,6 +1011,7 @@ impl PlayFrame {
             }
             1 => {
                 self.pc = 2;
+                g.plays.last_mut().expect("play in progress").coins = g.turn.coins;
                 let st = g.plays.last().expect("play in progress");
                 let ways: Vec<Card> = g
                     .landscapes

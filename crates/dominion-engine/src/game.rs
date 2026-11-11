@@ -379,7 +379,8 @@ pub struct PlayState {
     /// The log's length when the play began: effects set up later ("the next time you
     /// play ...") don't respond to it.
     pub since: usize,
-    /// The turn's $ when the play began.
+    /// The turn's $ when the card's own effect began (after "when you play" effects, such
+    /// as a +$1 token): "if it gave you +$".
     pub coins: u32,
 }
 
