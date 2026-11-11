@@ -1813,3 +1813,133 @@ fn war_trashes_the_first_card_costing_three_or_four() {
     assert!(g.player(P1).deck.is_empty());
     assert_eq!(g.player(P1).discard.len(), 2);
 }
+
+// ---- Interactions ----
+
+#[test]
+fn a_face_down_card_trashed_again_is_face_up_for_necromancer() {
+    let mut g = setup(&[Card::Necromancer, Card::Village, Card::Chapel]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::Necromancer,
+            Card::Chapel,
+            Card::Necromancer,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Necromancer);
+    choose_kinds(&mut g, &[Card::ZombieSpy]);
+    no(&mut g);
+    let spy = *g
+        .trash()
+        .iter()
+        .find(|&&c| g.card(c) == Card::ZombieSpy)
+        .unwrap();
+    g.move_card(spy, Zone::Hand(P0), crate::game::Pos::Top);
+    play(&mut g, Card::Chapel);
+    choose(&mut g, &[spy]);
+    assert!(g.lasting().is_empty());
+    play(&mut g, Card::Necromancer);
+    assert!(candidates(&g).contains(&spy));
+}
+
+#[test]
+fn a_faithful_hound_set_aside_from_vassal_is_not_played() {
+    let mut g = setup(&[Card::FaithfulHound, Card::Vassal]);
+    hand(&mut g, P0, &[Card::Vassal]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::FaithfulHound, Card::Copper, Card::Copper],
+    );
+    g.start();
+    play(&mut g, Card::Vassal);
+    trigger(&mut g, 0);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::FaithfulHound]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Vassal]);
+    next_turn(&mut g);
+    assert_eq!(hand_kinds(&g, P0).last(), Some(&Card::FaithfulHound));
+}
+
+#[test]
+fn a_card_gained_to_hand_exchanged_for_a_changeling_sends_it_to_the_discard_pile() {
+    let mut g = setup(&[Card::Changeling, Card::GhostTown]);
+    hand(&mut g, P0, &[Card::Silver, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::GhostTown);
+    trigger(&mut g, 0);
+    assert_eq!(pile_size(&g, Card::GhostTown), 10);
+    assert_eq!(g.count_owned(P0, Card::Changeling), 1);
+    assert!(!hand_kinds(&g, P0).contains(&Card::GhostTown));
+}
+
+#[test]
+fn druid_with_the_rivers_gift_draws_at_end_of_turn_and_keeps_the_boon() {
+    let mut g = setup(&[Card::Druid]);
+    g.ext.nocturne.druid = vec![
+        Card::TheRiversGift,
+        Card::TheSeasGift,
+        Card::TheMountainsGift,
+    ];
+    hand(&mut g, P0, &[Card::Druid]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Druid);
+    pick(&mut g, Card::TheRiversGift);
+    next_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!(g.ext.nocturne.druid.len(), 3);
+    assert!(!g.boons().discard.contains(&Card::TheRiversGift));
+}
+
+#[test]
+fn crypt_cannot_set_aside_duration_treasures() {
+    let mut g = setup(&[Card::Crypt, Card::Astrolabe]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Astrolabe, Card::Silver, Card::Crypt, Card::Guardian],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Astrolabe);
+    play(&mut g, Card::Silver);
+    to_night(&mut g);
+    play(&mut g, Card::Crypt);
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Silver]);
+}
+
+#[test]
+fn moat_blocks_raider_at_night() {
+    let mut g = setup(&[Card::Raider, Card::Moat]);
+    hand(&mut g, P0, &[Card::Copper, Card::Raider]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Copper,
+            Card::Copper,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    to_night(&mut g);
+    play(&mut g, Card::Raider);
+    trigger(&mut g, 0);
+    assert_eq!(g.hand(P1).len(), 5);
+    next_turn(&mut g);
+    assert_eq!(g.turn().coins, 3);
+}
