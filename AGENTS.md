@@ -1,8 +1,9 @@
 # dominion-engine
 
-A headless Rust rules engine for Dominion: every card from every expansion, played
-exactly by the current rules (second editions / Dominion Online, plus the cards removed
-in second editions). It ships no bots and no UI; anything that plays implements `Agent`.
+A headless Rust rules engine for Dominion: every card from every expansion but
+Possession, played exactly by the current rules (second editions / Dominion Online, plus
+the cards removed in second editions). It ships no bots and no UI; anything that plays
+implements `Agent`.
 
 ## Checks
 
@@ -46,9 +47,13 @@ entry has `name`, `set`, `types`, official `text` (lines separated by `\n`, `---
 the dividing line), and as applicable `cost` (`coins`, `potions`, `debt`, `variable`,
 `overpay`), `plus` (leading vanilla bonuses: `cards`, `actions`, `buys`, `coins`,
 `villagers`, `coffers`, `favors`), `coins` (a Treasure's value), `potions`, `vp`,
-`kingdom`, `basic`, `removed`, and `pile` (the randomizer or top card of its mixed or
-split pile). `build.rs` turns it into `Card` (one variant per entry, named by
-CamelCasing the name), `Types` and the `CardDef` table. Arcana is unreleased: its entries are names and types only, none are Kingdom cards yet, and it has no behavior; re-import it once its cards are public. Edit the JSON to fix data; the
+`kingdom`, `unimplemented`, `basic`, `removed`, and `pile` (the randomizer or top card
+of its mixed or split pile). `build.rs` turns it into `Card` (one variant per entry, named by
+CamelCasing the name), `Types` and the `CardDef` table. Arcana is unreleased: its entries are names and types only, none are Kingdom cards yet, and it has no behavior; re-import it once its cards are public.
+Possession is deliberately unimplemented: its entry is marked `unimplemented`, which
+makes it no Kingdom card to the engine, and setup rejects it (`SetupError::Unimplemented`).
+Don't add back what it needed (another player deciding or seeing a player's cards,
+redirected gains, trashing or Debt) for any other card. Edit the JSON to fix data; the
 vanilla bonuses were parsed automatically and must be right, because the engine applies
 them.
 
@@ -73,17 +78,14 @@ them.
   and paying off Debt are moves in the Action, Buy and Night phases alike (outside the Buy
   phase, offered only where they could matter: `push_token_moves`). Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
-  in a row: check `g.third_in_a_row(p)` before queuing one; Possession: not a second
-  extra turn in a row; Seize the Day: never), and extra turns
-  don't count for the tiebreaker. Between turns the player who just took a turn takes
+  in a row: check `g.third_in_a_row(p)` before queuing one; Seize the Day: never), and
+  extra turns don't count for the tiebreaker. Between turns the player who just took a turn takes
   their extra turns first, then the others in turn order; one with different extra turns
   pending chooses which to take (`Purpose::Either`, `Opt::Card(source)`), and an extra
   turn that can't follow the last turn is lost. Once the game has ended, extra turns
   happen only before a turn of Fleet's round. `Player::skip_turns` skips the next turns
   a player would take (Lich), Fleet's included; skipped regular turns count for the
-  tiebreaker. `Turn::controller` makes someone else decide and see
-  the player's cards (Possession, which also replaces gains, trashing through
-  `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
+  tiebreaker.
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
   (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`: they are the card's
   player's, and the one resolved last applies), choose a Way if the game has Ways (it
@@ -105,8 +107,8 @@ them.
   card's cost then in `GainState::cost` and the phase in `GainState::phase`: a gain
   "in your Buy phase" is tested with `g.gain_phase(id)`, because Cavalry and Villa change
   `turn.phase` while their gain's window is open), `Gain` window. An effect that goes on
-  with the card it gained asks `g.gained_to(p, id)` where `p` gained it to (`None` if
-  someone else gained it instead: Possession) rather than assuming the discard pile.
+  with the card it gained asks `g.gained_to(p, id)` where `p` gained it to rather than
+  assuming the discard pile.
   **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
   (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
   `f.data` = the $ and `f.s.cost` = all of it), `Buy` window (`Occasion::Buy` carries
@@ -164,7 +166,7 @@ them.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
   Debt, VP tokens, Projects, States, Adventures tokens, ...), `Pile` (VP / Debt /
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with
-  `g.add_debt` (never `debt +=`), so Possession can redirect it. A set's own state goes in
+  `g.add_debt` (never `debt +=`). A set's own state goes in
   its `State` struct (`g.ext.<set>`). Everything must stay `Clone + Serialize`.
 - **Shuffling** goes through `Frame::shuffle` (a discard pile into its deck) or
   `Frame::shuffle_deck` (a whole deck: Inn, Famine), never by hand: `WouldShuffle`,

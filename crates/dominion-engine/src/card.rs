@@ -160,6 +160,8 @@ pub struct CardDef {
     pub vp: i8,
     /// Can be one of a game's Kingdom piles (as a pile's randomizer or top card).
     pub kingdom: bool,
+    /// A Kingdom card the engine deliberately leaves out (Possession): never in a game.
+    pub unimplemented: bool,
     /// One of the basic Supply cards (Copper, Curse, Potion, Colony, ...).
     pub basic: bool,
     /// Removed in a later edition; still playable.

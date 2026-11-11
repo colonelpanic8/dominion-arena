@@ -492,9 +492,7 @@ impl Frame {
                 for &c in cards.iter() {
                     let from = g.zone(c);
                     g.show(c);
-                    if !cards::trash_instead(g, *player, c) {
-                        g.move_card(c, Zone::Trash, Pos::Top);
-                    }
+                    g.move_card(c, Zone::Trash, Pos::Top);
                     g.trashing.push((c, from));
                     let card = g.card(c);
                     if *player == g.turn.player {
@@ -702,7 +700,6 @@ fn fails(g: &Game, extra: &ExtraTurn) -> bool {
     match extra.limit {
         ExtraLimit::None => false,
         ExtraLimit::ThirdInARow => g.third_in_a_row(extra.player),
-        ExtraLimit::SecondExtraInARow => g.turn.player == extra.player && g.turn.extra.is_some(),
     }
 }
 
@@ -762,7 +759,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     .iter()
                     .position(|e| e.player == p && e.source == source)
                     .expect("the chosen extra turn is pending");
-                let extra = g.extra_turns.remove(i).expect("in range");
+                g.extra_turns.remove(i);
                 if g.skips_turn(p, true) {
                     // What kept its card in play for that turn (Voyage, Outpost) ends, so
                     // the card is discarded in the next Clean-up.
@@ -773,7 +770,6 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 }
                 g.turn = Turn::new(p);
                 g.turn.previous = last;
-                g.turn.controller = extra.controller;
                 g.turn.extra = Some(source);
                 g.record_turn();
                 *pc = 1;

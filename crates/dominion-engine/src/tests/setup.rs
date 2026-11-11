@@ -293,6 +293,36 @@ fn invalid_choices_are_rejected() {
 }
 
 #[test]
+fn possession_is_rejected_in_a_kingdom_and_in_a_setup_choice() {
+    let unimplemented = Some(SetupError::Unimplemented(Card::Possession));
+    assert_eq!(
+        build(config(&[Card::Possession], &[], &[])).err(),
+        unimplemented
+    );
+    assert_eq!(
+        build(config(
+            &[Card::BlackMarket],
+            &[],
+            &[(Card::BlackMarket, &[Card::Possession])]
+        ))
+        .err(),
+        unimplemented
+    );
+}
+
+#[test]
+fn possession_is_never_dealt_or_chosen_at_random() {
+    for seed in 0..300 {
+        let mut config = GameConfig::random(2, &[Set::Alchemy], seed);
+        assert!(!config.kingdom.contains(&Card::Possession), "seed {seed}");
+        config.kingdom[..2].copy_from_slice(&[Card::BlackMarket, Card::YoungWitch]);
+        config.landscapes = vec![Card::WayOfTheMouse];
+        let g = build(config).expect("setup");
+        assert!(!g.cards.contains(&Card::Possession), "seed {seed}");
+    }
+}
+
+#[test]
 fn a_card_configured_for_one_choice_is_not_dealt_to_another() {
     // Young Witch's random Bane is chosen before Way of the Mouse's configured card.
     for seed in 0..40 {

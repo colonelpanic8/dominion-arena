@@ -133,17 +133,6 @@ pub(crate) trait SetRules {
     /// Changes a player's starting deck (Heirlooms, ...).
     fn modify_starting_deck(g: &Game, p: PlayerId, deck: &mut Vec<Card>) {}
 
-    /// Replaces moving `id`, which `p` is trashing, to the trash (Possession sets it aside).
-    /// Returns whether it moved the card itself.
-    fn trash_instead(g: &mut Game, p: PlayerId, id: CardId) -> bool {
-        false
-    }
-
-    /// Who takes the Debt `p` would take, if someone else does (Possession).
-    fn debt_taker(g: &Game, p: PlayerId) -> Option<PlayerId> {
-        None
-    }
-
     /// Reacts to `event` as it is logged, for effects that only change counters and
     /// never move cards or ask anything (Patron's +1 Coffers when revealed).
     fn on_event(g: &mut Game, event: &Event) {}
@@ -298,14 +287,6 @@ macro_rules! sets {
 
         pub(crate) fn modify_starting_deck(g: &Game, p: PlayerId, deck: &mut Vec<Card>) {
             $(<$module::Rules as SetRules>::modify_starting_deck(g, p, deck);)*
-        }
-
-        pub(crate) fn trash_instead(g: &mut Game, p: PlayerId, id: CardId) -> bool {
-            false $(|| <$module::Rules as SetRules>::trash_instead(g, p, id))*
-        }
-
-        pub(crate) fn debt_taker(g: &Game, p: PlayerId) -> Option<PlayerId> {
-            None$(.or_else(|| <$module::Rules as SetRules>::debt_taker(g, p)))*
         }
 
         pub(crate) fn on_event(g: &mut Game, event: &Event) {

@@ -27,8 +27,6 @@ pub struct Knowledge {
     #[serde(with = "zone_map")]
     members: HashMap<Zone, Vec<CardId>>,
     minds: Vec<Mind>,
-    /// The turn's player and who controls it, as of the trace consumed so far.
-    turn: (PlayerId, PlayerId),
     /// Where the last `Created` card went, and that card, to group cards created together.
     created_in: Option<(Container, CardId)>,
 }
@@ -210,12 +208,6 @@ fn marked(card: Card) -> bool {
     card == Card::Stash
 }
 
-/// Whether `v` sees what `p` sees: their own cards, or those of a player whose turn they
-/// control.
-fn sees_for(turn: (PlayerId, PlayerId), v: PlayerId, p: PlayerId) -> bool {
-    v == p || turn == (p, v)
-}
-
 fn public(game: &Game, zone: Zone) -> bool {
     match zone {
         Zone::InPlay(_) | Zone::Trash => true,
@@ -226,11 +218,9 @@ fn public(game: &Game, zone: Zone) -> bool {
 }
 
 /// Whether the owner's view of `zone` lets `v` follow cards in and out of it.
-fn private_to(turn: (PlayerId, PlayerId), zone: Zone, v: PlayerId) -> bool {
+fn private_to(zone: Zone, v: PlayerId) -> bool {
     match zone {
-        Zone::Hand(p) | Zone::SetAside(p) | Zone::Mat(p, Mat::NativeVillage) => {
-            sees_for(turn, v, p)
-        }
+        Zone::Hand(p) | Zone::SetAside(p) | Zone::Mat(p, Mat::NativeVillage) => v == p,
         _ => false,
     }
 }
@@ -242,7 +232,6 @@ impl Knowledge {
             is: vec![],
             members: HashMap::new(),
             minds: vec![Mind::default(); players],
-            turn: (PlayerId(0), PlayerId(0)),
             created_in: None,
         }
     }
@@ -281,13 +270,13 @@ impl Knowledge {
                 self.created_in = None;
                 let is = self.is[card.index()];
                 for (v, mind) in self.minds.iter_mut().enumerate() {
-                    if to.is_none_or(|p| sees_for(self.turn, PlayerId(v as u8), p)) {
+                    if to.is_none_or(|p| p == PlayerId(v as u8)) {
                         mind.identify(card, is);
                         mind.recent.insert(card);
                     }
                 }
             }
-            Trace::Turn { player, controller } => self.turn = (player, controller),
+            Trace::Turn { .. } => {}
             Trace::Changed { card, from, to } => {
                 self.created_in = None;
                 self.is[card.index()] = to;
@@ -360,7 +349,7 @@ impl Knowledge {
         let shown = public(game, from) || public(game, to) || marked(is);
         for (v, mind) in self.minds.iter_mut().enumerate() {
             let v = PlayerId(v as u8);
-            if shown || private_to(self.turn, from, v) || private_to(self.turn, to, v) {
+            if shown || private_to(from, v) || private_to(to, v) {
                 mind.identify(card, is);
                 mind.recent.insert(card);
                 continue;

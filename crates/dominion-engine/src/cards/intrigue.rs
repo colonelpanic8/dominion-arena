@@ -387,7 +387,6 @@ fn ironworks(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             None => Flow::done(),
         },
         2 => {
-            // No bonus for a card someone else gained instead (Possession).
             let Some(c) = input.card().filter(|&c| g.gained_to(f.player, c).is_some()) else {
                 return Flow::done();
             };

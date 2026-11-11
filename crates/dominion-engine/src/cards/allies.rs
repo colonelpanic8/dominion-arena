@@ -1180,7 +1180,6 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             g.extra_turns.push_front(ExtraTurn {
                 player: p,
                 source: Card::IslandFolk,
-                controller: p,
                 limit: ExtraLimit::ThirdInARow,
             });
             Flow::done()
@@ -2469,7 +2468,6 @@ fn voyage(g: &mut Game, f: &mut CardFrame) {
     g.extra_turns.push_back(ExtraTurn {
         player: p,
         source: Card::Voyage,
-        controller: p,
         limit: ExtraLimit::ThirdInARow,
     });
     g.add_lasting(

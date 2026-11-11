@@ -315,7 +315,6 @@ impl SetRules for Rules {
                     g.extra_turns.push_back(ExtraTurn {
                         player: p,
                         source: Card::Journey,
-                        controller: g.turn.controller,
                         limit: ExtraLimit::ThirdInARow,
                     });
                 }

@@ -270,7 +270,11 @@ pub fn config(req: &NewGame) -> Result<GameConfig, HubError> {
     let kingdom: Vec<Card> = req
         .kingdom
         .iter()
-        .map(|n| card(n, "Kingdom pile", |c| c.def().kingdom))
+        .map(|n| {
+            card(n, "Kingdom pile", |c| {
+                c.def().kingdom || c.def().unimplemented
+            })
+        })
         .collect::<Result<_, _>>()?;
     let landscapes: Vec<Card> = req
         .landscapes

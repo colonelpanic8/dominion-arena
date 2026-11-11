@@ -97,8 +97,6 @@ pub struct TurnView {
     pub your_turn: bool,
     pub phase: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub controller: Option<u8>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actions: Option<u32>,

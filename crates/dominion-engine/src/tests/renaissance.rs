@@ -295,7 +295,7 @@ fn patron_in_a_hand_revealed_to_bureaucrat_gives_coffers() {
 
 #[test]
 fn patron_revealed_from_the_black_market_deck_gives_coffers() {
-    let mut g = setup(&[Card::BlackMarket]);
+    let mut g = super::promos::setup_black_market();
     let bm = g.ext.promos.black_market.expect("a Black Market deck");
     g.create(Card::Patron, Zone::Pile(bm));
     hand(&mut g, P0, &[Card::BlackMarket]);

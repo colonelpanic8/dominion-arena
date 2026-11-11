@@ -661,7 +661,6 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
     g.extra_turns.push_back(ExtraTurn {
         player: p,
         source: Card::Outpost,
-        controller: p,
         limit: ExtraLimit::ThirdInARow,
     });
     g.add_lasting(
