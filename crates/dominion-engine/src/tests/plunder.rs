@@ -3129,3 +3129,27 @@ fn rush_and_mirror_apply_to_the_next_action_gained_not_one_gained_because_of_it(
         }
     }
 }
+
+#[test]
+fn taskmaster_played_while_a_five_is_being_gained_counts_it() {
+    // Rush plays the gained Specialist, which plays the Taskmaster twice, all while the
+    // Specialist's gain is still being resolved.
+    let mut g = setup_l(&[Card::Taskmaster, Card::Specialist], &[Card::Rush]);
+    hand(&mut g, P0, &[Card::Taskmaster]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 7, 2);
+    buy_event(&mut g, Card::Rush);
+    buy(&mut g, Card::Specialist);
+    choose_kinds(&mut g, &[Card::Taskmaster]);
+    mode(&mut g, 0);
+    assert_eq!(
+        g.turn().played,
+        [Card::Specialist, Card::Taskmaster, Card::Taskmaster]
+    );
+    next_turn(&mut g);
+    next_turn(&mut g);
+    resolve_triggers(&mut g);
+    assert_eq!((g.turn().actions, g.turn().coins), (3, 2));
+}
