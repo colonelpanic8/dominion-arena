@@ -204,6 +204,22 @@ fn black_market_lets_debt_be_paid_off_first() {
 }
 
 #[test]
+fn black_market_sells_animal_fair_for_an_action_trashed_from_the_hand() {
+    let mut g = setup(&[Card::BlackMarket]);
+    let bm = black_market_deck(&g);
+    replace(&mut g, Zone::Pile(bm), &[Card::Smithy, Card::AnimalFair]);
+    hand(&mut g, P0, &[Card::BlackMarket, Card::Village]);
+    g.start();
+    play(&mut g, Card::BlackMarket);
+    // $2 pays for neither; Animal Fair can be had for the Village.
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::AnimalFair]);
+    choose_kinds(&mut g, &[Card::AnimalFair]);
+    assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Village));
+    assert_eq!(discard_kinds(&g, P0), [Card::AnimalFair]);
+    assert_eq!((g.turn().coins, g.turn().buys), (2, 1));
+}
+
+#[test]
 fn a_prince_set_up_at_the_start_of_a_turn_plays_its_card_that_turn() {
     let mut config = GameConfig::new(2, vec![Card::Prince, Card::Village], 7);
     config.colonies = Some(false);

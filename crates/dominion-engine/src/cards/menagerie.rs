@@ -1008,8 +1008,10 @@ fn animal_fair_pay(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Done(Value::Bool(false));
             }
             let cost = g.cost_of(f.this());
-            let affordable =
-                cost.coins as u32 <= g.turn.coins && cost.potions as u32 <= g.turn.potions;
+            // Only the turn's player has $ to pay with (Black Market on another's turn).
+            let affordable = p == g.turn.player
+                && cost.coins as u32 <= g.turn.coins
+                && cost.potions as u32 <= g.turn.potions;
             f.pc = 2;
             if affordable {
                 f.pc = 1;
