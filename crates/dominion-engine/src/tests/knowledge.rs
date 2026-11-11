@@ -242,6 +242,38 @@ fn a_passed_card_is_known_to_both_players() {
     assert_eq!(p1.zone(Zone::Hand(P1)).known.get(&Card::Gold), Some(&1));
 }
 
+/// Shadow cards go to the bottom when shuffled, and each shows what it is from its back.
+#[test]
+fn everyone_knows_where_a_shadow_card_is() {
+    let mut g = setup(&[Card::Alley, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    discard(
+        &mut g,
+        P0,
+        &[
+            Card::Alley,
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+            Card::Silver,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Smithy);
+    k.update(&mut g);
+    let known = k.known(&g, P1);
+    assert_eq!(
+        known.zone(Zone::Deck(P0)),
+        ZoneKnowledge {
+            count: 2,
+            known: count(&[(Card::Alley, 1)]),
+            unknown: 1
+        }
+    );
+    assert_eq!(known.zone(Zone::Hand(P0)).unknown, 3);
+}
+
 /// After a card passes between two other players, a viewer can't say whose each of their
 /// cards is, but still knows how many each of them owns.
 #[test]

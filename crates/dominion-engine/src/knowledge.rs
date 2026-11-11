@@ -6,13 +6,14 @@
 //! becomes a group of its own. Shuffles and other rearrangements no one can follow merge
 //! groups, and so does a card leaving a place where the viewer couldn't tell which card
 //! it was (an opponent's hand, the middle of a deck or discard pile). Deck order is never
-//! tracked. A Stash has its own back, so everyone always knows which card it is.
+//! tracked. Stash and the Shadow cards have their own backs, so everyone always knows
+//! which card each of them is.
 //!
 //! [`Knowledge`] consumes a traced game's [`Trace`]; build it before the game's first
 //! [`Game::take_trace`] and call [`Knowledge::update`] after every response.
 
 use crate::game::{Mat, Zone};
-use crate::{Card, CardId, Game, PlayerId, Trace};
+use crate::{Card, CardId, Game, PlayerId, Trace, Types};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -203,9 +204,10 @@ impl Mind {
     }
 }
 
-/// Whether everyone can tell this card from its back.
+/// Whether everyone can tell this card from its back: Stash, and the Shadow cards, each
+/// with a back of its own.
 fn marked(card: Card) -> bool {
-    card == Card::Stash
+    card == Card::Stash || card.is(Types::SHADOW)
 }
 
 fn public(game: &Game, zone: Zone) -> bool {
