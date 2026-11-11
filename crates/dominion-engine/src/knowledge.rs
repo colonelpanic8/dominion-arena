@@ -13,16 +13,18 @@
 
 use crate::game::{Mat, Zone};
 use crate::{Card, CardId, Game, PlayerId, Trace};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Cards of some identities, by identity.
 pub type CardCount = BTreeMap<Card, u32>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Knowledge {
     /// Each card's zone and printed identity, as of the trace consumed so far.
     zone: Vec<Zone>,
     is: Vec<Card>,
+    #[serde(with = "zone_map")]
     members: HashMap<Zone, Vec<CardId>>,
     minds: Vec<Mind>,
     /// The turn's player and who controls it, as of the trace consumed so far.
@@ -31,13 +33,13 @@ pub struct Knowledge {
     created_in: Option<(Container, CardId)>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum Container {
     Player(PlayerId),
     Zone(Zone),
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Mind {
     group_of: Vec<usize>,
     groups: Vec<Group>,
@@ -45,7 +47,28 @@ struct Mind {
     recent: HashSet<CardId>,
 }
 
-#[derive(Clone, Debug, Default)]
+/// Zones aren't valid JSON object keys, so the map is stored as pairs.
+mod zone_map {
+    use super::{CardId, HashMap, Zone};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        map: &HashMap<Zone, Vec<CardId>>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.collect_seq(map.iter())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<HashMap<Zone, Vec<CardId>>, D::Error> {
+        Ok(Vec::<(Zone, Vec<CardId>)>::deserialize(d)?
+            .into_iter()
+            .collect())
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Group {
     cards: Vec<CardId>,
     /// `None` when the viewer doesn't know which cards these are.
