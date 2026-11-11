@@ -13,6 +13,7 @@
 //! Effects that play a card at the start of the next turn (Delay, Reap, Way of the Turtle)
 //! and the Durations keep their card in `data.pick` of a lasting resolved by `START`.
 
+use super::plunder::next_play;
 use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -185,14 +186,12 @@ impl SetRules for Rules {
             }
             (Card::HuntingLodge, _) => hunting_lodge(g, f, input),
             (Card::Kiln, _) | (Card::Livery, _) => {
-                g.add_lasting(
-                    f.card,
-                    f.player,
-                    f.this,
-                    vec![],
-                    Until::EndOfTurn,
-                    Scratch::default(),
-                );
+                // Kiln waits for the next play to begin after this.
+                let data = Scratch {
+                    i: if f.card == Card::Kiln { g.log.len() } else { 0 },
+                    ..Scratch::default()
+                };
+                g.add_lasting(f.card, f.player, f.this, vec![], Until::EndOfTurn, data);
                 Flow::done()
             }
             (Card::Mastermind, _) => {
@@ -389,10 +388,15 @@ impl SetRules for Rules {
         }
         match *occ {
             Occasion::Play { player, card } => {
-                for l in g.lasting() {
-                    if l.card == Card::Kiln && l.owner == player && l.until == Until::EndOfTurn {
-                        out.push(Trigger::new(player, Card::Kiln, KILN_COPY).via_lasting(l.id).on(card));
-                    }
+                // One at a time, so that Kilns waiting for the same play need no order.
+                let kiln = g.lasting().iter().find(|l| {
+                    l.card == Card::Kiln
+                        && l.owner == player
+                        && l.until == Until::EndOfTurn
+                        && next_play(g, l, card, |_| true)
+                });
+                if let Some(l) = kiln {
+                    out.push(Trigger::new(player, Card::Kiln, KILN_COPY).via_lasting(l.id).on(card));
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),

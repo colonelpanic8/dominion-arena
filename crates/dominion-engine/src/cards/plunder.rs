@@ -604,7 +604,12 @@ fn next_gain_of(g: &Game, l: &Lasting, card: CardId, types: Types) -> bool {
 /// types `wanted` accepts, since lasting `l` was set up: it began after that, and not
 /// while an earlier such play was still being resolved (Throne Room, not the card it
 /// plays).
-fn next_play(g: &Game, l: &Lasting, card: CardId, wanted: impl Fn(Types) -> bool) -> bool {
+pub(super) fn next_play(
+    g: &Game,
+    l: &Lasting,
+    card: CardId,
+    wanted: impl Fn(Types) -> bool,
+) -> bool {
     let Some(i) = g.plays.iter().rposition(|s| s.card == card) else {
         return false;
     };

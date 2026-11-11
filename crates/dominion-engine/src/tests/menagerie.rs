@@ -868,6 +868,24 @@ fn kiln_gains_a_copy_of_the_next_card_played() {
 }
 
 #[test]
+fn kiln_played_during_another_play_waits_for_the_next_one() {
+    let mut g = setup(&[Card::Kiln]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Kiln, Card::Kiln]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Kiln);
+    play(&mut g, Card::Kiln);
+    // The first Kiln gains a copy of the second, which Innovation plays at once.
+    yes(&mut g);
+    trigger(&mut g, Card::Innovation);
+    // The second Kiln's play had already begun: nothing more to copy for it.
+    assert_eq!(purpose(&g), Purpose::Turn);
+    assert_eq!(gained(&g, P0), [Card::Kiln]);
+    assert_eq!(g.turn().coins, 6);
+}
+
+#[test]
 fn kiln_gains_its_copy_before_victims_decide_on_moat() {
     let mut g = setup(&[Card::Kiln, Card::Militia, Card::Moat, Card::Village]);
     hand(&mut g, P0, &[Card::Village, Card::Kiln, Card::Militia]);
