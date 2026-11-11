@@ -4,7 +4,22 @@ A headless rules engine for the deck-building card game
 [Dominion](https://www.riograndegames.com/games/dominion/), written in Rust, aiming
 to implement every expansion.
 
-Status: the engine core plus Dominion (2nd edition) Base set.
+Status: every expansion through Rising Sun is implemented, with the promos and the
+cards removed in second editions: every Kingdom card, non-Supply card, Event,
+Landmark, Project, Way, Ally, Trait, Prophecy, Boon, Hex, State and Artifact. Arcana
+is unreleased; its entries are placeholders until its cards are public.
+
+Card data (official text, cost, types) is available without a game:
+
+```rust,ignore
+use dominion_engine::{Card, Types};
+
+let card = Card::from_name("Throne Room").unwrap();
+println!("{} ({}, {}): {}", card, card.cost().unwrap(), card.types(), card.text());
+assert!(card.is(Types::ACTION));
+```
+
+The data lives in `data/cards/<set>.json` and is compiled into the `Card` enum.
 
 ```rust,ignore
 use dominion_engine::{Card, Game, GameConfig};
