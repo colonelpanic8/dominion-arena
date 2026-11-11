@@ -1745,6 +1745,23 @@ fn deluded_stops_buying_cards_that_are_actions_by_an_effect() {
     assert!(!moves.contains(&Card::Silver));
 }
 
+/// A player who Inherited an Action can't buy Estates either.
+#[test]
+fn deluded_stops_buying_inherited_estates() {
+    let mut g = setup(&[Card::Village]);
+    let top = g.pile_top(g.supply_pile(Card::Village).unwrap()).unwrap();
+    g.move_card(top, Zone::SetAside(P0), crate::game::Pos::Top);
+    g.ext.adventures.inherited.push((P0, Some(top)));
+    g.players[0].states.push(Card::Deluded);
+    hand(&mut g, P0, &[Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    let moves = buy_moves(&g);
+    assert!(moves.contains(&Card::Silver));
+    assert!(!moves.contains(&Card::Estate));
+}
+
 #[test]
 fn envy_makes_silver_and_gold_worth_one_for_a_turn() {
     let mut g = hexed(
