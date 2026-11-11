@@ -316,7 +316,7 @@ pub(crate) fn drive_randomly(mut g: Game, seed: u64) -> Game {
 fn random_games_keep_invariants() {
     for seed in 0..fuzz_seeds(200) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let players = rng.random_range(2..=4);
+        let players = rng.random_range(2..=6);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
         config.turn_limit = Some(80);
         let g = random_game(config, seed);
@@ -466,6 +466,34 @@ fn buying_a_card_pays_and_gains_it() {
     assert_eq!(g.pending().unwrap().player, P1);
 }
 
+#[test]
+fn coffers_and_debt_can_be_used_in_every_phase() {
+    let mut g = setup(&[Card::Smithy]);
+    hand(&mut g, P0, &[]);
+    g.players[0].coffers = 3;
+    g.players[0].debt = 3;
+    g.start();
+    for phase in [Phase::Action, Phase::Buy, Phase::Night] {
+        let d = g.pending().unwrap();
+        assert_eq!(
+            d.kind,
+            DecisionKind::Turn {
+                phase,
+                moves: vec![Move::Coffers, Move::EndPhase]
+            }
+        );
+        respond(&mut g, Response::Move(Move::Coffers));
+        assert_eq!(g.turn().coins, 1);
+        respond(&mut g, Response::Move(Move::PayDebt));
+        if phase != Phase::Night {
+            end_phase(&mut g);
+        }
+    }
+    // Nothing left to do at Night, so the turn ended on its own.
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!((g.player(P0).coffers, g.player(P0).debt), (0, 0));
+}
+
 // ---- Shuffling ----
 
 /// Resolves a pending Star Chart trigger, picking `card` to go on top of the shuffle.
@@ -611,7 +639,7 @@ fn cross_set_games_keep_invariants() {
     let removed = removed_kingdom_cards();
     for seed in 0..fuzz_seeds(100) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xc0ffee);
-        let players = rng.random_range(2..=4);
+        let players = rng.random_range(2..=6);
         let mut config = GameConfig::random(players, IMPLEMENTED, seed);
         for i in 0..rng.random_range(0..=3) {
             let card = *removed.choose(&mut rng).unwrap();

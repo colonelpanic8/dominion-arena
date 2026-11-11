@@ -872,6 +872,26 @@ fn highwayman_is_not_cumulative_and_moat_blocks_it() {
     assert_eq!(g.turn().coins, 1);
 }
 
+/// Highwayman stops what an Attack does, not the Reactions to it being played.
+#[test]
+fn reactions_answer_an_attack_highwayman_stops() {
+    let mut g = game(&[Card::Highwayman, Card::Relic, Card::Moat]);
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::Relic]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    let mut cards = vec![Card::Moat];
+    cards.extend([Card::Copper; 4]);
+    hand(&mut g, P0, &cards);
+    play(&mut g, Card::Relic);
+    accept(&mut g, Card::Moat);
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(g.turn().coins, 0);
+}
+
 #[test]
 fn throne_room_on_highwayman_draws_six_and_discards_it_once() {
     let mut g = game(&[Card::Highwayman, Card::ThroneRoom]);

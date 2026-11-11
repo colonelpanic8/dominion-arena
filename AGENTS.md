@@ -64,10 +64,11 @@ them.
   `Input::Return`), `Flow::Continue` (re-enter now) or `Flow::Done(value)`.
 - **Turns.** Start (`StartTurn` window, then `Until::StartOfTurn` lastings expire),
   Action (moves: play an Action, spend a Villager, end), Buy (`StartBuyPhase`; play
-  Treasures until something is bought, buy cards / Events / Projects, spend Coffers, pay
-  Debt; `EndBuyPhase`), Night (`StartNight`; play Night cards), Clean-up
+  Treasures until something is bought, buy cards / Events / Projects; `EndBuyPhase`),
+  Night (`StartNight`; play Night cards), Clean-up
   (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
-  `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Extra turns queue
+  `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Spending Coffers
+  and paying off Debt are moves in the Action, Buy and Night phases alike. Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
   in a row: check `g.third_in_a_row(p)` before queuing one; Possession: not a second
   extra turn in a row; Seize the Day: never), and extra turns
@@ -77,7 +78,8 @@ them.
   `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
   (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`), choose a Way if the
-  game has Ways, open an `Attack` window per other player for Attacks, then apply the
+  game has Ways, open an `Attack` window per other player for Attacks (also when the
+  play is replaced or blocked: Reactions answer the card being played), then apply the
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
   `SetRules::modify_bonus`) and run the card's `Hook::Main`, then the `AfterPlay`
   window. `chain` lists the cards playing it (Throne Room ...); pass

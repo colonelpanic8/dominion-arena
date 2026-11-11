@@ -623,6 +623,33 @@ fn enchantress_affects_only_the_first_action_even_twice_and_moat_blocks_it() {
     assert_eq!(g.hand(P1).len(), 4);
 }
 
+/// An Enchanted Attack was still played, so Reactions to it can be used.
+#[test]
+fn reactions_answer_an_attack_enchantress_replaces() {
+    let mut g = setup(&[Card::Enchantress, Card::Militia, Card::Diplomat]);
+    hand(&mut g, P0, &[Card::Enchantress]);
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    hand(&mut g, P1, &[Card::Militia]);
+    deck(&mut g, P1, &[Card::Copper; 12]);
+    g.start();
+    play(&mut g, Card::Enchantress);
+    next_turn(&mut g);
+    let mut cards = vec![Card::Diplomat];
+    cards.extend([Card::Copper; 4]);
+    hand(&mut g, P0, &cards);
+    play(&mut g, Card::Militia);
+    trigger(&mut g, Card::Diplomat);
+    assert_eq!(g.hand(P0).len(), 7);
+    choose_kinds(&mut g, &[Card::Copper; 3]);
+    // Militia itself only gave +1 Card and +1 Action.
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(
+        (g.hand(P1).len(), g.turn().actions, g.turn().coins),
+        (1, 1, 0)
+    );
+    assert_eq!(g.hand(P0).len(), 4);
+}
+
 #[test]
 fn an_enchanted_sacrifice_trashes_nothing_and_an_enchanted_duration_is_discarded() {
     let mut g = setup(&[Card::Enchantress, Card::Sacrifice, Card::Archive]);
