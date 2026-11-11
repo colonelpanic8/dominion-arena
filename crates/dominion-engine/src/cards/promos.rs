@@ -78,15 +78,17 @@ impl SetRules for Rules {
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         match *occ {
             Occasion::StartTurn { player } => {
+                // Prince plays its card at the start of every turn, even one that set it up.
+                for l in g.lasting() {
+                    if l.card == Card::Prince
+                        && l.owner == player
+                        && l.data.pick.is_some_and(|c| g.zone(c) == Zone::SetAside(player))
+                    {
+                        out.push(duration_trigger(l, PRINCE_PLAY));
+                    }
+                }
                 for l in due_durations(g, occ) {
                     let ability = match l.card {
-                        Card::Prince => {
-                            let held = l.data.pick.expect("Prince holds a card");
-                            if g.zone(held) != Zone::SetAside(player) {
-                                continue;
-                            }
-                            PRINCE_PLAY
-                        }
                         Card::Captain => CAPTAIN_NEXT,
                         Card::Church => CHURCH_NEXT,
                         Card::Summon => SUMMON_PLAY,
@@ -302,6 +304,12 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         3 => {
+            let (debt, coins) = (g.player(p).debt, g.turn.coins);
+            if debt > 0 && coins > 0 && f.s.m == 0 {
+                f.s.m = 1;
+                f.pc = 13;
+                return f.ask_number(0, debt.min(coins) as i32, Purpose::Other);
+            }
             let buyable: Vec<CardId> = f
                 .s
                 .cards
@@ -377,6 +385,13 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 card: None,
                 pc: 0,
             })
+        }
+        13 => {
+            let n = input.number().unwrap_or(0).max(0) as u32;
+            g.players[p.index()].debt -= n;
+            g.turn.coins -= n;
+            f.pc = 3;
+            Flow::Continue
         }
         5 => {
             let rest: Vec<CardId> = f

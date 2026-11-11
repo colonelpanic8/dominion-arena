@@ -129,6 +129,51 @@ fn black_market_offers_only_affordable_cards() {
 }
 
 #[test]
+fn black_market_lets_debt_be_paid_off_first() {
+    let mut g = setup(&[Card::BlackMarket]);
+    let bm = black_market_deck(&g);
+    replace(&mut g, Zone::Pile(bm), &[Card::Cellar]);
+    hand(&mut g, P0, &[Card::BlackMarket, Card::Silver]);
+    g.players[0].debt = 2;
+    g.start();
+    play(&mut g, Card::BlackMarket);
+    choose_kinds(&mut g, &[Card::Silver]);
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Number { min: 0, max: 2 }
+    );
+    respond(&mut g, Response::Number(2));
+    choose_kinds(&mut g, &[Card::Cellar]);
+    assert_eq!((g.player(P0).debt, g.turn().coins), (0, 0));
+    assert_eq!(discard_kinds(&g, P0), [Card::Cellar]);
+}
+
+#[test]
+fn a_prince_set_up_at_the_start_of_a_turn_plays_its_card_that_turn() {
+    let mut config = GameConfig::new(2, vec![Card::Prince, Card::Village], 7);
+    config.colonies = Some(false);
+    config.shelters = Some(false);
+    let mut g = setup_with(config);
+    g.start();
+    // A Prince holding a Village, set up during the start of P1's next turn (as from a
+    // start-of-turn play).
+    let prince = g.create(Card::Prince, Zone::InPlay(P1));
+    let village = g.create(Card::Village, Zone::SetAside(P1));
+    let keeps = vec![prince];
+    let data = crate::game::Scratch {
+        pick: Some(village),
+        ..Default::default()
+    };
+    g.players[1].turns_taken = 5;
+    g.add_lasting(Card::Prince, P1, Some(prince), keeps, Until::Removed, data);
+    // Stamped with the turn P1 is about to start.
+    g.players[1].turns_taken = 4;
+    finish_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.turn().played, [Card::Village]);
+}
+
+#[test]
 fn stash_goes_where_its_owner_chooses_when_shuffled() {
     let mut g = setup(&[Card::Stash, Card::Smithy]);
     hand(&mut g, P0, &[Card::Smithy]);
