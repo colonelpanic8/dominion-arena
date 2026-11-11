@@ -639,11 +639,14 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         Card::Infirmary => {
-            if f.s.i >= n as usize {
+            let this = f.this();
+            // The first play puts it into play from where it was gained.
+            let first = f.s.i == 0;
+            if f.s.i >= n as usize || (first && !still_gained(g, this)) {
                 return Flow::done();
             }
             f.s.i += 1;
-            Flow::Call(Frame::play(f.player, f.this(), false, vec![]))
+            Flow::Call(Frame::play(f.player, this, first, vec![]))
         }
         _ => {
             // Stonemason: gain 2 Actions each costing exactly the amount overpaid.

@@ -440,25 +440,54 @@ fn infirmary_overpay_plays_it_once_per_coin() {
     play_treasures(&mut g);
     buy(&mut g, Card::Infirmary);
     respond(&mut g, Response::Number(2));
+    // Playing it puts it into play.
+    assert_eq!(
+        kinds(&g, g.in_play(P0)),
+        [Card::Gold, Card::Gold, Card::Infirmary]
+    );
     choose_kinds(&mut g, &[Card::Curse]);
     choose_kinds(&mut g, &[Card::Estate]);
     assert_eq!(
         kinds(&g, &g.trash()[g.trash().len() - 2..]),
         [Card::Curse, Card::Estate]
     );
-    assert!(
-        g.log()
-            .iter()
-            .filter(|e| matches!(
-                e,
-                Event::Played {
-                    card: Card::Infirmary,
-                    ..
-                }
-            ))
-            .count()
-            == 2
-    );
+    assert_eq!(infirmary_plays(&g), 2);
+}
+
+fn infirmary_plays(g: &Game) -> usize {
+    let played = |e: &&Event| {
+        matches!(
+            e,
+            Event::Played {
+                card: Card::Infirmary,
+                ..
+            }
+        )
+    };
+    g.log().iter().filter(played).count()
+}
+
+#[test]
+fn infirmary_exchanged_before_its_overpay_is_not_played() {
+    let mut g = setup(&[Card::Infirmary, Card::Trader]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper, Card::Trader]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    end_phase(&mut g);
+    play_treasures(&mut g);
+    buy(&mut g, Card::Infirmary);
+    respond(&mut g, Response::Number(1));
+    let labels = match &g.pending().unwrap().kind {
+        DecisionKind::Choose { labels, .. } => labels.clone(),
+        k => panic!("{k:?}"),
+    };
+    let trader = labels.iter().position(|l| l.starts_with("Trader")).unwrap();
+    respond(&mut g, Response::option(Opt::Trigger(trader as u16)));
+    // Back on its pile, it can't be put into play.
+    let pile = g.supply_pile(Card::Infirmary).unwrap();
+    assert_eq!(g.pile(pile).cards.len(), 10);
+    assert_eq!(infirmary_plays(&g), 0);
+    assert_eq!(g.hand(P0).len(), 5);
 }
 
 #[test]
