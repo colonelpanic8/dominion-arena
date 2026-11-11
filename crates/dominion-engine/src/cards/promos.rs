@@ -5,7 +5,7 @@ use super::intrigue::{GainRule, trash_and_gain};
 use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
-use crate::frame::{Flow, Frame, From as GainFrom, Input, OVERPAY};
+use crate::frame::{Flow, Frame, From as GainFrom, Input};
 use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup;
 use crate::trigger::{Occasion, Trigger};
@@ -337,11 +337,10 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     player: p,
                     card: kind,
                 });
-                if kind.def().overpay && g.turn.coins > 0 {
-                    f.pc = 10;
-                    return f.ask_number(0, g.turn.coins as i32, Purpose::Overpay);
-                }
                 f.pc = 11;
+                if kind.def().overpay {
+                    return Flow::Call(Frame::overpay(p, c));
+                }
                 Flow::Continue
             }
             None => {
@@ -349,22 +348,6 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Flow::Continue
             }
         },
-        10 => {
-            let n = input.number().unwrap_or(0);
-            f.pc = 11;
-            if n <= 0 {
-                return Flow::Continue;
-            }
-            g.turn.coins -= n as u32;
-            g.emit(Event::Overpaid {
-                player: p,
-                amount: n as u32,
-            });
-            let c = f.s.pick.expect("set in step 4");
-            let mut child = CardFrame::new(g.card(c), Hook::Ability(OVERPAY), p, Some(c));
-            child.data = n;
-            Flow::Call(Frame::Card(Box::new(child)))
-        }
         11 => {
             f.pc = 12;
             let card = f.s.pick.expect("set in step 4");

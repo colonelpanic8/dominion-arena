@@ -168,6 +168,13 @@ pub(crate) enum Frame {
         cleanup: bool,
         i: usize,
     },
+    /// Offer to overpay for `card`, just bought: $, then Potions; then its overpay ability.
+    Overpay {
+        player: PlayerId,
+        card: CardId,
+        paid: crate::Cost,
+        pc: u8,
+    },
     /// Receive a Boon or Hex: resolve it, then discard it unless it was kept.
     Receive {
         player: PlayerId,
@@ -267,6 +274,15 @@ impl Frame {
             cards,
             cleanup: false,
             i: 0,
+        }
+    }
+
+    pub(crate) fn overpay(player: PlayerId, card: CardId) -> Frame {
+        Frame::Overpay {
+            player,
+            card,
+            paid: crate::Cost::ZERO,
+            pc: 0,
         }
     }
 
@@ -458,6 +474,12 @@ impl Frame {
                     card: c,
                 }))
             }
+            Frame::Overpay {
+                player,
+                card,
+                paid,
+                pc,
+            } => resume_overpay(g, *player, *card, paid, pc, input),
             Frame::Receive { player, card, pc } => match pc {
                 0 => {
                     *pc = 1;
@@ -1034,35 +1056,10 @@ fn resume_buy(
                 card: kind,
             });
             *pc = 2;
-            if kind.def().overpay && (g.turn.coins > 0 || g.turn.potions > 0) {
-                *pc = 1;
-                return Flow::Ask(Decision {
-                    player: p,
-                    kind: DecisionKind::Number {
-                        min: 0,
-                        max: g.turn.coins as i32,
-                    },
-                    purpose: Purpose::Overpay,
-                    source: Some(kind),
-                });
+            if kind.def().overpay {
+                return Flow::Call(Frame::overpay(p, top));
             }
             Flow::Continue
-        }
-        1 => {
-            let n = input.number().unwrap_or(0);
-            *pc = 2;
-            if n <= 0 {
-                return Flow::Continue;
-            }
-            g.turn.coins -= n as u32;
-            let top = card.expect("set in step 0");
-            g.emit(Event::Overpaid {
-                player: p,
-                amount: n as u32,
-            });
-            let mut f = CardFrame::new(g.card(top), Hook::Ability(OVERPAY), p, Some(top));
-            f.data = n;
-            Flow::Call(Frame::Card(Box::new(f)))
         }
         2 => {
             *pc = 3;
@@ -1085,6 +1082,63 @@ fn resume_buy(
                 card: None,
                 pc: 0,
             })
+        }
+        _ => Flow::done(),
+    }
+}
+
+fn resume_overpay(
+    g: &mut Game,
+    p: PlayerId,
+    card: CardId,
+    paid: &mut crate::Cost,
+    pc: &mut u8,
+    input: Input,
+) -> Flow {
+    let ask = |max: u32| {
+        Flow::Ask(Decision {
+            player: p,
+            kind: DecisionKind::Number {
+                min: 0,
+                max: max as i32,
+            },
+            purpose: Purpose::Overpay,
+            source: Some(g.card(card)),
+        })
+    };
+    match pc {
+        0 => {
+            *pc = 1;
+            if g.turn.coins > 0 {
+                return ask(g.turn.coins);
+            }
+            Flow::Continue
+        }
+        1 => {
+            paid.coins = input.number().unwrap_or(0).max(0) as u8;
+            *pc = 2;
+            if g.turn.potions > 0 {
+                return ask(g.turn.potions);
+            }
+            Flow::Continue
+        }
+        2 => {
+            paid.potions = input.number().unwrap_or(0).max(0) as u8;
+            *pc = 3;
+            if *paid == crate::Cost::ZERO {
+                return Flow::done();
+            }
+            g.turn.coins -= paid.coins as u32;
+            g.turn.potions -= paid.potions as u32;
+            g.emit(Event::Overpaid {
+                player: p,
+                amount: paid.coins as u32,
+                potions: paid.potions as u32,
+            });
+            let mut f = CardFrame::new(g.card(card), Hook::Ability(OVERPAY), p, Some(card));
+            f.data = paid.coins as i32;
+            f.s.cost = *paid;
+            Flow::Call(Frame::Card(Box::new(f)))
         }
         _ => Flow::done(),
     }

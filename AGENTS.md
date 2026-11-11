@@ -81,8 +81,8 @@ them.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
   card's cost then in `GainState::cost`), `Gain` window.
-  **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay (the card's
-  `Hook::Ability(frame::OVERPAY)` with `f.data` = amount), `Buy` window, then gain.
+  **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay (`Frame::overpay`: $, then Potions; the card's
+  `Hook::Ability(frame::OVERPAY)` with `f.data` = $ and `f.s.cost` = all overpaid), `Buy` window, then gain.
   Events and Projects: pay, `BuyLandscape` window, then the landscape's `Hook::Main`
   (a Project also gets the buyer's cube in `Player::projects`).
 - **Triggers** (`trigger.rs`). Each set's `SetRules::triggers(g, occ, out)` adds the

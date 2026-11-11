@@ -34,6 +34,7 @@ pub enum Event {
     Overpaid {
         player: PlayerId,
         amount: u32,
+        potions: u32,
     },
     Gained {
         player: PlayerId,
