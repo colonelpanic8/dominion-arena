@@ -880,23 +880,58 @@ fn tribute_rewards_each_differently_named_card() {
     assert_eq!(g.turn().coins, 2);
 }
 
-#[test]
-fn random_games_with_the_removed_cards_keep_invariants() {
-    let kingdom = vec![
-        Card::Coppersmith,
-        Card::GreatHall,
-        Card::Saboteur,
-        Card::Scout,
-        Card::SecretChamber,
-        Card::Tribute,
-        Card::Diplomat,
-        Card::Masquerade,
-        Card::Moat,
-        Card::ThroneRoom,
-    ];
-    for seed in 0..30 {
-        let mut config = GameConfig::new(2 + (seed % 3) as u8, kingdom.clone(), seed);
+/// Random games with 8 cards from `pool` plus Throne Room and Moat as the kingdom, each
+/// player starting with a copy of every Kingdom card (and of `extra`) so that all of them
+/// get played. `landscapes` gives a seed's landscapes.
+pub(crate) fn random_games_with_copies(
+    pool: &[Card],
+    extra: &[Card],
+    seeds: std::ops::Range<u64>,
+    landscapes: impl Fn(u64) -> Vec<Card>,
+) {
+    for seed in seeds {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut cards = pool.to_vec();
+        cards.shuffle(&mut rng);
+        cards.truncate(8);
+        cards.extend([Card::ThroneRoom, Card::Moat]);
+        let players = rng.random_range(2..=4);
+        let mut config = GameConfig::new(players, cards.clone(), seed);
         config.turn_limit = Some(60);
-        random_game(config, seed);
+        config.landscapes = landscapes(seed);
+        let mut g = setup_with(config);
+        for p in 0..players {
+            let p = PlayerId(p);
+            for &c in cards.iter().chain(extra) {
+                g.create(c, Zone::Deck(p));
+            }
+            let mut deck = std::mem::take(&mut g.players[p.index()].deck);
+            g.shuffle(&mut deck);
+            g.players[p.index()].deck = deck;
+        }
+        g.start();
+        let mut agents: Vec<Chaos> = (0..players)
+            .map(|p| Chaos(ChaCha8Rng::seed_from_u64(seed * 10 + p as u64)))
+            .collect();
+        let mut steps = 0;
+        while let Some(d) = g.pending().cloned() {
+            check_zones(&g);
+            let r = agents[d.player.index()].decide(&g.view(d.player), &d);
+            if let Err(e) = g.respond(r.clone()) {
+                panic!("seed {seed}: random response {r:?} to {d:?} rejected: {e}");
+            }
+            steps += 1;
+            assert!(steps < 100_000, "seed {seed}: game does not end");
+        }
+        check_zones(&g);
     }
+}
+
+/// Random games over Intrigue, removed cards included.
+#[test]
+fn random_intrigue_games_keep_invariants() {
+    let pool: Vec<Card> = Card::in_set(Set::Intrigue)
+        .filter(|c| c.def().kingdom)
+        .collect();
+    random_games_with_copies(&pool, &[], 0..120, |_| vec![]);
 }
