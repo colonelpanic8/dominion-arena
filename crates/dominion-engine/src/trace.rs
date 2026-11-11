@@ -85,6 +85,15 @@ impl Game {
         self.record(|| Trace::Shown { card, to: Some(p) });
     }
 
+    /// Records that `p` looked through their discard pile.
+    pub(crate) fn look_through_discard(&mut self, p: PlayerId) {
+        if self.trace.is_some() {
+            for card in self.players[p.index()].discard.clone() {
+                self.show_to(card, p);
+            }
+        }
+    }
+
     /// Reveals `card` (one of `p`'s, or one they revealed): logs it and records it shown.
     pub(crate) fn reveal(&mut self, p: PlayerId, card: CardId) {
         self.show(card);

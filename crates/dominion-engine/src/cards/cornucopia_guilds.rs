@@ -624,6 +624,7 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         Card::Herald => match f.pc {
             0 => {
+                g.look_through_discard(f.player);
                 let discard = g.player(f.player).discard.clone();
                 if discard.is_empty() {
                     return Flow::done();

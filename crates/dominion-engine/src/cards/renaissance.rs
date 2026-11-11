@@ -997,6 +997,7 @@ fn mountain_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
+            g.look_through_discard(p);
             let discard = g.player(p).discard.clone();
             if discard.is_empty() {
                 f.pc = 2;

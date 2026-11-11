@@ -251,9 +251,7 @@ impl SetRules for Rules {
             (Card::March, _) => {
                 let p = f.player;
                 if f.pc == 0 {
-                    for c in g.player(p).discard.clone() {
-                        g.show_to(c, p);
-                    }
+                    g.look_through_discard(p);
                 }
                 let actions = cards_where(g, &g.player(p).discard, Types::ACTION);
                 play_one_of(f, input, actions, true)

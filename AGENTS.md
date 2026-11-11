@@ -199,7 +199,8 @@ them.
   group's known identities (a Stash or a Shadow card, with its own back, is always
   known). Anything that reveals a specific card must record it: `g.reveal(p, id)`
   instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to` for other
-  reveals and looks. Cards that change zones must go through `move_card` (or record a
+  reveals and looks, `g.look_through_discard(p)` before a player picks from their
+  discard pile. Cards that change zones must go through `move_card` (or record a
   `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by

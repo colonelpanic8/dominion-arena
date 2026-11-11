@@ -242,6 +242,28 @@ fn a_passed_card_is_known_to_both_players() {
     assert_eq!(p1.zone(Zone::Hand(P1)).known.get(&Card::Gold), Some(&1));
 }
 
+/// Hermit offers only the non-Treasures of the discard pile, but its player looks through
+/// all of it.
+#[test]
+fn looking_through_a_discard_pile_shows_all_of_it() {
+    let mut g = setup(&[Card::Hermit]);
+    hand(&mut g, P0, &[Card::Hermit]);
+    let pile = discard(&mut g, P0, &[Card::Gold, Card::Estate]);
+    g.enable_trace();
+    g.start();
+    g.take_trace();
+    play(&mut g, Card::Hermit);
+    let looked: Vec<CardId> = g
+        .take_trace()
+        .into_iter()
+        .filter_map(|t| match t {
+            Trace::Shown { card, to } if to == Some(P0) => Some(card),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(looked, pile);
+}
+
 /// Shadow cards go to the bottom when shuffled, and each shows what it is from its back.
 #[test]
 fn everyone_knows_where_a_shadow_card_is() {
