@@ -259,6 +259,17 @@ fn patron_in_a_hand_revealed_to_bureaucrat_gives_coffers() {
 }
 
 #[test]
+fn patron_revealed_from_the_black_market_deck_gives_coffers() {
+    let mut g = setup(&[Card::BlackMarket]);
+    let bm = g.ext.promos.black_market.expect("a Black Market deck");
+    g.create(Card::Patron, Zone::Pile(bm));
+    hand(&mut g, P0, &[Card::BlackMarket]);
+    g.start();
+    play(&mut g, Card::BlackMarket);
+    assert_eq!(g.player(P0).coffers, 1);
+}
+
+#[test]
 fn patron_gives_a_villager_and_two_coins() {
     let mut g = setup(&[Card::Patron]);
     hand(&mut g, P0, &[Card::Patron]);
