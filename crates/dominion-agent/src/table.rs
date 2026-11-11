@@ -2,6 +2,7 @@ use crate::project::{self, Context};
 use crate::text;
 use crate::types::{AgentView, Answer};
 use dominion_engine::{Game, GameConfig, Knowledge, PlayerId, Response, SetupError};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -22,7 +23,7 @@ pub enum AnswerError {
 
 /// A hosted game: the engine game, what each seat knows, decision ids and each seat's
 /// log cursor.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Table {
     id: String,
     game: Game,

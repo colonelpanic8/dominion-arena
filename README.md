@@ -63,12 +63,20 @@ Tools: `create_game` (returns one secret token per seat), `join_game`, `view`,
 or act for it; pass it to each call (or `join_game` once, in clients that keep MCP
 sessions). Views come back as structured JSON plus their text rendering.
 
+Games survive restarts: the server saves each game (with its seat tokens, so the files
+are private to you) to `$XDG_STATE_HOME/dominion/games/<id>.json` after every change and
+resumes them on startup. Finished games are deleted on a later startup once they are a
+week old. `--ephemeral` keeps games in memory only.
+
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 
 ```toml
 listen = "127.0.0.1"           # serve: address to listen on
 port = 7317                    # serve: port
 allowed_hosts = []             # serve: extra Host header values to accept
+persist = true                 # serve: save games and resume them on restart
+state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
+keep_finished_days = 7         # serve: delete finished games this old at startup
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to
 ```
 

@@ -5,8 +5,11 @@ use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fs;
+use std::io::{self, BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::sync::watch;
 
 /// What a client asks for when creating a game.
@@ -82,10 +85,62 @@ pub struct Seat {
     pub seat: PlayerId,
 }
 
+#[derive(Serialize)]
+struct SavedRef<'a> {
+    table: &'a Table,
+    tokens: &'a [String],
+}
+
+#[derive(Deserialize)]
+struct Saved {
+    table: Table,
+    tokens: Vec<String>,
+}
+
+/// A directory holding one `<game id>.json` per game, rewritten after every change.
+struct Store {
+    dir: PathBuf,
+}
+
+impl Store {
+    fn save(&self, h: &Hosted) -> io::Result<()> {
+        let id = h.table.id();
+        let tmp = self.dir.join(format!(".{id}.json.tmp"));
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let file = options.open(&tmp)?;
+        let mut out = BufWriter::new(&file);
+        serde_json::to_writer(
+            &mut out,
+            &SavedRef {
+                table: &h.table,
+                tokens: &h.tokens,
+            },
+        )?;
+        out.flush()?;
+        drop(out);
+        file.sync_all()?;
+        fs::rename(&tmp, self.dir.join(format!("{id}.json")))
+    }
+}
+
+/// What [`Hub::open`] found in its directory.
+#[derive(Debug, Default)]
+pub struct Loaded {
+    pub games: usize,
+    /// Finished games older than the retention period, deleted.
+    pub expired: usize,
+    /// Files that couldn't be read, left in place.
+    pub unreadable: Vec<(PathBuf, String)>,
+}
+
 #[derive(Default)]
 pub struct Hub {
     games: Mutex<BTreeMap<String, Arc<Mutex<Hosted>>>>,
     next: Mutex<u64>,
+    store: Option<Store>,
 }
 
 fn card(name: &str, want: impl Fn(Card) -> bool) -> Result<Card, HubError> {
@@ -146,6 +201,75 @@ fn token() -> String {
 }
 
 impl Hub {
+    /// A hub that keeps its games in `dir` and resumes the ones saved there. Finished
+    /// games whose last change is older than `keep_finished` are deleted.
+    pub fn open(dir: &Path, keep_finished: Duration) -> io::Result<(Hub, Loaded)> {
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(dir)?;
+        let mut loaded = Loaded::default();
+        let mut games = BTreeMap::new();
+        let mut next = 0;
+        for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with('.') || !name.ends_with(".json") {
+                continue;
+            }
+            let saved = fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|bytes| {
+                    serde_json::from_slice::<Saved>(&bytes).map_err(|e| e.to_string())
+                });
+            let saved = match saved {
+                Ok(saved) => saved,
+                Err(e) => {
+                    loaded.unreadable.push((path, e));
+                    continue;
+                }
+            };
+            let id = saved.table.id().to_string();
+            if let Some(n) = id.strip_prefix('g').and_then(|n| n.parse().ok()) {
+                next = next.max(n);
+            }
+            let age = fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| SystemTime::now().duration_since(t).ok())
+                .unwrap_or_default();
+            if saved.table.is_over() && age >= keep_finished {
+                fs::remove_file(&path)?;
+                loaded.expired += 1;
+                continue;
+            }
+            let hosted = Hosted {
+                table: saved.table,
+                tokens: saved.tokens,
+                version: watch::channel(0).0,
+            };
+            games.insert(id, Arc::new(Mutex::new(hosted)));
+        }
+        loaded.games = games.len();
+        let hub = Hub {
+            games: Mutex::new(games),
+            next: Mutex::new(next),
+            store: Some(Store {
+                dir: dir.to_path_buf(),
+            }),
+        };
+        Ok((hub, loaded))
+    }
+
+    fn save(&self, h: &Hosted) {
+        if let Some(store) = &self.store
+            && let Err(e) = store.save(h)
+        {
+            eprintln!("dominion: saving game {}: {e}", h.table.id());
+        }
+    }
+
     pub fn create(&self, req: &NewGame) -> Result<Created, HubError> {
         let config = config(req)?;
         let id = {
@@ -170,6 +294,7 @@ impl Hub {
             tokens,
             version: watch::channel(0).0,
         };
+        self.save(&hosted);
         self.games
             .lock()
             .unwrap()
@@ -258,6 +383,7 @@ impl Hub {
         let game = self.game(&seat.game)?;
         let mut h = game.lock().unwrap();
         h.table.answer(seat.seat, answer)?;
+        self.save(&h);
         h.version.send_modify(|v| *v += 1);
         Ok(())
     }

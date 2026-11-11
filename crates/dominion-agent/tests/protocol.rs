@@ -110,6 +110,41 @@ fn random_games_produce_valid_views_and_answerable_options() {
     }
 }
 
+#[test]
+fn a_restored_table_plays_on_exactly_like_the_original() {
+    for seed in 0..seeds(6) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let players = rng.random_range(2..=4);
+        let mut config = GameConfig::random(players, &released(), seed);
+        config.turn_limit = Some(20);
+        let mut table = Table::new(format!("g{seed}"), config, vec![]).unwrap();
+        let mut copy: Option<Table> = None;
+        let mut step = 0;
+        while let Some(seat) = table.deciding() {
+            if step % 40 == 7 {
+                let saved = serde_json::to_string(&table).unwrap();
+                copy = Some(serde_json::from_str(&saved).unwrap());
+            }
+            if let Some(copy) = &copy {
+                for p in 0..players {
+                    assert_eq!(
+                        serde_json::to_value(copy.view(PlayerId(p))).unwrap(),
+                        serde_json::to_value(table.view(PlayerId(p))).unwrap(),
+                        "seed {seed} step {step} seat {p}"
+                    );
+                }
+            }
+            let answer = random_answer(&table.view(seat).decision.unwrap(), &mut rng);
+            table.answer(seat, &answer).unwrap();
+            if let Some(copy) = &mut copy {
+                copy.answer(seat, &answer).unwrap();
+            }
+            step += 1;
+        }
+        assert!(copy.is_none_or(|c| c.is_over()));
+    }
+}
+
 fn base_table() -> Table {
     let kingdom = vec![
         Card::Cellar,

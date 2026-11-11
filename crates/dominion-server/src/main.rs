@@ -26,6 +26,12 @@ enum Command {
         listen: Option<IpAddr>,
         #[arg(long)]
         port: Option<u16>,
+        /// Directory to save games in and resume them from.
+        #[arg(long, conflicts_with = "ephemeral")]
+        state_dir: Option<PathBuf>,
+        /// Keep games in memory only.
+        #[arg(long)]
+        ephemeral: bool,
     },
     /// Play one seat from the terminal against a server.
     Play(PlayArgs),
@@ -76,6 +82,23 @@ async fn serve(config: Config) -> Result<(), String> {
     if !config.listen().is_loopback() && !config.listen().is_unspecified() {
         hosts.push(config.listen().to_string());
     }
+    let hub = match config.state_dir() {
+        None => Hub::default(),
+        Some(dir) => {
+            let (hub, loaded) = Hub::open(&dir, config.keep_finished())
+                .map_err(|e| format!("opening {}: {e}", dir.display()))?;
+            for (path, e) in &loaded.unreadable {
+                eprintln!("dominion: skipping {}: {e}", path.display());
+            }
+            eprintln!(
+                "dominion: {} saved games in {} ({} finished games expired)",
+                loaded.games,
+                dir.display(),
+                loaded.expired
+            );
+            hub
+        }
+    };
     eprintln!("dominion: MCP endpoint http://{addr}/mcp");
     let stop = CancellationToken::new();
     let signal = stop.clone();
@@ -83,7 +106,7 @@ async fn serve(config: Config) -> Result<(), String> {
         let _ = tokio::signal::ctrl_c().await;
         signal.cancel();
     });
-    dominion_server::serve(listener, Arc::new(Hub::default()), hosts, stop)
+    dominion_server::serve(listener, Arc::new(hub), hosts, stop)
         .await
         .map_err(|e| e.to_string())
 }
@@ -99,9 +122,18 @@ async fn main() -> ExitCode {
         }
     };
     let result = match cli.command {
-        Command::Serve { listen, port } => {
+        Command::Serve {
+            listen,
+            port,
+            state_dir,
+            ephemeral,
+        } => {
             config.listen = listen.or(config.listen);
             config.port = port.or(config.port);
+            config.state_dir = state_dir.or(config.state_dir);
+            if ephemeral {
+                config.persist = Some(false);
+            }
             serve(config).await
         }
         Command::Play(args) => {
