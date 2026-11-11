@@ -3312,3 +3312,63 @@ fn differently_named_fated_cards_put_under_are_ordered() {
         [Card::Copper, Card::Plunder, Card::Encampment]
     );
 }
+
+/// Capital's "when you discard this from play" and Tireless both happen when the Capital
+/// is discarded from play.
+#[test]
+fn a_tireless_capital_still_takes_its_debt() {
+    let mut g = setup(&[Card::Capital]);
+    set_trait(&mut g, Card::Tireless, Card::Capital);
+    let capital = hand(&mut g, P0, &[Card::Capital])[0];
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Capital);
+    g.turn.coins = 0;
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.player(P0).deck.last(), Some(&capital));
+    assert_eq!(g.player(P0).debt, 6);
+}
+
+#[test]
+fn a_capital_set_aside_by_trickster_still_takes_its_debt() {
+    let mut g = setup(&[Card::Capital, Card::Trickster]);
+    hand(&mut g, P0, &[Card::Trickster, Card::Capital]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Trickster);
+    play(&mut g, Card::Capital);
+    g.turn.coins = 0;
+    end_phase(&mut g);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    let i = trigger_index(&g, Card::Trickster);
+    respond(&mut g, Response::option(Opt::Trigger(i)));
+    assert_eq!(g.turn().player, P1);
+    assert!(hand_kinds(&g, P0).contains(&Card::Capital));
+    assert_eq!(g.player(P0).debt, 6);
+}
+
+/// Divine Wind's FAQ: "In games using this" abilities keep working for the removed piles.
+#[test]
+fn shaman_still_gains_from_the_trash_after_divine_wind_removed_its_pile() {
+    let mut g = setup_l(&[Card::TeaHouse, Card::Shaman], &[Card::DivineWind]);
+    g.prophecy = Some((Card::DivineWind, 1));
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    // The cards `hand` and `deck` replaced are in the trash.
+    g.start();
+    assert_eq!(
+        (purpose(&g), g.pending().unwrap().source),
+        (Purpose::Gain, Some(Card::Shaman))
+    );
+    choose_kinds(&mut g, &[Card::Copper]);
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Shaman), None);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(
+        (purpose(&g), g.pending().unwrap().source),
+        (Purpose::Gain, Some(Card::Shaman))
+    );
+}
