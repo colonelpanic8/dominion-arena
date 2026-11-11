@@ -3145,6 +3145,27 @@ fn a_reckless_card_played_as_way_of_the_chameleon_follows_its_instructions_twice
     assert_eq!((g.turn().coins, g.hand(P0).len()), (6, 0));
 }
 
+/// An Omen's +1 Sun is part of its instructions: a Reckless one removes two Sun tokens,
+/// also as Way of the Chameleon.
+#[test]
+fn a_reckless_omen_removes_two_sun_tokens() {
+    for chameleon in [false, true] {
+        let mut g = setup_l(&[Card::Poet], &[Card::WayOfTheChameleon, Card::GreatLeader]);
+        g.prophecy = Some((Card::GreatLeader, 5));
+        set_trait(&mut g, Card::Reckless, Card::Poet);
+        hand(&mut g, P0, &[Card::Poet]);
+        deck(&mut g, P0, &[Card::Estate; 10]);
+        g.start();
+        play(&mut g, Card::Poet);
+        if chameleon {
+            pick(&mut g, Card::WayOfTheChameleon);
+        } else {
+            no(&mut g);
+        }
+        assert_eq!(g.prophecy, Some((Card::GreatLeader, 3)), "{chameleon}");
+    }
+}
+
 #[test]
 fn rush_and_mirror_apply_to_the_next_action_gained_not_one_gained_because_of_it() {
     for event in [Card::Rush, Card::Mirror] {
