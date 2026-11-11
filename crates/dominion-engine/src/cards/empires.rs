@@ -480,14 +480,13 @@ impl SetRules for Rules {
                     }
                 }
             }
-            Occasion::EndTurn { player } => {
+            Occasion::EndTurn { player }
                 if g.has_landscape(Card::Baths)
                     && player == g.turn.player
                     && g.turn.gained.is_empty()
-                    && g.landmark_vp(Card::Baths) > 0
-                {
-                    out.push(Trigger::new(player, Card::Baths, TAKE));
-                }
+                    && g.landmark_vp(Card::Baths) > 0 =>
+            {
+                out.push(Trigger::new(player, Card::Baths, TAKE));
             }
             _ => {}
         }
@@ -846,7 +845,7 @@ fn add_landmark_vp(g: &mut Game, landmark: Card, n: i32) {
 }
 
 /// Takes up to `n` VP tokens from a Landmark.
-fn take_landmark_vp(g: &mut Game, p: PlayerId, landmark: Card, n: i32) {
+pub(crate) fn take_landmark_vp(g: &mut Game, p: PlayerId, landmark: Card, n: i32) {
     let n = n.min(g.landmark_vp(landmark)).max(0);
     add_landmark_vp(g, landmark, -n);
     add_vp(g, p, n);

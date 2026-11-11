@@ -1541,3 +1541,574 @@ fn windfall_gains_three_golds_only_with_no_deck_or_discard_pile() {
     buy_event(&mut g, Card::Windfall);
     assert_eq!(g.count_owned(P0, Card::Gold), 5);
 }
+
+// ---- Landmarks ----
+
+#[test]
+fn landmarks_with_tokens_start_with_six_per_player_and_others_set_up_their_piles() {
+    let g = setup_landscapes(
+        &[Card::Village, Card::WildHunt, Card::Catapult],
+        &[Card::Arena, Card::Aqueduct],
+    );
+    assert_eq!(g.landmark_vp(Card::Arena), 12);
+    assert_eq!(g.landmark_vp(Card::Aqueduct), 0);
+    assert_eq!(pile_vp(&g, Card::Silver), 8);
+    assert_eq!(pile_vp(&g, Card::Gold), 8);
+    let g = setup_landscapes(
+        &[Card::Village, Card::WildHunt, Card::Catapult, Card::Castles],
+        &[Card::DefiledShrine, Card::Obelisk],
+    );
+    assert_eq!(pile_vp(&g, Card::Village), 2);
+    assert_eq!(pile_vp(&g, Card::Catapult), 2);
+    assert_eq!(pile_vp(&g, Card::WildHunt), 0);
+    assert_eq!(pile_vp(&g, Card::Castles), 0);
+    assert_eq!(pile_vp(&g, Card::Silver), 0);
+    let chosen = g.pile(g.obelisk_pile().unwrap()).card;
+    assert!([Card::Village, Card::WildHunt, Card::Catapult].contains(&chosen));
+}
+
+#[test]
+fn aqueduct_collects_from_treasure_piles_and_gives_its_tokens_for_a_victory_card() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Aqueduct]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::Silver);
+    assert_eq!(pile_vp(&g, Card::Silver), 7);
+    assert_eq!(g.landmark_vp(Card::Aqueduct), 1);
+    buy(&mut g, Card::Estate);
+    assert_eq!(vp(&g, P0), 1);
+    assert_eq!(g.landmark_vp(Card::Aqueduct), 0);
+}
+
+#[test]
+fn arena_lets_an_action_be_discarded_at_the_start_of_the_buy_phase_for_two_vp() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Arena]);
+    hand(&mut g, P0, &[Card::Village, Card::Copper]);
+    g.start();
+    end_phase(&mut g);
+    trigger(&mut g, Card::Arena);
+    assert_eq!(vp(&g, P0), 2);
+    assert_eq!(g.landmark_vp(Card::Arena), 10);
+    assert_eq!(discard_kinds(&g, P0), [Card::Village]);
+}
+
+#[test]
+fn basilica_pays_for_a_gain_in_the_buy_phase_with_two_coins_left() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Basilica]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 3;
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::Silver);
+    assert_eq!(vp(&g, P0), 2);
+    buy(&mut g, Card::Silver);
+    assert_eq!(vp(&g, P0), 2);
+}
+
+#[test]
+fn baths_pays_for_a_turn_without_gaining_a_card() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Baths]);
+    g.start();
+    next_turn(&mut g);
+    assert_eq!(vp(&g, P0), 2);
+    to_buy(&mut g);
+    buy(&mut g, Card::Copper);
+    assert_eq!(vp(&g, P1), 0);
+}
+
+#[test]
+fn battlefield_pays_for_each_victory_card_gained() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Battlefield]);
+    hand(&mut g, P0, &[Card::Silver]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::Estate);
+    assert_eq!(vp(&g, P0), 2);
+    buy(&mut g, Card::Copper);
+    assert_eq!(vp(&g, P0), 2);
+}
+
+#[test]
+fn colonnade_pays_for_an_action_bought_with_a_copy_in_play() {
+    let mut g = setup_landscapes(&[Card::Village, Card::Smithy], &[Card::Colonnade]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Village, Card::Gold, Card::Gold, Card::Gold],
+    );
+    g.start();
+    play(&mut g, Card::Village);
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::Smithy);
+    assert_eq!(vp(&g, P0), 0);
+    buy(&mut g, Card::Village);
+    assert_eq!(vp(&g, P0), 2);
+}
+
+#[test]
+fn defiled_shrine_collects_from_action_piles_and_a_curse_gained_in_the_buy_phase_takes_them() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::DefiledShrine]);
+    hand(&mut g, P0, &[Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Village);
+    assert_eq!(pile_vp(&g, Card::Village), 1);
+    assert_eq!(g.landmark_vp(Card::DefiledShrine), 1);
+    buy(&mut g, Card::Curse);
+    assert_eq!(vp(&g, P0), 1);
+    assert_eq!(g.landmark_vp(Card::DefiledShrine), 0);
+}
+
+#[test]
+fn labyrinth_pays_for_the_second_card_gained_in_a_turn_only() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Labyrinth]);
+    hand(&mut g, P0, &[Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 3;
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Copper);
+    assert_eq!(vp(&g, P0), 0);
+    buy(&mut g, Card::Copper);
+    assert_eq!(vp(&g, P0), 2);
+    buy(&mut g, Card::Copper);
+    assert_eq!(vp(&g, P0), 2);
+}
+
+#[test]
+fn labyrinth_counts_a_gain_by_a_gain_ability_as_the_second() {
+    let mut g = setup_landscapes(&[Card::Catapult], &[Card::Labyrinth]);
+    strip(&mut g, Card::Catapult, 5);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    play_all(&mut g, Card::Copper);
+    buy(&mut g, Card::Rocks);
+    assert_eq!(vp(&g, P0), 2);
+}
+
+#[test]
+fn mountain_pass_has_everyone_bid_once_ending_with_the_first_province_gainer() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::MountainPass]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Gold, Card::Gold, Card::Gold],
+    );
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::Province);
+    let d = g.pending().unwrap();
+    assert_eq!(d.player, P1);
+    assert_eq!(d.kind, DecisionKind::Number { min: 0, max: 40 });
+    number(&mut g, 5);
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Number { min: 5, max: 40 }
+    );
+    number(&mut g, 7);
+    assert_eq!(vp(&g, P0), 8);
+    assert_eq!(g.player(P0).debt, 7);
+    assert_eq!(g.player(P1).debt, 0);
+}
+
+#[test]
+fn mountain_pass_bids_only_for_the_first_province() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::MountainPass]);
+    hand(&mut g, P0, &[Card::Gold; 6]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::Province);
+    number(&mut g, 0);
+    number(&mut g, 0);
+    buy(&mut g, Card::Province);
+    assert_eq!(g.count_owned(P0, Card::Province), 2);
+    assert_eq!(purpose(&g), Purpose::Turn);
+}
+
+#[test]
+fn mountain_pass_with_every_player_passing_gives_nothing() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::MountainPass]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Gold);
+    buy(&mut g, Card::Province);
+    number(&mut g, 0);
+    number(&mut g, 0);
+    assert_eq!((vp(&g, P0), vp(&g, P1)), (0, 0));
+    assert_eq!((g.player(P0).debt, g.player(P1).debt), (0, 0));
+}
+
+#[test]
+fn tomb_gives_a_vp_per_card_trashed() {
+    let mut g = setup_landscapes(&[Card::Chapel], &[Card::Tomb]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Chapel, Card::Copper, Card::Estate, Card::Curse],
+    );
+    g.start();
+    play(&mut g, Card::Chapel);
+    choose_kinds(&mut g, &[Card::Copper, Card::Estate, Card::Curse]);
+    assert_eq!(vp(&g, P0), 3);
+}
+
+/// P0's Landmark VP with `mine` as all their cards and `theirs` as P1's.
+fn landmark_score(landmark: Card, kingdom: &[Card], mine: &[Card], theirs: &[Card]) -> i32 {
+    let mut g = setup_landscapes(kingdom, &[landmark]);
+    for (p, cards) in [(P0, mine), (P1, theirs)] {
+        hand(&mut g, p, &[]);
+        deck(&mut g, p, cards);
+    }
+    crate::cards::bonus_vp(&g, P0)
+}
+
+#[test]
+fn scoring_landmarks_score_from_the_cards_you_have() {
+    use Card as C;
+    let k = &[C::Village, C::Smithy];
+    assert_eq!(
+        landmark_score(C::BanditFort, k, &[C::Silver, C::Silver, C::Gold], &[]),
+        -6
+    );
+    assert_eq!(landmark_score(C::Fountain, k, &[C::Copper; 10], &[]), 15);
+    assert_eq!(landmark_score(C::Fountain, k, &[C::Copper; 9], &[]), 0);
+    assert_eq!(
+        landmark_score(
+            C::Keep,
+            k,
+            &[C::Copper, C::Copper, C::Silver, C::Gold],
+            &[C::Copper, C::Copper, C::Silver, C::Silver]
+        ),
+        10
+    );
+    assert_eq!(
+        landmark_score(
+            C::Museum,
+            k,
+            &[C::Copper, C::Copper, C::Estate, C::Village],
+            &[]
+        ),
+        6
+    );
+    assert_eq!(
+        landmark_score(
+            C::Orchard,
+            k,
+            &[&[C::Village; 6][..], &[C::Smithy; 2], &[C::Copper; 3]].concat(),
+            &[]
+        ),
+        4
+    );
+    assert_eq!(
+        landmark_score(
+            C::Palace,
+            k,
+            &[&[C::Copper; 7][..], &[C::Silver; 5], &[C::Gold; 2]].concat(),
+            &[]
+        ),
+        6
+    );
+    assert_eq!(
+        landmark_score(
+            C::TriumphalArch,
+            k,
+            &[&[C::Village; 7][..], &[C::Smithy; 4]].concat(),
+            &[]
+        ),
+        12
+    );
+    assert_eq!(
+        landmark_score(
+            C::TriumphalArch,
+            k,
+            &[&[C::Village; 3][..], &[C::Smithy; 3]].concat(),
+            &[]
+        ),
+        9
+    );
+    assert_eq!(landmark_score(C::Wall, k, &[C::Copper; 27], &[]), -12);
+    assert_eq!(
+        landmark_score(
+            C::WolfDen,
+            k,
+            &[C::Copper, C::Copper, C::Estate, C::Village],
+            &[]
+        ),
+        -6
+    );
+}
+
+#[test]
+fn obelisk_counts_every_card_of_its_pile_including_both_halves_of_a_split_pile() {
+    let mut g = setup_landscapes(&[Card::Catapult], &[Card::Obelisk]);
+    assert_eq!(g.obelisk_pile(), g.pile_of(Card::Catapult));
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Catapult, Card::Rocks, Card::Copper]);
+    assert_eq!(crate::cards::bonus_vp(&g, P0), 4);
+}
+
+#[test]
+fn tower_counts_non_victory_cards_from_empty_supply_piles() {
+    let mut g = setup_landscapes(&[Card::Village, Card::Catapult], &[Card::Tower]);
+    hand(&mut g, P0, &[]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::Village,
+            Card::Curse,
+            Card::Rocks,
+            Card::Estate,
+        ],
+    );
+    strip(&mut g, Card::Village, 10);
+    strip(&mut g, Card::Curse, 10);
+    strip(&mut g, Card::Estate, 8);
+    strip(&mut g, Card::Catapult, 5);
+    // Catapult / Rocks still has its Rocks: not empty.
+    assert_eq!(crate::cards::bonus_vp(&g, P0), 3);
+}
+
+// ---- Rulings and interactions ----
+
+#[test]
+fn an_encampment_without_a_pile_stays_set_aside_and_a_farmers_market_without_one_only_gives_a_buy()
+{
+    // As when bought from the Black Market: no pile to return to or gather on.
+    let mut g = setup(&[Card::Village]);
+    hand(&mut g, P0, &[Card::Encampment, Card::FarmersMarket]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Encampment);
+    play(&mut g, Card::FarmersMarket);
+    assert_eq!((g.turn().coins, g.turn().buys), (0, 2));
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Encampment]);
+    assert_eq!(g.count_owned(P0, Card::Encampment), 1);
+}
+
+#[test]
+fn moat_stops_legionary_before_the_gold_is_revealed() {
+    let mut g = setup(&[Card::Legionary, Card::Moat]);
+    hand(&mut g, P0, &[Card::Legionary, Card::Gold]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Legionary);
+    trigger(&mut g, Card::Moat);
+    choose_kinds(&mut g, &[Card::Gold]);
+    assert_eq!(g.hand(P1).len(), 5);
+}
+
+#[test]
+fn moat_stops_catapult_but_the_trash_still_happens() {
+    let mut g = setup(&[Card::Catapult, Card::Moat]);
+    hand(&mut g, P0, &[Card::Catapult, Card::Silver]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Catapult);
+    trigger(&mut g, Card::Moat);
+    assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Silver));
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+    assert_eq!(g.hand(P1).len(), 5);
+}
+
+#[test]
+fn an_enchanted_crown_in_the_buy_phase_gives_a_card_and_an_action() {
+    let mut g = setup(&[Card::Enchantress, Card::Crown]);
+    hand(&mut g, P0, &[Card::Enchantress]);
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    hand(&mut g, P1, &[Card::Crown, Card::Gold]);
+    deck(&mut g, P1, &[Card::Silver; 5]);
+    g.start();
+    play(&mut g, Card::Enchantress);
+    next_turn(&mut g);
+    end_phase(&mut g);
+    play(&mut g, Card::Crown);
+    assert_eq!(hand_kinds(&g, P1), [Card::Gold, Card::Silver]);
+    assert_eq!(g.turn().actions, 2);
+    assert_eq!(g.turn().coins, 0);
+}
+
+#[test]
+fn enchantress_does_not_touch_the_enchanted_players_later_actions_or_its_owners() {
+    let mut g = setup(&[Card::Enchantress, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Village, Card::Enchantress, Card::Village],
+    );
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Enchantress);
+    play(&mut g, Card::Village);
+    assert_eq!(g.turn().actions, 2);
+    assert_eq!(g.hand(P0).len(), 2);
+}
+
+#[test]
+fn two_charms_each_gain_a_card_and_debt_costs_must_match_exactly() {
+    let mut g = setup(&[
+        Card::Charm,
+        Card::Overlord,
+        Card::CityQuarter,
+        Card::Gladiator,
+    ]);
+    strip(&mut g, Card::Gladiator, 5);
+    hand(&mut g, P0, &[Card::Charm, Card::Charm]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Charm);
+    modes(&mut g, &[1]);
+    play(&mut g, Card::Charm);
+    modes(&mut g, &[1]);
+    buy(&mut g, Card::Overlord);
+    for _ in 0..2 {
+        resolve_triggers(&mut g);
+        let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+            panic!("expected Charm's pile choice, got {:?}", g.pending());
+        };
+        let names: Vec<Card> = piles.iter().map(|&p| g.pile(p).card).collect();
+        assert_eq!(names, [Card::CityQuarter]);
+        choose_pile(&mut g, Card::CityQuarter);
+    }
+    assert_eq!(g.count_owned(P0, Card::CityQuarter), 2);
+    // Only the bought Overlord gives Debt.
+    assert_eq!(g.player(P0).debt, 8);
+}
+
+#[test]
+fn capital_offers_to_pay_only_what_the_coins_left_cover() {
+    let mut g = setup(&[Card::Capital]);
+    hand(&mut g, P0, &[Card::Capital]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Capital);
+    buy(&mut g, Card::Capital);
+    end_phase(&mut g);
+    // $1 left.
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Number { min: 0, max: 1 }
+    );
+    number(&mut g, 1);
+    assert_eq!(g.player(P0).debt, 5);
+    assert_eq!(g.pending().unwrap().player, P1);
+}
+
+#[test]
+fn events_that_do_nothing_can_still_be_bought() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Ritual, Card::Triumph]);
+    strip(&mut g, Card::Curse, 10);
+    strip(&mut g, Card::Estate, 8);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper, Card::Gold]);
+    g.start();
+    to_buy(&mut g);
+    g.turn.buys = 2;
+    play_all(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy_event(&mut g, Card::Ritual);
+    assert_eq!(g.hand(P0).len(), 0);
+    assert_eq!(vp(&g, P0), 0);
+    buy_event(&mut g, Card::Triumph);
+    assert_eq!(vp(&g, P0), 0);
+    assert_eq!(g.player(P0).debt, 5);
+}
+
+#[test]
+fn wild_hunt_estate_option_with_no_estates_takes_no_tokens() {
+    let mut g = setup(&[Card::WildHunt]);
+    let pile = g.pile_of(Card::WildHunt).unwrap();
+    g.piles[pile.index()].vp_tokens = 3;
+    strip(&mut g, Card::Estate, 8);
+    hand(&mut g, P0, &[Card::WildHunt]);
+    g.start();
+    play(&mut g, Card::WildHunt);
+    modes(&mut g, &[1]);
+    assert_eq!(vp(&g, P0), 0);
+    assert_eq!(pile_vp(&g, Card::WildHunt), 3);
+}
+
+#[test]
+fn arena_is_offered_with_no_tokens_left() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Arena]);
+    let arena = g.landmark_vp(Card::Arena);
+    crate::cards::empires::take_landmark_vp(&mut g, P1, Card::Arena, arena);
+    g.players[1].vp_tokens = 0;
+    hand(&mut g, P0, &[Card::Village]);
+    g.start();
+    end_phase(&mut g);
+    trigger(&mut g, Card::Arena);
+    assert_eq!(discard_kinds(&g, P0), [Card::Village]);
+    assert_eq!(vp(&g, P0), 0);
+}
+
+#[test]
+fn groundskeeper_counts_gains_outside_the_buy_phase() {
+    let mut g = setup(&[Card::Groundskeeper, Card::Engineer]);
+    hand(&mut g, P0, &[Card::Groundskeeper, Card::Engineer]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Groundskeeper);
+    play(&mut g, Card::Engineer);
+    choose_pile(&mut g, Card::Estate);
+    no(&mut g);
+    assert_eq!(vp(&g, P0), 1);
+}
+
+#[test]
+fn donate_trashing_rocks_gains_the_silver_before_the_shuffle() {
+    let mut g = setup_landscapes(&[Card::Catapult], &[Card::Donate]);
+    hand(&mut g, P0, &[Card::Copper]);
+    deck(&mut g, P0, &[Card::Rocks, Card::Estate, Card::Estate]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    buy_event(&mut g, Card::Donate);
+    // P0's Clean-up drew 3 cards (Rocks, Estates) and the Copper.
+    next_turn(&mut g);
+    next_turn(&mut g);
+    choose_kinds(&mut g, &[Card::Rocks, Card::Estate, Card::Estate]);
+    // Rocks's Silver went to the hand and was shuffled in: 2 cards left to draw.
+    assert_eq!(hand_kinds(&g, P0).len(), 2);
+    assert_eq!(g.count_owned(P0, Card::Silver), 1);
+    assert_eq!(vp(&g, P0), 0);
+}
