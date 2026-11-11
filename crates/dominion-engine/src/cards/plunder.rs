@@ -2665,11 +2665,10 @@ fn bury(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
     for c in input.cards() {
         if g.zone(c) == Zone::Discard(p) {
-            g.show(c);
             g.move_card(c, Zone::Deck(p), Pos::Bottom);
             g.emit(Event::Moved {
                 player: p,
-                card: Some(g.card(c)),
+                card: None,
                 to: Zone::Deck(p),
             });
         }

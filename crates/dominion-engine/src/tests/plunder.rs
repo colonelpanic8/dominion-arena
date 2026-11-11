@@ -3173,3 +3173,33 @@ fn journey_keeps_a_card_played_at_the_start_of_clean_up() {
     assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Journey)));
     assert_eq!(in_play_kinds(&g, P0), [Card::Copper, Card::Sheepdog]);
 }
+
+#[test]
+fn bury_does_not_reveal_the_buried_card() {
+    let mut g = setup_l(&[Card::Village], &[Card::Bury]);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    let buried = discard(&mut g, P0, &[Card::Gold, Card::Estate])[0];
+    g.enable_trace();
+    g.start();
+    to_buy(&mut g);
+    money(&mut g, 1, 2);
+    buy_event(&mut g, Card::Bury);
+    choose(&mut g, &[buried]);
+    assert_eq!(g.player(P0).deck.first(), Some(&buried));
+    let named = |e: &Event| {
+        matches!(
+            e,
+            Event::Moved {
+                card: Some(Card::Gold),
+                ..
+            }
+        )
+    };
+    assert!(!g.log().iter().any(named));
+    let shown = Trace::Shown {
+        card: buried,
+        to: None,
+    };
+    assert!(!g.trace().unwrap().contains(&shown));
+}
