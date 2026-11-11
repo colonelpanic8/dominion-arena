@@ -64,7 +64,8 @@ them.
   (`StartCleanup`, `DiscardFromPlay`, discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Extra turns queue
   in `Game::extra_turns`; nobody takes more than two turns in a row, and extra turns
-  don't count for the tiebreaker. `Turn::controller` makes someone else decide and see
+  don't count for the tiebreaker. `Player::skip_turns` skips the next turns a player
+  would take (Lich); skipped regular turns count for the tiebreaker. `Turn::controller` makes someone else decide and see
   the player's cards (Possession, which also replaces gains, trashing through
   `SetRules::trash_instead` and Debt through `SetRules::debt_taker`).
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
@@ -73,9 +74,12 @@ them.
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
   `SetRules::modify_bonus`) and run the card's `Hook::Main`, then the `AfterPlay`
   window. `chain` lists the cards playing it (Throne Room ...); pass
-  `f.chain_for_child()` when a card plays another.
+  `f.chain_for_child()` when a card plays another. `SetRules::can_play` can forbid a
+  play from the hand (Warlord, Voyage; `g.playable` applies it); `Turn::hand_plays`
+  counts the turn's plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
-  effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move, `Gain` window.
+  effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
+  card's cost then in `GainState::cost`), `Gain` window.
   **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay (the card's
   `Hook::Ability(frame::OVERPAY)` with `f.data` = amount), `Buy` window, then gain.
   Events and Projects: pay, `BuyLandscape` window, then the landscape's `Hook::Main`
@@ -106,9 +110,14 @@ them.
   Embargo / Trade Route / player tokens, Traits) and `Turn`. Take Debt with
   `g.add_debt` (never `debt +=`), so Possession can redirect it. A set's own state goes in
   its `State` struct (`g.ext.<set>`). Everything must stay `Clone + Serialize`.
+- **Shuffling** opens `WouldShuffle`, shuffles, then `Shuffled { count }` (the bottom
+  `count` cards of the deck are the shuffled ones). One draw shuffles at most once.
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
   carries a `Purpose` and its `source` card. Never add a card-specific decision kind.
+  `SetRules::modify_decision` may change what a card ability asks: Elder adds one pick
+  to a `Purpose::Mode` "choose", so scripts must handle every chosen mode, in printed
+  order.
 - **Agents** get a `View`, never the `Game`.
 
 ## Writing a set
