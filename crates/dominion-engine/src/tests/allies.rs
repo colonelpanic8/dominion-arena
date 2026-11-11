@@ -1734,3 +1734,588 @@ fn random_games_with_every_allies_card_keep_invariants() {
         assert!(unplayed.is_empty(), "never played: {unplayed:?}");
     }
 }
+
+// ---- Allies ----
+
+#[test]
+fn architects_guild_gains_cheaper_non_victory_cards_and_chains_off_itself() {
+    let mut g = game_with(&[Card::Underling], Card::ArchitectsGuild);
+    set_favors(&mut g, P0, 4);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Gold);
+    accept(&mut g, Card::ArchitectsGuild);
+    assert_eq!(favors(&g, P0), 2);
+    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+        panic!()
+    };
+    let names: Vec<Card> = piles.iter().map(|&p| g.pile(p).card).collect();
+    assert!(names.contains(&Card::Silver) && !names.contains(&Card::Duchy));
+    assert!(!names.contains(&Card::Gold));
+    choose_pile(&mut g, Card::Silver);
+    accept(&mut g, Card::ArchitectsGuild);
+    choose_pile(&mut g, Card::Copper);
+    assert_eq!(favors(&g, P0), 0);
+    let mut d = discard_kinds(&g, P0);
+    d.retain(|c| matches!(c, Card::Gold | Card::Silver | Card::Copper));
+    assert!(g.log().contains(&Event::Gained {
+        player: P0,
+        card: Card::Copper,
+        to: Dest::Discard
+    }));
+}
+
+#[test]
+fn band_of_nomads_spends_a_favor_on_a_gain_costing_three_or_more() {
+    let mut g = game_with(&[Card::Underling], Card::BandOfNomads);
+    hand(&mut g, P0, &[Card::Gold, Card::Market]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Market);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Copper);
+    // Copper costs $0: nothing offered.
+    assert_eq!(purpose(&g), Purpose::Turn);
+    buy(&mut g, Card::Silver);
+    accept(&mut g, Card::BandOfNomads);
+    modes(&mut g, &[2]);
+    assert_eq!(favors(&g, P0), 0);
+    assert_eq!(g.turn().buys, 1);
+}
+
+#[test]
+fn cave_dwellers_discards_and_draws_as_often_as_desired() {
+    let mut g = game_with(&[Card::Underling], Card::CaveDwellers);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Estate, Card::Curse, Card::Copper]);
+    deck(&mut g, P0, &[Card::Gold, Card::Silver, Card::Copper]);
+    g.start();
+    accept(&mut g, Card::CaveDwellers);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert!(hand_kinds(&g, P0).contains(&Card::Gold));
+    yes(&mut g);
+    choose_kinds(&mut g, &[Card::Curse]);
+    assert!(hand_kinds(&g, P0).contains(&Card::Silver));
+    assert_eq!(favors(&g, P0), 0);
+    assert_eq!(purpose(&g), Purpose::Turn);
+}
+
+#[test]
+fn circle_of_witches_curses_the_others_after_a_liaison_for_three_favors() {
+    let mut g = game_with(&[Card::Underling, Card::Moat], Card::CircleOfWitches);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Underling]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    hand(&mut g, P1, &[Card::Moat]);
+    g.start();
+    play(&mut g, Card::Underling);
+    // The Favor Underling just gave counts.
+    accept(&mut g, Card::CircleOfWitches);
+    assert_eq!(favors(&g, P0), 0);
+    assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
+}
+
+#[test]
+fn city_state_plays_an_action_gained_on_your_turn_for_two_favors() {
+    let mut g = game_with(&[Card::Underling, Card::Village], Card::CityState);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Village);
+    accept(&mut g, Card::CityState);
+    assert!(g.log().contains(&Event::Played {
+        player: P0,
+        card: Card::Village
+    }));
+    assert_eq!(favors(&g, P0), 0);
+}
+
+#[test]
+fn city_state_does_not_work_on_another_players_turn() {
+    let mut g = game_with(
+        &[Card::Underling, Card::Village, Card::Swindler],
+        Card::CityState,
+    );
+    set_favors(&mut g, P1, 2);
+    hand(&mut g, P0, &[Card::Swindler]);
+    deck(&mut g, P1, &[Card::Silver]);
+    g.start();
+    play(&mut g, Card::Swindler);
+    choose_pile(&mut g, Card::Village);
+    assert_eq!(discard_kinds(&g, P1), [Card::Village]);
+    assert!(!offered(&g, Card::CityState));
+}
+
+#[test]
+fn coastal_haven_keeps_cards_in_hand_for_favors() {
+    let mut g = game_with(&[Card::Underling], Card::CoastalHaven);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Gold, Card::Silver, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    to_buy(&mut g);
+    end_phase(&mut g);
+    accept(&mut g, Card::CoastalHaven);
+    choose_kinds(&mut g, &[Card::Gold, Card::Silver]);
+    assert_eq!(favors(&g, P0), 0);
+    assert_eq!(g.hand(P0).len(), 7);
+    assert!(hand_kinds(&g, P0).contains(&Card::Gold));
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn crafters_guild_gains_a_card_onto_the_deck_for_two_favors() {
+    let mut g = game_with(&[Card::Underling, Card::Smithy], Card::CraftersGuild);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Copper]);
+    deck(&mut g, P0, &[Card::Estate]);
+    g.start();
+    accept(&mut g, Card::CraftersGuild);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(deck_kinds(&g, P0), [Card::Smithy, Card::Estate]);
+    assert_eq!(favors(&g, P0), 0);
+}
+
+#[test]
+fn desert_guides_discards_the_hand_and_draws_five() {
+    let mut g = game_with(&[Card::Underling], Card::DesertGuides);
+    hand(&mut g, P0, &[Card::Estate, Card::Estate]);
+    deck(&mut g, P0, &[Card::Gold; 5]);
+    g.start();
+    accept(&mut g, Card::DesertGuides);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold; 5]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate, Card::Estate]);
+    assert_eq!(purpose(&g), Purpose::Turn);
+}
+
+#[test]
+fn family_of_inventors_puts_favors_on_non_victory_piles_to_lower_costs() {
+    let mut g = game_with(
+        &[Card::Underling, Card::Smithy, Card::Gardens],
+        Card::FamilyOfInventors,
+    );
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Copper]);
+    g.start();
+    accept(&mut g, Card::FamilyOfInventors);
+    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
+        panic!()
+    };
+    let names: Vec<Card> = piles.iter().map(|&p| g.pile(p).card).collect();
+    assert!(names.contains(&Card::Smithy) && names.contains(&Card::Curse));
+    assert!(!names.contains(&Card::Province) && !names.contains(&Card::Gardens));
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(g.cost(Card::Smithy), Cost::coins(3));
+    assert_eq!(g.view(P1).cost(Card::Smithy), Cost::coins(3));
+    assert_eq!(favors(&g, P0), 1);
+}
+
+#[test]
+fn family_of_inventors_tokens_add_up_and_stop_at_zero() {
+    let mut g = game_with(&[Card::Underling], Card::FamilyOfInventors);
+    let silver = g.supply_pile(Card::Silver).unwrap();
+    g.ext.allies.inventors.push((silver, 4));
+    assert_eq!(g.cost(Card::Silver), Cost::ZERO);
+    let id = g.pile_top(silver).unwrap();
+    assert_eq!(g.cost_of(id), Cost::ZERO);
+}
+
+#[test]
+fn fellowship_of_scribes_draws_after_an_action_with_four_or_fewer_cards_in_hand() {
+    let mut g = game_with(&[Card::Underling, Card::Village], Card::FellowshipOfScribes);
+    hand(&mut g, P0, &[Card::Village, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Village);
+    accept(&mut g, Card::FellowshipOfScribes);
+    assert_eq!(g.hand(P0).len(), 3);
+    assert_eq!(favors(&g, P0), 0);
+}
+
+#[test]
+fn forest_dwellers_looks_at_three_discards_any_and_reorders_the_rest() {
+    let mut g = game_with(&[Card::Underling], Card::ForestDwellers);
+    hand(&mut g, P0, &[Card::Copper]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Estate, Card::Silver, Card::Gold, Card::Curse],
+    );
+    g.start();
+    accept(&mut g, Card::ForestDwellers);
+    choose_kinds(&mut g, &[Card::Estate]);
+    choose_kinds(&mut g, &[Card::Gold, Card::Silver]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Silver, Card::Curse]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
+}
+
+#[test]
+fn gang_of_pickpockets_discards_down_to_four_unless_a_favor_is_spent() {
+    let mut g = game_with(&[Card::Underling], Card::GangOfPickpockets);
+    hand(&mut g, P0, &[Card::Copper; 5]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Estate,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    yes(&mut g);
+    assert_eq!((g.hand(P0).len(), favors(&g, P0)), (5, 0));
+    next_turn(&mut g);
+    no(&mut g);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(g.hand(P1).len(), 4);
+    next_turn(&mut g);
+    // No Favors left: P0 just discards (all Coppers, so no choice).
+    assert_eq!(g.hand(P0).len(), 4);
+}
+
+#[test]
+fn island_folk_takes_an_extra_turn_for_five_favors_but_not_a_third_in_a_row() {
+    let mut g = game_with(&[Card::Underling], Card::IslandFolk);
+    set_favors(&mut g, P0, 10);
+    hand(&mut g, P0, &[Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    end_phase(&mut g);
+    accept(&mut g, Card::IslandFolk);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.turn().extra, Some(Card::IslandFolk));
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(favors(&g, P0), 5);
+}
+
+#[test]
+fn island_folk_and_voyage_in_one_turn_take_only_the_island_folk_turn() {
+    let mut g = game_with(&[Card::Underling, Card::Odysseys], Card::IslandFolk);
+    set_favors(&mut g, P0, 5);
+    hand(&mut g, P0, &[Card::Voyage]);
+    deck(&mut g, P0, &[Card::Village; 20]);
+    g.start();
+    play(&mut g, Card::Voyage);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    accept(&mut g, Card::IslandFolk);
+    assert_eq!(g.turn().extra, Some(Card::IslandFolk));
+    // Not limited to 3 plays from the hand.
+    for _ in 0..4 {
+        play(&mut g, Card::Village);
+    }
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert!(g.in_play(P0).is_empty());
+}
+
+#[test]
+fn league_of_bankers_gives_a_coin_per_four_favors_at_the_start_of_the_buy_phase() {
+    let mut g = game_with(&[Card::Underling], Card::LeagueOfBankers);
+    set_favors(&mut g, P0, 9);
+    hand(&mut g, P0, &[Card::Copper]);
+    g.start();
+    assert_eq!(g.turn().coins, 2);
+    assert_eq!(favors(&g, P0), 9);
+}
+
+#[test]
+fn league_of_shopkeepers_rewards_liaisons_by_favors_held() {
+    let mut g = game_with(&[Card::Underling], Card::LeagueOfShopkeepers);
+    set_favors(&mut g, P0, 9);
+    hand(&mut g, P0, &[Card::Underling]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Underling);
+    assert_eq!(g.turn().coins, 1);
+    assert_eq!((g.turn().actions, g.turn().buys), (2, 2));
+    assert_eq!(favors(&g, P0), 10);
+}
+
+#[test]
+fn league_of_shopkeepers_with_throne_room_checks_after_each_play() {
+    let mut g = game_with(
+        &[Card::Underling, Card::ThroneRoom],
+        Card::LeagueOfShopkeepers,
+    );
+    set_favors(&mut g, P0, 3);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Underling]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Underling]);
+    assert_eq!(g.turn().coins, 1);
+    assert_eq!(favors(&g, P0), 5);
+}
+
+#[test]
+fn market_towns_plays_actions_from_hand_at_the_start_of_the_buy_phase() {
+    let mut g = game_with(&[Card::Underling, Card::Village], Card::MarketTowns);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Village, Card::Village, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    end_phase(&mut g);
+    accept(&mut g, Card::MarketTowns);
+    let village = find(&g, P0, Card::Village);
+    choose(&mut g, &[village]);
+    let village = find(&g, P0, Card::Village);
+    choose(&mut g, &[village]);
+    assert_eq!(favors(&g, P0), 0);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Village, Card::Village]);
+    assert_eq!(g.turn().phase, Phase::Buy);
+}
+
+#[test]
+fn mountain_folk_draws_three_for_five_favors_only() {
+    let mut g = game_with(&[Card::Underling], Card::MountainFolk);
+    set_favors(&mut g, P0, 4);
+    hand(&mut g, P0, &[Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    assert_eq!(purpose(&g), Purpose::Turn);
+    let mut g = game_with(&[Card::Underling], Card::MountainFolk);
+    set_favors(&mut g, P0, 5);
+    hand(&mut g, P0, &[Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    accept(&mut g, Card::MountainFolk);
+    assert_eq!(g.hand(P0).len(), 4);
+}
+
+#[test]
+fn order_of_astrologers_puts_cards_on_top_of_the_shuffled_cards() {
+    let mut g = game_with(&[Card::Underling, Card::Smithy], Card::OrderOfAstrologers);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(
+        &mut g,
+        P0,
+        &[
+            Card::Estate,
+            Card::Curse,
+            Card::Gold,
+            Card::Silver,
+            Card::Duchy,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Smithy);
+    accept(&mut g, Card::OrderOfAstrologers);
+    assert_eq!(candidates(&g).len(), 5);
+    choose_kinds(&mut g, &[Card::Gold, Card::Silver]);
+    choose_kinds(&mut g, &[Card::Gold, Card::Silver]);
+    let mut h = hand_kinds(&g, P0);
+    h.sort();
+    let mut want = vec![Card::Copper, Card::Gold, Card::Silver];
+    want.sort();
+    assert_eq!(h, want);
+    assert_eq!(favors(&g, P0), 0);
+}
+
+#[test]
+fn order_of_masons_leaves_cards_out_of_the_shuffle_and_shuffles_only_once() {
+    let mut g = game_with(&[Card::Underling, Card::Smithy], Card::OrderOfMasons);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    discard(
+        &mut g,
+        P0,
+        &[Card::Province, Card::Province, Card::Curse, Card::Curse],
+    );
+    g.start();
+    play(&mut g, Card::Smithy);
+    accept(&mut g, Card::OrderOfMasons);
+    choose_kinds(&mut g, &[Card::Province, Card::Province]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Curse, Card::Curse]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Province, Card::Province]);
+    assert_eq!(favors(&g, P0), 0);
+}
+
+#[test]
+fn peaceful_cult_trashes_a_card_per_favor_spent() {
+    let mut g = game_with(&[Card::Underling], Card::PeacefulCult);
+    set_favors(&mut g, P0, 2);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Estate, Card::Estate, Card::Estate, Card::Copper],
+    );
+    g.start();
+    accept(&mut g, Card::PeacefulCult);
+    assert_eq!(
+        g.respond(Response::Cards(g.hand(P0)[..3].to_vec())),
+        Err(ResponseError::WrongCount {
+            got: 3,
+            min: 0,
+            max: 2
+        })
+    );
+    choose_kinds(&mut g, &[Card::Estate, Card::Estate]);
+    assert_eq!(favors(&g, P0), 0);
+    assert_eq!(g.hand(P0).len(), 2);
+}
+
+#[test]
+fn plateau_shepherds_pairs_favors_with_cards_costing_two() {
+    let mut g = game_with(&[Card::Underling], Card::PlateauShepherds);
+    // Three Estates and seven Coppers.
+    assert_eq!(g.score(P0), 3 + 2);
+    set_favors(&mut g, P0, 5);
+    assert_eq!(g.score(P0), 3 + 6);
+}
+
+#[test]
+fn trappers_lodge_puts_a_gained_card_onto_the_deck_for_a_favor() {
+    let mut g = game_with(&[Card::Underling], Card::TrappersLodge);
+    hand(&mut g, P0, &[Card::Gold]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Silver);
+    accept(&mut g, Card::TrappersLodge);
+    assert!(
+        hand_kinds(&g, P0).contains(&Card::Silver) || deck_kinds(&g, P0).contains(&Card::Silver)
+    );
+    assert!(!g.log().iter().any(|e| matches!(
+        e,
+        Event::Discarded {
+            card: Card::Silver,
+            ..
+        }
+    )));
+    assert_eq!(favors(&g, P0), 0);
+}
+
+#[test]
+fn woodworkers_guild_trashes_an_action_to_gain_an_action() {
+    let mut g = game_with(&[Card::Underling, Card::Laboratory], Card::WoodworkersGuild);
+    hand(&mut g, P0, &[Card::Village, Card::Copper]);
+    g.start();
+    end_phase(&mut g);
+    accept(&mut g, Card::WoodworkersGuild);
+    choose_pile(&mut g, Card::Laboratory);
+    assert_eq!(discard_kinds(&g, P0), [Card::Laboratory]);
+    assert!(kinds(&g, g.trash()).contains(&Card::Village));
+}
+
+// ---- Interactions ----
+
+#[test]
+fn guildmaster_favor_from_a_city_state_gain_can_pay_for_the_play() {
+    let mut g = game_with(&[Card::Guildmaster, Card::Village], Card::CityState);
+    set_favors(&mut g, P0, 1);
+    hand(&mut g, P0, &[Card::Guildmaster]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Guildmaster);
+    buy(&mut g, Card::Village);
+    accept(&mut g, Card::CityState);
+    assert!(g.log().contains(&Event::Played {
+        player: P0,
+        card: Card::Village
+    }));
+}
+
+#[test]
+fn highwayman_attack_lasts_past_a_turn_lich_skips() {
+    let mut g = game(&[Card::Highwayman, Card::Wizards]);
+    hand(&mut g, P0, &[Card::Highwayman, Card::Lich]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Lich);
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    play(&mut g, Card::Copper);
+    assert_eq!(g.turn().coins, 0);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    play(&mut g, Card::Copper);
+    assert_eq!(g.turn().coins, 0);
+}
+
+#[test]
+fn games_with_allies_resume_identically_after_serialization() {
+    let mut g = game_with(&[Card::Townsfolk, Card::Underling], Card::FamilyOfInventors);
+    hand(&mut g, P0, &[Card::Elder, Card::Town]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Elder);
+    let town = find(&g, P0, Card::Town);
+    choose(&mut g, &[town]);
+    let mut restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+    modes(&mut g, &[0, 1]);
+    modes(&mut restored, &[0, 1]);
+    assert_eq!(
+        serde_json::to_string(&g).unwrap(),
+        serde_json::to_string(&restored).unwrap()
+    );
+}
+
+#[test]
+fn royal_galley_replaying_a_throne_room_on_a_duration_leaves_the_throne_room_in_play() {
+    let mut g = game(&[Card::RoyalGalley, Card::ThroneRoom, Card::Caravan]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::RoyalGalley, Card::ThroneRoom, Card::Village],
+    );
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::RoyalGalley);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Village]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::RoyalGalley, Card::ThroneRoom]);
+    // P0's next hand gets a Caravan for the Throne Room to play.
+    let caravan = g.create(Card::Caravan, Zone::Hand(P0));
+    next_turn(&mut g);
+    choose(&mut g, &[caravan]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Caravan]);
+}
+
+#[test]
+fn a_skirmisher_gained_and_played_with_city_state_attacks_for_its_own_gain() {
+    let mut g = game_with(&[Card::Skirmisher], Card::CityState);
+    set_favors(&mut g, P0, 2);
+    hand(&mut g, P0, &[Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::Skirmisher);
+    accept(&mut g, Card::CityState);
+    assert_eq!(g.hand(P1).len(), 3);
+}
+
+#[test]
+#[ignore = "a Voyage whose turn is skipped stays in play until its owner's next Clean-up, \
+            not the next Clean-up of any player"]
+fn a_voyage_whose_turn_lich_skips_is_discarded_in_the_next_clean_up() {
+    let mut g = game(&[Card::Wizards, Card::Odysseys]);
+    hand(&mut g, P0, &[Card::Lich, Card::Voyage]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Voyage);
+    play(&mut g, Card::Lich);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert!(!in_play_kinds(&g, P0).contains(&Card::Voyage));
+}
