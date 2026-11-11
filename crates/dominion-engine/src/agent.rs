@@ -91,7 +91,7 @@ impl<'a> View<'a> {
             Zone::Hand(p) | Zone::SetAside(p) => self.sees_for(p),
             Zone::InPlay(_) | Zone::Trash => true,
             Zone::Discard(p) => g.player(p).discard.last() == Some(&id),
-            Zone::Pile(pile) => g.pile_top(pile) == Some(id),
+            Zone::Pile(pile) => !g.pile(pile).hidden && g.pile_top(pile) == Some(id),
             Zone::Mat(p, mat) => self.sees_for(p) || mat != crate::Mat::NativeVillage,
             Zone::Deck(_) => false,
         };
@@ -163,6 +163,9 @@ impl<'a> View<'a> {
     }
 
     pub fn pile_top(&self, id: PileId) -> Option<Card> {
+        if self.game.pile(id).hidden {
+            return None;
+        }
         self.game.pile_top(id).map(|c| self.game.card(c))
     }
 

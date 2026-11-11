@@ -365,21 +365,31 @@ impl Frame {
                 pc,
             } => resume_buy(g, *player, *pile, *landscape, card, pc, input),
             Frame::Trash { player, cards, i } => {
+                // Cards trashed together are all trashed before any "when trashed" ability.
+                if *i == 0 {
+                    for &c in cards.iter() {
+                        let from = g.zone(c);
+                        if !cards::trash_instead(g, *player, c) {
+                            g.move_card(c, Zone::Trash, Pos::Top);
+                        }
+                        g.trashing.push((c, from));
+                        let card = g.card(c);
+                        if *player == g.turn.player {
+                            g.turn.trashed.push(card);
+                        }
+                        g.emit(Event::Trashed {
+                            player: *player,
+                            card,
+                        });
+                    }
+                } else if let Some(pos) = g.trashing.iter().rposition(|(c, _)| *c == cards[*i - 1])
+                {
+                    g.trashing.remove(pos);
+                }
                 let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 };
                 *i += 1;
-                let card = g.card(c);
-                if !cards::trash_instead(g, *player, c) {
-                    g.move_card(c, Zone::Trash, Pos::Top);
-                }
-                if *player == g.turn.player {
-                    g.turn.trashed.push(card);
-                }
-                g.emit(Event::Trashed {
-                    player: *player,
-                    card,
-                });
                 Flow::Call(Frame::window(Occasion::Trash {
                     player: *player,
                     card: c,
@@ -397,15 +407,20 @@ impl Frame {
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
+                // Cards discarded together are all discarded before any reacts.
+                if *i == 0 {
+                    for &c in cards.iter() {
+                        g.move_card(c, Zone::Discard(*player), Pos::Top);
+                        g.emit(Event::Discarded {
+                            player: *player,
+                            card: g.card(c),
+                        });
+                    }
+                }
                 let Some(&c) = cards.get(*i) else {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 };
                 *i += 1;
-                g.move_card(c, Zone::Discard(*player), Pos::Top);
-                g.emit(Event::Discarded {
-                    player: *player,
-                    card: g.card(c),
-                });
                 Flow::Call(Frame::window(Occasion::Discard {
                     player: *player,
                     card: c,
@@ -650,6 +665,18 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         }
         7 => {
             let kept: Vec<CardId> = g.lasting.iter().flat_map(|l| l.keeps.clone()).collect();
+            // Cards other players played this turn (Guard Dog, ...) are discarded too.
+            for other in g.others(p) {
+                let stray: Vec<CardId> = g.players[other.index()]
+                    .in_play
+                    .iter()
+                    .filter(|c| !kept.contains(c))
+                    .copied()
+                    .collect();
+                for c in stray {
+                    g.move_card(c, Zone::Discard(other), Pos::Top);
+                }
+            }
             let pl = &g.players[p.index()];
             let cards = pl
                 .in_play
@@ -987,9 +1014,12 @@ impl PlayFrame {
                 if st.blocked {
                     return Flow::Continue;
                 }
+                let mine = p == g.turn.player;
                 if let Some(plus) = st.replaced {
-                    g.turn.actions += plus.actions as u32;
-                    g.turn.buys += plus.buys as u32;
+                    if mine {
+                        g.turn.actions += plus.actions as u32;
+                        g.turn.buys += plus.buys as u32;
+                    }
                     g.add_coins(p, plus.coins as u32);
                     return Flow::Call(Frame::draw(p, plus.cards as usize));
                 }
@@ -1009,9 +1039,11 @@ impl PlayFrame {
                 pl.villagers += bonus.plus.villagers as u32;
                 pl.coffers += bonus.plus.coffers as u32;
                 pl.favors += bonus.plus.favors as u32;
-                g.turn.actions += bonus.plus.actions as u32;
-                g.turn.buys += bonus.plus.buys as u32;
-                g.turn.potions += bonus.potions;
+                if mine {
+                    g.turn.actions += bonus.plus.actions as u32;
+                    g.turn.buys += bonus.plus.buys as u32;
+                    g.turn.potions += bonus.potions;
+                }
                 g.add_coins(p, bonus.plus.coins as u32 + bonus.coins);
                 self.pc = 5;
                 Flow::Call(Frame::draw(p, bonus.plus.cards as usize))

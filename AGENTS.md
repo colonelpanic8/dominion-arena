@@ -43,7 +43,7 @@ the dividing line), and as applicable `cost` (`coins`, `potions`, `debt`, `varia
 `villagers`, `coffers`, `favors`), `coins` (a Treasure's value), `potions`, `vp`,
 `kingdom`, `basic`, `removed`, and `pile` (the randomizer or top card of its mixed or
 split pile). `build.rs` turns it into `Card` (one variant per entry, named by
-CamelCasing the name), `Types` and the `CardDef` table. Edit the JSON to fix data; the
+CamelCasing the name), `Types` and the `CardDef` table. Arcana is unreleased: its entries are names and types only, none are Kingdom cards yet, and it has no behavior; re-import it once its cards are public. Edit the JSON to fix data; the
 vanilla bonuses were parsed automatically and must be right, because the engine applies
 them.
 
