@@ -173,6 +173,61 @@ fn configured_choices_are_used() {
 }
 
 #[test]
+fn any_legal_card_can_be_configured() {
+    // Removed cards, and a Bane and a Ferryman pile from sets not in the Kingdom.
+    let kingdom = [
+        Card::YoungWitch,
+        Card::Ferryman,
+        Card::Riverboat,
+        Card::BlackMarket,
+    ];
+    let landscapes = [Card::WayOfTheMouse, Card::ApproachingArmy];
+    let g = game(
+        &kingdom,
+        &landscapes,
+        &[
+            (Card::YoungWitch, &[Card::Moat]),
+            (Card::Ferryman, &[Card::Thief]),
+            (Card::WayOfTheMouse, &[Card::Woodcutter]),
+            (Card::Riverboat, &[Card::Mandarin]),
+            (Card::BlackMarket, &[Card::Adventurer, Card::FortuneTeller]),
+            (Card::ApproachingArmy, &[Card::NobleBrigand]),
+        ],
+    );
+    let st = &g.ext.cornucopia_guilds;
+    assert_eq!(g.pile(st.bane.unwrap()).card, Card::Moat);
+    assert_eq!(g.pile(st.ferryman.unwrap()).card, Card::Thief);
+    assert_eq!(
+        g.ext.menagerie.mouse.map(|c| g.printed(c)),
+        Some(Card::Woodcutter)
+    );
+    assert_eq!(
+        g.ext.rising_sun.riverboat.map(|c| g.printed(c)),
+        Some(Card::Mandarin)
+    );
+    assert_eq!(black_market(&g), [Card::Adventurer, Card::FortuneTeller]);
+    assert!(g.supply_pile(Card::NobleBrigand).is_some());
+
+    // Left to chance, none of them is a removed card, and the Bane and Ferryman's pile
+    // come from the sets in the Kingdom.
+    for seed in 0..20 {
+        let mut config = config(&kingdom, &landscapes, &[]);
+        config.seed = seed;
+        let g = setup_with(config);
+        let sets = kingdom.map(|c| c.set());
+        let st = &g.ext.cornucopia_guilds;
+        for pile in [st.bane.unwrap(), st.ferryman.unwrap()] {
+            let card = g.pile(pile).card;
+            assert!(sets.contains(&card.set()), "seed {seed}: {card}");
+        }
+        let added = g.piles().iter().map(|p| p.card).chain(black_market(&g));
+        for card in added.chain(g.ext.menagerie.mouse.map(|c| g.printed(c))) {
+            assert!(!card.def().removed, "seed {seed}: {card}");
+        }
+    }
+}
+
+#[test]
 fn invalid_choices_are_rejected() {
     let err = |kingdom: &[Card], landscapes: &[Card], choices: &[(Card, &[Card])]| {
         build(config(kingdom, landscapes, choices)).err()

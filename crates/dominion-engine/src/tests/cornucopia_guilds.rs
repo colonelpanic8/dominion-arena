@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::Zone;
+use crate::game::{Phase, Zone};
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -179,6 +179,30 @@ fn farmhands_sets_aside_a_card_to_play_next_turn() {
 }
 
 #[test]
+fn farmhands_gained_at_the_start_of_a_turn_plays_the_card_next_turn() {
+    let mut g = setup(&[Card::Farmhands, Card::Cobbler]);
+    hand(&mut g, P0, &[Card::Cobbler]);
+    deck(&mut g, P0, &[Card::Estate; 20]);
+    g.start();
+    while g.turn().phase != Phase::Night {
+        end_phase(&mut g);
+    }
+    play(&mut g, Card::Cobbler);
+    end_phase(&mut g);
+    // At the start of P0's turn Cobbler gains Farmhands to hand, which sets itself aside.
+    assert_eq!((g.turn().player, g.turn().phase), (P0, Phase::Start));
+    choose_pile(&mut g, Card::Farmhands);
+    let farmhands = find(&g, P0, Card::Farmhands);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.zone(farmhands), Zone::SetAside(P0));
+    assert_eq!((g.turn().player, g.turn().phase), (P0, Phase::Buy));
+    end_phase(&mut g);
+    end_phase(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.zone(farmhands), Zone::InPlay(P0));
+}
+
+#[test]
 fn farrier_overpay_draws_extra_cards_at_end_of_turn() {
     let mut g = setup(&[Card::Farrier]);
     hand(&mut g, P0, &[Card::Gold, Card::Gold]);
@@ -202,6 +226,21 @@ fn farrier_gained_without_buying_draws_nothing_extra() {
     end_phase(&mut g);
     assert_eq!(g.pending().unwrap().player, P1);
     assert_eq!(g.hand(P0).len(), 5);
+}
+
+#[test]
+fn ferryman_discards_a_card() {
+    let mut g = setup(&[Card::Ferryman]);
+    hand(&mut g, P0, &[Card::Ferryman, Card::Estate, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Ferryman);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P0, Purpose::Discard));
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
+    assert_eq!(g.hand(P0).len(), 3);
+    assert_eq!(g.turn().actions, 1);
 }
 
 #[test]
@@ -260,6 +299,20 @@ fn footpad_draws_on_gains_in_action_phases_only() {
         .collect();
     // Workshop's gain drew one; buying the Silver drew none; then Clean-up.
     assert_eq!(draws, [1, 5]);
+}
+
+#[test]
+fn footpad_in_the_black_market_deck_draws_on_gains() {
+    let mut g = setup_with(GameConfig {
+        setup_choices: [(Card::BlackMarket, vec![Card::Footpad])].into(),
+        ..GameConfig::new(2, vec![Card::BlackMarket, Card::Workshop], 7)
+    });
+    hand(&mut g, P0, &[Card::Workshop]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Workshop);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
 }
 
 #[test]
@@ -425,25 +478,54 @@ fn infirmary_overpay_plays_it_once_per_coin() {
     play_treasures(&mut g);
     buy(&mut g, Card::Infirmary);
     respond(&mut g, Response::Number(2));
+    // Playing it puts it into play.
+    assert_eq!(
+        kinds(&g, g.in_play(P0)),
+        [Card::Gold, Card::Gold, Card::Infirmary]
+    );
     choose_kinds(&mut g, &[Card::Curse]);
     choose_kinds(&mut g, &[Card::Estate]);
     assert_eq!(
         kinds(&g, &g.trash()[g.trash().len() - 2..]),
         [Card::Curse, Card::Estate]
     );
-    assert!(
-        g.log()
-            .iter()
-            .filter(|e| matches!(
-                e,
-                Event::Played {
-                    card: Card::Infirmary,
-                    ..
-                }
-            ))
-            .count()
-            == 2
-    );
+    assert_eq!(infirmary_plays(&g), 2);
+}
+
+fn infirmary_plays(g: &Game) -> usize {
+    let played = |e: &&Event| {
+        matches!(
+            e,
+            Event::Played {
+                card: Card::Infirmary,
+                ..
+            }
+        )
+    };
+    g.log().iter().filter(played).count()
+}
+
+#[test]
+fn infirmary_exchanged_before_its_overpay_is_not_played() {
+    let mut g = setup(&[Card::Infirmary, Card::Trader]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper, Card::Trader]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    end_phase(&mut g);
+    play_treasures(&mut g);
+    buy(&mut g, Card::Infirmary);
+    respond(&mut g, Response::Number(1));
+    let labels = match &g.pending().unwrap().kind {
+        DecisionKind::Choose { labels, .. } => labels.clone(),
+        k => panic!("{k:?}"),
+    };
+    let trader = labels.iter().position(|l| l.starts_with("Trader")).unwrap();
+    respond(&mut g, Response::option(Opt::Trigger(trader as u16)));
+    // Back on its pile, it can't be put into play.
+    let pile = g.supply_pile(Card::Infirmary).unwrap();
+    assert_eq!(g.pile(pile).cards.len(), 10);
+    assert_eq!(infirmary_plays(&g), 0);
+    assert_eq!(g.hand(P0).len(), 5);
 }
 
 #[test]
@@ -942,16 +1024,23 @@ fn prizes() {
 }
 
 #[test]
-fn followers_gains_an_estate_curses_and_attacks() {
-    let mut g = setup(&[Card::Tournament]);
+fn followers_gains_an_estate_and_attacks_each_player_in_turn() {
+    let mut g = setup_with(GameConfig::new(3, vec![Card::Tournament], 1));
     hand(&mut g, P0, &[Card::Followers]);
     deck(&mut g, P0, &[Card::Copper; 2]);
     g.start();
     play(&mut g, Card::Followers);
     assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
-    assert_eq!(g.count_owned(P1, Card::Curse), 1);
+    // P1 gains a Curse and discards before P2 gains one.
+    let curses = |g: &Game| [P1, P2].map(|p| g.count_owned(p, Card::Curse));
     let d = g.pending().unwrap();
     assert_eq!((d.player, d.purpose), (P1, Purpose::Discard));
+    assert_eq!(curses(&g), [1, 0]);
+    let hand = candidates(&g);
+    choose(&mut g, &hand[..2]);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P2, Purpose::Discard));
+    assert_eq!(curses(&g), [1, 1]);
 }
 
 #[test]
@@ -983,6 +1072,24 @@ fn doctor_trashes_named_cards_and_overpay_looks_at_the_top() {
     mode(&mut g, &[0]);
     mode(&mut g, &[2]);
     assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Estate));
+}
+
+#[test]
+fn doctor_does_not_put_back_a_card_that_left_the_deck() {
+    let mut g = setup(&[Card::Doctor, Card::Trail]);
+    hand(&mut g, P0, &[Card::Doctor]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Trail, Card::Gold, Card::Silver, Card::Estate],
+    );
+    g.start();
+    play(&mut g, Card::Doctor);
+    respond(&mut g, Response::Name(Card::Trail));
+    // The trashed Trail is played and draws the revealed Gold.
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Estate]);
 }
 
 #[test]

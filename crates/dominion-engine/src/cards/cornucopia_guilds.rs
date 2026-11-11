@@ -157,6 +157,7 @@ impl SetRules for Rules {
             (Card::Advisor, _) => advisor(g, f, input),
             (Card::Butcher, _) => butcher(g, f, input),
             (Card::Carnival, _) => carnival(g, f, input),
+            (Card::Ferryman, _) => discard_n(g, f, input, 1),
             (Card::Footpad, _) => discard_down(g, f, input, 3, 0).unwrap_or_else(Flow::done),
             (Card::Hamlet, _) => hamlet(g, f, input),
             (Card::Herald, _) => herald(g, f, input),
@@ -265,7 +266,8 @@ impl SetRules for Rules {
                     }
                     _ => {}
                 }
-                if g.turn.phase == Phase::Action && g.pile_of(Card::Footpad).is_some() {
+                // "In games using this": wherever its cards are (the Black Market deck).
+                if g.turn.phase == Phase::Action && setup::in_game(g, |c| c == Card::Footpad) {
                     out.push(Trigger::new(player, Card::Footpad, FOOTPAD_DRAW));
                 }
             }
@@ -276,7 +278,8 @@ impl SetRules for Rules {
                         Card::HorseTraders => HORSE_TRADERS_RETURN,
                         _ => continue,
                     };
-                    if l.owner == player {
+                    // "Your next turn": not the turn the card was set aside on.
+                    if l.owner == player && l.turn < g.player(player).turns_taken {
                         out.push(Trigger::new(player, l.card, ability).via_lasting(l.id));
                     }
                 }
@@ -336,20 +339,20 @@ impl SetRules for Rules {
 
     fn ensure(g: &mut Game, s: &mut Setup) {
         let st = &g.ext.cornucopia_guilds;
-        if st.bane.is_none() && setup::in_game(g, |c| c == Card::YoungWitch) {
-            let candidates = unused_costing(g, 2, 3);
-            if let Some(bane) = s.choose(g, Card::YoungWitch, candidates) {
-                g.ext.cornucopia_guilds.bane = Some(setup::add_kingdom_pile(g, bane));
-            }
+        if st.bane.is_none()
+            && setup::in_game(g, |c| c == Card::YoungWitch)
+            && let Some(bane) = choose_unused_costing(g, s, Card::YoungWitch, 2, 3)
+        {
+            g.ext.cornucopia_guilds.bane = Some(setup::add_kingdom_pile(g, bane));
         }
         let st = &g.ext.cornucopia_guilds;
-        if st.ferryman.is_none() && setup::in_game(g, |c| c == Card::Ferryman) {
-            let candidates = unused_costing(g, 3, 4);
-            if let Some(card) = s.choose(g, Card::Ferryman, candidates) {
-                let pile = setup::add_kingdom_pile(g, card);
-                g.piles[pile.index()].in_supply = false;
-                g.ext.cornucopia_guilds.ferryman = Some(pile);
-            }
+        if st.ferryman.is_none()
+            && setup::in_game(g, |c| c == Card::Ferryman)
+            && let Some(card) = choose_unused_costing(g, s, Card::Ferryman, 3, 4)
+        {
+            let pile = setup::add_kingdom_pile(g, card);
+            g.piles[pile.index()].in_supply = false;
+            g.ext.cornucopia_guilds.ferryman = Some(pile);
         }
         if setup::in_game(g, |c| c == Card::Tournament) && g.pile_of(PRIZES[0]).is_none() {
             for prize in PRIZES {
@@ -373,20 +376,19 @@ impl SetRules for Rules {
     }
 }
 
-/// The unused Kingdom cards costing $`lo` to $`hi` from the sets in use (Young Witch's
-/// Bane, Ferryman's pile).
-fn unused_costing(g: &Game, lo: u8, hi: u8) -> Vec<Card> {
-    let sets: Vec<Set> = g.config.kingdom.iter().map(|c| c.set()).collect();
-    Card::kingdom_cards()
+/// The unused Kingdom card costing $`lo` to $`hi` that `by` adds (Young Witch's Bane,
+/// Ferryman's pile): any when configured, at random one from the sets in use.
+fn choose_unused_costing(g: &mut Game, s: &mut Setup, by: Card, lo: u8, hi: u8) -> Option<Card> {
+    let candidates = Card::kingdom_cards()
         .filter(|&c| {
-            sets.contains(&c.set())
-                && !c.def().removed
-                && setup::unused(g, c)
+            setup::unused(g, c)
                 && c.cost().is_some_and(|k| {
                     k.potions == 0 && k.debt == 0 && (lo..=hi).contains(&k.coins)
                 })
         })
-        .collect()
+        .collect();
+    let sets: Vec<Set> = g.config.kingdom.iter().map(|c| c.set()).collect();
+    s.choose_or_random(g, by, candidates, |c| sets.contains(&c.set()))
 }
 
 // ---- Helpers shared with other sets ----
@@ -638,11 +640,14 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         Card::Infirmary => {
-            if f.s.i >= n as usize {
+            let this = f.this();
+            // The first play puts it into play from where it was gained.
+            let first = f.s.i == 0;
+            if f.s.i >= n as usize || (first && !still_gained(g, this)) {
                 return Flow::done();
             }
             f.s.i += 1;
-            Flow::Call(Frame::play(f.player, f.this(), false, vec![]))
+            Flow::Call(Frame::play(f.player, this, first, vec![]))
         }
         _ => {
             // Stonemason: gain 2 Actions each costing exactly the amount overpaid.
@@ -1362,16 +1367,37 @@ fn followers(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 None => Flow::Continue,
             }
         }
+        // Each other player in turn gains a Curse, then discards.
         1 => {
-            let targets = f.targets.clone();
-            if let Some(flow) = each_gains(g, f, &targets, Card::Curse) {
-                return flow;
-            }
-            f.s.i = 0;
+            let Some(&t) = f.targets.get(f.s.i) else {
+                return Flow::done();
+            };
             f.pc = 2;
+            match g.supply_pile(Card::Curse) {
+                Some(pile) => Flow::Call(Frame::gain(t, pile, Dest::Discard)),
+                None => Flow::Continue,
+            }
+        }
+        2 => {
+            let t = f.targets[f.s.i];
+            let hand = g.hand(t).to_vec();
+            if hand.len() <= 3 {
+                f.pc = 4;
+                return Flow::Continue;
+            }
+            let n = hand.len() - 3;
+            f.pc = 3;
+            f.ask_cards_for(t, hand, n, n, Purpose::Discard)
+        }
+        3 => {
+            f.pc = 4;
+            Flow::Call(Frame::discard(f.targets[f.s.i], input.cards()))
+        }
+        _ => {
+            f.s.i += 1;
+            f.pc = 1;
             Flow::Continue
         }
-        _ => discard_down(g, f, input, 3, 2).unwrap_or_else(Flow::done),
     }
 }
 
@@ -1395,13 +1421,13 @@ fn doctor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, matches))
         }
         3 => {
+            let p = f.player;
+            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
             f.pc = 4;
-            let rest = f.s.cards.clone();
-            f.ask_order(rest, Purpose::TopDeck)
+            f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            let order = input.cards();
-            put_back(g, f.player, &order);
+            put_back(g, f.player, &input.cards());
             Flow::done()
         }
     }

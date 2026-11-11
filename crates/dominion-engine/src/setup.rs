@@ -32,8 +32,9 @@ pub struct GameConfig {
     /// Choices setup otherwise makes at random, by the card that makes them: the unused
     /// Kingdom card Young Witch (its Bane), Ferryman, Way of the Mouse, Riverboat and
     /// Approaching Army add; the Black Market deck (top first); Druid's three Boons; and
-    /// the Kingdom pile Obelisk or each Trait goes on. The Ally and Prophecy are chosen by
-    /// listing them in `landscapes`.
+    /// the Kingdom pile Obelisk or each Trait goes on. Any card the rules allow can be
+    /// configured, including the removed cards a random choice never adds. The Ally and
+    /// Prophecy are chosen by listing them in `landscapes`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub setup_choices: BTreeMap<Card, Vec<Card>>,
 }
@@ -299,9 +300,22 @@ impl Setup {
         &self.joined
     }
 
-    /// The choice `by` makes among `candidates`: the configured one, or a random one.
+    /// The choice `by` makes among `candidates`, every card the rules allow: the configured
+    /// one, or a random one.
     pub(crate) fn choose(&mut self, g: &mut Game, by: Card, candidates: Vec<Card>) -> Option<Card> {
         self.choose_n(g, by, candidates, 1..=1).pop()
+    }
+
+    /// Like [`Setup::choose`], with only the candidates `random` accepts chosen at random.
+    pub(crate) fn choose_or_random(
+        &mut self,
+        g: &mut Game,
+        by: Card,
+        candidates: Vec<Card>,
+        random: impl Fn(Card) -> bool,
+    ) -> Option<Card> {
+        let pool = candidates.iter().copied().filter(|&c| random(c)).collect();
+        self.pick(g, by, &candidates, pool, 1..=1).pop()
     }
 
     /// The different cards `by` chooses among `candidates`: the configured ones (as many as
@@ -310,7 +324,20 @@ impl Setup {
         &mut self,
         g: &mut Game,
         by: Card,
-        mut candidates: Vec<Card>,
+        candidates: Vec<Card>,
+        n: RangeInclusive<usize>,
+    ) -> Vec<Card> {
+        let pool = candidates.clone();
+        self.pick(g, by, &candidates, pool, n)
+    }
+
+    /// The configured choice of `by` if it is among `legal`, or random cards from `pool`.
+    fn pick(
+        &mut self,
+        g: &mut Game,
+        by: Card,
+        legal: &[Card],
+        mut pool: Vec<Card>,
         n: RangeInclusive<usize>,
     ) -> Vec<Card> {
         self.made.push(by);
@@ -319,7 +346,7 @@ impl Setup {
                 chosen
                     .iter()
                     .enumerate()
-                    .find(|&(i, c)| !candidates.contains(c) || chosen[..i].contains(c))
+                    .find(|&(i, c)| !legal.contains(c) || chosen[..i].contains(c))
                     .map(|(_, &choice)| SetupError::InvalidChoice { by, choice })
             } else {
                 Some(SetupError::ChoiceCount(by))
@@ -331,14 +358,16 @@ impl Setup {
                 }
             }
         }
-        // A card configured for another choice isn't free for a random one.
-        let reserved = |c: &Card| {
-            g.home_pile(*c).is_none() && g.config.setup_choices.values().flatten().any(|r| r == c)
+        // A random choice adds no card removed in a second edition (as no random kingdom
+        // has one), and a card configured for another choice isn't free for it.
+        let excluded = |c: &Card| {
+            g.home_pile(*c).is_none()
+                && (c.def().removed || g.config.setup_choices.values().flatten().any(|r| r == c))
         };
-        candidates.retain(|c| !reserved(c));
-        g.shuffle(&mut candidates);
-        candidates.truncate(*n.end());
-        candidates
+        pool.retain(|c| !excluded(c));
+        g.shuffle(&mut pool);
+        pool.truncate(*n.end());
+        pool
     }
 }
 
