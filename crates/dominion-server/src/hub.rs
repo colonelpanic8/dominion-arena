@@ -138,9 +138,39 @@ struct Saved {
 /// A directory holding one `<game id>.json` per game, rewritten after every change.
 struct Store {
     dir: PathBuf,
+    /// Held locked while the directory is in use, so two servers never share it.
+    _lock: fs::File,
 }
 
 impl Store {
+    fn open(dir: &Path) -> io::Result<Store> {
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(dir)?;
+        let lock = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(dir.join(".lock"))?;
+        lock.try_lock().map_err(|e| match e {
+            fs::TryLockError::WouldBlock => io::Error::new(
+                io::ErrorKind::ResourceBusy,
+                "another dominion server is using this directory",
+            ),
+            fs::TryLockError::Error(e) => e,
+        })?;
+        // Fail now rather than at the first save.
+        let probe = dir.join(".probe.tmp");
+        fs::write(&probe, b"")?;
+        fs::remove_file(&probe)?;
+        Ok(Store {
+            dir: dir.to_path_buf(),
+            _lock: lock,
+        })
+    }
+
     fn save(&self, table: &Table, tokens: &[String]) -> io::Result<()> {
         let id = table.id();
         let tmp = self.dir.join(format!(".{id}.json.tmp"));
@@ -328,39 +358,57 @@ fn token() -> String {
     format!("{:032x}", rand::rng().random::<u128>())
 }
 
+/// The number in a game id (`g<number>`).
+fn id_number(id: &str) -> Option<u64> {
+    id.strip_prefix('g')?.parse().ok()
+}
+
+fn load(path: &Path, stem: &str) -> Result<Saved, String> {
+    let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    let saved: Saved = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if saved.table.id() != stem {
+        return Err(format!("holds game {}, not {stem}", saved.table.id()));
+    }
+    if saved.tokens.len() != saved.table.names().len() {
+        return Err(format!(
+            "has {} seat tokens for {} seats",
+            saved.tokens.len(),
+            saved.table.names().len()
+        ));
+    }
+    Ok(saved)
+}
+
 impl Hub {
     /// A hub that keeps its games in `dir` and resumes the ones saved there. Finished
-    /// games whose last change is older than `keep_finished` are deleted.
+    /// games whose last change is older than `keep_finished` are deleted. Fails if `dir`
+    /// can't be written to or another server has it open.
     pub fn open(dir: &Path, keep_finished: Duration) -> io::Result<(Hub, Loaded)> {
-        let mut builder = fs::DirBuilder::new();
-        builder.recursive(true);
-        #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        builder.create(dir)?;
+        let store = Store::open(dir)?;
         let mut loaded = Loaded::default();
         let mut index = Index::default();
         for entry in fs::read_dir(dir)? {
             let path = entry?.path();
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if name.starts_with('.') || !name.ends_with(".json") {
+            if name.starts_with('.') {
+                // A write the last server didn't finish; the game's file is intact.
+                if name.ends_with(".json.tmp") {
+                    fs::remove_file(&path)?;
+                }
                 continue;
             }
-            let saved = fs::read(&path)
-                .map_err(|e| e.to_string())
-                .and_then(|bytes| {
-                    serde_json::from_slice::<Saved>(&bytes).map_err(|e| e.to_string())
-                });
-            let saved = match saved {
+            let Some(stem) = name.strip_suffix(".json") else {
+                continue;
+            };
+            // An unreadable file keeps its id too, so no new game overwrites it.
+            index.next = index.next.max(id_number(stem).unwrap_or(0));
+            let saved = match load(&path, stem) {
                 Ok(saved) => saved,
                 Err(e) => {
                     loaded.unreadable.push((path, e));
                     continue;
                 }
             };
-            let id = saved.table.id().to_string();
-            if let Some(n) = id.strip_prefix('g').and_then(|n| n.parse().ok()) {
-                index.next = index.next.max(n);
-            }
             let age = fs::metadata(&path)
                 .and_then(|m| m.modified())
                 .ok()
@@ -371,14 +419,12 @@ impl Hub {
                 loaded.expired += 1;
                 continue;
             }
-            index.insert(&id, Hosted::new(saved.table, saved.tokens));
+            index.insert(stem, Hosted::new(saved.table, saved.tokens));
         }
         loaded.games = index.games.len();
         let hub = Hub {
             index: Mutex::new(index),
-            store: Some(Store {
-                dir: dir.to_path_buf(),
-            }),
+            store: Some(store),
         };
         Ok((hub, loaded))
     }

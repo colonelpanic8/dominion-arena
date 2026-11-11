@@ -3,7 +3,7 @@
 use dominion_agent::Answer;
 use dominion_server::Options;
 use dominion_server::hub::{Created, Hub, NewGame, Seat};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Arc;
@@ -206,6 +206,20 @@ fn serve_announces_the_port_it_got() {
 }
 
 #[test]
+fn serve_does_not_drop_persistence_quietly() {
+    let home = tempfile::tempdir().unwrap();
+    let run = dominion(&home)
+        .args(["serve", "--listen", "127.0.0.1", "--port", "0"])
+        .env_remove("XDG_STATE_HOME")
+        .env_remove("HOME")
+        .output()
+        .unwrap();
+    let error = String::from_utf8_lossy(&run.stderr);
+    assert!(!run.status.success());
+    assert!(error.contains("--ephemeral"), "{error}");
+}
+
+#[test]
 fn play_shows_the_game_whenever_it_has_to_wait() {
     let hub = Arc::new(Hub::default());
     let server = Server::start("127.0.0.1:0", hub.clone());
@@ -270,7 +284,18 @@ fn play_rides_out_a_server_restart() {
 
     server.stop();
     drop(hub);
-    let (hub, loaded) = Hub::open(home.path(), keep).unwrap();
+    // The stopped server's tasks let go of the hub, and so of its directory, in their
+    // own time.
+    let deadline = Instant::now() + PATIENCE;
+    let (hub, loaded) = loop {
+        match Hub::open(home.path(), keep) {
+            Ok(opened) => break opened,
+            Err(e) if e.kind() == ErrorKind::ResourceBusy && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => panic!("{e}"),
+        }
+    };
     assert_eq!(loaded.games, 1);
     let hub = Arc::new(hub);
     let server = Server::start(&addr.to_string(), hub.clone());

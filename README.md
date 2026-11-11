@@ -69,7 +69,8 @@ refused, as are `create_game` options that don't fit together.
 Games survive restarts: the server saves each game (with its seat tokens, so the files
 are private to you) to `$XDG_STATE_HOME/dominion/games/<id>.json` after every change and
 resumes them on startup. Finished games are deleted on a later startup once they are a
-week old. `--ephemeral` keeps games in memory only.
+week old. One server uses the directory at a time. `--ephemeral` keeps games in memory
+only.
 
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 

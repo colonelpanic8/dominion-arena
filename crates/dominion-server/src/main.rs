@@ -92,7 +92,14 @@ async fn serve(config: Config) -> Result<(), String> {
         hosts.push(config.listen().to_string());
     }
     let hub = match config.state_dir() {
-        None => Hub::default(),
+        None if config.persist == Some(false) => Hub::default(),
+        None => {
+            return Err(
+                "no place to save games: set state_dir (or XDG_STATE_HOME or HOME), \
+                 or pass --ephemeral"
+                    .into(),
+            );
+        }
         Some(dir) => {
             let (hub, loaded) = Hub::open(&dir, config.keep_finished())
                 .map_err(|e| format!("opening {}: {e}", dir.display()))?;
