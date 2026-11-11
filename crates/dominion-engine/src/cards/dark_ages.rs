@@ -236,6 +236,10 @@ impl SetRules for Rules {
         }
     }
 
+    fn setup_added_piles(g: &mut Game, _cards: &[Card]) {
+        Self::setup(g);
+    }
+
     fn setup(g: &mut Game) {
         let present = |g: &Game, pred: &dyn Fn(Card) -> bool| {
             g.piles

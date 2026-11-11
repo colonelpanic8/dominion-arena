@@ -87,11 +87,14 @@ impl SetRules for Rules {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if DURATIONS.contains(&c) => start(g, f, input),
             (Card::Highwayman, Hook::Ability(HIGHWAYMAN_BLOCK)) => {
+                // Resolved after a replacement (Enlightenment), it overrides it: the
+                // player picks which applies by ordering them.
                 let c = f.this();
                 if let Some(st) = g.plays.last_mut()
                     && st.card == c
                 {
                     st.blocked = true;
+                    st.replaced = None;
                 }
                 Flow::done()
             }
@@ -410,11 +413,7 @@ impl SetRules for Rules {
             .iter()
             .any(|pile| pile.cards.iter().any(|&c| g.printed(c).is(Types::LIAISON)));
         if liaison && allies(g).next().is_none() {
-            let all: Vec<Card> = Card::in_set(Set::Allies)
-                .filter(|c| c.kind() == Kind::Ally)
-                .collect();
-            let ally = all[g.random_index(all.len())];
-            g.landscapes.push(ally);
+            add_random_ally(g);
         }
         if allies(g).next().is_none() {
             return;
@@ -424,9 +423,34 @@ impl SetRules for Rules {
             pl.favors += if importer { 5 } else { 1 };
         }
     }
+
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+        let liaison = cards.iter().any(|&c| {
+            c.is(Types::LIAISON) || c.pile_members().iter().any(|m| m.is(Types::LIAISON))
+        });
+        let mut favors = 0;
+        if liaison && allies(g).next().is_none() {
+            add_random_ally(g);
+            favors += 1;
+        }
+        if cards.contains(&Card::Importer) {
+            favors += 4;
+        }
+        for pl in &mut g.players {
+            pl.favors += favors;
+        }
+    }
 }
 
 // ---- Helpers ----
+
+fn add_random_ally(g: &mut Game) {
+    let all: Vec<Card> = Card::in_set(Set::Allies)
+        .filter(|c| c.kind() == Kind::Ally)
+        .collect();
+    let ally = all[g.random_index(all.len())];
+    g.landscapes.push(ally);
+}
 
 /// Continues the ability at `next`, or finishes it if `next` is [`DONE`].
 fn goto(f: &mut CardFrame, next: u8) -> Flow {

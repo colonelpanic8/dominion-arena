@@ -137,6 +137,9 @@ pub struct Pile {
     /// Adventures tokens on this pile, by owner.
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
+    /// Not a pile any more (Divine Wind removed it from the game) or never one (a holder for
+    /// cards set aside in setup, like Riverboat's): lookups by name skip it.
+    pub removed: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
 }
@@ -153,6 +156,7 @@ impl Pile {
             trade_route: false,
             tokens: vec![],
             traits: vec![],
+            removed: false,
             hidden: false,
         }
     }
@@ -181,12 +185,16 @@ pub struct Turn {
     pub buys: u32,
     pub coins: u32,
     pub potions: u32,
-    /// Bought anything (card, Event or Project) this turn.
+    /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures).
     pub bought: bool,
+    /// Go back to the Action phase from the Buy phase as soon as possible (Villa).
+    pub return_to_action: bool,
     /// Every play this turn, in order. A card played twice appears twice.
     pub played: Vec<Card>,
     /// How many of this turn's plays by its player were from their hand.
     pub hand_plays: u32,
+    /// The physical cards of `played`, in the same order.
+    pub played_ids: Vec<CardId>,
     pub gained: Vec<Card>,
     /// The cards in `gained` that were gained in the Buy phase.
     pub gained_in_buy_phase: Vec<Card>,
@@ -210,8 +218,10 @@ impl Turn {
             coins: 0,
             potions: 0,
             bought: false,
+            return_to_action: false,
             played: vec![],
             hand_plays: 0,
+            played_ids: vec![],
             gained: vec![],
             gained_in_buy_phase: vec![],
             bought_cards: vec![],
@@ -325,6 +335,10 @@ pub struct Game {
     pub(crate) lasting: Vec<Lasting>,
     pub(crate) next_lasting: u32,
     pub(crate) extra_turns: VecDeque<ExtraTurn>,
+    /// Set once the game has ended, while an extra round after its end is played.
+    pub(crate) ending: Option<EndReason>,
+    /// The turns of the extra round after the game ended (Fleet) still to be taken.
+    pub(crate) final_round: VecDeque<PlayerId>,
     pub(crate) gains: Vec<GainState>,
     /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
     pub(crate) trashing: Vec<(CardId, Zone)>,
@@ -348,6 +362,9 @@ pub struct GainState {
     pub cancelled: bool,
     /// What the card cost at the moment it was gained (set as it moves).
     pub cost: Cost,
+    /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
+    /// you gain", "your second gain this turn").
+    pub turn_index: Option<usize>,
 }
 
 /// A play in progress. "When you play" triggers may change it.
@@ -504,7 +521,7 @@ impl Game {
     pub fn pile_of(&self, card: Card) -> Option<PileId> {
         self.piles
             .iter()
-            .position(|p| p.card == card)
+            .position(|p| p.card == card && !p.removed)
             .map(|i| PileId(i as u8))
     }
 
@@ -719,6 +736,7 @@ impl Game {
     }
 
     pub(crate) fn emit(&mut self, event: Event) {
+        cards::on_event(self, &event);
         self.log.push(event);
     }
 
@@ -735,6 +753,7 @@ impl Game {
         let player = &mut self.players[p.index()];
         let mut cards = std::mem::take(&mut player.discard);
         cards.shuffle(&mut self.rng);
+        cards::arrange_shuffled(self, p, &mut cards);
         for &c in &cards {
             self.zones[c.index()] = Zone::Deck(p);
         }
@@ -744,21 +763,21 @@ impl Game {
         self.emit(Event::Shuffled { player: p });
     }
 
+    /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
+    /// elsewhere that can be played as if there (Shadow cards in the deck), less those
+    /// `SetRules::can_play` forbids (Warlord, Voyage).
+    pub(crate) fn playable(&self, p: PlayerId, types: Types) -> Vec<CardId> {
+        let mut cards = self.hand(p).to_vec();
+        cards::playable_as_if_in_hand(self, p, &mut cards);
+        cards.retain(|&c| self.is(c, types) && cards::can_play(self, p, c));
+        cards
+    }
+
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {
         self.hand(p)
             .iter()
             .copied()
             .filter(|&c| self.is(c, types))
-            .collect()
-    }
-
-    /// The cards of `types` in `p`'s hand that `p` may play from their hand now (Warlord,
-    /// Voyage, ... may forbid some).
-    pub(crate) fn playable(&self, p: PlayerId, types: Types) -> Vec<CardId> {
-        self.hand(p)
-            .iter()
-            .copied()
-            .filter(|&c| self.is(c, types) && cards::can_play(self, p, c))
             .collect()
     }
 

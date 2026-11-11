@@ -2319,3 +2319,53 @@ fn a_voyage_whose_turn_lich_skips_is_discarded_in_the_next_clean_up() {
     next_turn(&mut g);
     assert!(!in_play_kinds(&g, P0).contains(&Card::Voyage));
 }
+
+/// A game in which P0 has played Highwayman and Enlightenment is in effect; P1 is in
+/// their Action phase with a Silver (an Action too, under Enlightenment).
+fn highwayman_under_enlightenment() -> Game {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::PlateauShepherds, Card::Enlightenment],
+        ..GameConfig::new(2, vec![Card::Highwayman], 7)
+    });
+    g.prophecy = Some((Card::Enlightenment, 0));
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::Silver, Card::Copper]);
+    deck(&mut g, P1, &[Card::Estate; 20]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    assert_eq!(g.turn().phase, Phase::Action);
+    play(&mut g, Card::Silver);
+    g
+}
+
+#[test]
+fn highwayman_or_enlightenment_applies_as_the_player_orders_them() {
+    let mut g = highwayman_under_enlightenment();
+    accept(&mut g, Card::Highwayman);
+    // Enlightenment resolved last: +1 Card +1 Action instead of $2.
+    assert_eq!((g.turn().actions, g.turn().coins), (1, 0));
+    assert_eq!(g.hand(P1).len(), 2);
+
+    let mut g = highwayman_under_enlightenment();
+    accept(&mut g, Card::Enlightenment);
+    // Highwayman resolved last: the Silver does nothing.
+    assert_eq!((g.turn().actions, g.turn().coins), (0, 0));
+    assert_eq!(g.hand(P1).len(), 1);
+}
+
+#[test]
+fn a_liaison_joining_mid_game_brings_an_ally_and_its_favors() {
+    let mut g = setup_with(GameConfig::new(2, vec![Card::Smithy], 1));
+    assert!(g.landscapes().is_empty());
+    crate::cards::setup_added_piles(&mut g, &[Card::Wizards]);
+    assert_eq!(g.landscapes().len(), 1);
+    assert_eq!(g.landscapes()[0].kind(), Kind::Ally);
+    assert_eq!((favors(&g, P0), favors(&g, P1)), (1, 1));
+    crate::cards::setup_added_piles(&mut g, &[Card::Importer, Card::Emissary]);
+    assert_eq!(g.landscapes().len(), 1);
+    assert_eq!(favors(&g, P0), 5);
+}

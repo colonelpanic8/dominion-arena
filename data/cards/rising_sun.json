@@ -28,10 +28,10 @@
   {"name": "Kintsugi", "set": "rising_sun", "types": ["Event"], "cost": {"coins": 3}, "text": "Trash a card from your hand. If you've gained a Gold this game, gain a card costing up to $2 more than the trashed card.", "kingdom": false},
   {"name": "Kitsune", "set": "rising_sun", "types": ["Action", "Attack", "Omen"], "cost": {"coins": 5}, "text": "+1 Sun\nChoose two different options: +$2; +2 Actions; each other player gains a Curse; gain a Silver.", "kingdom": true},
   {"name": "Litter", "set": "rising_sun", "types": ["Action"], "cost": {"coins": 5}, "plus": {"cards": 2, "actions": 2}, "text": "+2 Cards\n+2 Actions\n+1 Debt", "kingdom": true},
-  {"name": "Mountain Shrine", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 0, "debt": 5}, "text": "+1 Sun\n+$2 You may trash a card from your hand. Then if there are any Action cards in the trash, +2 Cards.", "kingdom": true},
+  {"name": "Mountain Shrine", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 0, "debt": 5}, "plus": {"coins": 2}, "text": "+1 Sun\n+$2\nYou may trash a card from your hand. Then if there are any Action cards in the trash, +2 Cards.", "kingdom": true},
   {"name": "Ninja", "set": "rising_sun", "types": ["Action", "Attack", "Shadow"], "cost": {"coins": 4}, "plus": {"cards": 1}, "text": "+1 Card\nEach other player discards down to 3 cards in hand.\n---\nYou can play this from your deck as if in your hand.", "kingdom": true},
   {"name": "Panic", "set": "rising_sun", "types": ["Prophecy"], "text": "When you play a Treasure, +2 Buys, and when you discard one from play, return it to its pile.", "kingdom": false},
-  {"name": "Poet", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 4}, "text": "+1 Sun\n+1 Card\n+1 Action\nReveal the top card of your deck. If it costs $3 or less, put it into your hand.", "kingdom": true},
+  {"name": "Poet", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 4}, "plus": {"cards": 1, "actions": 1}, "text": "+1 Sun\n+1 Card\n+1 Action\nReveal the top card of your deck. If it costs $3 or less, put it into your hand.", "kingdom": true},
   {"name": "Practice", "set": "rising_sun", "types": ["Event"], "cost": {"coins": 3}, "text": "You may play an Action card from your hand twice.", "kingdom": false},
   {"name": "Progress", "set": "rising_sun", "types": ["Prophecy"], "text": "When you gain a card, put it onto your deck.", "kingdom": false},
   {"name": "Rapid Expansion", "set": "rising_sun", "types": ["Prophecy"], "text": "When you gain an Action or Treasure, set it aside, and play it at the start of your next turn.", "kingdom": false},
@@ -42,11 +42,11 @@
   {"name": "Riverboat", "set": "rising_sun", "types": ["Action", "Duration"], "cost": {"coins": 3}, "text": "At the start of your next turn, play the set aside card, leaving it there.\n---\nSetup: Set aside an unused non-Duration Action card costing $5.", "kingdom": true},
   {"name": "Ronin", "set": "rising_sun", "types": ["Action", "Shadow"], "cost": {"coins": 5}, "text": "Draw until you have 7 cards in hand.\n---\nYou can play this from your deck as if in your hand.", "kingdom": true},
   {"name": "Root Cellar", "set": "rising_sun", "types": ["Action"], "cost": {"coins": 3}, "plus": {"cards": 3, "actions": 1}, "text": "+3 Cards\n+1 Action\n+3 Debt", "kingdom": true},
-  {"name": "Rustic Village", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 4}, "text": "+1 Sun\n+1 Card\n+2 Actions\nYou may discard 2 cards for +1 Card.", "kingdom": true},
+  {"name": "Rustic Village", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 4}, "plus": {"cards": 1, "actions": 2}, "text": "+1 Sun\n+1 Card\n+2 Actions\nYou may discard 2 cards for +1 Card.", "kingdom": true},
   {"name": "Samurai", "set": "rising_sun", "types": ["Action", "Duration", "Attack"], "cost": {"coins": 6}, "text": "Each other player discards down to 3 cards in hand (once). At the start of each of your turns this game, +$1. (This stays in play.)", "kingdom": true},
   {"name": "Sea Trade", "set": "rising_sun", "types": ["Event"], "cost": {"coins": 4}, "text": "+1 Card per Action card you have in play. Trash up to that many cards from your hand.", "kingdom": false},
   {"name": "Sickness", "set": "rising_sun", "types": ["Prophecy"], "text": "At the start of your turn, choose one: Gain a Curse onto your deck; or discard 3 cards.", "kingdom": false},
   {"name": "Snake Witch", "set": "rising_sun", "types": ["Action", "Attack"], "cost": {"coins": 2}, "plus": {"cards": 1, "actions": 1}, "text": "+1 Card\n+1 Action\nIf your hand has no duplicate cards, you may reveal it and return this to its pile, to have each other player gain a Curse.", "kingdom": true},
   {"name": "Tanuki", "set": "rising_sun", "types": ["Action", "Shadow"], "cost": {"coins": 5}, "text": "Trash a card from your hand. Gain a card costing up to $2 more than it.\n---\nYou can play this from your deck as if in your hand.", "kingdom": true},
-  {"name": "Tea House", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 5}, "text": "+1 Sun\n+1 Card\n+1 Action\n+$2", "kingdom": true}
+  {"name": "Tea House", "set": "rising_sun", "types": ["Action", "Omen"], "cost": {"coins": 5}, "plus": {"cards": 1, "actions": 1, "coins": 2}, "text": "+1 Sun\n+1 Card\n+1 Action\n+$2", "kingdom": true}
 ]
