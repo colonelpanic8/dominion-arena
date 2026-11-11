@@ -29,8 +29,9 @@ pub(crate) struct State {
     pub mouse: Option<CardId>,
     /// Cards Exiled by Invest.
     pub invested: Vec<CardId>,
-    /// Gained cards whose gainer discarded copies of them from Exile during the gain.
-    pub exile_discarded: Vec<CardId>,
+    /// Gains (the card and its place in `Game::gains`) during which the gainer discarded
+    /// copies of the card from Exile.
+    pub exile_discarded: Vec<(CardId, usize)>,
     /// Cards being played using Way of the Chameleon, innermost last.
     pub chameleon: Vec<CardId>,
     /// "This turn" effects made by plays using Way of the Chameleon.
@@ -800,7 +801,11 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
 
     // Gatekeeper: only if the gainer had no Exiled copy when they gained it.
     let action_or_treasure = g.is(card, Types::ACTION | Types::TREASURE);
-    if action_or_treasure && in_place && copies.is_empty() && !st.exile_discarded.contains(&card) {
+    let had_copies = st
+        .exile_discarded
+        .iter()
+        .any(|&(c, i)| c == card && g.gains.get(i).is_some_and(|s| s.card == c));
+    if action_or_treasure && in_place && copies.is_empty() && !had_copies {
         for l in g.lasting() {
             let active = l.until == Until::Removed && g.player(l.owner).turns_taken == l.turn;
             if l.card == Card::Gatekeeper && active && l.owner != gainer && in_mask(l.data.n, gainer)
@@ -889,8 +894,10 @@ fn exile_discard(g: &mut Game, f: &mut CardFrame) -> Flow {
     let st = &mut g.ext.menagerie;
     let gains = &g.gains;
     st.exile_discarded
-        .retain(|c| gains.iter().any(|s| s.card == *c));
-    st.exile_discarded.push(card);
+        .retain(|&(c, i)| gains.get(i).is_some_and(|s| s.card == c));
+    if let Some(i) = gains.iter().rposition(|s| s.card == card) {
+        st.exile_discarded.push((card, i));
+    }
     st.invested.retain(|c| !copies.contains(c));
     f.pc = 1;
     Flow::Call(Frame::discard(p, copies))

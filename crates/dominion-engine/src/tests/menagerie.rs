@@ -1617,8 +1617,8 @@ fn seize_the_day_bought_on_an_outpost_turn_gives_a_third_turn() {
     assert_eq!(g.turn().extra, Some(Card::Outpost));
     play_treasures(&mut g);
     buy_event(&mut g, Card::SeizeTheDay);
-    next_turn(&mut g);
     assert_eq!(g.turn().player, P0);
+    assert_eq!(g.turn().extra, Some(Card::SeizeTheDay));
 }
 
 #[test]
@@ -2191,4 +2191,134 @@ fn way_of_the_turtle_after_a_duration_played_normally_cancels_its_next_turn() {
     own(&mut g);
     modes(&mut g, &[0]);
     assert_eq!((g.hand(P0).len(), g.turn().buys), (8, 2));
+}
+
+// ---- More rulings ----
+
+#[test]
+fn black_cat_reacting_on_its_owners_turn_curses_nobody() {
+    let mut g = setup(&[Card::BlackCat, Card::Ambassador]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Ambassador, Card::Estate, Card::BlackCat],
+    );
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Ambassador);
+    choose_kinds(&mut g, &[Card::Estate]);
+    choose(&mut g, &[]);
+    assert_eq!(gained(&g, P1), [Card::Estate]);
+    trigger(&mut g, Card::BlackCat);
+    assert_eq!(
+        hand_kinds(&g, P0),
+        [Card::Estate, Card::Copper, Card::Copper]
+    );
+    assert_eq!(gained(&g, P1), [Card::Estate]);
+}
+
+#[test]
+fn a_sheepdog_gained_to_the_hand_may_react_to_its_own_gain() {
+    let mut g = setup(&[Card::Sheepdog, Card::Falconer]);
+    hand(&mut g, P0, &[Card::Falconer]);
+    deck(&mut g, P0, &[Card::Silver; 5]);
+    g.start();
+    play(&mut g, Card::Falconer);
+    choose_pile(&mut g, Card::Sheepdog);
+    trigger(&mut g, Card::Sheepdog);
+    assert_eq!(hand_kinds(&g, P0), [Card::Silver, Card::Silver]);
+}
+
+#[test]
+fn sleigh_cannot_move_a_card_way_of_the_seal_already_moved() {
+    let mut g = way_game(Card::WayOfTheSeal, &[Card::Sleigh, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Sleigh, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheSeal);
+    g.turn.buys = 2;
+    play_treasures(&mut g);
+    buy(&mut g, Card::Silver);
+    trigger(&mut g, Card::WayOfTheSeal);
+    // The Sleigh may still be discarded, but the Silver stays on the deck.
+    trigger(&mut g, Card::Sleigh);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Copper]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Sleigh]);
+}
+
+#[test]
+fn vassal_loses_track_of_a_village_green_played_by_its_reaction() {
+    let mut g = setup(&[Card::VillageGreen, Card::Vassal]);
+    hand(&mut g, P0, &[Card::Vassal]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::VillageGreen, Card::Copper, Card::Copper],
+    );
+    g.start();
+    play(&mut g, Card::Vassal);
+    trigger(&mut g, Card::VillageGreen);
+    modes(&mut g, &[0]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Vassal, Card::VillageGreen]);
+    assert_eq!(g.turn().actions, 2);
+}
+
+#[test]
+fn way_of_the_squirrel_used_out_of_turn_draws_at_the_end_of_that_turn() {
+    let mut g = way_game(Card::WayOfTheSquirrel, &[Card::BlackCat]);
+    hand(&mut g, P0, &[Card::Copper, Card::Copper]);
+    hand(&mut g, P1, &[Card::BlackCat]);
+    deck(&mut g, P1, &[Card::Silver; 5]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Estate);
+    trigger(&mut g, Card::BlackCat);
+    way(&mut g, Card::WayOfTheSquirrel);
+    assert!(gained(&g, P0) == [Card::Estate]);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(hand_kinds(&g, P1), [Card::Silver; 2]);
+}
+
+#[test]
+#[ignore = "a Duration played by a Throne Room that Mastermind played keeps the whole chain in play"]
+fn a_mastermind_whose_throne_room_plays_a_duration_does_not_stay() {
+    let mut g = setup(&[Card::Mastermind, Card::ThroneRoom, Card::Barge]);
+    hand(&mut g, P0, &[Card::Mastermind]);
+    let mut cards = vec![Card::ThroneRoom, Card::Barge];
+    cards.extend([Card::Copper; 40]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    play(&mut g, Card::Mastermind);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Barge]);
+    modes(&mut g, &[1]);
+    modes(&mut g, &[1]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Barge]);
+}
+
+#[test]
+#[ignore = "Frame::discard opens each card's Discard window before discarding the next (fixed by the engine change on set/cornucopia-hinterlands)"]
+fn village_greens_discarded_to_militia_together_can_each_be_played() {
+    let mut g = setup(&[Card::VillageGreen, Card::Militia]);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::VillageGreen,
+            Card::VillageGreen,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Militia);
+    choose_kinds(&mut g, &[Card::VillageGreen, Card::VillageGreen]);
+    // Both are in the discard pile before either reacts.
+    assert_eq!(discard_kinds(&g, P1), [Card::VillageGreen; 2]);
 }
