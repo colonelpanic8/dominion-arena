@@ -3094,6 +3094,18 @@ fn a_reckless_highwayman_discarded_at_the_start_of_the_turn_returns_to_its_pile(
 }
 
 #[test]
+fn a_reckless_card_played_as_way_of_the_chameleon_follows_its_instructions_twice() {
+    let mut g = setup_l(&[Card::Smithy], &[Card::WayOfTheChameleon]);
+    set_trait(&mut g, Card::Reckless, Card::Smithy);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    pick(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (6, 0));
+}
+
+#[test]
 fn rush_and_mirror_apply_to_the_next_action_gained_not_one_gained_because_of_it() {
     for event in [Card::Rush, Card::Mirror] {
         let mut g = setup_l(&[Card::BorderVillage, Card::Village], &[event]);

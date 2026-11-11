@@ -1990,6 +1990,11 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
                 return Flow::Call(Frame::draw(p, plus.cards as usize));
             }
             let behavior = play.map_or(g.card(id), |st| st.behavior);
+            // The card's instructions are followed, so as often as they would be (Reckless):
+            // `f.s.i` runs are left, this one included.
+            if f.s.i == 0 {
+                f.s.i = 1 + super::extra_runs(g, p, id) as usize;
+            }
             if f.s.card.replace(behavior).is_none()
                 && let Some(first) = super::prelude(behavior, p, id)
             {
@@ -2048,6 +2053,12 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
                     })
                     .map(|l| l.id),
             );
+            f.s.i -= 1;
+            if f.s.i > 0 {
+                f.s.card = None;
+                f.pc = 0;
+                return Flow::Continue;
+            }
             Flow::done()
         }
     }
