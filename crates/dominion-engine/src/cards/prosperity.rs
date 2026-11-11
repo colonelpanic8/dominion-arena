@@ -529,7 +529,7 @@ pub(super) fn reveal_until(
         f.pc = base + 2;
         return Flow::Continue;
     };
-    g.move_card(c, Zone::SetAside(f.player), Pos::Top);
+    g.set_aside_revealed(c, f.player);
     f.s.cards.push(c);
     if stop(g, &f.s.cards) {
         f.s.pick = Some(c);

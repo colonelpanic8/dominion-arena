@@ -75,6 +75,8 @@ pub struct Player {
     pub discard: Vec<CardId>,
     pub in_play: Vec<CardId>,
     pub set_aside: Vec<CardId>,
+    /// The cards in `set_aside` that are face up; the rest only their owner may look at.
+    pub face_up: Vec<CardId>,
     pub mats: BTreeMap<Mat, Vec<CardId>>,
     pub vp_tokens: i32,
     pub coffers: u32,
@@ -755,6 +757,9 @@ impl Game {
         if matches!(from, Zone::InPlay(_)) && !matches!(to, Zone::InPlay(_)) {
             self.masks.remove(&id);
         }
+        if let Zone::SetAside(p) = from {
+            self.players[p.index()].face_up.retain(|&c| c != id);
+        }
         self.zones[id.index()] = to;
         let dst = self.zone_vec(to);
         match pos {
@@ -845,13 +850,20 @@ impl Game {
         self.move_card(id, Zone::Hand(p), Pos::Top);
     }
 
-    /// Sets `id` aside for `p`; whoever set it aside must track it (usually in a Lasting).
+    /// Sets `id` aside face up for `p`; whoever set it aside must track it (usually in a
+    /// Lasting). Cards set aside face down are moved with `move_card` instead.
     pub(crate) fn set_aside(&mut self, id: CardId, p: PlayerId) {
-        self.move_card(id, Zone::SetAside(p), Pos::Top);
+        self.set_aside_revealed(id, p);
         self.emit(Event::SetAside {
             player: p,
             card: self.card(id),
         });
+    }
+
+    /// Sets aside a card that was just revealed: face up, with no event of its own.
+    pub(crate) fn set_aside_revealed(&mut self, id: CardId, p: PlayerId) {
+        self.move_card(id, Zone::SetAside(p), Pos::Top);
+        self.players[p.index()].face_up.push(id);
     }
 
     pub(crate) fn put_on_mat(&mut self, id: CardId, p: PlayerId, mat: Mat) {

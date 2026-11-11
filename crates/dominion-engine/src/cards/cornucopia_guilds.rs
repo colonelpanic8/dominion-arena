@@ -593,7 +593,7 @@ pub(crate) fn reveal_until(
         None => Ok(None),
         Some(c) if pred(g, c) => Ok(Some(c)),
         Some(c) => {
-            g.move_card(c, Zone::SetAside(who), Pos::Top);
+            g.set_aside_revealed(c, who);
             f.s.cards.push(c);
             f.pc = at;
             Err(Flow::Continue)

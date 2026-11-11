@@ -829,6 +829,9 @@ fn resume_gain(
                 }
             }
             g.move_card(st.card, zone, Pos::Top);
+            if let Zone::SetAside(p) = zone {
+                g.players[p.index()].face_up.push(st.card);
+            }
             let kind = g.card(st.card);
             if st.player == g.turn.player {
                 g.gains.last_mut().expect("gain in progress").turn_index =

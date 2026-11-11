@@ -396,7 +396,7 @@ fn trashing_attack(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, next
             let revealed = input.cards();
             // Held out of the deck, so cards drawn when one is trashed (Cultist) aren't these.
             for &c in &revealed {
-                g.move_card(c, Zone::SetAside(target), Pos::Top);
+                g.set_aside_revealed(c, target);
             }
             let candidates: Vec<CardId> = revealed
                 .iter()
@@ -1249,7 +1249,7 @@ fn reveal_until(
     let Some(c) = input.card() else {
         return goto(f, next);
     };
-    g.move_card(c, Zone::SetAside(p), Pos::Top);
+    g.set_aside_revealed(c, p);
     if stop(g, c) {
         f.s.pick = Some(c);
         f.pc = next;

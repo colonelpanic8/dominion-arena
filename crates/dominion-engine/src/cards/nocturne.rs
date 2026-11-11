@@ -1096,7 +1096,7 @@ fn war(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Call(Frame::trash(p, vec![c]));
             }
-            g.move_card(c, Zone::SetAside(p), Pos::Top);
+            g.set_aside_revealed(c, p);
             f.s.cards.push(c);
             f.pc = 0;
             Flow::Continue
@@ -1579,7 +1579,7 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Continue;
             };
-            g.move_card(c, Zone::SetAside(p), Pos::Top);
+            g.set_aside_revealed(c, p);
             if g.is(c, Types::ACTION) {
                 g.emit(Event::SetAside {
                     player: p,

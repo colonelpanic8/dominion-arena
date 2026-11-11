@@ -1773,12 +1773,7 @@ fn save(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             let chosen = input.cards();
             for &c in &chosen {
-                g.move_card(c, Zone::SetAside(p), Pos::Top);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: None,
-                    to: Zone::SetAside(p),
-                });
+                g.set_aside(c, p);
             }
             g.add_lasting(
                 Card::Save,

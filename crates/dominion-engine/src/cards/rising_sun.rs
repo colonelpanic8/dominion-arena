@@ -1316,7 +1316,7 @@ fn foresight(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Continue;
             };
-            g.move_card(c, Zone::SetAside(p), Pos::Top);
+            g.set_aside_revealed(c, p);
             if g.is(c, Types::ACTION) {
                 g.add_lasting(
                     Card::Foresight,

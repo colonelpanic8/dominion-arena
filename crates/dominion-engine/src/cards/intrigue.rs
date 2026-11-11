@@ -954,7 +954,7 @@ fn saboteur(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     f.pc = 5;
                     continue;
                 };
-                g.move_card(c, Zone::SetAside(target), Pos::Top);
+                g.set_aside_revealed(c, target);
                 let cost = g.cost_of(c);
                 if cost.coins < 3 {
                     f.s.cards.push(c);
