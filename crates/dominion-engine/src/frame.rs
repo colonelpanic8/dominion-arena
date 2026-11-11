@@ -650,6 +650,18 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         }
         7 => {
             let kept: Vec<CardId> = g.lasting.iter().flat_map(|l| l.keeps.clone()).collect();
+            // Cards other players played this turn (Guard Dog, ...) are discarded too.
+            for other in g.others(p) {
+                let stray: Vec<CardId> = g.players[other.index()]
+                    .in_play
+                    .iter()
+                    .filter(|c| !kept.contains(c))
+                    .copied()
+                    .collect();
+                for c in stray {
+                    g.move_card(c, Zone::Discard(other), Pos::Top);
+                }
+            }
             let pl = &g.players[p.index()];
             let cards = pl
                 .in_play
