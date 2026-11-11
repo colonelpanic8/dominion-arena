@@ -611,18 +611,29 @@ fn two_walled_villages_alone_can_both_go_on_the_deck() {
     );
 }
 
-#[test]
-fn summon_sets_the_gained_card_aside_and_plays_it_next_turn() {
-    let mut config = GameConfig::new(2, vec![Card::Smithy, Card::Laboratory], 7);
-    config.landscapes = vec![Card::Summon];
-    config.colonies = Some(false);
-    config.shelters = Some(false);
-    let mut g = setup_with(config);
-    hand(&mut g, P0, &[Card::Gold, Card::Silver]);
+/// A game with Summon in which P0 has played `treasures`.
+fn summon_game(kingdom: &[Card], treasures: &[Card]) -> Game {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Summon],
+        ..GameConfig::new(2, kingdom.to_vec(), 7)
+    });
+    hand(&mut g, P0, treasures);
     deck(&mut g, P0, &[Card::Copper; 20]);
     g.start();
-    play(&mut g, Card::Gold);
-    play(&mut g, Card::Silver);
+    for &card in treasures {
+        play(&mut g, card);
+    }
+    g
+}
+
+#[test]
+fn summon_sets_the_gained_card_aside_and_plays_it_next_turn() {
+    let mut g = summon_game(
+        &[Card::Smithy, Card::Laboratory],
+        &[Card::Gold, Card::Silver],
+    );
     // Smithy is the only Action costing up to $4, so it is gained without asking.
     respond(&mut g, Response::Move(Move::BuyLandscape(Card::Summon)));
     assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Smithy]);
@@ -631,6 +642,30 @@ fn summon_sets_the_gained_card_aside_and_plays_it_next_turn() {
     assert_eq!(g.turn().played, [Card::Smithy]);
     assert_eq!(g.hand(P0).len(), 8);
     assert_eq!(g.turn().actions, 1);
+}
+
+/// Summon finds its card wherever it was gained to.
+#[test]
+fn summon_sets_aside_a_nomad_camp_gained_onto_the_deck() {
+    let mut g = summon_game(&[Card::NomadCamp], &[Card::Gold, Card::Silver]);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Summon)));
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::NomadCamp]);
+    finish_turn(&mut g);
+    assert_eq!(g.turn().played, [Card::NomadCamp]);
+}
+
+/// A card moved from where it was gained to is lost track of, even onto the deck.
+#[test]
+fn summon_loses_track_of_a_card_royal_seal_put_onto_the_deck() {
+    let treasures = [Card::Gold, Card::Silver, Card::RoyalSeal];
+    let mut g = summon_game(&[Card::Smithy, Card::RoyalSeal], &treasures);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Summon)));
+    trigger(&mut g, Card::RoyalSeal);
+    assert_eq!(g.player(P0).set_aside, []);
+    // P0's turn is over: the Smithy was drawn from the deck.
+    assert!(hand_kinds(&g, P0).contains(&Card::Smithy));
+    finish_turn(&mut g);
+    assert_eq!(g.turn().played, []);
 }
 
 /// Random games over the Promos, Summon in every other one.

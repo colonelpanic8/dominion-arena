@@ -1842,6 +1842,22 @@ fn way_of_the_chameleon_turns_cards_into_coins_and_coins_into_cards() {
     assert_eq!(hand_kinds(&g, P0), [Card::Silver; 3]);
 }
 
+/// Governor's "+1 (+3) Cards" is +Cards; only its player's are exchanged.
+#[test]
+fn way_of_the_chameleon_exchanges_governors_plus_cards_for_its_player_only() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Governor]);
+    hand(&mut g, P0, &[Card::Governor]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    deck(&mut g, P1, &[Card::Copper; 5]);
+    let p1 = g.hand(P1).len();
+    g.start();
+    play(&mut g, Card::Governor);
+    way(&mut g, Card::WayOfTheChameleon);
+    modes(&mut g, &[0]);
+    assert_eq!((g.hand(P0).len(), g.turn().coins), (0, 3));
+    assert_eq!(g.hand(P1).len(), p1 + 1);
+}
+
 #[test]
 fn way_of_the_chameleon_also_changes_this_turns_later_effects() {
     let mut g = way_game(Card::WayOfTheChameleon, &[Card::Merchant]);

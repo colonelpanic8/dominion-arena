@@ -404,6 +404,22 @@ fn the_possessor_gains_what_the_possessed_player_would_gain() {
     assert_eq!(g.count_owned(P1, Card::Silver), 0);
 }
 
+/// A card the possessor gains instead is not "the gained card" for what gained it.
+#[test]
+fn gainers_get_nothing_for_a_card_the_possessor_gains_instead() {
+    let mut g = possess(&[Card::Ironworks], &[Card::Ironworks, Card::Copper]);
+    play_from(&mut g, P1, Card::Ironworks);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(discard_kinds(&g, P0).last(), Some(&Card::Silver));
+    assert_eq!(g.turn().coins, 0);
+
+    let mut g = possess(&[Card::Replace], &[Card::Replace, Card::Gold]);
+    play_from(&mut g, P1, Card::Replace);
+    choose_pile(&mut g, Card::Province);
+    assert_eq!(discard_kinds(&g, P0).last(), Some(&Card::Province));
+    assert_eq!(g.count_owned(P0, Card::Curse), 0);
+}
+
 #[test]
 fn the_possessed_players_trashed_cards_return_to_their_discard_pile_after_the_turn() {
     let mut g = possess(

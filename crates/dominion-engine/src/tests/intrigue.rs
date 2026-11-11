@@ -630,6 +630,18 @@ fn swindler_gives_a_curse_for_a_copper() {
     assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
 }
 
+/// Swindler trashes the top card without revealing it, so a Patron gives no Coffers.
+#[test]
+fn swindler_does_not_reveal_the_card_it_trashes() {
+    let mut g = setup(&[Card::Swindler, Card::Patron]);
+    hand(&mut g, P0, &[Card::Swindler]);
+    deck(&mut g, P1, &[Card::Patron, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Swindler);
+    assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Patron));
+    assert_eq!(g.player(P1).coffers, 0);
+}
+
 #[test]
 fn torturer_victims_choose() {
     let mut g = setup3(&[Card::Torturer]);

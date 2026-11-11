@@ -1050,7 +1050,7 @@ fn resume_gain(
             }))
         }
         _ => {
-            g.gains.pop();
+            g.last_gain = g.gains.pop();
             Flow::Done(Value::Cards(card.iter().copied().collect()))
         }
     }

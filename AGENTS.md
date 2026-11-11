@@ -92,7 +92,9 @@ them.
   plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
   effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
-  card's cost then in `GainState::cost`), `Gain` window.
+  card's cost then in `GainState::cost`), `Gain` window. An effect that goes on with the
+  card it gained asks `g.gained_to(p, id)` where `p` gained it to (`None` if someone
+  else gained it instead: Possession) rather than assuming the discard pile.
   **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
   (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
   `f.data` = the $ and `f.s.cost` = all of it), `Buy` window, then gain.
@@ -156,11 +158,11 @@ them.
   its zones), cards mixed where no one can follow them (shuffles, privately ordered
   cards), cards shown to everyone or one player, turns, identity swaps. `Knowledge`
   consumes it and keeps, per player, groups of cards they can't tell apart with each
-  group's known identities. Anything that reveals a specific card must record it:
-  `g.reveal(p, id)` instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to`
-  for other reveals and looks. Cards that change zones must go through `move_card` (or
-  record a `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay
-  nothing.
+  group's known identities (a Stash, with its own back, is always known). Anything that
+  reveals a specific card must record it: `g.reveal(p, id)` instead of emitting
+  `Event::Revealed` by hand, `g.show` / `g.show_to` for other reveals and looks. Cards
+  that change zones must go through `move_card` (or record a `Trace::Moved`); identity
+  changes record `Trace::Changed`. Untraced games pay nothing.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
@@ -186,7 +188,11 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   just revealed); `move_card` to `SetAside` leaves it face down, seen only by its owner.
   Public state kept in the set's `State` goes to agents through `SetRules::notes`.
 - Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
-  check `g.zone(id)` is still that zone.
+  check `g.zone(id)` is still that zone. That includes cards from `Frame::look` /
+  `Frame::reveal`: they stay on the deck, where a "when trashed" draw in the middle of
+  the effect can take one.
+- `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
+  "discard / trash the top card" takes it with `Frame::look`.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
   Heirlooms/Shelters-like changes, and two phases (`setup::complete`). `ensure` adds
   what the cards in the game need (extra piles, Boons/Hexes, set-aside cards, an Ally
