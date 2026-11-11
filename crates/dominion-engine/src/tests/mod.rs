@@ -367,6 +367,13 @@ fn card_data_is_consistent() {
                 "{card}'s pile {pile}"
             );
         }
+        // The dividing line is a line of its own, and no line is the wrapped rest of a
+        // sentence or carries stray whitespace.
+        for line in card.text().lines() {
+            assert!(line == "---" || !line.contains("---"), "{card}: {line:?}");
+            assert_eq!(line, line.trim(), "{card}");
+            assert!(!line.starts_with(char::is_lowercase), "{card}: {line:?}");
+        }
     }
     assert_eq!(Card::from_name("king's court"), Some(Card::KingsCourt));
     assert_eq!(Card::Peddler.type_names(), ["Action"]);
