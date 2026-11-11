@@ -343,17 +343,25 @@ impl SetRules for Rules {
     }
 
     fn setup(g: &mut Game) {
-        if g.pile_of(Card::Baker).is_some() {
+        let cards = [Card::Baker, Card::Tournament, Card::Joust]
+            .into_iter()
+            .filter(|&c| g.pile_of(c).is_some())
+            .collect::<Vec<_>>();
+        Self::setup_added_piles(g, &cards);
+    }
+
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+        if cards.contains(&Card::Baker) {
             for p in &mut g.players {
                 p.coffers += 1;
             }
         }
-        if g.pile_of(Card::Tournament).is_some() {
+        if cards.contains(&Card::Tournament) && g.pile_of(PRIZES[0]).is_none() {
             for prize in PRIZES {
                 add_pile(g, prize, 1, false);
             }
         }
-        if g.pile_of(Card::Joust).is_some() {
+        if cards.contains(&Card::Joust) && g.pile_of(REWARDS[0]).is_none() {
             let n = if g.num_players() == 2 { 1 } else { 2 };
             for reward in REWARDS {
                 add_pile(g, reward, n, false);

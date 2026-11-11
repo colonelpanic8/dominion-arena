@@ -545,6 +545,14 @@ impl SetRules for Rules {
         for p in &mut g.players {
             p.journey_face_up = true;
         }
+        let starts: Vec<Card> = [Card::Page, Card::Peasant]
+            .into_iter()
+            .filter(|&c| g.supply_pile(c).is_some())
+            .collect();
+        Self::setup_added_piles(g, &starts);
+    }
+
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {
         let lines = [
             (
                 Card::Page,
@@ -561,7 +569,7 @@ impl SetRules for Rules {
             ),
         ];
         for (start, line) in lines {
-            if g.supply_pile(start).is_some() {
+            if cards.contains(&start) && g.pile_of(line[0]).is_none() {
                 for card in line {
                     add_pile(g, card, 5, false);
                 }

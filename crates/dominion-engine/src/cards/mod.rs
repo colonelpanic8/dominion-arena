@@ -69,9 +69,13 @@ pub(crate) trait SetRules {
     /// aside in setup, ...). Runs after the Kingdom piles are built, before `setup`.
     fn setup_kingdom(g: &mut Game) {}
 
-    /// Setup after the Supply is built: extra piles, decks of Boons, tokens, ... It runs
-    /// again when piles are dealt mid-game (Divine Wind), so add only what is missing.
+    /// Setup after the Supply is built: extra piles, decks of Boons, tokens, ...
     fn setup(g: &mut Game) {}
+
+    /// Setup for Kingdom cards that join the game outside the normal setup: piles dealt
+    /// mid-game (Divine Wind) or a card with no pile (Riverboat's). `setup` may already
+    /// have run, so add only what is missing.
+    fn setup_added_piles(g: &mut Game, cards: &[Card]) {}
 
     /// Rearranges `cards`, just shuffled to go under `p`'s deck (bottom first).
     fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {}
@@ -170,6 +174,10 @@ macro_rules! sets {
 
         pub(crate) fn setup(g: &mut Game) {
             $(<$module::Rules as SetRules>::setup(g);)*
+        }
+
+        pub(crate) fn setup_added_piles(g: &mut Game, cards: &[Card]) {
+            $(<$module::Rules as SetRules>::setup_added_piles(g, cards);)*
         }
 
         pub(crate) fn arrange_shuffled(g: &Game, p: PlayerId, cards: &mut Vec<CardId>) {
