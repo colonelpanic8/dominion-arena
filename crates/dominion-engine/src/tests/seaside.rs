@@ -77,6 +77,28 @@ fn haven_sets_a_card_aside_until_next_turn_and_stays_in_play() {
 }
 
 #[test]
+fn throne_roomed_havens_holding_different_cards_are_ordered() {
+    let mut g = setup(&[Card::Haven, Card::ThroneRoom]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::ThroneRoom, Card::Haven, Card::Gold, Card::Estate],
+    );
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Haven]);
+    choose_kinds(&mut g, &[Card::Gold]);
+    choose_kinds(&mut g, &[Card::Estate]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    let hand = hand_kinds(&g, P0);
+    assert!(hand.contains(&Card::Gold) && hand.contains(&Card::Estate));
+}
+
+#[test]
 fn haven_with_nothing_to_set_aside_is_discarded_this_turn() {
     let mut g = setup(&[Card::Haven]);
     hand(&mut g, P0, &[Card::Haven]);

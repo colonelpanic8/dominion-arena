@@ -162,7 +162,7 @@ impl SetRules for Rules {
             }
             Occasion::EndBuyPhase { player } => {
                 if has(g, player, Card::Exploration) && g.turn.gained_in_buy_phase.is_empty() {
-                    out.push(Trigger::new(player, Card::Exploration, EFFECT));
+                    out.push(Trigger::new(player, Card::Exploration, EFFECT).quiet());
                 }
                 if has(g, player, Card::Pageant) && g.turn.coins >= 1 {
                     out.push(Trigger::new(player, Card::Pageant, EFFECT).optional());
@@ -399,7 +399,7 @@ fn trash_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, pc: u8) -> Opt
 
 fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
     if holds(g, p, Card::Key) {
-        out.push(Trigger::new(p, Card::Key, EFFECT));
+        out.push(Trigger::new(p, Card::Key, EFFECT).quiet());
     }
     for &project in &g.player(p).projects {
         let t = Trigger::new(p, project, EFFECT);
@@ -409,9 +409,8 @@ fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
             Card::CropRotation if !g.cards_in_hand_where(p, Types::VICTORY).is_empty() => {
                 out.push(t.optional())
             }
-            Card::CityGate | Card::Fair | Card::Barracks | Card::SinisterPlot | Card::Piazza => {
-                out.push(t)
-            }
+            Card::Fair | Card::Barracks => out.push(t.quiet()),
+            Card::CityGate | Card::SinisterPlot | Card::Piazza => out.push(t),
             _ => {}
         }
     }

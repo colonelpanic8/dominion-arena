@@ -301,8 +301,7 @@ fn haggler_gains_per_play_on_bought_cards_only() {
     play(&mut g, Card::Gold);
     play(&mut g, Card::Gold);
     buy(&mut g, Card::Province);
-    // Two Haggler effects: order them, then each gains a cheaper non-Victory card.
-    trigger(&mut g, 0);
+    // Two Haggler effects: each gains a cheaper non-Victory card.
     let offered = offered_piles(&g);
     assert!(offered.contains(&Card::Gold) && !offered.contains(&Card::Duchy));
     choose_pile(&mut g, Card::Gold);

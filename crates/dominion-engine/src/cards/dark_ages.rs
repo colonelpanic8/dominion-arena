@@ -187,7 +187,7 @@ impl SetRules for Rules {
             }
             Occasion::StartBuyPhase { player } => {
                 if hermits(g, player).next().is_some() {
-                    out.push(Trigger::new(player, Card::Hermit, HERMIT_BUY_START));
+                    out.push(Trigger::new(player, Card::Hermit, HERMIT_BUY_START).quiet());
                 }
             }
             Occasion::EndBuyPhase { player } => {

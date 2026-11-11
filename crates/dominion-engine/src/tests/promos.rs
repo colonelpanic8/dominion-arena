@@ -621,7 +621,6 @@ fn throne_room_on_captain_plays_twice_now_and_twice_next_turn() {
     assert_eq!(g.turn().actions, 4);
     next_turn(&mut g);
     assert_eq!(kinds(&g, g.in_play(P0)), [Card::ThroneRoom, Card::Captain]);
-    trigger(&mut g, Card::Captain);
     choose_pile(&mut g, Card::Smithy);
     choose_pile(&mut g, Card::Smithy);
     assert_eq!(g.hand(P0).len(), 11);

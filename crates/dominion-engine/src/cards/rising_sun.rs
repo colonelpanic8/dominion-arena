@@ -329,7 +329,7 @@ impl SetRules for Rules {
                     out.push(duration_trigger(l, START));
                 }
                 Card::Samurai if l.source.is_some_and(|c| g.zone(c) == Zone::InPlay(l.owner)) => {
-                    out.push(duration_trigger(l, SAMURAI_COIN));
+                    out.push(duration_trigger(l, SAMURAI_COIN).quiet());
                 }
                 _ => {}
             }
@@ -376,7 +376,9 @@ impl SetRules for Rules {
                     for l in this_turn(g, Card::Daimyo, player) {
                         if l.data.pick.is_none() {
                             out.push(
-                                Trigger::new(player, Card::Daimyo, DAIMYO_CLAIM).via_lasting(l.id),
+                                Trigger::new(player, Card::Daimyo, DAIMYO_CLAIM)
+                                    .via_lasting(l.id)
+                                    .quiet(),
                             );
                         }
                     }
@@ -388,12 +390,12 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::Enlightenment, ENLIGHTENMENT));
                 }
                 if active(Card::Panic) && player == turn {
-                    out.push(Trigger::new(player, Card::Panic, PANIC_BUYS));
+                    out.push(Trigger::new(player, Card::Panic, PANIC_BUYS).quiet());
                 }
                 let name = g.card(card);
                 let first = g.turn.played.iter().filter(|&&c| c == name).count() == 1;
                 if active(Card::GoodHarvest) && player == turn && first {
-                    out.push(Trigger::new(player, Card::GoodHarvest, GOOD_HARVEST));
+                    out.push(Trigger::new(player, Card::GoodHarvest, GOOD_HARVEST).quiet());
                 }
             }
             Occasion::AfterPlay { player, card } => {
@@ -405,7 +407,7 @@ impl SetRules for Rules {
                     }
                 }
                 if active(Card::GreatLeader) && player == turn && g.is(card, Types::ACTION) {
-                    out.push(Trigger::new(player, Card::GreatLeader, GREAT_LEADER));
+                    out.push(Trigger::new(player, Card::GreatLeader, GREAT_LEADER).quiet());
                 }
                 if active(Card::ApproachingArmy) && g.is(card, Types::ATTACK) {
                     out.push(Trigger::new(player, Card::ApproachingArmy, APPROACHING_ARMY));

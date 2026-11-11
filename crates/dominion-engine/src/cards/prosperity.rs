@@ -178,7 +178,9 @@ impl SetRules for Rules {
                 let collections = lastings(Card::Collection);
                 if collections > 0 && g.is(card, Types::ACTION) {
                     out.push(
-                        Trigger::new(player, Card::Collection, COLLECTION_VP).data(collections),
+                        Trigger::new(player, Card::Collection, COLLECTION_VP)
+                    .data(collections)
+                    .quiet(),
                     );
                 }
                 if in_place && g.zone(card) != Zone::Deck(player) {
@@ -214,7 +216,7 @@ impl SetRules for Rules {
                 }
                 let goons = in_play(Card::Goons);
                 if goons > 0 {
-                    out.push(Trigger::new(player, Card::Goons, GOONS_VP).data(goons));
+                    out.push(Trigger::new(player, Card::Goons, GOONS_VP).data(goons).quiet());
                 }
             }
             _ => {}

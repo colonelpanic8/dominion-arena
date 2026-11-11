@@ -88,7 +88,10 @@ them.
   `Trigger`s that apply right now; the window resolves them (turn player first, then
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
-  card is: the stop-moving rule) when producing a trigger. A trigger runs as the card's
+  card is: the stop-moving rule) when producing a trigger. It doesn't ask for an order
+  when a player's mandatory triggers all have the same effect, and resolves
+  `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
+  +1 Buy) first without asking. A trigger runs as the card's
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
   trigger with `Value::Bool(true)` makes the target unaffected.
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call

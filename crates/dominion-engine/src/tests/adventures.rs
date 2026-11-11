@@ -704,8 +704,7 @@ fn a_throne_roomed_bridge_troll_cheapens_two_on_both_turns() {
     assert_eq!((g.turn().buys, g.cost(Card::Silver)), (3, Cost::coins(1)));
     finish_turn(&mut g);
     finish_turn(&mut g);
-    // Two Duration effects to order.
-    accept(&mut g, Card::BridgeTroll);
+    // Its two identical Duration effects resolve without asking for an order.
     assert_eq!((g.turn().buys, g.cost(Card::Silver)), (3, Cost::coins(1)));
     assert_eq!(
         kinds(&g, g.in_play(P0)),
@@ -758,7 +757,6 @@ fn caravan_guard_is_played_from_the_hand_against_an_attack() {
     assert_eq!(g.hand(P1).len(), 3);
     finish_turn(&mut g);
     assert_eq!(g.turn().player, P1);
-    accept(&mut g, Card::CaravanGuard);
     assert_eq!(g.turn().coins, 2);
     finish_turn(&mut g);
     assert!(g.in_play(P1).is_empty());
@@ -883,11 +881,9 @@ fn swamp_hag_curses_buyers_and_gives_three_coins_next_turn() {
     choose_kinds(&mut g, &[Card::SwampHag]);
     finish_turn(&mut g);
     buy(&mut g, Card::Copper);
-    accept(&mut g, Card::SwampHag);
     // One Curse per Swamp Hag effect.
     assert_eq!(g.count_owned(P1, Card::Curse), 2);
     assert_eq!(g.turn().player, P0);
-    accept(&mut g, Card::SwampHag);
     assert_eq!(g.turn().coins, 6);
 }
 
@@ -917,7 +913,6 @@ fn hireling_draws_a_card_every_turn_for_the_rest_of_the_game() {
     for _ in 0..3 {
         finish_turn(&mut g);
         finish_turn(&mut g);
-        accept(&mut g, Card::Hireling);
         assert_eq!(g.hand(P0).len(), 7);
         assert_eq!(kinds(&g, g.in_play(P0)), [Card::ThroneRoom, Card::Hireling]);
     }

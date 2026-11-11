@@ -771,11 +771,11 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     let cost = gain_cost(g, card);
     let galleria = this_turn(Card::Galleria).count();
     if galleria > 0 && (3..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0 {
-        out.push(Trigger::new(player, Card::Galleria, REACT).data(galleria as i32));
+        out.push(Trigger::new(player, Card::Galleria, REACT).data(galleria as i32).quiet());
     }
     let guildmaster = this_turn(Card::Guildmaster).count();
     if guildmaster > 0 {
-        out.push(Trigger::new(player, Card::Guildmaster, REACT).data(guildmaster as i32));
+        out.push(Trigger::new(player, Card::Guildmaster, REACT).data(guildmaster as i32).quiet());
     }
     if g.is(card, Types::ATTACK) {
         for l in this_turn(Card::Skirmisher) {
@@ -784,7 +784,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     }
     if this_turn(Card::Garrison).any(|l| l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player)))
     {
-        out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN));
+        out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN).quiet());
     }
     if let Some(l) = this_turn(Card::Bauble).next()
         && still_landed(g, card)

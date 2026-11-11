@@ -1025,6 +1025,23 @@ fn city_gate_draws_then_topdecks() {
 }
 
 #[test]
+fn bonus_projects_resolve_without_asking_for_an_order() {
+    let mut g = setup(&[Card::Smithy]);
+    for project in [Card::Fair, Card::Barracks, Card::CityGate, Card::Piazza] {
+        give_project(&mut g, P0, project);
+    }
+    hand(&mut g, P0, &[Card::Estate, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper, Card::Silver, Card::Gold]);
+    g.start();
+    assert_eq!((g.turn().buys, g.turn().actions), (2, 2));
+    // City Gate and Piazza both use the deck, so their order is still asked.
+    let DecisionKind::Choose { labels, .. } = &g.pending().unwrap().kind else {
+        panic!("expected the trigger order");
+    };
+    assert_eq!(labels, &["City Gate", "Piazza"]);
+}
+
+#[test]
 fn pageant_pays_a_coin_for_coffers() {
     let mut g = setup(&[Card::Smithy]);
     give_project(&mut g, P0, Card::Pageant);

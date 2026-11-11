@@ -510,7 +510,6 @@ fn ghost_stays_out_with_a_duration_it_plays() {
     next_turn(&mut g);
     next_turn(&mut g);
     assert_eq!(in_play_kinds(&g, P0), [Card::Ghost, Card::Caravan]);
-    trigger(&mut g, 0);
     assert_eq!(g.hand(P0).len(), 7);
     next_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
