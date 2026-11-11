@@ -2241,6 +2241,46 @@ fn way_of_the_horse_still_draws_for_a_card_with_no_pile() {
 }
 
 #[test]
+fn way_of_the_horse_after_a_haven_played_normally_strands_its_card() {
+    let mut g = way_game(Card::WayOfTheHorse, &[Card::ThroneRoom, Card::Haven]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Haven, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Haven]);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Gold]);
+    way(&mut g, Card::WayOfTheHorse);
+    next_turn(&mut g);
+    // Nothing is left for the Throne Room to stay in play for.
+    assert!(g.in_play(P0).is_empty());
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Gold]);
+    assert_eq!(g.count_owned(P0, Card::Gold), 1);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn a_duration_played_after_way_of_the_horse_returned_it_does_nothing_later() {
+    let mut g = way_game(Card::WayOfTheHorse, &[Card::ThroneRoom, Card::Wharf]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Wharf]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Wharf]);
+    way(&mut g, Card::WayOfTheHorse);
+    own(&mut g);
+    assert_eq!((g.hand(P0).len(), g.turn().buys), (4, 2));
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.hand(P0).len(), g.turn().buys), (5, 1));
+}
+
+#[test]
 fn way_of_the_mole_discards_the_hand_and_draws_three() {
     let mut g = way_game(Card::WayOfTheMole, &[Card::Smithy]);
     hand(&mut g, P0, &[Card::Smithy, Card::Estate]);

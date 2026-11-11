@@ -341,8 +341,7 @@ impl SetRules for Rules {
             }
         }
         for l in turn_durations(g, occ) {
-            if l.card == Card::Samurai && l.source.is_some_and(|c| g.zone(c) == Zone::InPlay(l.owner))
-            {
+            if l.card == Card::Samurai {
                 out.push(duration_trigger(l, SAMURAI_COIN).quiet());
             }
         }
@@ -776,11 +775,7 @@ fn daimyo_replay(g: &mut Game, f: &mut CardFrame) -> Flow {
     let Some(card) = l.data.pick else {
         return Flow::done();
     };
-    let chain = l
-        .source
-        .filter(|&d| g.zone(d) == Zone::InPlay(f.player))
-        .into_iter()
-        .collect();
+    let chain = l.source.into_iter().collect();
     f.pc = 1;
     Flow::Call(Frame::play(f.player, card, false, chain))
 }

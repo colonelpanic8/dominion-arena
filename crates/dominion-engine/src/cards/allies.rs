@@ -703,22 +703,17 @@ fn warlord_attacks(g: &Game, p: PlayerId) -> bool {
     attack_on(g, Card::Warlord, p)
 }
 
-/// Adds a token to each Garrison `p` has in play that watches this turn's gains.
+/// Adds a token to each Garrison `p` played that watches this turn's gains.
 fn garrison_token(g: &mut Game, p: PlayerId) {
-    let watchers: Vec<(u32, Option<CardId>, Scratch)> = g
+    let watchers: Vec<crate::Lasting> = g
         .lasting()
         .iter()
-        .filter(|l| {
-            l.card == Card::Garrison
-                && l.until == Until::EndOfTurn
-                && l.owner == p
-                && l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(p))
-        })
-        .map(|l| (l.id, l.source, l.data.clone()))
+        .filter(|l| l.card == Card::Garrison && l.until == Until::EndOfTurn && l.owner == p)
+        .cloned()
         .collect();
-    for (id, source, data) in watchers {
-        let tokens = (data.n > 0)
-            .then(|| (data.n - 1) as u32)
+    for w in watchers {
+        let tokens = (w.data.n > 0)
+            .then(|| (w.data.n - 1) as u32)
             .filter(|&t| g.lasting().iter().any(|l| l.id == t));
         match tokens {
             Some(t) => g.lasting_mut(t).expect("checked").data.n += 1,
@@ -727,8 +722,8 @@ fn garrison_token(g: &mut Game, p: PlayerId) {
                     n: 1,
                     ..Scratch::default()
                 };
-                let t = g.add_lasting(Card::Garrison, p, source, data.cards, Until::Removed, held);
-                g.lasting_mut(id).expect("watcher").data.n = t as i32 + 1;
+                let t = g.continue_lasting(&w, w.data.cards.clone(), Until::Removed, held);
+                g.lasting_mut(w.id).expect("watcher").data.n = t as i32 + 1;
             }
         }
     }
@@ -761,8 +756,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
             out.push(Trigger::new(player, Card::Skirmisher, REACT).via_lasting(l.id));
         }
     }
-    if this_turn(Card::Garrison).any(|l| l.source.is_some_and(|s| g.zone(s) == Zone::InPlay(player)))
-    {
+    if this_turn(Card::Garrison).next().is_some() {
         out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN).quiet());
     }
     if let Some(l) = this_turn(Card::Bauble).next()
@@ -1972,10 +1966,14 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 // what its first play left to do as well.
                 if g.is(c, Types::DURATION) {
                     let (first, keeps) = (f.s.n as u32, f.keeps(g));
-                    for l in &mut g.lasting {
-                        if l.id >= first && l.keeps.last() == Some(&c) {
-                            l.keeps.extend(&keeps);
-                        }
+                    let firsts: Vec<(u32, Vec<CardId>)> = g
+                        .lasting
+                        .iter()
+                        .filter(|l| l.id >= first && l.keeps.last() == Some(&c))
+                        .map(|l| (l.id, [&l.keeps[..], &keeps[..]].concat()))
+                        .collect();
+                    for (id, keeps) in firsts {
+                        g.keep_in_play(id, keeps);
                     }
                 }
                 Flow::Call(Frame::play(p, c, false, f.chain_for_child()))

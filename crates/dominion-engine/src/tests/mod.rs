@@ -205,7 +205,18 @@ pub(crate) fn deck_kinds(g: &Game, p: PlayerId) -> Vec<Card> {
     g.player(p).deck.iter().rev().map(|&c| g.card(c)).collect()
 }
 
-/// Checks that every card is in exactly one zone, and that zones agree with `Game::zones`.
+/// Trashes `p`'s `card` from play: a card leaving play "somehow".
+pub(crate) fn leave_play(g: &mut Game, p: PlayerId, card: Card) {
+    let id = *g
+        .in_play(p)
+        .iter()
+        .find(|&&c| g.card(c) == card)
+        .unwrap_or_else(|| panic!("no {card} in {p}'s play area"));
+    g.move_card(id, Zone::Trash, crate::game::Pos::Top);
+}
+
+/// Checks that every card is in exactly one zone, and that zones agree with `Game::zones`
+/// and lasting effects with the cards in play.
 pub(crate) fn check_zones(g: &Game) {
     let mut seen = vec![0u8; g.card_count()];
     let mut mark = |ids: &[CardId], zone: Zone| {
@@ -240,6 +251,26 @@ pub(crate) fn check_zones(g: &Game) {
             "card {i} ({}) is in {n} zones",
             g.printed(CardId(i as u32))
         );
+    }
+    check_lasting(g);
+}
+
+/// Checks that lasting effects keep only cards that are in play, and that a Duration's
+/// effect that isn't ending has its card, and the card that replayed it, in play.
+fn check_lasting(g: &Game) {
+    let in_play = |c: &CardId| matches!(g.zone(*c), Zone::InPlay(_));
+    for l in g.lasting() {
+        assert!(
+            l.keeps.iter().all(in_play),
+            "{l:?} keeps a card not in play"
+        );
+        if l.source.is_some() && l.keeps.first() == l.source.as_ref() {
+            assert!(!l.ending, "{l:?} is ending but keeps its card in play");
+            assert!(
+                l.tracker.as_ref().is_none_or(in_play),
+                "{l:?} lost its tracker"
+            );
+        }
     }
 }
 

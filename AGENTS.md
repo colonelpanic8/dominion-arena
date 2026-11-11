@@ -138,7 +138,16 @@ them.
   `cards::duration_trigger` builds the trigger), whose ability removes it
   (`f.end_lasting(g)`). "This turn" effects use `Until::EndOfTurn`, "until your next
   turn" `Until::StartOfTurn(owner)`. Sets read `g.lasting()` for cost changes, triggers,
-  immunity and so on.
+  immunity and so on. A lasting that keeps its `source` in play is that Duration's
+  effect: when the card leaves play (`Game::move_card` notices), or was not in play when
+  the lasting was made, the lasting is `ending`: it goes on working this turn and is
+  removed at its end, whatever its `until`, with the extra turn it was for (Outpost);
+  the cards it set aside stay set aside. A replay's lasting (Throne Room's second play,
+  ...) ends the same way with the card that replayed it, its `tracker`
+  (`PlayState::tracker`; none for Citadel and other non-cards). Never re-check
+  `g.zone(source)` in card code. A later part of a play's effect (the card Cargo Ship
+  sets aside) is added with `g.continue_lasting`; a lasting that starts keeping cards in
+  play later does it with `g.keep_in_play`.
 - **Modifiers.** Rules code asks the game, never the static data: `g.cost_of(id)` /
   `g.cost(card)` (through `SetRules::modify_cost`; Events and Projects always cost what
   they say), `g.types(id)` / `g.is(id, types)`

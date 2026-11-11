@@ -549,6 +549,29 @@ fn secluded_shrine_trashes_up_to_two_when_a_treasure_is_gained_on_any_turn() {
 }
 
 #[test]
+fn a_secluded_shrine_that_left_play_still_waits_that_turn_only() {
+    let shrine = |gain_now: bool| {
+        let mut g = setup(&[Card::SecludedShrine]);
+        hand(&mut g, P0, &[Card::SecludedShrine, Card::Estate]);
+        deck(&mut g, P0, &[Card::Copper, Card::Estate].repeat(10));
+        g.start();
+        play(&mut g, Card::SecludedShrine);
+        leave_play(&mut g, P0, Card::SecludedShrine);
+        if !gain_now {
+            next_turn(&mut g);
+            next_turn(&mut g);
+        }
+        money(&mut g, 3, 2);
+        to_buy(&mut g);
+        buy(&mut g, Card::Silver);
+        g
+    };
+    assert_eq!(purpose(&shrine(true)), Purpose::Trash);
+    let later = shrine(false);
+    assert_eq!((later.turn().player, purpose(&later)), (P0, Purpose::Turn));
+}
+
+#[test]
 fn a_secluded_shrine_played_by_a_gained_gondola_waits_for_the_next_treasure() {
     let mut g = setup(&[Card::SecludedShrine, Card::Gondola]);
     hand(
@@ -686,6 +709,23 @@ fn taskmaster_repeats_next_turn_after_a_five_is_gained_and_not_otherwise() {
     assert!(g.in_play(P0).is_empty());
     next_turn(&mut g);
     assert_eq!((g.turn().actions, g.turn().coins), (1, 0));
+}
+
+#[test]
+fn a_taskmaster_that_left_play_does_not_repeat() {
+    let mut g = setup(&[Card::Taskmaster, Card::Market]);
+    hand(&mut g, P0, &[Card::Taskmaster]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Taskmaster);
+    leave_play(&mut g, P0, Card::Taskmaster);
+    money(&mut g, 4, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Market);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.turn().actions, g.turn().coins), (1, 0));
+    assert!(g.lasting().is_empty());
 }
 
 #[test]

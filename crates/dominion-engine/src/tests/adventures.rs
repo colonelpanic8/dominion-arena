@@ -940,6 +940,56 @@ fn hireling_played_at_the_start_of_a_turn_draws_that_turn() {
     assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
 }
 
+#[test]
+fn a_hireling_that_left_play_draws_no_more() {
+    let mut g = game(&[Card::Hireling], &[]);
+    hand(&mut g, P0, &[Card::Hireling]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Hireling);
+    finish_turn(&mut g);
+    finish_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 6);
+    leave_play(&mut g, P0, Card::Hireling);
+    finish_turn(&mut g);
+    finish_turn(&mut g);
+    assert_eq!(g.hand(P0).len(), 5);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn a_champion_that_left_play_works_until_the_end_of_the_turn() {
+    let mut g = game(&[Card::Page, Card::Smithy, Card::Militia], &[]);
+    hand(&mut g, P0, &[Card::Champion, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Militia]);
+    g.start();
+    play(&mut g, Card::Champion);
+    leave_play(&mut g, P0, Card::Champion);
+    play(&mut g, Card::Smithy);
+    assert_eq!(g.turn().actions, 1);
+    finish_turn(&mut g);
+    play(&mut g, Card::Militia);
+    assert_eq!(g.hand(P0).len(), 3);
+}
+
+#[test]
+fn a_swamp_hag_whose_throne_room_left_play_curses_and_pays_once() {
+    let mut g = game(&[Card::SwampHag, Card::ThroneRoom], &[]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::SwampHag]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::SwampHag]);
+    leave_play(&mut g, P0, Card::ThroneRoom);
+    finish_turn(&mut g);
+    buy(&mut g, Card::Copper);
+    assert_eq!(g.count_owned(P1, Card::Curse), 1);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.turn().coins, 3);
+}
+
 // ---- Other Kingdom cards ----
 
 #[test]

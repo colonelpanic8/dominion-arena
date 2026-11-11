@@ -464,9 +464,9 @@ fn captain_plays_supply_cards_now_and_next_turn() {
     assert!(g.in_play(P0).is_empty());
 }
 
-/// The Throne Room is in the Supply, so Captain stays in play with the Duration it played.
+/// The Throne Room stays in the Supply, so nothing keeps track of the second play.
 #[test]
-fn captain_stays_in_play_with_a_duration_its_throne_room_played() {
+fn a_duration_played_by_a_captains_throne_room_is_doubled_this_turn_only() {
     let mut g = setup(&[Card::Captain, Card::ThroneRoom, Card::Caravan]);
     hand(&mut g, P0, &[Card::Captain]);
     let mut cards = vec![Card::Caravan];
@@ -478,7 +478,9 @@ fn captain_stays_in_play_with_a_duration_its_throne_room_played() {
     next_turn(&mut g);
     choose_kinds(&mut g, &[Card::Caravan]);
     finish_turn(&mut g);
-    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Captain, Card::Caravan]);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Caravan]);
+    finish_turn(&mut g);
+    assert_eq!((g.turn().player, g.hand(P0).len()), (P0, 6));
 }
 
 #[test]

@@ -1037,7 +1037,20 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             Flow::Call(Frame::window(Occasion::EndTurn { player: p }))
         }
         _ => {
-            g.lasting.retain(|l| l.until != Until::EndOfTurn);
+            for l in std::mem::take(&mut g.lasting) {
+                if l.until != Until::EndOfTurn && !l.ending {
+                    g.lasting.push(l);
+                } else if l.until == Until::StartOfTurn(l.owner)
+                    && let Some(i) = g
+                        .extra_turns
+                        .iter()
+                        .position(|t| t.player == l.owner && t.source == l.card)
+                {
+                    // The extra turn a Duration stayed in play for (Outpost, Voyage) is
+                    // one of the things it no longer does.
+                    g.extra_turns.remove(i);
+                }
+            }
             for pl in &mut g.players {
                 g.boons.discard.append(&mut pl.boons_kept);
             }
@@ -1345,7 +1358,8 @@ impl PlayFrame {
                         g.turn.hand_plays += 1;
                     }
                 }
-                if self.move_to_play && g.zone(id) != Zone::InPlay(p) {
+                let enters = self.move_to_play && g.zone(id) != Zone::InPlay(p);
+                if enters {
                     g.move_card(id, Zone::InPlay(p), Pos::Top);
                 }
                 let card = g.card(id);
@@ -1368,6 +1382,7 @@ impl PlayFrame {
                     since,
                     gave_coins: false,
                     run_since: since,
+                    tracker: self.chain.last().copied().filter(|_| !enters),
                 });
                 self.pc = 1;
                 Flow::Call(Frame::window(Occasion::Play {

@@ -179,6 +179,164 @@ fn throne_room_on_tactician_gives_the_bonus_once() {
 }
 
 #[test]
+fn a_duration_that_left_play_does_nothing_on_later_turns() {
+    let mut g = setup(&[Card::Astrolabe, Card::Mandarin]);
+    hand(&mut g, P0, &[Card::Astrolabe, Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::Astrolabe);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    // Gaining Mandarin puts the Treasures in play, Astrolabe included, onto the deck.
+    buy(&mut g, Card::Mandarin);
+    let order = candidates(&g);
+    choose(&mut g, &order);
+    assert!(g.in_play(P0).is_empty());
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.turn().coins, g.turn().buys), (0, 1));
+    // Played again, it works again, once.
+    play(&mut g, Card::Astrolabe);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.turn().coins, g.turn().buys), (1, 2));
+}
+
+#[test]
+fn a_duration_whose_tiara_left_play_is_not_doubled_on_later_turns() {
+    let mut g = setup(&[Card::Astrolabe, Card::Tiara, Card::Mint]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Tiara, Card::Astrolabe, Card::Gold, Card::Estate],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::Tiara);
+    choose_kinds(&mut g, &[Card::Astrolabe]);
+    play(&mut g, Card::Gold);
+    assert_eq!((g.turn().coins, g.turn().buys), (5, 4));
+    // Gaining Mint trashes the Tiara but not the Astrolabe; Tiara's own effect is declined.
+    buy(&mut g, Card::Mint);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    no(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Astrolabe]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.turn().coins, g.turn().buys), (1, 2));
+}
+
+#[test]
+fn a_duration_whose_kings_court_left_play_is_played_once_on_later_turns() {
+    let mut g = setup(&[Card::Procession, Card::KingsCourt, Card::FishingVillage]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Procession, Card::KingsCourt, Card::FishingVillage],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    // Procession trashes the King's Court after it played Fishing Village three times.
+    play(&mut g, Card::Procession);
+    choose_kinds(&mut g, &[Card::KingsCourt]);
+    choose_kinds(&mut g, &[Card::FishingVillage]);
+    assert_eq!(g.turn().coins, 3);
+    assert_eq!(
+        in_play_kinds(&g, P0),
+        [Card::Procession, Card::FishingVillage]
+    );
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::FishingVillage]);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.turn().actions, g.turn().coins), (2, 1));
+}
+
+#[test]
+fn a_haven_whose_throne_room_left_play_returns_only_its_first_card() {
+    let mut g = setup(&[Card::Procession, Card::ThroneRoom, Card::Haven]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Procession,
+            Card::ThroneRoom,
+            Card::Haven,
+            Card::Gold,
+            Card::Silver,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Estate; 12]);
+    g.start();
+    play(&mut g, Card::Procession);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Haven]);
+    choose_kinds(&mut g, &[Card::Gold]);
+    choose_kinds(&mut g, &[Card::Silver]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Procession, Card::Haven]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert!(hand_kinds(&g, P0).contains(&Card::Gold));
+    // The second play's card stays set aside for the rest of the game, still the player's.
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Silver]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Silver]);
+    assert_eq!(g.count_owned(P0, Card::Silver), 1);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
+fn a_lighthouse_that_left_play_protects_and_pays_no_longer() {
+    let mut g = setup(&[Card::Lighthouse, Card::Militia]);
+    hand(&mut g, P0, &[Card::Lighthouse]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Militia]);
+    g.start();
+    play(&mut g, Card::Lighthouse);
+    leave_play(&mut g, P0, Card::Lighthouse);
+    next_turn(&mut g);
+    play(&mut g, Card::Militia);
+    assert_eq!(g.hand(P0).len(), 3);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().coins), (P0, 0));
+}
+
+#[test]
+fn a_corsair_that_left_play_attacks_and_draws_no_longer() {
+    let mut g = setup(&[Card::Corsair]);
+    hand(&mut g, P0, &[Card::Corsair]);
+    deck(&mut g, P0, &[Card::Copper; 15]);
+    hand(&mut g, P1, &[Card::Silver]);
+    g.start();
+    play(&mut g, Card::Corsair);
+    leave_play(&mut g, P0, Card::Corsair);
+    next_turn(&mut g);
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    assert_eq!(in_play_kinds(&g, P1), [Card::Silver]);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.hand(P0).len()), (P0, 5));
+}
+
+#[test]
+fn an_outpost_that_left_play_gives_no_extra_turn_but_still_a_hand_of_three() {
+    let mut g = setup(&[Card::Outpost]);
+    hand(&mut g, P0, &[Card::Outpost]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Outpost);
+    leave_play(&mut g, P0, Card::Outpost);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+    assert_eq!(g.hand(P0).len(), 3);
+    assert!(g.lasting().is_empty());
+}
+
+#[test]
 fn lighthouse_gives_a_coin_now_and_next_turn_and_blocks_attacks_until_then() {
     let mut g = setup(&[Card::Lighthouse, Card::Militia]);
     hand(&mut g, P0, &[Card::Lighthouse, Card::Copper]);

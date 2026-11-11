@@ -256,6 +256,7 @@ impl<'a> View<'a> {
             .map(|l| {
                 let mut l = l.clone();
                 l.source = l.source.filter(seen);
+                l.tracker = l.tracker.filter(seen);
                 l.keeps.retain(seen);
                 l.data.cards.retain(seen);
                 l.data.pick = l.data.pick.filter(seen);
