@@ -2204,3 +2204,479 @@ fn prosper_gains_a_loot_and_differently_named_treasures() {
     assert_eq!(gain_count(&g, P0, Card::Gold), 1);
     assert_eq!(gain_count(&g, P0, Card::Silver), 1);
 }
+
+#[test]
+fn a_trait_goes_on_a_random_action_or_treasure_kingdom_pile() {
+    for seed in 0..20 {
+        let g = setup_with(GameConfig {
+            landscapes: vec![Card::Rich, Card::Cheap],
+            ..GameConfig::new(2, vec![Card::Gardens, Card::Village, Card::Cage], seed)
+        });
+        let traited: Vec<(Card, Vec<Card>)> = g
+            .piles()
+            .iter()
+            .filter(|p| !p.traits.is_empty())
+            .map(|p| (p.card, p.traits.clone()))
+            .collect();
+        assert_eq!(traited.len(), 2, "{traited:?}");
+        assert!(
+            traited
+                .iter()
+                .all(|(c, t)| matches!(c, Card::Village | Card::Cage) && t.len() == 1)
+        );
+    }
+}
+
+#[test]
+fn cheap_cards_cost_one_less_but_not_below_zero() {
+    let mut g = setup(&[Card::Village, Card::Cage]);
+    set_trait(&mut g, Card::Cheap, Card::Village);
+    assert_eq!(g.cost(Card::Village), Cost::coins(2));
+    set_trait(&mut g, Card::Cheap, Card::Cage);
+    assert_eq!(g.cost(Card::Cage), Cost::coins(1));
+    assert_eq!(g.cost(Card::Village), Cost::coins(3));
+}
+
+#[test]
+fn cursed_gives_the_card_then_a_loot_then_a_curse() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Cursed, Card::Village);
+    crate::cards::setup(&mut g);
+    hand(&mut g, P0, &[]);
+    g.start();
+    money(&mut g, 3, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Village);
+    let gains: Vec<Card> = g
+        .log()
+        .iter()
+        .filter_map(|e| match e {
+            Event::Gained {
+                player: P0, card, ..
+            } => Some(*card),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(gains.len(), 3);
+    assert_eq!(gains[0], Card::Village);
+    assert!(gains[1].is(Types::LOOT));
+    assert_eq!(gains[2], Card::Curse);
+}
+
+#[test]
+fn fated_cards_may_go_on_top_or_bottom_when_shuffling() {
+    let mut g = setup(&[Card::Village, Card::Smithy]);
+    set_trait(&mut g, Card::Fated, Card::Village);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    discard(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::Village,
+            Card::Copper,
+            Card::Copper,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Smithy);
+    resolve_triggers(&mut g);
+    let villages: Vec<CardId> = candidates(&g);
+    choose(&mut g, &villages[..1]);
+    choose(&mut g, &villages[1..]);
+    // One Village on top (drawn first), one at the bottom.
+    assert_eq!(hand_kinds(&g, P0)[0], Card::Village);
+    assert_eq!(
+        g.player(P0).deck.first().map(|&c| g.card(c)),
+        Some(Card::Village)
+    );
+}
+
+#[test]
+fn fawning_gains_a_fawning_card_with_each_province() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Fawning, Card::Village);
+    hand(&mut g, P0, &[]);
+    g.start();
+    money(&mut g, 8, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Province);
+    assert_eq!(gain_count(&g, P0, Card::Village), 1);
+}
+
+#[test]
+fn friendly_discards_one_friendly_card_at_the_start_of_clean_up_to_gain_another() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Friendly, Card::Village);
+    hand(&mut g, P0, &[Card::Village, Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    to_buy(&mut g);
+    end_phase(&mut g);
+    // Night is skipped; at the start of Clean-up:
+    yes_trigger(&mut g);
+    assert_eq!(gain_count(&g, P0, Card::Village), 1);
+    assert_eq!(g.turn().player, P1);
+}
+
+#[test]
+fn hasty_cards_are_set_aside_when_gained_and_played_next_turn() {
+    let mut g = setup(&[Card::Smithy]);
+    set_trait(&mut g, Card::Hasty, Card::Smithy);
+    hand(&mut g, P0, &[]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    money(&mut g, 4, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Smithy);
+    assert_eq!(aside_kinds(&g, P0), [Card::Smithy]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Smithy]);
+    assert_eq!(g.hand(P0).len(), 8);
+    assert_eq!(g.turn().actions, 1);
+}
+
+#[test]
+fn inherited_replaces_an_estate_or_the_starting_card_each_player_chooses() {
+    let mut g = Game::new(GameConfig {
+        landscapes: vec![Card::Inherited],
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, vec![Card::Village], 1)
+    })
+    .unwrap();
+    // P0 keeps the default (an Estate); P1 replaces a Copper, which goes back to its pile.
+    assert_eq!(g.pending().unwrap().player, P0);
+    assert!(g.hand(P0).is_empty());
+    pick(&mut g, Card::Estate);
+    assert_eq!(g.pending().unwrap().player, P1);
+    pick(&mut g, Card::Copper);
+    for (p, coppers, estates) in [(P0, 7, 2), (P1, 6, 3)] {
+        assert_eq!(g.count_owned(p, Card::Village), 1);
+        assert_eq!(g.count_owned(p, Card::Copper), coppers);
+        assert_eq!(g.count_owned(p, Card::Estate), estates);
+        assert_eq!(g.hand(p).len(), 5);
+    }
+    let village = g.pile_of(Card::Village).unwrap();
+    assert_eq!(g.pile(village).cards.len(), 8);
+    let copper = g.pile_of(Card::Copper).unwrap();
+    assert_eq!(g.pile(copper).cards.len(), 60 - 14 + 1);
+    assert_eq!(gain_count(&g, P0, Card::Village), 0);
+    check_zones(&g);
+}
+
+#[test]
+fn inspiring_plays_an_action_without_a_copy_in_play_after_it() {
+    let mut g = setup(&[Card::Village, Card::Smithy]);
+    set_trait(&mut g, Card::Inspiring, Card::Village);
+    hand(&mut g, P0, &[Card::Village, Card::Village, Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    yes_trigger(&mut g);
+    // Only the Smithy: a Village is already in play.
+    assert_eq!(in_play_kinds(&g, P0), [Card::Village, Card::Smithy]);
+    assert_eq!(g.turn().actions, 2);
+}
+
+#[test]
+fn nearby_and_rich_give_a_buy_and_a_silver_on_gaining() {
+    let mut g = setup(&[Card::Village, Card::Smithy]);
+    set_trait(&mut g, Card::Nearby, Card::Village);
+    set_trait(&mut g, Card::Rich, Card::Smithy);
+    hand(&mut g, P0, &[]);
+    g.start();
+    money(&mut g, 7, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Village);
+    assert_eq!(g.turn().buys, 1);
+    buy(&mut g, Card::Smithy);
+    assert_eq!(gain_count(&g, P0, Card::Silver), 1);
+}
+
+#[test]
+fn patient_cards_are_set_aside_at_clean_up_and_played_next_turn() {
+    let mut g = setup(&[Card::Smithy]);
+    set_trait(&mut g, Card::Patient, Card::Smithy);
+    hand(&mut g, P0, &[Card::Smithy, Card::Smithy, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    g.turn.actions = 0;
+    end_phase(&mut g);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    yes_trigger(&mut g);
+    choose_kinds(&mut g, &[Card::Smithy, Card::Smithy]);
+    assert_eq!(aside_kinds(&g, P0), [Card::Smithy, Card::Smithy]);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Smithy, Card::Smithy]);
+    assert_eq!(g.hand(P0).len(), 11);
+}
+
+#[test]
+fn pious_may_trash_a_card_when_one_is_gained() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Pious, Card::Village);
+    hand(&mut g, P0, &[Card::Estate, Card::Curse]);
+    g.start();
+    money(&mut g, 3, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Village);
+    yes_trigger(&mut g);
+    choose_kinds(&mut g, &[Card::Curse]);
+    assert_eq!(trash_kinds(&g).last(), Some(&Card::Curse));
+}
+
+#[test]
+fn reckless_cards_follow_their_instructions_twice_and_return_to_their_pile() {
+    let mut g = setup(&[Card::Smithy, Card::Militia, Card::Moat]);
+    set_trait(&mut g, Card::Reckless, Card::Smithy);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!(
+        g.log()
+            .iter()
+            .filter(|e| matches!(e, Event::Played { .. }))
+            .count(),
+        1
+    );
+    let pile = g.pile_of(Card::Smithy).unwrap();
+    next_turn(&mut g);
+    assert_eq!(g.pile(pile).cards.len(), 11);
+    assert_eq!(g.count_owned(P0, Card::Smithy), 0);
+}
+
+#[test]
+fn one_moat_reveal_covers_both_runs_of_a_reckless_attack() {
+    let mut g = setup(&[Card::Militia, Card::Moat]);
+    set_trait(&mut g, Card::Reckless, Card::Militia);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Militia);
+    yes_trigger(&mut g);
+    assert_eq!(g.turn().coins, 4);
+    assert_eq!(g.hand(P1).len(), 5);
+}
+
+#[test]
+fn shy_cards_may_be_discarded_at_the_start_of_the_turn_for_two_cards() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Shy, Card::Village);
+    hand(&mut g, P0, &[]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::Village,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ]
+        .iter()
+        .chain(&[Card::Silver; 10])
+        .copied()
+        .collect::<Vec<_>>(),
+    );
+    g.start();
+    next_turn(&mut g);
+    next_turn(&mut g);
+    yes_trigger(&mut g);
+    // One Shy card only.
+    assert_eq!(g.hand(P0).len(), 6);
+    assert_eq!(discard_kinds(&g, P0), [Card::Village]);
+}
+
+#[test]
+fn tireless_cards_go_onto_the_deck_after_the_new_hand_is_drawn() {
+    let mut g = setup(&[Card::Village]);
+    set_trait(&mut g, Card::Tireless, Card::Village);
+    hand(&mut g, P0, &[Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Village);
+    next_turn(&mut g);
+    assert_eq!(deck_kinds(&g, P0)[0], Card::Village);
+    assert_eq!(g.hand(P0).len(), 5);
+    assert!(!hand_kinds(&g, P0).contains(&Card::Village));
+}
+
+#[test]
+fn a_trait_still_applies_after_its_pile_is_empty() {
+    let mut g = setup(&[Card::Smithy]);
+    set_trait(&mut g, Card::Reckless, Card::Smithy);
+    let pile = g.pile_of(Card::Smithy).unwrap();
+    for c in g.pile(pile).cards.clone() {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    assert_eq!(g.hand(P0).len(), 6);
+}
+
+#[test]
+fn a_gold_gained_from_a_tunnel_discarded_to_a_cutthroat_does_not_wake_it() {
+    let mut g = setup(&[Card::Cutthroat, Card::Tunnel]);
+    hand(&mut g, P0, &[Card::Cutthroat]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Tunnel,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Cutthroat);
+    choose_kinds(&mut g, &[Card::Tunnel, Card::Copper]);
+    resolve_triggers(&mut g);
+    assert_eq!(gain_count(&g, P1, Card::Gold), 1);
+    assert_eq!(loot_gained(&g, P0), 0);
+    assert!(g.lasting().iter().any(|l| l.card == Card::Cutthroat));
+}
+
+#[test]
+fn a_search_played_by_the_gain_that_empties_a_pile_waits_for_the_next() {
+    let mut g = setup(&[Card::Search, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Search]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    last_one(&mut g, Card::Gondola);
+    g.start();
+    money(&mut g, 4, 2);
+    to_buy(&mut g);
+    buy(&mut g, Card::Gondola);
+    yes_trigger(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Search]);
+    assert_eq!(loot_gained(&g, P0), 0);
+    assert!(g.lasting().iter().any(|l| l.card == Card::Search));
+}
+
+#[test]
+fn a_reckless_duration_does_its_next_turn_part_twice() {
+    let mut g = setup(&[Card::Longship]);
+    set_trait(&mut g, Card::Reckless, Card::Longship);
+    hand(&mut g, P0, &[Card::Longship]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Longship);
+    assert_eq!(g.turn().actions, 4);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Longship]);
+    next_turn(&mut g);
+    resolve_triggers(&mut g);
+    assert_eq!(g.hand(P0).len(), 9);
+    next_turn(&mut g);
+    assert_eq!(g.count_owned(P0, Card::Longship), 0);
+}
+
+#[test]
+fn kings_cache_on_a_cage_holds_three_sets_and_returns_them_all() {
+    let mut g = setup(&[Card::Cage, Card::KingsCache]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::KingsCache,
+            Card::Cage,
+            Card::Estate,
+            Card::Curse,
+            Card::Duchy,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::KingsCache);
+    choose_kinds(&mut g, &[Card::Cage]);
+    choose_kinds(&mut g, &[Card::Estate]);
+    choose_kinds(&mut g, &[Card::Curse]);
+    choose_kinds(&mut g, &[Card::Duchy]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::KingsCache, Card::Cage]);
+    money(&mut g, 2, 1);
+    to_buy(&mut g);
+    buy(&mut g, Card::Estate);
+    resolve_triggers(&mut g);
+    resolve_triggers(&mut g);
+    // Trashed once; all three cards come back; King's Cache is discarded that turn.
+    assert_eq!(
+        trash_kinds(&g).iter().filter(|&&c| c == Card::Cage).count(),
+        1
+    );
+    assert_eq!(g.hand(P0).len(), 5 + 3);
+    assert!(g.in_play(P0).is_empty());
+}
+
+#[test]
+fn a_siren_gained_with_a_quartermaster_still_trashes_itself() {
+    let mut g = setup(&[Card::Quartermaster, Card::Siren]);
+    hand(&mut g, P0, &[Card::Quartermaster]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Quartermaster);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Siren);
+    assert!(trash_kinds(&g).contains(&Card::Siren));
+    assert!(g.player(P0).set_aside.is_empty());
+    assert!(g.lasting().iter().all(|l| l.data.cards.is_empty()));
+}
+
+#[test]
+fn inherited_with_shelters_replaces_a_hovel_unless_another_card_is_chosen() {
+    let mut g = Game::new(GameConfig {
+        landscapes: vec![Card::Inherited],
+        colonies: Some(false),
+        shelters: Some(true),
+        ..GameConfig::new(2, vec![Card::Village], 1)
+    })
+    .unwrap();
+    pick(&mut g, Card::Hovel);
+    pick(&mut g, Card::Necropolis);
+    assert_eq!(g.count_owned(P0, Card::Hovel), 0);
+    assert_eq!(g.count_owned(P0, Card::Necropolis), 1);
+    assert_eq!(g.count_owned(P1, Card::Hovel), 1);
+    assert_eq!(g.count_owned(P1, Card::Necropolis), 0);
+    for p in [P0, P1] {
+        assert_eq!(g.player(p).owned().count(), 10);
+    }
+    check_zones(&g);
+}
+
+#[test]
+fn harbor_village_ignores_the_coin_of_a_plus_coin_token() {
+    let mut g = setup(&[Card::HarborVillage, Card::Village]);
+    hand(&mut g, P0, &[Card::HarborVillage, Card::Village]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    let village = g.pile_of(Card::Village).unwrap();
+    g.players[0].tokens.insert(Token::PlusCoin, Some(village));
+    g.piles[village.index()].tokens.push((P0, Token::PlusCoin));
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    play(&mut g, Card::Village);
+    assert_eq!(g.turn().coins, 1);
+}
