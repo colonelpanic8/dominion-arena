@@ -1,5 +1,6 @@
 //! Engine tests and shared helpers. Each set's card tests live in `tests/<set>.rs`.
 
+mod adventures;
 mod base;
 mod cornucopia_guilds;
 mod dark_ages;
@@ -22,6 +23,7 @@ pub(crate) const IMPLEMENTED: &[Set] = &[
     Set::CornucopiaGuilds,
     Set::Hinterlands,
     Set::DarkAges,
+    Set::Adventures,
     Set::Promos,
 ];
 
