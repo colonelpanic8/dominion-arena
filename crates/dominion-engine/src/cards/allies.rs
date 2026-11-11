@@ -167,6 +167,7 @@ impl SetRules for Rules {
                 if let Some(Occasion::Gain { card, .. }) = f.occ
                     && still_landed(g, card)
                 {
+                    g.show(card);
                     g.top_deck(card, f.player);
                 }
                 Flow::done()
@@ -942,6 +943,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 && still_landed(g, card)
             {
                 spend(g, p, 1);
+                g.show(card);
                 g.top_deck(card, p);
             }
             Flow::done()
@@ -1242,6 +1244,7 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             spend(g, p, if astrologers { k } else { k.div_ceil(2) }.max(1));
             if !astrologers {
                 for c in chosen {
+                    g.show_to(c, p);
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
                 return Flow::done();
@@ -1842,6 +1845,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 => {
             for c in input.cards() {
                 f.s.cards.retain(|&x| x != c);
+                g.show(c);
                 g.put_in_hand(c, p);
             }
             f.s.i += 1;
