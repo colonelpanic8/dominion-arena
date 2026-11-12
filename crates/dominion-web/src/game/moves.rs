@@ -11,7 +11,7 @@
 use super::board::{Board, PileAt, PileEntry, PlayerEntry, Zone};
 use super::entry::{self, Entry, GainTo, Moved, Place};
 use dominion_protocol::LogEntry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A place cards are in.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -58,6 +58,10 @@ pub struct Move {
     pub card: Option<String>,
     pub from: Loc,
     pub to: Loc,
+    /// Part of a shuffle, which dominion.games doesn't show moving.
+    pub shuffle: bool,
+    /// Whose turn it was.
+    pub turn: Option<u8>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -207,6 +211,8 @@ enum Step {
     /// tentative (the new board is in the middle of Clean-up), only if cards in play
     /// still have to go.
     Cleanup(u8, bool),
+    /// A turn begins: whose.
+    TurnStart(Option<u8>),
 }
 
 fn step(e: &LogEntry, names: &[String]) -> Option<Step> {
@@ -261,6 +267,7 @@ fn steps(
                 cleanup(&mut out, p, false);
             }
             cur = e.player;
+            out.push(Step::TurnStart(cur));
             continue;
         }
         if let Some(s) = step(e, names) {
@@ -286,6 +293,14 @@ struct Sim<'a> {
     /// How many times the steps still to come move each player's card of a name out of
     /// their play area.
     leaving_play: BTreeMap<(u8, String), u32>,
+    /// What the Clean-up being run keeps in play.
+    keep: Option<Held>,
+    /// Players whose Clean-up is among the steps still to come.
+    cleanup_ahead: BTreeSet<u8>,
+    /// The step being run is a shuffle.
+    shuffling: bool,
+    /// Whose turn the step being run is in.
+    turn: Option<u8>,
     old: &'a Board,
     new: &'a Board,
     moves: Vec<Done>,
@@ -300,6 +315,8 @@ struct Done {
     to: Loc,
     taken: Option<String>,
     put: Option<String>,
+    shuffle: bool,
+    turn: Option<u8>,
 }
 
 impl Sim<'_> {
@@ -322,8 +339,9 @@ impl Sim<'_> {
     fn look_ahead(&mut self, rest: &[Step]) {
         let mut pending: BTreeMap<Loc, i64> = BTreeMap::new();
         let mut leaving: BTreeMap<(u8, String), u32> = BTreeMap::new();
+        self.cleanup_ahead.clear();
         let mut add = |l: Loc, n: i64| *pending.entry(l).or_default() += n;
-        for s in rest {
+        for (i, s) in rest.iter().enumerate() {
             match s {
                 Step::Moved(p, m) => {
                     let n = i64::from(m.count());
@@ -368,9 +386,10 @@ impl Sim<'_> {
                     add(Loc::Deck(*p), n);
                 }
                 Step::Cleanup(p, _) => {
+                    self.cleanup_ahead.insert(*p);
                     let hand = i64::from(self.held(&Loc::Hand(*p)).count());
                     let play = i64::from(self.held(&Loc::InPlay(*p)).count())
-                        - i64::from(self.goal(&Loc::InPlay(*p)).count());
+                        - i64::from(self.kept(*p, &rest[i + 1..]).count());
                     add(Loc::Hand(*p), -hand);
                     add(Loc::InPlay(*p), -play.max(0));
                     add(Loc::Discard(*p), hand + play.max(0));
@@ -380,6 +399,20 @@ impl Sim<'_> {
         }
         self.pending = pending;
         self.leaving_play = leaving;
+    }
+
+    /// What a player's Clean-up keeps in play: what the new board has there, less what
+    /// the steps after it play.
+    fn kept(&self, p: u8, after: &[Step]) -> Held {
+        let mut keep = self.goal(&Loc::InPlay(p));
+        for s in after {
+            if let Step::Play(q, c) | Step::Call(q, c) = s
+                && *q == p
+            {
+                keep.take(Some(c));
+            }
+        }
+        keep
     }
 
     fn has(&self, l: &Loc, c: Option<&str>) -> bool {
@@ -422,6 +455,8 @@ impl Sim<'_> {
             to: to.clone(),
             taken,
             put: put.map(str::to_string),
+            shuffle: self.shuffling,
+            turn: self.turn,
         });
         true
     }
@@ -431,10 +466,12 @@ impl Sim<'_> {
     fn apply_unnamed(&mut self, from: &Loc, to: &Loc) -> bool {
         let src = self.held(from);
         let (dest, goal) = (self.held(to), self.goal(to));
+        // A hand a Clean-up will empty before the new board isn't the new board's.
+        let passing = matches!(to, Loc::Hand(p) if self.cleanup_ahead.contains(p));
         let needed = goal
             .known
             .iter()
-            .filter(|&(c, &n)| n > dest.of(c))
+            .filter(|&(c, &n)| n > dest.of(c) && !passing)
             .map(|(c, _)| c.clone());
         let mut needed_here = None;
         let mut needed_any = None;
@@ -473,6 +510,8 @@ impl Sim<'_> {
             to: to.clone(),
             taken: Some(c),
             put: None,
+            shuffle: self.shuffling,
+            turn: self.turn,
         });
         true
     }
@@ -596,13 +635,30 @@ impl Sim<'_> {
         match s {
             Step::Play(p, c) => {
                 let to = Loc::InPlay(*p);
-                let leaving = self.leaving_play.get(&(*p, c.clone())).copied();
-                if self.held(&to).of(c) >= self.goal(&to).of(c) + leaving.unwrap_or(0) {
+                // A card played again (Throne Room) is already in play. Before a Clean-up
+                // the new board can't tell, so then it is one the hand is known not to
+                // hold.
+                let replay = if self.cleanup_ahead.contains(p) {
+                    let hand = self.held(&Loc::Hand(*p));
+                    self.held(&to).of(c) > 0 && hand.of(c) == 0 && hand.unknown == 0
+                } else {
+                    let leaving = self.leaving_play.get(&(*p, c.clone())).copied();
+                    self.held(&to).of(c) >= self.goal(&to).of(c) + leaving.unwrap_or(0)
+                };
+                if replay {
                     return;
                 }
-                let mut from = vec![Loc::Hand(*p)];
-                from.extend(self.player_locs(*p).into_iter().filter(|l| *l != to));
-                if let Some(f) = self.source(Some(c), &from) {
+                let hand = Loc::Hand(*p);
+                // What a Clean-up still to come will do leaves no place short or over, so
+                // then the hand is where a card is played from.
+                let f = if self.cleanup_ahead.contains(p) && self.has(&hand, Some(c)) {
+                    Some(hand)
+                } else {
+                    let mut from = vec![hand];
+                    from.extend(self.player_locs(*p).into_iter().filter(|l| *l != to));
+                    self.source(Some(c), &from)
+                };
+                if let Some(f) = f {
                     self.apply(Some(c), &f, &to);
                 }
             }
@@ -740,11 +796,12 @@ impl Sim<'_> {
                     self.move_one(*p, None, from.as_ref(), &to);
                 }
             }
+            Step::TurnStart(_) => {}
             Step::Cleanup(p, tentative) => {
                 let play = Loc::InPlay(*p);
                 let discard = Loc::Discard(*p);
                 let h = self.held(&play);
-                let keep = self.goal(&play);
+                let keep = self.keep.clone().unwrap_or_default();
                 if *tentative && h.count() <= keep.count() {
                     return;
                 }
@@ -892,6 +949,7 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
             *n = entry::seat_name(&[], i as u8);
         }
     }
+    let first_turn = old.status.player.as_ref().map(|w| w.seat);
     let mut sim = Sim {
         zones: start,
         goal: &goal,
@@ -900,6 +958,10 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
         moves: vec![],
         pending: BTreeMap::new(),
         leaving_play: BTreeMap::new(),
+        cleanup_ahead: BTreeSet::new(),
+        keep: None,
+        shuffling: false,
+        turn: first_turn,
         loose: false,
         naming: false,
     };
@@ -910,13 +972,21 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
     } else {
         None
     };
-    let steps = steps(log, &names, old.status.player.as_ref().map(|w| w.seat), end);
+    let steps = steps(log, &names, first_turn, end);
     sim.loose = steps.iter().enumerate().any(|(i, s)| {
         matches!(s, Step::Draw(p, _)
             if steps[i + 1..].iter().any(|t| matches!(t, Step::Cleanup(q, _) if q == p)))
     });
     for (i, s) in steps.iter().enumerate() {
         sim.look_ahead(&steps[i + 1..]);
+        sim.shuffling = matches!(s, Step::Shuffle(_));
+        sim.keep = match s {
+            Step::Cleanup(p, _) => Some(sim.kept(*p, &steps[i + 1..])),
+            _ => None,
+        };
+        if let Step::TurnStart(p) = s {
+            sim.turn = *p;
+        }
         sim.naming = matches!(
             s,
             Step::Play(..)
@@ -932,7 +1002,10 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
         sim.run(s);
     }
     sim.naming = false;
+    sim.shuffling = false;
+    sim.turn = new.status.player.as_ref().map(|w| w.seat);
     sim.pending.clear();
+    sim.cleanup_ahead.clear();
     sim.undo_overshoot();
     sim.fill_gaps();
     if !sim.agrees() {
@@ -946,6 +1019,8 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
                 card: d.face,
                 from: d.from,
                 to: d.to,
+                shuffle: d.shuffle,
+                turn: d.turn,
             })
             .collect(),
         complete: true,
@@ -960,36 +1035,38 @@ pub struct Ghost {
     pub to: Loc,
     /// How many cards it stands for.
     pub count: u32,
+    pub turn: Option<u8>,
 }
 
-/// The ghosts to draw for `moves`: one per move while there are at most `max`, else one
-/// per pair of places (in the order first seen), at most `max` of them, so that a long
-/// run of moves is summarised rather than replayed.
+/// The ghosts to draw for `moves`, leaving out shuffles (dominion.games shows none): one
+/// per move while there are at most `max`, else one per pair of places (in the order
+/// first seen), at most `max` of them, so that a long run of moves is summarised rather
+/// than replayed.
 pub fn ghosts(moves: &[Move], max: usize) -> Vec<Ghost> {
+    let moves: Vec<&Move> = moves.iter().filter(|m| !m.shuffle).collect();
+    let ghost = |m: &Move| Ghost {
+        card: m.card.clone(),
+        from: m.from.clone(),
+        to: m.to.clone(),
+        count: 1,
+        turn: m.turn,
+    };
     if moves.len() <= max {
-        return moves
-            .iter()
-            .map(|m| Ghost {
-                card: m.card.clone(),
-                from: m.from.clone(),
-                to: m.to.clone(),
-                count: 1,
-            })
-            .collect();
+        return moves.into_iter().map(ghost).collect();
     }
     let mut out: Vec<Ghost> = vec![];
     for m in moves {
-        match out.iter_mut().find(|g| g.from == m.from && g.to == m.to) {
+        match out
+            .iter_mut()
+            .find(|g| g.from == m.from && g.to == m.to && g.turn == m.turn)
+        {
             Some(g) => {
                 g.count += 1;
-                g.card = m.card.clone().filter(|_| g.card.is_some());
+                if g.card != m.card {
+                    g.card = None;
+                }
             }
-            None => out.push(Ghost {
-                card: m.card.clone(),
-                from: m.from.clone(),
-                to: m.to.clone(),
-                count: 1,
-            }),
+            None => out.push(ghost(m)),
         }
     }
     out.truncate(max);
@@ -1005,32 +1082,49 @@ mod tests {
             card: card.map(String::from),
             from,
             to,
+            shuffle: false,
+            turn: Some(0),
+        }
+    }
+
+    fn ghost(card: Option<&str>, from: Loc, to: Loc, count: u32) -> Ghost {
+        Ghost {
+            card: card.map(String::from),
+            from,
+            to,
+            count,
+            turn: Some(0),
         }
     }
 
     #[test]
     fn a_long_run_of_moves_is_summarised_by_where_they_go() {
         let mut moves = vec![mv(Some("Copper"), Loc::Hand(0), Loc::InPlay(0)); 3];
-        moves.extend(vec![mv(None, Loc::Discard(0), Loc::Deck(0)); 12]);
+        moves.extend(vec![mv(None, Loc::Deck(0), Loc::Hand(0)); 12]);
         moves.push(mv(Some("Gold"), Loc::Hand(0), Loc::InPlay(0)));
         assert_eq!(ghosts(&moves[..3], 12).len(), 3);
-        let g = ghosts(&moves, 12);
         assert_eq!(
-            g,
+            ghosts(&moves, 12),
             [
-                Ghost {
-                    card: Some("Gold".into()),
-                    from: Loc::Hand(0),
-                    to: Loc::InPlay(0),
-                    count: 4
-                },
-                Ghost {
-                    card: None,
-                    from: Loc::Discard(0),
-                    to: Loc::Deck(0),
-                    count: 12
-                },
+                ghost(None, Loc::Hand(0), Loc::InPlay(0), 4),
+                ghost(None, Loc::Deck(0), Loc::Hand(0), 12),
             ]
+        );
+    }
+
+    #[test]
+    fn shuffles_have_no_ghosts() {
+        let mut moves = vec![
+            Move {
+                shuffle: true,
+                ..mv(None, Loc::Discard(0), Loc::Deck(0))
+            };
+            20
+        ];
+        moves.push(mv(Some("Gold"), Loc::Deck(0), Loc::Hand(0)));
+        assert_eq!(
+            ghosts(&moves, 12),
+            [ghost(Some("Gold"), Loc::Deck(0), Loc::Hand(0), 1)]
         );
     }
 }

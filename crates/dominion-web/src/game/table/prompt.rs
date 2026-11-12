@@ -568,11 +568,21 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
     };
     let picks = sel.picks().to_vec();
     let id = u.decision.id.clone();
+    // Cards taken off a deck to look at are seen arriving here.
+    let anchor = u
+        .decision
+        .player
+        .filter(|_| {
+            tray.iter()
+                .any(|&i| u.inter.targets[i].zone.as_deref() == Some("looking"))
+        })
+        .map(|p| format!("zone:{p}:looking"));
     rsx! {
         div {
             class: "dt-window dt-tray",
             style: "{win.style()}",
             "data-tray": "1",
+            "data-anchor": anchor,
             onclick: move |e| e.stop_propagation(),
             button {
                 class: "dt-x",

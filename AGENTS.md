@@ -75,7 +75,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     model.rs              each target's `Spot` on the table; play area this turn / earlier (pure)
     motion.rs             cards seen moving: DOM snapshot before a view change, ghosts after
                           it (`moves`) with dominion.games' per-destination scripts and
-                          Animation Type timings
+                          Animation Type timings, queued across changes as its
+                          AnimationDirector queues them; no shuffle animation
     sound.rs              your-turn and end-of-game sounds when dominion.games plays them
     layout.rs             every zone's box from the window size, in dominion.games' vh/vw
                           rules: basic columns, kingdom grid, rows, windows (pure)
