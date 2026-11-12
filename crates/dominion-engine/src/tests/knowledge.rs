@@ -52,6 +52,24 @@ fn opponents_know_a_hand_only_as_part_of_the_starting_cards() {
     );
 }
 
+/// Cards that could only be one card are known wherever they are.
+#[test]
+fn cards_whose_candidates_are_all_one_card_are_known() {
+    let mut g = setup(&[Card::Village]);
+    hand(&mut g, P0, &[Card::Copper; 5]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    let (g, k) = start(g);
+    let theirs = k.known(&g, P1);
+    for zone in [Zone::Hand(P0), Zone::Deck(P0)] {
+        let known = theirs.zone(zone);
+        assert_eq!(
+            (known.known, known.unknown),
+            (count(&[(Card::Copper, 5)]), 0)
+        );
+    }
+    assert!(theirs.uncertain.is_empty());
+}
+
 #[test]
 fn a_shuffle_mixes_known_cards_into_the_deck() {
     let mut g = setup(&[Card::Moat]);
@@ -642,7 +660,11 @@ fn only_its_owner_follows_a_card_taken_from_under_a_crypt() {
     let [(ga, ka), (gb, kb)] = worlds(&g, &k, under[0], under[1]);
     let theirs = ka.known(&ga, P1);
     assert_eq!(theirs, kb.known(&gb, P1));
-    assert_eq!(theirs.zone(Zone::Hand(P0)).known, count(&[]));
+    // The Estates it drew could only be Estates.
+    assert_eq!(
+        theirs.zone(Zone::Hand(P0)).known,
+        count(&[(Card::Estate, 5)])
+    );
     assert_eq!(
         uncertain_over(&theirs, &[Zone::Hand(P0), Zone::SetAside(P0)]),
         Some(count(&[(Card::Gold, 1), (Card::Copper, 1)]))
@@ -671,9 +693,10 @@ fn a_known_card_set_aside_face_down_with_others_is_lost_when_one_is_taken() {
     k.update(&mut g);
     play_from(&mut g, P1, Card::Archive);
     k.update(&mut g);
+    // The rest of P1's deck could only be Coppers.
     assert_eq!(
         k.known(&g, P0).zone(Zone::SetAside(P1)).known,
-        count(&[(Card::Duchy, 1)])
+        count(&[(Card::Duchy, 1), (Card::Copper, 2)])
     );
     let aside = candidates(&g);
     let duchy = *aside.iter().find(|&&c| g.card(c) == Card::Duchy).unwrap();
