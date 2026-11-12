@@ -123,7 +123,9 @@ impl SetRules for Rules {
             (_, Hook::Ability(HELD)) => held(g, f),
             (_, Hook::Ability(GAINED)) => gained(g, f, input),
             (_, Hook::Ability(REACT)) => react(g, f),
-            (Card::JewelledEgg, Hook::Ability(TRASHED)) => once(f, |g, f| gain_loot(g, f.player, Dest::Discard), g),
+            (Card::JewelledEgg, Hook::Ability(TRASHED)) => {
+                once(f, |g, f| gain_loot(g, f.player, Dest::Discard), g)
+            }
             (_, Hook::Ability(THIS_TURN)) => this_turn(g, f, input),
             (Card::Shaman, Hook::Ability(SHAMAN_GAIN)) => shaman_gain(g, f, input),
             (Card::Taskmaster, Hook::Ability(TASKMASTER_ARM)) => {
@@ -269,9 +271,10 @@ impl SetRules for Rules {
                 plus_buys(g, f.player, 1);
                 // A Rush or Mirror still waiting waits for the same gain: sharing its stamp
                 // makes their triggers interchangeable.
-                let waiting = g.lasting().iter().find(|l| {
-                    f.card != Card::Avoid && l.card == f.card && l.owner == f.player
-                });
+                let waiting = g
+                    .lasting()
+                    .iter()
+                    .find(|l| f.card != Card::Avoid && l.card == f.card && l.owner == f.player);
                 let data = waiting.map_or_else(|| stamped(g), |l| l.data.clone());
                 g.add_lasting(f.card, f.player, None, vec![], Until::EndOfTurn, data);
                 Flow::done()
@@ -280,7 +283,14 @@ impl SetRules for Rules {
                 plus_buys(g, f.player, 1);
                 if this_turn_lasting(g, Card::Deliver, f.player).is_none() {
                     let data = stamped(g);
-                    g.add_lasting(Card::Deliver, f.player, None, vec![], Until::EndOfTurn, data);
+                    g.add_lasting(
+                        Card::Deliver,
+                        f.player,
+                        None,
+                        vec![],
+                        Until::EndOfTurn,
+                        data,
+                    );
                 }
                 Flow::done()
             }
@@ -358,12 +368,18 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::Shaman, SHAMAN_GAIN));
                 }
                 if !traited_in_hand(g, player, Card::Shy).is_empty() {
-                    out.push(Trigger::new(player, Card::Shy, TRAIT).optional("discard a Shy card for +2 Cards"));
+                    out.push(
+                        Trigger::new(player, Card::Shy, TRAIT)
+                            .optional("discard a Shy card for +2 Cards"),
+                    );
                 }
             }
             Occasion::StartCleanup { player } => {
                 if !traited_in_hand(g, player, Card::Friendly).is_empty() {
-                    out.push(Trigger::new(player, Card::Friendly, TRAIT).optional("discard a Friendly card to gain a Friendly card"));
+                    out.push(
+                        Trigger::new(player, Card::Friendly, TRAIT)
+                            .optional("discard a Friendly card to gain a Friendly card"),
+                    );
                 }
                 if !traited_in_hand(g, player, Card::Patient).is_empty() {
                     out.push(Trigger::new(player, Card::Patient, TRAIT).optional("set aside Patient cards from your hand to play at the start of your next turn"));
@@ -387,7 +403,12 @@ impl SetRules for Rules {
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
                     if g.card(c) == Card::Shield {
-                        out.push(Trigger::new(target, Card::Shield, REACT).on(c).optional("reveal it to be unaffected").protects());
+                        out.push(
+                            Trigger::new(target, Card::Shield, REACT)
+                                .on(c)
+                                .optional("reveal it to be unaffected")
+                                .protects(),
+                        );
                     }
                 }
             }
@@ -531,7 +552,11 @@ fn stamped(g: &Game) -> Scratch {
 }
 
 /// Runs `step` once, then finishes.
-fn once(f: &mut CardFrame, step: impl FnOnce(&mut Game, &mut CardFrame) -> Flow, g: &mut Game) -> Flow {
+fn once(
+    f: &mut CardFrame,
+    step: impl FnOnce(&mut Game, &mut CardFrame) -> Flow,
+    g: &mut Game,
+) -> Flow {
     if f.pc == 0 {
         f.pc = 1;
         return step(g, f);
@@ -652,7 +677,8 @@ fn trait_pile(g: &Game, t: Card) -> Option<PileId> {
 /// out of the game).
 fn is_trait(g: &Game, card: Card, t: Card) -> bool {
     g.has_landscape(t)
-        && g.origin_pile(card).is_some_and(|pile| g.pile(pile).traits.contains(&t))
+        && g.origin_pile(card)
+            .is_some_and(|pile| g.pile(pile).traits.contains(&t))
 }
 
 fn is_traited(g: &Game, id: CardId, t: Card) -> bool {
@@ -776,7 +802,10 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             out.push(on(Trigger::new(gainer, kind, GAINED)));
         }
         Card::Gondola if !g.playable(gainer, Types::ACTION).is_empty() => {
-            out.push(on(Trigger::new(gainer, kind, GAINED)).optional("play an Action card from your hand"));
+            out.push(
+                on(Trigger::new(gainer, kind, GAINED))
+                    .optional("play an Action card from your hand"),
+            );
         }
         Card::WealthyVillage if treasure_names_in_play(g, gainer) >= 3 => {
             out.push(on(Trigger::new(gainer, kind, GAINED)));
@@ -791,7 +820,9 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         }
     }
     if is_trait(g, kind, Card::Pious) && !g.hand(gainer).is_empty() {
-        out.push(on(Trigger::new(gainer, Card::Pious, GAINED)).optional("trash a card from your hand"));
+        out.push(
+            on(Trigger::new(gainer, Card::Pious, GAINED)).optional("trash a card from your hand"),
+        );
     }
     if kind == Card::Province
         && let Some(pile) = trait_pile(g, Card::Fawning)
@@ -803,8 +834,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
     // Effects waiting for a gain
     for l in g.lasting() {
         let mine = l.owner == gainer;
-        let next =
-            |wanted| mine && types.contains(wanted) && next_gain_of(g, l, card, wanted);
+        let next = |wanted| mine && types.contains(wanted) && next_gain_of(g, l, card, wanted);
         let via = |ability| duration_trigger(l, ability);
         match l.card {
             Card::Cage if l.until == Until::Removed && next(Types::VICTORY) => {
@@ -825,9 +855,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             {
                 out.push(via(WAITED));
             }
-            Card::Taskmaster
-                if mine && l.until == Until::EndOfTurn && cost == Cost::coins(5) =>
-            {
+            Card::Taskmaster if mine && l.until == Until::EndOfTurn && cost == Cost::coins(5) => {
                 out.push(
                     Trigger::new(gainer, Card::Taskmaster, TASKMASTER_ARM)
                         .via_lasting(l.id)
@@ -835,13 +863,13 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 );
             }
             Card::Insignia
-                if mine
-                    && where_gained(g, card)
-                    && !matches!(g.zone(card), Zone::Deck(_)) =>
+                if mine && where_gained(g, card) && !matches!(g.zone(card), Zone::Deck(_)) =>
             {
                 out.push(via(THIS_TURN).optional(format!("put {} onto your deck", g.card(card))));
             }
-            Card::MiningRoad if mine && types.contains(Types::TREASURE) && where_gained(g, card) => {
+            Card::MiningRoad
+                if mine && types.contains(Types::TREASURE) && where_gained(g, card) =>
+            {
                 out.push(via(THIS_TURN).optional(format!("play {}", g.card(card))));
             }
             Card::Deliver if mine && where_gained(g, card) => {
@@ -866,7 +894,11 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     _ => false,
                 };
                 if react && super::can_play(g, p, c) {
-                    out.push(Trigger::new(p, g.card(c), REACT).on(c).optional("play it from your hand"));
+                    out.push(
+                        Trigger::new(p, g.card(c), REACT)
+                            .on(c)
+                            .optional("play it from your hand"),
+                    );
                 }
             }
         }
@@ -918,7 +950,11 @@ fn after_play_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<T
         }
     }
     if player == g.turn.player && is_traited(g, card, Card::Inspiring) {
-        out.push(Trigger::new(player, Card::Inspiring, TRAIT).on(card).optional("play an Action from your hand that you have no copy of in play"));
+        out.push(
+            Trigger::new(player, Card::Inspiring, TRAIT)
+                .on(card)
+                .optional("play an Action from your hand that you have no copy of in play"),
+        );
     }
 }
 
@@ -997,13 +1033,12 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.card {
         Card::Grotto => match f.pc {
             1 => {
-                let held: Vec<CardId> = f
-                    .s
-                    .cards
-                    .iter()
-                    .copied()
-                    .filter(|&c| g.zone(c) == Zone::SetAside(p))
-                    .collect();
+                let held: Vec<CardId> =
+                    f.s.cards
+                        .iter()
+                        .copied()
+                        .filter(|&c| g.zone(c) == Zone::SetAside(p))
+                        .collect();
                 f.pc = 2;
                 Flow::Call(Frame::discard(p, held))
             }
@@ -1105,14 +1140,13 @@ fn play_held(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         1 => {
             let prepare = f.card == Card::Prepare;
-            let left: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::SetAside(p))
-                .filter(|&c| !prepare || g.is(c, Types::ACTION | Types::TREASURE))
-                .collect();
+            let left: Vec<CardId> =
+                f.s.cards
+                    .iter()
+                    .copied()
+                    .filter(|&c| g.zone(c) == Zone::SetAside(p))
+                    .filter(|&c| !prepare || g.is(c, Types::ACTION | Types::TREASURE))
+                    .collect();
             if left.is_empty() {
                 f.pc = 3;
                 return Flow::Continue;
@@ -1131,13 +1165,12 @@ fn play_held(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         }
         3 => {
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::SetAside(p))
-                .collect();
+            let rest: Vec<CardId> =
+                f.s.cards
+                    .iter()
+                    .copied()
+                    .filter(|&c| g.zone(c) == Zone::SetAside(p))
+                    .collect();
             f.pc = 4;
             Flow::Call(Frame::discard(p, rest))
         }
@@ -1213,7 +1246,9 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 }
                 f.pc = 5;
-                return f.ask_cards(cards, 1, 1, Purpose::Move).question("put into your hand");
+                return f
+                    .ask_cards(cards, 1, 1, Purpose::Move)
+                    .question("put into your hand");
             }
             let piles = g.piles_costing_up_to(Cost::coins(4));
             if piles.is_empty() {
@@ -1429,7 +1464,14 @@ fn gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     pick: Some(card),
                     ..Scratch::default()
                 };
-                g.add_lasting(Card::Hasty, player, Some(card), vec![], Until::Removed, data);
+                g.add_lasting(
+                    Card::Hasty,
+                    player,
+                    Some(card),
+                    vec![],
+                    Until::Removed,
+                    data,
+                );
             }
             Flow::done()
         }
@@ -1562,7 +1604,9 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let mut shuffled = g.shuffled(p).to_vec();
                 shuffled.sort();
                 g.look_through_shuffled(p);
-                return f.ask_cards(shuffled, 0, 3, Purpose::Move).question("put into your discard pile");
+                return f
+                    .ask_cards(shuffled, 0, 3, Purpose::Move)
+                    .question("put into your discard pile");
             }
             for c in input.cards() {
                 if g.zone(c) == Zone::Deck(p) {
@@ -1652,7 +1696,9 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 4;
             let under = f.s.cards[top..].to_vec();
             if under.iter().any(|&c| g.card(c) != g.card(under[0])) {
-                return f.ask_order(under, Purpose::Move).question("put on the bottom of your deck");
+                return f
+                    .ask_order(under, Purpose::Move)
+                    .question("put on the bottom of your deck");
             }
             Flow::Continue
         }
@@ -1662,7 +1708,8 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.s.cards.splice(top.., input.cards());
             }
             let in_deck = |c: &CardId| g.zone(*c) == Zone::Deck(p);
-            let mut on_top: Vec<CardId> = f.s.cards[..top].iter().copied().filter(in_deck).collect();
+            let mut on_top: Vec<CardId> =
+                f.s.cards[..top].iter().copied().filter(in_deck).collect();
             let under: Vec<CardId> = f.s.cards[top..].iter().copied().filter(in_deck).collect();
             for &c in on_top.iter().chain(&under) {
                 if is_traited(g, c, Card::Fated) {
@@ -1719,7 +1766,12 @@ fn trait_ability(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Friendly => match f.pc {
             0 => {
                 f.pc = 1;
-                f.ask_cards(traited_in_hand(g, p, Card::Friendly), 1, 1, Purpose::Discard)
+                f.ask_cards(
+                    traited_in_hand(g, p, Card::Friendly),
+                    1,
+                    1,
+                    Purpose::Discard,
+                )
             }
             1 => {
                 f.pc = 2;
@@ -1833,9 +1885,7 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         .owned()
         .filter(|&c| g.home_pile(g.printed(c)) != pile)
         .collect();
-    let has_shelters = starting
-        .iter()
-        .any(|&c| g.printed(c).is(Types::SHELTER));
+    let has_shelters = starting.iter().any(|&c| g.printed(c).is(Types::SHELTER));
     let default = if has_shelters {
         Card::Hovel
     } else {
@@ -1919,7 +1969,14 @@ fn trash_up_to(g: &mut Game, f: &mut CardFrame, input: Input, min: usize, max: u
 }
 
 /// From `base`: gain a card costing up to `limit`.
-fn gain_up_to(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, limit: Cost, to: Dest) -> Flow {
+fn gain_up_to(
+    g: &mut Game,
+    f: &mut CardFrame,
+    input: Input,
+    base: u8,
+    limit: Cost,
+    to: Dest,
+) -> Flow {
     match f.pc - base {
         0 => {
             let piles = g.piles_costing_up_to(limit);
@@ -1960,7 +2017,9 @@ fn remodel(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, extra: u8) -
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = g.cost_of(f.s.pick.expect("set when trashed")).plus_coins(extra);
+            let limit = g
+                .cost_of(f.s.pick.expect("set when trashed"))
+                .plus_coins(extra);
             gain_up_to(g, f, input, base + 2, limit, Dest::Discard)
         }
     }
@@ -1994,7 +2053,13 @@ fn discard_down(g: &mut Game, f: &mut CardFrame, input: Input, n: usize) -> Flow
 }
 
 /// `target` discards down to `n` cards in hand.
-fn discard_down_one(g: &mut Game, f: &mut CardFrame, input: Input, target: PlayerId, n: usize) -> Flow {
+fn discard_down_one(
+    g: &mut Game,
+    f: &mut CardFrame,
+    input: Input,
+    target: PlayerId,
+    n: usize,
+) -> Flow {
     match f.pc {
         0 => {
             let hand = g.hand(target).to_vec();
@@ -2382,8 +2447,8 @@ fn silver_mine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             let limit = g.cost_of(f.this());
-            let piles =
-                g.supply_piles_where(|t, cost| t.contains(Types::TREASURE) && cost.less_than(limit));
+            let piles = g
+                .supply_piles_where(|t, cost| t.contains(Types::TREASURE) && cost.less_than(limit));
             if piles.is_empty() {
                 return Flow::done();
             }
@@ -2441,7 +2506,10 @@ fn orb(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             g.look_through_discard(p);
             f.pc = 1;
             f.ask_modes(
-                &["Play an Action or Treasure from your discard pile", "+1 Buy and +$3"],
+                &[
+                    "Play an Action or Treasure from your discard pile",
+                    "+1 Buy and +$3",
+                ],
                 1,
                 1,
             )
@@ -2609,7 +2677,9 @@ fn bury(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             return Flow::done();
         }
         f.pc = 1;
-        return f.ask_cards(discard, 1, 1, Purpose::Move).question("put on the bottom of your deck");
+        return f
+            .ask_cards(discard, 1, 1, Purpose::Move)
+            .question("put on the bottom of your deck");
     }
     for c in input.cards() {
         if g.zone(c) == Zone::Discard(p) {
@@ -2731,7 +2801,11 @@ fn scrounge(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return f.ask_cards(hand, 1, 1, Purpose::Trash);
             }
-            let estate = g.trash().iter().copied().find(|&c| g.card(c) == Card::Estate);
+            let estate = g
+                .trash()
+                .iter()
+                .copied()
+                .find(|&c| g.card(c) == Card::Estate);
             match estate {
                 Some(c) => {
                     f.pc = 4;

@@ -12,6 +12,7 @@ use super::{
     CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
     take_mode,
 };
+use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -19,7 +20,6 @@ use crate::game::{ExtraLimit, ExtraTurn, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -47,11 +47,21 @@ const DESERT_GUIDES: &str = "discard your hand and draw 5 cards";
 const SPLIT_PILES: [(Card, [Card; 4]); 6] = [
     (
         Card::Augurs,
-        [Card::HerbGatherer, Card::Acolyte, Card::Sorceress, Card::Sibyl],
+        [
+            Card::HerbGatherer,
+            Card::Acolyte,
+            Card::Sorceress,
+            Card::Sibyl,
+        ],
     ),
     (
         Card::Clashes,
-        [Card::BattlePlan, Card::Archer, Card::Warlord, Card::Territory],
+        [
+            Card::BattlePlan,
+            Card::Archer,
+            Card::Warlord,
+            Card::Territory,
+        ],
     ),
     (
         Card::Forts,
@@ -91,7 +101,11 @@ const DURATIONS: [Card; 8] = [
 impl SetRules for Rules {
     fn notes(g: &Game, out: &mut Vec<Note>) {
         for &(pile, n) in &g.ext.allies.inventors {
-            out.push(Note::new(Card::FamilyOfInventors).pile(pile).count(n as i32));
+            out.push(
+                Note::new(Card::FamilyOfInventors)
+                    .pile(pile)
+                    .count(n as i32),
+            );
         }
     }
 
@@ -309,7 +323,9 @@ impl SetRules for Rules {
             Occasion::Play { player, card } => {
                 if g.is(card, Types::TREASURE)
                     && highwayman_attacks(g, player)
-                    && !g.plays_before(player, card).any(|(_, t)| t.contains(Types::TREASURE))
+                    && !g
+                        .plays_before(player, card)
+                        .any(|(_, t)| t.contains(Types::TREASURE))
                 {
                     out.push(Trigger::new(player, Card::Highwayman, HIGHWAYMAN_BLOCK).on(card));
                 }
@@ -318,7 +334,11 @@ impl SetRules for Rules {
                 for c in g.leaving_play(player) {
                     let kind = g.card(c);
                     if matches!(kind, Card::MerchantCamp | Card::Tent) {
-                        out.push(Trigger::new(player, kind, REACT).on(c).optional("put it onto your deck"));
+                        out.push(
+                            Trigger::new(player, kind, REACT)
+                                .on(c)
+                                .optional("put it onto your deck"),
+                        );
                     }
                 }
             }
@@ -467,7 +487,10 @@ fn goto(f: &mut CardFrame, next: u8) -> Flow {
 
 /// The Allies in this game.
 fn allies(g: &Game) -> impl Iterator<Item = Card> + '_ {
-    g.landscapes().iter().copied().filter(|c| c.kind() == Kind::Ally)
+    g.landscapes()
+        .iter()
+        .copied()
+        .filter(|c| c.kind() == Kind::Ally)
 }
 
 fn mask(players: &[PlayerId]) -> i32 {
@@ -547,7 +570,11 @@ pub(crate) fn rotate(g: &mut Game, p: PlayerId, pile: PileId) {
         return;
     };
     let top = g.card(top);
-    let run = cards.iter().rev().take_while(|&&c| g.card(c) == top).count();
+    let run = cards
+        .iter()
+        .rev()
+        .take_while(|&&c| g.card(c) == top)
+        .count();
     let cards = &mut g.piles[pile.index()].cards;
     let moved = cards.split_off(cards.len() - run);
     cards.splice(0..0, moved);
@@ -555,7 +582,14 @@ pub(crate) fn rotate(g: &mut Game, p: PlayerId, pile: PileId) {
 }
 
 /// "You may rotate the `name`" at pc `base` (asks) and `base + 1`, then `next`.
-fn may_rotate(g: &mut Game, f: &mut CardFrame, input: Input, name: Card, base: u8, next: u8) -> Flow {
+fn may_rotate(
+    g: &mut Game,
+    f: &mut CardFrame,
+    input: Input,
+    name: Card,
+    base: u8,
+    next: u8,
+) -> Flow {
     let pile = g.pile_of(name).filter(|&p| rotatable(g, p));
     if f.pc == base {
         if pile.is_none() {
@@ -617,7 +651,14 @@ fn gain_copies(g: &mut Game, f: &mut CardFrame, card: Card, n: i32, dest: Dest) 
 
 /// Each of `f.targets` (from `f.s.i`) discards down to `n` cards, in turn order. Runs at
 /// pcs `base` and `base + 1`, then continues at `next`.
-fn discard_down(g: &mut Game, f: &mut CardFrame, input: Input, n: usize, base: u8, next: u8) -> Flow {
+fn discard_down(
+    g: &mut Game,
+    f: &mut CardFrame,
+    input: Input,
+    n: usize,
+    base: u8,
+    next: u8,
+) -> Flow {
     if f.pc == base + 1 {
         let target = f.targets[f.s.i];
         f.s.i += 1;
@@ -716,11 +757,19 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     let cost = gain_cost(g, card);
     if (3..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0 {
         for l in this_turn(Card::Galleria) {
-            out.push(Trigger::new(player, Card::Galleria, REACT).via_lasting(l.id).quiet());
+            out.push(
+                Trigger::new(player, Card::Galleria, REACT)
+                    .via_lasting(l.id)
+                    .quiet(),
+            );
         }
     }
     for l in this_turn(Card::Guildmaster) {
-        out.push(Trigger::new(player, Card::Guildmaster, REACT).via_lasting(l.id).quiet());
+        out.push(
+            Trigger::new(player, Card::Guildmaster, REACT)
+                .via_lasting(l.id)
+                .quiet(),
+        );
     }
     if g.is(card, Types::ATTACK) {
         for l in this_turn(Card::Skirmisher) {
@@ -728,7 +777,11 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         }
     }
     for l in this_turn(Card::Garrison) {
-        out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN).via_lasting(l.id).quiet());
+        out.push(
+            Trigger::new(player, Card::Garrison, GARRISON_TOKEN)
+                .via_lasting(l.id)
+                .quiet(),
+        );
     }
     if let Some(l) = this_turn(Card::Bauble).next()
         && g.still_where_gained(card)
@@ -837,7 +890,9 @@ fn ally_does(ally: Card) -> String {
         Card::CircleOfWitches => "spend 3 Favors so each other player gains a Curse".into(),
         Card::CityState => "spend 2 Favors to play the gained card".into(),
         Card::CoastalHaven => "spend Favors to keep that many cards in hand".into(),
-        Card::CraftersGuild => "spend 2 Favors to gain a card costing up to $4 onto your deck".into(),
+        Card::CraftersGuild => {
+            "spend 2 Favors to gain a card costing up to $4 onto your deck".into()
+        }
         Card::DesertGuides => format!("spend a Favor to {DESERT_GUIDES}"),
         Card::FamilyOfInventors => "put a Favor on a non-Victory Supply pile".into(),
         Card::FellowshipOfScribes => "spend a Favor for +1 Card".into(),
@@ -1031,7 +1086,11 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 if favors(g, p) == 0 {
                     return Flow::Continue;
                 }
-                f.ask_yes_or(Purpose::Other, "Spend a Favor to keep your hand", "Discard down to 4 cards")
+                f.ask_yes_or(
+                    Purpose::Other,
+                    "Spend a Favor to keep your hand",
+                    "Discard down to 4 cards",
+                )
             }
             1 => {
                 if input.is_yes() {
@@ -1227,7 +1286,10 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let (purpose, what) = if astrologers {
                 (Purpose::TopDeck, "put on top of your deck, a Favor each")
             } else {
-                (Purpose::Move, "put into your discard pile, a Favor per 2 cards")
+                (
+                    Purpose::Move,
+                    "put into your discard pile, a Favor per 2 cards",
+                )
             };
             f.ask_cards(shuffled, 0, max, purpose)
                 .question(what)
@@ -1684,7 +1746,8 @@ fn barbarian(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             let types = g.types(c);
-            let piles = g.supply_piles_where(|t, cost| cost.less_than(limit) && t.intersects(types));
+            let piles =
+                g.supply_piles_where(|t, cost| cost.less_than(limit) && t.intersects(types));
             if piles.is_empty() {
                 f.pc = 5;
                 return Flow::Continue;
@@ -1821,16 +1884,17 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             while let Some(&kind) = KINDS.get(f.s.i) {
-                let matching: Vec<CardId> = f
-                    .s
-                    .cards
-                    .iter()
-                    .copied()
-                    .filter(|&c| g.is(c, kind) && g.held(p, c))
-                    .collect();
+                let matching: Vec<CardId> =
+                    f.s.cards
+                        .iter()
+                        .copied()
+                        .filter(|&c| g.is(c, kind) && g.held(p, c))
+                        .collect();
                 if !matching.is_empty() {
                     f.pc = 3;
-                    return f.ask_cards(matching, 1, 1, Purpose::Move).question("put into your hand");
+                    return f
+                        .ask_cards(matching, 1, 1, Purpose::Move)
+                        .question("put into your hand");
                 }
                 f.s.i += 1;
             }
@@ -1956,7 +2020,11 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         2 => {
             f.pc = 3;
             let c = f.s.card.expect("set in step 1");
-            f.ask_modes(&[format!("Play {c} again"), format!("Gain a copy of {c}")], 1, 1)
+            f.ask_modes(
+                &[format!("Play {c} again"), format!("Gain a copy of {c}")],
+                1,
+                1,
+            )
         }
         3 => {
             f.s.m = mode_mask(input);
@@ -2197,7 +2265,14 @@ fn acolyte(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 4;
-            f.ask_yes_no(Purpose::Trash, format!("Trash {} to gain an Augur{}", g.card(f.this()), top_named(g, Card::Augurs)))
+            f.ask_yes_no(
+                Purpose::Trash,
+                format!(
+                    "Trash {} to gain an Augur{}",
+                    g.card(f.this()),
+                    top_named(g, Card::Augurs)
+                ),
+            )
         }
         4 => {
             let this = f.this();
@@ -2351,7 +2426,8 @@ fn archer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let hand = g.hand(target).to_vec();
                 if hand.len() >= 5 {
                     f.pc = 1;
-                    return f.ask_cards_for(target, hand, 1, 1, Purpose::Other)
+                    return f
+                        .ask_cards_for(target, hand, 1, 1, Purpose::Other)
                         .question("keep hidden (the others are revealed)");
                 }
                 f.s.i += 1;

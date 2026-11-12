@@ -5,6 +5,7 @@ use super::{
     CardFrame, Hook, SetRules, due_durations, duration_trigger, left_supply, looking, mode_mask,
     put_back, turn_durations,
 };
+use crate::Note;
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -12,7 +13,6 @@ use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Token, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -65,7 +65,9 @@ fn call_does(card: Card) -> &'static str {
         Card::Transmogrify => {
             "call it to trash a card from your hand and gain one costing up to $1 more into your hand"
         }
-        _ => "call it to move your +1 Card, +1 Action, +1 Buy or +$1 token to an Action Supply pile",
+        _ => {
+            "call it to move your +1 Card, +1 Action, +1 Buy or +$1 token to an Action Supply pile"
+        }
     }
 }
 
@@ -422,12 +424,16 @@ impl SetRules for Rules {
                 for &c in tavern(g, player) {
                     let replayable = g.zone(card) == Zone::InPlay(player);
                     match g.card(c) {
-                        Card::CoinOfTheRealm => {
-                            out.push(Trigger::new(player, Card::CoinOfTheRealm, CALL).on(c).optional("call it for +2 Actions"))
-                        }
-                        Card::RoyalCarriage if replayable => {
-                            out.push(Trigger::new(player, Card::RoyalCarriage, CALL).on(c).optional(format!("call it to replay {}", g.card(card))))
-                        }
+                        Card::CoinOfTheRealm => out.push(
+                            Trigger::new(player, Card::CoinOfTheRealm, CALL)
+                                .on(c)
+                                .optional("call it for +2 Actions"),
+                        ),
+                        Card::RoyalCarriage if replayable => out.push(
+                            Trigger::new(player, Card::RoyalCarriage, CALL)
+                                .on(c)
+                                .optional(format!("call it to replay {}", g.card(card))),
+                        ),
                         _ => {}
                     }
                 }
@@ -473,11 +479,13 @@ impl SetRules for Rules {
                     };
                     // An exchange needs both cards to move: a pile to return this one to.
                     let available = g.home_pile(printed).is_some()
-                        && g
-                            .pile_of(next)
-                            .is_some_and(|p| !g.pile(p).cards.is_empty());
+                        && g.pile_of(next).is_some_and(|p| !g.pile(p).cards.is_empty());
                     if g.card(c) == printed && available {
-                        out.push(Trigger::new(player, printed, EXCHANGE).on(c).optional(format!("exchange it for a {next}")));
+                        out.push(
+                            Trigger::new(player, printed, EXCHANGE)
+                                .on(c)
+                                .optional(format!("exchange it for a {next}")),
+                        );
                     }
                 }
             }
@@ -550,7 +558,11 @@ impl SetRules for Rules {
                 .any(|l| l.card == card && l.owner == p && l.until == Until::EndOfTurn),
             Card::Inheritance => g.ext.adventures.inherited.iter().all(|&(q, _)| q != p),
             // Only the Mission turn's player can't buy cards.
-            _ => !(card.kind() == Kind::Card && p == g.turn.player && g.turn.extra == Some(Card::Mission)),
+            _ => {
+                !(card.kind() == Kind::Card
+                    && p == g.turn.player
+                    && g.turn.extra == Some(Card::Mission))
+            }
         }
     }
 
@@ -641,12 +653,10 @@ fn active(g: &Game, p: PlayerId, card: Card) -> impl Iterator<Item = &crate::Las
 
 /// The Supply pile a copy of `card` can be gained from.
 fn copy_pile(g: &Game, card: Card) -> Option<PileId> {
-    (0..g.piles().len())
-        .map(|i| PileId(i as u8))
-        .find(|&id| {
-            let pile = g.pile(id);
-            pile.in_supply && pile.cards.last().is_some_and(|&top| g.card(top) == card)
-        })
+    (0..g.piles().len()).map(|i| PileId(i as u8)).find(|&id| {
+        let pile = g.pile(id);
+        pile.in_supply && pile.cards.last().is_some_and(|&top| g.card(top) == card)
+    })
 }
 
 fn upgrade(card: Card) -> Option<Card> {
@@ -818,7 +828,11 @@ fn start_turn_triggers(g: &Game, occ: &Occasion, player: PlayerId, out: &mut Vec
     for &c in tavern(g, player) {
         let card = g.card(c);
         if START_CALLS.contains(&card) {
-            out.push(Trigger::new(player, card, CALL).on(c).optional(call_does(card)));
+            out.push(
+                Trigger::new(player, card, CALL)
+                    .on(c)
+                    .optional(call_does(card)),
+            );
         }
     }
 }
@@ -871,7 +885,11 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
     let copyable = cost.at_most(Cost::coins(6)) && copy_pile(g, kind).is_some();
     for &c in tavern(g, player) {
         if copyable && g.card(c) == Card::Duplicate {
-            out.push(Trigger::new(player, Card::Duplicate, CALL).on(c).optional(format!("call it to gain a copy of {kind}")));
+            out.push(
+                Trigger::new(player, Card::Duplicate, CALL)
+                    .on(c)
+                    .optional(format!("call it to gain a copy of {kind}")),
+            );
         }
     }
     let pl = g.player(player);
@@ -887,7 +905,10 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
         .any(|l| l.card == Card::TravellingFair && l.owner == player);
     let movable = g.still_where_gained(card) && g.zone(card) != Zone::Deck(player);
     if fair && movable && player == g.turn.player {
-        out.push(Trigger::new(player, Card::TravellingFair, FAIR).optional(format!("put {} onto your deck", g.card(card))));
+        out.push(
+            Trigger::new(player, Card::TravellingFair, FAIR)
+                .optional(format!("put {} onto your deck", g.card(card))),
+        );
     }
     if bought {
         for l in g.lasting() {
@@ -945,7 +966,9 @@ fn exchange(g: &mut Game, f: &mut CardFrame) -> Flow {
 
 fn duration(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
     let p = f.player;
-    let id = f.lasting.expect("a Duration's start-of-turn effect has a lasting");
+    let id = f
+        .lasting
+        .expect("a Duration's start-of-turn effect has a lasting");
     Some(match f.card {
         Card::Amulet => amulet(g, f, input),
         Card::Dungeon => dungeon(g, f, input),
@@ -1234,7 +1257,11 @@ fn amulet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.end_lasting(g);
             }
             f.pc = 1;
-            f.ask_modes(&["+$1", "Trash a card from your hand", "Gain a Silver"], 1, 1)
+            f.ask_modes(
+                &["+$1", "Trash a card from your hand", "Gain a Silver"],
+                1,
+                1,
+            )
         }
         1 => {
             f.s.m = mode_mask(input);
@@ -1728,7 +1755,11 @@ fn quest(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 1;
             f.ask_numbered(
                 p,
-                &["Discard an Attack", "Discard two Curses", "Discard six cards"],
+                &[
+                    "Discard an Attack",
+                    "Discard two Curses",
+                    "Discard six cards",
+                ],
                 0,
                 1,
                 Purpose::Either,

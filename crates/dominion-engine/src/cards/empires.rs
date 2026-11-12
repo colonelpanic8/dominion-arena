@@ -9,6 +9,7 @@
 //! a card moves is checked to still be in play.
 
 use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -16,7 +17,6 @@ use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Set, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -215,7 +215,11 @@ impl SetRules for Rules {
             }
             (Card::Arena, Hook::Ability(ARENA_DISCARD)) => arena(g, f, input),
             (
-                Card::Basilica | Card::Baths | Card::Battlefield | Card::Colonnade | Card::Labyrinth,
+                Card::Basilica
+                | Card::Baths
+                | Card::Battlefield
+                | Card::Colonnade
+                | Card::Labyrinth,
                 Hook::Ability(TAKE),
             ) => {
                 take_landmark_vp(g, f.player, f.card, 2);
@@ -331,15 +335,7 @@ impl SetRules for Rules {
                     f.pc = 1;
                 }
                 if f.pc == 1 {
-                    return Some(gain_copies(
-                        g,
-                        f,
-                        input,
-                        Card::Silver,
-                        2,
-                        Dest::Discard,
-                        2,
-                    ));
+                    return Some(gain_copies(g, f, input, Card::Silver, 2, Dest::Discard, 2));
                 }
                 let silvers = g.turn.gained.iter().filter(|&&c| c == Card::Silver).count();
                 add_vp(g, f.player, silvers as i32);
@@ -464,7 +460,10 @@ impl SetRules for Rules {
                 if g.has_landscape(Card::Arena)
                     && !g.cards_in_hand_where(player, Types::ACTION).is_empty()
                 {
-                    out.push(Trigger::new(player, Card::Arena, ARENA_DISCARD).optional("discard an Action card to take 2 VP from Arena"));
+                    out.push(
+                        Trigger::new(player, Card::Arena, ARENA_DISCARD)
+                            .optional("discard an Action card to take 2 VP from Arena"),
+                    );
                 }
             }
             Occasion::StartCleanup { .. } => {
@@ -485,7 +484,11 @@ impl SetRules for Rules {
                 for c in g.leaving_play(player) {
                     if g.card(c) == Card::Capital {
                         // Taken whatever else happens to the card as it is discarded.
-                        out.push(Trigger::new(player, Card::Capital, CAPITAL_DEBT).on(c).quiet());
+                        out.push(
+                            Trigger::new(player, Card::Capital, CAPITAL_DEBT)
+                                .on(c)
+                                .quiet(),
+                        );
                     }
                 }
             }
@@ -642,7 +645,12 @@ impl SetRules for Rules {
             .copied()
             .filter(|&id| g.pile_top(id).is_some_and(|top| g.is(top, Types::ACTION)))
             .collect();
-        let joined: Vec<Card> = g.landscapes.iter().copied().filter(|&l| s.joined(l)).collect();
+        let joined: Vec<Card> = g
+            .landscapes
+            .iter()
+            .copied()
+            .filter(|&l| s.joined(l))
+            .collect();
         for l in joined {
             match l {
                 _ if TOKEN_LANDMARKS.contains(&l) => {
@@ -787,7 +795,9 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
 fn enchant_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
     let first_action = player == g.turn.player
         && g.is(card, Types::ACTION)
-        && !g.plays_before(player, card).any(|(_, t)| t.contains(Types::ACTION));
+        && !g
+            .plays_before(player, card)
+            .any(|(_, t)| t.contains(Types::ACTION));
     let open = g
         .plays
         .last()
@@ -1232,7 +1242,8 @@ fn charm_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let cost = g.cost_of(card);
             let name = g.card(card);
-            let piles: Vec<PileId> = g.supply_piles_where(|_, c| c == cost)
+            let piles: Vec<PileId> = g
+                .supply_piles_where(|_, c| c == cost)
                 .into_iter()
                 .filter(|&pile| g.pile_top(pile).is_some_and(|t| g.card(t) != name))
                 .collect();
@@ -1344,7 +1355,14 @@ fn encampment(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     pick: Some(this),
                     ..Scratch::default()
                 };
-                g.add_lasting(Card::Encampment, p, Some(this), vec![], Until::EndOfTurn, data);
+                g.add_lasting(
+                    Card::Encampment,
+                    p,
+                    Some(this),
+                    vec![],
+                    Until::EndOfTurn,
+                    data,
+                );
             }
             Flow::done()
         }
@@ -1364,7 +1382,10 @@ fn engineer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 4;
-            f.ask_yes_no(Purpose::Trash, format!("Trash {} to gain a card costing up to $4", g.card(f.this())))
+            f.ask_yes_no(
+                Purpose::Trash,
+                format!("Trash {} to gain a card costing up to $4", g.card(f.this())),
+            )
         }
         4 => {
             if !input.is_yes() {
@@ -2094,10 +2115,7 @@ fn mountain_pass(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 purpose: Purpose::Other,
                 source: Some(Card::MountainPass),
                 about: vec![],
-                question: Some(format!(
-                    "bid Debt for +8 VP; bidding {} passes",
-                    f.s.n
-                )),
+                question: Some(format!("bid Debt for +8 VP; bidding {} passes", f.s.n)),
             })
         }
         _ => {

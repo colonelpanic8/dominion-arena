@@ -48,7 +48,14 @@ impl SetRules for Rules {
                     n: silvers as i32,
                     ..Scratch::default()
                 };
-                g.add_lasting(Card::Merchant, f.player, f.this, vec![], Until::EndOfTurn, data);
+                g.add_lasting(
+                    Card::Merchant,
+                    f.player,
+                    f.this,
+                    vec![],
+                    Until::EndOfTurn,
+                    data,
+                );
                 Flow::done()
             }
             (Card::Vassal, _) => vassal(g, f, input),
@@ -80,7 +87,12 @@ impl SetRules for Rules {
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
                     if g.card(c) == Card::Moat {
-                        out.push(Trigger::new(target, Card::Moat, MOAT_REACT).on(c).optional("reveal it to be unaffected").protects());
+                        out.push(
+                            Trigger::new(target, Card::Moat, MOAT_REACT)
+                                .on(c)
+                                .optional("reveal it to be unaffected")
+                                .protects(),
+                        );
                     }
                 }
             }
@@ -365,7 +377,9 @@ fn upgrade(
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
-            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(extra);
+            let limit = g
+                .cost_of(f.s.pick.expect("set in step 1"))
+                .plus_coins(extra);
             let piles = g.supply_piles_where(|card_types, cost| {
                 cost.at_most(limit) && types.is_none_or(|t| card_types.intersects(t))
             });
@@ -433,13 +447,12 @@ fn bandit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             2 => {
                 let target = f.targets[f.s.i];
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();
-                let treasures: Vec<_> = f
-                    .s
-                    .cards
-                    .iter()
-                    .copied()
-                    .filter(|&c| g.is(c, Types::TREASURE) && g.card(c) != Card::Copper)
-                    .collect();
+                let treasures: Vec<_> =
+                    f.s.cards
+                        .iter()
+                        .copied()
+                        .filter(|&c| g.is(c, Types::TREASURE) && g.card(c) != Card::Copper)
+                        .collect();
                 if treasures.is_empty() {
                     f.pc = 4;
                     continue;
@@ -496,7 +509,11 @@ fn library(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if g.is(c, Types::ACTION) {
                 f.s.pick = Some(c);
                 f.pc = 2;
-                return f.ask_yes_or(Purpose::SetAside, format!("Set aside {}", g.card(c)), "Keep it");
+                return f.ask_yes_or(
+                    Purpose::SetAside,
+                    format!("Set aside {}", g.card(c)),
+                    "Keep it",
+                );
             }
             f.pc = 0;
             Flow::Continue
@@ -680,7 +697,11 @@ fn spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_or(Purpose::Discard, format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)), "Put it back")
+            f.ask_yes_or(
+                Purpose::Discard,
+                format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)),
+                "Put it back",
+            )
         }
         _ => {
             let target = victims[f.s.i];
@@ -709,13 +730,12 @@ fn thief(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             1 => {
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();
-                let treasures: Vec<_> = f
-                    .s
-                    .cards
-                    .iter()
-                    .copied()
-                    .filter(|&c| g.is(c, Types::TREASURE))
-                    .collect();
+                let treasures: Vec<_> =
+                    f.s.cards
+                        .iter()
+                        .copied()
+                        .filter(|&c| g.is(c, Types::TREASURE))
+                        .collect();
                 if treasures.is_empty() {
                     f.pc = 4;
                     continue;

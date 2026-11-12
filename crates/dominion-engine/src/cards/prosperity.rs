@@ -154,7 +154,11 @@ impl SetRules for Rules {
             Occasion::StartTurn { player } => {
                 for &c in g.hand(player) {
                     if g.card(c) == Card::Clerk && super::can_play(g, player, c) {
-                        out.push(Trigger::new(player, Card::Clerk, CLERK_START).on(c).optional("play it from your hand"));
+                        out.push(
+                            Trigger::new(player, Card::Clerk, CLERK_START)
+                                .on(c)
+                                .optional("play it from your hand"),
+                        );
                     }
                 }
             }
@@ -172,12 +176,18 @@ impl SetRules for Rules {
                 };
                 let in_place = where_gained(g, player, card);
                 if in_place
-                    && let Some(&w) = g.hand(player).iter().find(|&&c| g.card(c) == Card::Watchtower)
+                    && let Some(&w) = g
+                        .hand(player)
+                        .iter()
+                        .find(|&&c| g.card(c) == Card::Watchtower)
                 {
                     out.push(
                         Trigger::new(player, Card::Watchtower, WATCHTOWER_REACT)
                             .on(w)
-                            .optional(format!("reveal it to trash {} or put it onto your deck", g.card(card))),
+                            .optional(format!(
+                                "reveal it to trash {} or put it onto your deck",
+                                g.card(card)
+                            )),
                     );
                 }
                 if g.card(card) == Card::Mint {
@@ -199,7 +209,10 @@ impl SetRules for Rules {
                 }
                 if in_place && g.zone(card) != Zone::Deck(player) {
                     if lastings(Card::Tiara).next().is_some() {
-                        out.push(Trigger::new(player, Card::Tiara, TIARA_TOPDECK).optional(format!("put {} onto your deck", g.card(card))));
+                        out.push(
+                            Trigger::new(player, Card::Tiara, TIARA_TOPDECK)
+                                .optional(format!("put {} onto your deck", g.card(card))),
+                        );
                     }
                     if let Some(&seal) = g
                         .in_play(player)
@@ -265,11 +278,12 @@ impl SetRules for Rules {
     }
 
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {
-        let contraband = g.lasting().iter().any(|l| {
-            l.card == Card::Contraband && l.owner == p && l.data.card == Some(card)
-        });
-        let grand_market_blocked = card == Card::GrandMarket
-            && g.in_play(p).iter().any(|&c| g.card(c) == Card::Copper);
+        let contraband = g
+            .lasting()
+            .iter()
+            .any(|l| l.card == Card::Contraband && l.owner == p && l.data.card == Some(card));
+        let grand_market_blocked =
+            card == Card::GrandMarket && g.in_play(p).iter().any(|&c| g.card(c) == Card::Copper);
         !contraband && !grand_market_blocked
     }
 
@@ -307,7 +321,9 @@ pub(super) fn occ_card(f: &CardFrame) -> CardId {
 
 /// Whether `card`, being gained by `p`, is still where it was gained to.
 pub(super) fn where_gained(g: &Game, p: PlayerId, card: CardId) -> bool {
-    g.gains.last().is_some_and(|st| st.card == card && st.player == p)
+    g.gains
+        .last()
+        .is_some_and(|st| st.card == card && st.player == p)
         && g.still_where_gained(card)
 }
 
@@ -379,7 +395,7 @@ fn ask_name_for(f: &CardFrame, player: PlayerId) -> Flow {
         purpose: Purpose::Name,
         source: Some(f.card),
         about: vec![],
-            question: None,
+        question: None,
     })
 }
 
@@ -397,7 +413,7 @@ pub(super) fn ask_order_for(f: &CardFrame, player: PlayerId, cards: Vec<CardId>)
         purpose: Purpose::TopDeck,
         source: Some(f.card),
         about: vec![],
-            question: None,
+        question: None,
     })
 }
 
@@ -463,7 +479,9 @@ fn upgrade(g: &mut Game, f: &mut CardFrame, input: Input, extra: u8) -> Flow {
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(extra);
+            let limit = g
+                .cost_of(f.s.pick.expect("set in step 1"))
+                .plus_coins(extra);
             choose_and_gain(
                 f,
                 input,
@@ -608,7 +626,10 @@ fn bishop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let other = g.others_in_turn_order(f.player)[f.s.i];
                 f.s.i += 1;
                 f.pc = 3;
-                return Flow::Call(Frame::trash(other, input.take().map(Input::cards).unwrap_or_default()));
+                return Flow::Call(Frame::trash(
+                    other,
+                    input.take().map(Input::cards).unwrap_or_default(),
+                ));
             }
         }
     }
@@ -668,7 +689,10 @@ fn crystal_ball(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.pick = Some(c);
             f.pc = 2;
             let mut options = vec![Opt::Mode(0), Opt::Mode(1)];
-            let mut labels = vec![format!("Trash {}", g.card(c)), format!("Discard {}", g.card(c))];
+            let mut labels = vec![
+                format!("Trash {}", g.card(c)),
+                format!("Discard {}", g.card(c)),
+            ];
             if g.is(c, Types::ACTION | Types::TREASURE) {
                 options.push(Opt::Mode(2));
                 labels.push(format!("Play {}", g.card(c)));
@@ -706,7 +730,11 @@ fn forge(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, f.s.cards.clone()))
         }
         _ => {
-            let sum: u32 = f.s.cards.iter().map(|&c| u32::from(g.cost_of(c).coins)).sum();
+            let sum: u32 =
+                f.s.cards
+                    .iter()
+                    .map(|&c| u32::from(g.cost_of(c).coins))
+                    .sum();
             let total = Cost::coins(sum.min(255) as u8);
             choose_and_gain(
                 f,
@@ -852,7 +880,11 @@ fn rabble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             _ => {
                 let target = f.targets[f.s.i];
-                put_back(g, target, &input.take().map(Input::cards).unwrap_or_default());
+                put_back(
+                    g,
+                    target,
+                    &input.take().map(Input::cards).unwrap_or_default(),
+                );
                 f.s.i += 1;
                 f.pc = 0;
                 return Flow::Continue;
@@ -981,7 +1013,10 @@ fn watchtower_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_choose_for(
                 f.player,
                 vec![Opt::Mode(0), Opt::Mode(1)],
-                vec![format!("Trash {name}"), format!("Put {name} onto your deck")],
+                vec![
+                    format!("Trash {name}"),
+                    format!("Put {name} onto your deck"),
+                ],
                 1,
                 1,
                 Purpose::Either,
@@ -1091,7 +1126,12 @@ fn venture(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         2 => {
             let pick = f.s.pick;
-            let rest: Vec<CardId> = f.s.cards.iter().copied().filter(|&c| Some(c) != pick).collect();
+            let rest: Vec<CardId> =
+                f.s.cards
+                    .iter()
+                    .copied()
+                    .filter(|&c| Some(c) != pick)
+                    .collect();
             f.pc = 3;
             Flow::Call(Frame::discard(f.player, rest))
         }
@@ -1123,7 +1163,12 @@ fn mountebank(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             0 => {
                 if curse.is_some() {
                     f.pc = 1;
-                    return f.ask_yes_or_for(target, Purpose::Discard, "Discard a Curse", "Gain a Curse and a Copper");
+                    return f.ask_yes_or_for(
+                        target,
+                        Purpose::Discard,
+                        "Discard a Curse",
+                        "Gain a Curse and a Copper",
+                    );
                 }
                 f.pc = 2;
             }

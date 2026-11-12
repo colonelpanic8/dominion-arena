@@ -8,8 +8,8 @@ use crate::decision::Purpose;
 use crate::event::Dest;
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Scratch, Zone};
-use crate::trigger::{Occasion, Trigger};
 use crate::setup::{self, Setup};
+use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 
@@ -291,7 +291,11 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_or(Purpose::Discard, format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)), "Put it back")
+            f.ask_yes_or(
+                Purpose::Discard,
+                format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)),
+                "Put it back",
+            )
         }
         _ => {
             let victim = victims[f.s.i];

@@ -101,7 +101,11 @@ impl SetRules for Rules {
     }
 
     fn modify_cost(g: &Game, _card: Card, _id: Option<CardId>, cost: &mut Cost) {
-        let bridges = g.lasting().iter().filter(|l| l.card == Card::Bridge).count();
+        let bridges = g
+            .lasting()
+            .iter()
+            .filter(|l| l.card == Card::Bridge)
+            .count();
         if bridges > 0 {
             *cost = cost.minus_coins(bridges.min(255) as u8);
         }
@@ -555,7 +559,10 @@ fn mining_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Trash, format!("Trash {} for +$2", g.card(f.this())))
+            f.ask_yes_no(
+                Purpose::Trash,
+                format!("Trash {} for +$2", g.card(f.this())),
+            )
         }
         1 => {
             if !input.is_yes() {
@@ -787,11 +794,7 @@ fn steward(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            f.ask_modes(
-                &["+2 Cards", "+$2", "Trash 2 cards from your hand"],
-                1,
-                1,
-            )
+            f.ask_modes(&["+2 Cards", "+$2", "Trash 2 cards from your hand"], 1, 1)
         }
         1 => {
             f.s.m = mode_mask(input);
