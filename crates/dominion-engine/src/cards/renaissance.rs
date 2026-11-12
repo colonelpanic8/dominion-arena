@@ -663,8 +663,8 @@ fn project(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.card {
         Card::Academy => villagers(g, p, 1),
-        Card::Barracks => g.turn.actions += 1,
-        Card::Fair => g.turn.buys += 1,
+        Card::Barracks => g.add_actions(p, 1),
+        Card::Fair => g.add_buys(p, 1),
         Card::Guildhall => coffers(g, p, 1),
         Card::Exploration => {
             coffers(g, p, 1);

@@ -835,7 +835,11 @@ fn gear_sets_cards_aside_until_the_next_turn() {
     // Set aside face down: everyone sees two cards go and come back, not which.
     let aside = moved(P0, Zone::Hand(P0), Zone::SetAside(P0), &[], 2);
     let back = moved(P0, Zone::SetAside(P0), Zone::Hand(P0), &[], 2);
-    assert!(logged_in_order(&g, &[aside, back]));
+    let resolved = Event::Resolved {
+        player: P0,
+        card: Card::Gear,
+    };
+    assert!(logged_in_order(&g, &[aside, resolved, back]));
 }
 
 #[test]

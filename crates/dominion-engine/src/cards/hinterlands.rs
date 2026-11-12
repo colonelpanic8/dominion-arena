@@ -266,8 +266,8 @@ impl SetRules for Rules {
                 }
                 _ => {
                     let plays = g.turn.played_count(f.player, Card::Crossroads);
-                    if plays == 1 && f.player == g.turn.player {
-                        g.turn.actions += 3;
+                    if plays == 1 {
+                        g.add_actions(f.player, 3);
                     }
                     Flow::done()
                 }

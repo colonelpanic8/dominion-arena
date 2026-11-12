@@ -39,6 +39,16 @@ fn moat_blocks_militia() {
     assert_eq!(g.hand(P1).len(), 5);
     assert_eq!(g.turn().coins, 2);
     assert_eq!(g.pending().unwrap().player, P0);
+    let revealed = Event::Revealed {
+        player: P1,
+        card: Card::Moat,
+    };
+    let unaffected = Event::Unaffected {
+        player: P1,
+        attack: Card::Militia,
+        by: Card::Moat,
+    };
+    assert!(logged_in_order(&g, &[revealed, unaffected]));
 }
 
 #[test]

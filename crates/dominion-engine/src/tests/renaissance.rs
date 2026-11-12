@@ -905,7 +905,14 @@ fn silk_merchant_gives_coffers_and_a_villager_when_gained_or_trashed() {
         counter,
         delta: 1,
     };
-    let order = [took(Counter::Coffers), took(Counter::Villagers)];
+    let order = [
+        Event::Resolved {
+            player: P0,
+            card: Card::SilkMerchant,
+        },
+        took(Counter::Coffers),
+        took(Counter::Villagers),
+    ];
     assert!(logged_in_order(&g, &order));
     next_turn(&mut g);
     play(&mut g, Card::Chapel);

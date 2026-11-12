@@ -563,15 +563,11 @@ fn in_mask(mask: i32, p: PlayerId) -> bool {
 }
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 fn coins(g: &mut Game, p: PlayerId, n: u32) {
@@ -2735,8 +2731,8 @@ fn launch(g: &mut Game, f: &mut CardFrame) -> Flow {
             Flow::Call(Frame::draw(p, 1))
         }
         _ => {
-            g.turn.actions += 1;
-            g.turn.buys += 1;
+            g.add_actions(p, 1);
+            g.add_buys(p, 1);
             Flow::done()
         }
     }

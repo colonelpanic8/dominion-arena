@@ -615,15 +615,11 @@ fn call_from_tavern(g: &mut Game, f: &CardFrame) -> bool {
 }
 
 fn add_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 fn add_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 /// Turns `p`'s Journey token over; returns whether it is now face up.

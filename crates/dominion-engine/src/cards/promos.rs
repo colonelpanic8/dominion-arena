@@ -589,9 +589,7 @@ fn governor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn marchland_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            if f.player == g.turn.player {
-                g.turn.buys += 1;
-            }
+            g.add_buys(f.player, 1);
             let hand = g.hand(f.player).to_vec();
             let n = hand.len();
             f.pc = 1;

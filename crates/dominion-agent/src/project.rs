@@ -1232,6 +1232,38 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             Some(*card),
             format!("{} returns {card}", name(*player)),
         ),
+        Event::Resolved { player, card } => (
+            Some(*player),
+            Some(*card),
+            format!("{}'s {card} resolves", name(*player)),
+        ),
+        Event::Bonus {
+            player,
+            actions,
+            buys,
+            coins,
+        } => {
+            let mut parts = vec![];
+            if *actions > 0 {
+                parts.push(format!("+{}", amount(*actions as i32, "Action", "Actions")));
+            }
+            if *buys > 0 {
+                parts.push(format!("+{}", amount(*buys as i32, "Buy", "Buys")));
+            }
+            if *coins > 0 {
+                parts.push(format!("+${coins}"));
+            }
+            (
+                Some(*player),
+                None,
+                format!("{} gets {}", name(*player), parts.join(", ")),
+            )
+        }
+        Event::Unaffected { player, attack, by } => (
+            Some(*player),
+            Some(*by),
+            format!("{} is unaffected by {attack} ({by})", name(*player)),
+        ),
         Event::ReturnedToAction { player } => (
             Some(*player),
             None,

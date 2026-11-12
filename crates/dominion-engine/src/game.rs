@@ -1188,6 +1188,7 @@ impl Game {
     pub(crate) fn add_actions(&mut self, p: PlayerId, n: u32) {
         if p == self.turn.player && !self.turn.ignore_plus_actions {
             self.turn.actions += n;
+            self.note_bonus(p, n, 0, 0);
         }
     }
 
@@ -1195,6 +1196,7 @@ impl Game {
     pub(crate) fn add_buys(&mut self, p: PlayerId, n: u32) {
         if p == self.turn.player {
             self.turn.buys += n;
+            self.note_bonus(p, 0, n, 0);
         }
     }
 
@@ -1212,6 +1214,7 @@ impl Game {
         };
         if p == self.turn.player {
             self.turn.coins += n;
+            self.note_bonus(p, 0, 0, n);
         }
     }
 

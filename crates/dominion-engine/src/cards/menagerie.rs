@@ -538,15 +538,11 @@ impl SetRules for Rules {
 // ---- Helpers ----
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player && !g.turn.ignore_plus_actions {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 fn mask(players: &[PlayerId]) -> i32 {
@@ -923,9 +919,7 @@ fn cavalry_gain(g: &mut Game, f: &mut CardFrame) -> Flow {
     }
     if f.pc == 1 {
         f.pc = 2;
-        if p == g.turn.player {
-            g.turn.buys += 1;
-        }
+        g.add_buys(p, 1);
         return Flow::Call(Frame::return_to_action(p));
     }
     Flow::done()

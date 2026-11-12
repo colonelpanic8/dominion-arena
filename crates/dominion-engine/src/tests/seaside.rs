@@ -359,10 +359,30 @@ fn lighthouse_gives_a_coin_now_and_next_turn_and_blocks_attacks_until_then() {
     play(&mut g, Card::Militia);
     assert_eq!(g.hand(P0).len(), 5);
     assert_eq!(g.turn().coins, 2);
+    assert!(g.log().contains(&Event::Unaffected {
+        player: P0,
+        attack: Card::Militia,
+        by: Card::Lighthouse
+    }));
     next_turn(&mut g);
     assert_eq!(g.turn().coins, 1);
     assert!(g.lasting().is_empty());
     assert_eq!(in_play_kinds(&g, P0), [Card::Lighthouse]);
+    let start = Event::TurnStart {
+        player: P0,
+        turn: 2,
+    };
+    let resolved = Event::Resolved {
+        player: P0,
+        card: Card::Lighthouse,
+    };
+    let bonus = Event::Bonus {
+        player: P0,
+        actions: 0,
+        buys: 0,
+        coins: 1,
+    };
+    assert!(logged_in_order(&g, &[start, resolved, bonus]));
 }
 
 #[test]
@@ -1199,6 +1219,24 @@ fn wharf_twice_with_throne_room() {
     next_turn(&mut g);
     resolve_triggers(&mut g);
     assert_eq!((g.hand(P0).len(), g.turn().buys), (9, 3));
+    // Each play's next-turn part says whose it is.
+    let part = [
+        Event::Resolved {
+            player: P0,
+            card: Card::Wharf,
+        },
+        Event::Bonus {
+            player: P0,
+            actions: 0,
+            buys: 1,
+            coins: 0,
+        },
+        Event::Drew {
+            player: P0,
+            count: 2,
+        },
+    ];
+    assert!(logged_in_order(&g, &[&part[..], &part[..]].concat()));
 }
 
 #[test]

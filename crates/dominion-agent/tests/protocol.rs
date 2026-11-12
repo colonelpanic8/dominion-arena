@@ -624,7 +624,7 @@ fn the_journey_token_is_shown_face_up_or_down_in_games_using_it() {
 }
 
 #[test]
-fn the_log_says_which_tokens_changed() {
+fn the_log_says_which_ability_changed_which_tokens() {
     let mut t = table(&[Card::SilkMerchant], 2, &["Ada", "Bo"]);
     let waiting = |seat: PlayerId, _: &AgentDecision| seat.0 == 1;
     let bought = |t: &Table| t.game().count_owned(PlayerId(0), Card::SilkMerchant) > 0;
@@ -647,8 +647,12 @@ fn the_log_says_which_tokens_changed() {
         .position(|l| l == "Ada gains Silk Merchant")
         .unwrap_or_else(|| panic!("{lines:#?}"));
     assert_eq!(
-        lines[at + 1..at + 3],
-        ["Ada takes 1 Coffers", "Ada takes 1 Villager"],
+        lines[at + 1..at + 4],
+        [
+            "Ada's Silk Merchant resolves",
+            "Ada takes 1 Coffers",
+            "Ada takes 1 Villager"
+        ],
         "{lines:#?}"
     );
 }

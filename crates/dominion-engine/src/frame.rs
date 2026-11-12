@@ -604,6 +604,7 @@ impl Frame {
                         player: *player,
                         card: *card,
                     });
+                    g.begin_resolving(None);
                     Flow::Call(Frame::Card(Box::new(CardFrame::new(
                         *card,
                         Hook::Main,
@@ -612,6 +613,7 @@ impl Frame {
                     ))))
                 }
                 _ => {
+                    g.end_resolving();
                     let kept = g.players[player.index()].boons_kept.contains(card);
                     if !kept {
                         match card.kind() {
@@ -1267,6 +1269,7 @@ fn resume_buy(
             }
             1 => {
                 *pc = 2;
+                g.begin_resolving(None);
                 Flow::Call(Frame::Card(Box::new(CardFrame::new(
                     l,
                     Hook::Main,
@@ -1274,7 +1277,10 @@ fn resume_buy(
                     None,
                 ))))
             }
-            _ => Flow::done(),
+            _ => {
+                g.end_resolving();
+                Flow::done()
+            }
         };
     }
     let pile = pile.expect("a buy is of a pile or a landscape");

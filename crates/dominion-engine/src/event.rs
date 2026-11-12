@@ -144,6 +144,26 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
+    /// An ability of `card` of `player`'s began to resolve (a Duration's, a Reaction's, a
+    /// landscape's, ...): logged before the first thing it does.
+    Resolved {
+        player: PlayerId,
+        card: Card,
+    },
+    /// +Actions, +Buys or +$ that `player` got other than from a card's own play (from a
+    /// Duration's later part, a landscape, a Boon, ...), after what gave them.
+    Bonus {
+        player: PlayerId,
+        actions: u32,
+        buys: u32,
+        coins: u32,
+    },
+    /// `player` is unaffected by `attack` because of `by`.
+    Unaffected {
+        player: PlayerId,
+        attack: Card,
+        by: Card,
+    },
     /// `player` returned to their Action phase.
     ReturnedToAction {
         player: PlayerId,

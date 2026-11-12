@@ -226,9 +226,12 @@ them.
   it was: shown with `g.show`, or leaving or entering a public zone; Clean-up's discards
   stay silent, `g.move_unlogged`); counters and tokens (Coffers, Villagers, Favors,
   Debt, VP tokens, Adventures tokens, -1 Card / -$1 / Journey, pile tokens, Sun tokens,
-  States returned) become `Counter` / `TokenMoved` / `Marker` / `Returned`. So never
-  emit a move or counter event by hand; log what has its own event (draws, gains,
-  discards, ...) with it.
+  States returned) become `Counter` / `TokenMoved` / `Marker` / `Returned`. A triggered
+  ability's `Resolved` header (unless the trigger is `labelled`) is logged before the
+  first thing it does, and `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
+  Boon rather than a card's own play are logged as `Bonus`. So never emit a move or
+  counter event by hand; log what has its own event (draws, gains, discards, ...) with
+  it.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The

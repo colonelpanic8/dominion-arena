@@ -1,5 +1,6 @@
 //! Keeps the public log complete. What changes without an event of its own (counters and
-//! tokens, cards moved by an effect) is logged before the next event or decision.
+//! tokens, cards moved by an effect) is logged before the next event or decision, after
+//! the ability it happened in (see [`Event::Resolved`]).
 
 use crate::event::{Counter, Event, Marker};
 use crate::game::{Mat, Token, Zone};
@@ -15,6 +16,8 @@ pub(crate) struct Scribe {
     moves: Vec<Unlogged>,
     /// Cards shown to everyone since they last moved.
     shown: Vec<CardId>,
+    /// Abilities resolving, innermost last.
+    resolving: Vec<Resolving>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -25,6 +28,15 @@ struct Unlogged {
     bottom: bool,
     /// Everyone knew which card it was.
     public: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Resolving {
+    /// How many plays were in progress when it began: +$ and the like are its own only
+    /// while no other play has begun.
+    plays: usize,
+    /// Logged before the first thing it does.
+    header: Option<Event>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -176,6 +188,39 @@ impl Game {
         self.scribe.shown.retain(|c| !cards.contains(c));
     }
 
+    /// An ability begins to resolve; `header`, if any, is logged before the first thing it
+    /// does.
+    pub(crate) fn begin_resolving(&mut self, header: Option<Event>) {
+        self.scribe.resolving.push(Resolving {
+            plays: self.plays.len(),
+            header,
+        });
+    }
+
+    pub(crate) fn end_resolving(&mut self) {
+        self.sync_log(None);
+        self.scribe.resolving.pop();
+    }
+
+    /// Logs +Actions, +Buys and +$ given outside a card's own play.
+    pub(crate) fn note_bonus(&mut self, player: PlayerId, actions: u32, buys: u32, coins: u32) {
+        let own = self
+            .scribe
+            .resolving
+            .last()
+            .is_some_and(|r| r.plays == self.plays.len());
+        if own && actions + buys + coins > 0 {
+            let e = Event::Bonus {
+                player,
+                actions,
+                buys,
+                coins,
+            };
+            self.sync_log(Some(&e));
+            self.log.push(e);
+        }
+    }
+
     /// Logs what changed without an event since the log was last brought up to date, the
     /// moves `event` (about to be logged) accounts for aside.
     pub(crate) fn sync_log(&mut self, event: Option<&Event>) {
@@ -193,6 +238,14 @@ impl Game {
             counter_changes(&old, &new, &mut lines);
         }
         self.scribe.tally = Some(new);
+        if lines.is_empty() && event.is_none() {
+            return;
+        }
+        for r in &mut self.scribe.resolving {
+            if let Some(h) = r.header.take() {
+                self.log.push(h);
+            }
+        }
         self.log.extend(lines);
     }
 
