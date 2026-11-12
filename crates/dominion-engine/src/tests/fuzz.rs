@@ -1361,6 +1361,7 @@ impl Tracker {
                     }
                 }
             }
+            Trace::Positioned { .. } => {}
             Trace::Mixed { cards } => {
                 for v in 0..n {
                     for c in cards {

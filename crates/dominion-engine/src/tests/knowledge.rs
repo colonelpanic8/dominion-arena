@@ -242,6 +242,74 @@ fn a_family_in_one_zone_keeps_its_whole_known_multiset() {
     );
 }
 
+#[test]
+fn fated_placements_are_public_but_identical_copies_are_indistinguishable() {
+    for above in [0, 4] {
+        for seed in 0..8 {
+            let mut g = setup(&[Card::Village, Card::NightWatchman]);
+            g.landscapes.push(Card::Fated);
+            let pile = g.pile_of(Card::Village).unwrap();
+            g.piles[pile.index()].traits.push(Card::Fated);
+            hand(&mut g, P0, &[Card::NightWatchman]);
+            deck(&mut g, P0, &vec![Card::Estate; above]);
+            discard(
+                &mut g,
+                P0,
+                &[
+                    Card::Village,
+                    Card::Village,
+                    Card::Copper,
+                    Card::Estate,
+                    Card::Duchy,
+                    Card::Silver,
+                    Card::Gold,
+                ],
+            );
+            let (mut g, mut k) = start(g);
+            g.rng = ChaCha8Rng::seed_from_u64(seed);
+            end_phase(&mut g);
+            play(&mut g, Card::NightWatchman);
+            if purpose(&g) == Purpose::Trigger {
+                super::intrigue::trigger(&mut g, Card::Fated);
+            }
+            k.update(&mut g);
+            let cards = candidates(&g);
+            let world = |top: &[CardId], bottom: &[CardId]| {
+                let (mut g, mut k) = (g.clone(), k.clone());
+                let mut seen =
+                    respond_traced(&mut g, &mut k, Response::Cards(top.to_vec()))[1].clone();
+                if g.pending().is_some_and(|d| d.source == Some(Card::Fated)) {
+                    seen.push_str(
+                        &respond_traced(&mut g, &mut k, Response::Cards(bottom.to_vec()))[1],
+                    );
+                }
+                (g, k, seen)
+            };
+            let (a, ka, sa) = world(&cards[..1], &cards[1..]);
+            let (b, kb, sb) = world(&cards[1..], &cards[..1]);
+            assert_eq!(sa, sb);
+            assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+            assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+            let (c, kc, _) = world(&cards, &[]);
+            assert_ne!(observation(&a, P1, 0), observation(&c, P1, 0));
+            assert_eq!(
+                kc.known(&c, P1)
+                    .zone(Zone::Looking(P0))
+                    .known
+                    .get(&Card::Village),
+                Some(&(2.min(5 - above) as u32))
+            );
+            assert_eq!(
+                ka.known(&a, P1)
+                    .zone(Zone::Looking(P0))
+                    .known
+                    .get(&Card::Village),
+                Some(&1)
+            );
+        }
+    }
+}
+
 fn uncertain_over(known: &KnownCards, zones: &[Zone]) -> Option<CardCount> {
     known
         .uncertain
@@ -1732,7 +1800,12 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                 from,
                 to,
                 top,
+                bottom,
+                under,
             } => {
+                if from == to {
+                    continue;
+                }
                 for (v, out) in seen.iter_mut().enumerate() {
                     let v = PlayerId(v as u8);
                     let mine = |z: &Zone| match *z {
@@ -1754,7 +1827,26 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                     };
                     // Whether it was the top card shows only for decks and piles.
                     let top = matches!(from, Zone::Deck(_) | Zone::Pile(_)) && *top;
-                    let _ = writeln!(out, "{what} {from:?} -> {to:?} top {top}");
+                    let placement = if matches!(to, Zone::Deck(_)) {
+                        format!(" bottom {bottom} under {under}")
+                    } else {
+                        String::new()
+                    };
+                    let _ = writeln!(out, "{what} {from:?} -> {to:?} top {top}{placement}");
+                }
+            }
+            Trace::Positioned {
+                player,
+                bottom,
+                under,
+                ..
+            } => {
+                for out in &mut seen {
+                    let zone = Zone::Deck(*player);
+                    let _ = writeln!(
+                        out,
+                        "a card {zone:?} -> {zone:?} top false bottom {bottom} under {under}"
+                    );
                 }
             }
             Trace::LookedOver { player, cards } => {

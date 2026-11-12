@@ -667,6 +667,7 @@ impl Knowledge {
             }
             // Cards rearranged in place: `Mixed` says who can't follow that.
             Trace::Moved { from, to, .. } if from == to => {}
+            Trace::Positioned { .. } => {}
             Trace::Moved { card, from, to, .. } => {
                 let face_up = shown == Some(card);
                 self.moved(game, card, from, to, face_up, joining);

@@ -401,6 +401,8 @@ them.
   only one possible identity are removed from their family's candidate pool.
   A family wholly in one zone is known there as its whole multiset, even when its
   groups still distinguish parts that could be followed later.
+  Deck placements record their destination even when nothing moves; an in-deck
+  placement does not expose the card's old position within a private set.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which

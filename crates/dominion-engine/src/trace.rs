@@ -12,13 +12,26 @@ pub enum Trace {
     /// starting cards, a pile) came in together.
     Created { card: CardId, is: Card, zone: Zone },
     /// A card moved. `top` says it was the top card of `from` (the last one, for a deck,
-    /// discard pile or pile). Cards set aside face down one after the other are set aside
+    /// discard pile or pile); `bottom` and `under` say where it was placed in `to`.
+    /// Cards set aside face down one after the other are set aside
     /// together.
     Moved {
         card: CardId,
         from: Zone,
         to: Zone,
         top: bool,
+        #[serde(default)]
+        bottom: bool,
+        #[serde(default)]
+        under: usize,
+    },
+    /// A card was placed within its deck, even if already there. Its old position is
+    /// not exposed; the placement does not itself reveal its identity.
+    Positioned {
+        card: CardId,
+        player: PlayerId,
+        bottom: bool,
+        under: usize,
     },
     /// These cards were rearranged where no one could follow them (a shuffle, or cards put
     /// back in an order their owner chose).
