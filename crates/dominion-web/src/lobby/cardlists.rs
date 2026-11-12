@@ -1,21 +1,25 @@
 //! Cardlists: dominion.games' Banned cards list (its Liked and Disliked lists weight the
-//! original's random deals, which the engine doesn't do). The list is a setting in the
-//! server's config file; every change here is written there.
+//! original's random deals, which the engine doesn't do). The list is the account's own:
+//! a change signs a guest in where nobody is, and is saved with the account.
 
 use super::rules::{expansion_icon, expansions, is_landscape, search, selectable, set_cards};
-use super::{LobbyFrame, Tab, flash, use_banned, use_toast};
+use super::{LobbyFrame, Tab, flash, signed_in, use_banned, use_toast};
+use crate::account::use_account;
 use crate::api;
 use crate::app::{Route, Settings, use_cards};
 use crate::assets::use_assets;
 use crate::card::{CardSize, CardView};
 use dioxus::prelude::*;
 use dominion_protocol::api::CardInfo;
+use dominion_protocol::lobby::UserKind;
 
 #[component]
 pub fn CardlistsTab() -> Element {
     let cards = use_cards();
     let assets = use_assets();
     let toast = use_toast();
+    let account = use_account();
+    let nav = navigator();
     let mut settings = use_context::<Settings>().0;
     let banned = use_banned();
     let mut active = use_signal(|| "Base".to_string());
@@ -28,15 +32,12 @@ pub fn CardlistsTab() -> Element {
         let all: Vec<&CardInfo> = cards.all().iter().filter(|c| selectable(c)).collect();
         search(&cards, &all, &q)
     };
-    let account = crate::account::use_account();
-    // The list is an account's: a guest's, when nobody is signed in.
     let save = move |next: Vec<String>| {
         spawn(async move {
-            let saved = match account.ensure().await {
-                Ok(_) => api::set_banned_cards(&next).await,
-                Err(e) => Err(e),
-            };
-            match saved {
+            if !signed_in(account, toast, nav).await {
+                return;
+            }
+            match api::set_banned_cards(&next).await {
                 Ok(s) => settings.set(s),
                 Err(e) => flash(toast, e.message),
             }
@@ -65,6 +66,19 @@ pub fn CardlistsTab() -> Element {
             query.set(String::new());
         }
     };
+    let owner = match account.me.read().as_ref() {
+        Some(me) if me.user.kind == UserKind::Guest => {
+            format!(
+                "{}'s list, kept while this guest account is. Register (Account) to keep it.",
+                me.user.name
+            )
+        }
+        Some(me) => format!(
+            "{}'s list: never dealt at random at a table you sit at that respects it, nor in your automatch games.",
+            me.user.name
+        ),
+        None => "The server's list. Changing it makes it yours.".to_string(),
+    };
     let mut listed: Vec<&CardInfo> = banned.iter().filter_map(|n| cards.get(n)).collect();
     listed.sort_by(|a, b| super::rules::card_order(&cards, a, b));
     rsx! {
@@ -72,6 +86,7 @@ pub fn CardlistsTab() -> Element {
             div { class: "lb-cardlists",
                 div { class: "lb-cardlist-buttons",
                     button { class: "lb-oval lb-cardlist-button active", "Banned cards" }
+                    p { class: "lb-note lb-cardlist-owner", "{owner}" }
                 }
                 div { class: "lb-cardlist-body",
                     div { class: "lb-cardlist-sets",

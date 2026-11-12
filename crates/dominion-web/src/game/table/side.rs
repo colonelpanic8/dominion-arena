@@ -294,14 +294,11 @@ pub fn GameOver(board: Rc<Board>) -> Element {
         });
     let entries: Vec<_> = board.you.iter().chain(&board.opponents).cloned().collect();
     let game_id = crate::game::use_game().game.read().clone();
-    let table = crate::lobby::use_table();
+    let lobby = crate::lobby::use_lobby();
     let toast = crate::lobby::use_toast();
-    let banned = crate::lobby::use_banned();
     let nav = navigator();
-    let at_table = table
-        .read()
-        .as_ref()
-        .is_some_and(|t| t.game.as_deref() == Some(game_id.as_str()));
+    let at_table = lobby.at_table_of(&game_id);
+    let host = lobby.is_host();
     let mut focus_score = use_signal(|| true);
     let painting = match me.and_then(|s| players.iter().find(|p| p.index == s)) {
         None => "watch",
@@ -325,7 +322,7 @@ pub fn GameOver(board: Rc<Board>) -> Element {
                         class: if focus_score() { "lb-tab" } else { "lb-tab selected" },
                         "data-tab": "edit-table",
                         onclick: move |_| focus_score.set(false),
-                        button { class: "lb-tab-button", "Edit Table" }
+                        button { class: "lb-tab-button", if host { "Edit Table" } else { "Table" } }
                     }
                 }
             }
@@ -398,39 +395,35 @@ pub fn GameOver(board: Rc<Board>) -> Element {
                     }
                 }
             } else {
-                div { class: "lb-score-table",
-                    crate::lobby::my_table::KingdomOptions { table, selector, study }
-                    crate::lobby::my_table::GameOptions { table }
+                div { class: if host { "lb-score-table" } else { "lb-score-table lb-readonly" },
+                    crate::lobby::my_table::KingdomOptions { selector, study }
+                    crate::lobby::my_table::GameOptions {}
                 }
-                if selector() {
+                if selector() && host {
                     div { class: "lb-selector-shield lb-score-shield", onclick: { let mut selector = selector; move |_| selector.set(false) } }
-                    crate::lobby::my_table::CardSelectorFor { table, selector, study }
+                    crate::lobby::my_table::CardSelectorFor { selector, study }
                 }
                 crate::lobby::my_table::StudyView { study }
             }
             if at_table {
                 div { class: "lb-score-side",
-                    crate::lobby::my_table::Players { table }
+                    crate::lobby::my_table::Players {}
                 }
             }
             div { class: "lb-score-buttons",
                 if at_table {
-                    button {
-                        class: "lb-button lb-gold",
-                        "data-action": "ready",
-                        onclick: move |_| { spawn(crate::lobby::my_table::start(table, banned.clone(), toast, nav, false)); },
-                        "Ready"
-                    }
+                    crate::lobby::my_table::ReadyButton {}
                 }
                 button {
                     class: "lb-button lb-copper",
                     "data-action": "leave-table",
                     onclick: move |_| {
-                        if at_table {
-                            let mut table = table;
-                            table.set(None);
-                        }
-                        nav.push(Route::Lobby {});
+                        spawn(async move {
+                            if at_table {
+                                lobby.leave_table().await;
+                            }
+                            nav.push(Route::Lobby {});
+                        });
                     },
                     "Leave Table"
                 }

@@ -1,9 +1,10 @@
-//! A table without the UI: the rules it holds before a game (dominion.games' Kingdom
-//! Options and Players), the kingdom as text, the card selector's search, and the deal
-//! and game requests they become.
+//! A table without the UI: the rules its host edits (dominion.games' Kingdom Options and
+//! Game Options) to and from the server's `TableSpec`, the kingdom as text, the card
+//! selector's search, and the seats as the host changes them.
 
 use crate::cards::{CardDb, LANDSCAPE_KINDS};
-use dominion_protocol::api::{CardInfo, DealRequest, DealSlot, Dealt, NewGame};
+use dominion_protocol::api::{CardInfo, DealRequest, DealSlot, Dealt};
+use dominion_protocol::lobby::{SeatEdit, SeatKind, TableInfo, TableSeat, TableSpec};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -104,6 +105,14 @@ impl Ternary {
             Ternary::No => Some(false),
         }
     }
+
+    pub fn of(value: Option<bool>) -> Ternary {
+        match value {
+            None => Ternary::Random,
+            Some(true) => Ternary::Yes,
+            Some(false) => Ternary::No,
+        }
+    }
 }
 
 /// What a landscape slot may be dealt, as in the server's deal.
@@ -147,6 +156,30 @@ impl LandscapeSlot {
         }
     }
 
+    pub fn deal(&self) -> DealSlot {
+        DealSlot {
+            kinds: (0..SLOT_KINDS.len())
+                .filter(|&i| self.takes(i))
+                .map(|i| SLOT_KINDS[i].to_lowercase())
+                .collect(),
+            optional: self.empty,
+        }
+    }
+
+    pub fn from_deal(slot: &DealSlot) -> LandscapeSlot {
+        let kinds = (0..SLOT_KINDS.len())
+            .filter(|&i| {
+                slot.kinds
+                    .iter()
+                    .any(|k| k.eq_ignore_ascii_case(SLOT_KINDS[i]))
+            })
+            .fold(0, |bits, i| bits | (1 << i));
+        LandscapeSlot {
+            kinds,
+            empty: slot.optional,
+        }
+    }
+
     /// Toggles a kind (or, with `None`, whether it may stay empty). Returns `false` when
     /// nothing would be left, which removes the slot on dominion.games.
     pub fn toggle(&mut self, kind: Option<usize>) -> bool {
@@ -155,33 +188,6 @@ impl LandscapeSlot {
             None => self.empty = !self.empty,
         }
         self.kinds != 0
-    }
-}
-
-/// Who plays a seat. dominion.games' bots are seats someone else plays here: an agent
-/// over MCP or a browser with the seat link; an empty slot left at the start is one of
-/// those too.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum SeatKind {
-    /// The host: this browser.
-    You,
-    /// Also played in this browser.
-    HotSeat,
-    /// For an MCP agent (joins with the token).
-    Agent,
-    /// An empty slot: whoever opens the seat link or joins with the token.
-    Open,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SeatSpec {
-    pub name: String,
-    pub kind: SeatKind,
-}
-
-impl SeatSpec {
-    pub fn plays_here(&self) -> bool {
-        matches!(self.kind, SeatKind::You | SeatKind::HotSeat)
     }
 }
 
@@ -195,7 +201,6 @@ pub enum Pick {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableRules {
-    pub seats: Vec<SeatSpec>,
     pub randomize_order: bool,
     pub kingdom: Vec<Pick>,
     pub landscapes: Vec<String>,
@@ -206,37 +211,90 @@ pub struct TableRules {
     pub shelters: Ternary,
     /// The Banned cards list applies.
     pub respect_banned: bool,
-    /// Blank: a random seed.
-    pub seed: String,
     /// Blank: none.
     pub turn_limit: String,
+    /// The game counts for ratings, when its players can play for them.
+    pub rated: bool,
+    /// Signed-in people may watch the game.
+    pub watchable: bool,
+    /// A player who has left, or takes too long, forfeits.
+    pub timed: bool,
 }
 
 impl TableRules {
-    /// A new table: you and an empty slot, every expansion, the default landscape slots.
-    pub fn new(you: &str, sets: &[String]) -> TableRules {
+    /// A new table's rules: every expansion, the default landscape slots.
+    pub fn new(sets: &[String]) -> TableRules {
+        TableRules::from_spec(&TableSpec::default(), sets)
+    }
+
+    /// The rules a table has on the server. `all` is every expansion: the ones random
+    /// cards come from when the spec names none.
+    pub fn from_spec(spec: &TableSpec, all: &[String]) -> TableRules {
+        let cards = spec.kingdom.iter().cloned().map(Pick::Card);
+        let from_sets = spec.from_sets.iter().cloned().map(Pick::FromSet);
         TableRules {
-            seats: vec![
-                SeatSpec {
-                    name: you.to_string(),
-                    kind: SeatKind::You,
-                },
-                SeatSpec {
-                    name: String::new(),
-                    kind: SeatKind::Open,
-                },
-            ],
-            randomize_order: true,
-            kingdom: vec![],
-            landscapes: vec![],
-            slots: vec![LandscapeSlot::ANY, LandscapeSlot::NO_WAY],
-            sets: sets.iter().cloned().collect(),
-            colonies: Ternary::Random,
-            shelters: Ternary::Random,
-            respect_banned: true,
-            seed: String::new(),
-            turn_limit: String::new(),
+            randomize_order: spec.randomize_order,
+            kingdom: cards.chain(from_sets).collect(),
+            landscapes: spec.landscapes.clone(),
+            slots: match &spec.slots {
+                Some(slots) => slots.iter().map(LandscapeSlot::from_deal).collect(),
+                None => vec![LandscapeSlot::ANY, LandscapeSlot::NO_WAY],
+            },
+            sets: if spec.sets.is_empty() {
+                all
+            } else {
+                &spec.sets
+            }
+            .iter()
+            .cloned()
+            .collect(),
+            colonies: Ternary::of(spec.colonies),
+            shelters: Ternary::of(spec.shelters),
+            respect_banned: spec.respect_banned,
+            turn_limit: spec.turn_limit.map(|n| n.to_string()).unwrap_or_default(),
+            rated: spec.rated,
+            watchable: spec.watchable,
+            timed: spec.timed,
         }
+    }
+
+    /// These rules as the server keeps them, or why they can't be sent. Every expansion
+    /// of `all` being on is sent as none named, which means the same.
+    pub fn spec(&self, all: &[String]) -> Result<TableSpec, String> {
+        if self.sets.is_empty() && self.kingdom.len() < KINGDOM_SLOTS {
+            return Err("Choose at least one expansion to deal random cards from.".into());
+        }
+        let every = self.sets.len() == all.len() && all.iter().all(|s| self.sets.contains(s));
+        Ok(TableSpec {
+            sets: if every {
+                vec![]
+            } else {
+                self.sets.iter().cloned().collect()
+            },
+            kingdom: self
+                .required_piles()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            from_sets: self
+                .kingdom
+                .iter()
+                .filter_map(|p| match p {
+                    Pick::FromSet(s) => Some(s.clone()),
+                    Pick::Card(_) => None,
+                })
+                .collect(),
+            landscapes: self.landscapes.clone(),
+            slots: Some(self.slots.iter().map(LandscapeSlot::deal).collect()),
+            respect_banned: self.respect_banned,
+            colonies: self.colonies.value(),
+            shelters: self.shelters.value(),
+            turn_limit: parse_number::<u32>(&self.turn_limit, "The turn limit")?,
+            randomize_order: self.randomize_order,
+            rated: self.rated,
+            watchable: self.watchable,
+            timed: self.timed,
+        })
     }
 
     /// Back to ten random slots, the default landscape slots, Random and Random, and
@@ -405,107 +463,29 @@ impl TableRules {
         unknown
     }
 
-    /// What `POST /api/deal` is asked for: these rules, with `banned` when the table
-    /// respects the list. The random slots are the Kingdom slots without a card.
-    pub fn deal_request(&self, banned: &[String]) -> Result<DealRequest, String> {
-        if self.sets.is_empty() && self.kingdom.len() < KINGDOM_SLOTS {
-            return Err("Choose at least one expansion to deal random cards from.".into());
-        }
+    /// What `POST /api/deal` is asked for: these rules for `players` seats, with
+    /// `banned` when the table respects the list.
+    pub fn deal_request(
+        &self,
+        all: &[String],
+        players: usize,
+        banned: &[String],
+    ) -> Result<DealRequest, String> {
+        let spec = self.spec(all)?;
         Ok(DealRequest {
-            players: self.seats.len() as u8,
-            sets: self.sets.iter().cloned().collect(),
-            kingdom: self
-                .required_piles()
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            from_sets: self
-                .kingdom
-                .iter()
-                .filter_map(|p| match p {
-                    Pick::FromSet(s) => Some(s.clone()),
-                    Pick::Card(_) => None,
-                })
-                .collect(),
-            landscapes: self.landscapes.clone(),
-            slots: Some(
-                self.slots
-                    .iter()
-                    .map(|s| DealSlot {
-                        kinds: (0..SLOT_KINDS.len())
-                            .filter(|&i| s.takes(i))
-                            .map(|i| SLOT_KINDS[i].to_lowercase())
-                            .collect(),
-                        optional: s.empty,
-                    })
-                    .collect(),
-            ),
+            players: players as u8,
+            sets: spec.sets,
+            kingdom: spec.kingdom,
+            from_sets: spec.from_sets,
+            landscapes: spec.landscapes,
+            slots: spec.slots,
             banned: if self.respect_banned {
                 banned.to_vec()
             } else {
                 vec![]
             },
-            seed: parse_number::<u64>(&self.seed, "The random seed")?,
+            seed: None,
         })
-    }
-
-    /// The seat names in seat order, blank ones named as the server would (P1, P2, ...);
-    /// an error when two are the same.
-    pub fn names(&self) -> Result<Vec<String>, String> {
-        let names: Vec<String> = self
-            .seats
-            .iter()
-            .enumerate()
-            .map(|(i, s)| {
-                let n = s.name.trim();
-                if n.is_empty() {
-                    format!("P{}", i + 1)
-                } else {
-                    n.to_string()
-                }
-            })
-            .collect();
-        for (i, n) in names.iter().enumerate() {
-            if names[..i]
-                .iter()
-                .any(|m| m.to_lowercase() == n.to_lowercase())
-            {
-                return Err(format!("Two players are called {n}."));
-            }
-        }
-        Ok(names)
-    }
-
-    /// The game a deal starts: its kingdom, landscapes and seed, these seats in `order`
-    /// (seat indices, first player first).
-    pub fn new_game(&self, dealt: &Dealt, order: &[usize]) -> Result<NewGame, String> {
-        let names = self.names()?;
-        Ok(NewGame {
-            players: self.seats.len() as u8,
-            names: order.iter().map(|&i| names[i].clone()).collect(),
-            kingdom: dealt.kingdom.clone(),
-            landscapes: dealt.landscapes.clone(),
-            sets: vec![],
-            seed: Some(dealt.seed),
-            turn_limit: parse_number::<u32>(&self.turn_limit, "The turn limit")?,
-            colonies: self.colonies.value(),
-            shelters: self.shelters.value(),
-            watchable: None,
-        })
-    }
-
-    /// The order seats play in: as listed, or shuffled with `seed` when the table
-    /// randomizes it.
-    pub fn seat_order(&self, seed: u64) -> Vec<usize> {
-        let mut order: Vec<usize> = (0..self.seats.len()).collect();
-        if self.randomize_order {
-            let mut state = seed;
-            for i in (1..order.len()).rev() {
-                state = splitmix(state);
-                order.swap(i, (state % (i as u64 + 1)) as usize);
-            }
-        }
-        order
     }
 
     /// Replaces the random Kingdom slots and landscape slots with what was dealt for
@@ -653,9 +633,91 @@ pub fn parse_number<T: std::str::FromStr>(text: &str, what: &str) -> Result<Opti
         .map_err(|_| format!("{what} must be a whole number."))
 }
 
-fn splitmix(x: u64) -> u64 {
-    let mut z = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    z ^ (z >> 31)
+/// Where a table is, as dominion.games' Tables tab says it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TableStatus {
+    New,
+    Running,
+    PostGame,
+}
+
+impl TableStatus {
+    pub const ALL: [TableStatus; 3] = [
+        TableStatus::New,
+        TableStatus::Running,
+        TableStatus::PostGame,
+    ];
+
+    pub fn of(table: &TableInfo) -> TableStatus {
+        match (&table.game, &table.last_game) {
+            (Some(_), _) => TableStatus::Running,
+            (None, Some(_)) => TableStatus::PostGame,
+            (None, None) => TableStatus::New,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TableStatus::New => "New",
+            TableStatus::Running => "Running",
+            TableStatus::PostGame => "Post-game",
+        }
+    }
+}
+
+/// A table's seats as the host sends them back: every seated player kept, by name.
+pub fn seat_edits(seats: &[TableSeat]) -> Vec<SeatEdit> {
+    seats
+        .iter()
+        .map(|seat| match seat.kind {
+            SeatKind::Open => SeatEdit::Open,
+            SeatKind::Player => match &seat.user {
+                Some(user) => SeatEdit::Player(user.name.clone()),
+                None => SeatEdit::Open,
+            },
+            SeatKind::Token => SeatEdit::Token(seat.name.clone().unwrap_or_default()),
+        })
+        .collect()
+}
+
+/// A name for a new token seat that no seat at the table has: `stem` and a number.
+pub fn free_seat_name(seats: &[TableSeat], stem: &str) -> String {
+    let taken = |name: &str| {
+        seats.iter().any(|seat| {
+            let held = seat.name.as_deref();
+            let held = held.or(seat.user.as_ref().map(|u| u.name.as_str()));
+            held.is_some_and(|h| h.eq_ignore_ascii_case(name))
+        })
+    };
+    (1..)
+        .map(|n| format!("{stem} {n}"))
+        .find(|name| !taken(name))
+        .unwrap_or_default()
+}
+
+/// What a table that isn't playing waits for, as told to `me`: its empty slots to be
+/// taken, then `me` to be ready, then the others.
+pub fn waiting_for(table: &TableInfo, me: &str) -> Option<String> {
+    if table.game.is_some() {
+        return None;
+    }
+    let open = (table.seats.iter())
+        .filter(|s| s.kind == SeatKind::Open)
+        .count();
+    match open {
+        0 => {}
+        1 => return Some("Waiting for someone to take the empty slot.".into()),
+        n => return Some(format!("Waiting for players to take the {n} empty slots.")),
+    }
+    let unready: Vec<&str> = (table.seats.iter())
+        .filter(|s| s.kind == SeatKind::Player && !s.ready)
+        .filter_map(|s| s.user.as_ref().map(|u| u.name.as_str()))
+        .collect();
+    let others: Vec<&str> = unready.iter().copied().filter(|n| *n != me).collect();
+    match (others.as_slice(), unready.len() > others.len()) {
+        ([], false) => None,
+        ([], true) => Some("The game starts when you are ready.".into()),
+        (_, true) => Some("The game starts when everyone is ready.".into()),
+        (others, false) => Some(format!("Waiting for {} to be ready.", others.join(", "))),
+    }
 }
