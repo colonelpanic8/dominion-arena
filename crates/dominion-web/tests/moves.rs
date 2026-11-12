@@ -75,7 +75,8 @@ fn names(b: &Board) -> BTreeSet<String> {
 /// Checks an inference between two boards; true if it was complete.
 fn check(old: &Board, new: &Board, log: &[LogEntry], inf: &Inference) -> bool {
     let mut c = counts(old);
-    let held: BTreeSet<String> = names(old).union(&names(new)).cloned().collect();
+    let mut held: BTreeSet<String> = names(old).union(&names(new)).cloned().collect();
+    held.extend(log.iter().filter_map(|e| e.card.clone()));
     for m in &inf.moves {
         let from = c.entry(m.from.clone()).or_default();
         *from -= 1;
@@ -152,7 +153,17 @@ struct Stats {
     complete: usize,
     batches: usize,
     batches_complete: usize,
+    /// Runs of steps whose cards played from a hand are the single steps' ones.
+    batches_playing_alike: usize,
     moves: usize,
+}
+
+/// How many cards go from a hand into play.
+fn plays(inf: &Inference) -> usize {
+    inf.moves
+        .iter()
+        .filter(|m| matches!((&m.from, &m.to), (Loc::Hand(a), Loc::InPlay(b)) if a == b))
+        .count()
 }
 
 /// Plays a game at random, checking every seat's inference at every step, and for seat
@@ -160,6 +171,7 @@ struct Stats {
 fn play(table: &mut Table, players: u8, rng: &mut StdRng, cards: &CardDb, stats: &mut Stats) {
     let mut batch_start = seat_board(table, 0, cards);
     let mut batch_len = 0;
+    let mut batch_plays = 0;
     for _ in 0..700 {
         let Some(seat) = table.deciding() else { break };
         let before: Vec<(Board, usize)> =
@@ -174,6 +186,9 @@ fn play(table: &mut Table, players: u8, rng: &mut StdRng, cards: &CardDb, stats:
             let inf = infer(old, &new, &log);
             stats.steps += 1;
             stats.moves += inf.moves.len();
+            if s == 0 {
+                batch_plays += plays(&inf);
+            }
             if check(old, &new, &log, &inf) {
                 stats.complete += 1;
             } else if std::env::var("MOVES_DEBUG").is_ok() {
@@ -188,11 +203,17 @@ fn play(table: &mut Table, players: u8, rng: &mut StdRng, cards: &CardDb, stats:
             stats.batches += 1;
             if check(&batch_start.0, &new, &log, &inf) {
                 stats.batches_complete += 1;
+                if plays(&inf) == batch_plays {
+                    stats.batches_playing_alike += 1;
+                } else if std::env::var("MOVES_DEBUG").is_ok() {
+                    println!("plays {} not {batch_plays}: {log:?}", plays(&inf));
+                }
             } else if std::env::var("MOVES_DEBUG").is_ok() {
                 println!("incomplete run: {log:?}");
             }
             batch_start = (new, len);
             batch_len = 0;
+            batch_plays = 0;
         }
     }
 }
@@ -212,13 +233,19 @@ fn moves_take_each_board_to_the_next() {
     }
     println!(
         "{games} games: {} of {} single steps and {} of {} runs of steps inferred \
-         completely, {} moves",
-        stats.complete, stats.steps, stats.batches_complete, stats.batches, stats.moves
+         completely ({} playing the single steps' cards), {} moves",
+        stats.complete,
+        stats.steps,
+        stats.batches_complete,
+        stats.batches,
+        stats.batches_playing_alike,
+        stats.moves
     );
     // What remains is mostly setup (Heirlooms replacing Coppers, opening hands), which
     // the log doesn't tell and the table never animates.
     assert!(stats.complete * 1000 >= stats.steps * 995);
     assert!(stats.batches_complete * 100 >= stats.batches * 98);
+    assert!(stats.batches_playing_alike * 100 >= stats.batches_complete * 98);
 }
 
 // Hand-checked steps.
@@ -238,6 +265,8 @@ fn mv(card: Option<&str>, from: Loc, to: Loc) -> Move {
         card: card.map(String::from),
         from,
         to,
+        shuffle: false,
+        turn: None,
     }
 }
 
@@ -260,6 +289,13 @@ impl Seen {
         let inf = infer(&self.old, &self.new, &self.log);
         assert!(inf.complete, "incomplete: {:#?}", self.log);
         inf.moves
+            .into_iter()
+            .map(|m| Move {
+                shuffle: false,
+                turn: None,
+                ..m
+            })
+            .collect()
     }
 
     fn pile(&self, card: &str) -> Loc {
