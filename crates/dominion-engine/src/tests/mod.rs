@@ -720,8 +720,10 @@ fn token_moves_are_not_offered_where_nothing_can_be_played() {
 
 // ---- Shuffling ----
 
+/// A draw short of cards shuffles first, so it logs the shuffle and then one draw of all
+/// its cards.
 #[test]
-fn a_draw_that_shuffles_partway_logs_the_cards_drawn_before_the_shuffle_first() {
+fn a_draw_short_of_cards_logs_the_shuffle_then_one_draw() {
     let mut g = setup(&[Card::Smithy]);
     hand(&mut g, P0, &[Card::Smithy]);
     deck(&mut g, P0, &[Card::Gold]);
@@ -729,8 +731,9 @@ fn a_draw_that_shuffles_partway_logs_the_cards_drawn_before_the_shuffle_first() 
     g.start();
     play(&mut g, Card::Smithy);
     let drew = |count| Event::Drew { player: P0, count };
-    let order = [drew(1), Event::Shuffled { player: P0 }, drew(2)];
+    let order = [Event::Shuffled { player: P0 }, drew(3)];
     assert!(logged_in_order(&g, &order));
+    assert!(!logged_in_order(&g, &[drew(1)]));
     // Clean-up's discards have no lines of their own.
     while g.turn().player == P0 {
         end_phase(&mut g);
@@ -794,7 +797,31 @@ fn inn_shuffling_the_deck_opens_the_shuffle_windows() {
     buy(&mut g, Card::Inn);
     choose_kinds(&mut g, &[Card::Village]);
     star_chart(&mut g, Card::Village);
+    // Clean-up needs 5 cards from a deck of 4: the discard pile is shuffled under it
+    // before anything is drawn.
+    assert_eq!(g.player(P0).deck.len(), 7);
+    assert!(g.hand(P0).is_empty());
+    star_chart(&mut g, Card::Gold);
     assert_eq!(hand_kinds(&g, P0)[0], Card::Village);
+}
+
+/// Wiki, Star Chart: the card chosen goes on top of the shuffled cards, under the cards
+/// still on the deck, which are drawn first.
+#[test]
+fn star_chart_puts_its_card_under_the_cards_left_on_the_deck() {
+    let mut g = setup(&[Card::Smithy]);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Gold, Card::Silver]);
+    discard(&mut g, P0, &[Card::Estate, Card::Duchy, Card::Province]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    assert!(g.hand(P0).is_empty());
+    star_chart(&mut g, Card::Province);
+    assert_eq!(
+        hand_kinds(&g, P0),
+        [Card::Gold, Card::Silver, Card::Province]
+    );
 }
 
 #[test]

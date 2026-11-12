@@ -16,6 +16,5 @@ TRASH empty
 LOG
   Bo buys Silver
   Bo gains Silver
-  Bo draws 2 card(s)
   Bo shuffles
-  Bo draws 3 card(s)
+  Bo draws 5 card(s)

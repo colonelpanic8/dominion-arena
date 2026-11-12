@@ -143,11 +143,8 @@ pub(crate) enum Frame {
         to: Option<usize>,
         drawn: Vec<CardId>,
         started: bool,
-        /// One draw shuffles at most once, even if its discard pile refills meanwhile.
+        /// Whether it shuffled: once, before drawing, if the deck was short.
         shuffled: bool,
-        /// How many of `drawn` were drawn before the shuffle (and logged).
-        #[serde(default)]
-        before_shuffle: usize,
     },
     /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
     /// are shuffled.
@@ -239,7 +236,6 @@ impl Frame {
             drawn: vec![],
             started: false,
             shuffled: false,
-            before_shuffle: 0,
         }
     }
 
@@ -252,7 +248,6 @@ impl Frame {
             drawn: vec![],
             started: false,
             shuffled: false,
-            before_shuffle: 0,
         }
     }
 
@@ -416,7 +411,6 @@ impl Frame {
                 drawn,
                 started,
                 shuffled,
-                before_shuffle,
             } => {
                 let (p, to) = (*player, *to);
                 // Whether another card is to be drawn after `n` of `count`.
@@ -426,37 +420,38 @@ impl Frame {
                 };
                 if !*started {
                     *started = true;
+                    let mut token = 0;
                     if g.players[p.index()].minus_card && wants(g, *count, 0) {
                         g.players[p.index()].minus_card = false;
                         // The token replaces one draw of a fixed number; a draw up to a
                         // hand size still goes on to that size.
                         *count = count.saturating_sub(1);
+                        token = 1;
+                    }
+                    // Short of cards, the discard pile is shuffled under the deck first,
+                    // and then they are all drawn; the token counts as a card for that.
+                    let needed = token
+                        + match to {
+                            Some(size) => size.saturating_sub(g.hand(p).len()),
+                            None => *count,
+                        };
+                    let pl = &g.players[p.index()];
+                    if pl.deck.len() < needed && !pl.discard.is_empty() {
+                        *shuffled = true;
+                        return Flow::Call(Frame::shuffle(p));
                     }
                 }
                 while wants(g, *count, drawn.len()) {
-                    let pl = &g.players[p.index()];
-                    if pl.deck.is_empty() {
-                        if pl.discard.is_empty() || *shuffled {
-                            break;
-                        }
-                        *shuffled = true;
-                        *before_shuffle = drawn.len();
-                        if !drawn.is_empty() {
-                            g.emit(Event::Drew {
-                                player: p,
-                                count: drawn.len(),
-                            });
-                        }
-                        return Flow::Call(Frame::shuffle(p));
-                    }
-                    let top = *pl.deck.last().expect("deck is not empty");
+                    let Some(&top) = g.players[p.index()].deck.last() else {
+                        break;
+                    };
                     g.move_card(top, Zone::Hand(p), Pos::Top);
                     drawn.push(top);
                 }
-                if drawn.len() > *before_shuffle {
+                if !drawn.is_empty() {
                     g.emit(Event::Drew {
                         player: p,
-                        count: drawn.len() - *before_shuffle,
+                        count: drawn.len(),
                     });
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))

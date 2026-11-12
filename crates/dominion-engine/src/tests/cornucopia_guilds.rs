@@ -335,9 +335,9 @@ fn footpad_draws_on_gains_in_action_phases_only() {
             _ => None,
         })
         .collect();
-    // Workshop's gain drew one; buying the Silver drew none; then Clean-up drew the four
-    // left, shuffled, and drew one more.
-    assert_eq!(draws, [1, 4, 1]);
+    // Workshop's gain drew one; buying the Silver drew none; then Clean-up, short of
+    // cards, shuffled and drew five.
+    assert_eq!(draws, [1, 5]);
 }
 
 #[test]

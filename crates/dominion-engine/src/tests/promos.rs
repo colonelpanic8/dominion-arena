@@ -379,6 +379,25 @@ fn stash_goes_where_its_owner_chooses_when_shuffled() {
     assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Copper]);
 }
 
+/// Wiki, Reshuffle: short of cards, the discard pile is shuffled under the deck before
+/// anything is drawn, and Stash's player may look at the cards still on the deck.
+#[test]
+fn stash_is_placed_before_the_cards_left_on_the_deck_are_drawn() {
+    let mut g = setup(&[Card::Stash, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    let gold = deck(&mut g, P0, &[Card::Gold]);
+    discard(&mut g, P0, &[Card::Stash, Card::Copper, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    trigger(&mut g, Card::Stash);
+    assert!(g.hand(P0).is_empty());
+    assert_eq!(g.pending().unwrap().about, gold);
+    respond(&mut g, Response::Number(0));
+    let mut h = hand_kinds(&g, P0);
+    h.sort();
+    assert_eq!(h, [Card::Copper, Card::Gold, Card::Stash]);
+}
+
 #[test]
 fn stash_can_be_left_to_the_shuffle() {
     let mut g = setup(&[Card::Stash, Card::Smithy]);
