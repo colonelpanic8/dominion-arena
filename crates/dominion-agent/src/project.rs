@@ -1160,7 +1160,7 @@ fn put_text(
         to_text = format!("the bottom of {to_text}");
     }
     let back = match (from, to) {
-        (Some(Zone::Deck(p) | Zone::Looking(p)), Zone::Deck(q)) => p == q,
+        (Some(Zone::Looking(p)), Zone::Deck(q)) => p == q,
         _ => false,
     };
     if back {
