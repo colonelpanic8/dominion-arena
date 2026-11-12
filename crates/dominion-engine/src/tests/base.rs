@@ -267,6 +267,33 @@ fn sentry_trashes_and_reorders() {
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Estate, Card::Silver]);
 }
 
+/// A game saved mid-look before holds had marks goes on as if it had them.
+#[test]
+fn a_look_saved_before_holds_had_marks_still_ends() {
+    let mut g = setup(&[Card::Sentry]);
+    hand(&mut g, P0, &[Card::Sentry]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Copper, Card::Estate, Card::Silver, Card::Gold],
+    );
+    g.start();
+    play(&mut g, Card::Sentry);
+    let mut save = serde_json::to_value(&g).unwrap();
+    for key in ["moved", "clock", "last_put"] {
+        save.as_object_mut().unwrap().remove(key);
+    }
+    for hold in save["holds"].as_array_mut().unwrap() {
+        hold.as_object_mut().unwrap().remove("at");
+    }
+    let mut g: Game = serde_json::from_value(save).unwrap();
+    choose_kinds(&mut g, &[Card::Estate]);
+    choose(&mut g, &[]);
+    assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Estate));
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Gold]);
+    assert!(g.player(P0).looking.is_empty());
+}
+
 /// Trashing an Overgrown Estate draws a card in the middle of Sentry: the cards Sentry
 /// looks at are off the deck, so it draws the next one down.
 #[test]

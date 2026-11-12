@@ -1045,7 +1045,13 @@ impl Game {
                 .iter()
                 .rev()
                 .find(|h| h.player == p && h.cards.contains(&id))
-                .is_some_and(|h| self.stayed(id, h.at))
+                .is_some_and(|h| self.kept(h, id))
+    }
+
+    /// Whether `id` has stayed in `h`. A hold saved before holds had marks has none: a
+    /// card it lists that is still off the deck has stayed.
+    fn kept(&self, h: &Hold, id: CardId) -> bool {
+        h.at == Mark::default() || self.stayed(id, h.at)
     }
 
     pub fn pile_top(&self, id: PileId) -> Option<CardId> {
@@ -1297,7 +1303,7 @@ impl Game {
         while let Some(i) = self.holds.iter().rposition(|h| h.depth > self.stack.len()) {
             let h = self.holds.remove(i);
             for &c in h.cards.iter().rev() {
-                if self.zones[c.index()] == Zone::Looking(h.player) && self.stayed(c, h.at) {
+                if self.zones[c.index()] == Zone::Looking(h.player) && self.kept(&h, c) {
                     self.move_card(c, Zone::Deck(h.player), Pos::Top);
                 }
             }
