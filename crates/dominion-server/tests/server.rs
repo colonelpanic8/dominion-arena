@@ -160,7 +160,11 @@ async fn two_clients_play_their_seats_to_the_end() {
         "{}",
         out_of_turn.text
     );
-    for (decision, indices) in [("d999", json!([0])), (id.as_str(), json!([options]))] {
+    for (decision, indices) in [
+        ("d999", json!([0])),
+        (id.as_str(), json!([options])),
+        (id.as_str(), json!([-1])),
+    ] {
         let bad = call(
             &a,
             "answer",
@@ -169,6 +173,7 @@ async fn two_clients_play_their_seats_to_the_end() {
         .await;
         assert!(!bad.ok);
         assert!(bad.text.starts_with("rejected:"), "{}", bad.text);
+        assert!(bad.text.contains("there is no option") || decision == "d999");
     }
 
     let seat_a = tokio::spawn(play_seat(a, token(0), 0));

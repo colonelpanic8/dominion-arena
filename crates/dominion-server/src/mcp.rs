@@ -61,7 +61,9 @@ pub struct AnswerParams {
     /// The open decision's id, from the view.
     pub decision_id: String,
     /// Option indices: one for most decisions; for ordered decisions, top first.
-    pub indices: Option<Vec<u32>>,
+    // Signed, so a negative index is refused with the other bad answers.
+    #[schemars(with = "Option<Vec<u32>>")]
+    pub indices: Option<Vec<i64>>,
     /// A card name, instead of indices, when the decision allows naming any card.
     pub name: Option<String>,
     #[serde(default)]
@@ -222,9 +224,20 @@ impl Session {
             Ok(seat) => seat,
             Err(e) => return Ok(failure(e.to_string())),
         };
+        let indices = match p.indices {
+            Some(v) => match v.iter().find(|&&i| u32::try_from(i).is_err()) {
+                Some(i) => {
+                    return Ok(failure(format!(
+                        "rejected: there is no option {i}: options are numbered from 0"
+                    )));
+                }
+                None => Some(v.into_iter().map(|i| i as u32).collect()),
+            },
+            None => None,
+        };
         let answer = Answer {
             decision: p.decision_id,
-            indices: p.indices,
+            indices,
             name: p.name,
         };
         Ok(match self.hub.answer(&seat, &answer) {

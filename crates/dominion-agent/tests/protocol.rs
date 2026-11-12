@@ -241,11 +241,22 @@ fn bad_answers_are_rejected_with_reasons() {
     let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![n])) else {
         panic!("out-of-range index accepted");
     };
-    assert!(msg.contains("does not exist"), "{msg}");
+    assert_eq!(
+        msg,
+        format!("there is no option {n}: the options are numbered 0 to {}", n - 1)
+    );
     let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![0, 0])) else {
         panic!("repeated index accepted");
     };
-    assert!(msg.contains("more than once"), "{msg}");
+    assert_eq!(msg, "option 0 is chosen more than once");
+    let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![0, 1])) else {
+        panic!("two moves accepted");
+    };
+    assert_eq!(msg, "choose a move; you chose 2");
+    let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![])) else {
+        panic!("no move accepted");
+    };
+    assert_eq!(msg, "choose a move; you chose none");
     let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::name(&d.id, "Gold")) else {
         panic!("name accepted for a turn decision");
     };
