@@ -219,7 +219,8 @@ pub struct Turn {
     pub buys: u32,
     pub coins: u32,
     pub potions: u32,
-    /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures).
+    /// Bought anything (card, Event or Project) in this Buy phase (so no more Treasures). A
+    /// card bought through Black Market isn't: Treasures can still be played after it.
     pub bought: bool,
     /// Every play this turn, by any player, in order. A card played twice appears twice.
     pub played: Vec<Card>,
