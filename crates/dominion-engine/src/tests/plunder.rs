@@ -3676,6 +3676,37 @@ fn shaman_still_gains_from_the_trash_after_divine_wind_removed_its_pile() {
     );
 }
 
+/// What happened before an ability began is logged before its header.
+#[test]
+fn what_a_play_gave_before_flagship_replays_it_is_logged_before_flagships_header() {
+    let mut g = setup(&[Card::Flagship, Card::CandlestickMaker]);
+    hand(&mut g, P0, &[Card::Flagship, Card::CandlestickMaker]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    g.turn.actions = 3;
+    play(&mut g, Card::Flagship);
+    let from = g.log().len();
+    play(&mut g, Card::CandlestickMaker);
+    let played = Event::Played {
+        player: P0,
+        card: Card::CandlestickMaker,
+    };
+    let coffers = Event::Counter {
+        player: Some(P0),
+        pile: None,
+        counter: crate::event::Counter::Coffers,
+        delta: 1,
+    };
+    let header = Event::Resolved {
+        player: P0,
+        card: Card::Flagship,
+    };
+    assert_eq!(
+        g.log()[from..],
+        [played.clone(), coffers.clone(), header, played, coffers]
+    );
+}
+
 #[test]
 fn two_abundances_waiting_for_the_same_gain_need_no_order() {
     let mut g = setup(&[Card::Abundance, Card::Village]);

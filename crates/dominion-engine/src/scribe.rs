@@ -253,6 +253,8 @@ impl Game {
     /// An ability begins to resolve; `header`, if any, is logged before the first thing it
     /// does.
     pub(crate) fn begin_resolving(&mut self, header: Option<Event>) {
+        // What happened before it began is not its doing.
+        self.sync_log(None);
         self.scribe.resolving.push(Resolving {
             plays: self.plays.len(),
             header,
