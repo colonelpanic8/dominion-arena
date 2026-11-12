@@ -2438,6 +2438,57 @@ fn way_of_the_chameleon_exchanges_on_another_players_turn() {
     assert_eq!((g.hand(P1).len(), g.turn().coins), (5, 0));
 }
 
+/// Capital City: "You may discard 2 cards for +$2", so with the Way for +2 Cards (wiki,
+/// Capital City): the cards are discarded first, and can be the ones drawn.
+#[test]
+fn way_of_the_chameleon_draws_for_capital_city_after_its_discard() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::CapitalCity]);
+    hand(&mut g, P0, &[Card::CapitalCity, Card::Estate, Card::Estate]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::CapitalCity);
+    way(&mut g, Card::WayOfTheChameleon);
+    yes(&mut g);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate, Card::Estate]);
+    assert_eq!(g.turn().coins, 1);
+}
+
+/// Elder lets a card played with the Way do one more of its choices (wiki, Elder). The
+/// cards that +$ became are in the hand for what the card does next.
+#[test]
+fn way_of_the_chameleon_draws_before_the_rest_of_what_an_elders_card_does() {
+    let elder = |card: Card| {
+        let mut g = way_game(Card::WayOfTheChameleon, &[Card::Townsfolk, card]);
+        hand(&mut g, P0, &[Card::Elder, card, Card::Estate, Card::Estate]);
+        deck(&mut g, P0, &[Card::Gold; 10]);
+        hand(&mut g, P1, &[Card::Copper; 4]);
+        g.start();
+        play(&mut g, Card::Elder);
+        own(&mut g);
+        choose_kinds(&mut g, &[card]);
+        way(&mut g, Card::WayOfTheChameleon);
+        g
+    };
+    // Minion: +$2 is +2 Cards, which "discard your hand" discards; +4 Cards is +$4.
+    let mut g = elder(Card::Minion);
+    modes(&mut g, &[0, 1]);
+    assert_eq!(g.turn().coins, 2 + 4);
+    assert_eq!(hand_kinds(&g, P0), []);
+    // Steward: +$2 is +2 Cards, which can be the 2 cards trashed.
+    let mut g = elder(Card::Steward);
+    modes(&mut g, &[1, 2]);
+    assert_eq!(kinds(&g, &candidates(&g))[2..], [Card::Gold; 2]);
+    choose_kinds(&mut g, &[Card::Gold, Card::Gold]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate; 2]);
+    // Amulet: +$1 is +1 Card, which can be the card trashed.
+    let mut g = elder(Card::Amulet);
+    modes(&mut g, &[0, 1]);
+    choose_kinds(&mut g, &[Card::Gold]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate; 2]);
+    assert_eq!(g.turn().coins, 2);
+}
+
 /// The Way is used on a play, not on a card: Scepter replays a Storyteller that isn't
 /// finished (wiki, Scepter), and that play, made without the Way, is as printed.
 #[test]

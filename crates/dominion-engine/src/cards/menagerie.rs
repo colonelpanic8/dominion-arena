@@ -21,7 +21,7 @@ use super::plunder::next_play;
 use super::{
     CardFrame, Hook, SetRules, Step, due_durations, duration_trigger, looking, put_back,
 };
-use crate::decision::{Opt, Purpose};
+use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
 use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Scratch, Until, Zone};
@@ -516,6 +516,11 @@ impl SetRules for Rules {
             g.add_coins(p, n as u32);
         }
         if coins > 0 {
+            // The cards are drawn here, before the step's flow: a step that gives +$
+            // ends there if it would go on with the hand.
+            if cfg!(test) {
+                assert!(!lists_hand(g, p, flow), "{}: +$ and the hand in one step", f.card);
+            }
             let rest = std::mem::replace(flow, Flow::Call(Frame::draw(p, coins as usize)));
             f.hold(rest);
         }
@@ -659,6 +664,19 @@ pub(crate) fn exchanged_effect(g: &Game, id: u32) -> Option<PlayerId> {
     let st = &g.ext.menagerie;
     let &(_, p) = st.chameleon_effects.iter().find(|(l, _)| *l == id)?;
     (st.chameleon_turn == Some(this_turn(g))).then_some(p)
+}
+
+/// Whether `flow` asks about or moves cards listed from `p`'s hand.
+fn lists_hand(g: &Game, p: PlayerId, flow: &Flow) -> bool {
+    let cards = match flow {
+        Flow::Ask(Decision {
+            kind: DecisionKind::Cards { candidates, .. },
+            ..
+        }) => candidates,
+        Flow::Call(Frame::Discard { cards, .. } | Frame::Trash { cards, .. }) => cards,
+        _ => return false,
+    };
+    cards.iter().any(|&c| g.zone(c) == Zone::Hand(p))
 }
 
 /// Returns the played card to its pile if it is in play (Horse, Way of the Horse).

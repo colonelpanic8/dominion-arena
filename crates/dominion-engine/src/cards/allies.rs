@@ -1733,7 +1733,7 @@ fn capital_city(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            f.pc = 3;
+            f.pc = 4;
             if g.hand(p).is_empty() {
                 return Flow::Continue;
             }
@@ -1742,7 +1742,7 @@ fn capital_city(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             if !input.is_yes() {
-                f.pc = 3;
+                f.pc = 4;
                 return Flow::Continue;
             }
             let hand = g.hand(p).to_vec();
@@ -1752,25 +1752,30 @@ fn capital_city(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let chosen = input.cards();
-            if chosen.len() == 2 {
-                g.add_coins(p, 2);
-            }
+            f.s.n = chosen.len() as i32;
             f.pc = 3;
             Flow::Call(Frame::discard(p, chosen))
         }
         3 => {
+            if f.s.n == 2 {
+                g.add_coins(p, 2);
+            }
+            f.pc = 4;
+            Flow::Continue
+        }
+        4 => {
             if p != g.turn.player || g.turn.coins < 2 {
                 return Flow::done();
             }
-            f.pc = 4;
+            f.pc = 5;
             f.ask_yes_no(Purpose::Other, "Pay $2 for +2 Cards")
         }
-        4 => {
+        5 => {
             if !input.is_yes() {
                 return Flow::done();
             }
             g.turn.coins -= 2;
-            f.pc = 5;
+            f.pc = 6;
             Flow::Call(Frame::draw(p, 2))
         }
         _ => Flow::done(),

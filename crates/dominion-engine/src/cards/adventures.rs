@@ -1248,19 +1248,23 @@ fn amulet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if f.s.m & 1 != 0 {
                 g.add_coins(p, 1);
             }
-            if f.s.m & 2 == 0 {
-                f.pc = 3;
-                return Flow::Continue;
-            }
             f.pc = 2;
-            f.ask_cards(g.hand(p).to_vec(), 1, 1, Purpose::Trash)
+            Flow::Continue
         }
         2 => {
+            if f.s.m & 2 == 0 {
+                f.pc = 4;
+                return Flow::Continue;
+            }
             f.pc = 3;
-            Flow::Call(Frame::trash(p, input.cards()))
+            f.ask_cards(g.hand(p).to_vec(), 1, 1, Purpose::Trash)
         }
         3 => {
             f.pc = 4;
+            Flow::Call(Frame::trash(p, input.cards()))
+        }
+        4 => {
+            f.pc = 5;
             if f.s.m & 4 != 0
                 && let Some(pile) = g.supply_pile(Card::Silver)
             {

@@ -285,6 +285,12 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   `g.add_actions(p, n)` and `g.add_buys(p, n)`: all three do nothing for a player whose
   turn it isn't, so never add to `g.turn` directly. Decisions are asked with the
   `CardFrame::ask_*` helpers.
+- Way of the Chameleon makes a script's `g.add_coins` a draw that happens when the step
+  returns, before the step's flow. So give +$ where the card's text does (after the
+  discard of "discard 2 cards for +$2"), unconditionally (no test of whose turn it is),
+  and end the step there (`Flow::Continue`) if the script goes on to list or move cards
+  of the player's hand, deck or discard pile. "+N Cards" is a `Frame::draw` the script
+  returns as its flow; $ that isn't "+$" (Fortune's doubling) is `g.get_coins`.
 - "Draw until you have N cards in hand" is `Frame::draw_to(p, n)`, never a draw of
   `n - hand`: the -1 Card token replaces a draw without making the hand smaller.
 - Set cards aside face up with `g.set_aside` (or `g.set_aside_revealed` for a card
