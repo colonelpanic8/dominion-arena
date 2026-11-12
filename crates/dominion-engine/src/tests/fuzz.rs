@@ -2985,7 +2985,7 @@ struct Memory {
     survivors: BTreeMap<CardId, u32>,
     end_of_turn: Vec<(u32, Card)>,
     /// "Until your next turn" effects: id, its player, and their turn count when first seen.
-    until_start: BTreeMap<u32, (PlayerId, u32, Card)>,
+    until_start: BTreeMap<u32, (PlayerId, u32, Card, Option<CardId>)>,
     decisions_this_turn: usize,
     /// Cards in play that nothing kept, at the last decision.
     unkept: HashSet<CardId>,
@@ -3121,9 +3121,11 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
         .iter()
         .any(|p| p.turns_skipped > 0 || p.skip_turns > 0);
     let skipped = m.skips;
-    m.until_start.retain(|&id, &mut (p, first, card)| {
+    m.until_start.retain(|&id, &mut (p, first, card, source)| {
         let alive = g.lasting().iter().any(|l| l.id == id);
-        if !alive && g.player(p).turns_taken == first && !skipped {
+        // A Duration that left play ended with the turn, perhaps with no decision since.
+        let left_play = source.is_some_and(|c| !matches!(g.zone(c), Zone::InPlay(_)));
+        if !alive && g.player(p).turns_taken == first && !skipped && !left_play {
             flags.bug(format!("until-next-turn-effect-ended-early:{card}"), || {
                 ctx(g)
             });
@@ -3195,7 +3197,10 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
                 } else {
                     turns
                 };
-                let &mut (_, first, _) = m.until_start.entry(l.id).or_insert((p, made, l.card));
+                let &mut (_, first, _, _) = m
+                    .until_start
+                    .entry(l.id)
+                    .or_insert((p, made, l.card, l.source));
                 let starting = t.player == p && t.phase == Phase::Start;
                 // Taskmaster repeating at the start of a turn reuses its lasting effect.
                 if turns > first && !starting && l.card != Card::Taskmaster {
