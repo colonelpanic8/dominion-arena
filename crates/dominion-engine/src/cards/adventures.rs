@@ -411,7 +411,8 @@ impl SetRules for Rules {
                             _ => Card::Training,
                         }
                     };
-                    out.push(Trigger::new(player, source, PLAY_BONUS));
+                    let t = Trigger::new(player, source, PLAY_BONUS);
+                    out.push(if tokens.is_empty() { t } else { t.first() });
                 }
             }
             Occasion::AfterPlay { player, card } => {

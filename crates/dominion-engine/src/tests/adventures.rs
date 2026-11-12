@@ -1739,6 +1739,24 @@ fn bonus_tokens_apply_to_every_play_of_a_card_from_their_pile() {
     assert_eq!(g.hand(P0).len(), 2 * 4);
 }
 
+/// "When you play a card from that pile, you first get that bonus": before anything
+/// else answers the play (wiki, Adventures tokens: the card is drawn before Urchin is
+/// trashed).
+#[test]
+fn a_pile_tokens_bonus_comes_before_other_abilities_that_answer_the_play() {
+    let mut g = game(&[Card::Urchin, Card::Marauder], &[Card::Pathfinding]);
+    hand(&mut g, P0, &[Card::Urchin, Card::Marauder]);
+    deck(&mut g, P0, &[Card::Copper, Card::Gold]);
+    hand(&mut g, P1, &[Card::Copper; 3]);
+    g.start();
+    let marauder = g.supply_pile(Card::Marauder).unwrap();
+    place(&mut g, P0, Token::PlusCard, marauder);
+    play(&mut g, Card::Urchin);
+    play(&mut g, Card::Marauder);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Gold]);
+}
+
 #[test]
 fn lost_arts_training_and_pathfinding_move_their_tokens() {
     let mut g = buy_phase(
