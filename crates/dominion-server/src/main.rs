@@ -22,7 +22,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Host games as an MCP server (streamable HTTP at /mcp).
+    /// Host games as an MCP server (streamable HTTP at /mcp), with an HTTP API at /api
+    /// for the web client.
     Serve {
         #[arg(long)]
         listen: Option<IpAddr>,
@@ -34,6 +35,12 @@ enum Command {
         /// Keep games in memory only.
         #[arg(long)]
         ephemeral: bool,
+        /// Directory of the asset cache, served at /assets.
+        #[arg(long)]
+        assets_dir: Option<PathBuf>,
+        /// Directory of the built web client, served at / (default: web_dir, then $DOMINION_WEB_DIR).
+        #[arg(long)]
+        web_dir: Option<PathBuf>,
     },
     /// Play one seat from the terminal against a server.
     Play(PlayArgs),
@@ -42,6 +49,29 @@ enum Command {
         #[arg(required = true)]
         names: Vec<String>,
     },
+    /// Manage the local cache of dominion.games' images, fonts and sounds.
+    Assets {
+        #[command(subcommand)]
+        command: AssetsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AssetsCommand {
+    /// Download the assets and write the manifest mapping cards to them.
+    Sync {
+        /// Cache directory (default from the config file).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Download files already in the cache again.
+        #[arg(long)]
+        force: bool,
+        /// Report what would be downloaded, fetching only the client's bundles.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print the cache directory.
+    Path,
 }
 
 #[derive(Args)]
@@ -80,7 +110,7 @@ struct PlayArgs {
     names: Vec<String>,
 }
 
-async fn serve(config: Config) -> Result<(), String> {
+async fn serve(config: Config, config_file: Option<PathBuf>) -> Result<(), String> {
     let addr = SocketAddr::new(config.listen(), config.port());
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -116,6 +146,10 @@ async fn serve(config: Config) -> Result<(), String> {
         }
     };
     eprintln!("dominion: MCP endpoint http://{addr}/mcp");
+    let web_dir = config.web_dir();
+    if web_dir.is_some() {
+        eprintln!("dominion: web client http://{addr}/");
+    }
     let stop = CancellationToken::new();
     let signal = stop.clone();
     tokio::spawn(async move {
@@ -125,10 +159,38 @@ async fn serve(config: Config) -> Result<(), String> {
     let options = Options {
         allowed_hosts: hosts,
         session_idle: config.session_idle(),
+        assets_dir: config.assets_dir(),
+        web_dir,
+        web: config.web(),
+        config_file,
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
         .map_err(|e| e.to_string())
+}
+
+async fn assets(command: AssetsCommand, mut config: Config) -> Result<(), String> {
+    let no_dir = || "no asset cache directory: set assets_dir (or XDG_CACHE_HOME or HOME)";
+    match command {
+        AssetsCommand::Sync {
+            dir,
+            force,
+            dry_run,
+        } => {
+            config.assets_dir = dir.or(config.assets_dir);
+            let dir = config.assets_dir().ok_or_else(no_dir)?;
+            let options = dominion_server::assets::SyncOptions {
+                dir,
+                force,
+                dry_run,
+            };
+            dominion_server::assets::sync(&options).await
+        }
+        AssetsCommand::Path => {
+            println!("{}", config.assets_dir().ok_or_else(no_dir)?.display());
+            Ok(())
+        }
+    }
 }
 
 #[tokio::main]
@@ -147,14 +209,18 @@ async fn main() -> ExitCode {
             port,
             state_dir,
             ephemeral,
+            assets_dir,
+            web_dir,
         } => {
+            config.assets_dir = assets_dir.or(config.assets_dir);
+            config.web_dir = web_dir.or(config.web_dir);
             config.listen = listen.or(config.listen);
             config.port = port.or(config.port);
             config.state_dir = state_dir.or(config.state_dir);
             if ephemeral {
                 config.persist = Some(false);
             }
-            serve(config).await
+            serve(config, cli.config.clone().or_else(Config::default_path)).await
         }
         Command::Play(args) => {
             let url = args.server.clone().unwrap_or_else(|| config.server());
@@ -173,6 +239,7 @@ async fn main() -> ExitCode {
             let seat = args.game.zip(args.token);
             dominion_server::client::play(&url, new, seat, reconnect).await
         }
+        Command::Assets { command } => assets(command, config).await,
         Command::Card { names } => names.iter().try_for_each(|name| {
             dominion_agent::glossary(name)
                 .map(|e| println!("{}\n", dominion_server::card_text(&e)))

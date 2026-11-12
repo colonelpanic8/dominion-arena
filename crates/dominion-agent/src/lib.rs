@@ -10,11 +10,10 @@
 mod project;
 mod table;
 pub mod text;
-mod types;
 
+pub use dominion_protocol::view::*;
 pub use project::WAY_HINT;
 pub use table::{AnswerError, Answered, Table, WayChoice};
-pub use types::*;
 
 use dominion_engine::Card;
 

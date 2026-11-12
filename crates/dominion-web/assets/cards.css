@@ -1,0 +1,199 @@
+/* Cards. Every size inside a card is in cqw (hundredths of the card's width) or em
+   of a size given in cqw, so a card scales with the width of its container. Icon
+   widths must agree with card/fit.rs. Images come from the asset cache through the
+   --dc-* variables the app sets; without them the stand-ins below are drawn. */
+
+.dc-card {
+  --dc-body: DomBody, "Times New Roman", "Liberation Serif", serif;
+  --dc-title: DomTitle, "Times New Roman", "Liberation Serif", serif;
+  --dc-num: DomNum, "Times New Roman", "Liberation Serif", serif;
+  position: relative;
+  width: 100%;
+  container-type: inline-size;
+  color: #000;
+  font-family: var(--dc-body);
+  line-height: 1;
+  user-select: none;
+  overflow: hidden;
+}
+
+.dc-card > * { position: absolute; }
+.dc-bg { inset: 0; background: #000; border-radius: 4cqw; }
+.dc-landscape .dc-bg { border-radius: 2.6cqw; }
+.dc-micro .dc-bg { border-radius: 1.6cqw; }
+.dc-overlay { inset: 0; z-index: 20; pointer-events: none; }
+.dc-overlay > * { pointer-events: auto; }
+
+.dc-art { object-fit: cover; object-position: top; z-index: 1; }
+.dc-art-ph {
+  z-index: 1;
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 1.5cqw, transparent 1.5cqw 3cqw),
+    linear-gradient(160deg, #6b6f78, #3f434b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dc-template { object-fit: fill; z-index: 2; }
+
+/* Drawn frames, for cards the cache has no template for. */
+.dc-frame {
+  z-index: 0;
+  border-radius: 2.5cqw;
+  box-shadow: inset 0 0 0 1cqw rgba(0,0,0,.25), inset 0 0 6cqw rgba(0,0,0,.25);
+}
+.dc-fb-panel {
+  z-index: 2;
+  margin: -1.5cqw -2cqw;
+  padding: 1.5cqw 2cqw;
+  box-sizing: content-box;
+  background: rgba(255,255,255,.62);
+  border-radius: 1.5cqw;
+}
+.dc-fb-panel.dc-dark { background: rgba(10,14,22,.55); }
+.dc-landscape .dc-fb-panel { background: rgba(255,255,255,.7); }
+
+.dc-name, .dc-types {
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-family: var(--dc-title);
+  color: #000;
+}
+.dc-name span, .dc-types span { line-height: 1; padding-top: .08em; }
+.dc-light { color: #ddd; }
+.dc-types.dc-corner { transform: rotate(45deg); }
+
+.dc-text {
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  overflow: hidden;
+}
+.dc-text-inner { width: 100%; padding: .1em 0; }
+.dc-row {
+  white-space: pre;
+  text-align: center;
+  line-height: 1.06;
+  height: 1.06em;
+}
+.dc-row.dc-bonus { font-size: 1.3em; font-weight: bold; }
+.dc-row.dc-huge { font-size: 2em; line-height: 1.1; height: 1.1em; }
+.dc-row.dc-italic, .dc-it { font-style: italic; }
+.dc-b { font-weight: bold; }
+.dc-gap { height: .35em; }
+.dc-sep {
+  position: static;
+  height: .16em;
+  width: 70%;
+  margin: .4em auto .24em;
+  background: currentColor;
+}
+.dc-heirloom { z-index: 4; }
+
+.dc-set { z-index: 5; object-fit: contain; }
+
+/* Icons in text and costs. */
+.dc-i {
+  display: inline-block;
+  text-align: center;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  font-family: var(--dc-num);
+  font-weight: bold;
+  font-style: normal;
+}
+.dc-i:empty { vertical-align: -.22em; }
+.dc-coin {
+  width: 1.1em;
+  height: 1.1em;
+  line-height: 1.1em;
+  margin: -.1em .05em;
+  color: #000;
+  font-size: 1em;
+  background-image: var(--dc-coin, radial-gradient(circle, #f7dc6a 0 58%, #c9971f 60% 68%, transparent 70%));
+  letter-spacing: -.05em;
+}
+.dc-debt {
+  width: 1.1em;
+  height: 1.1em;
+  line-height: 1.1em;
+  margin: -.1em .05em;
+  color: #fff;
+  background-image: var(--dc-debt, linear-gradient(#b4602e, #7d3a14));
+}
+.dc-potion {
+  width: .75em;
+  height: 1em;
+  margin: 0 .05em;
+  color: #fff;
+  background-image: var(--dc-potion, radial-gradient(ellipse at 50% 65%, #4f7ed8 0 45%, #2b4f9a 47% 52%, transparent 54%));
+}
+.dc-sun {
+  width: 1em;
+  height: 1em;
+  margin: 0 .05em;
+  background-image: var(--dc-sun, radial-gradient(circle, #f59a2a 0 50%, transparent 52%));
+}
+.dc-vp { white-space: nowrap; }
+.dc-vp-n {
+  font-family: var(--dc-num);
+  font-weight: bold;
+  margin-right: .05em;
+  line-height: 1;
+}
+.dc-shield {
+  width: 1em;
+  height: 1em;
+  margin: 0 0 0 .05em;
+  vertical-align: 0;
+  background-image: var(--dc-vp, linear-gradient(#5fae3c, #2f6d1b));
+}
+.dc-vp .dc-shield { margin-left: 0; }
+
+/* Stand-in shapes; the app lifts them when the cache has the icon images. */
+.dc-debt { clip-path: polygon(25% 3%, 75% 3%, 100% 50%, 75% 97%, 25% 97%, 0 50%); }
+.dc-shield { clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); }
+
+.dc-cost-box { z-index: 7; display: flex; align-items: center; }
+.dc-cost { display: inline-flex; align-items: center; height: 1em; transform: scale(1.15); transform-origin: 40% 50%; }
+.dc-cost .dc-i { vertical-align: 0; margin: 0; }
+.dc-cost .dc-coin { font-size: .72em; width: 1.39em; height: 1.39em; padding-top: .06em; }
+.dc-cost .dc-debt { font-size: .66em; width: 1.44em; height: 1.44em; padding-top: .04em; }
+.dc-cost .dc-potion { width: .65em; height: 1em; }
+.dc-cost > .dc-i + .dc-i { margin-left: -.15em; }
+.dc-mark {
+  font-family: var(--dc-num);
+  font-weight: bold;
+  font-size: .45em;
+  align-self: flex-start;
+  margin-left: -.1em;
+  color: #000;
+  text-shadow: 0 0 .15em #fff, 0 0 .15em #fff;
+}
+
+.dc-symbol { font-size: 30cqw; }
+.dc-symbol .dc-i { vertical-align: 0; }
+
+/* Backs. */
+.dc-back-img { inset: 2%; width: 96%; height: 96%; object-fit: fill; border-radius: 3cqw; }
+.dc-back-fallback {
+  inset: 3%;
+  border-radius: 3cqw;
+  background:
+    radial-gradient(circle at 50% 50%, #d9b24a 0 8cqw, transparent 8.5cqw),
+    repeating-linear-gradient(45deg, #2a3f7a 0 4cqw, #233569 4cqw 8cqw);
+}
+
+/* The full card shown beside a hovered card name. */
+.dc-hover { position: relative; }
+.dc-hover-card {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  filter: drop-shadow(0 6px 18px rgba(0,0,0,.6));
+}

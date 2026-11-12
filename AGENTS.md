@@ -9,8 +9,13 @@ implements `Agent`.
 
 From the repo root (direnv loads the Nix dev shell; otherwise prefix `nix develop -c`):
 
-- `just check`: fmt-check, clippy `-D warnings`, tests.
+- `just check`: fmt-check, clippy `-D warnings` (and dominion-web for wasm32), tests.
+- `just web-build` / `web-serve` / `web-dev`: build, serve or hot-reload the web client.
 - `just fmt`: format Rust and `flake.nix`.
+- Nix: `packages.default` is `dominion`, `packages.web` the client (dx in the sandbox,
+  with wasm-bindgen pinned to the crate's version), `packages.dominion-with-web` the binary
+  wrapped with `DOMINION_WEB_DIR`. Bumping wasm-bindgen means bumping both the crate pin
+  and `wasm-bindgen-cli_*` in `flake.nix`. `nix flake check` builds all but the wrapper.
 - Focused: `cargo test -p dominion-engine tests::<set>`.
 
 ## Layout
@@ -36,9 +41,69 @@ crates/dominion-engine/
   src/tests/<set>.rs      each set's card tests
   src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
+crates/dominion-protocol/ serde types of agent-view@2, the HTTP API and the asset manifest; engine-free,
+                          builds for wasm
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
+  src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
+crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
+                          only on dominion-protocol (engine crates are dev-dependencies)
+  src/api.rs              typed client for /api and the SSE change feed
+  src/session.rs          seat tokens held in localStorage
+  src/cards.rs            /api/cards data by name (provided as `app::Cards` context)
+  src/assets.rs           /assets/manifest.json and the card fonts (`use_assets()`); absent cache is fine
+  src/card/               the card renderer: CardView / CardBack / CardHover at Full, Mini, Micro
+    text.rs               official text -> lines of styled words and icons (pure)
+    fit.rs                word wrapping and font-size fitting in card-width units (pure)
+    layout.rs             where things sit on a card, as fractions of its size (upstream's boxes)
+    measure.rs            text widths: canvas in the browser, an estimate natively
+  assets/cards.css        card styles (cqw units; images through --dc-* variables)
+  src/gallery.rs          /gallery: every card through the renderer, with filters
+  src/game/state.rs       the game page's model (view, version, log), selection -> Answer
+  src/game/mod.rs         GamePage: seat choice, keeping state current, `GameCtx` context
+  src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
+  src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
+                          "Play Treasures" (`TreasureRun`)
+  src/game/board.rs       a view arranged for drawing: piles, players, stacks, status
+  src/game/table/         the graphical table, dominion.games' layout and behaviour; the game
+                          page's default view (Plain is a toggle)
+    mod.rs                `TableGame`, `TableCtx` (selection, study view, windows, keys,
+                          the Autoplay Treasures run), `Mark`: how a card takes part in a
+                          decision and the colour of its border
+    model.rs              each target's `Spot` on the table; play area this turn / earlier (pure)
+    motion.rs             cards seen moving: DOM snapshot before a view change, ghosts after
+                          it (`moves`) with dominion.games' per-destination scripts and
+                          Animation Type timings
+    sound.rs              your-turn and end-of-game sounds when dominion.games plays them
+    layout.rs             every zone's box from the window size, in dominion.games' vh/vw
+                          rules: basic columns, kingdom grid, rows, windows (pure)
+    pieces.rs             `TableCard` (action-coloured border, crosses, counts, plus, All),
+                          badges, `CardName`, the study view
+    supply.rs players.rs prompt.rs side.rs   Supply and tabs; player bars, peeking opponent
+                          piles, play row, your hand and piles; status bar, buttons, decision
+                          window; log, "more" panel, game end and score screen
+  src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
+  assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
+  src/game/logfmt.rs      the log in dominion.games' wording: initials, card lists with
+                          articles and plurals, merged runs, turn headers, depth
+  src/game/moves.rs       which cards moved where between two boards, from the log and the
+                          boards (pure); ghosts summarising them
+  tests/table.rs          those models and the table's spots property-tested over random games
+  tests/moves.rs          move inference over random games, and hand-checked steps
+  src/lobby/              the lobby, dominion.games' layout and behaviour
+    mod.rs                the frame and tabs, `TableState` (the table this browser sits at),
+                          toast, tooltips, fieldsets, rows, switches
+    rules.rs              a table's rules (Kingdom Options, seats), kingdom text, the
+                          selector's search, `DealRequest` and `NewGame` from them (pure)
+    store.rs              the table, your name and the last kingdom in localStorage
+    my_table.rs           My Table: Kingdom Options, Game Options, Players, seat links,
+                          Ready (`start`) and Leave Table; shared with the score page
+    selector.rs           "Select Cards", the card selector
+    home.rs tables.rs cardlists.rs   Automatch (Bot Game, Create Table, Join a Seat),
+                          Tables, Cardlists (the Banned list in the config file)
+  assets/lobby.css        lobby styles, in dominion.games' vh/vw
+  tests/lobby.rs          table rules against the engine's cards
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

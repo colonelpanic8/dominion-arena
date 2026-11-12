@@ -1,6 +1,7 @@
 //! Settings: a flat TOML file (`$XDG_CONFIG_HOME/dominion/config.toml`), which command
 //! line flags override.
 
+use dominion_protocol::api::{AnimationSpeed, WebSettings};
 use serde::Deserialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -10,8 +11,10 @@ pub const DEFAULT_PORT: u16 = 7317;
 pub const DEFAULT_KEEP_FINISHED_DAYS: u32 = 7;
 pub const DEFAULT_SESSION_IDLE_MINUTES: u32 = 24 * 60;
 pub const DEFAULT_RECONNECT_SECONDS: u32 = 30;
+/// The environment variable naming the web client to serve when `web_dir` is unset.
+pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Address `dominion serve` listens on (default 127.0.0.1).
@@ -38,6 +41,33 @@ pub struct Config {
     pub state_dir: Option<PathBuf>,
     /// Days a finished game is kept before it is deleted, checked at startup (default 7).
     pub keep_finished_days: Option<u32>,
+    /// Where `dominion assets sync` keeps dominion.games' images, fonts and sounds, and
+    /// `dominion serve` serves them from (default `$XDG_CACHE_HOME/dominion/assets`).
+    pub assets_dir: Option<PathBuf>,
+    /// The built web client `dominion serve` serves at `/` (default `$DOMINION_WEB_DIR`,
+    /// which a packaged build sets to its own client; otherwise none).
+    pub web_dir: Option<PathBuf>,
+    /// The web client shows cards moving (default true).
+    pub web_animations: Option<bool>,
+    /// How fast cards move: `slow`, `standard` (default), `sprightly`, `swift`, `speedy`
+    /// or `none`, as dominion.games' Animation Type.
+    pub web_animation_speed: Option<AnimationSpeed>,
+    /// On other players' turns the kingdom drops and their play area goes above it
+    /// (default true).
+    pub web_move_kingdom: Option<bool>,
+    /// A single card to trash, discard, exile or topdeck waits for a confirming button
+    /// (default false: it is sent on the click).
+    pub web_confirm_single: Option<bool>,
+    /// The painting under the table, by its name in the asset cache's `images/large`, or
+    /// "" for none (default `inheritance`).
+    pub web_background: Option<String>,
+    /// The web client plays sounds (default true).
+    pub web_sounds: Option<bool>,
+    /// The web client's sound volume, 0.0 to 1.0 (default 0.5).
+    pub web_volume: Option<f32>,
+    /// Cards a table never deals at random while it respects the Banned list (the web
+    /// client's Cardlists tab writes it).
+    pub banned_cards: Option<Vec<String>>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -69,6 +99,24 @@ impl Config {
         Duration::from_secs(u64::from(days) * 24 * 60 * 60)
     }
 
+    /// The asset cache directory.
+    pub fn assets_dir(&self) -> Option<PathBuf> {
+        self.assets_dir
+            .clone()
+            .or_else(|| Some(xdg_dir("XDG_CACHE_HOME", ".cache")?.join("dominion/assets")))
+    }
+
+    /// The built web client to serve, if any.
+    pub fn web_dir(&self) -> Option<PathBuf> {
+        self.web_dir_or(std::env::var_os(WEB_DIR_ENV))
+    }
+
+    fn web_dir_or(&self, env: Option<std::ffi::OsString>) -> Option<PathBuf> {
+        self.web_dir
+            .clone()
+            .or_else(|| env.filter(|v| !v.is_empty()).map(PathBuf::from))
+    }
+
     /// Reads `path`, or the default file if it exists; no file means default settings.
     pub fn load(path: Option<&Path>) -> Result<Config, String> {
         let (path, required) = match path {
@@ -84,6 +132,52 @@ impl Config {
                 Ok(Config::default())
             }
             Err(e) => Err(format!("{}: {e}", path.display())),
+        }
+    }
+
+    /// Sets `key` in the settings file at `path` to `value`, keeping everything else in
+    /// it as it was, and returns the settings it then holds.
+    pub fn write_key(path: &Path, key: &str, value: toml_edit::Item) -> Result<Config, String> {
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        };
+        let mut doc: toml_edit::DocumentMut = text
+            .parse()
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        doc[key] = value;
+        let text = doc.to_string();
+        let config: Config =
+            toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(config)
+    }
+
+    /// What `GET /api/settings` serves.
+    pub fn web(&self) -> WebSettings {
+        let d = WebSettings::default();
+        WebSettings {
+            web_animations: self.web_animations.unwrap_or(d.web_animations),
+            web_animation_speed: self.web_animation_speed.unwrap_or(d.web_animation_speed),
+            web_move_kingdom: self.web_move_kingdom.unwrap_or(d.web_move_kingdom),
+            web_confirm_single: self.web_confirm_single.unwrap_or(d.web_confirm_single),
+            web_background: self
+                .web_background
+                .clone()
+                .filter(|b| {
+                    b.is_empty() || b.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                })
+                .unwrap_or(d.web_background),
+            web_sounds: self.web_sounds.unwrap_or(d.web_sounds),
+            web_volume: self
+                .web_volume
+                .filter(|v| v.is_finite())
+                .map_or(d.web_volume, |v| v.clamp(0.0, 1.0)),
+            banned_cards: self.banned_cards.clone().unwrap_or_default(),
         }
     }
 
@@ -142,6 +236,51 @@ mod tests {
         assert_eq!(on.state_dir(), Some(PathBuf::from("/x")));
         let sessions: Config = toml::from_str("session_idle_minutes = 0").unwrap();
         assert_eq!(sessions.session_idle(), None);
+    }
+
+    #[test]
+    fn web_settings_default_and_stay_in_range() {
+        let web = |toml: &str| toml::from_str::<Config>(toml).unwrap().web();
+        assert_eq!(web(""), WebSettings::default());
+        let set = web(
+            "web_animations = false\nweb_animation_speed = \"swift\"\nweb_move_kingdom = false\n\
+             web_confirm_single = true\nweb_background = \"dark-wood\"\nweb_sounds = false\n\
+             web_volume = 0.2\nbanned_cards = [\"Witch\"]",
+        );
+        assert_eq!(
+            set,
+            WebSettings {
+                web_animations: false,
+                web_animation_speed: AnimationSpeed::Swift,
+                web_move_kingdom: false,
+                web_confirm_single: true,
+                web_background: "dark-wood".into(),
+                web_sounds: false,
+                web_volume: 0.2,
+                banned_cards: vec!["Witch".into()],
+            }
+        );
+        assert_eq!(
+            web("web_background = \"../x\"").web_background,
+            "inheritance"
+        );
+        assert!(toml::from_str::<Config>("web_animation_speed = \"fast\"").is_err());
+        assert_eq!(web("web_volume = 3.0").web_volume, 1.0);
+        assert!(toml::from_str::<Config>("web_volume = \"loud\"").is_err());
+    }
+
+    #[test]
+    fn the_web_dir_setting_wins_over_the_environment() {
+        let env = || Some(std::ffi::OsString::from("/nix/store/web"));
+        let set: Config = toml::from_str("web_dir = \"/srv/web\"").unwrap();
+        assert_eq!(set.web_dir_or(env()), Some(PathBuf::from("/srv/web")));
+        let unset = Config::default();
+        assert_eq!(
+            unset.web_dir_or(env()),
+            Some(PathBuf::from("/nix/store/web"))
+        );
+        assert_eq!(unset.web_dir_or(Some("".into())), None);
+        assert_eq!(unset.web_dir_or(None), None);
     }
 
     #[test]

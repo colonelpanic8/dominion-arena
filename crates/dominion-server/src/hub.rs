@@ -1,7 +1,12 @@
 //! The games a server hosts, and the seat tokens that let a client act for a seat.
 
 use dominion_agent::{AgentView, Answer, AnswerError, Answered, Table, WayChoice};
-use dominion_engine::{Card, GameConfig, PlayerId, Set};
+use dominion_engine::{
+    Card, DealRules, Game, GameConfig, LandscapeSlot, PlayerId, SLOT_KINDS, Set,
+};
+pub use dominion_protocol::api::{
+    Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
+};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -13,57 +18,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 use tokio::sync::watch;
-
-/// What a client asks for when creating a game.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct NewGame {
-    /// Number of players, 2 to 6.
-    pub players: u8,
-    /// Seat names, in turn order (default P1, P2, ...). Each is at most 32 characters on
-    /// one line, and no two seats share a name.
-    #[serde(default)]
-    pub names: Vec<String>,
-    /// Kingdom piles by name. Without it, a random kingdom is dealt from `sets`.
-    #[serde(default)]
-    pub kingdom: Vec<String>,
-    /// Events, Landmarks, Projects, Ways, ... by name. With a random kingdom they replace
-    /// the landscapes it would deal.
-    #[serde(default)]
-    pub landscapes: Vec<String>,
-    /// Sets to deal a random kingdom from (default: every released set). Not with
-    /// `kingdom`.
-    #[serde(default)]
-    pub sets: Vec<String>,
-    pub seed: Option<u64>,
-    /// End the game after this many turns in total.
-    pub turn_limit: Option<u32>,
-    pub colonies: Option<bool>,
-    pub shelters: Option<bool>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct SeatToken {
-    pub seat: u8,
-    pub name: String,
-    pub token: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct Created {
-    pub game_id: String,
-    pub seats: Vec<SeatToken>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct GameSummary {
-    pub game_id: String,
-    pub names: Vec<String>,
-    pub running: bool,
-    /// The seat that must decide now.
-    pub deciding: Option<u8>,
-    pub kingdom: Vec<String>,
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum HubError {
@@ -308,6 +262,72 @@ pub fn config(req: &NewGame) -> Result<GameConfig, HubError> {
     Ok(config)
 }
 
+/// The kingdom `req`'s rules deal, checked by setting a game up with it.
+pub fn deal(req: &DealRequest) -> Result<Dealt, HubError> {
+    let seed = req.seed.unwrap_or_else(|| rand::rng().random());
+    let cards = |names: &[String], what: &str, want: fn(Card) -> bool| {
+        names
+            .iter()
+            .map(|n| card(n, what, want))
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let sets = |names: &[String]| names.iter().map(|n| set(n)).collect::<Result<Vec<_>, _>>();
+    let slots = match &req.slots {
+        None => None,
+        Some(slots) => Some(
+            slots
+                .iter()
+                .map(|s| {
+                    let mut kinds = 0u8;
+                    for k in &s.kinds {
+                        let i = SLOT_KINDS
+                            .iter()
+                            .position(|kind| format!("{kind:?}").eq_ignore_ascii_case(k))
+                            .ok_or_else(|| {
+                                bad(format!(
+                                    "{k:?} is not a landscape slot kind; those are event, \
+                                     landmark, project, way and trait"
+                                ))
+                            })?;
+                        kinds |= 1 << i;
+                    }
+                    Ok(LandscapeSlot {
+                        kinds,
+                        optional: s.optional,
+                    })
+                })
+                .collect::<Result<Vec<_>, HubError>>()?,
+        ),
+    };
+    let mut rules = DealRules {
+        sets: sets(&req.sets)?,
+        kingdom: cards(&req.kingdom, "Kingdom pile", |c| c.def().kingdom)?,
+        from_sets: sets(&req.from_sets)?,
+        landscapes: cards(&req.landscapes, "landscape", |c| c.kind().is_landscape())?,
+        slots,
+        banned: cards(&req.banned, "card", |_| true)?,
+    };
+    if rules.sets.is_empty() {
+        rules.sets = dealable_sets();
+    }
+    let config = GameConfig::deal(req.players, &rules, seed);
+    let dealt = Dealt {
+        kingdom: config
+            .kingdom
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect(),
+        landscapes: config
+            .landscapes
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect(),
+        seed,
+    };
+    engine(|| Game::new(config))?.map_err(|e| bad(e.to_string()))?;
+    Ok(dealt)
+}
+
 const MAX_NAME_CHARS: usize = 32;
 
 /// Every seat's name: the ones given, then the defaults. Names go into every client's
@@ -514,6 +534,12 @@ impl Hub {
                         .iter()
                         .map(|c| c.name().to_string())
                         .collect(),
+                    landscapes: t
+                        .game()
+                        .landscapes()
+                        .iter()
+                        .map(|c| c.name().to_string())
+                        .collect(),
                 }
             })
             .collect()
@@ -527,6 +553,36 @@ impl Hub {
             let text = dominion_agent::text::render(&view);
             (view, text)
         })
+    }
+
+    /// `seat`'s view, with the log from `log_from` on if given, the game's version and
+    /// the seat deciding, all read together.
+    pub fn seat_view(&self, seat: &Seat, log_from: Option<usize>) -> Result<SeatView, HubError> {
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        let view = engine(|| match log_from {
+            Some(from) => table.view_from(seat.seat, from),
+            None => table.view(seat.seat),
+        })?;
+        let extras = engine(|| table.extras(seat.seat))?;
+        Ok(SeatView {
+            view,
+            version: *game.version.borrow(),
+            deciding: table.deciding().map(|p| p.0),
+            table: extras,
+        })
+    }
+
+    /// Game `id`'s version, which [`Hub::answer`] bumps, and a receiver of every bump.
+    pub fn subscribe(&self, id: &str) -> Result<watch::Receiver<u64>, HubError> {
+        Ok(self.game(id)?.version.subscribe())
+    }
+
+    /// The name of `seat`.
+    pub fn seat_name(&self, seat: &Seat) -> Result<String, HubError> {
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        Ok(table.names()[seat.seat.index()].clone())
     }
 
     pub fn answer(&self, seat: &Seat, answer: &Answer) -> Result<(), HubError> {

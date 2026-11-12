@@ -403,3 +403,127 @@ fn setup_rejects_more_piles_than_a_game_can_hold() {
         Some(SetupError::TooManyPiles)
     );
 }
+
+/// `GameConfig::random` as it dealt before slots: kept so that seeds keep their kingdoms.
+fn rulebook_deal(players: u8, sets: &[Set], seed: u64) -> GameConfig {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x9e37_79b9_7f4a_7c15);
+    let mut stack: Vec<Card> = Card::ALL
+        .iter()
+        .copied()
+        .filter(|c| sets.contains(&c.set()) && !c.def().removed)
+        .filter(|c| c.def().kingdom || crate::SLOT_KINDS.contains(&c.kind()))
+        .collect();
+    stack.shuffle(&mut rng);
+    let mut config = GameConfig::new(players, vec![], seed);
+    for card in stack {
+        if config.kingdom.len() == 10 {
+            break;
+        }
+        if card.def().kingdom {
+            config.kingdom.push(card);
+        } else if config.landscapes.len() < 2
+            && !(card.kind() == Kind::Way
+                && config.landscapes.iter().any(|l| l.kind() == Kind::Way))
+        {
+            config.landscapes.push(card);
+        }
+    }
+    config
+}
+
+#[test]
+fn a_deal_without_rules_is_the_rulebooks() {
+    let sets = [Set::Base, Set::Adventures, Set::Menagerie, Set::Renaissance];
+    for seed in 0..300 {
+        assert_eq!(
+            GameConfig::random(2, &sets, seed),
+            rulebook_deal(2, &sets, seed)
+        );
+    }
+}
+
+#[test]
+fn a_deal_keeps_required_cards_takes_one_from_each_named_set_and_skips_banned_ones() {
+    let banned = [
+        Card::Village,
+        Card::Militia,
+        Card::Chapel,
+        Card::Cellar,
+        Card::Moat,
+    ];
+    let rules = DealRules {
+        sets: vec![Set::Base],
+        kingdom: vec![Card::Smithy, Card::Witch],
+        from_sets: vec![Set::Seaside, Set::Seaside],
+        banned: banned.to_vec(),
+        ..DealRules::default()
+    };
+    for seed in 0..200 {
+        let c = GameConfig::deal(2, &rules, seed);
+        assert_eq!(c.kingdom.len(), 10);
+        assert_eq!(&c.kingdom[..2], &[Card::Smithy, Card::Witch]);
+        assert_eq!(
+            c.kingdom.iter().filter(|k| k.set() == Set::Seaside).count(),
+            2
+        );
+        assert!(
+            c.kingdom
+                .iter()
+                .all(|k| !banned.contains(k) && k.def().kingdom)
+        );
+        assert!(
+            c.kingdom
+                .iter()
+                .all(|k| matches!(k.set(), Set::Base | Set::Seaside))
+        );
+        let distinct: std::collections::BTreeSet<_> = c.kingdom.iter().collect();
+        assert_eq!(distinct.len(), 10);
+        setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            ..c
+        });
+    }
+}
+
+#[test]
+fn landscape_slots_take_only_their_kinds_and_ones_that_cannot_stay_empty_are_filled() {
+    let event = 1 << 0;
+    let project_or_way = (1 << 2) | (1 << 3);
+    let rules = DealRules {
+        sets: vec![Set::Base, Set::Adventures, Set::Renaissance, Set::Menagerie],
+        landscapes: vec![Card::Delve],
+        slots: Some(vec![
+            LandscapeSlot {
+                kinds: event,
+                optional: false,
+            },
+            LandscapeSlot {
+                kinds: project_or_way,
+                optional: false,
+            },
+        ]),
+        ..DealRules::default()
+    };
+    for seed in 0..200 {
+        let c = GameConfig::deal(2, &rules, seed);
+        assert_eq!(c.kingdom.len(), 10);
+        assert_eq!(c.landscapes[0], Card::Delve);
+        let dealt = &c.landscapes[1..];
+        assert_eq!(dealt.len(), 2, "{dealt:?}");
+        assert_eq!(dealt.iter().filter(|l| l.kind() == Kind::Event).count(), 1);
+        assert_eq!(
+            dealt
+                .iter()
+                .filter(|l| matches!(l.kind(), Kind::Project | Kind::Way))
+                .count(),
+            1
+        );
+    }
+    let none = DealRules {
+        sets: vec![Set::Adventures],
+        slots: Some(vec![]),
+        ..DealRules::default()
+    };
+    assert!((0..50).all(|s| GameConfig::deal(2, &none, s).landscapes.is_empty()));
+}

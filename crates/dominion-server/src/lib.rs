@@ -1,8 +1,10 @@
 //! `dominion`: an MCP server hosting Dominion games over streamable HTTP, and a terminal
 //! client for it.
 
+pub mod assets;
 pub mod client;
 pub mod config;
+pub mod http;
 pub mod hub;
 pub mod mcp;
 
@@ -10,6 +12,7 @@ use dominion_agent::GlossaryEntry;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
@@ -23,6 +26,14 @@ pub struct Options {
     /// How long an MCP session may go without a call before it is closed, and the seat
     /// it joined forgotten. `None` keeps sessions until the server stops.
     pub session_idle: Option<Duration>,
+    /// The asset cache, served at `/assets`.
+    pub assets_dir: Option<PathBuf>,
+    /// The built web client, served at `/`.
+    pub web_dir: Option<PathBuf>,
+    /// What `GET /api/settings` tells the web client.
+    pub web: dominion_protocol::api::WebSettings,
+    /// The settings file the web client's edits are written to.
+    pub config_file: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -30,11 +41,16 @@ impl Default for Options {
         Options {
             allowed_hosts: vec![],
             session_idle: config::Config::default().session_idle(),
+            assets_dir: None,
+            web_dir: None,
+            web: Default::default(),
+            config_file: None,
         }
     }
 }
 
-/// Serves the MCP endpoint at `/mcp` on `listener` until `stop` is cancelled.
+/// Serves the MCP endpoint at `/mcp`, the HTTP API at `/api`, the asset cache at
+/// `/assets` and the web client at `/` on `listener` until `stop` is cancelled.
 pub async fn serve(
     listener: TcpListener,
     hub: Arc<hub::Hub>,
@@ -45,7 +61,8 @@ pub async fn serve(
         .into_iter()
         .map(String::from)
         .collect();
-    hosts.extend(options.allowed_hosts);
+    hosts.extend(options.allowed_hosts.iter().cloned());
+    let site = http::router(hub.clone(), &options, hosts.clone(), stop.clone());
     let config = StreamableHttpServerConfig::default()
         .with_allowed_hosts(hosts)
         .with_cancellation_token(stop.child_token());
@@ -58,7 +75,9 @@ pub async fn serve(
         Arc::new(sessions),
         config,
     );
-    let router = axum::Router::new().nest_service("/mcp", service);
+    let router = axum::Router::new()
+        .nest_service("/mcp", service)
+        .merge(site);
     axum::serve(listener, router)
         .with_graceful_shutdown(async move { stop.cancelled_owned().await })
         .await

@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 dominion-engine = { path = "../dominion-engine" }
+dominion-protocol = { path = "../dominion-protocol" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

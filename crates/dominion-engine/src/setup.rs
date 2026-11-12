@@ -57,36 +57,154 @@ impl GameConfig {
     /// Deals a random kingdom from `sets`: 10 Kingdom piles plus up to two landscapes,
     /// dealt from one shuffled stack of randomizers, as in the rulebook.
     pub fn random(players: u8, sets: &[Set], seed: u64) -> GameConfig {
+        GameConfig::deal(
+            players,
+            &DealRules {
+                sets: sets.to_vec(),
+                ..DealRules::default()
+            },
+            seed,
+        )
+    }
+
+    /// Deals a kingdom by `rules`: the piles and landscapes they require, then one
+    /// shuffled stack of randomizers from `rules.sets` fills the rest up to 10 Kingdom
+    /// piles, a landscape going to a free slot that takes its kind as it comes up.
+    pub fn deal(players: u8, rules: &DealRules, seed: u64) -> GameConfig {
         let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0x9e37_79b9_7f4a_7c15);
         let mut stack: Vec<Card> = Card::ALL
             .iter()
             .copied()
-            .filter(|c| sets.contains(&c.set()) && !c.def().removed)
             .filter(|c| {
-                c.def().kingdom
-                    || matches!(
-                        c.kind(),
-                        Kind::Event | Kind::Landmark | Kind::Project | Kind::Way | Kind::Trait
-                    )
+                (rules.sets.contains(&c.set()) || rules.from_sets.contains(&c.set()))
+                    && !c.def().removed
             })
+            .filter(|c| c.def().kingdom || SLOT_KINDS.contains(&c.kind()))
             .collect();
         stack.shuffle(&mut rng);
-        let mut config = GameConfig::new(players, vec![], seed);
-        for card in stack {
-            if config.kingdom.len() == 10 {
-                break;
-            }
-            if card.def().kingdom {
-                config.kingdom.push(card);
-            } else if config.landscapes.len() < 2
-                && !(card.kind() == Kind::Way
-                    && config.landscapes.iter().any(|l| l.kind() == Kind::Way))
+        let mut config = GameConfig::new(players, rules.kingdom.clone(), seed);
+        config.landscapes = rules.landscapes.clone();
+        let free = |c: &Card, config: &GameConfig| {
+            !rules.banned.contains(c)
+                && !config.kingdom.contains(c)
+                && !config.landscapes.contains(c)
+        };
+        for &set in &rules.from_sets {
+            if let Some(&card) = stack
+                .iter()
+                .find(|c| c.def().kingdom && c.set() == set && free(c, &config))
             {
-                config.landscapes.push(card);
+                config.kingdom.push(card);
             }
         }
+        let slots = rules.slots.as_deref().unwrap_or(&DEFAULT_SLOTS);
+        let mut dealt: Vec<Card> = vec![];
+        for card in stack {
+            let full = config.kingdom.len() >= KINGDOM_PILES;
+            if full && assign(&dealt, slots, true) {
+                break;
+            }
+            if !rules.sets.contains(&card.set()) || !free(&card, &config) || dealt.contains(&card) {
+                continue;
+            }
+            if card.def().kingdom {
+                if !full {
+                    config.kingdom.push(card);
+                }
+            } else {
+                dealt.push(card);
+                if !assign(&dealt, slots, false) {
+                    dealt.pop();
+                }
+            }
+        }
+        config.landscapes.extend(dealt);
         config
     }
+}
+
+/// Kingdom piles in a dealt kingdom.
+pub const KINGDOM_PILES: usize = 10;
+
+/// The landscapes a slot can be dealt.
+pub const SLOT_KINDS: [Kind; 5] = [
+    Kind::Event,
+    Kind::Landmark,
+    Kind::Project,
+    Kind::Way,
+    Kind::Trait,
+];
+
+/// A slot's `kinds` taking every landscape a slot can.
+pub const ANY_SLOT_KIND: u8 = (1 << SLOT_KINDS.len()) - 1;
+
+/// The rulebook's two slots: any landscape, then any but a Way; either may stay empty.
+/// Together: up to two landscapes, at most one of them a Way.
+pub const DEFAULT_SLOTS: [LandscapeSlot; 2] = [
+    LandscapeSlot {
+        kinds: ANY_SLOT_KIND,
+        optional: true,
+    },
+    LandscapeSlot {
+        kinds: ANY_SLOT_KIND & !(1 << 3),
+        optional: true,
+    },
+];
+
+/// What a kingdom is dealt from and must contain.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DealRules {
+    /// Sets the random piles and landscapes come from.
+    pub sets: Vec<Set>,
+    /// Kingdom piles the kingdom must have.
+    pub kingdom: Vec<Card>,
+    /// One random Kingdom pile from each of these sets, whether or not it is in `sets`.
+    pub from_sets: Vec<Set>,
+    /// Landscapes the game must have, besides the slots.
+    pub landscapes: Vec<Card>,
+    /// Slots for random landscapes; `None` is [`DEFAULT_SLOTS`].
+    pub slots: Option<Vec<LandscapeSlot>>,
+    /// Never dealt at random.
+    pub banned: Vec<Card>,
+}
+
+/// A place for one random landscape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LandscapeSlot {
+    /// Bit `i` set: it takes `SLOT_KINDS[i]`.
+    pub kinds: u8,
+    /// It may stay empty; otherwise the deal goes on until it is filled.
+    pub optional: bool,
+}
+
+impl LandscapeSlot {
+    pub fn takes(&self, kind: Kind) -> bool {
+        SLOT_KINDS
+            .iter()
+            .position(|&k| k == kind)
+            .is_some_and(|i| self.kinds & (1 << i) != 0)
+    }
+}
+
+/// Whether `cards` go to different slots that take them, leaving no slot that must be
+/// filled empty when `fill` is set.
+fn assign(cards: &[Card], slots: &[LandscapeSlot], fill: bool) -> bool {
+    fn go(cards: &[Card], slots: &[LandscapeSlot], used: &mut Vec<bool>, fill: bool) -> bool {
+        let Some((first, rest)) = cards.split_first() else {
+            return !fill || slots.iter().zip(used.iter()).all(|(s, &u)| u || s.optional);
+        };
+        for i in 0..slots.len() {
+            if !used[i] && slots[i].takes(first.kind()) {
+                used[i] = true;
+                if go(rest, slots, used, fill) {
+                    return true;
+                }
+                used[i] = false;
+            }
+        }
+        false
+    }
+    go(cards, slots, &mut vec![false; slots.len()], fill)
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

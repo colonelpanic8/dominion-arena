@@ -81,6 +81,40 @@ resumes them on startup. Finished games are deleted on a later startup once they
 week old. One server uses the directory at a time. `--ephemeral` keeps games in memory
 only.
 
+The same server has a JSON API under `/api` for browser clients, which act for a seat
+the way MCP agents do (types in `crates/dominion-protocol`). A seat authenticates with
+its token as `Authorization: Bearer <token>` (or `?token=` on the event stream). Errors
+are `{"error": "..."}` with 400 (bad request), 401 (missing or wrong token), 404 (unknown
+game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) or 500.
+
+| Route | Body | Returns |
+| --- | --- | --- |
+| `GET /api/cards` | | every card-shaped object as printed |
+| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume, bannedCards}` |
+| `PUT /api/settings/banned-cards` | `["Witch", ...]` | the settings, after writing `banned_cards` to the settings file (409 when the server has none) |
+| `GET /api/games` | | the games, as `list_games` gives them |
+| `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
+| `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
+| `GET /api/seat` | | `{gameId, seat, name}` of the token |
+| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them |
+| `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
+| `GET /api/games/{id}/events` | | server-sent `change` events with `{version}`: on connect and after every change |
+
+`POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
+and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
+`sets` (default: every released set) shuffled into one stack fill the kingdom up to ten
+piles, a landscape going to a free slot that takes its kind (`slots`: `{kinds: ["event",
+"landmark", "project", "way", "trait"], optional}`; the default is the rulebook's two: any
+kind, then any but Way, both optional; a slot that isn't optional is always filled). Cards
+in `banned` are never dealt. Creating a game with the result's `kingdom`, `landscapes` and
+`seed` sets up exactly that kingdom, and `sets` alone with a seed deals what
+`POST /api/games` deals from those sets with that seed.
+
+`/assets/` serves the asset cache (`assets_dir`), then the web client's own bundled files
+(`web_dir/assets`), and every other path the built web client (`web_dir`, falling back to
+its `index.html`); without a cache, `/assets/manifest.json` is 204 No Content. These
+routes accept the same Host headers as `/mcp`.
+
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 
 ```toml
@@ -90,6 +124,16 @@ allowed_hosts = []             # serve: extra Host header values to accept
 persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: delete finished games this old at startup
+assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
+web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
+web_animations = true          # serve: the web client shows cards moving
+web_animation_speed = "standard"  # serve: slow, standard, sprightly, swift, speedy or none (dominion.games' Animation Type)
+web_move_kingdom = true        # serve: on other players' turns the kingdom drops and their play row goes above it
+web_confirm_single = false     # serve: a single card to trash, discard, exile or topdeck waits for a button
+web_background = "inheritance" # serve: the painting under the table, from the asset cache's images/large ("" for none)
+web_sounds = true              # serve: the web client plays dominion.games' sounds (from the asset cache)
+web_volume = 0.5               # serve: their volume, 0.0 to 1.0
+banned_cards = []              # serve: dominion.games' Banned cards list (the web client's Cardlists tab writes it)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
@@ -102,6 +146,72 @@ numbers, optionally followed by `way none` or `way <Way>`, or `name <card>`. It 
 server restart: when it loses the server it keeps trying to reach it for
 `reconnect_seconds` (`--reconnect`), then gives up. `dominion card NAME` prints a card's
 text.
+
+`dominion assets sync` downloads the card art, frame templates, icons, fonts and sounds
+of [dominion.games](https://dominion.games) into a local cache (`assets_dir`, or `--dir`)
+and writes `manifest.json` there, which maps every card to its art and templates and
+lists what couldn't be found. It reads the card tables out of the site's current client,
+skips files it already has (`--force` fetches them again) and prints what is covered;
+`--dry-run` only reports what it would fetch. `dominion assets path` prints the
+directory. These assets belong to their owners: they are only cached locally for
+personal use and are never part of this repository or its package.
+
+## The web client
+
+`crates/dominion-web` is a browser client (Dioxus, compiled to wasm) for the same
+server: a lobby to set up games and take seats, and a game page that shows a seat's view
+and answers its decisions.
+
+The lobby is laid out and behaves like dominion.games': a tab column on the left
+(Automatch, New Table / My Table, Tables, Cardlists) over its painting. **My Table** holds
+a table's rules until Ready starts a game: the ten Kingdom slots (cards you require, a
+random card from one set, or left to chance) with the kingdom written out under them,
+the landscape slots (each set to the kinds it may be dealt, or emptied), the expansions
+random cards come from, Colonies and Shelters (Random, Yes, No), whether the Banned
+cards list applies, a random seed and a turn limit, and the players. "Select Kingdom
+Cards" opens dominion.games' card selector: the expansions, a search (Enter adds a typed
+list, `smithy, witch, Colonies` as the table writes it), Replay Last Kingdom, and
+Randomize, which deals the random slots at once so the kingdom can be changed before
+Ready. Ready has the server deal the rest (`POST /api/deal`) and creates the game. Where
+dominion.games seats bots, a seat here is for an agent (it joins over MCP with its
+token), for another browser (an empty slot: the seat link), or for this browser too (hot
+seat); the seats played elsewhere get their token, link and `join_game` line beside the
+players. **Automatch**'s Bot Game starts a table at once with 1 to 3 agent seats.
+**Tables** lists this server's games; **Cardlists** edits the Banned cards list, kept in
+the config file. After a game the score page has the table's Ready (another game with
+the same rules), Edit Table and Leave Table, as dominion.games has.
+
+The game page is a table laid out and behaving like dominion.games': player bars and
+the basic piles on the left, the kingdom sorted by cost with the turn player's play row
+under it, the status bar with the prompt and the phase's end button, a row of named
+buttons above it, your hand at the bottom, and the log on the right in dominion.games'
+wording. Cards are clicked where they lie, their borders coloured by what a click does;
+revealed or looked-at cards open in a window; right-click studies a card; hovering a
+tab opens the trash or a mat. Enter confirms, Escape clears, E ends a phase and T
+autoplays Treasures. Cards move as dominion.games moves them, at its Animation Type
+speeds (`web_animation_speed`, `web_animations`; none with `prefers-reduced-motion`),
+and its sounds play when it plays them: your turn coming back to you and the end of the
+game (`web_sounds`, `web_volume`, and a mute toggle on the page for the session). A Plain toggle shows the same game as text
+and buttons.
+
+The client keeps the seat tokens it holds in the browser's localStorage; a seat link
+`/game/<id>#token=<token>` opens a seat in another browser. Cards are drawn like
+dominion.games' own from the asset cache (`dominion assets sync`), which the client only
+references by URL; without a cache they are drawn in CSS and the table is silent.
+`/gallery` shows every card at each size.
+
+```sh
+just web-build                  # release build into target/web-client
+just web-serve --port 7317      # build, then: dominion serve --web-dir target/web-client ...
+just web-dev 127.0.0.1:7317     # dx dev server with hot reload, proxying /api and the
+                                # asset cache to a dominion server at that address
+```
+
+The flake builds it too: `nix build .#web` is the same bundle as `just web-build`, and
+`nix run .#dominion-with-web -- serve` runs `dominion` with it. That wrapper sets
+`DOMINION_WEB_DIR` to the packaged client, which `serve` uses only when neither
+`--web-dir` nor `web_dir` says otherwise. Neither package contains the asset cache: fill
+it with `dominion assets sync`.
 
 ## Development
 

@@ -1,10 +1,11 @@
 use crate::project::{self, Context};
 use crate::text;
-use crate::types::{AgentView, Answer};
 use dominion_engine::{
     Card, DecisionKind, Game, GameConfig, Kind, Knowledge, Opt, PlayerId, Purpose, Response,
     SetupError,
 };
+use dominion_protocol::api::{PlayerTable, TableExtras};
+use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -143,12 +144,14 @@ impl Table {
         self.game.pending().map(|_| format!("d{}", self.seq))
     }
 
-    fn context(&self, seat: PlayerId) -> (Option<String>, usize) {
-        (self.decision_id(), self.log_from[seat.index()])
+    pub fn view(&self, seat: PlayerId) -> AgentView {
+        self.view_from(seat, self.log_from[seat.index()])
     }
 
-    pub fn view(&self, seat: PlayerId) -> AgentView {
-        let (id, log_from) = self.context(seat);
+    /// `seat`'s view with the log from sequence number `log_from` on, instead of from
+    /// the seat's last answer.
+    pub fn view_from(&self, seat: PlayerId, log_from: usize) -> AgentView {
+        let id = self.decision_id();
         let known = self.knowledge.known(&self.game, seat);
         project::view(
             &self.game,
@@ -161,6 +164,23 @@ impl Table {
                 log_from,
             },
         )
+    }
+
+    /// What a graphical table shows beside `seat`'s view (play order, discard tops),
+    /// read through its engine view so that only what it may see is named.
+    pub fn extras(&self, seat: PlayerId) -> TableExtras {
+        let view = self.game.view(seat);
+        let name = |id| view.card(id).map(|c| c.name().to_string());
+        TableExtras {
+            players: view
+                .players()
+                .map(|p| PlayerTable {
+                    seat: p.id().0,
+                    in_play: p.in_play().iter().filter_map(|&id| name(id)).collect(),
+                    discard_top: p.discard_top().and_then(name),
+                })
+                .collect(),
+        }
     }
 
     /// The compact text rendering of `seat`'s view.

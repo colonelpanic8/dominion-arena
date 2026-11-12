@@ -35,6 +35,9 @@ pub use game::{
 };
 pub use ids::{CardId, PileId, PlayerId};
 pub use knowledge::{CardCount, GroupView, Knowledge, KnownCards, UncertainCards, ZoneKnowledge};
-pub use setup::{GameConfig, SetupError};
+pub use setup::{
+    ANY_SLOT_KIND, DEFAULT_SLOTS, DealRules, GameConfig, KINGDOM_PILES, LandscapeSlot, SLOT_KINDS,
+    SetupError,
+};
 pub use trace::Trace;
 pub use trigger::{Occasion, Trigger};
