@@ -412,12 +412,12 @@ fn play_checked(table: &mut Table, rng: &mut StdRng, cards: &CardDb, stats: &mut
             );
         }
 
-        if let Some(run) = TreasureRun::start(&view, cards)
+        if let Some(mut run) = TreasureRun::start(&view, cards)
             && rng.random_bool(0.5)
         {
             stats.treasure_runs += 1;
             let mut v = view;
-            while let Some(a) = run.next(&v, cards) {
+            while let Some(a) = run.take(&v, cards) {
                 table.resolve(seat, &a).unwrap();
                 table.answer(seat, &a).unwrap();
                 stats.treasure_plays += 1;
@@ -516,10 +516,10 @@ fn play_treasures_stops_at_a_question_and_when_none_are_left() {
         let mut rng = StdRng::seed_from_u64(seed);
         while let Some(seat) = table.deciding() {
             let view = table.view(seat);
-            if let Some(run) = TreasureRun::start(&view, &cards) {
+            if let Some(mut run) = TreasureRun::start(&view, &cards) {
                 start_view.get_or_insert_with(|| view.clone());
                 let mut v = view;
-                while let Some(a) = run.next(&v, &cards) {
+                while let Some(a) = run.take(&v, &cards) {
                     table.answer(seat, &a).unwrap();
                     v = table.view(seat);
                 }
@@ -565,6 +565,55 @@ fn play_treasures_stops_at_a_question_and_when_none_are_left() {
             .unwrap()
             .types
             .contains(&"Treasure".into())
+    );
+}
+
+#[test]
+fn play_treasures_leaves_the_treasures_a_figurine_draws() {
+    let cards = card_db();
+    let (mut runs, mut drawn_left) = (0, 0);
+    for seed in 0..10 {
+        let c = config(&["Figurine", "Village"], 2, seed);
+        let mut table = Table::new("g", c, vec![]).unwrap();
+        let mut rng = StdRng::seed_from_u64(seed);
+        while let Some(seat) = table.deciding() {
+            let view = table.view(seat);
+            let treasures = |v: &AgentView| -> Vec<String> {
+                let Some(d) = v.decision.as_ref().filter(|d| d.kind == "turn") else {
+                    return vec![];
+                };
+                let mut names: Vec<String> = (interaction(v, d, &cards).treasures.iter())
+                    .map(|&i| option_card(d, i).card.clone().unwrap())
+                    .collect();
+                names.sort();
+                names
+            };
+            if let Some(mut run) = TreasureRun::start(&view, &cards) {
+                runs += 1;
+                let mut offered = treasures(&view);
+                let mut v = view;
+                while let Some(a) = run.take(&v, &cards) {
+                    let d = v.decision.as_ref().unwrap();
+                    let name = option_card(d, a.indices.clone().unwrap()[0]).card.clone();
+                    let i = offered.iter().position(|n| Some(n) == name.as_ref());
+                    offered.remove(i.expect("plays only what was offered"));
+                    table.answer(seat, &a).unwrap();
+                    v = table.view(seat);
+                }
+                if v.decision.as_ref().is_some_and(|d| d.kind == "turn") {
+                    assert!(offered.is_empty(), "{offered:?} not played");
+                    drawn_left += treasures(&v).len();
+                }
+                continue;
+            }
+            let sel = steer(&view, &cards, &["Figurine"], &mut rng);
+            let d = view.decision.as_ref().unwrap();
+            table.answer(seat, &sel.answer(d).unwrap()).unwrap();
+        }
+    }
+    assert!(
+        runs > 0 && drawn_left > 0,
+        "runs {runs}, drawn left {drawn_left}"
     );
 }
 

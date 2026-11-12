@@ -2,7 +2,9 @@ use dominion_agent::{
     AgentDecision, AgentOption, Answer, AnswerError, Answered, JSON_SCHEMA, Table, WAY_HINT,
     WayChoice, glossary_for, text,
 };
-use dominion_engine::{Card, GameConfig, Kind, PlayerId, Set};
+use dominion_engine::{
+    Card, CardId, DecisionKind, GameConfig, Kind, Move, Phase, PlayerId, Set, Types,
+};
 use jsonschema::Validator;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -1545,4 +1547,73 @@ fn the_way_hint_does_not_depend_on_cards_the_seat_cannot_see() {
         }
     }
     panic!("no game had Throne Room and Jester in hand together");
+}
+
+/// The Treasures `seat`'s open Buy phase move offers to play.
+fn treasures_offered(t: &Table, seat: PlayerId) -> Vec<CardId> {
+    let g = t.game();
+    match g.pending() {
+        Some(d) if d.player == seat => match &d.kind {
+            DecisionKind::Turn {
+                phase: Phase::Buy,
+                moves,
+            } => (moves.iter())
+                .filter_map(|m| match *m {
+                    Move::Play(c) if g.is(c, Types::TREASURE) => Some(c),
+                    _ => None,
+                })
+                .collect(),
+            _ => vec![],
+        },
+        _ => vec![],
+    }
+}
+
+#[test]
+fn play_treasures_plays_only_what_was_offered_when_asked() {
+    let (mut runs, mut drawn_left) = (0, 0);
+    for seed in 0..10 {
+        let mut t = table(&[Card::Figurine], seed, &[]);
+        for _ in 0..1000 {
+            let Some(seat) = t.deciding() else { break };
+            let d = t.view(seat).decision.unwrap();
+            assert!(matches!(
+                t.play_treasures(seat, "d0"),
+                Err(AnswerError::StaleDecision { .. })
+            ));
+            let before = treasures_offered(&t, seat);
+            if before.is_empty() {
+                assert!(matches!(
+                    t.play_treasures(seat, &d.id),
+                    Err(AnswerError::Invalid(_))
+                ));
+            } else {
+                runs += 1;
+                let played = t.play_treasures(seat, &d.id).unwrap();
+                assert_eq!(played as usize, before.len());
+                let after = treasures_offered(&t, seat);
+                assert!(after.iter().all(|c| !before.contains(c)), "{after:?}");
+                drawn_left += after.len();
+                let mut back = t.clone();
+                assert!(back.undo(seat), "one undo takes the run back");
+                assert_eq!(treasures_offered(&back, seat), before);
+                continue;
+            }
+            let answer = if d.kind != "turn" {
+                first(&d)
+            } else if seat.0 != 0 {
+                pick(&d, |o| o.action == "end-phase").unwrap()
+            } else {
+                pick(&d, |o| o.label.starts_with("Buy Figurine"))
+                    .or_else(|| pick(&d, |o| o.label.starts_with("Buy Silver")))
+                    .or_else(|| pick(&d, |o| o.action == "end-phase"))
+                    .unwrap()
+            };
+            t.answer(seat, &answer).unwrap();
+        }
+    }
+    assert!(
+        runs > 0 && drawn_left > 0,
+        "runs {runs}, drawn left {drawn_left}"
+    );
 }

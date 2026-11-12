@@ -78,6 +78,16 @@ pub struct AnswerParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct PlayTreasuresParams {
+    pub token: Option<String>,
+    /// The open decision's id, from the view: a Buy phase move offering Treasures.
+    pub decision_id: String,
+    #[serde(default)]
+    pub format: Format,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CardParams {
     pub name: String,
 }
@@ -268,6 +278,31 @@ impl Session {
         })
     }
 
+    #[tool(
+        description = "Autoplay Treasures: in a Buy phase move, play the Treasures it offers one after another, instead of answering once per Treasure. Plays only the Treasures offered when called (not ones drawn meanwhile, as by Figurine), and stops early when you are asked anything else (a Treasure's own question). Returns your next view."
+    )]
+    async fn play_treasures(
+        &self,
+        Parameters(p): Parameters<PlayTreasuresParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        Ok(match self.hub.play_treasures(&seat, &p.decision_id) {
+            Ok(played) => {
+                let mut result = self.view_of(&seat, p.format);
+                let note = format!(
+                    "Played {}.",
+                    dominion_engine::amount(played, "Treasure", "Treasures")
+                );
+                result.content.insert(0, ContentBlock::text(note));
+                result
+            }
+            Err(e) => failure(format!("rejected: {e}")),
+        })
+    }
+
     #[tool(description = "A card's official text, types, cost and set, by name.")]
     async fn card(
         &self,
@@ -321,7 +356,7 @@ answer. (join_game binds a seat to this MCP session so later calls may leave the
 out, but only until the session ends: keep the token.) Loop: \
 wait_for_decision, read the view, then answer the decision with option indices (in order \
 when the decision is ordered, or `name` when it says any card may be named; `way` answers \
-a Way question in advance). Views are \
+a Way question in advance; play_treasures plays all your Treasures in one call). Views are \
 dominion/agent-view@2: the JSON is the structured content, the text rendering the text \
 content."
 )]

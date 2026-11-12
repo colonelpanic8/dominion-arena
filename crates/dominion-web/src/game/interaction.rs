@@ -207,60 +207,103 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
 
 /// "Autoplay Treasures" (or the "All" chip on a hand stack): a run of answers, each
 /// playing one Treasure (or one copy of the card), for as long as the seat that started
-/// it is asked for a move in the same phase with one left.
+/// it is asked for a move in the same phase with one left. It plays only what was
+/// offered when it started: not the cards a Figurine draws.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreasureRun {
     seat: u8,
     phase: String,
     card: Option<String>,
+    /// How many copies of each card it may still play.
+    left: Vec<(String, u32)>,
 }
 
 impl TreasureRun {
     /// A run from this view, if its decision offers Treasures to play.
     pub fn start(view: &AgentView, cards: &CardDb) -> Option<TreasureRun> {
-        let run = TreasureRun {
-            seat: view.seat?,
-            phase: view.decision.as_ref()?.phase.clone()?,
-            card: None,
-        };
-        run.next(view, cards).is_some().then_some(run)
+        TreasureRun::begin(view, cards, None)
     }
 
     /// A run playing every copy of `card` in the hand.
     pub fn start_card(view: &AgentView, cards: &CardDb, card: &str) -> Option<TreasureRun> {
-        let run = TreasureRun {
-            seat: view.seat?,
-            phase: view.decision.as_ref()?.phase.clone()?,
-            card: Some(card.to_string()),
-        };
-        run.next(view, cards).is_some().then_some(run)
+        TreasureRun::begin(view, cards, Some(card.to_string()))
     }
 
-    /// The answer to send next, or none when the run is over: the view is another
-    /// seat's, its decision isn't a move in the run's phase (a card asked something,
-    /// or the phase ended), or nothing is left to play.
-    pub fn next(&self, view: &AgentView, cards: &CardDb) -> Option<Answer> {
-        let d = view.decision.as_ref()?;
+    fn begin(view: &AgentView, cards: &CardDb, card: Option<String>) -> Option<TreasureRun> {
+        let mut run = TreasureRun {
+            seat: view.seat?,
+            phase: view.decision.as_ref()?.phase.clone()?,
+            card,
+            left: vec![],
+        };
+        for o in run.offered(view, cards) {
+            let name = o.card.clone()?;
+            match run.left.iter_mut().find(|(n, _)| *n == name) {
+                Some((_, n)) => *n += 1,
+                None => run.left.push((name, 1)),
+            }
+        }
+        (!run.left.is_empty()).then_some(run)
+    }
+
+    /// The options of the view's decision the run would play, ignoring what it has left:
+    /// none when the view is another seat's or its decision isn't a move in the run's
+    /// phase (a card asked something, or the phase ended).
+    fn offered<'a>(&self, view: &'a AgentView, cards: &CardDb) -> Vec<&'a AgentOption> {
+        let Some(d) = view.decision.as_ref() else {
+            return vec![];
+        };
         if view.seat != Some(self.seat)
             || d.kind != "turn"
             || d.phase.as_deref() != Some(self.phase.as_str())
         {
-            return None;
+            return vec![];
         }
-        let index = match &self.card {
-            None => *interaction(view, d, cards).treasures.first()?,
-            Some(card) => {
-                d.options
-                    .iter()
-                    .find(|o| {
-                        o.action == "play"
-                            && o.zone.as_deref() == Some("hand")
-                            && o.card.as_deref() == Some(card)
-                    })?
-                    .index
-            }
-        };
-        Some(Answer::indices(d.id.clone(), vec![index]))
+        match &self.card {
+            None => interaction(view, d, cards)
+                .treasures
+                .iter()
+                .filter_map(|&i| d.options.iter().find(|o| o.index == i))
+                .collect(),
+            Some(card) => d
+                .options
+                .iter()
+                .filter(|o| {
+                    o.action == "play"
+                        && o.zone.as_deref() == Some("hand")
+                        && o.card.as_deref() == Some(card)
+                })
+                .collect(),
+        }
+    }
+
+    fn pick<'a>(&self, view: &'a AgentView, cards: &CardDb) -> Option<&'a AgentOption> {
+        self.offered(view, cards).into_iter().find(|o| {
+            self.left
+                .iter()
+                .any(|(n, k)| *k > 0 && o.card.as_deref() == Some(n))
+        })
+    }
+
+    /// The answer to send next, or none when the run is over.
+    pub fn next(&self, view: &AgentView, cards: &CardDb) -> Option<Answer> {
+        self.clone().take(view, cards)
+    }
+
+    /// [`TreasureRun::next`], counting the card it plays as played.
+    pub fn take(&mut self, view: &AgentView, cards: &CardDb) -> Option<Answer> {
+        let o = self.pick(view, cards)?;
+        if let Some((_, k)) = self
+            .left
+            .iter_mut()
+            .find(|(n, _)| o.card.as_deref() == Some(n))
+        {
+            *k -= 1;
+        }
+        Some(Answer::indices(
+            view.decision.as_ref()?.id.clone(),
+            vec![o.index],
+        ))
     }
 }
 

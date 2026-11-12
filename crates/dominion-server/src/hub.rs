@@ -643,6 +643,19 @@ impl Hub {
         Ok(())
     }
 
+    /// Plays the Treasures `seat` could play in its open Buy phase decision `decision`
+    /// ([`Table::play_treasures`]). How many it played.
+    pub fn play_treasures(&self, seat: &Seat, decision: &str) -> Result<u32, HubError> {
+        let game = self.game(&seat.game)?;
+        let mut table = lock(&game.table);
+        let mut next = table.clone();
+        let played = engine(|| next.play_treasures(seat.seat, decision))??;
+        *table = next;
+        self.save(&table, &game.tokens);
+        game.version.send_modify(|v| *v += 1);
+        Ok(played)
+    }
+
     /// Waits until `seat` must decide or the game is over, for at most `timeout`. Returns
     /// whether it is so.
     pub async fn wait(&self, seat: &Seat, timeout: Duration) -> Result<bool, HubError> {

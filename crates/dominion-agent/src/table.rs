@@ -1,8 +1,8 @@
 use crate::project::{self, Context};
 use crate::text;
 use dominion_engine::{
-    Card, CardId, DecisionKind, Game, GameConfig, Kind, Knowledge, Move, Opt, PlayerId, Purpose,
-    Response, SetupError,
+    Card, CardId, DecisionKind, Game, GameConfig, Kind, Knowledge, Move, Opt, Phase, PlayerId,
+    Purpose, Response, SetupError, Types,
 };
 use dominion_protocol::api::{PlayerTable, TableExtras};
 use dominion_protocol::{AgentView, Answer};
@@ -371,6 +371,79 @@ impl Table {
         let answered = self.answer_ways(seat)?;
         self.undo = Some((seat, Arc::new(before)));
         Ok(answered)
+    }
+
+    /// "Autoplay Treasures": plays, one after another, the Treasures `seat` could play in
+    /// the open Buy phase decision `decision`, while the seat is asked for a move in that
+    /// phase. Cards that became playable meanwhile (drawn by Figurine) are left alone.
+    /// One undo takes the whole run back. Returns how many were played.
+    pub fn play_treasures(&mut self, seat: PlayerId, decision: &str) -> Result<u32, AnswerError> {
+        let Some(d) = self.game.pending() else {
+            return Err(AnswerError::GameOver);
+        };
+        let open = format!("d{}", self.seq);
+        if d.player != seat {
+            return Err(AnswerError::NotYourDecision {
+                seat,
+                deciding: d.player,
+                open,
+            });
+        }
+        if decision != open {
+            return Err(AnswerError::StaleDecision {
+                given: decision.to_string(),
+                open,
+            });
+        }
+        let mut left = self.treasure_plays(seat);
+        if left.is_empty() {
+            return Err(AnswerError::Invalid(
+                "no Treasures to play: the decision is not a Buy phase move offering one".into(),
+            ));
+        }
+        let mut before = self.clone();
+        if !before.can_undo(seat) {
+            before.undo = None;
+        }
+        let log_len = self.game.log().len();
+        let mut played = 0;
+        while let Some(card) = self
+            .treasure_plays(seat)
+            .into_iter()
+            .find(|c| left.contains(c))
+        {
+            left.retain(|&c| c != card);
+            self.game_respond(Response::Move(Move::Play(card)))?;
+            self.answer_ways(seat)?;
+            played += 1;
+        }
+        self.log_from[seat.index()] = log_len;
+        let undos = self.undone_by.len();
+        if let Some(seen) = self.undos_seen.get_mut(seat.index()) {
+            *seen = undos;
+        }
+        self.undo = Some((seat, Arc::new(before)));
+        Ok(played)
+    }
+
+    /// The Treasures `seat`'s open Buy phase decision offers to play.
+    fn treasure_plays(&self, seat: PlayerId) -> Vec<CardId> {
+        match self.game.pending() {
+            Some(d) if d.player == seat => match &d.kind {
+                DecisionKind::Turn {
+                    phase: Phase::Buy,
+                    moves,
+                } => moves
+                    .iter()
+                    .filter_map(|m| match *m {
+                        Move::Play(c) if self.game.is(c, Types::TREASURE) => Some(c),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => vec![],
+            },
+            _ => vec![],
+        }
     }
 
     /// Answers the Way questions the pending pre-answers cover, dropping each once its
