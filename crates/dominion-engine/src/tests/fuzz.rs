@@ -5,8 +5,8 @@
 //! (one seed, with details), `FUZZ_THREADS`, `FUZZ_STATS` (coverage), `FUZZ_COVER` (uses
 //! per card), `FUZZ_AUDIT` (print the review-by-hand lists), `FUZZ_KEYS` (every game an
 //! oracle fired in), `FUZZ_VIEWS` (percentage of decisions at which a view is checked
-//! against hidden cards being swapped), `FUZZ_LOG` and `FUZZ_TRACE` (with `FUZZ_ONLY`: the
-//! log, and card moves, decisions and answers).
+//! against hidden cards being swapped, and twin worlds are played on), `FUZZ_LOG` and
+//! `FUZZ_TRACE` (with `FUZZ_ONLY`: the log, and card moves, decisions and answers).
 
 use super::*;
 use crate::frame::Frame;
@@ -3685,6 +3685,11 @@ fn drive(seed: u64, mut plan: Plan, report: &mut Report) {
             check_view_noninterference(&g, &k, &mut rng, flags);
             if let Err(error) = super::knowledge::check_revealed_order_twins(&g, &k, &mut rng) {
                 flags.bug("knowledge-depends-on-private-revealed-order", || {
+                    format!("{error}; {}", ctx(&g))
+                });
+            }
+            if let Err(error) = super::knowledge::check_hidden_twins(&g, &k, &mut rng) {
+                flags.bug("knowledge-or-log-depends-on-hidden-cards", || {
                     format!("{error}; {}", ctx(&g))
                 });
             }

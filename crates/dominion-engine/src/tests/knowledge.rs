@@ -1475,15 +1475,27 @@ fn translate(a: &Game, b: &Game, r: &Response) -> Option<Response> {
 /// log and the next decision don't show: every card movement (without the card, unless
 /// they see it) and the cards they looked at.
 fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
-    // Names and choices are announced.
+    // Names, choices and moves are announced.
     let said = match &r {
         Response::Name(_) | Response::Options(_) | Response::Number(_) | Response::Pile(_) => {
             format!("{r:?}\n")
         }
+        Response::Move(Move::Play(c)) => format!("play {}\n", g.card(*c)),
+        Response::Move(m) => format!("{m:?}\n"),
         _ => String::new(),
     };
+    let since = g.log().len();
     g.respond(r).unwrap();
     let mut seen = vec![said; g.num_players()];
+    // Boons and Hexes are revealed and received with no card id.
+    for e in &g.log()[since..] {
+        if let Event::Revealed { card, .. } | Event::Received { card, .. } = e
+            && matches!(card.kind(), Kind::Boon | Kind::Hex)
+        {
+            seen.iter_mut()
+                .for_each(|out| out.push_str(&format!("{card}\n")));
+        }
+    }
     for entry in g.trace().unwrap_or_default() {
         match entry {
             Trace::Moved {
@@ -1521,6 +1533,11 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                     let _ = writeln!(seen[player.index()], "looked at {}", g.printed(*card));
                 }
             }
+            Trace::Shown { card, to: None } => {
+                for out in seen.iter_mut() {
+                    let _ = writeln!(out, "shown {}", g.printed(*card));
+                }
+            }
             Trace::Shown { card, to: Some(p) } => {
                 for (v, out) in seen.iter_mut().enumerate() {
                     let v = PlayerId(v as u8);
@@ -1553,6 +1570,26 @@ fn twins_agree(
                 continue;
             }
             if observation(&a.0, p, log_from) != observation(&b.0, p, log_from) {
+                // The log says no more than the table and the moves they watched (which
+                // of two public cards of one name moved is no news).
+                let log = |g: &Game| -> Vec<Event> {
+                    let mut log = g.log()[log_from.min(g.log().len())..].to_vec();
+                    for e in &mut log {
+                        if let Event::Moved { cards, .. } = e {
+                            cards.sort();
+                        }
+                    }
+                    log
+                };
+                if observation(&a.0, p, usize::MAX) == observation(&b.0, p, usize::MAX)
+                    && log(&a.0) != log(&b.0)
+                {
+                    return Err(format!(
+                        "{p} observed the same in both worlds but the log differs:\n{:?}\n{:?}\nAnswers since the split:\n{history}",
+                        log(&a.0),
+                        log(&b.0)
+                    ));
+                }
                 *same = false;
                 continue;
             }
@@ -1931,6 +1968,36 @@ fn looking_over_a_shuffle_preserves_known_cards_left_above_it() {
             theirs.uncertain
         );
     }
+}
+
+/// Twin worlds from the pending decision: one where the hidden future differs (how the
+/// next shuffles come out), or one where the deciding player answers otherwise. A player
+/// who observed the same in both must know the same, and read the same log.
+pub(super) fn check_hidden_twins(
+    g: &Game,
+    k: &Knowledge,
+    rng: &mut ChaCha8Rng,
+) -> Result<(), String> {
+    let Some(d) = g.pending() else { return Ok(()) };
+    let mut chaos = Chaos(ChaCha8Rng::seed_from_u64(rng.random()));
+    let mut a = (g.clone(), k.clone());
+    let mut b = a.clone();
+    b.0.rng = ChaCha8Rng::seed_from_u64(rng.random());
+    let mut same = vec![true; g.num_players()];
+    let (r, other) = (
+        chaos.decide(&g.view(d.player), d),
+        chaos.decide(&g.view(d.player), d),
+    );
+    if rng.random_bool(0.5) && other != r {
+        b = a.clone();
+        let sa = respond_traced(&mut a.0, &mut a.1, r);
+        let sb = respond_traced(&mut b.0, &mut b.1, other);
+        for (same, (x, y)) in same.iter_mut().zip(sa.iter().zip(&sb)) {
+            *same &= x == y;
+        }
+        same[d.player.index()] = false;
+    }
+    twins_agree(a, b, same, g.log().len(), rng)
 }
 
 pub(super) fn check_revealed_order_twins(
