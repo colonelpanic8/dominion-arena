@@ -105,6 +105,9 @@ pub struct Player {
     pub minus_card: bool,
     /// The -$1 token: the next time this player gets $, they get $1 less.
     pub minus_coin: bool,
+    /// The $ this player has got so far, on anyone's turn: "if it gave you +$".
+    #[serde(default)]
+    pub coins_got: u32,
     pub journey_face_up: bool,
     pub turns_taken: u32,
     /// How many of `turns_taken` were extra turns, which don't count for the tiebreaker.
@@ -1268,6 +1271,7 @@ impl Game {
         } else {
             n
         };
+        player.coins_got += n;
         if p == self.turn.player {
             self.turn.coins += n;
             self.note_bonus(p, 0, 0, n);

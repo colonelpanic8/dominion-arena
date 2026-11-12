@@ -424,7 +424,7 @@ impl SetRules for Rules {
     /// (Harbor Village). Way of the Chameleon's exchange (Menagerie's, which runs first)
     /// counts as what the step gave.
     fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, _flow: &mut Flow) {
-        if f.player != g.turn.player || g.turn.coins <= before.coins {
+        if g.player(f.player).coins_got <= before.coins {
             return;
         }
         let this = f.this.or_else(|| {
