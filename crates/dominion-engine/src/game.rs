@@ -154,10 +154,14 @@ pub struct Pile {
     /// Adventures tokens on this pile, by owner.
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
-    /// Not a pile any more (Divine Wind removed it from the game) or never one (a holder for
-    /// cards set aside in setup, like Riverboat's and Way of the Mouse's): lookups by name
-    /// skip it, so it is no card's pile.
+    /// Out of the game: Divine Wind removed it, or it is a `holder` nobody sees as a pile
+    /// (Riverboat's and Way of the Mouse's cards). Lookups by name skip it, so it is no
+    /// card's pile, though its cards are still its own for what marks it (`origin_pile`).
     pub removed: bool,
+    /// Never a pile by the rules: cards set aside in setup (the Black Market deck,
+    /// Riverboat's and Way of the Mouse's cards). No lookup by name finds it.
+    #[serde(default)]
+    pub holder: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
     /// How many times it became empty while in the Supply.
@@ -177,6 +181,7 @@ impl Pile {
             tokens: vec![],
             traits: vec![],
             removed: false,
+            holder: false,
             hidden: false,
             emptied: 0,
         }
@@ -891,7 +896,7 @@ impl Game {
     pub fn pile_of(&self, card: Card) -> Option<PileId> {
         self.piles
             .iter()
-            .position(|p| p.card == card && !p.removed)
+            .position(|p| p.card == card && !p.removed && !p.holder)
             .map(|i| PileId(i as u8))
     }
 
@@ -916,7 +921,7 @@ impl Game {
             let name = card.def().pile.unwrap_or(card);
             self.piles
                 .iter()
-                .position(|p| p.card == name)
+                .position(|p| p.card == name && !p.holder)
                 .map(|i| PileId(i as u8))
         })
     }

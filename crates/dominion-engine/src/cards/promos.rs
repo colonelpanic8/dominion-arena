@@ -211,6 +211,7 @@ impl SetRules for Rules {
         }
         let pile = setup::add_mixed_pile(g, Card::BlackMarket, &deck, false);
         g.piles[pile.index()].hidden = true;
+        g.piles[pile.index()].holder = true;
         g.ext.promos.black_market = Some(pile);
     }
 }

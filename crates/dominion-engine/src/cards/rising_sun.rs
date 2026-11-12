@@ -612,6 +612,7 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
     };
     let mut holder = Pile::new(card, false);
     holder.removed = true;
+    holder.holder = true;
     let pile = g.add_pile(holder);
     let id = g.create(card, Zone::Pile(pile));
     g.ext.rising_sun.riverboat = Some(id);
