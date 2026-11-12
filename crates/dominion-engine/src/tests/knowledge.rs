@@ -1717,3 +1717,42 @@ fn looking_over_a_shuffle_preserves_known_cards_left_above_it() {
         );
     }
 }
+
+pub(super) fn check_revealed_order_twins(
+    g: &Game,
+    k: &Knowledge,
+    rng: &mut ChaCha8Rng,
+) -> Result<(), String> {
+    let Some(d) = g.pending() else { return Ok(()) };
+    let DecisionKind::Cards {
+        candidates,
+        max,
+        ordered: true,
+        ..
+    } = &d.kind
+    else {
+        return Ok(());
+    };
+    if *max < 2
+        || !candidates.iter().any(|&c| {
+            matches!(g.zone(c), Zone::Looking(p)
+        if g.player(p).face_up.contains(&c))
+        })
+    {
+        return Ok(());
+    }
+    let cards: Vec<_> = candidates.iter().copied().take(*max).collect();
+    let mut reversed = cards.clone();
+    reversed.reverse();
+    let mut a = (g.clone(), k.clone());
+    let mut b = a.clone();
+    let sa = respond_traced(&mut a.0, &mut a.1, Response::Cards(cards));
+    let sb = respond_traced(&mut b.0, &mut b.1, Response::Cards(reversed));
+    let same = sa
+        .iter()
+        .zip(&sb)
+        .enumerate()
+        .map(|(v, (a, b))| PlayerId(v as u8) != d.player && a == b)
+        .collect();
+    twins_agree(a, b, same, g.log().len(), rng)
+}
