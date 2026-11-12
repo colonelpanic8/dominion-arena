@@ -14,7 +14,7 @@ use axum::routing::get;
 use dominion_agent::{Answer, AnswerError};
 use dominion_engine::{Card, Kind};
 use dominion_protocol::api::{
-    ApiError, CardCost, CardInfo, Change, NewGame, SeatInfo, SeatView, ViewQuery,
+    ApiError, CardCost, CardInfo, Change, NewGame, SeatInfo, SeatView, ViewQuery, WebSettings,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -36,6 +36,7 @@ pub fn router(
 ) -> Router {
     let api = Router::new()
         .route("/cards", get(cards))
+        .route("/settings", get(settings))
         .route("/games", get(list).post(create))
         .route("/seat", get(seat))
         .route("/games/{id}/view", get(view))
@@ -45,7 +46,11 @@ pub fn router(
         .method_not_allowed_fallback(|| async {
             Error(StatusCode::METHOD_NOT_ALLOWED, "method not allowed".into())
         })
-        .with_state(Api { hub, stop });
+        .with_state(Api {
+            hub,
+            stop,
+            web: Arc::new(options.web.clone()),
+        });
     // The web client's bundler puts its own (content-hashed) files under /assets too:
     // the cache answers first, then the client's.
     let dir = |d: &std::path::Path| ServeDir::new(d).append_index_html_on_directories(false);
@@ -126,6 +131,7 @@ async fn check_host(State(allowed): State<Arc<Vec<String>>>, req: Request, next:
 struct Api {
     hub: Arc<Hub>,
     stop: CancellationToken,
+    web: Arc<WebSettings>,
 }
 
 struct Error(StatusCode, String);
@@ -224,6 +230,10 @@ fn card_info(card: Card) -> CardInfo {
 
 async fn cards() -> axum::Json<Vec<CardInfo>> {
     axum::Json(Card::ALL.iter().map(|&c| card_info(c)).collect())
+}
+
+async fn settings(State(api): State<Api>) -> axum::Json<WebSettings> {
+    axum::Json((*api.web).clone())
 }
 
 async fn list(State(api): State<Api>) -> impl IntoResponse {

@@ -2,7 +2,9 @@
 
 use crate::platform::{self, encode};
 use dominion_protocol::Answer;
-use dominion_protocol::api::{CardInfo, Change, Created, GameSummary, NewGame, SeatInfo, SeatView};
+use dominion_protocol::api::{
+    CardInfo, Change, Created, GameSummary, NewGame, SeatInfo, SeatView, WebSettings,
+};
 use std::fmt;
 
 /// A failed call: the HTTP status (0 when the server couldn't be reached or answered
@@ -34,6 +36,10 @@ pub type Result<T> = std::result::Result<T, ApiError>;
 
 pub async fn cards() -> Result<Vec<CardInfo>> {
     imp::get("/api/cards", None).await
+}
+
+pub async fn settings() -> Result<WebSettings> {
+    imp::get("/api/settings", None).await
 }
 
 pub async fn games() -> Result<Vec<GameSummary>> {

@@ -81,6 +81,7 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | Route | Body | Returns |
 | --- | --- | --- |
 | `GET /api/cards` | | every card-shaped object as printed |
+| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationMs, webSounds, webVolume}` |
 | `GET /api/games` | | the games, as `list_games` gives them |
 | `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
@@ -104,6 +105,10 @@ state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_
 keep_finished_days = 7         # serve: delete finished games this old at startup
 assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
+web_animations = true          # serve: the web client shows cards moving
+web_animation_ms = 250         # serve: how long one card takes to move, in milliseconds
+web_sounds = true              # serve: the web client plays dominion.games' sounds (from the asset cache)
+web_volume = 0.5               # serve: their volume, 0.0 to 1.0
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away

@@ -1,6 +1,6 @@
 use dominion_agent::{AgentDecision, Answer};
 use dominion_engine::{Card, PlayerId};
-use dominion_protocol::api::{CardInfo, Created, GameSummary, SeatInfo, SeatView};
+use dominion_protocol::api::{CardInfo, Created, GameSummary, SeatInfo, SeatView, WebSettings};
 use dominion_server::Options;
 use dominion_server::client::Client;
 use dominion_server::hub::{Hub, Seat};
@@ -606,6 +606,27 @@ async fn without_a_client_the_root_says_where_the_mcp_endpoint_is() {
         server.get("/assets/images/x.png", None).await.status,
         StatusCode::NOT_FOUND
     );
+}
+
+#[tokio::test]
+async fn settings_serve_the_web_client_settings_without_a_token() {
+    let server = start_with(Options {
+        web: WebSettings {
+            web_animations: false,
+            web_animation_ms: 300,
+            web_sounds: true,
+            web_volume: 0.25,
+        },
+        ..Options::default()
+    })
+    .await;
+    let raw: Value = server.get("/api/settings", None).await.json();
+    assert_eq!(
+        raw,
+        json!({ "webAnimations": false, "webAnimationMs": 300, "webSounds": true, "webVolume": 0.25 })
+    );
+    let defaults: WebSettings = start().await.get("/api/settings", None).await.json();
+    assert_eq!(defaults, WebSettings::default());
 }
 
 #[tokio::test]

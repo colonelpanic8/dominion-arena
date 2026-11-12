@@ -4,6 +4,7 @@ use crate::api;
 use crate::cards::CardDb;
 use crate::platform;
 use dioxus::prelude::*;
+use dominion_protocol::api::WebSettings;
 use std::rc::Rc;
 
 const CSS: &str = include_str!("../assets/style.css");
@@ -28,6 +29,10 @@ pub enum Route {
 #[derive(Clone, Copy)]
 pub struct Cards(pub Signal<Rc<CardDb>>);
 
+/// The server's settings for the web client, the defaults until they have loaded.
+#[derive(Clone, Copy)]
+pub struct Settings(pub Signal<WebSettings>);
+
 /// The card data, subscribing the calling component to its arrival.
 pub fn use_cards() -> Rc<CardDb> {
     use_context::<Cards>().0.read().clone()
@@ -41,6 +46,18 @@ pub fn App() -> Element {
             match api::cards().await {
                 Ok(list) => {
                     cards.0.set(Rc::new(CardDb::new(list)));
+                    break;
+                }
+                Err(_) => platform::sleep(3000).await,
+            }
+        }
+    });
+    let mut settings = use_context_provider(|| Settings(Signal::new(WebSettings::default())));
+    use_future(move || async move {
+        for _ in 0..5 {
+            match api::settings().await {
+                Ok(s) => {
+                    settings.0.set(s);
                     break;
                 }
                 Err(_) => platform::sleep(3000).await,
