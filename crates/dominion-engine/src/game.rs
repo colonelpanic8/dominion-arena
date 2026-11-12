@@ -1249,15 +1249,29 @@ impl Game {
         let decision = self
             .pending
             .as_ref()
+            .cloned()
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
         let player = decision.player;
         if let Response::Name(card) = response {
             self.emit(Event::Named { player, card });
         }
+        self.mix_ordered_answer(&decision);
         self.pending = None;
         self.run(Input::Response(response));
         Ok(())
+    }
+
+    fn mix_ordered_answer(&mut self, decision: &Decision) {
+        if let DecisionKind::Cards {
+            candidates,
+            ordered: true,
+            ..
+        } = &decision.kind
+            && candidates.len() > 1
+        {
+            self.mixed(candidates.clone());
+        }
     }
 
     /// Resumes frames until one needs a real decision or the stack empties.
@@ -1282,17 +1296,8 @@ impl Game {
                         cards::modify_decision(self, f, &mut decision);
                     }
                     self.stack.push(frame);
-                    // Whatever the answer, the others can't follow the order.
-                    if let DecisionKind::Cards {
-                        candidates,
-                        ordered: true,
-                        ..
-                    } = &decision.kind
-                        && candidates.len() > 1
-                    {
-                        self.mixed(candidates.clone());
-                    }
                     if let Some(response) = decision.forced(self) {
+                        self.mix_ordered_answer(&decision);
                         input = Input::Response(response);
                     } else {
                         self.sync_log(None);

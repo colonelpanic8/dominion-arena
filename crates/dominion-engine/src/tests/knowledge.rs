@@ -1569,3 +1569,46 @@ fn traced_games_play_like_untraced_ones_and_survive_serialization() {
         }
     }
 }
+
+#[test]
+fn private_revealed_put_back_order_does_not_reach_other_seats() {
+    let mut g = setup(&[Card::Rabble, Card::Village]);
+    hand(&mut g, P0, &[Card::Rabble]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Village]);
+    deck(
+        &mut g,
+        P1,
+        &[
+            Card::Estate,
+            Card::Duchy,
+            Card::Province,
+            Card::Silver,
+            Card::Silver,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Rabble);
+    k.update(&mut g);
+    let revealed = candidates(&g);
+    assert_eq!(g.pending().unwrap().player, P1);
+    let world = |order: [usize; 3]| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &order.map(|i| revealed[i]));
+        k.update(&mut g);
+        while g.pending().unwrap().player == P0 {
+            end_phase(&mut g);
+            k.update(&mut g);
+        }
+        play(&mut g, Card::Village);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((ga, ka), (gb, kb)) = (world([0, 1, 2]), world([1, 2, 0]));
+    // The same public log, and P1 drew a different card in each world.
+    assert_eq!(ga.log(), gb.log());
+    assert_ne!(hand_kinds(&ga, P1), hand_kinds(&gb, P1));
+    let (a, b) = (ka.known(&ga, P0), kb.known(&gb, P0));
+    assert_eq!(a.zone(Zone::Hand(P1)), b.zone(Zone::Hand(P1)));
+    assert_eq!(a.zone(Zone::Deck(P1)), b.zone(Zone::Deck(P1)));
+}
