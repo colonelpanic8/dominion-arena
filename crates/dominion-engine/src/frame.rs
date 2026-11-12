@@ -82,6 +82,8 @@ pub(crate) enum Value {
     None,
     Cards(Vec<CardId>),
     Bool(bool),
+    /// A window's result: one flag per occasion.
+    Flags(Vec<bool>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,7 +136,7 @@ pub(crate) enum Frame {
     },
     Play(PlayFrame),
     Card(Box<CardFrame>),
-    Window(Window),
+    Window(Box<Window>),
     Draw {
         player: PlayerId,
         count: usize,
@@ -143,7 +145,8 @@ pub(crate) enum Frame {
         to: Option<usize>,
         drawn: Vec<CardId>,
         started: bool,
-        /// Whether it shuffled: once, before drawing, if the deck was short.
+        /// Whether it shuffled: once, before drawing, if the deck was short; a draw up to
+        /// a hand size each time the deck ran out.
         shuffled: bool,
     },
     /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
@@ -239,7 +242,8 @@ impl Frame {
         }
     }
 
-    /// Draw until `player` has `size` cards in hand, or has no more cards to draw.
+    /// Draw until `player` has `size` cards in hand, or has no more cards to draw, one
+    /// card at a time: it shuffles when the deck has run out and another card is needed.
     pub(crate) fn draw_to(player: PlayerId, size: usize) -> Frame {
         Frame::Draw {
             player,
@@ -430,29 +434,39 @@ impl Frame {
                     }
                     // Short of cards, the discard pile is shuffled under the deck first,
                     // and then they are all drawn; the token counts as a card for that.
-                    let needed = token
-                        + match to {
-                            Some(size) => size.saturating_sub(g.hand(p).len()),
-                            None => *count,
-                        };
+                    // A draw up to a hand size takes one card at a time.
+                    let needed = match to {
+                        Some(_) => 0,
+                        None => token + *count,
+                    };
                     let pl = &g.players[p.index()];
                     if pl.deck.len() < needed && !pl.discard.is_empty() {
                         *shuffled = true;
                         return Flow::Call(Frame::shuffle(p));
                     }
                 }
+                let had = drawn.len();
+                let mut shuffle = false;
                 while wants(g, *count, drawn.len()) {
-                    let Some(&top) = g.players[p.index()].deck.last() else {
+                    let pl = &g.players[p.index()];
+                    let Some(&top) = pl.deck.last() else {
+                        // One card at a time: the deck has run out and another card is
+                        // needed, even if an earlier shuffle left cards out.
+                        shuffle = to.is_some() && !pl.discard.is_empty();
                         break;
                     };
                     g.move_card(top, Zone::Hand(p), Pos::Top);
                     drawn.push(top);
                 }
-                if !drawn.is_empty() {
+                if drawn.len() > had {
                     g.emit(Event::Drew {
                         player: p,
-                        count: drawn.len(),
+                        count: drawn.len() - had,
                     });
+                }
+                if shuffle {
+                    *shuffled = true;
+                    return Flow::Call(Frame::shuffle(p));
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))
             }
@@ -570,25 +584,28 @@ impl Frame {
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
-                // Cards discarded together are all discarded before any reacts.
-                if *i == 0 {
-                    for &c in cards.iter() {
-                        g.show(c);
-                        g.move_card(c, Zone::Discard(*player), Pos::Top);
-                        g.emit(Event::Discarded {
-                            player: *player,
-                            card: g.card(c),
-                        });
-                    }
-                }
-                let Some(&c) = cards.get(*i) else {
+                // Cards discarded together are all discarded before any "when discarded"
+                // ability, and their abilities share one window.
+                if *i > 0 {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
-                };
-                *i += 1;
-                Flow::Call(Frame::window(Occasion::Discard {
-                    player: *player,
-                    card: c,
-                }))
+                }
+                *i = 1;
+                for &c in cards.iter() {
+                    g.show(c);
+                    g.move_card(c, Zone::Discard(*player), Pos::Top);
+                    g.emit(Event::Discarded {
+                        player: *player,
+                        card: g.card(c),
+                    });
+                }
+                let occs = cards
+                    .iter()
+                    .map(|&card| Occasion::Discard {
+                        player: *player,
+                        card,
+                    })
+                    .collect();
+                Flow::Call(Window::open_all(occs))
             }
             Frame::DiscardFromPlay { player, cards, pc } => match pc {
                 0 => {
@@ -1546,23 +1563,24 @@ impl PlayFrame {
                 })
             }
             3 => {
-                if let Input::Return(Value::Bool(unaffected)) = input {
-                    let target = self.remaining.remove(0);
-                    if !unaffected {
-                        self.targets.push(target);
-                    }
+                // One window for all the players attacked: a Reaction one of them uses
+                // gives the others another chance to react.
+                if let Input::Return(Value::Flags(unaffected)) = input {
+                    let asked = unaffected.len().max(1).min(self.remaining.len());
+                    let asked = self.remaining.drain(..asked).zip(unaffected);
+                    self.targets
+                        .extend(asked.filter(|(_, safe)| !safe).map(|(t, _)| t));
                 }
-                match self.remaining.first() {
-                    Some(&target) => Flow::Call(Frame::window(Occasion::Attack {
-                        attacker: p,
-                        card: id,
-                        target,
-                    })),
-                    None => {
-                        self.pc = 2;
-                        Flow::Continue
-                    }
+                if self.remaining.is_empty() {
+                    self.pc = 2;
+                    return Flow::Continue;
                 }
+                let occs = self.remaining.iter().map(|&target| Occasion::Attack {
+                    attacker: p,
+                    card: id,
+                    target,
+                });
+                Flow::Call(Window::open_all(occs.collect()))
             }
             6 => {
                 if let Some(Opt::Card(way)) = input.opt() {

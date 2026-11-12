@@ -91,11 +91,11 @@ them.
   tiebreaker.
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window
   (triggers may set `g.plays.last_mut()`'s `replaced` / `blocked`: they are the card's
-  player's, and the one resolved last applies), choose a Way if the game has Ways
-  (`Purpose::Way`; it can be used instead of either), open an `Attack` window per other
-  player for Attacks (in turn order from the turn's player; also when the play is
-  replaced or blocked: Reactions
-  answer the card being played), then apply the
+  player's, and the one resolved last applies), for an Attack one window holding an
+  `Attack` occasion per other player (they answer in turn order from the turn's player,
+  and a Reaction one of them uses gives the others another chance; also when the play is
+  replaced or blocked: Reactions answer the card being played), choose a Way if the game
+  has Ways (`Purpose::Way`; it can be used instead of either), then apply the
   vanilla bonuses (`CardDef::plus`, Treasure `coins` / `potions`, through
   `SetRules::modify_bonus`; a Way's own instead, unmodified; an Omen's +1 Sun comes
   before them: `cards::prelude`) and run the card's `Hook::Main`, then the `AfterPlay`
@@ -127,18 +127,28 @@ them.
   `Trigger`s that apply right now; the window resolves them (turn player first, then
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
-  card is: the stop-moving rule) when producing a trigger. An effect that stacks ("this
+  card is: the stop-moving rule) when producing a trigger. A declined ability stays
+  declined, except that a Reaction (an optional ability on a Reaction card) another
+  player uses gives the players who declined theirs another chance, until everyone has
+  declined. Things that happen together
+  share one window (`Window::open_all`): cards trashed together (`Frame::trash`) or
+  discarded together (`Frame::discard`) are all moved first, then their player orders
+  the abilities, and a card that has moved meanwhile (a Trail shuffled away by the first
+  Trail's draw) has lost its own; the players an Attack is played against share one too.
+  An effect that stacks ("this
   turn, when you gain ...") produces one trigger per lasting effect or card in play,
   never one trigger carrying a count: the window tracks what has resolved per trigger,
   and more can come into effect while it is open. It doesn't ask for an order
   when a player's mandatory triggers all have the same effect, offers triggers the
-  player can't tell apart and whose effect is the same (two Moats) as one option, drops
+  player can't tell apart and whose effect is the same (two Moats, two Tunnels
+  discarded together) as one option, drops
   `Trigger::protects` ones (all they do is make the attacked player unaffected) once the
   player is unaffected, and resolves
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
   +1 Buy) first without asking. A trigger runs as the card's
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
-  trigger with `Value::Bool(true)` makes the target unaffected. Players choose among
+  trigger with `Value::Bool(true)` makes the target unaffected (the window finishes with
+  `Value::Flags`, one per occasion). Players choose among
   triggers by card name: give one `Trigger::labelled` when the name doesn't say what it
   is (the Exile rule on a gained card, which card a Way's ability is on), and say what an
   optional one does (`Trigger::optional("reveal it to be unaffected")`). The window's
@@ -194,6 +204,9 @@ them.
   Star Chart and Fated resolve there, under any cards left on the deck). A draw, look or
   reveal that needs more cards than the deck holds shuffles first and then takes them all
   (for a draw the -1 Card token counts as a card); one draw shuffles at most once.
+  `Frame::draw_to` ("draw until you have N cards in hand") takes one card at a time
+  instead: it shuffles only once the deck has run out and another card is needed, and
+  again if that shuffle left cards in the discard pile (Order of Masons, Avoid).
 - **Looking and revealing** (`Frame::look` / `Frame::reveal`, the only way to take cards
   from the top of a deck to look at or reveal): the cards go to `Zone::Looking` of the
   deck's owner, off the deck, held (`Game::holds`) for the frame that called it, face up

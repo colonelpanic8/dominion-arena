@@ -650,7 +650,10 @@ fn tunnel_gains_a_gold_when_discarded() {
     g.start();
     play(&mut g, Card::Militia);
     choose_kinds(&mut g, &[Card::Tunnel, Card::Tunnel]);
+    // Two Tunnels discarded together are one option, twice.
+    assert_eq!(trigger_cards(&g), [Card::Tunnel]);
     trigger(&mut g, 0);
+    assert_eq!(trigger_cards(&g), [Card::Tunnel]);
     trigger(&mut g, 0);
     assert_eq!(g.count_owned(P1, Card::Gold), 2);
 }
@@ -719,6 +722,30 @@ fn trails_discarded_together_lose_track_after_a_reshuffle() {
     // Playing it drew from a reshuffled discard pile: the other Trail went with it.
     assert_eq!(g.in_play(P1).len(), 1);
     assert_eq!(g.pending().unwrap().player, P0);
+}
+
+/// "If you discard multiple cards at once ..., they are all discarded at once, and then
+/// the abilities happen one at a time" (Hinterlands rulebook, When discarded), in the
+/// order their player chooses.
+#[test]
+fn cards_discarded_together_react_in_the_order_their_player_chooses() {
+    let mut g = setup(&[Card::Harvest, Card::Trail, Card::Tunnel]);
+    hand(&mut g, P0, &[Card::Harvest]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Trail, Card::Tunnel, Card::Copper, Card::Estate],
+    );
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Harvest);
+    assert_eq!(trigger_cards(&g), [Card::Trail, Card::Tunnel]);
+    // Tunnel first: the Trail's +1 Card shuffles the discard pile.
+    trigger(&mut g, 1);
+    assert_eq!(g.count_owned(P0, Card::Gold), 1);
+    assert_eq!(trigger_cards(&g), [Card::Trail]);
+    trigger(&mut g, 0);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Harvest, Card::Trail]);
 }
 
 #[test]
