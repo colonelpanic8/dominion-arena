@@ -2217,6 +2217,44 @@ fn way_of_the_chameleon_exchanges_before_the_minus_tokens_apply() {
     assert!(!g.player(P0).minus_card);
 }
 
+/// Enchantress and Highwayman change what the card does, whatever Way is used, and the
+/// Way doesn't apply to what Enchantress gives instead (wiki, Way of the Chameleon). The
+/// +1 Card and +$1 tokens on a card's pile are not its instructions.
+#[test]
+fn way_of_the_chameleon_exchanges_only_the_cards_instructions_as_followed() {
+    let kingdom = [Card::Enchantress, Card::Highwayman, Card::Smithy];
+    for (attack, got) in [(Card::Enchantress, (0, 1 + 1)), (Card::Highwayman, (0, 1))] {
+        let mut g = way_game(Card::WayOfTheChameleon, &kingdom);
+        g.players[1].projects.push(Card::Capitalism);
+        hand(&mut g, P0, &[attack]);
+        deck(&mut g, P0, &[Card::Copper; 10]);
+        hand(&mut g, P1, &[Card::Militia, Card::Estate]);
+        deck(&mut g, P1, &[Card::Copper; 10]);
+        g.start();
+        play(&mut g, attack);
+        own(&mut g);
+        next_turn(&mut g);
+        // An Action, and under Capitalism a Treasure: the first of each this turn.
+        play(&mut g, Card::Militia);
+        way(&mut g, Card::WayOfTheChameleon);
+        assert_eq!((g.turn().coins, g.hand(P1).len()), got, "{attack}");
+        assert_eq!(g.hand(P0).len(), 5, "{attack}");
+    }
+
+    let mut g = way_game(Card::WayOfTheChameleon, &kingdom);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    let smithy = g.pile_of(Card::Smithy).unwrap();
+    for token in [Token::PlusCard, Token::PlusCoin] {
+        g.players[0].tokens.insert(token, Some(smithy));
+        g.piles[smithy.index()].tokens.push((P0, token));
+    }
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1 + 3, 1));
+}
+
 /// Monkey: "Until your next turn, when the player to your right gains a card, +1 Card."
 /// The Way changes what the card's instructions give later the same turn too, whatever
 /// kind of effect gives it (wiki, Monkey).
