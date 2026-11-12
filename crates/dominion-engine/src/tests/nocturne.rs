@@ -343,6 +343,45 @@ fn guardian_blocks_attacks_until_its_owners_next_turn_and_then_gives_a_coin() {
     assert_eq!(g.hand(P0).len(), 3);
 }
 
+/// "This offers no protection during your next turn. This means that on the turn after you
+/// play a Guardian, you can still get attacked by another player's Black Cat" (wiki,
+/// Guardian): its start included, before Guardian's own +$1.
+#[test]
+fn guardian_does_not_protect_at_the_start_of_its_owners_next_turn() {
+    let mut g = setup(&[
+        Card::Guardian,
+        Card::Workshop,
+        Card::Farmhands,
+        Card::BlackCat,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Guardian, Card::Workshop, Card::Gold, Card::Gold],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    let mut cards = vec![Card::BlackCat];
+    cards.extend([Card::Copper; 6]);
+    deck(&mut g, P1, &cards);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Farmhands);
+    // Farmhands sets the Workshop aside to play at the start of the next turn.
+    super::intrigue::trigger(&mut g, Card::Farmhands);
+    to_night(&mut g);
+    play(&mut g, Card::Guardian);
+    assert_eq!(g.turn().player, P1);
+    next_turn(&mut g);
+    super::intrigue::trigger(&mut g, Card::Farmhands);
+    // P0 gains an Estate, and P1 plays Black Cat.
+    choose_pile(&mut g, Card::Estate);
+    super::intrigue::trigger(&mut g, Card::BlackCat);
+    assert_eq!(g.count_owned(P0, Card::Curse), 1);
+}
+
 #[test]
 fn ghost_town_and_den_of_sin_draw_next_turn() {
     let mut g = setup(&[Card::GhostTown, Card::DenOfSin]);
