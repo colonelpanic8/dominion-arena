@@ -475,6 +475,33 @@ impl Hub {
         })
     }
 
+    /// `seat`'s view, with the log from `log_from` on if given, and the game's version.
+    pub fn seat_view(
+        &self,
+        seat: &Seat,
+        log_from: Option<usize>,
+    ) -> Result<(AgentView, u64), HubError> {
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        let view = engine(|| match log_from {
+            Some(from) => table.view_from(seat.seat, from),
+            None => table.view(seat.seat),
+        })?;
+        Ok((view, *game.version.borrow()))
+    }
+
+    /// Game `id`'s version, which [`Hub::answer`] bumps, and a receiver of every bump.
+    pub fn subscribe(&self, id: &str) -> Result<watch::Receiver<u64>, HubError> {
+        Ok(self.game(id)?.version.subscribe())
+    }
+
+    /// The name of `seat`.
+    pub fn seat_name(&self, seat: &Seat) -> Result<String, HubError> {
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        Ok(table.names()[seat.seat.index()].clone())
+    }
+
     pub fn answer(&self, seat: &Seat, answer: &Answer) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let mut table = lock(&game.table);

@@ -94,12 +94,14 @@ impl Table {
         self.game.pending().map(|_| format!("d{}", self.seq))
     }
 
-    fn context(&self, seat: PlayerId) -> (Option<String>, usize) {
-        (self.decision_id(), self.log_from[seat.index()])
+    pub fn view(&self, seat: PlayerId) -> AgentView {
+        self.view_from(seat, self.log_from[seat.index()])
     }
 
-    pub fn view(&self, seat: PlayerId) -> AgentView {
-        let (id, log_from) = self.context(seat);
+    /// `seat`'s view with the log from sequence number `log_from` on, instead of from
+    /// the seat's last answer.
+    pub fn view_from(&self, seat: PlayerId, log_from: usize) -> AgentView {
+        let id = self.decision_id();
         let known = self.knowledge.known(&self.game, seat);
         project::view(
             &self.game,
