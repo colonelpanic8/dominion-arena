@@ -1163,3 +1163,66 @@ fn way_pre_answer_stops_at_a_different_physical_herald() {
     }
     panic!("no game got a Herald in hand with another second from the top of the deck");
 }
+
+#[test]
+fn way_pre_answer_waits_while_another_seat_reacts_to_the_attack() {
+    let config = GameConfig {
+        landscapes: vec![Card::WayOfTheOx],
+        ..table(&[Card::Militia], 5, &[]).game().config().clone()
+    };
+    let mut t = Table::new("t", config, vec![]).unwrap();
+    let moat_in_hand = |t: &Table| {
+        let g = t.game();
+        (g.player(PlayerId(1)).hand.iter()).any(|&c| g.card(c) == Card::Moat)
+    };
+    let mut bought = [false; 2];
+    for _ in 0..3000 {
+        let Some(seat) = t.deciding() else { break };
+        let d = t.view(seat).decision.unwrap();
+        let militia = pick(&d, |o| {
+            o.action == "play" && o.card.as_deref() == Some("Militia")
+        });
+        if let Some(play) = militia.filter(|_| seat.0 == 0 && moat_in_hand(&t)) {
+            let answered = t
+                .answer_with(PlayerId(0), &play, Some(WayChoice::None))
+                .unwrap();
+            assert_eq!(answered.ways_answered, 0);
+            let reveal = t.view(PlayerId(1)).decision.unwrap();
+            assert_eq!(reveal.purpose, "trigger", "{}", reveal.prompt);
+            // It survives a save, and another seat's answer with a Way doesn't drop it.
+            let mut t: Table = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
+            let moat = pick(&reveal, |o| o.card.as_deref() == Some("Moat")).unwrap();
+            t.answer_with(PlayerId(1), &moat, Some(WayChoice::None))
+                .unwrap();
+            let next = t.view(PlayerId(0));
+            let d = next.decision.unwrap();
+            assert!(!is_way_question(&d), "{}", d.prompt);
+            assert_eq!(d.kind, "turn");
+            let log: Vec<&str> = next
+                .since_last_decision
+                .iter()
+                .map(|e| e.text.as_str())
+                .collect();
+            assert!(log.iter().any(|e| e.ends_with("plays Militia")), "{log:?}");
+            assert!(!log.iter().any(|e| e.contains("Way of the Ox")), "{log:?}");
+            return;
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let want = ["Buy Militia", "Buy Moat"][seat.index()];
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if d.phase.as_deref() == Some("action") {
+            end.unwrap()
+        } else {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| {
+                    pick(&d, |o| !bought[seat.index()] && o.label.starts_with(want))
+                        .inspect(|_| bought[seat.index()] = true)
+                })
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("P1 never has Militia while P2 holds Moat");
+}

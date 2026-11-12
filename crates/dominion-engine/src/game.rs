@@ -683,6 +683,12 @@ impl Game {
         self.plays.last().map(|play| play.card)
     }
 
+    /// The plays in progress, innermost last: who plays which card, and the log's length
+    /// when the play began.
+    pub fn plays_in_progress(&self) -> impl Iterator<Item = (PlayerId, CardId, usize)> + '_ {
+        self.plays.iter().map(|st| (st.player, st.card, st.since))
+    }
+
     pub fn outcome(&self) -> Option<&Outcome> {
         self.outcome.as_ref()
     }

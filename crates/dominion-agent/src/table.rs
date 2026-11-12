@@ -1,8 +1,8 @@
 use crate::project::{self, Context};
 use crate::text;
 use dominion_engine::{
-    Card, DecisionKind, Game, GameConfig, Kind, Knowledge, Move, Opt, PlayerId, Purpose, Response,
-    SetupError,
+    Card, CardId, DecisionKind, Game, GameConfig, Kind, Knowledge, Move, Opt, PlayerId, Purpose,
+    Response, SetupError,
 };
 use dominion_protocol::api::{PlayerTable, TableExtras};
 use dominion_protocol::{AgentView, Answer};
@@ -27,7 +27,7 @@ pub enum AnswerError {
 
 /// An answer to the Way question ("play it as itself, or use a Way instead") given in
 /// advance, with the answer whose play would ask it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WayChoice {
     /// Play the card as itself.
     None,
@@ -71,6 +71,15 @@ impl Answered {
     }
 }
 
+/// A Way pre-answer waiting for the Way questions of `card`'s play: kept while `seat` is
+/// asked nothing else and the play goes on, while other seats decide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct PendingWay {
+    seat: PlayerId,
+    card: CardId,
+    choice: WayChoice,
+}
+
 /// A hosted game: the engine game, what each seat knows, decision ids and each seat's
 /// log cursor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -83,6 +92,9 @@ pub struct Table {
     seq: u64,
     /// Per seat: the log length when they last answered.
     log_from: Vec<usize>,
+    /// At most one per seat.
+    #[serde(default)]
+    ways: Vec<PendingWay>,
 }
 
 impl Table {
@@ -111,6 +123,7 @@ impl Table {
             names,
             seq: 1,
             log_from: vec![0; n],
+            ways: vec![],
         })
     }
 
@@ -221,10 +234,11 @@ impl Table {
         self.answer_with(seat, answer, None).map(|_| ())
     }
 
-    /// Answers the open decision for `seat`, then, with `way`, answers the played card's
-    /// next Way question and its consecutive replays' questions. A Way that
-    /// isn't in the game rejects the answer; one in the game but not offered for a play
-    /// leaves that question open.
+    /// Answers the open decision for `seat`, then, with `way`, answers the Way questions
+    /// of the card the answer plays and of its consecutive replays, also when other seats
+    /// are asked something first (Reactions to an Attack). A Way that isn't in the game
+    /// rejects the answer; one in the game but not offered for a play leaves that question
+    /// open.
     pub fn answer_with(
         &mut self,
         seat: PlayerId,
@@ -248,40 +262,70 @@ impl Table {
             }));
         }
         let log_len = self.game.log().len();
-        let choosing_way = self.game.way_card();
-        let direct = match response {
-            Response::Move(Move::Play(card)) => Some(Some(card)),
-            Response::Move(_) => Some(None),
-            _ => None,
+        // The card whose Way questions it answers: the one played, a replayed one, or the
+        // one an ability starts playing (a Reaction that plays itself).
+        let played = match response {
+            Response::Move(Move::Play(card)) => Some(card),
+            _ => self.game.way_card(),
         };
-        self.respond(response)?;
-        let played = direct.unwrap_or_else(|| choosing_way.or_else(|| self.game.way_card()));
+        self.game_respond(response)?;
         self.log_from[seat.index()] = log_len;
+        if let Some(choice) = way {
+            let card = played.or_else(|| {
+                (self.game.plays_in_progress())
+                    .find(|&(p, _, since)| p == seat && since >= log_len)
+                    .map(|(_, card, _)| card)
+            });
+            self.ways.retain(|w| w.seat != seat);
+            self.ways
+                .extend(card.map(|card| PendingWay { seat, card, choice }));
+        }
+        self.answer_ways(seat)
+    }
+
+    /// Answers the Way questions the pending pre-answers cover, dropping each once its
+    /// seat is asked anything else or its card's play is over. What `seat`'s did.
+    fn answer_ways(&mut self, seat: PlayerId) -> Result<Answered, AnswerError> {
         let mut answered = Answered::default();
-        let Some(way) = way else {
-            return Ok(answered);
-        };
-        while let Some(d) = self.game.pending()
-            && d.player == seat
-            && d.purpose == Purpose::Way
-            && self.game.way_card() == played
-        {
-            let DecisionKind::Choose { options, .. } = &d.kind else {
+        loop {
+            let game = &self.game;
+            self.ways.retain(|w| {
+                game.pending().is_some()
+                    && (game.plays_in_progress()).any(|(p, c, _)| p == w.seat && c == w.card)
+            });
+            let Some(d) = self.game.pending() else {
                 break;
             };
-            if !options.contains(&way.opt()) {
-                if let WayChoice::Way(w) = way {
-                    answered.way_not_offered = Some(w);
+            let Some(i) = self.ways.iter().position(|w| w.seat == d.player) else {
+                break;
+            };
+            let w = self.ways[i];
+            let offered = match &d.kind {
+                DecisionKind::Choose { options, .. }
+                    if d.purpose == Purpose::Way && self.game.way_card() == Some(w.card) =>
+                {
+                    Some(options.contains(&w.choice.opt()))
                 }
+                _ => None,
+            };
+            if offered != Some(true) {
+                if let (Some(false), WayChoice::Way(card), true) =
+                    (offered, w.choice, w.seat == seat)
+                {
+                    answered.way_not_offered = Some(card);
+                }
+                self.ways.remove(i);
                 break;
             }
-            self.respond(Response::option(way.opt()))?;
-            answered.ways_answered += 1;
+            self.game_respond(Response::option(w.choice.opt()))?;
+            if w.seat == seat {
+                answered.ways_answered += 1;
+            }
         }
         Ok(answered)
     }
 
-    fn respond(&mut self, response: Response) -> Result<(), AnswerError> {
+    fn game_respond(&mut self, response: Response) -> Result<(), AnswerError> {
         self.game
             .respond(response)
             .map_err(|e| AnswerError::Invalid(e.to_string()))?;
