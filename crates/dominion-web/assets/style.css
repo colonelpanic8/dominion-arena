@@ -144,6 +144,37 @@ input[type=checkbox] { padding: 0; }
 .result table { border-collapse: collapse; }
 .result th, .result td { padding: .2em .8em .2em 0; text-align: left; }
 
+/* The game's chat, menu and the question before resigning, on the plain page and (sized
+   by table.css) on the table. */
+.watching-mark { color: var(--accent); font-weight: 600; }
+.player .who { font-size: .9em; font-weight: 400; }
+.game-menu { display: inline-flex; gap: .4em; align-items: center; }
+.game-chat { display: flex; flex-direction: column; gap: .3em; min-height: 0; }
+.game-chat-lines { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 3em; max-height: 14em; user-select: text; }
+.chat-line { padding: .08em 0; overflow-wrap: anywhere; }
+.chat-from { font-weight: 600; }
+.chat-watcher { color: var(--muted); }
+.chat-watcher .chat-from { font-weight: 400; font-style: italic; }
+.chat-system { color: var(--muted); font-style: italic; }
+.game-chat-error { color: var(--bad); margin: 0; }
+.game-chat-input { width: 100%; }
+.side-col .chat-panel { margin: 1em 0 0; flex: none; }
+.resign-ask {
+  position: fixed;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  z-index: 26500;
+  padding: 1.2em 1.6em;
+  background: #000;
+  color: #fff;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  text-align: center;
+}
+.resign-ask p { margin: 0 0 .8em; font-size: 1.3em; }
+.resign-buttons { display: flex; gap: .8em; justify-content: center; }
+
 .gallery-controls { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: 1em; }
 .gallery-sizes { display: inline-flex; gap: .25em; }
 .gallery-width { display: inline-flex; gap: .4em; align-items: center; }

@@ -1,11 +1,13 @@
 //! The plain game page: everything in the view as structured text, the log, and the
 //! open decision as generic controls ([`DecisionControls`], usable beside any board).
 
+use super::meta::{self, SeatAccount};
 use super::state::{Selection, answers_on_click, name_answer};
-use super::use_game;
 use super::wording;
+use super::{use_forfeit, use_game};
 use crate::app::use_cards;
 use dioxus::prelude::*;
+use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
     AgentDecision, AgentView, Answer, CardCount, Cost, LogEntry, PileView, PlayerView, Tokens,
 };
@@ -33,6 +35,7 @@ fn player_name(view: &AgentView, seat: u8) -> String {
 #[component]
 pub fn PlainGame() -> Element {
     let ctx = use_game();
+    let forfeit = use_forfeit();
     let st = ctx.state.read();
     let Some(view) = st.view.clone() else {
         return rsx! {
@@ -48,7 +51,9 @@ pub fn PlainGame() -> Element {
     let answering = st.answering;
     let can_undo = st.can_undo;
     let log = st.log.clone();
+    let game_meta = st.meta.clone();
     drop(st);
+    let watching = view.seat.is_none();
     rsx! {
         div { class: "plain-game",
             div { class: "board-col",
@@ -56,8 +61,8 @@ pub fn PlainGame() -> Element {
                 if let Some(r) = view.game.result.clone() {
                     section { class: "panel result",
                         h2 { "Game over" }
-                        if let Some(reason) = r.reason.as_deref().map(super::wording::end_reason) {
-                            p { class: "muted", "{reason}" }
+                        if let Some(reason) = meta::end_reason(r.reason.as_deref(), &r.players, game_meta.ended.as_deref()) {
+                            p { class: "muted", "data-ended": "1", "{reason}" }
                         }
                         table {
                             thead { tr { th { "Rank" } th { "Player" } th { "VP" } th { "Turns" } } }
@@ -74,7 +79,7 @@ pub fn PlainGame() -> Element {
                         }
                     }
                 }
-                PlainBoard { view: view.clone() }
+                PlainBoard { view: view.clone(), meta: game_meta }
             }
             div { class: "side-col",
                 section { class: "panel decision-panel",
@@ -89,6 +94,12 @@ pub fn PlainGame() -> Element {
                             onclick: move |_| ctx.undo.call(()),
                             "Undo"
                         }
+                    }
+                    if watching {
+                        p { class: "muted", "data-watching": "1", "You are watching this game." }
+                    }
+                    if let Some((f, text)) = forfeit.filter(|_| view.game.running) {
+                        p { class: "warn", "data-forfeit": "{f.seat}", "{text}" }
                     }
                     if let Some(d) = view.decision.clone() {
                         DecisionControls {
@@ -109,6 +120,10 @@ pub fn PlainGame() -> Element {
                     }
                 }
                 LogPanel { entries: log }
+                section { class: "panel chat-panel",
+                    h3 { "Chat" }
+                    super::chat::Chat {}
+                }
             }
         }
     }
@@ -228,7 +243,7 @@ fn token_list(t: &Tokens) -> Vec<String> {
 }
 
 #[component]
-fn PlayerBox(player: PlayerView, you: bool) -> Element {
+fn PlayerBox(player: PlayerView, you: bool, account: Option<SeatAccount>) -> Element {
     let p = &player;
     let mut extras = token_list(&p.tokens);
     for (token, pile) in &p.adventure_tokens {
@@ -254,6 +269,12 @@ fn PlayerBox(player: PlayerView, you: bool) -> Element {
             h3 {
                 "{p.name}"
                 if you { span { class: "muted", " (you)" } }
+                if let Some(a) = &account {
+                    span { class: "muted who", "data-connected": "{a.connected}", title: "{a.title()}",
+                        "{a.tag()}"
+                        if !a.connected { " (away)" }
+                    }
+                }
                 if let Some(vp) = p.vp { span { class: "vp", "{vp} VP" } }
             }
             table { class: "zones",
@@ -379,18 +400,19 @@ fn PileTable(title: String, piles: Vec<PileView>) -> Element {
     }
 }
 
-/// Every part of a view except the decision and the log.
+/// Every part of a view except the decision and the log; with `meta`, the account
+/// playing each seat.
 #[component]
-pub fn PlainBoard(view: AgentView) -> Element {
+pub fn PlainBoard(view: AgentView, #[props(default)] meta: GameMeta) -> Element {
     let v = &view;
     let name = |p: u8| player_name(v, p);
     rsx! {
         div { class: "players",
             if let Some(you) = v.you.clone() {
-                PlayerBox { player: you, you: true }
+                PlayerBox { account: meta::account(&meta, you.index), player: you, you: true }
             }
             for o in v.opponents.iter().cloned() {
-                PlayerBox { key: "{o.index}", player: o, you: false }
+                PlayerBox { key: "{o.index}", account: meta::account(&meta, o.index), player: o, you: false }
             }
         }
         PileTable { title: "Supply", piles: v.supply.clone() }

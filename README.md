@@ -318,6 +318,17 @@ and its sounds play when it plays them: your turn coming back to you and the end
 game (`web_sounds`, `web_volume`, and a mute toggle on the page for the session). A Plain toggle shows the same game as text
 and buttons.
 
+Opening `/game/<id>` shows the seat this browser holds, else the seat the account
+signed in plays there (no token in the address), else, when the game is watchable, the
+game as someone watching sees it (signing in as a guest if nobody is signed in): the
+same table with the first player where your own would be, every hand face down and
+nothing to answer. In a game between accounts each player's bar has their rating (or
+`guest`, `bot`) and whether they are connected; when the player who must decide has
+left, the status bar counts down to their forfeit ("Bo has left: forfeits in 0:47"), as
+it does for anyone's last minute, your own included. The game's chat is under the log,
+with the lines of those watching marked. The menu (☰) has Resign, which asks once more
+before it ends the game; the end notice and the score say who resigned or forfeited.
+
 The client keeps the seat tokens it holds in the browser's localStorage; a seat link
 `/game/<id>#token=<token>` opens a seat in another browser. Cards are drawn like
 dominion.games' own from the asset cache (`dominion assets sync`), which the client only

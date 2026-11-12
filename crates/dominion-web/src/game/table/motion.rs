@@ -430,6 +430,7 @@ pub struct Flight {
     pub seq: u64,
     pub ghosts: Vec<(Ghost, Class)>,
     pub speed: AnimationSpeed,
+    /// The seat drawn at the bottom, whose hand isn't an opponent's upside-down one.
     pub you: Option<u8>,
 }
 
@@ -466,7 +467,8 @@ pub fn use_motion(board: Memo<Option<Rc<Board>>>, game: GameCtx) -> Signal<Optio
         {
             let inf = moves::infer(old, new, &st.log[l.log_len..]);
             if !inf.moves.is_empty() {
-                let you = new.you.as_ref().map(|y| y.seat);
+                // For someone watching, the player drawn where "you" would be.
+                let you = new.front().map(|y| y.seat);
                 let ghosts = moves::ghosts(&inf.moves, MAX_GHOSTS)
                     .into_iter()
                     .map(|g| {

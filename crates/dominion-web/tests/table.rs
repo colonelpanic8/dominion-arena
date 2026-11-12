@@ -6,12 +6,14 @@ mod common;
 use common::card_db;
 use dominion_agent::Table;
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
+use dominion_protocol::api::SeatView;
+use dominion_protocol::lobby::{GameMeta, UserKind, UserRef};
 use dominion_protocol::{AgentDecision, AgentView, PlayerView, Tokens};
 use dominion_web::cards::CardDb;
 use dominion_web::game::board::{Board, PileAt, PileEntry, PlayerEntry, Zone, board};
 use dominion_web::game::interaction::{Interaction, Place, Target, TreasureRun, interaction};
 use dominion_web::game::logfmt::{Span, log_lines};
-use dominion_web::game::state::Selection;
+use dominion_web::game::state::{GameState, Selection};
 use dominion_web::game::table::model::{Spot, spots};
 use dominion_web::game::{entry, wording};
 use rand::rngs::StdRng;
@@ -271,6 +273,16 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
     assert_eq!(lands, want);
 
     assert_eq!(b.you.is_some(), view.you.is_some());
+    assert_eq!(b.watching, view.seat.is_none());
+    // Every player is drawn once: one where a seat's own is, the rest as opponents.
+    let drawn: Vec<u8> = (b.front().into_iter().chain(b.others()))
+        .map(|p| p.seat)
+        .collect();
+    let all: Vec<u8> = (view.you.iter().chain(&view.opponents))
+        .map(|p| p.index)
+        .collect();
+    assert_eq!(drawn, all);
+    assert_eq!(b.players().count(), all.len());
     if let (Some(e), Some(p)) = (&b.you, &view.you) {
         check_player(e, p);
     }
@@ -332,6 +344,36 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
             view.turn.number
         )
     );
+}
+
+/// The board of someone watching: every player's, nothing to answer, the first player
+/// where a seat's own would be.
+fn check_watched(table: &Table, deciding: PlayerId, cards: &CardDb) {
+    let view = table.watch_view(0).expect("a new table can be watched");
+    assert!(view.seat.is_none() && view.you.is_none() && view.decision.is_none());
+    let extras = table.watch_extras().expect("extras for someone watching");
+    let b = board(&view, Some(deciding.0), &extras, cards);
+    check_board(&b, &view, Some(deciding.0));
+    assert!(!b.status.you_decide && !b.status.your_turn);
+    let seats: Vec<u8> = (0..table.names().len() as u8).collect();
+    assert_eq!(b.front().map(|p| p.seat), Some(0));
+    assert_eq!(
+        b.others().iter().map(|p| p.seat).collect::<Vec<_>>(),
+        seats[1..]
+    );
+    assert_eq!(b.front_turn(), view.turn.player == Some(0));
+    assert_eq!(dominion_web::game::logfmt::names(&view), table.names());
+    let mut state = GameState::default();
+    state.apply(SeatView {
+        view,
+        version: 1,
+        deciding: Some(deciding.0),
+        table: extras,
+        undos: 0,
+        can_undo: false,
+        meta: Default::default(),
+    });
+    assert!(state.watching() && state.decision().is_none());
 }
 
 #[derive(Default)]
@@ -410,6 +452,7 @@ fn play_checked(table: &mut Table, rng: &mut StdRng, cards: &CardDb, stats: &mut
                 &theirs,
                 Some(seat.0),
             );
+            check_watched(table, seat, cards);
         }
 
         if let Some(mut run) = TreasureRun::start(&view, cards)
@@ -458,6 +501,12 @@ fn every_option_has_one_place_and_every_view_a_whole_board() {
         assert_eq!(
             lines.iter().map(|l| l.count as usize).sum::<usize>(),
             log.len()
+        );
+        let watched = table.watch_view(0).unwrap().since_last_decision;
+        let lines = log_lines(&watched, &names, &cards);
+        assert_eq!(
+            lines.iter().map(|l| l.count as usize).sum::<usize>(),
+            watched.len()
         );
     }
     println!(
@@ -757,7 +806,8 @@ fn every_log_entry_is_worded_by_a_rule() {
             table.answer(seat, &sel.answer(&d).unwrap()).unwrap();
         }
         let log = table.view_from(PlayerId(0), 0).since_last_decision;
-        for e in &log {
+        let watched = table.watch_view(0).unwrap().since_last_decision;
+        for e in log.iter().chain(&watched) {
             assert!(entry::parse(e, &seats).is_some(), "no rule reads {e:?}");
             *kinds.entry(e.kind.clone()).or_default() += 1;
         }
@@ -806,4 +856,57 @@ fn way_questions_read_like_dominion_games() {
         }
     }
     panic!("hinted {hinted}, asked {asked}");
+}
+
+#[test]
+fn a_game_ended_early_says_who_ended_it_to_every_viewer() {
+    let cards = card_db();
+    let names = vec!["Ada".to_string(), "Bo".to_string()];
+    let c = config(&["Village", "Smithy"], 2, 1);
+    let mut table = Table::new("g", c, names).unwrap();
+    table.resign(PlayerId(1)).unwrap();
+    let user = |name: &str, kind| {
+        Some(UserRef {
+            name: name.into(),
+            kind,
+            rating: Some(1500),
+            owner: None,
+        })
+    };
+    let meta = GameMeta {
+        users: vec![
+            user("Ada", UserKind::Registered),
+            user("Bo", UserKind::Guest),
+        ],
+        connected: vec![true, false],
+        rated: true,
+        watchers: 2,
+        ended: Some("abandoned".into()),
+        ..GameMeta::default()
+    };
+    let views = [
+        (table.view(PlayerId(0)), table.extras(PlayerId(0))),
+        (table.watch_view(0).unwrap(), table.watch_extras().unwrap()),
+    ];
+    for (view, extras) in views {
+        let plain = board(&view, None, &extras, &cards);
+        assert!(!plain.status.running);
+        assert_eq!(plain.end_reason.as_deref(), Some("Bo resigned."));
+        assert!(plain.players().all(|p| p.account.is_none()));
+        let b = plain.with_meta(&meta);
+        assert_eq!(b.end_reason.as_deref(), Some("Bo forfeited."));
+        assert_eq!((b.rated, b.timed, b.watchers), (true, false, 2));
+        let result = b.result.as_ref().unwrap();
+        assert_eq!(
+            dominion_web::game::meta::ended_lines(result, b.ended.as_deref()),
+            ["Bo has forfeited: away, or too long over a decision."]
+        );
+        let bo = b.players().find(|p| p.seat == 1).unwrap();
+        let account = bo.account.as_ref().unwrap();
+        assert_eq!(
+            (account.tag().as_str(), account.connected),
+            ("guest 1500", false)
+        );
+        assert!(b.players().find(|p| p.seat == 0).unwrap().account.is_some());
+    }
 }

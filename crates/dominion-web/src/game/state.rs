@@ -1,10 +1,12 @@
-//! The game page's model: one seat's latest view, the game's change counter and the log
-//! accumulated across fetches, plus the rules for turning a selection of options into an
-//! answer. Plain data, so it is tested natively against real games.
+//! The game page's model: the latest view of one seat (or of someone watching), the
+//! game's change counter, the log accumulated across fetches, who plays and what was said
+//! in its chat, plus the rules for turning a selection of options into an answer. Plain
+//! data, so it is tested natively against real games.
 
 use crate::api::ApiError;
 use crate::cards::CardDb;
 use dominion_protocol::api::{Change, SeatView};
+use dominion_protocol::lobby::{ChatMessage, GameMeta};
 use dominion_protocol::{AgentDecision, AgentView, Answer, DecisionGroup, LogEntry};
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -29,6 +31,12 @@ pub struct GameState {
     pub answering: bool,
     /// The server has no such game, or refused the seat's token: nothing will change.
     pub gone: bool,
+    /// Who plays, who is connected and what kind of game it is, as of the last response.
+    pub meta: GameMeta,
+    /// The game's chat, in order.
+    pub chat: Vec<ChatMessage>,
+    /// The feed's chat counter the chat was last fetched at, once it has been.
+    pub chat_seen: Option<u64>,
 }
 
 /// What to do after applying a response.
@@ -85,6 +93,7 @@ impl GameState {
             self.deciding = sv.deciding;
             self.table = sv.table;
             self.can_undo = sv.can_undo;
+            self.meta = sv.meta;
         }
         self.error = None;
         if complete {
@@ -97,6 +106,45 @@ impl GameState {
     /// Whether a change event means the view must be fetched again.
     pub fn is_news(&self, change: Change) -> bool {
         self.view.is_none() || change.version != self.version
+    }
+
+    /// Whether a response fetched to see who is still connected says nothing new.
+    pub fn is_current(&self, sv: &SeatView) -> bool {
+        self.view.is_some()
+            && self.error.is_none()
+            && sv.version == self.version
+            && sv.meta == self.meta
+            && sv
+                .view
+                .since_last_decision
+                .last()
+                .is_none_or(|e| e.seq < self.log_from())
+    }
+
+    /// Whether a change event means the chat must be fetched from [`GameState::chat_from`].
+    pub fn chat_is_news(&self, change: Change) -> bool {
+        self.chat_seen != Some(change.chat)
+    }
+
+    /// The `after` to ask the chat for next: the number of the last message held.
+    pub fn chat_from(&self) -> u64 {
+        self.chat.last().map_or(0, |m| m.seq)
+    }
+
+    /// Appends the messages not held yet, fetched when the feed's chat counter was
+    /// `counter`.
+    pub fn merge_chat(&mut self, counter: u64, messages: Vec<ChatMessage>) {
+        for m in messages {
+            if m.seq > self.chat_from() {
+                self.chat.push(m);
+            }
+        }
+        self.chat_seen = Some(counter);
+    }
+
+    /// Whether the view is of someone watching: no seat's.
+    pub fn watching(&self) -> bool {
+        self.view.as_ref().is_some_and(|v| v.seat.is_none())
     }
 
     /// Records a failed answer; true if the view is stale and must be fetched again.

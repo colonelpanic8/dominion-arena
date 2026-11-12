@@ -55,6 +55,7 @@ pub fn Log(
         log_lines(&entries, &names, &cards)
     }));
     let short = initials(&names);
+    let header = crate::game::meta::log_header(game_id.as_deref(), board.rated, board.timed);
     let mut stick = use_signal(|| true);
     let len = entries.len();
     use_effect(use_reactive!(|len| {
@@ -76,10 +77,8 @@ pub fn Log(
                         stick.set(end);
                     }
                 },
-                li { class: "dt-log-line dt-log-meta",
-                    if let Some(id) = &game_id { "Game {id}, unrated." } else { "Game, unrated." }
-                }
-                li { class: "dt-log-line dt-log-meta dt-log-meta-last", "Timer: Off" }
+                li { class: "dt-log-line dt-log-meta", "{header[0]}" }
+                li { class: "dt-log-line dt-log-meta dt-log-meta-last", "{header[1]}" }
                 for l in lines.read().iter() {
                     LogRow { key: "{l.seq}", line: l.clone(), short: short.clone() }
                 }
@@ -252,8 +251,8 @@ pub fn GameOver(board: Rc<Board>) -> Element {
             return rsx! {
                 div { class: "dt-ended", "data-gameover": "1",
                     p { "The game has ended." }
-                    for p in players.iter().filter(|p| p.resigned) {
-                        p { key: "{p.index}", "{p.name} has resigned." }
+                    for line in crate::game::meta::ended_lines(&players, board.ended.as_deref()) {
+                        p { key: "{line}", "data-ended": "1", "{line}" }
                     }
                     button {
                         class: "dt-ok",

@@ -143,6 +143,17 @@ fn seat_board(table: &Table, seat: u8, cards: &CardDb) -> (Board, usize) {
     )
 }
 
+/// The board of someone watching, and the length of the log they see.
+fn watched_board(table: &Table, cards: &CardDb) -> (Board, usize) {
+    let v = table.watch_view(0).unwrap();
+    let len = v.since_last_decision.len();
+    let deciding = table.deciding().map(|p| p.0);
+    (
+        board(&v, deciding, &table.watch_extras().unwrap(), cards),
+        len,
+    )
+}
+
 fn log_from(table: &Table, seat: u8, from: usize) -> Vec<LogEntry> {
     table.view_from(PlayerId(seat), from).since_last_decision
 }
@@ -156,6 +167,8 @@ struct Stats {
     /// Runs of steps whose cards played from a hand are the single steps' ones.
     batches_playing_alike: usize,
     moves: usize,
+    watched: usize,
+    watched_complete: usize,
 }
 
 /// How many cards go from a hand into play.
@@ -176,9 +189,15 @@ fn play(table: &mut Table, players: u8, rng: &mut StdRng, cards: &CardDb, stats:
         let Some(seat) = table.deciding() else { break };
         let before: Vec<(Board, usize)> =
             (0..players).map(|s| seat_board(table, s, cards)).collect();
+        let watched = watched_board(table, cards);
         let view = table.view(seat);
         let a = random_answer(&view, cards, rng);
         table.answer(seat, &a).unwrap();
+        let (new, _) = watched_board(table, cards);
+        let log = table.watch_view(watched.1).unwrap().since_last_decision;
+        let inf = infer(&watched.0, &new, &log);
+        stats.watched += 1;
+        stats.watched_complete += usize::from(check(&watched.0, &new, &log, &inf));
         for s in 0..players {
             let (old, len) = &before[usize::from(s)];
             let (new, _) = seat_board(table, s, cards);
@@ -246,6 +265,11 @@ fn moves_take_each_board_to_the_next() {
     assert!(stats.complete * 1000 >= stats.steps * 995);
     assert!(stats.batches_complete * 100 >= stats.batches * 98);
     assert!(stats.batches_playing_alike * 100 >= stats.batches_complete * 98);
+    println!(
+        "watching: {} of {} steps",
+        stats.watched_complete, stats.watched
+    );
+    assert!(stats.watched_complete * 1000 >= stats.watched * 995);
 }
 
 // Hand-checked steps.

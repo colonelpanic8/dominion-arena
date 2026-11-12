@@ -2,8 +2,10 @@
 //! badges, cards stacked in a stable order, and every other part of the view in a form
 //! ready to show, so that nothing a view holds is lost on the table.
 
+use super::meta::{self, SeatAccount};
 use crate::cards::CardDb;
 use dominion_protocol::api::TableExtras;
+use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
     AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, ZoneView,
 };
@@ -15,10 +17,13 @@ pub struct Board {
     pub supply: Supply,
     pub non_supply: Vec<PileEntry>,
     pub landscapes: Vec<LandscapeEntry>,
-    /// The seat's own player, if it has one.
+    /// The seat's own player; none for someone watching.
     pub you: Option<PlayerEntry>,
-    /// The other players, in turn order from the seat.
+    /// The other players, in turn order from the seat; for someone watching, every
+    /// player from the first seat.
     pub opponents: Vec<PlayerEntry>,
+    /// The view of someone watching: no seat's.
+    pub watching: bool,
     pub play_area: PlayArea,
     pub trash: Zone,
     pub boons: Option<CardDeck>,
@@ -32,6 +37,58 @@ pub struct Board {
     pub uncertain: Vec<Uncertain>,
     pub result: Option<Vec<ResultPlayer>>,
     pub end_reason: Option<String>,
+    /// Why the game ended early, when it did: `resigned` or `abandoned`.
+    pub ended: Option<String>,
+    pub rated: bool,
+    pub timed: bool,
+    /// People watching now.
+    pub watchers: u32,
+}
+
+impl Board {
+    /// The player drawn where the seat's own is: for someone watching, the first.
+    pub fn front(&self) -> Option<&PlayerEntry> {
+        self.you
+            .as_ref()
+            .or_else(|| self.opponents.first().filter(|_| self.watching))
+    }
+
+    /// The players drawn as opponents: everyone but [`Board::front`].
+    pub fn others(&self) -> &[PlayerEntry] {
+        match (&self.you, self.watching) {
+            (None, true) => self.opponents.get(1..).unwrap_or_default(),
+            _ => &self.opponents,
+        }
+    }
+
+    /// Every player.
+    pub fn players(&self) -> impl Iterator<Item = &PlayerEntry> {
+        self.you.iter().chain(&self.opponents)
+    }
+
+    /// Whether it is the turn of the player at the front.
+    pub fn front_turn(&self) -> bool {
+        let turn = self.status.player.as_ref().map(|w| w.seat);
+        turn.is_some() && turn == self.front().map(|p| p.seat)
+    }
+
+    /// The board with what a response says beside its view: the accounts playing, who is
+    /// connected, what kind of game it is and how it ended.
+    pub fn with_meta(mut self, m: &GameMeta) -> Board {
+        for p in self.you.iter_mut().chain(&mut self.opponents) {
+            p.account = meta::account(m, p.seat);
+        }
+        self.rated = m.rated;
+        self.timed = m.timed;
+        self.watchers = m.watchers;
+        self.ended = m.ended.clone();
+        if let (Some(players), Some(ended)) = (&self.result, &self.ended)
+            && players.iter().any(|p| p.resigned)
+        {
+            self.end_reason = meta::end_reason(Some("resigned"), players, Some(ended));
+        }
+        self
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -191,6 +248,8 @@ pub struct PlayerEntry {
     pub unlocated: Vec<Stack>,
     pub uncertain: Vec<Uncertain>,
     pub counters: Vec<(String, i64)>,
+    /// The account playing the seat ([`Board::with_meta`]).
+    pub account: Option<SeatAccount>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -587,6 +646,7 @@ fn player_entry(
             })
             .collect(),
         counters: counters(&p.counters),
+        account: None,
     }
 }
 
@@ -779,6 +839,7 @@ pub fn board(
         landscapes,
         you,
         opponents,
+        watching: view.seat.is_none(),
         play_area,
         trash: zone(&view.trash, cards),
         boons: view.boons.as_ref().map(card_deck),
@@ -865,7 +926,10 @@ pub fn board(
             .game
             .result
             .as_ref()
-            .and_then(|r| r.reason.as_deref())
-            .map(super::wording::end_reason),
+            .and_then(|r| meta::end_reason(r.reason.as_deref(), &r.players, None)),
+        ended: None,
+        rated: false,
+        timed: false,
+        watchers: 0,
     }
 }
