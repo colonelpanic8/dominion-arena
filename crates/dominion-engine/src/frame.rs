@@ -1525,7 +1525,7 @@ impl PlayFrame {
                         min: 1,
                         max: 1,
                     },
-                    purpose: Purpose::Mode,
+                    purpose: Purpose::Way,
                     source: Some(g.card(id)),
                     about: vec![],
                     question: Some("play it as itself, or use a Way instead".into()),

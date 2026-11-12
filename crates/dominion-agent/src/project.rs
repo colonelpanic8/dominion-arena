@@ -4,7 +4,7 @@
 use crate::types::{self, *};
 use dominion_engine::{
     Card, CardId, Decision, DecisionKind, EndReason, Event, Game, Kind, KnownCards, Mat, Move, Opt,
-    Phase, PileId, PlayerId, Purpose, Response, Token, Until, View, Zone,
+    Phase, PileId, PlayerId, Purpose, Response, Token, Types, Until, View, Zone,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -25,7 +25,11 @@ pub(crate) fn kebab(name: &str) -> String {
 }
 
 pub(crate) fn purpose_name(p: Purpose) -> String {
-    kebab(&format!("{p:?}"))
+    match p {
+        // agent-view@2 has no purpose of its own for it.
+        Purpose::Way => "mode".into(),
+        p => kebab(&format!("{p:?}")),
+    }
 }
 
 pub(crate) fn phase_name(p: Phase) -> String {
@@ -522,6 +526,7 @@ fn verb(p: Purpose) -> Option<&'static str> {
         Purpose::Pass => "pass",
         Purpose::Trigger
         | Purpose::Mode
+        | Purpose::Way
         | Purpose::Either
         | Purpose::Overpay
         | Purpose::Name
@@ -573,6 +578,38 @@ fn nameable(game: &Game, known: &KnownCards, seat: PlayerId) -> Vec<Card> {
     let mut cards: Vec<Card> = cards.into_iter().collect();
     cards.sort_by_key(|c| c.name());
     cards
+}
+
+/// Said on decisions whose answer may play an Action in a game with Ways.
+pub const WAY_HINT: &str = "(to pre-answer the Way question, add way: \"none\" or a Way's name)";
+
+/// Whether answering `d` may play an Action card, in a game with Ways: a Way question
+/// may follow.
+fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
+    if !v.landscapes().iter().any(|l| l.kind() == Kind::Way) {
+        return false;
+    }
+    let action = |c: CardId| v.types(c).is_none_or(|t| t.intersects(Types::ACTION));
+    match &d.kind {
+        DecisionKind::Turn { moves, .. } => moves
+            .iter()
+            .any(|m| matches!(m, Move::Play(c) if action(*c))),
+        DecisionKind::Cards { candidates, .. } if d.purpose == Purpose::Play => {
+            candidates.iter().any(|&c| action(c))
+        }
+        // Reactions and Reserves that play themselves or replay a card.
+        DecisionKind::Choose { .. } if d.purpose == Purpose::Trigger => {
+            v.pending_triggers().iter().any(|t| {
+                t.source.is_some_and(|c| {
+                    matches!(
+                        v.zone(c),
+                        Some(Zone::Hand(p) | Zone::Mat(p, Mat::Tavern)) if p == d.player
+                    ) && action(c)
+                })
+            })
+        }
+        _ => d.purpose == Purpose::Play,
+    }
 }
 
 /// The decision as agent-view@2 options, with what each option answers with.
@@ -777,6 +814,11 @@ pub(crate) fn decision(
         }
     };
     let (options, targets): (Vec<AgentOption>, Vec<Target>) = items.into_iter().unzip();
+    let prompt = if may_ask_way(&v, d) {
+        format!("{prompt} {WAY_HINT}")
+    } else {
+        prompt
+    };
     let decision = AgentDecision {
         id: id.to_string(),
         player: Some(d.player.0),

@@ -1,7 +1,10 @@
 use crate::project::{self, Context};
 use crate::text;
 use crate::types::{AgentView, Answer};
-use dominion_engine::{Game, GameConfig, Knowledge, PlayerId, Response, SetupError};
+use dominion_engine::{
+    Card, DecisionKind, Game, GameConfig, Kind, Knowledge, Opt, PlayerId, Purpose, Response,
+    SetupError,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -19,6 +22,52 @@ pub enum AnswerError {
     StaleDecision { given: String, open: String },
     #[error("{0}")]
     Invalid(String),
+}
+
+/// An answer to the Way question ("play it as itself, or use a Way instead") given in
+/// advance, with the answer whose play would ask it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WayChoice {
+    /// Play the card as itself.
+    None,
+    Way(Card),
+}
+
+impl WayChoice {
+    /// `none`, or a Way's name (ignoring case, spaces and punctuation).
+    pub fn parse(s: &str) -> Result<WayChoice, String> {
+        if s.trim().eq_ignore_ascii_case("none") {
+            return Ok(WayChoice::None);
+        }
+        Card::from_name(s)
+            .filter(|c| c.kind() == Kind::Way)
+            .map(WayChoice::Way)
+            .ok_or_else(|| format!("way {s:?} is neither \"none\" nor the name of a Way"))
+    }
+
+    fn opt(self) -> Opt {
+        match self {
+            WayChoice::None => Opt::No,
+            WayChoice::Way(w) => Opt::Card(w),
+        }
+    }
+}
+
+/// What a pre-answered Way did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Answered {
+    /// Way questions answered with it.
+    pub ways_answered: u32,
+    /// Its Way, when a Way question came up that doesn't offer it; that question is open.
+    pub way_not_offered: Option<Card>,
+}
+
+impl Answered {
+    /// A line for the agent when its pre-answer was not used.
+    pub fn note(&self) -> Option<String> {
+        self.way_not_offered
+            .map(|w| format!("{w} is not offered for this play, so the Way question is still open"))
+    }
 }
 
 /// A hosted game: the engine game, what each seat knows, decision ids and each seat's
@@ -149,12 +198,65 @@ impl Table {
 
     /// Answers the open decision for `seat`.
     pub fn answer(&mut self, seat: PlayerId, answer: &Answer) -> Result<(), AnswerError> {
+        self.answer_with(seat, answer, None).map(|_| ())
+    }
+
+    /// Answers the open decision for `seat`, then, with `way`, answers each Way question
+    /// that `seat` is asked next with it, until a decision that isn't one. A Way that
+    /// isn't in the game rejects the answer; one in the game but not offered for a play
+    /// leaves that question open.
+    pub fn answer_with(
+        &mut self,
+        seat: PlayerId,
+        answer: &Answer,
+        way: Option<WayChoice>,
+    ) -> Result<Answered, AnswerError> {
         let response = self.resolve(seat, answer)?;
+        if let Some(WayChoice::Way(w)) = way
+            && !self.game.landscapes().contains(&w)
+        {
+            let ways: Vec<&str> = self
+                .game
+                .landscapes()
+                .iter()
+                .filter(|l| l.kind() == Kind::Way)
+                .map(|l| l.name())
+                .collect();
+            return Err(AnswerError::Invalid(match ways.as_slice() {
+                [] => format!("{w} is not in this game, which has no Ways"),
+                _ => format!("{w} is not in this game (its Ways: {})", ways.join(", ")),
+            }));
+        }
         let log_len = self.game.log().len();
+        self.respond(response)?;
+        self.log_from[seat.index()] = log_len;
+        let mut answered = Answered::default();
+        let Some(way) = way else {
+            return Ok(answered);
+        };
+        while let Some(d) = self.game.pending()
+            && d.player == seat
+            && d.purpose == Purpose::Way
+        {
+            let DecisionKind::Choose { options, .. } = &d.kind else {
+                break;
+            };
+            if !options.contains(&way.opt()) {
+                if let WayChoice::Way(w) = way {
+                    answered.way_not_offered = Some(w);
+                }
+                break;
+            }
+            self.respond(Response::option(way.opt()))?;
+            answered.ways_answered += 1;
+        }
+        Ok(answered)
+    }
+
+    fn respond(&mut self, response: Response) -> Result<(), AnswerError> {
         self.game
             .respond(response)
             .map_err(|e| AnswerError::Invalid(e.to_string()))?;
-        self.log_from[seat.index()] = log_len;
         self.knowledge.update(&mut self.game);
         self.seq += 1;
         Ok(())

@@ -1,7 +1,7 @@
 //! The MCP tools: one `Session` per MCP session, sharing the `Hub`.
 
 use crate::hub::{Hub, HubError, NewGame, Seat, panic_message};
-use dominion_agent::{AgentView, Answer};
+use dominion_agent::{AgentView, Answer, WayChoice};
 use futures_util::FutureExt;
 use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
@@ -64,6 +64,11 @@ pub struct AnswerParams {
     pub indices: Option<Vec<u32>>,
     /// A card name, instead of indices, when the decision allows naming any card.
     pub name: Option<String>,
+    /// Answers the Way question in advance: "none" plays the card as itself, a Way's name
+    /// uses that Way. Applies to each Way question this answer leads to (a Throne Room's
+    /// replays too) and is ignored when none does. A Way that isn't in the game rejects
+    /// the answer.
+    pub way: Option<String>,
     #[serde(default)]
     pub format: Format,
 }
@@ -212,7 +217,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Answer your open decision with option indices (or `name` where any card may be named). Returns your next view, or why the answer was rejected."
+        description = "Answer your open decision with option indices (or `name` where any card may be named). In a game with Ways, `way` (\"none\" or a Way's name) also answers the \"play it as itself, or use a Way\" question for the card your answer plays, saving a call. Returns your next view, or why the answer was rejected."
     )]
     async fn answer(
         &self,
@@ -222,13 +227,23 @@ impl Session {
             Ok(seat) => seat,
             Err(e) => return Ok(failure(e.to_string())),
         };
+        let way = match p.way.as_deref().map(WayChoice::parse).transpose() {
+            Ok(way) => way,
+            Err(e) => return Ok(failure(format!("rejected: {e}"))),
+        };
         let answer = Answer {
             decision: p.decision_id,
             indices: p.indices,
             name: p.name,
         };
-        Ok(match self.hub.answer(&seat, &answer) {
-            Ok(()) => self.view_of(&seat, p.format),
+        Ok(match self.hub.answer_with(&seat, &answer, way) {
+            Ok(answered) => {
+                let mut result = self.view_of(&seat, p.format);
+                if let Some(note) = answered.note() {
+                    result.content.insert(0, ContentBlock::text(note));
+                }
+                result
+            }
             Err(e) => failure(format!("rejected: {e}")),
         })
     }
@@ -285,7 +300,8 @@ token is the only way to see or act for it. Pass `token` to view, wait_for_decis
 answer. (join_game binds a seat to this MCP session so later calls may leave the token \
 out, but only until the session ends: keep the token.) Loop: \
 wait_for_decision, read the view, then answer the decision with option indices (in order \
-when the decision is ordered, or `name` when it says any card may be named). Views are \
+when the decision is ordered, or `name` when it says any card may be named; `way` answers \
+a Way question in advance). Views are \
 dominion/agent-view@2: the JSON is the structured content, the text rendering the text \
 content."
 )]
@@ -324,6 +340,18 @@ async fn answered(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn answer_documents_the_way_argument() {
+        let router = Session::tool_router();
+        let tool = router.get("answer").unwrap();
+        assert!(tool.description.as_deref().unwrap().contains("`way`"));
+        let way = &tool.input_schema["properties"]["way"];
+        assert!(
+            way["description"].as_str().unwrap().contains("\"none\""),
+            "{way}"
+        );
+    }
 
     #[tokio::test]
     async fn a_tool_call_that_panics_is_answered_with_an_error() {

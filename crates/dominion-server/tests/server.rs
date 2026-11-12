@@ -225,6 +225,11 @@ async fn arguments_a_tool_does_not_take_are_refused() {
             "index",
             json!({ "token": tokens[0], "decision_id": "d1", "index": 0 }),
         ),
+        (
+            "answer",
+            "ways",
+            json!({ "token": tokens[0], "decision_id": "d1", "way": "none", "ways": "none" }),
+        ),
         ("card", "set", json!({ "name": "Moat", "set": "Base" })),
         ("list_games", "running", json!({ "running": true })),
     ] {
@@ -238,6 +243,128 @@ async fn arguments_a_tool_does_not_take_are_refused() {
     }
     let games = call(&client, "list_games", json!({})).await;
     assert_eq!(games.json.unwrap()["games"].as_array().unwrap().len(), 1);
+    client.close().await;
+    stop.cancel();
+}
+
+/// The index of the first option of `d` that `wanted` accepts.
+fn option(d: &Value, wanted: impl Fn(&Value) -> bool) -> Option<u64> {
+    d["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| wanted(o))?["index"]
+        .as_u64()
+}
+
+/// Seat 0 plays only Treasures and buys Laboratories; seat 1 does nothing. Returns seat
+/// 0's next Action phase decision that offers to play a Laboratory.
+async fn until_laboratory(client: &Client, tokens: &[String]) -> Value {
+    for _ in 0..1000 {
+        for (seat, token) in tokens.iter().enumerate() {
+            let view = call(client, "view", json!({ "token": token }))
+                .await
+                .json
+                .unwrap();
+            let d = &view["decision"];
+            if d.is_null() {
+                continue;
+            }
+            let play_lab = |o: &Value| o["action"] == "play" && o["card"] == "Laboratory";
+            let index = if d["kind"] != "turn" {
+                0
+            } else if seat == 0 && d["phase"] == "action" {
+                if option(d, play_lab).is_some() {
+                    return d.clone();
+                }
+                option(d, |o| o["action"] == "end-phase").unwrap()
+            } else if seat == 0 {
+                option(d, |o| o["action"] == "play")
+                    .or_else(|| option(d, |o| o["card"] == "Laboratory" && o["action"] == "buy"))
+                    .or_else(|| option(d, |o| o["action"] == "end-phase"))
+                    .unwrap()
+            } else {
+                option(d, |o| o["action"] == "end-phase").unwrap()
+            };
+            let answer = json!({ "token": token, "decision_id": d["id"], "indices": [index] });
+            assert!(call(client, "answer", answer).await.ok);
+        }
+    }
+    panic!("seat 0 never gets to play a Laboratory");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn answer_takes_the_way_question_in_advance() {
+    let (url, stop) = start().await;
+    let client = Client::connect(&url).await.unwrap();
+    let created = call(
+        &client,
+        "create_game",
+        json!({
+            "players": 2,
+            "kingdom": ["Laboratory"],
+            "landscapes": ["Way of the Mouse", "Way of the Ox"],
+            "seed": 2,
+            "colonies": false,
+            "shelters": false,
+        }),
+    )
+    .await;
+    let created = created.json.unwrap();
+    let tokens: Vec<String> = (0..2)
+        .map(|i| created["seats"][i]["token"].as_str().unwrap().to_string())
+        .collect();
+    let d = until_laboratory(&client, &tokens).await;
+    assert!(
+        d["prompt"]
+            .as_str()
+            .unwrap()
+            .ends_with(dominion_agent::WAY_HINT),
+        "{}",
+        d["prompt"]
+    );
+    let lab = option(&d, |o| o["card"] == "Laboratory").unwrap();
+    let answer = |way: &str| json!({ "token": tokens[0], "decision_id": d["id"], "indices": [lab], "way": way });
+    let typo = call(&client, "answer", answer("Way of the Moose")).await;
+    assert!(!typo.ok);
+    assert!(
+        typo.text.starts_with("rejected: way \"Way of the Moose\""),
+        "{}",
+        typo.text
+    );
+    let absent = call(&client, "answer", answer("Way of the Mole")).await;
+    assert!(!absent.ok);
+    assert!(absent.text.contains("not in this game"), "{}", absent.text);
+
+    let played = call(&client, "answer", answer("none")).await;
+    assert!(played.ok, "{}", played.text);
+    let view = played.json.unwrap();
+    assert_eq!(view["decision"]["kind"], "turn");
+    assert!(!played.text.contains("not offered"));
+
+    // Way of the Mouse plays its set-aside card, which can't use Way of the Mouse.
+    let d = until_laboratory(&client, &tokens).await;
+    let lab = option(&d, |o| o["card"] == "Laboratory").unwrap();
+    let mouse = json!({
+        "token": tokens[0], "decision_id": d["id"], "indices": [lab], "way": "Way of the Mouse"
+    });
+    let reply = call(&client, "answer", mouse).await;
+    assert!(reply.ok, "{}", reply.text);
+    assert!(
+        reply
+            .text
+            .starts_with("Way of the Mouse is not offered for this play"),
+        "{}",
+        reply.text
+    );
+    let open = &reply.json.unwrap()["decision"];
+    assert!(
+        open["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("use a Way instead")
+    );
+    assert_ne!(open["source"], "Laboratory");
     client.close().await;
     stop.cancel();
 }
