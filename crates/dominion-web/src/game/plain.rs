@@ -3,6 +3,7 @@
 
 use super::state::{Selection, answers_on_click, name_answer};
 use super::use_game;
+use super::wording;
 use crate::app::use_cards;
 use dioxus::prelude::*;
 use dominion_protocol::{
@@ -558,7 +559,9 @@ pub fn LogPanel(entries: Vec<LogEntry>) -> Element {
 
 fn option_label(o: &AgentOption) -> String {
     match o.zone.as_deref() {
-        Some(z) if o.action == "select" && z != "hand" => format!("{} (from {z})", o.label),
+        Some(z) if o.action == "select" && !matches!(z, "hand" | "looking") => {
+            format!("{} (from {z})", o.label)
+        }
         _ => o.label.clone(),
     }
 }
@@ -598,11 +601,11 @@ pub fn DecisionControls(
     };
     rsx! {
         div { class: "decision",
-            h3 { class: "prompt", "{d.prompt}" }
+            h3 { class: "prompt", "{wording::own_prompt(&d)}" }
             for g in d.groups.iter().cloned() {
                 div { key: "{g.group}", class: "group",
                     if many_groups {
-                        h4 { "{g.prompt} ({bounds_text(g.min, g.max)})" }
+                        h4 { "{wording::without_way_hint(&g.prompt)} ({bounds_text(g.min, g.max)})" }
                     } else if !click_answers {
                         p { class: "muted", "{bounds_text(g.min, g.max)}" if d.ordered { " — order matters, first picked first" } }
                     }

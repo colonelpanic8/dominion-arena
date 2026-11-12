@@ -586,7 +586,7 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                     let t = &u.inter.targets[i];
                     let mark = u.mark_target(&sel, i);
                     let label = match (&t.card, &t.zone) {
-                        (Some(c), Some(z)) if &t.label == c && !matches!(z.as_str(), "deck" | "hand") => {
+                        (Some(c), Some(z)) if &t.label == c && !matches!(z.as_str(), "deck" | "hand" | "looking") => {
                             Some(zone_text(z).to_string())
                         }
                         (Some(c), _) if &t.label == c => None,

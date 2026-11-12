@@ -42,17 +42,49 @@ fn down_to(text: &str) -> Option<u32> {
     text[at + 8..].split_whitespace().next()?.parse().ok()
 }
 
+/// A decision's own prompt without the note telling agents they may answer the Way
+/// question in advance (the table asks it when it comes).
+pub fn own_prompt(d: &AgentDecision) -> &str {
+    without_way_hint(&d.prompt)
+}
+
+pub fn without_way_hint(prompt: &str) -> &str {
+    match prompt.find(" (to pre-answer the Way question") {
+        Some(at) => &prompt[..at],
+        None => prompt,
+    }
+}
+
+/// Whether `d` asks whether to play a card as itself or use a Way instead.
+fn is_way(d: &AgentDecision, cards: &CardDb) -> bool {
+    d.kind == "choose"
+        && d.options.iter().any(|o| o.action == "select")
+        && d.options.iter().all(|o| match o.action.as_str() {
+            "no" => true,
+            "select" => o
+                .card
+                .as_deref()
+                .and_then(|c| cards.get(c))
+                .is_some_and(|c| c.kind == "way"),
+            _ => false,
+        })
+}
+
 /// The prompt dominion.games shows for a decision.
 pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
     let (min, max) = bounds(d);
     let text = source_text(d, cards);
     let may = min == 0;
+    if is_way(d, cards) {
+        let card = d.source.as_deref().unwrap_or("it");
+        return format!("Consider the Way you play {card}");
+    }
     match (d.kind.as_str(), d.purpose.as_str()) {
         ("turn", _) => match d.phase.as_deref() {
             Some("action") => "You may play Actions".into(),
             Some("buy") => "You may buy cards".into(),
             Some("night") => "You may play Night cards".into(),
-            _ => d.prompt.clone(),
+            _ => own_prompt(d).into(),
         },
         ("name", _) => "Name a card".into(),
         ("number", _) => "Choose a number".into(),
@@ -146,10 +178,11 @@ pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
         (_, "pass") => "Pass a card".into(),
         (_, "overpay") => "You may overpay".into(),
         (_, "name") => "Name a card".into(),
-        _ => d
-            .prompt
-            .split_once(": ")
-            .map_or(d.prompt.clone(), |(_, rest)| capitalise(rest)),
+        _ => {
+            let own = own_prompt(d);
+            own.split_once(": ")
+                .map_or(own.into(), |(_, rest)| capitalise(rest))
+        }
     }
 }
 

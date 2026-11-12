@@ -156,7 +156,7 @@ pub struct Zone {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NamedZone {
-    /// The view's key: `setAside`, `tavern`, `island`, `nativeVillage`, `exile`.
+    /// The view's key: `setAside`, `looking`, `tavern`, `island`, `nativeVillage`, `exile`.
     pub key: String,
     pub label: String,
     pub zone: Zone,
@@ -356,6 +356,7 @@ fn badge(kind: &str, text: String, count: Option<i32>) -> Badge {
 fn zone_label(key: &str) -> String {
     match key {
         "setAside" => "Set aside".into(),
+        "looking" => "Looking at".into(),
         "tavern" => "Tavern mat".into(),
         "island" => "Island mat".into(),
         "nativeVillage" => "Native Village mat".into(),

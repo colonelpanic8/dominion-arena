@@ -9,11 +9,11 @@ use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use dominion_protocol::{AgentDecision, AgentView, PlayerView, Tokens};
 use dominion_web::cards::CardDb;
 use dominion_web::game::board::{Board, PileAt, PileEntry, PlayerEntry, Zone, board};
-use dominion_web::game::entry;
 use dominion_web::game::interaction::{Interaction, Place, Target, TreasureRun, interaction};
 use dominion_web::game::logfmt::{Span, log_lines};
 use dominion_web::game::state::Selection;
 use dominion_web::game::table::model::{Spot, spots};
+use dominion_web::game::{entry, wording};
 use rand::rngs::StdRng;
 use rand::seq::IndexedRandom;
 use rand::{Rng, SeedableRng};
@@ -722,4 +722,39 @@ fn every_log_entry_is_worded_by_a_rule() {
         }
     }
     println!("{kinds:?}");
+}
+
+#[test]
+fn way_questions_read_like_dominion_games() {
+    let cards = card_db();
+    let mut c = config(&["Village", "Smithy"], 2, 3);
+    c.landscapes = vec![Card::WayOfTheOx];
+    let mut table = Table::new("g", c, vec![]).unwrap();
+    let mut rng = StdRng::seed_from_u64(3);
+    let (mut hinted, mut asked) = (0, 0);
+    while let Some(seat) = table.deciding() {
+        let view = table.view(seat);
+        let d = view.decision.clone().unwrap();
+        if d.prompt.ends_with(dominion_agent::WAY_HINT) {
+            hinted += 1;
+            assert!(!wording::own_prompt(&d).contains("Way"), "{}", d.prompt);
+        }
+        if d.options
+            .iter()
+            .any(|o| o.card.as_deref() == Some("Way of the Ox"))
+        {
+            asked += 1;
+            let source = d.source.clone().unwrap();
+            assert_eq!(
+                wording::prompt(&d, &cards),
+                format!("Consider the Way you play {source}")
+            );
+        }
+        let sel = steer(&view, &cards, &["Village", "Smithy"], &mut rng);
+        table.answer(seat, &sel.answer(&d).unwrap()).unwrap();
+        if hinted > 0 && asked > 2 {
+            return;
+        }
+    }
+    panic!("hinted {hinted}, asked {asked}");
 }
