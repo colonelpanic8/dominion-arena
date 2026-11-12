@@ -2,7 +2,8 @@
 //! Adventures tokens.
 
 use super::{
-    CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, turn_durations,
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
+    turn_durations,
 };
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -1813,7 +1814,7 @@ fn scouting_party(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(p, chosen))
         }
         3 => {
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+            f.s.cards = looking(g, p, &f.s.cards);
             if f.s.cards.len() < 2 {
                 return Flow::done();
             }
@@ -1821,7 +1822,7 @@ fn scouting_party(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            top_deck_ordered(g, p, &input.cards());
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }

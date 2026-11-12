@@ -2,7 +2,7 @@
 //! Governor, Marchland, Sauna / Avanto, Walled Village and the Event Summon.
 
 use super::intrigue::{GainRule, trash_and_gain};
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, PAY_OTHERWISE, Value};
@@ -519,10 +519,8 @@ fn envoy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, chosen))
         }
         _ => {
-            for c in std::mem::take(&mut f.s.cards) {
-                if g.zone(c) == Zone::Deck(f.player) {
-                    g.put_in_hand(c, f.player);
-                }
+            for c in looking(g, f.player, &std::mem::take(&mut f.s.cards)) {
+                g.put_in_hand(c, f.player);
             }
             Flow::done()
         }
@@ -700,7 +698,7 @@ fn sauna_avanto(g: &mut Game, f: &mut CardFrame, input: Input, other: Card) -> F
 }
 
 /// Stash: each Stash just shuffled is put where its owner chooses among the shuffled cards
-/// (0: on top of them).
+/// (0: on top of them), looking at the cards still on the deck above them.
 fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     let shuffled = g.shuffled(p).len();
@@ -719,10 +717,13 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 2;
-            let deck = g.player(p).deck[..shuffled].iter().rev().copied().collect();
+            let above: Vec<CardId> = g.player(p).deck[shuffled..].iter().rev().copied().collect();
+            for &c in &above {
+                g.show_to(c, p);
+            }
             f.ask_number(0, shuffled as i32 - 1, Purpose::Move)
                 .question("how many of the shuffled cards go above Stash? 0 puts it on top")
-                .about(deck)
+                .about(above)
         }
         _ => {
             let stash = f.s.cards[f.s.i];

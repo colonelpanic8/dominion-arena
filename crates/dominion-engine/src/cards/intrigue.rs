@@ -1,6 +1,6 @@
 //! Intrigue (2nd edition) and its removed 1st-edition cards.
 
-use super::{Bonus, CardFrame, Hook, SetRules, mode_mask, take_mode};
+use super::{Bonus, CardFrame, Hook, SetRules, looking, mode_mask, put_back, take_mode};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -662,9 +662,7 @@ fn reveal_and_take(g: &mut Game, f: &mut CardFrame, input: Input, n: usize, type
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                g.move_card(c, Zone::Deck(f.player), Pos::Top);
-            }
+            put_back(g, f.player, &input.cards());
             Flow::done()
         }
     }
@@ -967,7 +965,6 @@ fn saboteur(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     f.pc = 5;
                     continue;
                 };
-                g.set_aside_revealed(c, target);
                 let cost = g.cost_of(c);
                 if cost.coins < 3 {
                     f.s.cards.push(c);
@@ -993,8 +990,9 @@ fn saboteur(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             5 => {
                 f.pc = 6;
-                let rest = std::mem::take(&mut f.s.cards);
-                return Flow::Call(Frame::discard(f.targets[f.s.i], rest));
+                let target = f.targets[f.s.i];
+                let rest = looking(g, target, &std::mem::take(&mut f.s.cards));
+                return Flow::Call(Frame::discard(target, rest));
             }
             _ => {
                 f.s.i += 1;

@@ -53,6 +53,7 @@ pub(crate) fn zone_name(zone: Zone) -> String {
         Zone::Discard(_) => "discard".into(),
         Zone::InPlay(_) => "inPlay".into(),
         Zone::SetAside(_) => "setAside".into(),
+        Zone::Looking(_) => "looking".into(),
         Zone::Mat(_, mat) => mat_name(mat).into(),
         Zone::Pile(_) => "pile".into(),
         Zone::Trash => "trash".into(),
@@ -396,7 +397,7 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
         .iter()
         .any(|&c| v.supply_pile(c).is_some() || v.landscapes().contains(&c));
     let mut other_zones = BTreeMap::new();
-    let mut zones: Vec<Zone> = vec![Zone::SetAside(p)];
+    let mut zones: Vec<Zone> = vec![Zone::SetAside(p), Zone::Looking(p)];
     zones.extend(
         [Mat::Tavern, Mat::Island, Mat::NativeVillage, Mat::Exile].map(|m| Zone::Mat(p, m)),
     );
@@ -980,6 +981,7 @@ fn place(game: &Game, zone: Zone, player: PlayerId, cx: &Context<'_>) -> String 
         Zone::InPlay(p) => format!("{} play area", whose(p)),
         Zone::SetAside(p) if p == player => "set aside".to_string(),
         Zone::SetAside(p) => format!("{} set-aside cards", whose(p)),
+        Zone::Looking(p) => format!("the top of {} deck", whose(p)),
         Zone::Mat(p, mat) => {
             let mat = match mat {
                 Mat::Tavern => "Tavern",
@@ -1017,7 +1019,11 @@ fn put_text(
     if bottom {
         to_text = format!("the bottom of {to_text}");
     }
-    if from == Some(to) && matches!(to, Zone::Deck(_)) {
+    let back = match (from, to) {
+        (Some(Zone::Deck(p) | Zone::Looking(p)), Zone::Deck(q)) => p == q,
+        _ => false,
+    };
+    if back {
         return format!("puts {what} back onto {to_text}");
     }
     let from = match from {

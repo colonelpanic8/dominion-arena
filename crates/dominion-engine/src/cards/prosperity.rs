@@ -1,10 +1,10 @@
 //! Prosperity (2nd edition), its removed 1st-edition cards, Platinum and Colony.
 
-use super::{Bonus, CardFrame, Hook, SetRules, mode_mask};
+use super::{Bonus, CardFrame, Hook, SetRules, looking, mode_mask, put_back};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::game::{Phase, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Note, PileId, PlayerId, Types};
@@ -401,15 +401,6 @@ pub(super) fn ask_order_for(f: &CardFrame, player: PlayerId, cards: Vec<CardId>)
     })
 }
 
-/// Puts `order` (top first) back on top of `p`'s deck.
-pub(super) fn put_back(g: &mut Game, p: PlayerId, order: Vec<CardId>) {
-    for &c in order.iter().rev() {
-        if g.zone(c) == Zone::Deck(p) || g.zone(c) == Zone::SetAside(p) {
-            g.move_card(c, Zone::Deck(p), Pos::Top);
-        }
-    }
-}
-
 /// Each target gains a `card` from the Supply, in turn order.
 pub(super) fn each_target_gains(g: &mut Game, f: &mut CardFrame, card: Card) -> Flow {
     let Some(&target) = f.targets.get(f.s.i) else {
@@ -512,7 +503,7 @@ fn discard_down_to(g: &mut Game, f: &mut CardFrame, input: Input, n: usize) -> F
     }
 }
 
-/// Reveal cards from the deck one at a time, setting them aside in `f.s.cards`, until
+/// Reveal cards from the deck one at a time, keeping them in `f.s.cards`, until
 /// `stop` holds for the cards revealed so far (the last one is kept in `f.s.pick`) or the
 /// deck runs out. Steps `base` and `base + 1`;
 /// moves on to `base + 2` when done.
@@ -531,7 +522,6 @@ pub(super) fn reveal_until(
         f.pc = base + 2;
         return Flow::Continue;
     };
-    g.set_aside_revealed(c, f.player);
     f.s.cards.push(c);
     if stop(g, &f.s.cards) {
         f.s.pick = Some(c);
@@ -851,7 +841,7 @@ fn rabble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             2 => {
                 let target = f.targets[f.s.i];
-                f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(target));
+                f.s.cards = looking(g, target, &f.s.cards);
                 if f.s.cards.len() > 1 {
                     f.pc = 3;
                     return ask_order_for(f, target, f.s.cards.clone());
@@ -861,7 +851,7 @@ fn rabble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             _ => {
                 let target = f.targets[f.s.i];
-                put_back(g, target, input.take().map(Input::cards).unwrap_or_default());
+                put_back(g, target, &input.take().map(Input::cards).unwrap_or_default());
                 f.s.i += 1;
                 f.pc = 0;
                 return Flow::Continue;
@@ -1107,7 +1097,7 @@ fn venture(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 => {
             f.pc = 4;
             match f.s.pick {
-                Some(c) if g.zone(c) == Zone::SetAside(f.player) => {
+                Some(c) if g.zone(c) == Zone::Looking(f.player) => {
                     Flow::Call(Frame::play(f.player, c, true, vec![]))
                 }
                 _ => Flow::done(),

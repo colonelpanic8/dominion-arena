@@ -112,6 +112,26 @@ fn a_revealed_card_put_on_a_deck_is_known_when_drawn() {
 }
 
 #[test]
+fn cards_being_looked_at_are_off_the_deck_and_known_only_to_the_looker() {
+    let mut g = setup(&[Card::SackOfLoot]);
+    hand(&mut g, P0, &[Card::Sextant]);
+    let mut cards = vec![Card::Gold; 2];
+    cards.extend([Card::Silver; 4]);
+    deck(&mut g, P0, &cards);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Sextant);
+    k.update(&mut g);
+    assert_eq!(g.player(P0).deck.len(), 1);
+    let mine = k.known(&g, P0).zone(Zone::Looking(P0));
+    assert_eq!(mine.known, count(&[(Card::Gold, 2), (Card::Silver, 3)]));
+    let theirs = k.known(&g, P1).zone(Zone::Looking(P0));
+    assert_eq!((theirs.count, theirs.unknown), (5, 5));
+    let view = g.view(P1);
+    assert_eq!(view.player(P0).looking_size(), 5);
+    assert!(view.player(P0).looking().is_empty());
+}
+
+#[test]
 fn a_card_put_on_a_deck_from_hand_stays_hidden() {
     let mut g = setup(&[Card::Courtyard]);
     hand(&mut g, P0, &[Card::Courtyard, Card::Gold]);

@@ -8,7 +8,9 @@
 //! lasting's `data.pick`; the players an Attack-Duration affects are a bit mask in
 //! `data.n`.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
+};
 use crate::decision::{DecisionKind, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -583,7 +585,7 @@ fn lookout(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, chosen))
         }
         3 => {
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(f.player));
+            f.s.cards = looking(g, f.player, &f.s.cards);
             f.pc = 4;
             f.ask_cards(f.s.cards.clone(), 1, 1, Purpose::Discard)
         }
@@ -1029,9 +1031,7 @@ fn navigator(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         3 => {
-            for &c in input.cards().iter().rev() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
         _ => Flow::done(),
@@ -1129,10 +1129,7 @@ fn pirate_ship(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             5 => {
                 f.pc = 6;
                 let target = f.targets[f.s.i];
-                let rest: Vec<_> = std::mem::take(&mut f.s.cards)
-                    .into_iter()
-                    .filter(|&c| g.zone(c) == Zone::Deck(target))
-                    .collect();
+                let rest = looking(g, target, &std::mem::take(&mut f.s.cards));
                 return Flow::Call(Frame::discard(target, rest));
             }
             _ => {

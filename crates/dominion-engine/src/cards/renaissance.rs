@@ -8,7 +8,10 @@
 //! wait as `EndOfTurn` lastings of their own, one per play; Priest's and Inventor's
 //! effects are `EndOfTurn` lastings too.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, take_mode};
+use super::{
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
+    take_mode,
+};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -796,7 +799,7 @@ fn piazza(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            if !g.is(c, Types::ACTION) || g.zone(c) != Zone::Deck(p) {
+            if !g.is(c, Types::ACTION) || g.zone(c) != Zone::Looking(p) {
                 return Flow::done();
             }
             f.pc = 2;
@@ -911,17 +914,12 @@ fn border_guard(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let chosen = input.cards();
-            for &c in &chosen {
-                if g.zone(c) == Zone::Deck(p) {
-                    g.put_in_hand(c, p);
-                }
+            for c in looking(g, p, &chosen) {
+                g.put_in_hand(c, p);
             }
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|c| !chosen.contains(c) && g.zone(*c) == Zone::Deck(p))
+            let rest: Vec<CardId> = looking(g, p, &f.s.cards)
+                .into_iter()
+                .filter(|c| !chosen.contains(c))
                 .collect();
             f.pc = 3;
             Flow::Call(Frame::discard(p, rest))
@@ -1187,7 +1185,7 @@ fn seer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             for c in input.cards() {
                 let cost = g.cost_of(c);
                 let cheap = (2..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0;
-                if g.zone(c) != Zone::Deck(p) {
+                if g.zone(c) != Zone::Looking(p) {
                     continue;
                 }
                 if cheap {
@@ -1203,9 +1201,7 @@ fn seer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_order(rest, Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }

@@ -1264,7 +1264,7 @@ fn will_o_wisp_takes_the_revealed_card_if_it_costs_two_or_less() {
     play(&mut g, Card::WillOWisp);
     assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Estate]);
     assert_eq!(g.turn().actions, 1);
-    let taken = moved(P0, Zone::Deck(P0), Zone::Hand(P0), &[Card::Estate], 1);
+    let taken = moved(P0, Zone::Looking(P0), Zone::Hand(P0), &[Card::Estate], 1);
     assert!(g.log().contains(&taken));
 
     let mut g = setup(&[Card::Bard]);

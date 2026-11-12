@@ -1,7 +1,7 @@
 //! Cornucopia & Guilds (2nd edition), and the removed 1st-edition Cornucopia and Guilds
 //! cards with Tournament's Prizes.
 
-use super::{CardFrame, Hook, SetRules};
+use super::{CardFrame, Hook, SetRules, looking, put_back};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, OVERPAY, Value};
@@ -456,13 +456,6 @@ pub(crate) fn ask_ordered(
     })
 }
 
-/// Puts `cards` (listed top first) onto `p`'s deck without revealing them.
-pub(crate) fn put_back(g: &mut Game, p: PlayerId, cards: &[CardId]) {
-    for &c in cards.iter().rev() {
-        g.move_card(c, Zone::Deck(p), Pos::Top);
-    }
-}
-
 /// Gains a `card` from the Supply (if there is one) and finishes.
 pub(crate) fn gain_one(g: &mut Game, f: &mut CardFrame, card: Card, to: Dest) -> Flow {
     if f.pc != 0 {
@@ -563,9 +556,9 @@ fn trash_optional(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// Reveals cards from `who`'s deck one at a time, setting aside each that doesn't match
-/// `pred` in `f.s.cards`, until one matches. Uses pcs `at` and `at + 1`. `Ok(found)` when
-/// done (`None` if the cards ran out); the match is left on top of the deck.
+/// Reveals cards from `who`'s deck one at a time, keeping each that doesn't match `pred`
+/// in `f.s.cards`, until one matches. Uses pcs `at` and `at + 1`. `Ok(found)` when done
+/// (`None` if the cards ran out); the match is held like the others.
 pub(crate) fn reveal_until(
     g: &mut Game,
     f: &mut CardFrame,
@@ -582,7 +575,6 @@ pub(crate) fn reveal_until(
         None => Ok(None),
         Some(c) if pred(g, c) => Ok(Some(c)),
         Some(c) => {
-            g.set_aside_revealed(c, who);
             f.s.cards.push(c);
             f.pc = at;
             Err(Flow::Continue)
@@ -727,10 +719,8 @@ fn advisor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, chosen))
         }
         _ => {
-            for c in std::mem::take(&mut f.s.cards) {
-                if g.zone(c) == Zone::Deck(f.player) {
-                    g.put_in_hand(c, f.player);
-                }
+            for c in looking(g, f.player, &std::mem::take(&mut f.s.cards)) {
+                g.put_in_hand(c, f.player);
             }
             Flow::done()
         }
@@ -1428,7 +1418,7 @@ fn doctor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         3 => {
             let p = f.player;
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+            f.s.cards = looking(g, p, &f.s.cards);
             f.pc = 4;
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
@@ -1439,7 +1429,7 @@ fn doctor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-fn doctor_overpay(_g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
+fn doctor_overpay(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             if f.s.n >= f.data {
@@ -1464,7 +1454,10 @@ fn doctor_overpay(_g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             match input.opt() {
                 Some(Opt::Mode(0)) => Flow::Call(Frame::trash(f.player, vec![c])),
                 Some(Opt::Mode(1)) => Flow::Call(Frame::discard(f.player, vec![c])),
-                _ => Flow::Continue,
+                _ => {
+                    put_back(g, f.player, &[c]);
+                    Flow::Continue
+                }
             }
         }
     }
@@ -1495,7 +1488,8 @@ fn fortune_teller(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     if f.pc <= 1 {
         match reveal_until(g, f, input, t, |g, c| g.is(c, Types::VICTORY | Types::CURSE), 0) {
             Err(flow) => return flow,
-            Ok(_) => {
+            Ok(found) => {
+                put_back(g, t, &Vec::from_iter(found));
                 f.pc = 2;
                 return Flow::Call(Frame::discard(t, std::mem::take(&mut f.s.cards)));
             }

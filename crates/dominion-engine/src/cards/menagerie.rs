@@ -14,11 +14,13 @@
 //! and the Durations keep their card in `data.pick` of a lasting resolved by `START`.
 
 use super::plunder::next_play;
-use super::{CardFrame, Hook, SetRules, Step, due_durations, duration_trigger};
+use super::{
+    CardFrame, Hook, SetRules, Step, due_durations, duration_trigger, looking, put_back,
+};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -1207,17 +1209,14 @@ fn cardinal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             2 => {
                 for c in input.take().map(Input::cards).unwrap_or_default() {
-                    if g.zone(c) == Zone::Deck(target) {
+                    if g.zone(c) == Zone::Looking(target) {
                         exile(g, target, c);
                     }
                 }
                 f.pc = 3;
             }
             3 => {
-                let rest: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                    .into_iter()
-                    .filter(|&c| g.zone(c) == Zone::Deck(target))
-                    .collect();
+                let rest = looking(g, target, &std::mem::take(&mut f.s.cards));
                 f.pc = 4;
                 return Flow::Call(Frame::discard(target, rest));
             }
@@ -1824,16 +1823,12 @@ fn pursue(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(p, rest))
         }
         3 => {
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+            f.s.cards = looking(g, p, &f.s.cards);
             f.pc = 4;
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            for c in input.cards().into_iter().rev() {
-                if g.zone(c) == Zone::Deck(p) {
-                    g.move_card(c, Zone::Deck(p), Pos::Top);
-                }
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }

@@ -3412,7 +3412,9 @@ fn star_chart_after_avoid_picks_from_the_shuffled_cards_only() {
     respond(&mut g, Response::option(Opt::Trigger(i)));
     assert!(!candidates(&g).contains(&gold));
     choose_kinds(&mut g, &[Card::Silver]);
-    assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Silver, Card::Duchy]);
+    // The look then takes them in this order, top first.
+    let looked = &g.player(P0).looking;
+    assert_eq!(kinds(&g, looked), [Card::Gold, Card::Silver, Card::Duchy]);
 }
 
 #[test]

@@ -185,8 +185,20 @@ them.
   shuffle, cards `SetRules::bottom_when_shuffled` says go to the bottom (Shadow cards, in
   their owner's order), then `Shuffled { count }` (`g.shuffled(p)`, the bottom cards of
   the deck, is the shuffled ones still in it; "when you shuffle" placements such as Stash,
-  Star Chart and Fated resolve there). One draw shuffles at most once. A script step that must draw before its
-  own flow goes on calls the draw and `CardFrame::hold`s that flow (Way of the Chameleon).
+  Star Chart and Fated resolve there, under any cards left on the deck). A draw, look or
+  reveal that needs more cards than the deck holds shuffles first and then takes them all
+  (for a draw the -1 Card token counts as a card); one draw shuffles at most once. A
+  script step that must draw before its own flow goes on calls the draw and
+  `CardFrame::hold`s that flow (Way of the Chameleon).
+- **Looking and revealing** (`Frame::look` / `Frame::reveal`, the only way to take cards
+  from the top of a deck to look at or reveal): the cards go to `Zone::Looking` of the
+  deck's owner, off the deck, held (`Game::holds`) for the frame that called it, face up
+  if revealed. Draws and looks meanwhile take the cards under them. When that frame
+  finishes, those it didn't move go back on top of the deck in their order, over
+  anything put there meanwhile. Put them back in a chosen order with `cards::put_back`;
+  a card the text keeps "on the deck" before the effect draws, looks or shuffles again
+  is put back at once. Reveal-until scripts keep what they reveal there too (set aside
+  only what the text sets aside).
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
   carries a `Purpose` and its `source` card. Never add a card-specific decision kind.
@@ -221,7 +233,7 @@ them.
   discard pile. Cards that change zones must go through `move_card` (or record a
   `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
   Only its owner follows a card that leaves cards they hold out of sight: a hand,
-  cards set aside face down together (move them one after the other), the cards of a
+  cards taken off their deck to look at, cards set aside face down together (move them one after the other), the cards of a
   deck or discard pile they looked through. `g.show` such a card first when everyone
   knows which it is; other cards of a deck or discard pile are followed by everyone.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
@@ -272,8 +284,8 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   Public state kept in the set's `State` goes to agents through `SetRules::notes`.
 - Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
   check `g.zone(id)` is still that zone. That includes cards from `Frame::look` /
-  `Frame::reveal`: they stay on the deck, where a "when trashed" draw in the middle of
-  the effect can take one. An on-gain ability that moves the gained card (or plays it)
+  `Frame::reveal`, which something may move while they are held (`cards::looking` lists
+  those still in `Zone::Looking`). An on-gain ability that moves the gained card (or plays it)
   checks `g.still_where_gained(id)`.
 - `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
   "discard / trash the top card" takes it with `Frame::look`.

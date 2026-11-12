@@ -368,10 +368,8 @@ fn a_question_about_looked_at_cards_names_them() {
     let g = t.game();
     let top: Vec<&str> = g
         .player(PlayerId(0))
-        .deck
+        .looking
         .iter()
-        .rev()
-        .take(5)
         .map(|&c| g.card(c).name())
         .collect();
     let d = t.view(PlayerId(0)).decision.unwrap();
@@ -989,4 +987,32 @@ fn a_card_returned_to_its_pile_is_logged_as_returned() {
         }
     }
     panic!("Experiment was never played");
+}
+
+/// Cards taken off a deck to be looked at are shown to the looker as what they are
+/// looking at, and to the others only as how many there are.
+#[test]
+fn cards_being_looked_at_are_the_lookers_and_counted_for_the_others() {
+    let mut t = table(&[Card::Navigator], 1, &[]);
+    let asked = |_: PlayerId, d: &AgentDecision| d.source.as_deref() == Some("Navigator");
+    assert_eq!(play_to(&mut t, "Navigator", asked), Some(PlayerId(0)));
+    let looker = t.view(PlayerId(0));
+    let zone = &looker.you.as_ref().unwrap().other_zones["looking"];
+    assert_eq!((zone.count, zone.unknown), (5, 0));
+    assert!(text::render(&looker).contains("\n  looking 5 ("));
+    let other = t.view(PlayerId(1));
+    let zone = &other.opponents[0].other_zones["looking"];
+    assert_eq!((zone.count, zone.unknown), (5, 5));
+    assert!(text::render(&other).contains("\n  looking 5 (5 unknown)"));
+    let d = looker.decision.unwrap();
+    let back = pick(&d, |o| o.label.starts_with("Put them back")).unwrap();
+    t.answer(PlayerId(0), &back).unwrap();
+    let looker = t.view(PlayerId(0));
+    let d = looker.decision.as_ref().unwrap();
+    assert!(
+        d.ordered && d.options.iter().all(|o| o.card.is_some()),
+        "{d:?}"
+    );
+    let text = text::render(&looker);
+    assert!(!text.contains("(from "), "{text}");
 }

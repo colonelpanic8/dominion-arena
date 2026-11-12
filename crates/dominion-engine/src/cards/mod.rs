@@ -13,7 +13,7 @@
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::Event;
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{Lasting, Scratch, Until};
+use crate::game::{Lasting, Pos, Scratch, Until, Zone};
 use crate::setup::Setup;
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Plus, Set, Types};
@@ -396,6 +396,26 @@ pub(crate) fn names(g: &Game, cards: &[CardId]) -> String {
         .map(|&c| g.card(c).name())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Those of `cards` still taken off `p`'s deck by a look or reveal ([`Zone::Looking`]):
+/// the stop-moving rule lets the effect move only those.
+pub(crate) fn looking(g: &Game, p: PlayerId, cards: &[CardId]) -> Vec<CardId> {
+    cards
+        .iter()
+        .copied()
+        .filter(|&c| g.zone(c) == Zone::Looking(p))
+        .collect()
+}
+
+/// Puts back on `p`'s deck those of `cards` (top first) still taken off it by a look or
+/// reveal.
+pub(crate) fn put_back(g: &mut Game, p: PlayerId, cards: &[CardId]) {
+    for &c in cards.iter().rev() {
+        if g.zone(c) == Zone::Looking(p) {
+            g.move_card(c, Zone::Deck(p), Pos::Top);
+        }
+    }
 }
 
 /// The chosen `Opt::Mode`s as a bit mask, to resolve in printed order with [`take_mode`].

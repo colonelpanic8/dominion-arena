@@ -1,6 +1,6 @@
 //! Dominion (2nd edition), its removed 1st-edition cards, and the basic cards.
 
-use super::{CardFrame, Hook, SetRules, whose};
+use super::{CardFrame, Hook, SetRules, looking, put_back, whose};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -108,13 +108,6 @@ fn top_deck(g: &mut Game, p: PlayerId, cards: Vec<crate::CardId>) {
     for c in cards {
         g.top_deck(c, p);
     }
-}
-
-/// Those of `cards`, looked at or revealed from `p`'s deck, that are still there: an
-/// ability resolving meanwhile may have moved some.
-fn on_deck(g: &Game, p: PlayerId, mut cards: Vec<crate::CardId>) -> Vec<crate::CardId> {
-    cards.retain(|&c| g.zone(c) == Zone::Deck(p));
-    cards
 }
 
 fn cellar(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
@@ -460,7 +453,7 @@ fn bandit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             4 => {
                 f.pc = 5;
                 let target = f.targets[f.s.i];
-                let rest = on_deck(g, target, std::mem::take(&mut f.s.cards));
+                let rest = looking(g, target, &std::mem::take(&mut f.s.cards));
                 return Flow::Call(Frame::discard(target, rest));
             }
             _ => {
@@ -540,7 +533,7 @@ fn sentry(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, chosen))
         }
         3 => {
-            f.s.cards = on_deck(g, f.player, std::mem::take(&mut f.s.cards));
+            f.s.cards = looking(g, f.player, &f.s.cards);
             f.pc = 4;
             f.ask_cards(f.s.cards.clone(), 0, f.s.cards.len(), Purpose::Discard)
         }
@@ -551,14 +544,12 @@ fn sentry(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, chosen))
         }
         5 => {
-            f.s.cards = on_deck(g, f.player, std::mem::take(&mut f.s.cards));
+            f.s.cards = looking(g, f.player, &f.s.cards);
             f.pc = 6;
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                g.move_card(c, Zone::Deck(f.player), Pos::Top);
-            }
+            put_back(g, f.player, &input.cards());
             Flow::done()
         }
     }
@@ -612,7 +603,6 @@ fn adventurer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Continue;
             };
-            g.set_aside_revealed(c, f.player);
             f.s.cards.push(c);
             if g.is(c, Types::TREASURE) {
                 f.s.n += 1;
@@ -621,7 +611,7 @@ fn adventurer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         2 => {
-            let (treasures, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut f.s.cards)
+            let (treasures, rest): (Vec<_>, Vec<_>) = looking(g, f.player, &f.s.cards)
                 .into_iter()
                 .partition(|&c| g.is(c, Types::TREASURE));
             for c in treasures {
@@ -693,10 +683,11 @@ fn spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let target = victims[f.s.i];
             f.s.i += 1;
             f.pc = 0;
+            let c = f.s.pick.expect("set in step 1");
             if input.is_yes() {
-                let c = f.s.pick.expect("set in step 1");
                 return Flow::Call(Frame::discard(target, vec![c]));
             }
+            put_back(g, target, &[c]);
             Flow::Continue
         }
     }
@@ -755,7 +746,7 @@ fn thief(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             4 => {
                 f.pc = 6;
                 let target = f.targets[f.s.i];
-                let rest = on_deck(g, target, std::mem::take(&mut f.s.cards));
+                let rest = looking(g, target, &std::mem::take(&mut f.s.cards));
                 return Flow::Call(Frame::discard(target, rest));
             }
             _ => {

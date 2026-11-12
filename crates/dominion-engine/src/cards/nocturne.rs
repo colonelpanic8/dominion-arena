@@ -11,7 +11,9 @@
 //! lasting of that State when returned at the start of the Buy phase. Night-Durations
 //! follow the Seaside pattern ([`START`]).
 
-use super::{Bonus, CardFrame, Hook, SetRules, due_durations, duration_trigger};
+use super::{
+    Bonus, CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, put_back,
+};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -693,16 +695,12 @@ fn sift(g: &mut Game, f: &mut CardFrame, input: Input, at: u8, n: usize) -> Flow
             Flow::Call(Frame::discard(p, chosen))
         }
         3 => {
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+            f.s.cards = looking(g, p, &f.s.cards);
             f.pc = at + 4;
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                if g.zone(c) == Zone::Deck(p) {
-                    g.move_card(c, Zone::Deck(p), Pos::Top);
-                }
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }
@@ -952,15 +950,19 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Flow::Call(Frame::reveal(p, 3))
             }
             1 => {
-                let actions: Vec<CardId> = input
-                    .cards()
-                    .into_iter()
+                f.s.cards = input.cards();
+                let actions: Vec<CardId> = f
+                    .s
+                    .cards
+                    .iter()
+                    .copied()
                     .filter(|&c| g.is(c, Types::ACTION))
                     .collect();
                 f.pc = 2;
                 Flow::Call(Frame::discard(p, actions))
             }
             2 => {
+                put_back(g, p, &std::mem::take(&mut f.s.cards));
                 f.pc = 3;
                 Flow::Call(Frame::shuffle_deck(p))
             }
@@ -1084,7 +1086,6 @@ fn war(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Call(Frame::trash(p, vec![c]));
             }
-            g.set_aside_revealed(c, p);
             f.s.cards.push(c);
             f.pc = 0;
             Flow::Continue
@@ -1095,10 +1096,7 @@ fn war(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         3 => {
             f.pc = 4;
-            let rest: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                .into_iter()
-                .filter(|&c| g.zone(c) == Zone::SetAside(p))
-                .collect();
+            let rest = looking(g, p, &std::mem::take(&mut f.s.cards));
             Flow::Call(Frame::discard(p, rest))
         }
         _ => Flow::done(),
@@ -1562,8 +1560,8 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 return Flow::Continue;
             };
-            g.set_aside_revealed(c, p);
             if g.is(c, Types::ACTION) {
+                g.set_aside_revealed(c, p);
                 g.emit(Event::SetAside {
                     player: p,
                     card: g.card(c),
@@ -2090,7 +2088,7 @@ fn will_o_wisp(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
-                && g.zone(c) == Zone::Deck(p)
+                && g.zone(c) == Zone::Looking(p)
                 && g.cost_of(c).at_most(Cost::coins(2))
             {
                 g.put_in_hand(c, p);
@@ -2191,7 +2189,7 @@ fn zombie_spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
-            if input.is_yes() && g.zone(c) == Zone::Deck(p) {
+            if input.is_yes() && g.zone(c) == Zone::Looking(p) {
                 f.pc = 3;
                 return Flow::Call(Frame::discard(p, vec![c]));
             }

@@ -143,11 +143,8 @@ pub(crate) enum Frame {
         to: Option<usize>,
         drawn: Vec<CardId>,
         started: bool,
-        /// One draw shuffles at most once, even if its discard pile refills meanwhile.
+        /// Whether it shuffled: once, before drawing, if the deck was short.
         shuffled: bool,
-        /// How many of `drawn` were drawn before the shuffle (and logged).
-        #[serde(default)]
-        before_shuffle: usize,
     },
     /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
     /// are shuffled.
@@ -160,6 +157,7 @@ pub(crate) enum Frame {
         bottom: Vec<CardId>,
         pc: u8,
     },
+    /// Takes the top cards of a deck into [`Zone::Looking`] (see [`Frame::look`]).
     TopCards {
         player: PlayerId,
         count: usize,
@@ -238,7 +236,6 @@ impl Frame {
             drawn: vec![],
             started: false,
             shuffled: false,
-            before_shuffle: 0,
         }
     }
 
@@ -251,11 +248,10 @@ impl Frame {
             drawn: vec![],
             started: false,
             shuffled: false,
-            before_shuffle: 0,
         }
     }
 
-    /// The top `count` cards of a deck (top first), revealed to everyone.
+    /// Reveals the top `count` cards of a deck to everyone, like [`Frame::look`].
     pub(crate) fn reveal(player: PlayerId, count: usize) -> Frame {
         Frame::TopCards {
             player,
@@ -265,7 +261,10 @@ impl Frame {
         }
     }
 
-    /// The top `count` cards of a deck (top first), seen only by their owner.
+    /// Takes the top `count` cards of a deck (top first, shuffling first if it has fewer)
+    /// for their owner to look at: they are in [`Zone::Looking`], off the deck, until the
+    /// frame that called this finishes; then those it didn't move go back on top of the
+    /// deck in their order, over anything put there meanwhile.
     pub(crate) fn look(player: PlayerId, count: usize) -> Frame {
         Frame::TopCards {
             player,
@@ -412,7 +411,6 @@ impl Frame {
                 drawn,
                 started,
                 shuffled,
-                before_shuffle,
             } => {
                 let (p, to) = (*player, *to);
                 // Whether another card is to be drawn after `n` of `count`.
@@ -422,37 +420,38 @@ impl Frame {
                 };
                 if !*started {
                     *started = true;
+                    let mut token = 0;
                     if g.players[p.index()].minus_card && wants(g, *count, 0) {
                         g.players[p.index()].minus_card = false;
                         // The token replaces one draw of a fixed number; a draw up to a
                         // hand size still goes on to that size.
                         *count = count.saturating_sub(1);
+                        token = 1;
+                    }
+                    // Short of cards, the discard pile is shuffled under the deck first,
+                    // and then they are all drawn; the token counts as a card for that.
+                    let needed = token
+                        + match to {
+                            Some(size) => size.saturating_sub(g.hand(p).len()),
+                            None => *count,
+                        };
+                    let pl = &g.players[p.index()];
+                    if pl.deck.len() < needed && !pl.discard.is_empty() {
+                        *shuffled = true;
+                        return Flow::Call(Frame::shuffle(p));
                     }
                 }
                 while wants(g, *count, drawn.len()) {
-                    let pl = &g.players[p.index()];
-                    if pl.deck.is_empty() {
-                        if pl.discard.is_empty() || *shuffled {
-                            break;
-                        }
-                        *shuffled = true;
-                        *before_shuffle = drawn.len();
-                        if !drawn.is_empty() {
-                            g.emit(Event::Drew {
-                                player: p,
-                                count: drawn.len(),
-                            });
-                        }
-                        return Flow::Call(Frame::shuffle(p));
-                    }
-                    let top = *pl.deck.last().expect("deck is not empty");
+                    let Some(&top) = g.players[p.index()].deck.last() else {
+                        break;
+                    };
                     g.move_card(top, Zone::Hand(p), Pos::Top);
                     drawn.push(top);
                 }
-                if drawn.len() > *before_shuffle {
+                if !drawn.is_empty() {
                     g.emit(Event::Drew {
                         player: p,
-                        count: drawn.len() - *before_shuffle,
+                        count: drawn.len(),
                     });
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))
@@ -484,11 +483,25 @@ impl Frame {
                     });
                 }
                 for &c in &cards {
+                    // Revealed while still on the deck, so everyone sees which card it is.
                     if *reveal {
                         g.reveal(p, c);
+                    }
+                    // The look or reveal is its own log line.
+                    g.move_unlogged(c, Zone::Looking(p));
+                    if *reveal {
+                        g.note_shown(c);
+                        g.players[p.index()].face_up.push(c);
                     } else {
                         g.show_to(c, p);
                     }
+                }
+                if !cards.is_empty() {
+                    g.holds.push(crate::game::Hold {
+                        player: p,
+                        cards: cards.clone(),
+                        depth: g.stack.len(),
+                    });
                 }
                 Flow::Done(Value::Cards(cards))
             }

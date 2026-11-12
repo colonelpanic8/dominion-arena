@@ -1,10 +1,9 @@
 //! Hinterlands (2nd edition) and its removed 1st-edition cards.
 
 use super::cornucopia_guilds::{
-    ask_ordered, discard_down, discard_n, each_gains, gain_one, put_back, reveal_hand,
-    still_gained,
+    ask_ordered, discard_down, discard_n, each_gains, gain_one, reveal_hand, still_gained,
 };
-use super::{CardFrame, Hook, SetRules, mode_mask, names, whose};
+use super::{CardFrame, Hook, SetRules, looking, mode_mask, names, put_back, whose};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -110,8 +109,9 @@ impl SetRules for Rules {
                     f.ask_order(treasures, Purpose::TopDeck)
                 }
                 _ => {
-                    let order = input.cards();
-                    put_back(g, f.player, &order);
+                    for c in input.cards().into_iter().rev() {
+                        g.move_card(c, Zone::Deck(f.player), Pos::Top);
+                    }
                     Flow::done()
                 }
             },
@@ -591,8 +591,7 @@ fn cartographer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, chosen))
         }
         3 => {
-            let p = f.player;
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+            f.s.cards = looking(g, f.player, &f.s.cards);
             f.pc = 4;
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
@@ -748,10 +747,11 @@ fn jack_of_all_trades(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         3 => {
             f.pc = 4;
+            let c = f.s.pick.expect("set in step 2");
             if input.is_yes() {
-                let c = f.s.pick.expect("set in step 2");
                 return Flow::Call(Frame::discard(f.player, vec![c]));
             }
+            put_back(g, f.player, &[c]);
             Flow::Continue
         }
         4 => {
@@ -1012,10 +1012,11 @@ fn duchess(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             f.s.i += 1;
             f.pc = 0;
+            let c = f.s.pick.expect("set in step 1");
             if input.is_yes() {
-                let c = f.s.pick.expect("set in step 1");
                 return Flow::Call(Frame::discard(q, vec![c]));
             }
+            put_back(g, q, &[c]);
             Flow::Continue
         }
     }
@@ -1066,10 +1067,7 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     f.s.cards.push(c);
                     f.s.m += 1;
                 }
-                let rest: Vec<CardId> = revealed
-                    .into_iter()
-                    .filter(|&c| g.zone(c) == Zone::Deck(t))
-                    .collect();
+                let rest = looking(g, t, &revealed);
                 f.pc = 4;
                 return Flow::Call(Frame::discard(t, rest));
             }

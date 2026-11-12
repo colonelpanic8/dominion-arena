@@ -11,7 +11,9 @@
 //! Traits sit on their pile (`Pile::traits`); the Loot pile is a face-down non-Supply pile
 //! named [`Card::Loot`].
 
-use super::{CardFrame, Hook, SetRules, Step, duration_trigger, mode_mask, turn_durations};
+use super::{
+    CardFrame, Hook, SetRules, Step, duration_trigger, looking, mode_mask, put_back, turn_durations,
+};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -2134,9 +2136,6 @@ fn fortune_hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             let cards = input.cards();
-            for &c in &cards {
-                g.move_card(c, Zone::SetAside(p), Pos::Top);
-            }
             let treasures: Vec<CardId> = cards
                 .iter()
                 .copied()
@@ -2154,22 +2153,12 @@ fn fortune_hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         }
         3 => {
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::SetAside(p))
-                .collect();
+            let rest = looking(g, p, &f.s.cards);
             f.pc = 4;
             f.ask_order(rest, Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                if g.zone(c) == Zone::SetAside(p) {
-                    g.move_card(c, Zone::Deck(p), Pos::Top);
-                }
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }
@@ -2206,19 +2195,10 @@ fn mapmaker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .question("put into your hand (the rest are discarded)")
         }
         2 => {
-            let chosen = input.cards();
-            for &c in &chosen {
-                if g.zone(c) == Zone::Deck(p) {
-                    g.put_in_hand(c, p);
-                }
+            for c in looking(g, p, &input.cards()) {
+                g.put_in_hand(c, p);
             }
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::Deck(p))
-                .collect();
+            let rest = looking(g, p, &f.s.cards);
             f.pc = 3;
             Flow::Call(Frame::discard(p, rest))
         }
@@ -2542,9 +2522,6 @@ fn sextant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             let cards = input.cards();
-            for &c in &cards {
-                g.move_card(c, Zone::SetAside(p), Pos::Top);
-            }
             let n = cards.len();
             f.s.cards = cards.clone();
             f.pc = 2;
@@ -2555,22 +2532,12 @@ fn sextant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(p, input.cards()))
         }
         3 => {
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::SetAside(p))
-                .collect();
+            let rest = looking(g, p, &f.s.cards);
             f.pc = 4;
             f.ask_order(rest, Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                if g.zone(c) == Zone::SetAside(p) {
-                    g.move_card(c, Zone::Deck(p), Pos::Top);
-                }
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }
