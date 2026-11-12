@@ -269,6 +269,36 @@ fn black_market_played_on_another_players_turn_buys_nothing() {
     assert_eq!((g.turn().player, g.turn().coins), (P0, 2));
 }
 
+/// Overpaying is paying: a player buying from the Black Market deck on another player's
+/// turn (Farrier, made free by two Highways) has no $ or Potions to overpay with.
+#[test]
+fn black_market_on_another_players_turn_has_nothing_to_overpay_with() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        setup_choices: [(
+            Card::BlackMarket,
+            vec![Card::Farrier, Card::Village, Card::Smithy],
+        )]
+        .into(),
+        ..GameConfig::new(2, vec![Card::BlackMarket, Card::Highway, Card::Festival], 7)
+    });
+    hand(&mut g, P0, &[Card::Highway, Card::Highway, Card::Festival]);
+    deck(&mut g, P0, &[Card::Estate; 5]);
+    hand(&mut g, P1, &[Card::BlackMarket]);
+    g.start();
+    play(&mut g, Card::Highway);
+    play(&mut g, Card::Highway);
+    play(&mut g, Card::Festival);
+    play_out_of_turn(&mut g, P1, Card::BlackMarket);
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Farrier]);
+    choose_kinds(&mut g, &[Card::Farrier]);
+    assert_eq!(discard_kinds(&g, P1), [Card::Farrier]);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Move));
+    assert_eq!(g.turn().coins, 2);
+}
+
 #[test]
 fn black_market_offers_only_affordable_cards() {
     let mut g = setup_black_market();

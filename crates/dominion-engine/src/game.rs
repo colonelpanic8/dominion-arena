@@ -516,8 +516,8 @@ pub struct GainState {
     pub card: CardId,
     pub to: crate::Dest,
     pub bought: bool,
-    /// For a bought card: which buy of the turn it is for (its position in
-    /// [`Turn::bought_cards`], from 1). Another buy may come between (Black Market).
+    /// For a bought card: which buy it is for (the log's length once its `Bought` event
+    /// was logged). Another buy may come between (Black Market).
     #[serde(default)]
     pub buy: Option<usize>,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
@@ -689,6 +689,15 @@ impl Game {
     /// "during your turns" and "this turn" effects apply to nobody (scoring).
     pub(crate) fn turn_player(&self) -> Option<PlayerId> {
         (self.turn.phase != Phase::End).then_some(self.turn.player)
+    }
+
+    /// `p`'s $ and Potions: they are the turn's, so none on another player's turn.
+    pub(crate) fn funds(&self, p: PlayerId) -> (u32, u32) {
+        if p == self.turn.player {
+            (self.turn.coins, self.turn.potions)
+        } else {
+            (0, 0)
+        }
     }
 
     pub fn landscapes(&self) -> &[Card] {

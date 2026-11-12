@@ -76,7 +76,7 @@ impl SetRules for Rules {
                 let data = Scratch {
                     n: f.data,
                     cost: f.s.cost,
-                    i: g.turn.bought_cards.len(),
+                    i: f.s.i,
                     ..Scratch::default()
                 };
                 g.add_lasting(c, f.player, f.this, vec![], Until::EndOfTurn, data);
@@ -248,8 +248,8 @@ impl SetRules for Rules {
                 bought,
             } => {
                 for l in g.lasting() {
-                    // The gain of the buy that was overpaid for (`data.i`: which buy of the
-                    // turn), whichever copy it takes, and only by the player who overpaid.
+                    // The gain of the buy that was overpaid for (`data.i`: which buy),
+                    // whichever copy it takes, and only by the player who overpaid.
                     let buy = g.gains.iter().rev().find(|s| s.card == card).and_then(|s| s.buy);
                     if bought
                         && l.card == g.card(card)

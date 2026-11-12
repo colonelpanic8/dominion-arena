@@ -243,19 +243,10 @@ fn trash_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, min: usize) ->
     }
 }
 
-/// `p`'s $ and Potions: none on another player's turn.
-fn funds(g: &Game, p: PlayerId) -> (u32, u32) {
-    if p == g.turn.player {
-        (g.turn.coins, g.turn.potions)
-    } else {
-        (0, 0)
-    }
-}
-
 /// Whether `p` could buy `id` right now, paying its cost or some other way (Animal Fair).
 fn affordable(g: &Game, p: PlayerId, id: CardId) -> bool {
     let (cost, kind) = (g.cost_of(id), g.card(id));
-    let (coins, potions) = funds(g, p);
+    let (coins, potions) = g.funds(p);
     g.player(p).debt == 0
         && ((cost.coins as u32 <= coins && cost.potions as u32 <= potions)
             || super::pays_otherwise(g, p, kind))
@@ -298,7 +289,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         3 => {
-            let (debt, coins) = (g.player(p).debt, funds(g, p).0);
+            let (debt, coins) = (g.player(p).debt, g.funds(p).0);
             if debt > 0 && coins > 0 && f.s.m == 0 {
                 f.s.m = 1;
                 f.pc = 13;
@@ -343,19 +334,22 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Input::Return(Value::Bool(true)) => Cost::ZERO,
                 _ => g.cost_of(c),
             };
-            g.turn.coins -= cost.coins as u32;
-            g.turn.potions -= cost.potions as u32;
-            g.add_debt(p, cost.debt as u32);
             let kind = g.card(c);
-            g.turn.bought_cards.push(kind);
-            f.s.i = g.turn.bought_cards.len();
             g.emit(Event::Bought {
                 player: p,
                 card: kind,
             });
+            f.s.i = g.log().len();
+            // Off-turn, a player has no $ or Potions to pay with (`affordable`).
+            if p == g.turn.player {
+                g.turn.coins -= cost.coins as u32;
+                g.turn.potions -= cost.potions as u32;
+            }
+            g.turn.bought_cards.push(kind);
+            g.add_debt(p, cost.debt as u32);
             f.pc = 11;
             if kind.def().overpay {
-                return Flow::Call(Frame::overpay(p, c));
+                return Flow::Call(Frame::overpay(p, c, f.s.i));
             }
             Flow::Continue
         }

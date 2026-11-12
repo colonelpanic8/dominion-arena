@@ -172,7 +172,7 @@ pub(crate) enum Frame {
         from: From,
         to: Dest,
         bought: bool,
-        /// For a bought card: which buy of the turn (see [`GainState::buy`]).
+        /// For a bought card: which buy (see [`GainState::buy`]).
         #[serde(default)]
         buy: Option<usize>,
         card: Option<CardId>,
@@ -186,8 +186,7 @@ pub(crate) enum Frame {
         pile: Option<PileId>,
         landscape: Option<Card>,
         card: Option<CardId>,
-        /// Which buy of the turn this is, once paid for: its position in
-        /// `Turn::bought_cards`, from 1.
+        /// Which buy this is, once paid for (see [`GainState::buy`]).
         #[serde(default)]
         index: usize,
         pc: u8,
@@ -214,6 +213,9 @@ pub(crate) enum Frame {
     Overpay {
         player: PlayerId,
         card: CardId,
+        /// Which buy (see [`GainState::buy`]).
+        #[serde(default)]
+        buy: usize,
         paid: crate::Cost,
         pc: u8,
     },
@@ -353,10 +355,11 @@ impl Frame {
         }
     }
 
-    pub(crate) fn overpay(player: PlayerId, card: CardId) -> Frame {
+    pub(crate) fn overpay(player: PlayerId, card: CardId, buy: usize) -> Frame {
         Frame::Overpay {
             player,
             card,
+            buy,
             paid: crate::Cost::ZERO,
             pc: 0,
         }
@@ -624,9 +627,10 @@ impl Frame {
             Frame::Overpay {
                 player,
                 card,
+                buy,
                 paid,
                 pc,
-            } => resume_overpay(g, *player, *card, paid, pc, input),
+            } => resume_overpay(g, *player, (*card, *buy), paid, pc, input),
             Frame::Receive { player, card, pc } => match pc {
                 0 => {
                     *pc = 1;
@@ -1344,12 +1348,12 @@ fn resume_buy(
                 player: p,
                 card: kind,
             });
+            *index = g.log.len();
             pay(g, p, cost);
             g.turn.bought_cards.push(kind);
-            *index = g.turn.bought_cards.len();
             *pc = 2;
             if kind.def().overpay {
-                return Flow::Call(Frame::overpay(p, top));
+                return Flow::Call(Frame::overpay(p, top, *index));
             }
             Flow::Continue
         }
@@ -1391,11 +1395,12 @@ fn resume_buy(
 fn resume_overpay(
     g: &mut Game,
     p: PlayerId,
-    card: CardId,
+    (card, buy): (CardId, usize),
     paid: &mut crate::Cost,
     pc: &mut u8,
     input: Input,
 ) -> Flow {
+    let (coins, potions) = g.funds(p);
     let ask = |max: u32| {
         Flow::Ask(Decision {
             player: p,
@@ -1412,16 +1417,16 @@ fn resume_overpay(
     match pc {
         0 => {
             *pc = 1;
-            if g.turn.coins > 0 {
-                return ask(g.turn.coins);
+            if coins > 0 {
+                return ask(coins);
             }
             Flow::Continue
         }
         1 => {
             paid.coins = input.number().unwrap_or(0).max(0) as u8;
             *pc = 2;
-            if g.turn.potions > 0 {
-                return ask(g.turn.potions);
+            if potions > 0 {
+                return ask(potions);
             }
             Flow::Continue
         }
@@ -1441,6 +1446,7 @@ fn resume_overpay(
             let mut f = CardFrame::new(g.card(card), Hook::Ability(OVERPAY), p, Some(card));
             f.data = paid.coins as i32;
             f.s.cost = *paid;
+            f.s.i = buy;
             Flow::Call(Frame::Card(Box::new(f)))
         }
         _ => Flow::done(),
