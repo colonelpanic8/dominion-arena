@@ -155,7 +155,8 @@ them.
   phase, offered only where they could matter: `push_token_moves`); Black Market asks for
   both between revealing its cards and selling one. Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
-  in a row: check `g.third_in_a_row(p)` before queuing one; Seize the Day: never), and
+  in a row, decided between turns: queue it anyway, and a card kept in play for it stays
+  until the Clean-up after it fails; Seize the Day: never), and
   extra turns don't count for the tiebreaker. Between turns the player who just took a turn takes
   their extra turns first, then the others in turn order; one with different extra turns
   pending chooses which to take (`Purpose::Either`, `Opt::Card(source)`), and an extra

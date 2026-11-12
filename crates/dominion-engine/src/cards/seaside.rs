@@ -664,9 +664,6 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
             Scratch::default(),
         );
     }
-    if g.third_in_a_row(p) {
-        return Flow::done();
-    }
     let lasting = g.add_lasting(
         Card::Outpost,
         p,

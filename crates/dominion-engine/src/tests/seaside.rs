@@ -1049,8 +1049,12 @@ fn outpost_gives_an_extra_turn_with_a_three_card_hand_but_not_a_third() {
     play(&mut g, Card::Outpost);
     next_turn(&mut g);
     assert_eq!(g.turn().player, P1);
-    // The Outpost played on the extra turn still shrinks the next hand.
+    // The Outpost played on the extra turn still shrinks the next hand. Its turn fails
+    // only between turns ("You can't be sure Outpost will fail until you are in between
+    // turns", wiki, Outpost), so it is discarded in the next Clean-up, P1's.
     assert_eq!(g.hand(P0).len(), 3);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
+    next_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
 }
 

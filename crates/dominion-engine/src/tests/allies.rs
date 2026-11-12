@@ -1888,7 +1888,12 @@ fn voyage_on_an_extra_turn_gives_no_third_turn() {
     next_turn(&mut g);
     play(&mut g, Card::Voyage);
     next_turn(&mut g);
-    assert_eq!(g.turn().player, P1);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+    // "If a Voyage turn fails to occur ..., you discard the Voyage during the next
+    // Clean-up that happens" (wiki, Voyage): it fails between turns.
+    assert_eq!(in_play_kinds(&g, P0), [Card::Voyage]);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
 }
 
 #[test]

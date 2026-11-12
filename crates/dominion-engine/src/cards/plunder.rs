@@ -324,7 +324,7 @@ impl SetRules for Rules {
                     Until::EndOfTurn,
                     Scratch::default(),
                 );
-                if p == g.turn.player && !g.third_in_a_row(p) {
+                if p == g.turn.player {
                     g.extra_turns.push_back(ExtraTurn {
                         player: p,
                         source: Card::Journey,
