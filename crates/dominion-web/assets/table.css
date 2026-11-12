@@ -392,8 +392,13 @@ body:has(.dt-root) .topbar { display: none; }
   position: absolute;
   right: calc(0.5 * var(--vh));
   top: calc(0.5 * var(--vh));
+  box-sizing: border-box;
   width: calc(3 * var(--vh));
   height: calc(3 * var(--vh));
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 3px;
   background: #b00;

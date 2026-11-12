@@ -181,6 +181,56 @@ fn a_restored_table_plays_on_exactly_like_the_original() {
     }
 }
 
+/// The game and every seat's knowledge, which an undo must restore exactly.
+fn state_of(t: &Table) -> (Value, Value) {
+    (
+        serde_json::to_value(t.game()).unwrap(),
+        serde_json::to_value(t.knowledge()).unwrap(),
+    )
+}
+
+#[test]
+fn undo_takes_back_a_seats_answers_until_another_seat_answered() {
+    for seed in 0..seeds(4) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut config = GameConfig::random(2, &released(), seed);
+        config.turn_limit = Some(12);
+        let mut table = Table::new(format!("g{seed}"), config, vec![]).unwrap();
+        // The states before each answer of the current run of one seat's answers.
+        let mut run: Vec<(PlayerId, (Value, Value))> = vec![];
+        let mut undos = 0;
+        while let Some(seat) = table.deciding() {
+            let other = PlayerId(1 - seat.0);
+            assert!(!table.can_undo(other) || run.last().is_some_and(|(s, _)| *s == other));
+            if run.last().is_some_and(|(s, _)| *s == seat) && rng.random_bool(0.3) {
+                let undone_id = table.decision_id().unwrap();
+                let (_, before) = run.pop().unwrap();
+                assert!(table.undo(seat));
+                undos += 1;
+                assert_eq!(table.undos(), undos);
+                assert_eq!(state_of(&table), before, "seed {seed}");
+                assert_ne!(table.decision_id().unwrap(), undone_id);
+                assert_eq!(table.can_undo(seat), !run.is_empty());
+                assert_eq!(table.undo_note(seat), None);
+                let note = table.undo_note(other).expect("the other seat is told");
+                assert!(note.contains(&format!("{seat} took back")), "{note}");
+                continue;
+            }
+            let before = state_of(&table);
+            let d = table.view(seat).decision.unwrap();
+            table.answer(seat, &random_answer(&d, &mut rng)).unwrap();
+            if run.last().is_some_and(|(s, _)| *s != seat) {
+                run.clear();
+            }
+            run.push((seat, before));
+            assert_eq!(table.undo_note(seat), None);
+            assert!(table.can_undo(seat));
+            assert!(!table.undo(other));
+        }
+        assert!(undos > 0, "seed {seed}");
+    }
+}
+
 fn base_table() -> Table {
     let kingdom = vec![
         Card::Cellar,

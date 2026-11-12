@@ -187,6 +187,13 @@ pub struct SeatView {
     /// What the table shows that the view doesn't carry, as the seat may see it.
     #[serde(default)]
     pub table: TableExtras,
+    /// How many answers have been undone. When it changes, the log may differ from any
+    /// held before at every sequence number.
+    #[serde(default)]
+    pub undos: u64,
+    /// The seat may take back its last answer (`POST /api/games/{id}/undo`).
+    #[serde(default)]
+    pub can_undo: bool,
 }
 
 /// Public facts the graphical table draws beside the view.

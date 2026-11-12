@@ -439,6 +439,7 @@ struct Last {
     log_len: usize,
     seat: Option<u8>,
     seq: u64,
+    undos: u64,
 }
 
 /// Animates the table's changes; the flight is for [`GhostPool`] to draw its cards.
@@ -453,10 +454,12 @@ pub fn use_motion(board: Memo<Option<Rc<Board>>>, game: GameCtx) -> Signal<Optio
         let st = game.state.peek();
         let seat = st.view.as_ref().and_then(|v| v.seat);
         let log_len = st.log.len();
+        let undos = st.undos;
         let mut l = last_a.borrow_mut();
         let s = settings.peek();
         if let (Some(old), Some(new)) = (&l.board, &b)
             && l.seat == seat
+            && l.undos == undos
             && log_len > l.log_len
             && s.web_animations
             && s.web_animation_speed != AnimationSpeed::None
@@ -484,6 +487,7 @@ pub fn use_motion(board: Memo<Option<Rc<Board>>>, game: GameCtx) -> Signal<Optio
         l.board = b;
         l.log_len = log_len;
         l.seat = seat;
+        l.undos = undos;
     });
     use_effect(move || {
         let Some(f) = flight.read().clone() else {

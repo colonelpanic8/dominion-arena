@@ -566,13 +566,14 @@ impl Hub {
             .collect()
     }
 
-    pub fn view(&self, seat: &Seat) -> Result<(AgentView, String), HubError> {
+    /// `seat`'s view, its text rendering, and `Table::undo_note`, read together.
+    pub fn view(&self, seat: &Seat) -> Result<(AgentView, String, Option<String>), HubError> {
         let game = self.game(&seat.game)?;
         let table = lock(&game.table);
         engine(|| {
             let view = table.view(seat.seat);
             let text = dominion_agent::text::render(&view);
-            (view, text)
+            (view, text, table.undo_note(seat.seat))
         })
     }
 
@@ -591,6 +592,8 @@ impl Hub {
             version: *game.version.borrow(),
             deciding: table.deciding().map(|p| p.0),
             table: extras,
+            undos: table.undos(),
+            can_undo: table.can_undo(seat.seat),
         })
     }
 
@@ -626,6 +629,18 @@ impl Hub {
         self.save(&table, &game.tokens);
         game.version.send_modify(|v| *v += 1);
         Ok(answered)
+    }
+
+    /// Takes back `seat`'s last answer (`Table::undo`).
+    pub fn undo(&self, seat: &Seat) -> Result<(), HubError> {
+        let game = self.game(&seat.game)?;
+        let mut table = lock(&game.table);
+        if !table.undo(seat.seat) {
+            return Err(HubError::Answer(AnswerError::CannotUndo));
+        }
+        self.save(&table, &game.tokens);
+        game.version.send_modify(|v| *v += 1);
+        Ok(())
     }
 
     /// Waits until `seat` must decide or the game is over, for at most `timeout`. Returns

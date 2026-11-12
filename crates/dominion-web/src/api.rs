@@ -79,6 +79,12 @@ pub async fn answer(game: &str, token: &str, answer: &Answer) -> Result<SeatView
     imp::post(&url, Some(token), answer).await
 }
 
+/// Takes back the seat's last answer; the view returned has the whole log.
+pub async fn undo(game: &str, token: &str) -> Result<SeatView> {
+    let url = format!("/api/games/{}/undo", encode(game));
+    imp::post(&url, Some(token), &()).await
+}
+
 /// Follows a game's change feed until the future is dropped, calling `on_change` for
 /// every `change` event (one on each connect). Reconnects with backoff.
 pub async fn watch(game: &str, token: &str, mut on_change: impl FnMut(Change)) {

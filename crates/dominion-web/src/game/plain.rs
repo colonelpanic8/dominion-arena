@@ -46,6 +46,7 @@ pub fn PlainGame() -> Element {
     let deciding = (*ctx.deciding.read()).map(|d| player_name(&view, d));
     let error = st.error.clone();
     let answering = st.answering;
+    let can_undo = st.can_undo;
     let log = st.log.clone();
     drop(st);
     rsx! {
@@ -79,6 +80,15 @@ pub fn PlainGame() -> Element {
                 section { class: "panel decision-panel",
                     if let Some(e) = error {
                         p { class: "error", "{e}" }
+                    }
+                    if can_undo {
+                        button {
+                            "data-action": "undo",
+                            title: "Take back your last answer",
+                            disabled: answering,
+                            onclick: move |_| ctx.undo.call(()),
+                            "Undo"
+                        }
                     }
                     if let Some(d) = view.decision.clone() {
                         DecisionControls {

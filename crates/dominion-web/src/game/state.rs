@@ -19,6 +19,10 @@ pub struct GameState {
     pub table: dominion_protocol::api::TableExtras,
     /// Every log entry from seq 0, without gaps.
     pub log: Vec<LogEntry>,
+    /// The server's count of undone answers the log was read under.
+    pub undos: u64,
+    /// The seat may take back its last answer, as of `version`.
+    pub can_undo: bool,
     /// The message of the last failed call, until the next success.
     pub error: Option<String>,
     /// An answer is on its way.
@@ -33,6 +37,8 @@ pub enum Applied {
     Done,
     /// The response's log started after the end of ours: fetch from [`GameState::log_from`].
     Refetch,
+    /// Answers were undone and the response's log doesn't start at 0: fetch from 0.
+    Restart,
 }
 
 impl GameState {
@@ -60,12 +66,25 @@ impl GameState {
     /// Takes in a view response (a fetch, or the answer to an answer). A view older than
     /// the one held only contributes its log.
     pub fn apply(&mut self, sv: SeatView) -> Applied {
+        if self.view.is_some() && sv.undos != self.undos {
+            if sv.undos < self.undos {
+                return Applied::Done;
+            }
+            if sv.view.since_last_decision.first().map(|e| e.seq) != Some(0) {
+                return Applied::Restart;
+            }
+            self.log.clear();
+            self.undos = sv.undos;
+        } else if self.view.is_none() {
+            self.undos = sv.undos;
+        }
         let complete = self.merge_log(&sv.view.since_last_decision);
         if self.view.is_none() || sv.version >= self.version {
             self.version = sv.version;
             self.view = Some(sv.view);
             self.deciding = sv.deciding;
             self.table = sv.table;
+            self.can_undo = sv.can_undo;
         }
         self.error = None;
         if complete {

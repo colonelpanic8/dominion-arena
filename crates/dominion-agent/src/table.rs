@@ -7,6 +7,7 @@ use dominion_engine::{
 use dominion_protocol::api::{PlayerTable, TableExtras};
 use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -23,6 +24,8 @@ pub enum AnswerError {
     StaleDecision { given: String, open: String },
     #[error("{0}")]
     Invalid(String),
+    #[error("there is nothing to undo: another seat has answered since your last answer")]
+    CannotUndo,
 }
 
 /// An answer to the Way question ("play it as itself, or use a Way instead") given in
@@ -95,6 +98,16 @@ pub struct Table {
     /// At most one per seat.
     #[serde(default)]
     ways: Vec<PendingWay>,
+    /// The seat that took back each answer undone, in order.
+    #[serde(default)]
+    undone_by: Vec<PlayerId>,
+    /// Per seat: how many answers had been undone when they last answered.
+    #[serde(default)]
+    undos_seen: Vec<usize>,
+    /// The seat that answered last and the table before that answer, while no other
+    /// seat has answered since. Not saved: a restarted server can't undo.
+    #[serde(skip)]
+    undo: Option<(PlayerId, Arc<Table>)>,
 }
 
 impl Table {
@@ -124,6 +137,9 @@ impl Table {
             seq: 1,
             log_from: vec![0; n],
             ways: vec![],
+            undone_by: vec![],
+            undos_seen: vec![0; n],
+            undo: None,
         })
     }
 
@@ -141,6 +157,70 @@ impl Table {
 
     pub fn knowledge(&self) -> &Knowledge {
         &self.knowledge
+    }
+
+    /// How many answers have been undone: the log may have changed behind any earlier
+    /// count.
+    pub fn undos(&self) -> u64 {
+        self.undone_by.len() as u64
+    }
+
+    /// Tells `seat` which answers other seats took back since `seat` last answered, and
+    /// that the log it sees now replaces whatever it saw after them.
+    pub fn undo_note(&self, seat: PlayerId) -> Option<String> {
+        let seen = self.undos_seen.get(seat.index()).copied().unwrap_or(0);
+        let mut counts: Vec<(PlayerId, usize)> = vec![];
+        for &p in self.undone_by.iter().skip(seen).filter(|&&p| p != seat) {
+            match counts.iter_mut().find(|(q, _)| *q == p) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((p, 1)),
+            }
+        }
+        if counts.is_empty() {
+            return None;
+        }
+        let who: Vec<String> = counts
+            .iter()
+            .map(|&(p, n)| {
+                let answers = if n == 1 {
+                    "their last answer".to_string()
+                } else {
+                    format!("their last {n} answers")
+                };
+                format!("{} took back {answers}", self.names[p.index()])
+            })
+            .collect();
+        Some(format!(
+            "Undo: since your last answer, {}. The game is as it was before what was taken \
+             back; anything you saw after that point and no longer see in the log did not \
+             happen. Decide from this view.",
+            who.join(", and ")
+        ))
+    }
+
+    /// Whether `seat` may undo: it answered last, and no other seat has answered since.
+    pub fn can_undo(&self, seat: PlayerId) -> bool {
+        self.undo.as_ref().is_some_and(|(s, _)| *s == seat)
+    }
+
+    /// Takes back `seat`'s last answer, with whatever followed it automatically. Its
+    /// earlier answers can be taken back in turn, back to the last answer of another
+    /// seat. False if `seat` can't undo.
+    pub fn undo(&mut self, seat: PlayerId) -> bool {
+        let Some((_, before)) = self.undo.take_if(|(s, _)| *s == seat) else {
+            return false;
+        };
+        let seq = self.seq;
+        let mut undone_by = std::mem::take(&mut self.undone_by);
+        undone_by.push(seat);
+        *self = Arc::unwrap_or_clone(before);
+        // A decision id is never reused, so an answer sent for the undone one is stale.
+        self.seq = seq + 1;
+        if let Some(seen) = self.undos_seen.get_mut(seat.index()) {
+            *seen = undone_by.len();
+        }
+        self.undone_by = undone_by;
+        true
     }
 
     pub fn is_over(&self) -> bool {
@@ -246,6 +326,10 @@ impl Table {
         way: Option<WayChoice>,
     ) -> Result<Answered, AnswerError> {
         let response = self.resolve(seat, answer)?;
+        let mut before = self.clone();
+        if !before.can_undo(seat) {
+            before.undo = None;
+        }
         if let Some(WayChoice::Way(w)) = way
             && !self.game.landscapes().contains(&w)
         {
@@ -270,6 +354,10 @@ impl Table {
         };
         self.game_respond(response)?;
         self.log_from[seat.index()] = log_len;
+        let undos = self.undone_by.len();
+        if let Some(seen) = self.undos_seen.get_mut(seat.index()) {
+            *seen = undos;
+        }
         if let Some(choice) = way {
             let card = played.or_else(|| {
                 (self.game.plays_in_progress())
@@ -280,7 +368,9 @@ impl Table {
             self.ways
                 .extend(card.map(|card| PendingWay { seat, card, choice }));
         }
-        self.answer_ways(seat)
+        let answered = self.answer_ways(seat)?;
+        self.undo = Some((seat, Arc::new(before)));
+        Ok(answered)
     }
 
     /// Answers the Way questions the pending pre-answers cover, dropping each once its
