@@ -60,23 +60,35 @@ pub fn play<'g>(
 ///
 /// A deck's order is never shown, nor which cards are in a discard pile under its top,
 /// nor any card of a face-down pile (the Black Market deck, Loot).
+///
+/// Someone watching without a seat ([`Game::watch`]) sees only what is public.
 #[derive(Clone, Copy)]
 pub struct View<'a> {
     game: &'a Game,
-    me: PlayerId,
+    /// `None` for someone watching.
+    me: Option<PlayerId>,
 }
 
 impl Game {
     pub fn view(&self, player: PlayerId) -> View<'_> {
         View {
             game: self,
-            me: player,
+            me: Some(player),
+        }
+    }
+
+    /// The game as someone who is no player sees it: what every player may see.
+    pub fn watch(&self) -> View<'_> {
+        View {
+            game: self,
+            me: None,
         }
     }
 }
 
 impl<'a> View<'a> {
-    pub fn me(&self) -> PlayerId {
+    /// The player whose view this is; `None` for someone watching.
+    pub fn me(&self) -> Option<PlayerId> {
         self.me
     }
 
@@ -95,7 +107,7 @@ impl<'a> View<'a> {
 
     /// The decision this player is being asked, if any.
     pub fn pending(&self) -> Option<&'a Decision> {
-        self.game.pending().filter(|d| d.player == self.me)
+        self.game.pending().filter(|d| Some(d.player) == self.me)
     }
 
     /// The triggers a pending [`Purpose::Trigger`] decision's `Opt::Trigger(i)` options
@@ -139,14 +151,14 @@ impl<'a> View<'a> {
     fn visible(&self, id: CardId) -> bool {
         let g = self.game;
         let seen = match g.zone(id) {
-            Zone::Hand(p) => p == self.me,
+            Zone::Hand(p) => Some(p) == self.me,
             Zone::SetAside(p) | Zone::Looking(p) => {
-                p == self.me || g.player(p).face_up.contains(&id)
+                Some(p) == self.me || g.player(p).face_up.contains(&id)
             }
             Zone::InPlay(_) | Zone::Trash => true,
             Zone::Discard(p) => g.player(p).discard.last() == Some(&id),
             Zone::Pile(pile) => !g.pile(pile).hidden && g.pile_top(pile) == Some(id),
-            Zone::Mat(p, mat) => mat != Mat::NativeVillage || p == self.me,
+            Zone::Mat(p, mat) => mat != Mat::NativeVillage || Some(p) == self.me,
             Zone::Deck(_) => false,
         };
         seen || self.offered(id)
@@ -164,9 +176,9 @@ impl<'a> View<'a> {
             }
     }
 
-    /// This player's hand.
+    /// This player's hand; no cards for someone watching.
     pub fn hand(&self) -> &'a [CardId] {
-        self.game.hand(self.me)
+        self.me.map_or(&[], |me| self.game.hand(me))
     }
 
     pub fn player(&self, p: PlayerId) -> PlayerView<'a> {
@@ -300,7 +312,7 @@ impl<'a> PlayerView<'a> {
 
     /// Their hand, if the viewer may see it.
     pub fn hand(&self) -> Option<&'a [CardId]> {
-        (self.id == self.view.me).then_some(&self.player.hand[..])
+        (Some(self.id) == self.view.me).then_some(&self.player.hand[..])
     }
 
     pub fn hand_size(&self) -> usize {
@@ -357,7 +369,7 @@ impl<'a> PlayerView<'a> {
     /// The cards on one of their mats, if the viewer may see them (the Native Village mat
     /// is its owner's only).
     pub fn mat(&self, mat: Mat) -> Option<&'a [CardId]> {
-        (mat != Mat::NativeVillage || self.id == self.view.me).then(|| self.player.mat(mat))
+        (mat != Mat::NativeVillage || Some(self.id) == self.view.me).then(|| self.player.mat(mat))
     }
 
     pub fn mat_size(&self, mat: Mat) -> usize {

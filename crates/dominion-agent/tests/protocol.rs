@@ -1,6 +1,6 @@
 use dominion_agent::{
-    AgentDecision, AgentOption, Answer, AnswerError, Answered, JSON_SCHEMA, Table, WAY_HINT,
-    WayChoice, glossary_for, text,
+    AgentDecision, AgentOption, AgentView, Answer, AnswerError, Answered, CardCount, JSON_SCHEMA,
+    PlayerView, Table, WAY_HINT, WayChoice, glossary_for, text,
 };
 use dominion_engine::{
     Card, CardId, DecisionKind, GameConfig, Kind, Move, Phase, PlayerId, Set, Types,
@@ -76,6 +76,13 @@ fn random_games_produce_valid_views_and_answerable_options() {
                 .expect("the deciding seat has a decision");
             assert_valid(&decision_schema, &json["decision"], "decision");
             assert_cards_placed_where_it_tells_them_apart(&d);
+            let log_from = table.game().log().len().saturating_sub(40);
+            assert_watcher_sees_only_what_is_public(
+                &table,
+                &view_schema,
+                log_from,
+                &format!("seed {seed} step {step}"),
+            );
             if step % 25 == 0 {
                 for p in 0..players {
                     let json = serde_json::to_value(table.view(PlayerId(p))).unwrap();
@@ -124,7 +131,268 @@ fn random_games_produce_valid_views_and_answerable_options() {
         let json = serde_json::to_value(table.view(PlayerId(0))).unwrap();
         assert_valid(&view_schema, &json, "the final view");
         assert!(json["game"]["result"].is_object());
+        let what = format!("seed {seed} at the end");
+        assert_watcher_sees_only_what_is_public(&table, &view_schema, 0, &what);
     }
+}
+
+fn total(known: &CardCount) -> u32 {
+    known.values().sum()
+}
+
+/// Every card `ours` places, `theirs` places too.
+fn assert_no_more_known(ours: &CardCount, theirs: &CardCount, what: &str) {
+    for (card, n) in ours {
+        assert!(
+            theirs.get(card).is_some_and(|m| m >= n),
+            "{what}: the watcher knows {ours:?}, the seat only {theirs:?}"
+        );
+    }
+}
+
+/// A player's zones as (name, count, known, unknown).
+fn zones(p: &PlayerView) -> Vec<(String, u32, &CardCount, u32)> {
+    let mut zones = vec![
+        (
+            "hand".to_string(),
+            p.hand.count,
+            &p.hand.known,
+            p.hand.unknown,
+        ),
+        (
+            "inPlay".to_string(),
+            p.in_play.count,
+            &p.in_play.known,
+            p.in_play.unknown,
+        ),
+        (
+            "deck".to_string(),
+            p.deck.count,
+            &p.deck.known,
+            p.deck.unknown,
+        ),
+        (
+            "discard".to_string(),
+            p.discard.count,
+            &p.discard.known,
+            p.discard.unknown,
+        ),
+    ];
+    for (name, z) in &p.other_zones {
+        zones.push((name.clone(), z.count, &z.known, z.unknown));
+    }
+    zones
+}
+
+/// The words of `text`, lowercased.
+fn words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphabetic())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// Someone watching is shown a valid view with no seat and no decision, in which all the
+/// public state is what every seat is shown and no card is placed that some seat can't
+/// place: not in a hand, a deck or anywhere else.
+fn assert_watcher_sees_only_what_is_public(
+    table: &Table,
+    schema: &Validator,
+    log_from: usize,
+    what: &str,
+) {
+    let n = table.names().len();
+    let watch = table
+        .watch_view(log_from)
+        .expect("a new table is watchable");
+    let json = serde_json::to_value(&watch).unwrap();
+    assert_valid(schema, &json, &format!("{what}: the watcher's view"));
+    assert!(watch.spectating && !watch.turn.your_turn, "{what}");
+    assert!(json["seat"].is_null() && json["you"].is_null() && json["decision"].is_null());
+    let seats: Vec<u8> = watch.opponents.iter().map(|p| p.index).collect();
+    assert_eq!(seats, (0..n as u8).collect::<Vec<_>>(), "{what}");
+    for entry in &watch.since_last_decision {
+        let second_person = ["you", "your", "yours", "yourself"];
+        assert!(
+            !words(&entry.text)
+                .iter()
+                .any(|w| second_person.contains(&w.as_str())),
+            "{what}: the log addresses someone: {}",
+            entry.text
+        );
+    }
+    let extras = table.watch_extras().expect("a new table is watchable");
+    for s in 0..n as u8 {
+        let what = format!("{what}, against seat {s}");
+        let seat = table.view_from(PlayerId(s), log_from);
+        let theirs = serde_json::to_value(&seat).unwrap();
+        for part in [
+            "game",
+            "supply",
+            "nonSupply",
+            "landscapes",
+            "trash",
+            "boons",
+            "hexes",
+            "artifacts",
+            "extraTurns",
+            "notes",
+            "counters",
+            "sinceLastDecision",
+        ] {
+            assert_eq!(json.get(part), theirs.get(part), "{what}: {part}");
+        }
+        let mut turn = seat.turn.clone();
+        turn.your_turn = false;
+        assert_eq!(watch.turn, turn, "{what}");
+        assert_eq!(extras, table.extras(PlayerId(s)), "{what}");
+        assert_eq!(watch.lasting.len(), seat.lasting.len(), "{what}");
+        for (ours, theirs) in watch.lasting.iter().zip(&seat.lasting) {
+            let mut shown = theirs.clone();
+            shown.cards = ours.cards.clone();
+            assert_eq!(*ours, shown, "{what}");
+            let mut rest = theirs.cards.clone();
+            for card in &ours.cards {
+                let i = rest.iter().position(|c| c == card);
+                let i = i.unwrap_or_else(|| panic!("{what}: {ours:?} shows more than {theirs:?}"));
+                rest.remove(i);
+            }
+        }
+        for ours in &watch.opponents {
+            let theirs = (seat.you.iter().chain(&seat.opponents))
+                .find(|p| p.index == ours.index)
+                .unwrap();
+            let what = format!("{what}, player {}", ours.index);
+            let (a, b) = (zones(ours), zones(theirs));
+            assert_eq!(a.len(), b.len(), "{what}");
+            for ((zone, count, known, unknown), (zone_b, count_b, known_b, _)) in a.iter().zip(&b) {
+                let what = format!("{what} {zone}");
+                assert_eq!((zone, count), (zone_b, count_b), "{what}");
+                assert_eq!(total(known) + unknown, *count, "{what}");
+                assert_no_more_known(known, known_b, &what);
+            }
+            let owned = |p: &PlayerView| total(&p.owned.known) + p.owned.unknown;
+            assert_eq!(owned(ours), owned(theirs), "{what}");
+            assert_no_more_known(&ours.owned.known, &theirs.owned.known, &what);
+            // Everything else about a player is public.
+            let mut rest = ours.clone();
+            rest.hand = theirs.hand.clone();
+            rest.in_play = theirs.in_play.clone();
+            rest.deck = theirs.deck.clone();
+            rest.discard = theirs.discard.clone();
+            rest.other_zones = theirs.other_zones.clone();
+            rest.owned = theirs.owned.clone();
+            rest.uncertain = theirs.uncertain.clone();
+            assert_eq!(rest, *theirs, "{what}");
+        }
+    }
+}
+
+/// The view of whoever watches `t`, with the whole log.
+fn watching(t: &Table) -> AgentView {
+    t.watch_view(0).expect("a new table is watchable")
+}
+
+/// A hand its owner drew and the cards they look at are theirs alone; a card revealed to
+/// everyone is known to someone watching too.
+#[test]
+fn someone_watching_knows_revealed_cards_but_not_the_ones_a_player_looks_at() {
+    let mut t = table(&[Card::Navigator], 1, &["Ann", "Ben"]);
+    let hand = |v: &AgentView, p: usize| v.opponents[p].hand.clone();
+    assert_eq!(t.view(PlayerId(0)).you.unwrap().hand.unknown, 0);
+    for p in 0..2 {
+        let hand = hand(&watching(&t), p);
+        assert_eq!((hand.count, hand.unknown, hand.known.len()), (5, 5, 0));
+    }
+    let asked = |_: PlayerId, d: &AgentDecision| d.source.as_deref() == Some("Navigator");
+    assert_eq!(play_to(&mut t, "Navigator", asked), Some(PlayerId(0)));
+    let looker = t.view(PlayerId(0)).you.unwrap();
+    let mine = &looker.other_zones["looking"];
+    assert_eq!((mine.count, mine.unknown), (5, 0));
+    let watch = watching(&t);
+    let theirs = &watch.opponents[0].other_zones["looking"];
+    assert_eq!(
+        (theirs.count, theirs.unknown, theirs.known.len()),
+        (5, 5, 0)
+    );
+    assert!(text::render(&watch).contains("\n  looking 5 (5 unknown)"));
+    assert!(text::render(&watch).contains("PLAYER P1: Ann"));
+
+    // Bureaucrat: Ben reveals a Victory card from his hand and puts it onto his deck.
+    let mut t = table(&[Card::Bureaucrat], 3, &["Ann", "Ben"]);
+    let bens_turn = |seat: PlayerId, d: &AgentDecision| seat.0 == 1 && d.kind == "turn";
+    for _ in 0..30 {
+        assert_eq!(play_to(&mut t, "Bureaucrat", bens_turn), Some(PlayerId(1)));
+        let watch = watching(&t);
+        let revealed = (watch.since_last_decision.iter().rev())
+            .take_while(|e| e.kind != "turn-start" || e.player != Some(0))
+            .find(|e| e.kind == "revealed" && e.player == Some(1));
+        if let Some(card) = revealed.and_then(|e| e.card.clone()) {
+            assert_eq!(watch.opponents[1].deck.known.get(&card), Some(&1));
+            assert_eq!(
+                t.view(PlayerId(0)).opponents[0].deck.known.get(&card),
+                Some(&1)
+            );
+            assert!(
+                t.view(PlayerId(1))
+                    .you
+                    .unwrap()
+                    .deck
+                    .known
+                    .contains_key(&card)
+            );
+            // Ben's hand is still his alone.
+            let hand = hand(&watch, 1);
+            assert_eq!((hand.unknown, hand.known.len()), (hand.count, 0));
+            assert_eq!(t.view(PlayerId(1)).you.unwrap().hand.unknown, 0);
+            return;
+        }
+        while t.deciding() == Some(PlayerId(1)) {
+            let d = t.view(PlayerId(1)).decision.unwrap();
+            let end = pick(&d, |o| o.action == "end-phase").unwrap_or_else(|| first(&d));
+            t.answer(PlayerId(1), &end).unwrap();
+        }
+    }
+    panic!("Bureaucrat never made Ben reveal a card");
+}
+
+/// A table saved before tables kept what someone watching knows has no such knowledge:
+/// it plays on for its seats and can't be watched.
+#[test]
+fn a_table_saved_without_the_watchers_knowledge_plays_on_unwatched() {
+    let view_schema = validator("view");
+    let mut rng = ChaCha8Rng::seed_from_u64(5);
+    let mut config = GameConfig::random(3, &released(), 5);
+    config.turn_limit = Some(12);
+    let mut table = Table::new("old", config, vec![]).unwrap();
+    assert!(table.watchable());
+    for _ in 0..10 {
+        let seat = table.deciding().unwrap();
+        let answer = random_answer(&table.view(seat).decision.unwrap(), &mut rng);
+        table.answer(seat, &answer).unwrap();
+    }
+    let mut saved = serde_json::to_value(&table).unwrap();
+    let watcher = saved["knowledge"]
+        .as_object_mut()
+        .unwrap()
+        .remove("watcher");
+    assert!(watcher.is_some_and(|w| w.is_object()));
+    let mut old: Table = serde_json::from_value(saved).unwrap();
+    assert!(!old.watchable());
+    assert_eq!((old.watch_view(0), old.watch_extras()), (None, None));
+    while let Some(seat) = table.deciding() {
+        for p in 0..3 {
+            assert_eq!(old.view(PlayerId(p)), table.view(PlayerId(p)));
+        }
+        let answer = random_answer(&table.view(seat).decision.unwrap(), &mut rng);
+        table.answer(seat, &answer).unwrap();
+        old.answer(seat, &answer).unwrap();
+    }
+    assert!(old.is_over() && !old.watchable());
+    let json = serde_json::to_value(old.view(PlayerId(0))).unwrap();
+    assert_valid(&view_schema, &json, "the old table's final view");
+    // Saved again, it still has none.
+    let again: Table = serde_json::from_str(&serde_json::to_string(&old).unwrap()).unwrap();
+    assert!(!again.watchable());
 }
 
 /// Card options say where their cards are when not all are in one place, in words.
@@ -171,6 +439,9 @@ fn a_restored_table_plays_on_exactly_like_the_original() {
                         "seed {seed} step {step} seat {p}"
                     );
                 }
+                assert_eq!(copy.watch_view(0), table.watch_view(0), "seed {seed}");
+                assert!(copy.watchable() && copy.watch_view(0).is_some());
+                assert_eq!(copy.watch_extras(), table.watch_extras());
             }
             let answer = random_answer(&table.view(seat).decision.unwrap(), &mut rng);
             table.answer(seat, &answer).unwrap();

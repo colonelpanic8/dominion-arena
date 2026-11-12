@@ -2,7 +2,7 @@ use crate::project::{self, Context};
 use crate::text;
 use dominion_engine::{
     Card, CardId, DecisionKind, Game, GameConfig, Kind, Knowledge, Move, Opt, Phase, PlayerId,
-    Purpose, Response, SetupError, Types,
+    Purpose, Response, SetupError, Types, View,
 };
 use dominion_protocol::api::{PlayerTable, TableExtras};
 use dominion_protocol::{AgentView, Answer};
@@ -83,8 +83,8 @@ struct PendingWay {
     choice: WayChoice,
 }
 
-/// A hosted game: the engine game, what each seat knows, decision ids and each seat's
-/// log cursor.
+/// A hosted game: the engine game, what each seat and someone watching know, decision
+/// ids and each seat's log cursor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Table {
     id: String,
@@ -119,7 +119,7 @@ impl Table {
     ) -> Result<Table, SetupError> {
         let mut game = Game::new_traced(config)?;
         let n = game.num_players();
-        let mut knowledge = Knowledge::new(n);
+        let mut knowledge = Knowledge::with_watcher(n);
         knowledge.update(&mut game);
         let names = (0..n)
             .map(|i| {
@@ -262,7 +262,10 @@ impl Table {
     /// What a graphical table shows beside `seat`'s view (play order, discard tops),
     /// read through its engine view so that only what it may see is named.
     pub fn extras(&self, seat: PlayerId) -> TableExtras {
-        let view = self.game.view(seat);
+        Self::extras_of(self.game.view(seat))
+    }
+
+    fn extras_of(view: View<'_>) -> TableExtras {
         let name = |id| view.card(id).map(|c| c.name().to_string());
         TableExtras {
             players: view
@@ -279,18 +282,28 @@ impl Table {
     /// Whether the table keeps what someone watching knows (one saved before it did
     /// doesn't).
     pub fn watchable(&self) -> bool {
-        false
+        self.knowledge.watches()
     }
 
     /// The view of someone watching without a seat: what every player may know, with the
     /// log from `log_from` on and no decision. `None` unless [`Table::watchable`].
-    pub fn watch_view(&self, _log_from: usize) -> Option<AgentView> {
-        None
+    pub fn watch_view(&self, log_from: usize) -> Option<AgentView> {
+        let known = self.knowledge.watched(&self.game)?;
+        Some(project::watch_view(
+            &self.game,
+            &known,
+            &Context {
+                game_id: Some(&self.id),
+                names: &self.names,
+                decision_id: None,
+                log_from,
+            },
+        ))
     }
 
     /// [`Table::extras`] for someone watching.
     pub fn watch_extras(&self) -> Option<TableExtras> {
-        None
+        self.watchable().then(|| Self::extras_of(self.game.watch()))
     }
 
     /// Ends the game with `seat` resigning, for good: nothing before it can be undone.
