@@ -433,6 +433,18 @@ impl SetRules for Rules {
         }
     }
 
+    fn plain_effect(l: &mut Lasting, p: PlayerId) {
+        if l.card.set() != Set::Plunder {
+            return;
+        }
+        // Every lasting effect of this set keeps its stamp there (`stamped`).
+        l.data.i = 0;
+        if l.card == Card::Frigate && l.owner != p {
+            l.data.n = 0;
+            l.owner = p;
+        }
+    }
+
     fn modify_cost(g: &Game, card: Card, _id: Option<CardId>, cost: &mut Cost) {
         if is_trait(g, card, Card::Cheap) {
             *cost = cost.minus_coins(1);

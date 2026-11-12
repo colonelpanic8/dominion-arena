@@ -217,7 +217,10 @@ them.
   turn, when you gain ...") produces one trigger per lasting effect or card in play,
   never one trigger carrying a count: the window tracks what has resolved per trigger,
   and more can come into effect while it is open. It doesn't ask for an order
-  when a player's mandatory triggers all have the same effect, offers triggers the
+  when a player's mandatory triggers all have the same effect (lasting effects are
+  compared by their data: a set whose lastings carry what only says when they apply, a
+  stamp or the players an Attack reaches, takes it out in `SetRules::plain_effect`),
+  offers triggers the
   player can't tell apart and whose effect is the same (two Moats, two Tunnels
   discarded together) as one option, drops
   `Trigger::protects` ones (all they do is make the attacked player unaffected) once the

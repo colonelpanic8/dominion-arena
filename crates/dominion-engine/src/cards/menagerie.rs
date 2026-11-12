@@ -26,7 +26,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Mat, Phase, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -456,6 +456,13 @@ impl SetRules for Rules {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn plain_effect(l: &mut Lasting, p: PlayerId) {
+        if l.card == Card::Gatekeeper && l.owner != p {
+            (l.data.i, l.data.n) = (0, 0);
+            l.owner = p;
         }
     }
 

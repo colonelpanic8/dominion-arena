@@ -94,6 +94,12 @@ pub(crate) trait SetRules {
     /// Changes a decision a card ability asks (Elder: one more pick from a "choose").
     fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {}
 
+    /// Removes from `l`, a copy of a lasting effect, what makes no difference to what its
+    /// abilities do for `p`: a stamp of when it began, the players an Attack reaches, and
+    /// for those players whose Attack it is (make `p` its owner). Two effects left equal
+    /// are the same effect to the trigger window.
+    fn plain_effect(l: &mut Lasting, p: PlayerId) {}
+
     /// Whether `p` may play `id` from their hand now.
     fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {
         true
@@ -255,6 +261,10 @@ macro_rules! sets {
 
         pub(crate) fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {
             $(<$module::Rules as SetRules>::modify_decision(g, f, d);)*
+        }
+
+        pub(crate) fn plain_effect(l: &mut Lasting, p: PlayerId) {
+            $(<$module::Rules as SetRules>::plain_effect(l, p);)*
         }
 
         pub(crate) fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {

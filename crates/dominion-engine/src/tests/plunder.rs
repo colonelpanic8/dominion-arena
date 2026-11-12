@@ -3652,6 +3652,19 @@ fn shaman_still_gains_from_the_trash_after_divine_wind_removed_its_pile() {
 }
 
 #[test]
+fn two_abundances_waiting_for_the_same_gain_need_no_order() {
+    let mut g = setup(&[Card::Abundance, Card::Village]);
+    hand(&mut g, P0, &[Card::Abundance, Card::Abundance, Card::Gold]);
+    g.start();
+    for card in [Card::Abundance, Card::Abundance, Card::Gold] {
+        play(&mut g, card);
+    }
+    buy(&mut g, Card::Village);
+    assert_eq!(purpose(&g), Purpose::Turn);
+    assert_eq!((g.turn().coins, g.turn().buys), (6, 2));
+}
+
+#[test]
 fn duration_play_stamps_do_not_create_an_order_between_identical_effects() {
     for card in [Card::CabinBoy, Card::Stowaway, Card::SecludedShrine] {
         let mut g = setup(&[card, Card::Village]);

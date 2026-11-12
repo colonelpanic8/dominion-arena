@@ -9,7 +9,7 @@ use crate::Note;
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Token, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Lasting, Mat, Pos, Scratch, Token, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -526,6 +526,13 @@ impl SetRules for Rules {
             && g.home_pile(card) == Some(pile)
         {
             *cost = cost.minus_coins(2);
+        }
+    }
+
+    fn plain_effect(l: &mut Lasting, p: PlayerId) {
+        if matches!(l.card, Card::HauntedWoods | Card::SwampHag) && l.owner != p {
+            (l.data.i, l.data.n) = (0, 0);
+            l.owner = p;
         }
     }
 

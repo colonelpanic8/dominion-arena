@@ -459,30 +459,15 @@ fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
         t.lasting
             .and_then(|id| g.lasting().iter().find(|l| l.id == id))
             .map(|l| {
-                let mut rest = Scratch {
+                let mut l = l.clone();
+                cards::plain_effect(&mut l, t.owner);
+                let rest = Scratch {
                     cards: vec![],
                     pick: None,
                     ..l.data.clone()
                 };
-                let victim = l.owner != t.owner
-                    && matches!(
-                        l.card,
-                        Card::SwampHag | Card::HauntedWoods | Card::Gatekeeper | Card::Frigate
-                    );
-                // Play stamps and attack masks decide when to trigger, not what to do.
-                if matches!(
-                    l.card,
-                    Card::SecludedShrine | Card::CabinBoy | Card::Stowaway
-                ) || victim
-                {
-                    rest.i = 0;
-                }
-                if victim {
-                    rest.n = 0;
-                }
-                let owner = if victim { t.owner } else { l.owner };
                 let cards: Vec<_> = l.data.cards.iter().map(look).collect();
-                (l.card, owner, rest, cards, l.data.pick.as_ref().map(look))
+                (l.card, l.owner, rest, cards, l.data.pick.as_ref().map(look))
             })
     };
     (a.card, a.ability, a.data, a.optional) == (b.card, b.ability, b.data, b.optional)
