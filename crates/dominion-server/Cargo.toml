@@ -27,6 +27,7 @@ toml = "0.9"
 tokio-util = "0.7"
 futures-util = "0.3"
 rand.workspace = true
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [lints]
 workspace = true
