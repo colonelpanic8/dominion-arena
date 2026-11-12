@@ -88,8 +88,9 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | `{view, version}` after it |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version}`: on connect and after every change |
 
-`/assets/` serves the asset cache (`assets_dir`) and every other path the built web
-client (`web_dir`, falling back to its `index.html`). These routes accept the same Host
+`/assets/` serves the asset cache (`assets_dir`), then the web client's own bundled files
+(`web_dir/assets`), and every other path the built web client (`web_dir`, falling back to
+its `index.html`). These routes accept the same Host
 headers as `/mcp`.
 
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
@@ -123,6 +124,20 @@ skips files it already has (`--force` fetches them again) and prints what is cov
 `--dry-run` only reports what it would fetch. `dominion assets path` prints the
 directory. These assets belong to their owners: they are only cached locally for
 personal use and are never part of this repository or its package.
+
+## The web client
+
+`crates/dominion-web` is a browser client (Dioxus, compiled to wasm) for the same
+server: a lobby to create games and take seats, and a game page that shows a seat's view
+and answers its decisions. It keeps the seat tokens it holds in the browser's
+localStorage; a seat link `/game/<id>#token=<token>` opens a seat in another browser.
+
+```sh
+just web-build                  # release build into target/web-client
+just web-serve --port 7317      # build, then: dominion serve --web-dir target/web-client ...
+just web-dev 127.0.0.1:7317     # dx dev server with hot reload, proxying /api and the
+                                # asset cache to a dominion server at that address
+```
 
 ## Development
 

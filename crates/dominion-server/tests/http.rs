@@ -516,8 +516,11 @@ fn dirs() -> Dirs {
     let assets = root.path().join("assets");
     let web = root.path().join("web");
     std::fs::create_dir_all(assets.join("images/cards")).unwrap();
-    std::fs::create_dir_all(&web).unwrap();
+    std::fs::create_dir_all(web.join("assets")).unwrap();
     std::fs::write(assets.join("images/cards/village.webp"), "art").unwrap();
+    std::fs::write(web.join("assets/client-1a2b.wasm"), "wasm").unwrap();
+    std::fs::write(web.join("assets/manifest.json"), "shadowed").unwrap();
+    std::fs::write(assets.join("manifest.json"), "{}").unwrap();
     std::fs::write(root.path().join("secret.txt"), "secret").unwrap();
     std::fs::write(web.join("index.html"), "<html>client</html>").unwrap();
     std::fs::write(web.join("app.js"), "main()").unwrap();
@@ -546,6 +549,13 @@ async fn assets_and_the_client_are_served_from_their_directories() {
             .unwrap()
             .contains("max-age=")
     );
+    // The client's bundled files share /assets; the cache wins a clash.
+    let bundled = server.get("/assets/client-1a2b.wasm", None).await;
+    assert_eq!(
+        (bundled.status, bundled.text.as_str()),
+        (StatusCode::OK, "wasm")
+    );
+    assert_eq!(server.get("/assets/manifest.json", None).await.text, "{}");
     let missing = server.get("/assets/images/cards/nope.webp", None).await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert!(missing.headers.get("cache-control").is_none());
