@@ -38,6 +38,7 @@ crates/dominion-engine/
   src/tests/mod.rs        engine tests, shared helpers, the random-game fuzz test
   src/tests/fuzz.rs       fuzz harness: kingdom families, oracles at every decision
                           (more games: FUZZ_SEEDS; switches in its module docs)
+  src/tests/fuzz/unused.rs  games played twice in step, once with unused landscapes added
   src/tests/<set>.rs      each set's card tests
   src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace

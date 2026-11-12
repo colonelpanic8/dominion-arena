@@ -17,6 +17,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Once;
 
+mod unused;
+
 // ---- Findings ----
 
 /// What one game's oracles reported: each key once, with the first detail.
@@ -3470,14 +3472,12 @@ fn plan(family: Family, seed: u64) -> Plan {
 
 const MAX_STEPS: usize = 150_000;
 
-fn drive(seed: u64, plan: Plan, report: &mut Report) {
-    let flags = &mut report.flags;
-    let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xd1ce);
-    let mut config = plan.config;
-    // A choice the rules don't allow is dropped (and listed); the rest are kept.
-    let mut g = loop {
+/// Sets the game up. A choice the rules don't allow is dropped (and listed); the rest are
+/// kept.
+fn build(config: &mut GameConfig, flags: &mut Flags) -> Option<Game> {
+    loop {
         match crate::setup::build(config.clone()) {
-            Ok(g) => break g,
+            Ok(g) => return Some(g),
             Err(crate::SetupError::InvalidChoice { by, choice })
                 if config.setup_choices.contains_key(&by) =>
             {
@@ -3496,16 +3496,15 @@ fn drive(seed: u64, plan: Plan, report: &mut Report) {
             }
             Err(e) => {
                 flags.bug(format!("setup-fails:{e}"), || format!("{config:?}"));
-                return;
+                return None;
             }
         }
-    };
-    check_setup(&g, flags);
-    enrich(&mut g, &mut rng, plan.rich);
-    if plan.thin {
-        thin_decks(&mut g, &mut rng);
     }
-    report.setup = format!(
+}
+
+fn setup_text(seed: u64, plan: &Plan, g: &Game) -> String {
+    let config = &plan.config;
+    format!(
         "seed {seed}: {} players, rich {}, boost {}, thin {}, greed {:?}, kingdom {:?}, landscapes {:?}, prophecy {:?}, \
          colonies {:?}, shelters {:?}, choices {:?}",
         config.players,
@@ -3519,7 +3518,21 @@ fn drive(seed: u64, plan: Plan, report: &mut Report) {
         config.colonies,
         config.shelters,
         config.setup_choices
-    );
+    )
+}
+
+fn drive(seed: u64, mut plan: Plan, report: &mut Report) {
+    let flags = &mut report.flags;
+    let mut rng = ChaCha8Rng::seed_from_u64(seed ^ 0xd1ce);
+    let Some(mut g) = build(&mut plan.config, flags) else {
+        return;
+    };
+    check_setup(&g, flags);
+    enrich(&mut g, &mut rng, plan.rich);
+    if plan.thin {
+        thin_decks(&mut g, &mut rng);
+    }
+    report.setup = setup_text(seed, &plan, &g);
     check_zones(&g);
     let base = g.clone();
     g.enable_trace();
@@ -3696,12 +3709,14 @@ fn drive(seed: u64, plan: Plan, report: &mut Report) {
     }
 }
 
-fn run_game(family: Family, seed: u64) -> Report {
+type Driver = fn(u64, Plan, &mut Report);
+
+fn run_game(family: Family, driver: Driver, seed: u64) -> Report {
     install_hook();
     let mut report = Report::default();
     let plan = plan(family, seed);
     CAPTURE.with(|c| *c.borrow_mut() = Some(String::new()));
-    let result = catch_unwind(AssertUnwindSafe(|| drive(seed, plan, &mut report)));
+    let result = catch_unwind(AssertUnwindSafe(|| driver(seed, plan, &mut report)));
     heartbeat(None);
     if let Err(payload) = result {
         let (key, message) = panic_key(payload);
@@ -3713,6 +3728,10 @@ fn run_game(family: Family, seed: u64) -> Report {
 
 /// Runs a family's seeds and fails with every oracle that fired.
 fn run_family(name: &str, family: Family, default_seeds: u64) {
+    run_family_with(name, family, drive, default_seeds);
+}
+
+fn run_family_with(name: &str, family: Family, driver: Driver, default_seeds: u64) {
     let start = env_u64("FUZZ_START").unwrap_or(0);
     let seeds: Vec<u64> = match env_u64("FUZZ_ONLY") {
         Some(seed) => vec![seed],
@@ -3728,7 +3747,7 @@ fn run_family(name: &str, family: Family, default_seeds: u64) {
                     loop {
                         let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         let Some(&seed) = seeds.get(i) else { break };
-                        out.push((seed, run_game(family, seed)));
+                        out.push((seed, run_game(family, driver, seed)));
                     }
                     out
                 })
@@ -3842,6 +3861,8 @@ macro_rules! families {
                 run_family(stringify!($family), $family, $seeds);
             }
         )*
+
+        const FAMILIES: &[Family] = &[$($family),*];
     };
 }
 
