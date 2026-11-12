@@ -140,16 +140,6 @@ fn total(known: &CardCount) -> u32 {
     known.values().sum()
 }
 
-/// Every card `ours` places, `theirs` places too.
-fn assert_no_more_known(ours: &CardCount, theirs: &CardCount, what: &str) {
-    for (card, n) in ours {
-        assert!(
-            theirs.get(card).is_some_and(|m| m >= n),
-            "{what}: the watcher knows {ours:?}, the seat only {theirs:?}"
-        );
-    }
-}
-
 /// A player's zones as (name, count, known, unknown).
 fn zones(p: &PlayerView) -> Vec<(String, u32, &CardCount, u32)> {
     let mut zones = vec![
@@ -192,8 +182,11 @@ fn words(text: &str) -> Vec<String> {
 }
 
 /// Someone watching is shown a valid view with no seat and no decision, in which all the
-/// public state is what every seat is shown and no card is placed that some seat can't
-/// place: not in a hand, a deck or anywhere else.
+/// public state is what every seat is shown, and every zone holds as many cards as the
+/// seats see there. What they know of those cards is held to the truth, and to being the
+/// same in worlds that differ only in what is hidden, by the engine's fuzz tests: it is no
+/// subset of what a seat's view states, since either may state a deduction the other
+/// leaves unsaid (a deck of twelve with nine other cards to hold has three Coppers).
 fn assert_watcher_sees_only_what_is_public(
     table: &Table,
     schema: &Validator,
@@ -264,15 +257,13 @@ fn assert_watcher_sees_only_what_is_public(
             let what = format!("{what}, player {}", ours.index);
             let (a, b) = (zones(ours), zones(theirs));
             assert_eq!(a.len(), b.len(), "{what}");
-            for ((zone, count, known, unknown), (zone_b, count_b, known_b, _)) in a.iter().zip(&b) {
+            for ((zone, count, known, unknown), (zone_b, count_b, ..)) in a.iter().zip(&b) {
                 let what = format!("{what} {zone}");
                 assert_eq!((zone, count), (zone_b, count_b), "{what}");
                 assert_eq!(total(known) + unknown, *count, "{what}");
-                assert_no_more_known(known, known_b, &what);
             }
             let owned = |p: &PlayerView| total(&p.owned.known) + p.owned.unknown;
             assert_eq!(owned(ours), owned(theirs), "{what}");
-            assert_no_more_known(&ours.owned.known, &theirs.owned.known, &what);
             // Everything else about a player is public.
             let mut rest = ours.clone();
             rest.hand = theirs.hand.clone();

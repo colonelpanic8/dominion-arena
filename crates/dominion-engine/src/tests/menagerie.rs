@@ -3552,3 +3552,38 @@ fn toil_may_play_a_shadow_card_from_the_deck() {
     assert_eq!(in_play_kinds(&g, P0), [Card::Silver, Card::Fishmonger]);
     assert_eq!((g.turn().buys, g.turn().coins), (2, 1));
 }
+
+/// Returning a Peddler takes an Action out of play, so it costs $2 more once returned.
+#[test]
+fn butterfly_gains_for_what_the_returned_card_costs_once_returned() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Capitalism, Card::WayOfTheButterfly],
+        ..GameConfig::new(
+            2,
+            vec![
+                Card::Peddler,
+                Card::Village,
+                Card::KingsCourt,
+                Card::Laboratory,
+            ],
+            7,
+        )
+    });
+    g.players[0].projects.push(Card::Capitalism);
+    hand(&mut g, P0, &[Card::Village, Card::Peddler]);
+    g.start();
+    play(&mut g, Card::Village);
+    no(&mut g);
+    if g.turn().phase == Phase::Action {
+        end_phase(&mut g);
+    }
+    play(&mut g, Card::Peddler);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheButterfly)));
+    assert_eq!(g.cost(Card::Peddler), Cost::coins(4));
+    yes(&mut g);
+    assert_eq!(g.cost(Card::Peddler), Cost::coins(6));
+    // King's Court is the only card costing exactly $7.
+    assert_eq!(kinds(&g, &g.player(P0).discard), [Card::KingsCourt]);
+}

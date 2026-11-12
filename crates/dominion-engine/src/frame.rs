@@ -755,6 +755,8 @@ fn resume_shuffle(
                 .partition(|&&c| cards::bottom_when_shuffled(g, p, c));
             *bottom = under.clone();
             under.extend(rest);
+            g.mixed(under.clone());
+            let above = g.player(p).deck.len();
             for &c in &under {
                 let from = g.zones[c.index()];
                 g.zones[c.index()] = Zone::Deck(p);
@@ -763,11 +765,11 @@ fn resume_shuffle(
                     from,
                     to: Zone::Deck(p),
                     top: false,
+                    bottom: false,
+                    under: above,
                 });
             }
             g.touch_shuffled(&under);
-            let mixed = under.clone();
-            g.mixed(mixed);
             *count = under.len();
             g.last_shuffle = under.clone();
             g.shuffle_placed.clear();

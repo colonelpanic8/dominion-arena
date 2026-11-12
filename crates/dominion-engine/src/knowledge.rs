@@ -85,12 +85,17 @@ struct Mind {
     recent: HashSet<CardId>,
     #[serde(default)]
     leaving: Option<Leaving>,
+    /// Hands discarded whole unseen: their identities arrived together, their positions
+    /// within the discard pile are unknown.
+    #[serde(default)]
+    arrived: Vec<Vec<CardId>>,
 }
 
 /// Cards a viewer watched leave a held set for one place without seeing which they were.
 /// Until the viewer knows where the rest of the set goes, the groups stay as they were.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Leaving {
+    from: Zone,
     to: Zone,
     left: Vec<CardId>,
     /// The cards still in the set.
@@ -256,6 +261,19 @@ impl Mind {
 
     /// The viewer sees `card`, which is `is`.
     fn identify(&mut self, card: CardId, is: Card) {
+        if let Some(i) = self.arrived.iter().position(|set| set.contains(&card)) {
+            let among = self.arrived[i].clone();
+            self.arrived[i].retain(|&c| c != card);
+            if self.arrived[i].len() < 2 {
+                self.arrived.swap_remove(i);
+            }
+            self.identify_among(card, is, &among);
+            return;
+        }
+        self.identify_exact(card, is);
+    }
+
+    fn identify_exact(&mut self, card: CardId, is: Card) {
         let g = self.group_of[card.index()];
         let family = self.groups[g].family;
         if let Some(f) = family
@@ -286,6 +304,29 @@ impl Mind {
             group.ids = None;
         }
         self.new_group(vec![card], Some(CardCount::from([(is, 1)])));
+    }
+
+    /// Cards with only one possible identity no longer constrain their families.
+    fn reduce(&mut self) {
+        loop {
+            let known: Vec<_> = self
+                .groups
+                .iter()
+                .filter_map(|g| {
+                    let ids = g.ids.as_ref()?;
+                    (ids.len() == 1 && !g.cards.is_empty() && g.family.is_some())
+                        .then(|| (g.cards.clone(), *ids.keys().next().unwrap()))
+                })
+                .collect();
+            if known.is_empty() {
+                break;
+            }
+            for (cards, is) in known {
+                for c in cards {
+                    self.identify_exact(c, is);
+                }
+            }
+        }
     }
 
     /// A family down to one group: that group is exactly the family's cards.
@@ -354,8 +395,39 @@ impl Mind {
             let ids = &self.groups[self.group_of[c.index()]].ids;
             ids.as_ref().is_none_or(|ids| ids.contains_key(&is))
         };
-        let same: Vec<CardId> = among.iter().copied().filter(may_be).chain([card]).collect();
-        self.merge(same);
+        let same: Vec<CardId> = among
+            .iter()
+            .copied()
+            .filter(|c| !self.recent.contains(c))
+            .filter(may_be)
+            .chain([card])
+            .collect();
+        // This may be a copy the viewer already counted in the held set.
+        let known = std::iter::once(card).chain(same.iter().copied()).find(|c| {
+            self.groups[self.group_of[c.index()]]
+                .ids
+                .as_ref()
+                .is_some_and(|ids| ids.len() == 1 && ids.contains_key(&is))
+        });
+        if let Some(other) = known {
+            let (a, b) = (self.group_of[card.index()], self.group_of[other.index()]);
+            if a != b {
+                for c in &mut self.groups[a].cards {
+                    if *c == card {
+                        *c = other;
+                    }
+                }
+                for c in &mut self.groups[b].cards {
+                    if *c == other {
+                        *c = card;
+                    }
+                }
+                self.group_of[card.index()] = b;
+                self.group_of[other.index()] = a;
+            }
+        } else {
+            self.merge(same);
+        }
         self.identify(card, is);
     }
 
@@ -383,8 +455,19 @@ impl Mind {
     /// `card` leaves `from` for `to` and the viewer doesn't see what it is. `held` is the
     /// set it was held in out of their sight, if any.
     fn lose(&mut self, card: CardId, from: Zone, to: Zone, held: Option<&[CardId]>) {
+        self.disturb(card, from);
+        let arrived = self
+            .arrived
+            .iter()
+            .position(|set| set.contains(&card))
+            .map(|i| self.arrived.swap_remove(i));
+        let continuing = self
+            .leaving
+            .as_ref()
+            .filter(|l| l.from == from && l.to == to && l.rest.contains(&card))
+            .map(|l| l.rest.clone());
+        let held = held.or(arrived.as_deref()).or(continuing.as_deref());
         let Some(held) = held else {
-            self.disturb(card, from);
             return;
         };
         let rest: Vec<CardId> = held.iter().copied().filter(|&c| c != card).collect();
@@ -400,6 +483,7 @@ impl Mind {
             _ => {
                 self.settle();
                 self.leaving = Some(Leaving {
+                    from,
                     to,
                     left: vec![card],
                     rest,
@@ -419,11 +503,21 @@ impl Mind {
         }
     }
 
-    /// The cards that left a held set unseen could be any of it, unless all of it left.
+    /// The cards that left a held set unseen could be any of it.
     fn settle(&mut self) {
-        if let Some(l) = self.leaving.take()
-            && !l.rest.is_empty()
-        {
+        if let Some(l) = self.leaving.take() {
+            if l.rest.is_empty() {
+                if l.left.len() > 1
+                    && matches!(l.from, Zone::Hand(_))
+                    && matches!(l.to, Zone::Discard(_))
+                    && l.left
+                        .iter()
+                        .any(|c| self.group_of[c.index()] != self.group_of[l.left[0].index()])
+                {
+                    self.arrived.push(l.left);
+                }
+                return;
+            }
             // Only the set's cards: the rest of their groups didn't go anywhere.
             let set: Vec<CardId> = l.left.into_iter().chain(l.rest).collect();
             self.split_off(&set);
@@ -557,6 +651,18 @@ fn view_of(game: &Game, v: Viewer) -> crate::View<'_> {
     }
 }
 
+/// Every viewer's mind: the players', then the watcher's. Takes the two fields, so that
+/// the rest of the knowledge can be read meanwhile.
+fn minds<'a>(
+    players: &'a mut [Mind],
+    watcher: &'a mut Option<Mind>,
+) -> impl Iterator<Item = (Viewer, &'a mut Mind)> {
+    let players = players.iter_mut().enumerate();
+    players
+        .map(|(v, mind)| (Some(PlayerId(v as u8)), mind))
+        .chain(watcher.iter_mut().map(|mind| (None, mind)))
+}
+
 impl Knowledge {
     pub fn new(players: usize) -> Knowledge {
         Knowledge {
@@ -589,10 +695,7 @@ impl Knowledge {
 
     /// Every viewer's mind: the players', then the watcher's.
     fn minds_mut(&mut self) -> impl Iterator<Item = (Viewer, &mut Mind)> {
-        let players = self.minds.iter_mut().enumerate();
-        players
-            .map(|(v, mind)| (Some(PlayerId(v as u8)), mind))
-            .chain(self.watcher.iter_mut().map(|mind| (None, mind)))
+        minds(&mut self.minds, &mut self.watcher)
     }
 
     fn mind(&self, v: Viewer) -> Option<&Mind> {
@@ -609,6 +712,7 @@ impl Knowledge {
         }
         self.settle();
         self.observe(game);
+        self.minds_mut().for_each(|(_, mind)| mind.reduce());
     }
 
     fn settle(&mut self) {
@@ -628,12 +732,17 @@ impl Knowledge {
             }
             // Cards rearranged in place: `Mixed` says who can't follow that.
             Trace::Moved { from, to, .. } if from == to => {}
+            Trace::Positioned { .. } => {}
             Trace::Moved { card, from, to, .. } => {
                 let face_up = shown == Some(card);
                 self.moved(game, card, from, to, face_up, joining);
             }
             Trace::Mixed { cards } => {
                 self.settle();
+                self.minds_mut().for_each(|(_, mind)| mind.reduce());
+                let mut held: Vec<_> = cards.iter().filter_map(|&c| self.held_with(c)).collect();
+                held.sort_unstable();
+                held.dedup();
                 self.face_up.retain(|c| !cards.contains(c));
                 // Mixed with other cards (a whole deck shuffled), a held set's cards are
                 // no longer the ones looked at together.
@@ -646,7 +755,30 @@ impl Knowledge {
                     .copied()
                     .filter(|c| !marked(self.is[c.index()]))
                     .collect();
-                for (_, mind) in self.minds_mut() {
+                for (v, mind) in minds(&mut self.minds, &mut self.watcher) {
+                    let arrivals = std::mem::take(&mut mind.arrived);
+                    for set in arrivals {
+                        if set.iter().any(|c| cards.contains(c)) {
+                            if set.iter().any(|c| !cards.contains(c)) {
+                                mind.split_off(&set);
+                                mind.merge(set);
+                            }
+                        } else {
+                            mind.arrived.push(set);
+                        }
+                    }
+                    for set in &held {
+                        // Not all the viewer's own, which someone watching has none of.
+                        let theirs = |c: &CardId| {
+                            let owner = self.zone[c.index()].owner();
+                            owner.is_some_and(|o| Some(o) == v)
+                        };
+                        if !set.iter().all(theirs) {
+                            mind.split_off(set);
+                            mind.merge(set.iter().copied());
+                        }
+                    }
+                    mind.split_off(&mixed);
                     mind.merge(mixed.iter().copied());
                     for c in &mixed {
                         mind.recent.remove(c);
@@ -914,12 +1046,24 @@ impl Knowledge {
                 }
             }
         };
-        for family in mind.families.iter().filter(|f| !f.groups.is_empty()) {
+        let mut whole = HashSet::new();
+        let mut whole_zones = vec![];
+        for (i, family) in mind
+            .families
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| !f.groups.is_empty())
+        {
             let mut cards = family
                 .groups
                 .iter()
                 .flat_map(|&g| mind.groups[g].cards.iter().copied());
-            own(&zones_of(&mut cards), family.ids.as_ref());
+            let zones = zones_of(&mut cards);
+            own(&zones, family.ids.as_ref());
+            if let ([(zone, n)], Some(ids)) = (&zones[..], &family.ids) {
+                whole.insert(i);
+                whole_zones.push((*zone, *n, ids));
+            }
         }
         let groups = mind.groups.iter().filter(|g| !g.cards.is_empty());
         for (group, zones) in groups.map(|g| (g, zones_of(&mut g.cards.iter().copied()))) {
@@ -927,7 +1071,17 @@ impl Knowledge {
                 own(&zones, group.ids.as_ref());
             }
         }
+        for (zone, n, ids) in whole_zones {
+            let z = out.zones.entry(zone).or_default();
+            z.count += n;
+            for (&c, &k) in ids {
+                add(&mut z.known, c, k);
+            }
+        }
         for group in mind.groups.iter().filter(|g| !g.cards.is_empty()) {
+            if group.family.is_some_and(|f| whole.contains(&f)) {
+                continue;
+            }
             let zones = zones_of(&mut group.cards.iter().copied());
             let mut extra = group.extra;
             let ids = match (&group.cards[..], &group.ids) {

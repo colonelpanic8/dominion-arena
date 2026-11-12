@@ -7,13 +7,307 @@ use std::fmt::Write;
 fn start(mut g: Game) -> (Game, Knowledge) {
     g.enable_trace();
     g.start();
-    let mut k = Knowledge::new(g.num_players());
+    let mut k = Knowledge::with_watcher(g.num_players());
     k.update(&mut g);
     (g, k)
 }
 
 fn count(cards: &[(Card, u32)]) -> CardCount {
     cards.iter().copied().collect()
+}
+
+#[test]
+fn discarding_identical_revealed_cards_with_envoy_gives_the_same_log() {
+    let mut g = setup(&[Card::Envoy]);
+    hand(&mut g, P0, &[Card::Envoy]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Silver,
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Envoy);
+    k.update(&mut g);
+    let golds: Vec<_> = candidates(&g)
+        .into_iter()
+        .filter(|&c| g.card(c) == Card::Gold)
+        .collect();
+    let [(a, ka), (b, kb)] = worlds(&g, &k, golds[0], golds[1]);
+    assert_eq!(a.log(), b.log());
+    assert_eq!(ka.known(&a, P0), kb.known(&b, P0));
+}
+
+#[test]
+fn revealing_identical_hand_cards_preserves_the_same_knowledge_after_cleanup() {
+    let mut g = setup(&[Card::Encampment]);
+    hand(&mut g, P0, &[Card::Encampment, Card::Plunder, Card::Copper]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Silver,
+            Card::Plunder,
+            Card::Gold,
+            Card::Estate,
+            Card::Copper,
+            Card::Duchy,
+            Card::Silver,
+            Card::Copper,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    let gold = g.create(Card::Gold, Zone::Hand(P0));
+    g.show(gold);
+    k.update(&mut g);
+    play(&mut g, Card::Encampment);
+    k.update(&mut g);
+    let copies: Vec<_> = candidates(&g)
+        .into_iter()
+        .filter(|&c| g.card(c) == Card::Plunder)
+        .collect();
+
+    let world = |copy| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &[copy]);
+        k.update(&mut g);
+        next_turn(&mut g);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(copies[0]), world(copies[1]));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+    assert_eq!(
+        ka.known(&a, P1)
+            .zone(Zone::Discard(P0))
+            .known
+            .get(&Card::Plunder),
+        Some(&1)
+    );
+    assert_eq!(
+        ka.known(&a, P1)
+            .zone(Zone::Discard(P0))
+            .known
+            .get(&Card::Gold),
+        Some(&1)
+    );
+}
+
+#[test]
+fn privately_ordering_discards_does_not_reveal_which_cards_were_selected() {
+    let mut g = setup(&[Card::Herald]);
+    hand(&mut g, P0, &[Card::Gold; 2]);
+    deck(&mut g, P0, &[Card::Silver; 8]);
+    discard(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Copper, Card::Estate, Card::Duchy],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Herald);
+    respond(&mut g, Response::Number(2));
+    k.update(&mut g);
+    let choices = candidates(&g);
+    let world = |chosen: &[CardId]| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, chosen);
+        k.update(&mut g);
+        choose(&mut g, chosen);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(&choices[..2]), world(&choices[2..4]));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+}
+
+#[test]
+fn discarding_a_revealed_hand_keeps_every_known_copy() {
+    let mut g = setup(&[Card::Village]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper, Card::Gold]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Estate,
+            Card::Copper,
+            Card::Silver,
+            Card::Duchy,
+            Card::Silver,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    g.emit(Event::RevealedHand {
+        player: P0,
+        cards: vec![Card::Gold, Card::Copper, Card::Gold],
+    });
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::Hand(P0)).known,
+        count(&[(Card::Gold, 2), (Card::Copper, 1)])
+    );
+    next_turn(&mut g);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::Discard(P0)).known,
+        count(&[(Card::Gold, 2), (Card::Copper, 1)])
+    );
+}
+
+#[test]
+fn shuffling_searched_discards_with_a_discarded_hand_forgets_their_positions() {
+    let mut g = setup(&[Card::Village]);
+    let cards = hand(&mut g, P0, &[Card::Estate, Card::Copper, Card::Copper]);
+    deck(&mut g, P0, &[Card::Silver]);
+    discard(&mut g, P0, &[Card::Gold, Card::Duchy, Card::Copper]);
+    let (mut g, mut k) = start(g);
+    g.reveal(P0, cards[0]);
+    g.look_through_discard(P0);
+    k.update(&mut g);
+    let mut expected = None;
+    for seed in 0..10 {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        g.rng = ChaCha8Rng::seed_from_u64(seed);
+        next_turn(&mut g);
+        k.update(&mut g);
+        let seen = (observation(&g, P1, 0), k.known(&g, P1));
+        match &expected {
+            None => expected = Some(seen),
+            Some(expected) => assert_eq!(&seen, expected, "shuffle {seed}"),
+        }
+    }
+}
+
+#[test]
+fn mixing_some_known_copies_keeps_the_untouched_copies_known() {
+    let mut g = setup(&[Card::Chapel, Card::Artist]);
+    let hand = hand(&mut g, P0, &[Card::Chapel, Card::Copper, Card::Artist]);
+    let deck = deck(&mut g, P0, &[Card::Copper; 5]);
+    let (mut g, mut k) = start(g);
+    for &c in hand.iter().chain(&deck) {
+        g.show(c);
+    }
+    g.mixed(deck.clone());
+    g.put_in_hand(deck[0], P0);
+    k.update(&mut g);
+    play(&mut g, Card::Chapel);
+    k.update(&mut g);
+    let world = |copy| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &[copy]);
+        k.update(&mut g);
+        next_turn(&mut g);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(hand[1]), world(deck[0]));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+    assert_eq!(
+        ka.known(&a, P1)
+            .zone(Zone::Hand(P0))
+            .known
+            .get(&Card::Copper),
+        Some(&4)
+    );
+}
+
+#[test]
+fn a_family_in_one_zone_keeps_its_whole_known_multiset() {
+    let mut g = setup(&[Card::Sauna]);
+    hand(&mut g, P0, &[]);
+    let cards = deck(&mut g, P0, &[Card::Copper, Card::Sauna]);
+    let (g, k) = start(g);
+    let world = |mixed: Vec<CardId>| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        g.mixed(mixed);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(vec![cards[0]]), world(cards));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+    assert_eq!(
+        ka.known(&a, P1).zone(Zone::Deck(P0)).known,
+        count(&[(Card::Copper, 1), (Card::Sauna, 1)])
+    );
+}
+
+#[test]
+fn fated_placements_are_public_but_identical_copies_are_indistinguishable() {
+    for above in [0, 4] {
+        for seed in 0..8 {
+            let mut g = setup(&[Card::Village, Card::NightWatchman]);
+            g.landscapes.push(Card::Fated);
+            let pile = g.pile_of(Card::Village).unwrap();
+            g.piles[pile.index()].traits.push(Card::Fated);
+            hand(&mut g, P0, &[Card::NightWatchman]);
+            deck(&mut g, P0, &vec![Card::Estate; above]);
+            discard(
+                &mut g,
+                P0,
+                &[
+                    Card::Village,
+                    Card::Village,
+                    Card::Copper,
+                    Card::Estate,
+                    Card::Duchy,
+                    Card::Silver,
+                    Card::Gold,
+                ],
+            );
+            let (mut g, mut k) = start(g);
+            g.rng = ChaCha8Rng::seed_from_u64(seed);
+            end_phase(&mut g);
+            play(&mut g, Card::NightWatchman);
+            if purpose(&g) == Purpose::Trigger {
+                super::intrigue::trigger(&mut g, Card::Fated);
+            }
+            k.update(&mut g);
+            let cards = candidates(&g);
+            let world = |top: &[CardId], bottom: &[CardId]| {
+                let (mut g, mut k) = (g.clone(), k.clone());
+                let mut seen =
+                    respond_traced(&mut g, &mut k, Response::Cards(top.to_vec()))[1].clone();
+                if g.pending().is_some_and(|d| d.source == Some(Card::Fated)) {
+                    seen.push_str(
+                        &respond_traced(&mut g, &mut k, Response::Cards(bottom.to_vec()))[1],
+                    );
+                }
+                (g, k, seen)
+            };
+            let (a, ka, sa) = world(&cards[..1], &cards[1..]);
+            let (b, kb, sb) = world(&cards[1..], &cards[..1]);
+            assert_eq!(sa, sb);
+            assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+            assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+            let (c, kc, _) = world(&cards, &[]);
+            assert_ne!(observation(&a, P1, 0), observation(&c, P1, 0));
+            assert_eq!(
+                kc.known(&c, P1)
+                    .zone(Zone::Looking(P0))
+                    .known
+                    .get(&Card::Village),
+                Some(&(2.min(5 - above) as u32))
+            );
+            assert_eq!(
+                ka.known(&a, P1)
+                    .zone(Zone::Looking(P0))
+                    .known
+                    .get(&Card::Village),
+                Some(&1)
+            );
+        }
+    }
 }
 
 fn uncertain_over(known: &KnownCards, zones: &[Zone]) -> Option<CardCount> {
@@ -445,7 +739,10 @@ fn cards_put_back_in_a_forced_order_are_mixed_too() {
     k.update(&mut g);
     respond(&mut g, Response::option(Opt::Mode(1)));
     k.update(&mut g);
-    assert_eq!(k.known(&g, P0).zone(Zone::Deck(P1)).known, count(&[]));
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::Deck(P1)).known,
+        count(&[(Card::Estate, 1)])
+    );
 }
 
 /// Sleigh is discarded onto the card just gained, which then moves in everyone's view.
@@ -1215,7 +1512,7 @@ fn check_no_leak(g: &Game, k: &Knowledge, v: PlayerId, known: &KnownCards) {
 }
 
 fn drive_traced(mut g: Game, seed: u64) {
-    let mut k = Knowledge::new(g.num_players());
+    let mut k = Knowledge::with_watcher(g.num_players());
     let mut agents: Vec<Chaos> = (0..g.num_players())
         .map(|p| Chaos(ChaCha8Rng::seed_from_u64(seed * 10 + p as u64)))
         .collect();
@@ -1432,6 +1729,21 @@ fn digest(g: &Game, k: &Knowledge, v: PlayerId) -> String {
     )
 }
 
+/// What someone watching knows, as text, where that is kept.
+fn watch_digest(g: &Game, k: &Knowledge) -> Option<String> {
+    let known = k.watched(g)?;
+    let mut zones: Vec<String> = known
+        .zones
+        .iter()
+        .map(|(z, zk)| format!("{z:?} {zk:?}"))
+        .collect();
+    zones.sort();
+    Some(format!(
+        "zones {zones:#?}\nuncertain {:#?}\nowned {:?}",
+        known.uncertain, known.owned
+    ))
+}
+
 /// `r`, an answer to `a`'s decision, as an answer to `b`'s: the same choice of cards by
 /// name and zone.
 fn translate(a: &Game, b: &Game, r: &Response) -> Option<Response> {
@@ -1503,7 +1815,12 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                 from,
                 to,
                 top,
+                bottom,
+                under,
             } => {
+                if from == to {
+                    continue;
+                }
                 for (v, out) in seen.iter_mut().enumerate() {
                     let v = PlayerId(v as u8);
                     let mine = |z: &Zone| match *z {
@@ -1525,7 +1842,26 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                     };
                     // Whether it was the top card shows only for decks and piles.
                     let top = matches!(from, Zone::Deck(_) | Zone::Pile(_)) && *top;
-                    let _ = writeln!(out, "{what} {from:?} -> {to:?} top {top}");
+                    let placement = if matches!(to, Zone::Deck(_)) {
+                        format!(" bottom {bottom} under {under}")
+                    } else {
+                        String::new()
+                    };
+                    let _ = writeln!(out, "{what} {from:?} -> {to:?} top {top}{placement}");
+                }
+            }
+            Trace::Positioned {
+                player,
+                bottom,
+                under,
+                ..
+            } => {
+                for out in &mut seen {
+                    let zone = Zone::Deck(*player);
+                    let _ = writeln!(
+                        out,
+                        "a card {zone:?} -> {zone:?} top false bottom {bottom} under {under}"
+                    );
                 }
             }
             Trace::LookedOver { player, cards } => {
@@ -1572,15 +1908,8 @@ fn twins_agree(
             if observation(&a.0, p, log_from) != observation(&b.0, p, log_from) {
                 // The log says no more than the table and the moves they watched (which
                 // of two public cards of one name moved is no news).
-                let log = |g: &Game| -> Vec<Event> {
-                    let mut log = g.log()[log_from.min(g.log().len())..].to_vec();
-                    for e in &mut log {
-                        if let Event::Moved { cards, .. } = e {
-                            cards.sort();
-                        }
-                    }
-                    log
-                };
+                let log =
+                    |g: &Game| -> Vec<Event> { g.log()[log_from.min(g.log().len())..].to_vec() };
                 if observation(&a.0, p, usize::MAX) == observation(&b.0, p, usize::MAX)
                     && log(&a.0) != log(&b.0)
                 {
@@ -1611,6 +1940,15 @@ fn twins_agree(
         }
         if !same.iter().any(|&s| s) {
             break;
+        }
+        // Someone watching observes no more than any player does: while a player has
+        // observed the same in both worlds, so have they.
+        let (ka, kb) = (watch_digest(&a.0, &a.1), watch_digest(&b.0, &b.1));
+        if ka != kb {
+            let log = &a.0.log()[log_from.min(a.0.log().len())..];
+            return Err(format!(
+                "someone watching observed the same in both worlds (log since the split: {log:?})\nbut knows\n{ka:?}\nin one and\n{kb:?}\nin the other.\nAnswers since the split:\n{history}"
+            ));
         }
         let (Some(da), Some(db)) = (a.0.pending().cloned(), b.0.pending().cloned()) else {
             break;
@@ -1793,7 +2131,7 @@ fn traced_games_play_like_untraced_ones_and_survive_serialization() {
         let mut plain = Game::new(config.clone()).unwrap();
         let mut traced = Game::new_traced(config.clone()).unwrap();
         let mut resumed = Game::new_traced(config).unwrap();
-        let mut k = Knowledge::new(players as usize);
+        let mut k = Knowledge::with_watcher(players as usize);
         let mut k_resumed = k.clone();
         k.update(&mut traced);
         k_resumed.update(&mut resumed);

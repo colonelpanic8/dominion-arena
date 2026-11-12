@@ -1398,6 +1398,19 @@ impl Game {
     }
 
     pub(crate) fn move_card(&mut self, id: CardId, to: Zone, pos: Pos) {
+        if self.zone(id) == to
+            && let Zone::Deck(player) = to
+        {
+            self.record(|| crate::Trace::Positioned {
+                card: id,
+                player,
+                bottom: pos == Pos::Bottom,
+                under: match pos {
+                    Pos::Under(n) => n,
+                    _ => 0,
+                },
+            });
+        }
         if self.already_at(id, to, pos) {
             return;
         }
@@ -1415,6 +1428,11 @@ impl Game {
             from,
             to,
             top,
+            bottom: pos == Pos::Bottom,
+            under: match pos {
+                Pos::Under(n) => n,
+                _ => 0,
+            },
         });
         if let Zone::Pile(pile) = from {
             let pile = &mut self.piles[pile.index()];
