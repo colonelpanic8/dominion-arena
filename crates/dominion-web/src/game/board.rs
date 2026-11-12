@@ -856,6 +856,11 @@ pub fn board(
             })
             .collect(),
         result: view.game.result.as_ref().map(|r| r.players.clone()),
-        end_reason: view.game.result.as_ref().and_then(|r| r.reason.clone()),
+        end_reason: view
+            .game
+            .result
+            .as_ref()
+            .and_then(|r| r.reason.as_deref())
+            .map(super::wording::end_reason),
     }
 }

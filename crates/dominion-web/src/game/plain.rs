@@ -56,7 +56,7 @@ pub fn PlainGame() -> Element {
                 if let Some(r) = view.game.result.clone() {
                     section { class: "panel result",
                         h2 { "Game over" }
-                        if let Some(reason) = r.reason.clone() {
+                        if let Some(reason) = r.reason.as_deref().map(super::wording::end_reason) {
                             p { class: "muted", "{reason}" }
                         }
                         table {
