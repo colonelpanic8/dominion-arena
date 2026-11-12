@@ -350,7 +350,8 @@ them.
   does something too), and labels name the cards they are about where the player can see
   them. Where the purpose doesn't say what a card, pile or number choice is for, add
   `Flow::question` ("put onto your Island mat", "choose a Supply pile for an Embargo
-  token", "how many cards go above it? 0 puts it on top").
+  token", "how many cards go above it? 0 puts it on top"). Text that counts something,
+  here and in the agent crate, says it with `amount` ("1 token", "2 Cards").
 - **Agents** get a `View`, never the `Game`: everything public (piles and their
   tokens through `PileView`, each player's tokens, mats and zones through
   `PlayerView`, landscapes, Artifacts, the Prophecy, Boon/Hex discards, lasting effects,

@@ -1471,9 +1471,11 @@ fn sinister_plot_adds_tokens_then_cashes_them_in() {
     give_project(&mut g, P0, Card::SinisterPlot);
     deck(&mut g, P0, &[Card::Copper; 20]);
     g.start();
+    assert_eq!(trigger_labels(&g)[1], "Remove your tokens (you have none)");
     mode(&mut g, 0);
     next_turn(&mut g);
     next_turn(&mut g);
+    assert_eq!(trigger_labels(&g)[1], "Remove your 1 token for +1 Card");
     mode(&mut g, 0);
     assert_eq!(g.ext.renaissance.plot[0], 2);
     next_turn(&mut g);

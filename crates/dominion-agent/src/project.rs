@@ -1086,9 +1086,7 @@ fn several(n: usize, one: &str, many: &str) -> String {
     }
 }
 
-fn amount(n: i32, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
-}
+use dominion_engine::amount;
 
 /// A token's printed name.
 fn token_text(t: Token) -> &'static str {
@@ -1196,7 +1194,10 @@ fn counter_text(
     let up = delta > 0;
     if let Some(p) = player {
         let (verb, what) = match counter {
-            C::Coffers => (if up { "takes" } else { "spends" }, format!("{n} Coffers")),
+            C::Coffers => (
+                if up { "takes" } else { "spends" },
+                several(n as usize, "Coffers", "Coffers"),
+            ),
             C::Villagers => (
                 if up { "takes" } else { "spends" },
                 amount(n, "Villager", "Villagers"),
@@ -1323,16 +1324,14 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             *player,
             Some(*card),
             format!(
-                "{}{} token{} {} {}{}",
+                "{}{} {} {}",
                 player.map_or(String::new(), |p| format!("{}: ", name(p))),
-                delta.unsigned_abs(),
-                if delta.unsigned_abs() == 1 { "" } else { "s" },
+                amount(delta.unsigned_abs(), "token", "tokens"),
                 if *delta > 0 { "put on" } else { "removed from" },
-                card,
-                pile.map_or(String::new(), |p| format!(
-                    " on the {} pile",
-                    game.pile(p).card
-                ))
+                match pile {
+                    Some(p) => format!("the {} pile ({card})", game.pile(*p).card),
+                    None => card.to_string(),
+                }
             ),
         ),
         Event::Bought { player, card } | Event::BoughtLandscape { player, card } => (
@@ -1346,7 +1345,10 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             potions,
         } => {
             let p = if *potions > 0 {
-                format!(" and {potions} Potion(s)")
+                format!(
+                    " and {}",
+                    dominion_engine::amount(*potions as i64, "Potion", "Potions")
+                )
             } else {
                 String::new()
             };
@@ -1419,7 +1421,11 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
         Event::Drew { player, count } => (
             Some(*player),
             None,
-            format!("{} draws {count} card(s)", name(*player)),
+            format!(
+                "{} draws {}",
+                name(*player),
+                amount(*count as i64, "card", "cards")
+            ),
         ),
         Event::Shuffled { player } => (Some(*player), None, format!("{} shuffles", name(*player))),
         Event::Received { player, card } => (

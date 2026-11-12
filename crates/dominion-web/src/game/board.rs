@@ -577,7 +577,12 @@ fn player_entry(
                 Uncertain {
                     count: u.count,
                     candidates: stacks(&u.candidates, cards),
-                    text: format!("{} card(s) in {}", u.count, zones.join(" or ")),
+                    text: format!(
+                        "{} {} in {}",
+                        u.count,
+                        if u.count == 1 { "card" } else { "cards" },
+                        zones.join(" or ")
+                    ),
                 }
             })
             .collect(),

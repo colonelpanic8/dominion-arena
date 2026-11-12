@@ -21,6 +21,7 @@ mod scribe;
 mod setup;
 mod trace;
 mod trigger;
+mod words;
 
 #[cfg(test)]
 mod tests;
@@ -41,3 +42,4 @@ pub use setup::{
 };
 pub use trace::Trace;
 pub use trigger::{Occasion, Trigger};
+pub use words::amount;

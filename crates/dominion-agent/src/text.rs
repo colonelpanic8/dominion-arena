@@ -286,7 +286,7 @@ pub fn render(v: &AgentView) -> String {
                     let _ = write!(s, " {vp} VP");
                 }
                 if let Some(suns) = l.suns {
-                    let _ = write!(s, " {suns} suns");
+                    let _ = write!(s, " {}", dominion_engine::amount(suns, "Sun", "Suns"));
                 }
                 if l.active == Some(true) {
                     s.push_str(" active");

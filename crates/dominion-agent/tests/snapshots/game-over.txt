@@ -17,4 +17,4 @@ LOG
   Bo buys Silver
   Bo gains Silver
   Bo shuffles
-  Bo draws 5 card(s)
+  Bo draws 5 cards

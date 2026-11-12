@@ -732,7 +732,7 @@ fn the_log_says_which_ability_changed_which_tokens() {
         lines[at + 1..at + 4],
         [
             "Ada's Silk Merchant resolves",
-            "Ada takes 1 Coffers",
+            "Ada takes a Coffers",
             "Ada takes 1 Villager"
         ],
         "{lines:#?}"
