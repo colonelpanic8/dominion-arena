@@ -645,3 +645,75 @@ fn accounts_sessions_and_records_outlive_the_server() {
     assert_ne!(wanderer.user, ada.user);
     assert_ne!(wanderer.user, bo.user);
 }
+
+/// Answers the deciding seat's open decision with its first option. The seat.
+fn answer_first(arena: &Arena, game: &str) -> Seat {
+    let summary = arena
+        .hub
+        .list()
+        .into_iter()
+        .find(|g| g.game_id == game)
+        .unwrap();
+    let seat = Seat {
+        game: game.into(),
+        seat: dominion_engine::PlayerId(summary.deciding.unwrap()),
+    };
+    let d = arena.hub.view(&seat).unwrap().0.decision.unwrap();
+    let min = d.min.unwrap_or(1).max(1) as usize;
+    let picks = d.options.iter().take(min).map(|o| o.index).collect();
+    arena
+        .hub
+        .answer(&seat, &Answer::indices(&d.id, picks))
+        .unwrap();
+    seat
+}
+
+#[test]
+fn answers_are_taken_back_only_where_the_table_allows_it() {
+    use dominion_server::hub::HubError;
+    let arena = arena();
+    let (ada, bo) = (register(&arena, "Ada"), register(&arena, "Bo"));
+    arena.search(&ada, &MatchRequest::default()).unwrap();
+    let matched = arena
+        .search(&bo, &MatchRequest::default())
+        .unwrap()
+        .game_id
+        .unwrap();
+    let seat = answer_first(&arena, &matched);
+    assert!(!arena.hub.seat_view(&seat, None).unwrap().can_undo);
+    assert!(matches!(arena.hub.undo(&seat), Err(HubError::Forbidden(_))));
+    arena
+        .hub
+        .resign(&my_seat(&arena, &ada, &matched), "resigned")
+        .unwrap();
+    arena
+        .hub
+        .resign(&my_seat(&arena, &bo, &matched), "resigned")
+        .unwrap_err();
+
+    let friendly = TableSpec {
+        undo: true,
+        turn_limit: Some(1),
+        ..TableSpec::default()
+    };
+    let game = start_table(&arena, friendly, &ada, &[&bo]);
+    let seat = answer_first(&arena, &game);
+    assert!(arena.hub.seat_view(&seat, None).unwrap().can_undo);
+    arena.hub.undo(&seat).unwrap();
+    // Once it is over it has been recorded: the last answer stands.
+    let mut last = seat;
+    for _ in 0..10_000 {
+        let running = arena
+            .hub
+            .list()
+            .into_iter()
+            .any(|g| g.game_id == game && g.running);
+        if !running {
+            break;
+        }
+        last = answer_first(&arena, &game);
+    }
+    assert!(!arena.hub.seat_view(&last, None).unwrap().can_undo);
+    assert!(matches!(arena.hub.undo(&last), Err(HubError::Forbidden(_))));
+    assert_eq!(arena.history(Some("Ada"), None, 10).unwrap().games.len(), 2);
+}
