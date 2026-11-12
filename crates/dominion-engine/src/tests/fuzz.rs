@@ -2,11 +2,12 @@
 //! checked at every decision. Each `fuzz_*` test runs one kingdom family.
 //!
 //! Environment: `FUZZ_SEEDS` (games per family), `FUZZ_START` (first seed), `FUZZ_ONLY`
-//! (one seed, with details), `FUZZ_THREADS`, `FUZZ_STATS` (coverage), `FUZZ_COVER` (uses
-//! per card), `FUZZ_AUDIT` (print the review-by-hand lists), `FUZZ_KEYS` (every game an
-//! oracle fired in), `FUZZ_VIEWS` (percentage of decisions at which a view is checked
-//! against hidden cards being swapped, and twin worlds are played on), `FUZZ_LOG` and
-//! `FUZZ_TRACE` (with `FUZZ_ONLY`: the log, and card moves, decisions and answers).
+//! (one seed, with details), `FUZZ_THREADS`, `FUZZ_STATS` (coverage and twin-check timing),
+//! `FUZZ_COVER` (uses per card), `FUZZ_AUDIT` (print the review-by-hand lists), `FUZZ_KEYS`
+//! (every game an oracle fired in), `FUZZ_VIEWS` (percentage of decisions at which a view
+//! is checked against hidden cards being swapped, and twin worlds are played on; default
+//! 30), `FUZZ_LOG` and `FUZZ_TRACE` (with `FUZZ_ONLY`: the log, and card moves, decisions
+//! and answers).
 
 use super::*;
 use crate::frame::Frame;
@@ -3431,6 +3432,8 @@ struct Report {
     prophesied: bool,
     landscapes_bought: u32,
     steps: usize,
+    twin_checks: usize,
+    twin_time: std::time::Duration,
     turns: u32,
     reason: Option<EndReason>,
     setup: String,
@@ -3613,9 +3616,10 @@ fn drive(seed: u64, mut plan: Plan, report: &mut Report) {
     let thorough = seed.is_multiple_of(4);
     // How often a view is compared with the view of a game with two hidden cards
     // swapped (`FUZZ_VIEWS`, a percentage).
-    let view_rate = env_u64("FUZZ_VIEWS").map_or(0.02, |pct| pct.min(100) as f64 / 100.0);
+    let view_rate = env_u64("FUZZ_VIEWS").map_or(0.30, |pct| pct.min(100) as f64 / 100.0);
     let keep_log = std::env::var("FUZZ_LOG").is_ok();
     let keep_trace = std::env::var("FUZZ_TRACE").is_ok();
+    let time_twins = std::env::var("FUZZ_STATS").is_ok();
     loop {
         let trace: Vec<Trace> = g.trace().unwrap_or_default().to_vec();
         for entry in &trace {
@@ -3689,10 +3693,15 @@ fn drive(seed: u64, mut plan: Plan, report: &mut Report) {
                     format!("{error}; {}", ctx(&g))
                 });
             }
+            let started = time_twins.then(std::time::Instant::now);
+            report.twin_checks += 1;
             if let Err(error) = super::knowledge::check_hidden_twins(&g, &k, &mut rng) {
                 flags.bug("knowledge-or-log-depends-on-hidden-cards", || {
                     format!("{error}; {}", ctx(&g))
                 });
+            }
+            if let Some(started) = started {
+                report.twin_time += started.elapsed();
             }
         }
 
@@ -3858,6 +3867,13 @@ fn run_family_with(name: &str, family: Family, driver: Driver, default_seeds: u6
         }
     }
     if std::env::var("FUZZ_STATS").is_ok() {
+        let twin_checks: usize = reports.iter().map(|(_, r)| r.twin_checks).sum();
+        let twin_time: std::time::Duration = reports.iter().map(|(_, r)| r.twin_time).sum();
+        eprintln!(
+            "{name}: hidden twins: {twin_checks} checks, {:.6}s ({:.3} ms/check)",
+            twin_time.as_secs_f64(),
+            twin_time.as_secs_f64() * 1000.0 / twin_checks.max(1) as f64
+        );
         let games = reports.len().max(1);
         let steps: usize = reports.iter().map(|(_, r)| r.steps).sum();
         let turns: u32 = reports.iter().map(|(_, r)| r.turns).sum();
