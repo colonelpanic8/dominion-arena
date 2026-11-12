@@ -1,10 +1,11 @@
-//! `dominion`: an MCP server hosting Dominion games over streamable HTTP, and a terminal
-//! client for it.
+//! `dominion`: an MCP server hosting Dominion games over streamable HTTP, a terminal
+//! client for it, and solo games kept in files.
 
 pub mod client;
 pub mod config;
 pub mod hub;
 pub mod mcp;
+pub mod solo;
 
 use dominion_agent::GlossaryEntry;
 use rmcp::transport::streamable_http_server::{

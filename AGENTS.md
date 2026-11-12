@@ -38,7 +38,8 @@ crates/dominion-engine/
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
-crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
+crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
+                          and solo games kept in files (`solo.rs`)
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 
@@ -342,7 +343,8 @@ helpers in `tests/mod.rs` (`setup`, `hand`, `deck`, `play`, `choose_kinds`, `yes
   through its frame.
 - One way to play a card: `Frame::play`.
 - Rules code asks the game for types, costs and identity per card instance.
-- No bots or AI strategies in this repo. Tests may use throwaway responders.
+- No bots or AI strategies in this repo. Tests may use throwaway responders. The idle
+  seats of a solo game (`solo.rs`) do the least each decision allows and choose nothing.
 
 ## References
 

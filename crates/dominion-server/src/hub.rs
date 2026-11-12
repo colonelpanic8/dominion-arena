@@ -40,6 +40,11 @@ pub struct NewGame {
     pub turn_limit: Option<u32>,
     pub colonies: Option<bool>,
     pub shelters: Option<bool>,
+    /// Choices setup otherwise makes at random, by the card that makes them: Young
+    /// Witch's Bane, the pile a Trait or Obelisk goes on, Way of the Mouse's card, the
+    /// Black Market deck (top first), Druid's Boons, ...
+    #[serde(default)]
+    pub setup: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -305,6 +310,14 @@ pub fn config(req: &NewGame) -> Result<GameConfig, HubError> {
     config.turn_limit = req.turn_limit;
     config.colonies = req.colonies;
     config.shelters = req.shelters;
+    for (by, chosen) in &req.setup {
+        let by = card(by, "card", |_| true)?;
+        let chosen = chosen
+            .iter()
+            .map(|n| card(n, "card", |_| true))
+            .collect::<Result<_, _>>()?;
+        config.setup_choices.insert(by, chosen);
+    }
     Ok(config)
 }
 
