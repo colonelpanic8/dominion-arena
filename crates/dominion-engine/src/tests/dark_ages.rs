@@ -430,6 +430,21 @@ fn sage_takes_the_first_card_costing_three_or_more() {
     assert_eq!(deck_kinds(&g, P0), [Card::Gold]);
 }
 
+/// Sage's FAQ: when the deck runs out, shuffle the discard pile, not including the
+/// revealed cards, and go on.
+#[test]
+fn sage_shuffles_without_the_cards_it_revealed() {
+    let mut g = setup(&[Card::Sage]);
+    hand(&mut g, P0, &[Card::Sage]);
+    deck(&mut g, P0, &[Card::Copper, Card::Estate]);
+    discard(&mut g, P0, &[Card::Gold]);
+    g.start();
+    play(&mut g, Card::Sage);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Copper, Card::Estate]);
+    assert!(g.player(P0).deck.is_empty());
+}
+
 #[test]
 fn sage_finding_nothing_discards_everything() {
     let mut g = setup(&[Card::Sage]);
@@ -1401,7 +1416,7 @@ fn survivors_discards_or_reorders_the_top_two() {
         player: P0,
         count: 2,
     };
-    let back = moved(P0, Zone::Deck(P0), Zone::Deck(P0), &[], 2);
+    let back = moved(P0, Zone::Looking(P0), Zone::Deck(P0), &[], 2);
     assert!(logged_in_order(&g, &[looked, back]));
 
     let mut g = setup(&[Card::Marauder]);

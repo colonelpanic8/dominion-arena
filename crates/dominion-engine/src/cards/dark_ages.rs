@@ -1,7 +1,7 @@
 //! Dark Ages: its Kingdom cards, the Knights, Ruins, Shelters, Spoils, Madman and
 //! Mercenary.
 
-use super::{CardFrame, Hook, SetRules, mode_mask, take_mode};
+use super::{CardFrame, Hook, SetRules, looking, mode_mask, put_back, take_mode};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -360,15 +360,11 @@ fn trashing_attack(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, next
                 return goto(f, next);
             };
             f.pc = base + 1;
-            Flow::Call(Frame::reveal_on_deck(target, 2))
+            Flow::Call(Frame::reveal(target, 2))
         }
         1 => {
             let target = f.targets[f.s.i];
             let revealed = input.cards();
-            // Held out of the deck, so cards drawn when one is trashed (Cultist) aren't these.
-            for &c in &revealed {
-                g.set_aside_revealed(c, target);
-            }
             let candidates: Vec<CardId> = revealed
                 .iter()
                 .copied()
@@ -394,10 +390,7 @@ fn trashing_attack(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, next
         }
         3 => {
             let target = f.targets[f.s.i];
-            let rest: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                .into_iter()
-                .filter(|&c| g.zone(c) == Zone::SetAside(target))
-                .collect();
+            let rest = looking(g, target, &std::mem::take(&mut f.s.cards));
             f.pc = base + 4;
             Flow::Call(Frame::discard(target, rest))
         }
@@ -608,7 +601,7 @@ fn catacombs(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 3))
+            Flow::Call(Frame::look(p, 3))
         }
         1 => {
             f.s.cards = input.cards();
@@ -618,10 +611,7 @@ fn catacombs(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let m = mode_mask(input);
-            let cards: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                .into_iter()
-                .filter(|&c| g.zone(c) == Zone::Deck(p))
-                .collect();
+            let cards = looking(g, p, &std::mem::take(&mut f.s.cards));
             if m & 1 != 0 {
                 for &c in &cards {
                     g.put_in_hand(c, p);
@@ -984,7 +974,7 @@ fn ironmonger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(p, 1))
+            Flow::Call(Frame::reveal(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -996,10 +986,11 @@ fn ironmonger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             f.pc = 3;
+            let c = f.s.pick.expect("set in step 1");
             if input.is_yes() {
-                let c = f.s.pick.expect("set in step 1");
                 return Flow::Call(Frame::discard(p, vec![c]));
             }
+            put_back(g, p, &[c]);
             Flow::Continue
         }
         3 => {
@@ -1094,12 +1085,12 @@ fn mystic(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal_on_deck(p, 1))
+            Flow::Call(Frame::reveal(p, 1))
         }
         _ => {
             if let Some(c) = input.card()
                 && Some(g.card(c)) == f.s.card
-                && g.zone(c) == Zone::Deck(p)
+                && g.zone(c) == Zone::Looking(p)
             {
                 g.put_in_hand(c, p);
             }
@@ -1196,7 +1187,7 @@ fn rats(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// Reveal cards one at a time, holding them aside, until `stop` matches one. Runs at pcs
+/// Reveal cards one at a time, holding them, until `stop` matches one. Runs at pcs
 /// `base` and `base + 1`; the matching card (if any) is left in `f.s.pick` and the rest in
 /// `f.s.cards`. Then continues at `next`.
 fn reveal_until(
@@ -1210,12 +1201,11 @@ fn reveal_until(
     let p = f.player;
     if f.pc == base {
         f.pc = base + 1;
-        return Flow::Call(Frame::reveal_on_deck(p, 1));
+        return Flow::Call(Frame::reveal(p, 1));
     }
     let Some(c) = input.card() else {
         return goto(f, next);
     };
-    g.set_aside_revealed(c, p);
     if stop(g, c) {
         f.s.pick = Some(c);
         f.pc = next;
@@ -1228,10 +1218,7 @@ fn reveal_until(
 
 fn discard_held(g: &mut Game, f: &mut CardFrame) -> Flow {
     let p = f.player;
-    let rest: Vec<CardId> = std::mem::take(&mut f.s.cards)
-        .into_iter()
-        .filter(|&c| g.zone(c) == Zone::SetAside(p))
-        .collect();
+    let rest = looking(g, p, &std::mem::take(&mut f.s.cards));
     Flow::Call(Frame::discard(p, rest))
 }
 
@@ -1263,7 +1250,7 @@ fn rebuild(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             discard_held(g, f)
         }
         5 => {
-            let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::SetAside(p)) else {
+            let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) else {
                 return Flow::done();
             };
             f.s.cost = g.cost_of(c);
@@ -1294,7 +1281,7 @@ fn sage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 | 1 => reveal_until(g, f, input, &|g, c| g.cost_of(c).coins >= 3, 0, 2),
         2 => {
-            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::SetAside(p)) {
+            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) {
                 g.put_in_hand(c, p);
             }
             f.pc = 3;
@@ -1426,7 +1413,7 @@ fn survivors(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 2))
+            Flow::Call(Frame::look(p, 2))
         }
         1 => {
             f.s.cards = input.cards();
@@ -1438,10 +1425,7 @@ fn survivors(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .about(f.s.cards.clone())
         }
         2 => {
-            let cards: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                .into_iter()
-                .filter(|&c| g.zone(c) == Zone::Deck(p))
-                .collect();
+            let cards = looking(g, p, &std::mem::take(&mut f.s.cards));
             if input.opt() == Some(crate::Opt::Mode(0)) {
                 f.pc = 4;
                 return Flow::Call(Frame::discard(p, cards));
@@ -1450,9 +1434,7 @@ fn survivors(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_order(cards, Purpose::TopDeck)
         }
         3 => {
-            for c in input.cards().into_iter().rev() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
         _ => Flow::done(),
@@ -1464,7 +1446,7 @@ fn vagrant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(p, 1))
+            Flow::Call(Frame::reveal(p, 1))
         }
         _ => {
             if let Some(c) = input.card()
@@ -1482,7 +1464,7 @@ fn wandering_minstrel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(p, 3))
+            Flow::Call(Frame::reveal(p, 3))
         }
         1 => {
             let (actions, rest): (Vec<CardId>, Vec<CardId>) =
@@ -1492,17 +1474,12 @@ fn wandering_minstrel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(p, rest))
         }
         2 => {
-            let actions: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                .into_iter()
-                .filter(|&c| g.zone(c) == Zone::Deck(p))
-                .collect();
+            let actions = looking(g, p, &std::mem::take(&mut f.s.cards));
             f.pc = 3;
             f.ask_order(actions, Purpose::TopDeck)
         }
         _ => {
-            for c in input.cards().into_iter().rev() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }
