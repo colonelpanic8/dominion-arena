@@ -221,7 +221,7 @@ them.
   player can't tell apart and whose effect is the same (two Moats, two Tunnels
   discarded together) as one option, drops
   `Trigger::protects` ones (all they do is make the attacked player unaffected) once the
-  player is unaffected, and resolves
+  player is unaffected, and resolves mandatory `protects` ones (Lighthouse) and
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
   +1 Buy) first without asking. A trigger runs as the card's
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`

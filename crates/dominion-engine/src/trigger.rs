@@ -305,7 +305,12 @@ impl Window {
             .expect("every trigger has an owner");
         let mine: Vec<(usize, Trigger)> =
             all.into_iter().filter(|(_, t)| t.owner == owner).collect();
-        if let Some(t) = mine.iter().find(|(_, t)| t.quiet && !t.optional) {
+        // A mandatory one that only makes its player unaffected (Lighthouse) needs no
+        // order either: the others that would do the same drop out.
+        if let Some(t) = mine
+            .iter()
+            .find(|(_, t)| (t.quiet || t.protects) && !t.optional)
+        {
             return self.run(g, t.clone());
         }
         // Copies of one mandatory ability, also for occasions that happen together (Tomb

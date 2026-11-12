@@ -385,8 +385,10 @@ fn lighthouse_gives_a_coin_now_and_next_turn_and_blocks_attacks_until_then() {
     assert!(logged_in_order(&g, &[start, resolved, bonus]));
 }
 
+/// Lighthouse only makes its player unaffected, which leaves nothing for a Moat to do:
+/// no order to ask.
 #[test]
-fn ordering_moat_and_lighthouse_says_what_attacks_and_what_moat_does() {
+fn lighthouse_resolves_before_a_moat_without_asking() {
     let mut g = setup(&[Card::Lighthouse, Card::Militia, Card::Moat]);
     hand(&mut g, P0, &[Card::Lighthouse]);
     deck(&mut g, P0, &[Card::Copper; 10]);
@@ -396,21 +398,15 @@ fn ordering_moat_and_lighthouse_says_what_attacks_and_what_moat_does() {
     next_turn(&mut g);
     hand(&mut g, P0, &[Card::Moat]);
     play(&mut g, Card::Militia);
-    let d = g.pending().unwrap();
-    assert_eq!((d.player, d.source), (P0, None));
-    assert_eq!(
-        d.question.as_deref(),
-        Some(
-            "P2 attacks you with Militia: choose which of your abilities resolves next (the others stay pending)"
-        )
-    );
-    assert_eq!(
-        super::intrigue::trigger_labels(&g),
-        ["Moat: reveal it to be unaffected (optional)", "Lighthouse"]
-    );
-    super::intrigue::trigger(&mut g, Card::Lighthouse);
-    // Unaffected now, P0 isn't offered the Moat.
     assert_ne!(g.pending().unwrap().player, P0);
+    assert!(g.log().iter().any(|e| matches!(
+        e,
+        Event::Unaffected {
+            player: P0,
+            by: Card::Lighthouse,
+            ..
+        }
+    )));
     assert_eq!(hand_kinds(&g, P0), [Card::Moat]);
 }
 
