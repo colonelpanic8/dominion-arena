@@ -535,14 +535,6 @@ fn verb(p: Purpose) -> Option<&'static str> {
     })
 }
 
-fn bounds(min: usize, max: usize) -> String {
-    if min == max {
-        format!("{min}")
-    } else {
-        format!("{min}-{max}")
-    }
-}
-
 fn lower_first(s: &str) -> String {
     let mut chars = s.chars();
     chars
@@ -873,11 +865,15 @@ pub(crate) fn response(
     let mut seen = BTreeSet::new();
     let mut chosen = vec![];
     for &i in indices {
-        let t = targets.get(i as usize).ok_or_else(|| {
-            format!(
-                "option {i} does not exist (decision has {} options)",
-                targets.len()
-            )
+        let t = targets.get(i as usize).ok_or_else(|| match targets.len() {
+            0 => format!(
+                "there is no option {i}: decision {} has no options",
+                agent.id
+            ),
+            n => format!(
+                "there is no option {i}: the options are numbered 0 to {}",
+                n - 1
+            ),
         })?;
         if !seen.insert(i) {
             return Err(format!("option {i} is chosen more than once"));
@@ -886,10 +882,21 @@ pub(crate) fn response(
     }
     let (min, max) = (agent.min.unwrap_or(1), agent.max.unwrap_or(1));
     if !(min..=max).contains(&(chosen.len() as u32)) {
+        let (one, many) = match d.kind {
+            DecisionKind::Turn { .. } => ("move", "moves"),
+            DecisionKind::Cards { .. } => ("card", "cards"),
+            DecisionKind::Pile { .. } => ("pile", "piles"),
+            DecisionKind::NameCard => ("card name", "card names"),
+            DecisionKind::Number { .. } => ("number", "numbers"),
+            DecisionKind::Choose { .. } => ("option", "options"),
+        };
+        let chose = match chosen.len() {
+            0 => "none".to_string(),
+            n => n.to_string(),
+        };
         return Err(format!(
-            "choose {} option(s), got {}",
-            bounds(min as usize, max as usize),
-            chosen.len()
+            "choose {}; you chose {chose}",
+            how_many(min as usize, max as usize, one, many)
         ));
     }
     let one = || chosen.first().copied();

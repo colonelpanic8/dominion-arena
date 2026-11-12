@@ -432,7 +432,7 @@ impl SetRules for Rules {
             }
             Occasion::Attack { target, .. } => {
                 if active(g, target, Card::Champion).next().is_some() {
-                    out.push(Trigger::new(target, Card::Champion, PROTECT));
+                    out.push(Trigger::new(target, Card::Champion, PROTECT).protects());
                 }
                 for &c in g.hand(target) {
                     if g.card(c) == Card::CaravanGuard && super::can_play(g, target, c) {

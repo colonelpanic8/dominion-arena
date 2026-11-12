@@ -486,7 +486,16 @@ fn invalid_responses_are_rejected_without_side_effects() {
     );
     assert_eq!(
         g.respond(Response::Move(Move::EndPhase)),
-        Err(ResponseError::WrongKind)
+        Err(ResponseError::WrongKind { expected: "cards" })
+    );
+    assert_eq!(
+        ResponseError::WrongCount {
+            got: 5,
+            min: 0,
+            max: 4
+        }
+        .to_string(),
+        "choose up to 4; you chose 5"
     );
     assert_eq!(serde_json::to_string(&g).unwrap(), before);
 }

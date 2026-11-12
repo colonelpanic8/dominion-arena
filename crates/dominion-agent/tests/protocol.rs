@@ -253,11 +253,25 @@ fn bad_answers_are_rejected_with_reasons() {
     let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![n])) else {
         panic!("out-of-range index accepted");
     };
-    assert!(msg.contains("does not exist"), "{msg}");
+    assert_eq!(
+        msg,
+        format!(
+            "there is no option {n}: the options are numbered 0 to {}",
+            n - 1
+        )
+    );
     let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![0, 0])) else {
         panic!("repeated index accepted");
     };
-    assert!(msg.contains("more than once"), "{msg}");
+    assert_eq!(msg, "option 0 is chosen more than once");
+    let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![0, 1])) else {
+        panic!("two moves accepted");
+    };
+    assert_eq!(msg, "choose a move; you chose 2");
+    let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![])) else {
+        panic!("no move accepted");
+    };
+    assert_eq!(msg, "choose a move; you chose none");
     let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::name(&d.id, "Gold")) else {
         panic!("name accepted for a turn decision");
     };
@@ -943,4 +957,36 @@ fn a_way_answered_in_advance_is_ignored_when_no_way_question_follows() {
         .answer_with(PlayerId(0), &play, Some(WayChoice::None))
         .unwrap();
     assert_eq!(answered, Answered::default());
+}
+
+#[test]
+fn a_card_returned_to_its_pile_is_logged_as_returned() {
+    let mut t = table(&[Card::Experiment], 0, &[]);
+    let seat_1_turn = |seat: PlayerId, d: &AgentDecision| seat.0 == 1 && d.kind == "turn";
+    for _ in 0..30 {
+        assert_eq!(
+            play_to(&mut t, "Experiment", seat_1_turn),
+            Some(PlayerId(1))
+        );
+        let view = t.view(PlayerId(1));
+        let returned: Vec<&str> = view
+            .since_last_decision
+            .iter()
+            .filter(|e| e.text.contains("Experiment") && e.text.contains("pile"))
+            .map(|e| e.text.as_str())
+            .collect();
+        if !returned.is_empty() {
+            assert!(
+                returned.contains(&"P1 returns Experiment from play to the Experiment pile"),
+                "{returned:?}"
+            );
+            return;
+        }
+        while t.deciding() == Some(PlayerId(1)) {
+            let d = t.view(PlayerId(1)).decision.unwrap();
+            let end = pick(&d, |o| o.action == "end-phase").unwrap_or_else(|| first(&d));
+            t.answer(PlayerId(1), &end).unwrap();
+        }
+    }
+    panic!("Experiment was never played");
 }

@@ -139,28 +139,51 @@ impl Response {
 pub enum ResponseError {
     #[error("no decision is pending")]
     NoPendingDecision,
-    #[error("response does not match the pending decision's kind")]
-    WrongKind,
-    #[error("move {0:?} is not available")]
+    #[error("the pending decision asks for {expected}")]
+    WrongKind { expected: &'static str },
+    #[error("{0:?} is not one of the moves you can make")]
     InvalidMove(Move),
-    #[error("card {0:?} is not one of the choices")]
+    #[error("{0:?} is not one of the cards to choose from")]
     NotACandidate(CardId),
-    #[error("card {0:?} was chosen more than once")]
+    #[error("{0:?} is chosen more than once")]
     Duplicate(CardId),
-    #[error("chose {got} items, expected {min}..={max}")]
+    #[error("choose {}; you chose {got}", expected_count(*min, *max))]
     WrongCount { got: usize, min: usize, max: usize },
-    #[error("pile is not one of the choices")]
+    #[error("that pile is not one of the piles to choose from")]
     InvalidPile,
     #[error("a pile must be chosen")]
     PileRequired,
-    #[error("option {0:?} is not one of the choices")]
+    #[error("{0:?} is not one of the options")]
     InvalidOption(Opt),
-    #[error("option {0:?} was chosen more than once")]
+    #[error("{0:?} is chosen more than once")]
     DuplicateOption(Opt),
-    #[error("{0} cannot be named")]
+    #[error("{0} is not a card that can be named")]
     InvalidName(Card),
-    #[error("{got} is outside {min}..={max}")]
+    #[error("choose a number from {min} to {max}; {got} is not")]
     OutOfRange { got: i32, min: i32, max: i32 },
+}
+
+/// "exactly 1", "up to 3", "1 to 3".
+fn expected_count(min: usize, max: usize) -> String {
+    match (min, max) {
+        (a, b) if a == b => format!("exactly {a}"),
+        (0, b) => format!("up to {b}"),
+        (a, b) => format!("{a} to {b}"),
+    }
+}
+
+impl DecisionKind {
+    /// What an answer to it is, for error messages.
+    fn answer_kind(&self) -> &'static str {
+        match self {
+            DecisionKind::Turn { .. } => "a move",
+            DecisionKind::Cards { .. } => "cards",
+            DecisionKind::Pile { .. } => "a pile",
+            DecisionKind::Choose { .. } => "options",
+            DecisionKind::NameCard => "a card name",
+            DecisionKind::Number { .. } => "a number",
+        }
+    }
 }
 
 fn ensure(cond: bool, err: ResponseError) -> Result<(), ResponseError> {
@@ -229,7 +252,9 @@ impl Decision {
                     max: *max,
                 },
             ),
-            _ => Err(ResponseError::WrongKind),
+            (kind, _) => Err(ResponseError::WrongKind {
+                expected: kind.answer_kind(),
+            }),
         }
     }
 

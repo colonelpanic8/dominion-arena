@@ -409,15 +409,9 @@ fn ordering_moat_and_lighthouse_says_what_attacks_and_what_moat_does() {
         ["Moat: reveal it to be unaffected (optional)", "Lighthouse"]
     );
     super::intrigue::trigger(&mut g, Card::Lighthouse);
-    let d = g.pending().unwrap();
-    assert_eq!(
-        d.question.as_deref(),
-        Some("P2 attacks you with Militia: you may use this ability")
-    );
-    assert_eq!(
-        super::intrigue::trigger_labels(&g),
-        ["Moat: reveal it to be unaffected (optional)", "Decline"]
-    );
+    // Unaffected now, P0 isn't offered the Moat.
+    assert_ne!(g.pending().unwrap().player, P0);
+    assert_eq!(hand_kinds(&g, P0), [Card::Moat]);
 }
 
 #[test]

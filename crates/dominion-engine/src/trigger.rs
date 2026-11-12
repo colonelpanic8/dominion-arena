@@ -133,6 +133,9 @@ pub struct Trigger {
     /// unaffected").
     #[serde(default)]
     pub does: Option<String>,
+    /// All it does is make the attacked player unaffected: not offered once they are.
+    #[serde(default)]
+    pub protects: bool,
 }
 
 impl Trigger {
@@ -149,6 +152,7 @@ impl Trigger {
             data: 0,
             label: None,
             does: None,
+            protects: false,
         }
     }
 
@@ -184,6 +188,11 @@ impl Trigger {
         self
     }
 
+    pub(crate) fn protects(mut self) -> Trigger {
+        self.protects = true;
+        self
+    }
+
     pub(crate) fn labelled(mut self, label: String) -> Trigger {
         self.label = Some(label);
         self
@@ -198,7 +207,11 @@ pub(crate) struct Window {
     occs: Vec<Occasion>,
     /// Resolved or declined triggers, with the index of their occasion.
     done: Vec<(usize, Trigger)>,
+    /// One trigger per option of the pending decision.
     asked: Vec<(usize, Trigger)>,
+    /// Every trigger the pending decision is about, interchangeable ones included.
+    #[serde(default)]
+    offered: Vec<(usize, Trigger)>,
     result: bool,
 }
 
@@ -212,6 +225,7 @@ impl Window {
             occs,
             done: vec![],
             asked: vec![],
+            offered: vec![],
             result: false,
         })
     }
@@ -231,7 +245,7 @@ impl Window {
                 }
                 _ => {
                     let declined: Vec<(usize, Trigger)> = self
-                        .asked
+                        .offered
                         .iter()
                         .filter(|(_, t)| t.optional)
                         .cloned()
@@ -249,7 +263,7 @@ impl Window {
             cards::triggers(g, occ, &mut found);
             all.extend(found.into_iter().map(|t| (i, t)));
         }
-        all.retain(|t| !self.done.contains(t));
+        all.retain(|t| !self.done.contains(t) && !(self.result && t.1.protects));
         if all.iter().any(|(_, t)| t.first) {
             all.retain(|(_, t)| t.first);
         }
@@ -280,8 +294,15 @@ impl Window {
             return self.run(g, mine[0].clone());
         }
         let several = self.occs.len() > 1;
-        let mut options: Vec<Opt> = (0..mine.len()).map(|i| Opt::Trigger(i as u16)).collect();
-        let mut labels: Vec<String> = mine
+        // Interchangeable triggers (two Moats) are one option.
+        let mut asked: Vec<(usize, Trigger)> = vec![];
+        for t in &mine {
+            if !asked.iter().any(|u| interchangeable(g, t, u)) {
+                asked.push(t.clone());
+            }
+        }
+        let mut options: Vec<Opt> = (0..asked.len()).map(|i| Opt::Trigger(i as u16)).collect();
+        let mut labels: Vec<String> = asked
             .iter()
             .map(|(i, t)| {
                 let mut label = label(g, t);
@@ -295,7 +316,7 @@ impl Window {
         if all_optional {
             options.push(Opt::No);
             labels.push(
-                if mine.len() == 1 {
+                if asked.len() == 1 {
                     "Decline"
                 } else {
                     "Decline all"
@@ -303,7 +324,7 @@ impl Window {
                 .to_string(),
             );
         }
-        let ask = if all_optional && mine.len() == 1 {
+        let ask = if all_optional && asked.len() == 1 {
             "you may use this ability"
         } else if all_optional {
             "choose an ability to use next, or decline all"
@@ -315,7 +336,8 @@ impl Window {
         } else {
             format!("{}: {ask}", moment(g, &self.occs[0], owner))
         };
-        self.asked = mine;
+        self.asked = asked;
+        self.offered = mine;
         Flow::Ask(Decision {
             player: owner,
             kind: DecisionKind::Choose {
@@ -387,6 +409,12 @@ fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
     };
     (a.card, a.ability, a.data, a.optional) == (b.card, b.ability, b.data, b.optional)
         && lasting(a) == lasting(b)
+}
+
+/// Whether the owner can't tell `a` and `b` apart and resolving either makes no
+/// difference.
+fn interchangeable(g: &Game, a: &(usize, Trigger), b: &(usize, Trigger)) -> bool {
+    a.0 == b.0 && same_effect(g, &a.1, &b.1) && label(g, &a.1) == label(g, &b.1)
 }
 
 /// How the owner is offered `t`: its card (or label), what an optional one does, and the

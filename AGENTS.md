@@ -131,7 +131,10 @@ them.
   turn, when you gain ...") produces one trigger per lasting effect or card in play,
   never one trigger carrying a count: the window tracks what has resolved per trigger,
   and more can come into effect while it is open. It doesn't ask for an order
-  when a player's mandatory triggers all have the same effect, and resolves
+  when a player's mandatory triggers all have the same effect, offers triggers the
+  player can't tell apart and whose effect is the same (two Moats) as one option, drops
+  `Trigger::protects` ones (all they do is make the attacked player unaffected) once the
+  player is unaffected, and resolves
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
   +1 Buy) first without asking. A trigger runs as the card's
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`

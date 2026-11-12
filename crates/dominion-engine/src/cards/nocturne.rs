@@ -310,7 +310,7 @@ impl SetRules for Rules {
                     l.card == Card::Guardian && l.owner == target && l.until == Until::Removed
                 });
                 if guarded && attacker != target {
-                    out.push(Trigger::new(target, Card::Guardian, GUARDIAN_SHIELD));
+                    out.push(Trigger::new(target, Card::Guardian, GUARDIAN_SHIELD).protects());
                 }
             }
             Occasion::WouldGain { player, card } => {
