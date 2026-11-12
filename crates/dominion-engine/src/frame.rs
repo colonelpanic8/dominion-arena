@@ -674,7 +674,7 @@ impl Frame {
                         player: *player,
                         card: *card,
                     });
-                    g.begin_resolving();
+                    g.begin_resolving(None);
                     Flow::Call(Frame::Card(Box::new(CardFrame::new(
                         *card,
                         Hook::Main,
@@ -1348,7 +1348,7 @@ fn resume_buy(
             }
             1 => {
                 *pc = 2;
-                g.begin_resolving();
+                g.begin_resolving(None);
                 Flow::Call(Frame::Card(Box::new(CardFrame::new(
                     l,
                     Hook::Main,

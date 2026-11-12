@@ -43,6 +43,12 @@ struct Resolving {
     /// How many plays were in progress when it began: +$ and the like are its own only
     /// while no other play has begun.
     plays: usize,
+    /// Logged before the first thing it does.
+    #[serde(default)]
+    header: Option<Event>,
+    /// What the play in progress did instead of its own effect when the ability began.
+    #[serde(default)]
+    play: (Option<crate::Plus>, bool),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -233,16 +239,34 @@ impl Game {
         self.scribe.shown.retain(|c| !cards.contains(c));
     }
 
-    /// An ability begins to resolve.
-    pub(crate) fn begin_resolving(&mut self) {
+    /// An ability begins to resolve; `header`, if any, is logged before the first thing it
+    /// does.
+    pub(crate) fn begin_resolving(&mut self, header: Option<Event>) {
         self.scribe.resolving.push(Resolving {
             plays: self.plays.len(),
+            header,
+            play: self.play_changes(),
         });
+    }
+
+    fn play_changes(&self) -> (Option<crate::Plus>, bool) {
+        self.plays
+            .last()
+            .map_or((None, false), |st| (st.replaced, st.blocked))
     }
 
     pub(crate) fn end_resolving(&mut self) {
         self.sync_log(None);
-        self.scribe.resolving.pop();
+        let changes = self.play_changes();
+        // An ability that only changed what the play in progress does (Enchantress,
+        // Highwayman) has no other line.
+        if let Some(r) = self.scribe.resolving.pop()
+            && let Some(header) = r.header
+            && r.plays == self.plays.len()
+            && r.play != changes
+        {
+            self.log.push(header);
+        }
     }
 
     pub(crate) fn log_choice(&mut self, decision: &crate::Decision, response: &crate::Response) {
@@ -320,6 +344,11 @@ impl Game {
         self.scribe.tally = Some(new);
         if lines.is_empty() && event.is_none() {
             return;
+        }
+        for r in &mut self.scribe.resolving {
+            if let Some(h) = r.header.take() {
+                self.log.push(h);
+            }
         }
         self.log.extend(lines);
     }

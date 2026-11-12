@@ -428,10 +428,7 @@ impl Window {
                 .map_or(t.owner, |l| l.owner),
             card: t.card,
         });
-        if let Some(header) = header {
-            g.emit(header);
-        }
-        g.begin_resolving();
+        g.begin_resolving(header);
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
         f.occ = Some(self.occs[i].clone());
         f.lasting = t.lasting;
