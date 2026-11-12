@@ -443,3 +443,29 @@ fn elder_gives_no_extra_option_to_a_royal_carriage_replay() {
     respond(&mut g, Response::option(opt));
     assert_eq!(choice(&g), (Purpose::Mode, 2));
 }
+
+/// Elder's own play keeps its extra option once the card was replayed in the middle of
+/// it, and the replay gets none: "you won't get an additional choice on the second play"
+/// (wiki, Elder); "Scepter can replay an Action that isn't finished resolving" (wiki,
+/// Scepter). Specialist plays Scepter, which replays the Specialist.
+#[test]
+fn elder_keeps_its_extra_option_after_a_replay_inside_its_play() {
+    let mut g = game(&[Card::Specialist, Card::Scepter, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Elder, Card::Specialist, Card::Scepter, Card::Village],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    elder_plays(&mut g, Card::Specialist);
+    choose_kinds(&mut g, &[Card::Scepter]);
+    // Scepter replays the Specialist, which plays the Village and gains a copy of it.
+    modes(&mut g, &[1]);
+    choose_kinds(&mut g, &[Card::Specialist]);
+    choose_kinds(&mut g, &[Card::Village]);
+    assert_eq!(choice(&g), (Purpose::Mode, 1));
+    modes(&mut g, &[1]);
+    // Back in Elder's play: play the Scepter again, gain a copy of it, or both.
+    assert_eq!(g.pending().unwrap().source, Some(Card::Specialist));
+    extra(&mut g, 1, &[0, 1]);
+}

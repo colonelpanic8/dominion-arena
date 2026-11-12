@@ -382,8 +382,8 @@ impl SetRules for Rules {
         let Some(this) = f.this else {
             return;
         };
-        // Only Elder's own play of it, not a replay (Royal Carriage) during that play.
-        let play = g.turn.played_ids.iter().rposition(|&c| c == this);
+        // Only Elder's own play of it, not a replay (Royal Carriage, Scepter) during it.
+        let play = g.plays.iter().rev().find(|st| st.card == this).map(|st| st.index);
         let elder = g.lasting().iter().any(|l| {
             l.card == Card::Elder
                 && l.until == Until::Removed
