@@ -125,7 +125,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     seat_link.rs          a seat handed out: its agent line, link, token, copy buttons
     selector.rs           "Select Cards", the card selector
     home.rs tables.rs cardlists.rs   Automatch (Bot Game, Create Table, Join a Seat),
-                          Tables, Cardlists (the Banned list in the config file)
+                          Tables, Cardlists (the account's Banned list)
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules against the engine's cards
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)

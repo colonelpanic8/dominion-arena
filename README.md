@@ -301,8 +301,8 @@ its rules can be changed once the game ends (or Leave Table to set up another).
 **Automatch**'s Bot Game starts a game at once with 1 to 3 agent seats and goes to it.
 When a game waits on a seat nobody has joined, the table and the game page say so, with
 the line to give that seat's agent.
-**Tables** lists this server's games; **Cardlists** edits the Banned cards list, kept in
-the config file. After a game the score page has the table's Ready (another game with
+**Tables** lists this server's games; **Cardlists** edits the Banned cards list, kept with
+your account (a guest's when nobody is signed in). After a game the score page has the table's Ready (another game with
 the same rules), Edit Table and Leave Table, as dominion.games has.
 
 The game page is a table laid out and behaving like dominion.games': player bars and
