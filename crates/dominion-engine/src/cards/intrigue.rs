@@ -150,7 +150,8 @@ impl GainRule {
 
 /// Trash a card from `who`'s hand, then gain a Supply card whose cost follows `rule`.
 /// Uses `f.pc` from `base` to `base + 5`. Returns `None` once finished, with `f.s.n` = 1 if
-/// a card was trashed (0 if not), `f.s.cost` its cost and `f.s.pick` the card `who` gained.
+/// a card was trashed (0 if not), `f.s.cost` its cost after the trash and `f.s.pick` the
+/// card `who` gained.
 pub(crate) fn trash_and_gain(
     g: &mut Game,
     f: &mut CardFrame,
@@ -179,11 +180,12 @@ pub(crate) fn trash_and_gain(
                 return None;
             };
             f.s.n = 1;
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = base + 2;
             Some(Flow::Call(Frame::trash(who, vec![c])))
         }
         2 => {
+            f.s.cost = g.cost_of(f.s.pick.take().expect("set in step 1"));
             let piles = rule.piles(g, f.s.cost);
             if piles.is_empty() {
                 f.pc = base + 5;
