@@ -398,6 +398,9 @@ pub struct Lasting {
     /// turn and ends with it.
     #[serde(default)]
     pub ending: bool,
+    /// The place in `Turn::played` of the play of `source` that made it, if one did.
+    #[serde(default)]
+    pub play: Option<usize>,
 }
 
 impl Lasting {
@@ -1083,8 +1086,13 @@ impl Game {
 
     /// The types `id` currently has, with every type-changing effect applied.
     pub fn types(&self, id: CardId) -> Types {
-        let mut types = self.card(id).types();
-        cards::modify_types(self, id, &mut types);
+        self.card_types(self.card(id))
+    }
+
+    /// The types a card named `card` has right now, e.g. the cards of a pile.
+    pub fn card_types(&self, card: Card) -> Types {
+        let mut types = card.types();
+        cards::modify_types(self, card, &mut types);
         types
     }
 
@@ -1606,12 +1614,10 @@ impl Game {
         until: Until,
         data: Scratch,
     ) -> u32 {
-        let tracker = self
-            .plays
-            .last()
-            .filter(|st| Some(st.card) == source)
-            .and_then(|st| st.tracker);
-        self.push_lasting(card, owner, source, tracker, keeps, until, data)
+        let play = self.plays.last().filter(|st| Some(st.card) == source);
+        let tracker = play.and_then(|st| st.tracker);
+        let play = play.map(|st| st.index);
+        self.push_lasting(card, owner, source, (tracker, play), keeps, until, data)
     }
 
     /// Adds a later part of the effect `from` began (a card set aside by its "once this
@@ -1627,7 +1633,7 @@ impl Game {
             from.card,
             from.owner,
             from.source,
-            from.tracker,
+            (from.tracker, from.play),
             keeps,
             until,
             data,
@@ -1640,7 +1646,7 @@ impl Game {
         card: Card,
         owner: PlayerId,
         source: Option<CardId>,
-        tracker: Option<CardId>,
+        (tracker, play): (Option<CardId>, Option<usize>),
         keeps: Vec<CardId>,
         until: Until,
         data: Scratch,
@@ -1659,6 +1665,7 @@ impl Game {
             data,
             tracker,
             ending: false,
+            play,
         });
         self.keep_in_play(id, keeps);
         id

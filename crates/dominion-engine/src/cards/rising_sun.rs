@@ -440,7 +440,7 @@ impl SetRules for Rules {
         }
     }
 
-    fn modify_types(g: &Game, _id: CardId, types: &mut Types) {
+    fn modify_types(g: &Game, _card: Card, types: &mut Types) {
         if types.contains(Types::TREASURE) && g.prophecy_active(Card::Enlightenment) {
             *types |= Types::ACTION;
         }

@@ -529,8 +529,8 @@ impl SetRules for Rules {
         }
     }
 
-    fn modify_types(g: &Game, id: CardId, types: &mut Types) {
-        if g.card(id) == Card::Estate && inherited(g) {
+    fn modify_types(g: &Game, card: Card, types: &mut Types) {
+        if card == Card::Estate && inherited(g) {
             *types |= Types::ACTION | Types::COMMAND;
         }
     }

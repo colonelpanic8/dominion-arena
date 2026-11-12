@@ -62,7 +62,7 @@ fn elder_plays_treasure(g: &mut Game, card: Card) {
         i: g.turn().played_ids.len(),
         ..Scratch::default()
     };
-    g.add_lasting(Card::Elder, P0, None, vec![], Until::Removed, data);
+    g.add_lasting(Card::Elder, P0, None, vec![], Until::EndOfTurn, data);
     play(g, card);
 }
 
@@ -442,4 +442,71 @@ fn elder_gives_no_extra_option_to_a_royal_carriage_replay() {
     let opt = options[i];
     respond(&mut g, Response::option(opt));
     assert_eq!(choice(&g), (Purpose::Mode, 2));
+}
+
+/// Answers trigger questions with their first option until another question comes up.
+fn first_triggers(g: &mut Game) {
+    while g.pending().is_some_and(|d| d.purpose == Purpose::Trigger) {
+        let d = g.pending().unwrap();
+        let DecisionKind::Choose { options, .. } = &d.kind else {
+            panic!("expected a choice, got {d:?}");
+        };
+        respond(g, Response::option(options[0]));
+    }
+}
+
+/// "If you play an Elder at the start of your turn (e.g. with Contract) and have it play a
+/// Quartermaster, you can choose both its options this turn (but not on future turns)"
+/// (wiki, Elder). Piazza plays the Elder.
+#[test]
+fn elder_widens_a_choice_its_card_gives_later_that_turn_only() {
+    let mut g = setup_with(GameConfig {
+        landscapes: vec![Card::Piazza],
+        ..GameConfig::new(2, vec![Card::Townsfolk, Card::Quartermaster], 7)
+    });
+    g.players[0].projects.push(Card::Piazza);
+    hand(&mut g, P0, &[Card::Quartermaster]);
+    let mut cards = vec![Card::Elder];
+    cards.extend([Card::Copper; 10]);
+    deck(&mut g, P0, &cards);
+    g.start();
+    first_triggers(&mut g);
+    choose_kinds(&mut g, &[Card::Quartermaster]);
+    first_triggers(&mut g);
+    assert_eq!(g.pending().unwrap().source, Some(Card::Quartermaster));
+    // Both, in printed order: gain a Silver onto it, then put it into the hand.
+    extra(&mut g, 1, &[0, 1]);
+    choose_pile(&mut g, Card::Silver);
+    assert!(hand_kinds(&g, P0).contains(&Card::Silver));
+    end_phases(&mut g);
+    first_triggers(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.pending().unwrap().source, Some(Card::Quartermaster));
+    assert_eq!(choice(&g), (Purpose::Mode, 1));
+}
+
+/// Elder's own play keeps its extra option once the card was replayed in the middle of
+/// it, and the replay gets none: "you won't get an additional choice on the second play"
+/// (wiki, Elder); "Scepter can replay an Action that isn't finished resolving" (wiki,
+/// Scepter). Specialist plays Scepter, which replays the Specialist.
+#[test]
+fn elder_keeps_its_extra_option_after_a_replay_inside_its_play() {
+    let mut g = game(&[Card::Specialist, Card::Scepter, Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Elder, Card::Specialist, Card::Scepter, Card::Village],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    elder_plays(&mut g, Card::Specialist);
+    choose_kinds(&mut g, &[Card::Scepter]);
+    // Scepter replays the Specialist, which plays the Village and gains a copy of it.
+    modes(&mut g, &[1]);
+    choose_kinds(&mut g, &[Card::Specialist]);
+    choose_kinds(&mut g, &[Card::Village]);
+    assert_eq!(choice(&g), (Purpose::Mode, 1));
+    modes(&mut g, &[1]);
+    // Back in Elder's play: play the Scepter again, gain a copy of it, or both.
+    assert_eq!(g.pending().unwrap().source, Some(Card::Specialist));
+    extra(&mut g, 1, &[0, 1]);
 }

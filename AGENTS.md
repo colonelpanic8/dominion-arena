@@ -253,8 +253,9 @@ them.
   play later does it with `g.keep_in_play`.
 - **Modifiers.** Rules code asks the game, never the static data: `g.cost_of(id)` /
   `g.cost(card)` (through `SetRules::modify_cost`; Events and Projects always cost what
-  they say), `g.types(id)` / `g.is(id, types)`
-  (through `modify_types`), `g.card(id)` (what a card currently is: `Game::masks` make
+  they say), `g.types(id)` / `g.is(id, types)`, and `g.card_types(card)` for a card
+  asked by name, a cost modifier's included (through `modify_types`, which sees only the
+  card's name: types never depend on the copy or where it is), `g.card(id)` (what a card currently is: `Game::masks` make
   Band of Misfits-style cards another card until they leave play; `g.printed(id)` is
   what is printed). `SetRules::behavior` lets a card use another card's abilities
   (Inheritance). Effects that look back at the turn ("the first Action you play", "the
@@ -328,8 +329,10 @@ them.
   "discard them all?") lists them in `Decision::about` (`f.ask_*(..).about(cards)`), so
   the player's view shows them.
   `SetRules::modify_decision` may change what a card ability asks: Elder adds one pick
-  to a `Purpose::Mode` "choose" (`ask_modes`), so scripts must handle every chosen mode,
-  in printed order (`mode_mask` / `take_mode`). Alternatives that aren't a "choose"
+  to a `Purpose::Mode` "choose" (`ask_modes`) asked by its play of a card, or for the
+  rest of that turn by an ability of a lasting effect that play made (`Lasting::play`),
+  so scripts, abilities included, must handle every chosen mode, in printed order
+  (`mode_mask` / `take_mode`). Alternatives that aren't a "choose"
   ("either ... or", which Artifact) use `ask_either` (`Purpose::Either`).
   Every question says what its answers do, in the card's words: `ask_yes_no(purpose,
   "Trash Engineer to gain a card costing up to $4")` labels Yes (`ask_yes_or` when No
@@ -429,6 +432,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   aside).
 - `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
   "discard / trash the top card" takes it with `Frame::look`.
+- Follow the text in order: "trash a card; if it's an Action ..." reads the card's types
+  once `Frame::trash` (or the discard, gain, ...) has returned, not when it is chosen.
+  A Prophecy coming into effect in between can change them (Sacrifice, Transmute).
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
   Heirlooms/Shelters-like changes, and two phases (`setup::complete`). `ensure` adds
   what the cards in the game need (extra piles, Boons/Hexes, set-aside cards, an Ally

@@ -12,7 +12,8 @@
 //! named [`Card::Loot`].
 
 use super::{
-    CardFrame, Hook, SetRules, Step, duration_trigger, looking, mode_mask, put_back, turn_durations,
+    CardFrame, Hook, SetRules, Step, duration_trigger, looking, mode_mask, put_back, take_mode,
+    turn_durations,
 };
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -631,9 +632,9 @@ fn next_gain_of(g: &Game, l: &Lasting, card: CardId, types: Types) -> bool {
 }
 
 /// Whether the play of `card` in progress is the next one by its player, of a card whose
-/// types `wanted` accepts, since lasting `l` was set up: it began after that, and not
-/// while an earlier such play was still being resolved (Throne Room, not the card it
-/// plays).
+/// types as played `wanted` accepts, since lasting `l` was set up: it began after that,
+/// and not while an earlier such play was still being resolved (Throne Room, not the
+/// card it plays).
 pub(super) fn next_play(
     g: &Game,
     l: &Lasting,
@@ -643,12 +644,18 @@ pub(super) fn next_play(
     let Some(i) = g.plays.iter().rposition(|s| s.card == card) else {
         return false;
     };
+    let played = |s: &crate::game::PlayState| {
+        g.turn()
+            .played_types
+            .get(s.index)
+            .is_some_and(|&t| wanted(t))
+    };
     let st = &g.plays[i];
     l.data.i <= st.since
-        && wanted(g.types(card))
+        && played(st)
         && !g.plays[..i]
             .iter()
-            .any(|s| s.player == st.player && l.data.i <= s.since && wanted(g.types(s.card)))
+            .any(|s| s.player == st.player && l.data.i <= s.since && played(s))
 }
 
 /// The play of `card` in progress (up to its AfterPlay window), if any.
@@ -1240,31 +1247,41 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         2 => {
-            if input.opt() == Some(Opt::Mode(1)) {
+            f.s.m = mode_mask(input);
+            f.pc = 3;
+            Flow::Continue
+        }
+        3 => match take_mode(f) {
+            Some(0) => {
+                let piles = g.piles_costing_up_to(Cost::coins(4));
+                if piles.is_empty() {
+                    return Flow::Continue;
+                }
+                f.pc = 4;
+                f.ask_pile(piles, false, Purpose::Gain)
+            }
+            Some(_) => {
                 let cards = held(g);
                 if cards.is_empty() {
-                    return Flow::done();
+                    return Flow::Continue;
                 }
-                f.pc = 5;
-                return f
-                    .ask_cards(cards, 1, 1, Purpose::Move)
-                    .question("put into your hand");
+                f.pc = 6;
+                f.ask_cards(cards, 1, 1, Purpose::Move)
+                    .question("put into your hand")
             }
-            let piles = g.piles_costing_up_to(Cost::coins(4));
-            if piles.is_empty() {
-                return Flow::done();
-            }
-            f.pc = 3;
-            f.ask_pile(piles, false, Purpose::Gain)
-        }
-        3 => {
-            f.pc = 4;
+            None => Flow::done(),
+        },
+        4 => {
+            f.pc = 5;
             match input.pile() {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::SetAside)),
-                None => Flow::done(),
+                None => {
+                    f.pc = 3;
+                    Flow::Continue
+                }
             }
         }
-        4 => {
+        5 => {
             if let Some(c) = input.card()
                 && g.gained(p, c).is_some()
                 && g.zone(c) == Zone::SetAside(p)
@@ -1272,7 +1289,8 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             {
                 l.data.cards.push(c);
             }
-            Flow::done()
+            f.pc = 3;
+            Flow::Continue
         }
         _ => {
             if let Some(c) = input.card()
@@ -1283,7 +1301,8 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     l.data.cards.retain(|&x| x != c);
                 }
             }
-            Flow::done()
+            f.pc = 3;
+            Flow::Continue
         }
     }
 }
@@ -2284,13 +2303,14 @@ fn maroon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.n = g.types(c).names().count() as i32;
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
+            let types = g.types(f.s.pick.expect("set in step 1"));
             f.pc = 3;
-            Flow::Call(Frame::draw(f.player, 2 * f.s.n as usize))
+            Flow::Call(Frame::draw(f.player, 2 * types.names().count()))
         }
         _ => Flow::done(),
     }
