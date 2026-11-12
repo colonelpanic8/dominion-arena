@@ -45,7 +45,7 @@ A `Game` can be cloned or serialized at any point, including mid-decision.
 ## Playing over the agent protocol
 
 `crates/dominion-agent` implements `dominion/agent-view@2`, the protocol defined in
-[dominion-agents](https://github.com/colonelpanic8/dominion-agents) (`protocol/`): each
+[dominion-playbook](https://github.com/colonelpanic8/dominion-playbook) (`protocol/`): each
 seat gets a JSON view of everything it may know, with perfect recall (cards it has seen
 stay known until it can no longer tell them apart), plus its open decision as indexed
 options; it answers with option indices. A `Table` hosts a game this way; the crate also

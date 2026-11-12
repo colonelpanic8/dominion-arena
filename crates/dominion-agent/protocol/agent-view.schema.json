@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/colonelpanic8/dominion-agents/protocol/agent-view.schema.json",
+  "$id": "https://github.com/colonelpanic8/dominion-playbook/protocol/agent-view.schema.json",
   "title": "dominion/agent-view@2",
   "description": "A Dominion game as one seat may know it, the decision it must make, and its answer. The root validates a view; $defs/decision, $defs/answer and $defs/glossaryEntry validate those on their own. See README.md.",
   "$ref": "#/$defs/view",

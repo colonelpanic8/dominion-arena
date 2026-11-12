@@ -417,7 +417,7 @@ them.
   `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
-  `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
+  `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The
   tests validate every view, decision and answer against the vendored copy.
   `Table::answer_with` (the MCP `answer` tool's `way`) also answers the `Purpose::Way`
   questions of the physical card an answer plays and that card's consecutive replays,
@@ -531,6 +531,6 @@ helpers in `tests/mod.rs` (`setup`, `hand`, `deck`, `play`, `choose_kinds`, `yes
 ## References
 
 - Official text: `data/cards`. Rulings: the Dominion Strategy wiki (one page per card),
-  and `~/projects/dominion-agents/context/rules.md` for the general rules.
+  and `~/projects/dominion-playbook/context/rules.md` for the general rules.
 - Prior art: DominionSim-v2 (Rust, no license: read its docs for rulings and pitfalls,
   never copy its code), pydominion, Geronimoo's DominionSim.
