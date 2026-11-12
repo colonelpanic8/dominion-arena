@@ -141,7 +141,8 @@ pub struct Pile {
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
     /// Not a pile any more (Divine Wind removed it from the game) or never one (a holder for
-    /// cards set aside in setup, like Riverboat's): lookups by name skip it.
+    /// cards set aside in setup, like Riverboat's and Way of the Mouse's): lookups by name
+    /// skip it, so it is no card's pile.
     pub removed: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
@@ -456,6 +457,10 @@ pub struct Game {
     /// The cards of the latest shuffle (see [`Game::shuffled`]).
     #[serde(default)]
     pub(crate) last_shuffle: Vec<CardId>,
+    /// How deep the effect stack was when a Supply pile last emptied (see
+    /// [`Game::answers_emptying`]).
+    #[serde(default)]
+    pub(crate) emptied_depth: usize,
     pub(crate) ext: Ext,
     pub(crate) stack: Vec<Frame>,
     pub(crate) pending: Option<Decision>,
@@ -748,6 +753,13 @@ impl Game {
         (st.card == id && st.player == p).then_some(st.zone())
     }
 
+    /// Whether a window opening now answers the latest emptying of a Supply pile: it is the
+    /// window of the gain or trash that emptied it, or one further out, not one opened by
+    /// an effect resolving in that window.
+    pub(crate) fn answers_emptying(&self) -> bool {
+        self.stack.len() <= self.emptied_depth + 1
+    }
+
     /// Whether `id`, whose gain is in progress, is still where it was gained to: the
     /// stop-moving rule lets an on-gain ability move the card only then.
     pub(crate) fn still_where_gained(&self, id: CardId) -> bool {
@@ -921,6 +933,7 @@ impl Game {
             plays: vec![],
             leaving: vec![],
             last_shuffle: vec![],
+            emptied_depth: 0,
             ext: self.ext.clone(),
             stack: vec![],
             pending: None,
@@ -1011,6 +1024,12 @@ impl Game {
 
     // ---- Primitive state changes. These never trigger anything; frames do. ----
 
+    pub(crate) fn add_pile(&mut self, pile: Pile) -> PileId {
+        let id = u8::try_from(self.piles.len()).expect("setup bounds how many piles a game has");
+        self.piles.push(pile);
+        PileId(id)
+    }
+
     pub(crate) fn create(&mut self, card: Card, zone: Zone) -> CardId {
         let id = CardId(self.cards.len() as u32);
         self.cards.push(card);
@@ -1056,6 +1075,7 @@ impl Game {
             let pile = &mut self.piles[pile.index()];
             if pile.cards.is_empty() && pile.in_supply {
                 pile.emptied += 1;
+                self.emptied_depth = self.stack.len();
             }
         }
         if matches!(from, Zone::InPlay(_)) && !matches!(to, Zone::InPlay(_)) {

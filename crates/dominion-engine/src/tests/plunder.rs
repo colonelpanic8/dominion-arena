@@ -459,6 +459,53 @@ fn a_throned_search_is_trashed_once_gains_two_loot_and_throne_room_goes_that_tur
     assert!(g.in_play(P0).is_empty());
 }
 
+fn loots(g: &Game, p: PlayerId) -> Vec<CardId> {
+    g.player(p)
+        .owned()
+        .filter(|&c| g.printed(c).is(Types::LOOT))
+        .collect()
+}
+
+#[test]
+fn a_search_played_three_times_gains_three_loots_without_asking_an_order() {
+    let mut g = setup(&[Card::Search, Card::KingsCourt]);
+    hand(&mut g, P0, &[Card::KingsCourt, Card::Search, Card::Copper]);
+    last_one(&mut g, Card::Curse);
+    g.start();
+    play(&mut g, Card::KingsCourt);
+    choose_kinds(&mut g, &[Card::Search]);
+    to_buy(&mut g);
+    buy(&mut g, Card::Curse);
+    assert_ne!(purpose(&g), Purpose::Trigger);
+    assert_eq!(loot_gained(&g, P0), 3);
+    assert_eq!(loots(&g, P0).len(), 3);
+}
+
+#[test]
+fn searches_of_both_players_each_gain_their_own_loot_turn_player_first() {
+    let mut g = setup(&[Card::Search, Card::ThroneRoom]);
+    hand(&mut g, P0, &[Card::Search]);
+    hand(&mut g, P1, &[Card::ThroneRoom, Card::Search, Card::Copper]);
+    last_one(&mut g, Card::Curse);
+    g.start();
+    play(&mut g, Card::Search);
+    next_turn(&mut g);
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Search]);
+    to_buy(&mut g);
+    buy(&mut g, Card::Curse);
+    let loot_gainers: Vec<PlayerId> = g
+        .log()
+        .iter()
+        .filter_map(|e| match e {
+            Event::Gained { player, card, .. } if card.is(Types::LOOT) => Some(*player),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(loot_gainers, [P1, P1, P0]);
+    assert_eq!((loots(&g, P0).len(), loots(&g, P1).len()), (1, 2));
+}
+
 #[test]
 fn search_counts_the_last_province_and_not_the_loot_pile() {
     let mut g = setup(&[Card::Search, Card::SackOfLoot]);
@@ -3303,6 +3350,28 @@ fn a_hasty_card_gained_with_quartermaster_is_not_on_the_quartermaster() {
     mode(&mut g, 1);
     assert!(!hand_kinds(&g, P0).contains(&Card::Village));
     assert!(in_play_kinds(&g, P0).contains(&Card::Village));
+}
+
+#[test]
+fn a_farmhands_gained_with_quartermaster_is_on_it_while_its_card_waits() {
+    let mut g = setup(&[Card::Quartermaster, Card::Farmhands]);
+    hand(&mut g, P0, &[Card::Quartermaster]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Quartermaster);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Farmhands);
+    // Farmhands sets a Copper aside to play next turn.
+    resolve_triggers(&mut g);
+    assert_eq!(aside_kinds(&g, P0), [Card::Farmhands, Card::Copper]);
+    let farmhands = g.player(P0).set_aside[0];
+    next_turn(&mut g);
+    next_turn(&mut g);
+    resolve_triggers(&mut g);
+    mode(&mut g, 1);
+    assert_eq!(g.zone(farmhands), Zone::Hand(P0));
 }
 
 #[test]

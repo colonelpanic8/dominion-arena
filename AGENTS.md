@@ -30,6 +30,8 @@ crates/dominion-engine/
   src/cards/mod.rs        SetRules trait, dispatch, CardFrame and its helpers
   src/cards/<set>.rs      one module per set: its State, Rules and card scripts
   src/tests/mod.rs        engine tests, shared helpers, the random-game fuzz test
+  src/tests/fuzz.rs       fuzz harness: kingdom families, oracles at every decision
+                          (more games: FUZZ_SEEDS; switches in its module docs)
   src/tests/<set>.rs      each set's card tests
   src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
@@ -103,7 +105,9 @@ them.
   for a Reaction that plays itself from the hand). `Turn::hand_plays` counts the turn's
   plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
-  effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
+  effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (the card it
+  began with if it is still where it was, else from a pile the top card if it has the
+  same name, or any card of a randomizer pile ("gain a Loot"), else nothing; recording the
   card's cost then in `GainState::cost` and the phase in `GainState::phase`: a gain
   "in your Buy phase" is tested with `g.gain_phase(id)`, because Cavalry and Villa change
   `turn.phase` while their gain's window is open), `Gain` window. An effect that goes on
@@ -268,7 +272,7 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   current one's gains, `Turn::gained_in_buy_phase` every Buy phase's.
 
 Tests: `src/tests/<set>.rs` (register it in `tests/mod.rs` and add the set to
-`IMPLEMENTED`, which feeds the fuzz test). Give every card with more than vanilla
+`IMPLEMENTED`, which feeds the fuzz tests). Give every card with more than vanilla
 bonuses a focused test, plus tests for tricky rulings and interactions. Tests use the
 helpers in `tests/mod.rs` (`setup`, `hand`, `deck`, `play`, `choose_kinds`, `yes`, ...).
 

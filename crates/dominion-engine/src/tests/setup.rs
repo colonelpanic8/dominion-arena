@@ -391,3 +391,15 @@ fn a_game_has_one_ally_and_one_prophecy_at_most() {
         Some(SetupError::OnlyOne(Card::DivineWind, Card::ApproachingArmy))
     );
 }
+
+#[test]
+fn setup_rejects_more_piles_than_a_game_can_hold() {
+    let kingdom: Vec<Card> = Card::kingdom_cards()
+        .filter(|c| IMPLEMENTED.contains(&c.set()) && *c != Card::Possession)
+        .take(260)
+        .collect();
+    assert_eq!(
+        build(GameConfig::new(2, kingdom, 3)).err(),
+        Some(SetupError::TooManyPiles)
+    );
+}

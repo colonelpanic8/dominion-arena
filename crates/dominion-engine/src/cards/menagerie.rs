@@ -525,6 +525,7 @@ impl SetRules for Rules {
                 .collect();
             if let Some(card) = s.choose(g, Card::WayOfTheMouse, candidates) {
                 let pile = setup::add_pile(g, card, 1, false);
+                g.piles[pile.index()].removed = true;
                 g.ext.menagerie.mouse = g.pile_top(pile);
             }
         }

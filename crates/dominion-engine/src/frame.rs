@@ -164,6 +164,9 @@ pub(crate) enum Frame {
         #[serde(default)]
         buy: Option<usize>,
         card: Option<CardId>,
+        /// Where `card` was when the gain began.
+        #[serde(default)]
+        at: Option<Zone>,
         pc: u8,
     },
     Buy {
@@ -290,6 +293,7 @@ impl Frame {
             bought: false,
             buy: None,
             card: None,
+            at: None,
             pc: 0,
         }
     }
@@ -303,6 +307,7 @@ impl Frame {
             bought: false,
             buy: None,
             card: None,
+            at: None,
             pc: 0,
         }
     }
@@ -467,8 +472,9 @@ impl Frame {
                 bought,
                 buy,
                 card,
+                at,
                 pc,
-            } => resume_gain(g, *player, *from, *to, (*bought, *buy), card, pc),
+            } => resume_gain(g, *player, *from, *to, (*bought, *buy), (card, at), pc),
             Frame::Buy {
                 player,
                 pile,
@@ -1092,7 +1098,7 @@ fn resume_gain(
     from: From,
     to: Dest,
     (bought, buy): (bool, Option<usize>),
-    card: &mut Option<CardId>,
+    (card, at): (&mut Option<CardId>, &mut Option<Zone>),
     pc: &mut u8,
 ) -> Flow {
     match pc {
@@ -1105,6 +1111,7 @@ fn resume_gain(
                 return Flow::Done(Value::Cards(vec![]));
             };
             *card = Some(id);
+            *at = Some(g.zone(id));
             g.gains.push(GainState {
                 player,
                 card: id,
@@ -1122,11 +1129,17 @@ fn resume_gain(
             Flow::Call(Frame::window(Occasion::WouldGain { player, card: id }))
         }
         1 => {
-            let st = g.gains.last().expect("gain in progress").clone();
-            if st.cancelled {
+            let expected = g.gains.last().expect("gain in progress").card;
+            let now = moving(g, from, expected, *at);
+            if g.gains.last().expect("gain in progress").cancelled || now.is_none() {
                 g.gains.pop();
+                *card = None;
                 return Flow::Done(Value::Cards(vec![]));
             }
+            let id = now.expect("checked above");
+            *card = Some(id);
+            g.gains.last_mut().expect("gain in progress").card = id;
+            let st = g.gains.last().expect("gain in progress").clone();
             let zone = match st.to {
                 Dest::Discard => Zone::Discard(st.player),
                 Dest::Hand => Zone::Hand(st.player),
@@ -1179,6 +1192,23 @@ fn resume_gain(
             Flow::Done(Value::Cards(card.iter().copied().collect()))
         }
     }
+}
+
+/// The card a gain moves once its "would gain" window has closed. The card it began with,
+/// if that is still where it was; otherwise, for a gain from a pile, the pile's top card
+/// if it is a card of the same name (or any card of a pile named after a randomizer: "gain
+/// a Loot" is its top card, whatever it is). Nothing if the pile has emptied or a specific
+/// card has moved.
+fn moving(g: &Game, from: From, expected: CardId, at: Option<Zone>) -> Option<CardId> {
+    if Some(g.zone(expected)) == at {
+        return Some(expected);
+    }
+    let From::Pile(pile) = from else {
+        return None;
+    };
+    let top = g.pile_top(pile)?;
+    let any = g.pile(pile).card.kind() == Kind::Randomizer;
+    (any || g.printed(top) == g.printed(expected)).then_some(top)
 }
 
 pub(crate) use crate::cards::{OVERPAY, PAY_OTHERWISE};
@@ -1274,16 +1304,17 @@ fn resume_buy(
             let top = g
                 .pile_top(pile)
                 .filter(|&c| !g.pile(pile).removed && g.card(c) == bought);
-            let Some(top) = top else {
+            if top.is_none() {
                 return Flow::done();
-            };
+            }
             Flow::Call(Frame::Gain {
                 player: p,
-                from: From::Card(top),
+                from: From::Pile(pile),
                 to: Dest::Discard,
                 bought: true,
                 buy: Some(*index),
                 card: None,
+                at: None,
                 pc: 0,
             })
         }

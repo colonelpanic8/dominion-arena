@@ -8,6 +8,7 @@ mod cornucopia_guilds;
 mod dark_ages;
 mod elder;
 mod empires;
+mod fuzz;
 mod hinterlands;
 mod intrigue;
 mod knowledge;

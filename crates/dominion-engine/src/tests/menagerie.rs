@@ -2352,12 +2352,50 @@ fn way_of_the_mouses_card_cannot_move_itself() {
     set_mouse(&mut g, Card::Horse);
     hand(&mut g, P0, &[Card::Smithy]);
     deck(&mut g, P0, &[Card::Copper; 5]);
+    let mouse = g.ext.menagerie.mouse.unwrap();
+    let holder = g.zone(mouse);
     g.start();
     play(&mut g, Card::Smithy);
     way(&mut g, Card::WayOfTheMouse);
     assert_eq!(g.hand(P0).len(), 2);
+    assert_eq!(g.zone(mouse), holder);
+}
+
+/// A game whose Way of the Mouse card is `mouse`, with P0 about to play a Village.
+fn mouse_game(mouse: Card) -> Game {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::WayOfTheMouse],
+        setup_choices: [(Card::WayOfTheMouse, vec![mouse])].into(),
+        ..GameConfig::new(2, vec![Card::Village], 7)
+    });
+    assert_eq!(g.card(g.ext.menagerie.mouse.unwrap()), mouse);
+    hand(&mut g, P0, &[Card::Village, Card::Copper]);
+    hand(&mut g, P1, &[Card::Estate; 5]);
+    g.start();
+    g
+}
+
+#[test]
+fn way_of_the_mouses_gladiator_has_no_pile_to_trash_from() {
+    let mut g = mouse_game(Card::Gladiator);
     let mouse = g.ext.menagerie.mouse.unwrap();
-    assert_eq!(g.zone(mouse), Zone::Pile(g.pile_of(Card::Horse).unwrap()));
+    let holder = g.zone(mouse);
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheMouse);
+    // P0 reveals the Copper and P1 has none: +$1, but no Gladiator pile.
+    assert_eq!(g.turn().coins, 3);
+    assert_eq!(g.zone(mouse), holder);
+}
+
+#[test]
+fn way_of_the_mouses_farmers_market_has_no_pile_to_put_vp_on() {
+    let mut g = mouse_game(Card::FarmersMarket);
+    play(&mut g, Card::Village);
+    way(&mut g, Card::WayOfTheMouse);
+    assert_eq!((g.turn().coins, g.turn().buys), (0, 2));
+    assert!(g.piles().iter().all(|p| p.vp_tokens == 0));
 }
 
 #[test]
