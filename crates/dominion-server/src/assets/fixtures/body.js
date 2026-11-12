@@ -61,6 +61,7 @@ function getMicroTemplateURL(e){var a=[];return e.includes(Types.ACTION)&&a.push
 function getFullBackURL(){return"images/cards/templates/back.jpg"}function getMiniBackURL(){return"images/cards/templates/back-mini.jpg"}
 var TokenNameSample={PLUS_ACTION:new TokenName("+Action token","action"),JOURNEY:new TokenName("Journey token","journey-token","journey-token-back",!1),MINUS_CARD:new TokenName("-Card token","minuscard",null)};
 var CounterNameSample={ACTIONS:new CounterName("Actions",null,{singular:Phrases.ACTION,plural:Phrases.ACTIONS,many:Phrases.ACTIONS_MANY},"#BFB"),COINS:new CounterName("Coins","coin"),POTIONS:new CounterName("Potions","potion-square",null,"white",!0)};
+var ActionsSample={DISABLED:new Action("Disabled","#000",null,null,null,!1),PLAY:new Action("Play","#32CD32","green-cross","#32A932"),DISCARD:new Action("Discard","#FFA500")};
 var PlayerColorSample={RED:new PlayerColor("rgb(255, 0, 0)","red"),BLUE:new PlayerColor("rgb(80, 160, 255)","blue")};
 var GameButtonSample={AUTOPLAY_TREASURES:new GameButton("autoplay-treasures"),USE_VILLAGER:new GameButton("villagers")};
 var CardModeSample={PAWN_CARD:new CardMode(CardNames.PAWN,"1-card",null,!1),PAWN_ACTION:new CardMode(CardNames.PAWN,"action",null,!1)};

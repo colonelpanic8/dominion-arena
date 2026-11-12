@@ -199,13 +199,18 @@ pub fn literal_paths(doc: &str, dir: &str) -> BTreeSet<String> {
 }
 
 /// Static files the client builds names for from its tables: tokens, counters, buttons,
-/// player cubes, sounds, stock avatars, expansion symbols, box art, landscape selectors.
+/// selection crosses, player cubes, sounds, stock avatars, expansion symbols, box art, landscape selectors.
 pub fn constructed_paths(js: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let arg = |args: &Vec<String>, i: usize| args.get(i).and_then(|a| string(a));
     for args in calls(js, "TokenName") {
         for name in [arg(&args, 1), arg(&args, 2)].into_iter().flatten() {
             out.insert(format!("images/tokens/{name}.png"));
+        }
+    }
+    for args in calls(js, "Action") {
+        if let Some(name) = arg(&args, 2) {
+            out.insert(format!("images/elements/{name}.png"));
         }
     }
     for args in calls(js, "CounterName") {
@@ -558,6 +563,7 @@ pub(crate) mod tests {
             "images/tokens/action.png",
             "images/tokens/journey-token-back.png",
             "images/elements/potion-square.png",
+            "images/elements/green-cross.png",
             "images/buttons/1-card.png",
             "images/buttons/topdeck.png",
             "images/buttons/autoplay-treasures.png",

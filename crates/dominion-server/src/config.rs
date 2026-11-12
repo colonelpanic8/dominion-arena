@@ -1,7 +1,7 @@
 //! Settings: a flat TOML file (`$XDG_CONFIG_HOME/dominion/config.toml`), which command
 //! line flags override.
 
-use dominion_protocol::api::WebSettings;
+use dominion_protocol::api::{AnimationSpeed, WebSettings};
 use serde::Deserialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -49,8 +49,18 @@ pub struct Config {
     pub web_dir: Option<PathBuf>,
     /// The web client shows cards moving (default true).
     pub web_animations: Option<bool>,
-    /// How long the web client takes to move one card, in milliseconds (default 250).
-    pub web_animation_ms: Option<u32>,
+    /// How fast cards move: `slow`, `standard` (default), `sprightly`, `swift`, `speedy`
+    /// or `none`, as dominion.games' Animation Type.
+    pub web_animation_speed: Option<AnimationSpeed>,
+    /// On other players' turns the kingdom drops and their play area goes above it
+    /// (default true).
+    pub web_move_kingdom: Option<bool>,
+    /// A single card to trash, discard, exile or topdeck waits for a confirming button
+    /// (default false: it is sent on the click).
+    pub web_confirm_single: Option<bool>,
+    /// The painting under the table, by its name in the asset cache's `images/large`, or
+    /// "" for none (default `inheritance`).
+    pub web_background: Option<String>,
     /// The web client plays sounds (default true).
     pub web_sounds: Option<bool>,
     /// The web client's sound volume, 0.0 to 1.0 (default 0.5).
@@ -127,10 +137,16 @@ impl Config {
         let d = WebSettings::default();
         WebSettings {
             web_animations: self.web_animations.unwrap_or(d.web_animations),
-            web_animation_ms: self
-                .web_animation_ms
-                .unwrap_or(d.web_animation_ms)
-                .min(5000),
+            web_animation_speed: self.web_animation_speed.unwrap_or(d.web_animation_speed),
+            web_move_kingdom: self.web_move_kingdom.unwrap_or(d.web_move_kingdom),
+            web_confirm_single: self.web_confirm_single.unwrap_or(d.web_confirm_single),
+            web_background: self
+                .web_background
+                .clone()
+                .filter(|b| {
+                    b.is_empty() || b.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                })
+                .unwrap_or(d.web_background),
             web_sounds: self.web_sounds.unwrap_or(d.web_sounds),
             web_volume: self
                 .web_volume
@@ -201,17 +217,27 @@ mod tests {
         let web = |toml: &str| toml::from_str::<Config>(toml).unwrap().web();
         assert_eq!(web(""), WebSettings::default());
         let set = web(
-            "web_animations = false\nweb_animation_ms = 400\nweb_sounds = false\nweb_volume = 0.2",
+            "web_animations = false\nweb_animation_speed = \"swift\"\nweb_move_kingdom = false\n\
+             web_confirm_single = true\nweb_background = \"dark-wood\"\nweb_sounds = false\n\
+             web_volume = 0.2",
         );
         assert_eq!(
             set,
             WebSettings {
                 web_animations: false,
-                web_animation_ms: 400,
+                web_animation_speed: AnimationSpeed::Swift,
+                web_move_kingdom: false,
+                web_confirm_single: true,
+                web_background: "dark-wood".into(),
                 web_sounds: false,
                 web_volume: 0.2
             }
         );
+        assert_eq!(
+            web("web_background = \"../x\"").web_background,
+            "inheritance"
+        );
+        assert!(toml::from_str::<Config>("web_animation_speed = \"fast\"").is_err());
         assert_eq!(web("web_volume = 3.0").web_volume, 1.0);
         assert!(toml::from_str::<Config>("web_volume = \"loud\"").is_err());
     }

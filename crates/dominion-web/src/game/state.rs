@@ -15,6 +15,8 @@ pub struct GameState {
     pub version: u64,
     /// The seat deciding as of `version`, if any.
     pub deciding: Option<u8>,
+    /// What the table shows beside the view, as of `version`.
+    pub table: dominion_protocol::api::TableExtras,
     /// Every log entry from seq 0, without gaps.
     pub log: Vec<LogEntry>,
     /// The message of the last failed call, until the next success.
@@ -61,6 +63,7 @@ impl GameState {
             self.version = sv.version;
             self.view = Some(sv.view);
             self.deciding = sv.deciding;
+            self.table = sv.table;
         }
         self.error = None;
         if complete {

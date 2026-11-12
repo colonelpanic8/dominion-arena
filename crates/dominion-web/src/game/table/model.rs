@@ -16,6 +16,7 @@ pub enum Spot {
     Landscape(String),
     Tray,
     Button,
+    Ability,
 }
 
 /// The spot of each of `inter.targets`, in order. A target whose place the board
@@ -46,6 +47,7 @@ pub fn spots(board: &Board, inter: &Interaction) -> Vec<Spot> {
                     Some(Spot::Landscape(card))
                 }
                 Place::Button => return Spot::Button,
+                Place::Ability => return Spot::Ability,
                 _ => None,
             };
             match want {

@@ -66,6 +66,9 @@ pub fn CardView(
     /// The cost to print, when it differs from the printed one (cost reducers).
     cost: Option<dominion_protocol::Cost>,
     #[props(default)] class: String,
+    /// A pile's name, moved right to clear its count badge in the top left corner.
+    #[props(default)]
+    shifted: bool,
     #[props(default = VNode::empty())] children: Element,
 ) -> Element {
     let cards = use_cards();
@@ -86,7 +89,7 @@ pub fn CardView(
     };
     let m = measure::measurer(assets.fonts);
     let body = match &info {
-        Some(info) => draw(info, size, price, &assets, m.as_ref()),
+        Some(info) => draw(info, size, price, shifted, &assets, m.as_ref()),
         None => draw_unknown(&name, size, &assets, m.as_ref()),
     };
     let ratio = info
@@ -242,6 +245,7 @@ fn draw(
     info: &CardInfo,
     size: CardSize,
     price: Option<Price>,
+    shifted: bool,
     assets: &AssetDb,
     m: &dyn Measure,
 ) -> Element {
@@ -263,6 +267,10 @@ fn draw(
     let template_box = shape.template(size);
     let title = title_text(&info.name, assets);
     let mut name_box = shape.name(size);
+    if shifted && size == CardSize::Mini && !shape.landscape {
+        name_box.x = 0.24;
+        name_box.w = 0.68;
+    }
     if size == CardSize::Micro
         && let Some(p) = price
     {

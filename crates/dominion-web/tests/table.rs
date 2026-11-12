@@ -69,6 +69,7 @@ fn check_placement(view: &AgentView, d: &AgentDecision, inter: &Interaction) {
             }
             Place::Tray => assert!(t.card.is_some() || t.zone.is_some(), "{t:?}"),
             Place::Button => assert!(t.card.is_none() && t.options.len() == 1, "{t:?}"),
+            Place::Ability => assert!(t.card.is_some() && t.action == "trigger", "{t:?}"),
         }
     }
     let all: BTreeSet<u32> = d.options.iter().map(|o| o.index).collect();
@@ -127,7 +128,7 @@ fn check_spots(b: &Board, inter: &Interaction) {
     assert_eq!(spots.len(), inter.targets.len());
     let mut seen = BTreeSet::new();
     for (t, s) in inter.targets.iter().zip(&spots) {
-        if !matches!(s, Spot::Tray | Spot::Button) {
+        if !matches!(s, Spot::Tray | Spot::Button | Spot::Ability) {
             assert!(seen.insert(format!("{s:?}")), "{s:?} twice: {inter:?}");
         }
         let card = t.card.clone().unwrap_or_default();
@@ -137,7 +138,8 @@ fn check_spots(b: &Board, inter: &Interaction) {
             Spot::Pile(at) => assert_eq!(Some(*at), t.pile),
             Spot::Landscape(c) => assert!(t.place == Place::Landscape && *c == card),
             Spot::Button => assert_eq!(t.place, Place::Button),
-            Spot::Tray => assert_ne!(t.place, Place::Button),
+            Spot::Ability => assert_eq!(t.place, Place::Ability),
+            Spot::Tray => assert!(!matches!(t.place, Place::Button | Place::Ability)),
         }
     }
 }
@@ -353,7 +355,7 @@ impl Stats {
         let places: BTreeSet<Place> = inter.targets.iter().map(|t| t.place).collect();
         if places
             .iter()
-            .all(|p| matches!(p, Place::Tray | Place::Button))
+            .all(|p| matches!(p, Place::Tray | Place::Button | Place::Ability))
         {
             *self.off_board.entry(d.kind.clone()).or_default() += 1;
         }
@@ -370,6 +372,7 @@ impl Stats {
             Place::Landscape,
             Place::Tray,
             Place::Button,
+            Place::Ability,
         ];
         let mut s = String::from("| kind | decisions |");
         for p in places {
@@ -403,13 +406,17 @@ fn play_checked(table: &mut Table, rng: &mut StdRng, cards: &CardDb, stats: &mut
         if controlling_another(&view) {
             stats.possessed += 1;
         }
-        let b = board(&view, Some(seat.0), cards);
+        let b = board(&view, Some(seat.0), &table.extras(seat), cards);
         check_board(&b, &view, Some(seat.0));
         check_spots(&b, &inter);
         if rng.random_bool(0.25) {
             let other = PlayerId(((seat.index() + 1) % table.names().len()) as u8);
             let theirs = table.view(other);
-            check_board(&board(&theirs, Some(seat.0), cards), &theirs, Some(seat.0));
+            check_board(
+                &board(&theirs, Some(seat.0), &table.extras(other), cards),
+                &theirs,
+                Some(seat.0),
+            );
         }
 
         if let Some(run) = TreasureRun::start(&view, cards)
@@ -454,7 +461,7 @@ fn every_option_has_one_place_and_every_view_a_whole_board() {
         play_checked(&mut table, &mut rng, &cards, &mut stats);
         let names = table.names().to_vec();
         let log = table.view_from(PlayerId(0), 0).since_last_decision;
-        let lines = log_lines(&log, &names);
+        let lines = log_lines(&log, &names, &cards);
         assert_eq!(
             lines.iter().map(|l| l.count as usize).sum::<usize>(),
             log.len()
@@ -598,7 +605,7 @@ fn a_possessed_turn_is_played_from_the_tray() {
                         assert!(them.hand.known.contains_key(o.card.as_deref().unwrap()));
                     }
                 }
-                let b = board(&view, Some(seat.0), &cards);
+                let b = board(&view, Some(seat.0), &table.extras(seat), &cards);
                 assert_eq!(b.status.controller.as_ref().map(|w| w.seat), view.seat);
                 assert_eq!(
                     b.play_area.player.as_ref().map(|w| w.seat),
@@ -694,42 +701,45 @@ fn log_lines_follow_a_real_game() {
     let view = table.view_from(PlayerId(0), 0);
     let names = dominion_web::game::logfmt::names(&view);
     assert_eq!(names, ["Ann", "Bo"]);
+    let short = dominion_web::game::logfmt::initials(&names);
+    assert_eq!(short, ["A", "B"]);
     let log = &view.since_last_decision;
-    let lines = log_lines(log, &names);
+    let lines = log_lines(log, &names, &cards);
     assert_eq!(
         lines.iter().map(|l| l.count as usize).sum::<usize>(),
         log.len()
     );
 
     let mut turns: BTreeMap<u8, u32> = BTreeMap::new();
-    let (mut merged, mut under_smithy, mut cleanup) = (0, 0, 0);
+    let (mut treasures, mut buys, mut under_smithy, mut cleanup) = (0, 0, 0, 0);
     for (k, l) in lines.iter().enumerate() {
         let e = log.iter().find(|e| e.seq == l.seq).unwrap();
-        let mut text = l.text(&names);
-        if l.count > 1 {
-            merged += 1;
-            text = text.rsplit_once(" ×").unwrap().0.to_string();
-        }
-        assert_eq!(text, e.text);
+        let text = l.text(&short);
         assert_eq!(l.is_turn(), e.kind == "turn-start");
         if l.is_turn() {
             let p = l.player.unwrap();
             let t = l.turn.unwrap();
+            assert_eq!(text, format!("Turn {t} - {}", names[usize::from(p)]));
             assert!(turns.get(&p).is_none_or(|&last| t == last + 1));
             turns.insert(p, t);
             assert_eq!(l.depth, 0);
+            continue;
         }
         if let Some(p) = e.player {
             assert_eq!(l.spans.first(), Some(&Span::Player(p)));
         }
-        if let Some(card) = &e.card {
-            assert!(l.spans.contains(&Span::Card(card.clone())), "{l:?}");
+        assert!(text.ends_with('.') || text.ends_with(')'), "{text}");
+        if l.kind == "played" && text.contains("Copper") {
+            assert!(text.ends_with(')'), "{text}");
+            treasures += 1;
+        }
+        if l.kind == "bought" {
+            assert!(text.contains(" buys and gains "), "{text}");
+            buys += 1;
         }
         let prev = k.checked_sub(1).map(|i| &lines[i]);
         if l.kind == "drew"
-            && prev.is_some_and(|p| {
-                p.kind == "played" && p.spans.contains(&Span::Card("Smithy".into()))
-            })
+            && prev.is_some_and(|p| p.kind == "played" && p.text(&short).contains("Smithy"))
         {
             assert_eq!(l.depth, 1);
             under_smithy += 1;
@@ -741,7 +751,7 @@ fn log_lines_follow_a_real_game() {
     }
     assert!(turns.values().all(|&t| t > 5));
     assert!(
-        merged > 0 && under_smithy > 0 && cleanup > 0,
-        "{merged} {under_smithy} {cleanup}"
+        treasures > 0 && buys > 0 && under_smithy > 0 && cleanup > 0,
+        "{treasures} {buys} {under_smithy} {cleanup}"
     );
 }

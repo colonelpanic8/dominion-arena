@@ -1,552 +1,581 @@
-//! How big everything in the middle row and the hand is, in pixels, from the measured
-//! size of their boxes: the Supply band (basic piles, the Kingdom, landscapes and other
-//! wide things, non-Supply piles) above the play area, and the cards of the play area
-//! and the hand. Pure, so that the worst boards are checked natively.
+//! Where everything on the table goes, in pixels, from the window's size: dominion.games'
+//! layout, in which every zone is a fixed box measured in hundredths of the window's
+//! height (cards scale with it) and width (horizontal ranges). Pure, so that the worst
+//! boards are checked natively.
 
-/// Height over width of a full card, a mini (pile), a landscape and a micro strip.
+/// Height over width of a full card, a mini (pile: art and name), a landscape and a
+/// micro strip.
 pub const FULL: f64 = 994.0 / 630.0;
 pub const MINI: f64 = 594.0 / 630.0;
 pub const WIDE: f64 = 630.0 / 994.0;
 pub const MICRO: f64 = 112.0 / 616.0;
-/// The trash mat's height over its width.
-pub const TRASH: f64 = 0.5;
 
-/// What the Supply band holds, as far as its size goes.
+/// The right-hand column (the log) and the left one (player bars, basic piles), in vw.
+pub const RIGHT_COLUMN: f64 = 23.0;
+pub const LEFT_COLUMN: f64 = 15.0;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+impl Rect {
+    pub fn new(x: f64, y: f64, w: f64, h: f64) -> Rect {
+        Rect { x, y, w, h }
+    }
+
+    pub fn right(&self) -> f64 {
+        self.x + self.w
+    }
+
+    pub fn bottom(&self) -> f64 {
+        self.y + self.h
+    }
+
+    /// The CSS placing an absolutely positioned box here.
+    pub fn style(&self) -> String {
+        format!(
+            "left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px;",
+            self.x, self.y, self.w, self.h
+        )
+    }
+
+    /// The box a pile stack is drawn in inside its cell.
+    fn inset(&self) -> Rect {
+        Rect::new(
+            self.x + 0.005 * self.w,
+            self.y + 0.015 * self.h,
+            0.97 * self.w,
+            0.97 * self.h,
+        )
+    }
+}
+
+/// What the layout depends on besides the window.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct SupplyShape {
-    /// Basic piles: Treasures, then the rest (each group fills its own columns).
+pub struct Shape {
+    pub opponents: usize,
+    /// Basic Victory piles and Curses (left column) and basic Treasures (right column).
+    pub victory: usize,
     pub treasures: usize,
-    pub others: usize,
-    /// Kingdom rows and the longest row.
-    pub kingdom_rows: usize,
-    pub kingdom_cols: usize,
-    /// The wide items in order (landscapes, Artifacts, Boons and Hexes, the trash last),
-    /// by kind.
-    pub wide: Vec<WideItem>,
+    pub kingdom: usize,
+    /// Landscapes and other wide things (Artifacts, Boons and Hexes).
+    pub landscapes: usize,
+    /// Non-Supply piles, drawn as micro strips.
     pub non_supply: usize,
+    /// An opponent's turn with "move kingdom and play area" on: the kingdom drops and
+    /// their play row goes above it.
+    pub lowered: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WideItem {
-    Landscape,
-    /// A Boons or Hexes deck beside its discard pile: two half-width landscapes.
-    Deck,
-    Trash,
+/// A row of cards: where each card's left edge is, its size and its top.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Row {
+    pub xs: Vec<f64>,
+    pub w: f64,
+    pub h: f64,
+    pub y: f64,
 }
 
-impl WideItem {
-    fn height(self, w: f64, gap: f64) -> f64 {
-        match self {
-            WideItem::Landscape => w * WIDE,
-            WideItem::Deck => (w - gap) / 2.0 * WIDE,
-            WideItem::Trash => w * TRASH,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Middle {
-    /// The Supply band's height; the play area gets the rest.
-    pub supply_h: f64,
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Geometry {
+    /// 1vw and 1vh in pixels.
+    pub vw: f64,
+    pub vh: f64,
+    /// Basic piles: the Victory column top to bottom, then the Treasure column.
+    pub victory: Vec<Rect>,
+    pub treasures: Vec<Rect>,
+    /// Kingdom piles, cheapest first (filled from the bottom row up, left to right).
+    pub kingdom: Vec<Rect>,
+    pub landscapes: Vec<Rect>,
+    pub non_supply: Vec<Rect>,
+    pub kingdom_box: Rect,
+    /// The play row: cards from `play_x` to `play_right`, their tops at `play_y`.
+    pub play_x: f64,
+    pub play_right: f64,
+    pub play_y: f64,
     pub play_h: f64,
-    /// Kingdom and basic pile widths.
-    pub k: f64,
-    pub b: f64,
-    /// Basic piles per column.
-    pub basic_rows: usize,
-    /// The wide items' width and the indices in each of their columns.
-    pub wide_w: f64,
-    pub wide_cols: Vec<Vec<usize>>,
-    /// Non-Supply piles: their width, whether as micro strips, and per column.
-    pub ns_w: f64,
-    pub ns_micro: bool,
-    pub ns_rows: usize,
-    /// The band's width.
-    pub width: f64,
+    pub status: Rect,
+    /// The centre and bottom of the button row above the status bar, and a button.
+    pub buttons_cx: f64,
+    pub buttons_bottom: f64,
+    pub button: (f64, f64),
+    /// The phase-ending button inside the status bar's right end.
+    pub end_button: Rect,
+    /// The side column of buttons: its right edge and top.
+    pub side_right: f64,
+    pub side_top: f64,
+    pub hand_x: f64,
+    pub hand_right: f64,
+    pub hand_y: f64,
+    pub hand_h: f64,
+    pub your_bar: Rect,
+    pub your_discard: Rect,
+    pub your_deck: Rect,
+    pub opponent_bars: Vec<Rect>,
+    /// The active opponent's piles, peeking in from the top edge upside down.
+    pub opp_discard: Rect,
+    pub opp_deck: Rect,
+    pub opp_hand_x: f64,
+    pub opp_hand_right: f64,
+    pub opp_hand_y: f64,
+    pub opp_hand_h: f64,
+    /// The log, and what our client keeps under it.
+    pub log: Rect,
+    pub below_log: Rect,
 }
 
-/// Smallest pile widths worth drawing: below them names can't be read.
-const MIN_K: f64 = 56.0;
-const MIN_MICRO: f64 = 96.0;
-
-fn columns_of(n: usize, rows: usize) -> usize {
-    if n == 0 { 0 } else { n.div_ceil(rows.max(1)) }
-}
-
-/// Packs `items` top to bottom into columns of height `h`, in order.
-fn pack(items: &[WideItem], w: f64, h: f64, gap: f64) -> Vec<Vec<usize>> {
-    let mut cols: Vec<Vec<usize>> = vec![];
-    let mut used = f64::INFINITY;
-    for (i, it) in items.iter().enumerate() {
-        let ih = it.height(w, gap);
-        if used + gap + ih > h + 0.01 {
-            cols.push(vec![i]);
-            used = ih;
-        } else {
-            cols.last_mut().expect("a column").push(i);
-            used += gap + ih;
-        }
+/// The left edges of `n` cards of width `w` between `x0` and `x1`, at most `max_gap`
+/// apart, overlapping evenly when they don't fit: centred, or from the left.
+pub fn spread(n: usize, w: f64, x0: f64, x1: f64, max_gap: f64, centred: bool) -> Vec<f64> {
+    if n == 0 {
+        return vec![];
     }
-    cols
-}
-
-/// The widest the wide items can be in at most `ncols` columns of height `h`, capped.
-fn wide_width(items: &[WideItem], ncols: usize, h: f64, gap: f64, cap: f64) -> f64 {
-    let fits = |w: f64| pack(items, w, h, gap).len() <= ncols;
-    if fits(cap) {
-        return cap;
-    }
-    let (mut lo, mut hi) = (0.0, cap);
-    for _ in 0..30 {
-        let mid = (lo + hi) / 2.0;
-        if fits(mid) { lo = mid } else { hi = mid }
-    }
-    lo
-}
-
-struct Candidate {
-    m: Middle,
-    score: f64,
-}
-
-/// The middle row's layout for a box of `w` × `h` with gaps of `gap`, or the best that
-/// fits if nothing is comfortable.
-pub fn middle(shape: &SupplyShape, w: f64, h: f64, gap: f64) -> Middle {
-    // Minimum sizes give way before the layout falls back to the crudest one.
-    for relax in [1.0, 0.75, 0.5] {
-        if let Some(m) = search(shape, w, h, gap, relax) {
-            return m;
-        }
-    }
-    fallback(shape, w, h, gap)
-}
-
-fn search(shape: &SupplyShape, w: f64, h: f64, gap: f64, relax: f64) -> Option<Middle> {
-    let mut best: Option<Candidate> = None;
-    let rows = shape.kingdom_rows.max(1);
-    let basic_max = shape.treasures.max(shape.others).clamp(3, 5);
-    for step in 0..=16 {
-        let supply_h = h * (0.42 + 0.025 * f64::from(step));
-        let play_h = h - supply_h - gap;
-        if play_h < 0.0 {
-            continue;
-        }
-        let pw = (play_h - 2.0 * gap) / FULL;
-        let k_h = (supply_h - (rows - 1) as f64 * gap) / rows as f64 / MINI;
-        // Treasures in one column and the rest in another where they fit.
-        for basic_rows in [basic_max] {
-            let bcols =
-                columns_of(shape.treasures, basic_rows) + columns_of(shape.others, basic_rows);
-            let b_h = (supply_h - (basic_rows - 1) as f64 * gap) / basic_rows as f64 / MINI;
-            for wide_cols in 1..=3usize {
-                if shape.wide.is_empty() && wide_cols > 1 {
-                    continue;
-                }
-                for ns_micro in [false, true] {
-                    if shape.non_supply == 0 && ns_micro {
-                        continue;
-                    }
-                    for ns_rows_try in 1..=20usize {
-                        let c = layout_for(
-                            shape,
-                            w,
-                            supply_h,
-                            play_h,
-                            gap,
-                            pw,
-                            k_h,
-                            basic_rows,
-                            bcols,
-                            b_h,
-                            wide_cols,
-                            ns_micro,
-                            ns_rows_try,
-                            relax,
-                        );
-                        if let Some(c) = c
-                            && best.as_ref().is_none_or(|b| c.score > b.score)
-                        {
-                            best = Some(c);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    best.map(|c| c.m)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn layout_for(
-    shape: &SupplyShape,
-    w: f64,
-    supply_h: f64,
-    play_h: f64,
-    gap: f64,
-    pw: f64,
-    k_h: f64,
-    basic_rows: usize,
-    bcols: usize,
-    b_h: f64,
-    wide_cols: usize,
-    ns_micro: bool,
-    ns_rows: usize,
-    relax: f64,
-) -> Option<Candidate> {
-    let kcols = shape.kingdom_cols.max(1) as f64;
-    let n = shape.non_supply;
-    // Non-Supply piles: minis in a grid, or micro strips in columns.
-    let ns_rows = if n == 0 { 0 } else { ns_rows.min(n) };
-    let (ns_w, ns_cols) = if n == 0 {
-        (0.0, 0)
-    } else if ns_micro {
-        let strip_h = (supply_h - (ns_rows - 1) as f64 * gap) / ns_rows as f64;
-        (strip_h / MICRO, columns_of(n, ns_rows))
-    } else {
-        let mh = (supply_h - (ns_rows - 1) as f64 * gap) / ns_rows as f64;
-        (mh / MINI, columns_of(n, ns_rows))
-    };
-    // Each extra block costs a gap before it.
-    let mut k = k_h;
-    let mut fixed;
-    let mut iter = 0;
-    loop {
-        iter += 1;
-        let b = b_h.min(0.8 * k);
-        let ns_w = if ns_micro {
-            ns_w.min(1.05 * k)
-        } else {
-            ns_w.min(0.8 * k)
-        };
-        let ww = if shape.wide.is_empty() {
-            0.0
-        } else {
-            let cap = if shape.wide.iter().all(|&i| i == WideItem::Trash) {
-                k
-            } else {
-                1.45 * k
-            };
-            wide_width(&shape.wide, wide_cols, supply_h, gap, cap)
-        };
-        let wide_used = if shape.wide.is_empty() {
-            0
-        } else {
-            pack(&shape.wide, ww, supply_h, gap).len()
-        };
-        // Blocks are two gaps apart, columns within them one.
-        fixed = bcols as f64 * b
-            + bcols.saturating_sub(1) as f64 * gap
-            + if wide_used > 0 {
-                2.0 * gap + wide_used as f64 * ww + (wide_used - 1) as f64 * gap
-            } else {
-                0.0
-            }
-            + if ns_cols > 0 {
-                2.0 * gap + ns_cols as f64 * ns_w + (ns_cols - 1) as f64 * gap
-            } else {
-                0.0
-            }
-            + if bcols > 0 { 2.0 * gap } else { 0.0 };
-        let k_w = (w - fixed - (kcols - 1.0) * gap) / kcols;
-        if k_w >= k - 0.01 || iter > 12 {
-            k = k.min(k_w);
-            let b = b_h.min(0.8 * k);
-            if k < MIN_K * relax || b < 0.55 * MIN_K * relax {
-                return None;
-            }
-            let ns_w_final = if ns_micro {
-                ns_w.min(1.05 * k)
-            } else {
-                ns_w.min(0.8 * k)
-            };
-            if n > 0 && ns_micro && ns_w_final < MIN_MICRO * relax {
-                return None;
-            }
-            if n > 0 && !ns_micro && ns_w_final < (0.6 * k).max(66.0) {
-                return None;
-            }
-            if !shape.wide.is_empty() && ww < 0.8 * k * relax {
-                return None;
-            }
-            let wide = if shape.wide.is_empty() {
-                vec![]
-            } else {
-                pack(&shape.wide, ww, supply_h, gap)
-            };
-            let width = fixed + kcols * k + (kcols - 1.0) * gap;
-            if width > w + 0.5 {
-                return None;
-            }
-            // As big as possible, the play area's cards about as wide as the Kingdom's,
-            // micro strips only when minis would be small.
-            let mut score = k.min(pw * 1.1) + 0.02 * (k + pw) + 0.6 * b.min(0.7 * k)
-                - 2.0 * bcols as f64
-                - 0.3 * (pw - 1.3 * k).max(0.0);
-            if !shape.wide.is_empty() {
-                score += 0.3 * ww.min(1.2 * k);
-            }
-            if ns_micro {
-                score -= 4.0;
-            }
-            score -= 0.5 * wide_cols as f64;
-            return Some(Candidate {
-                m: Middle {
-                    supply_h,
-                    play_h,
-                    k,
-                    b,
-                    basic_rows,
-                    wide_w: ww,
-                    wide_cols: wide,
-                    ns_w: ns_w_final,
-                    ns_micro,
-                    ns_rows,
-                    width,
-                },
-                score,
-            });
-        }
-        k = k_w;
-    }
-}
-
-/// Everything at its smallest, when even that doesn't fit: better small than overflowing.
-fn fallback(shape: &SupplyShape, w: f64, h: f64, gap: f64) -> Middle {
-    let supply_h = h * 0.6;
-    let rows = shape.kingdom_rows.max(1) as f64;
-    let kcols = shape.kingdom_cols.max(1) as f64;
-    let basic_rows = 5;
-    let bcols = columns_of(shape.treasures, 5) + columns_of(shape.others, 5);
-    let ns_rows = ((supply_h + gap) / (supply_h / 10.0)).floor().max(1.0) as usize;
-    let ns_rows = ns_rows.min(shape.non_supply.max(1));
-    let ns_cols = columns_of(shape.non_supply, ns_rows);
-    let parts = kcols + bcols as f64 * 0.6 + ns_cols as f64 * 1.2 + 2.0;
-    let k = ((w - 12.0 * gap) / parts)
-        .min((supply_h - (rows - 1.0) * gap) / rows / MINI)
-        .max(1.0);
-    let b = (0.6 * k).min((supply_h - 4.0 * gap) / 5.0 / MINI);
-    let ww = 2.0 * k;
-    let wide = shape
-        .wide
-        .iter()
-        .enumerate()
-        .map(|(i, _)| vec![i])
-        .collect::<Vec<_>>();
-    let ww = if wide.is_empty() {
+    let room = x1 - x0;
+    let gap = if n == 1 {
         0.0
     } else {
-        ww.min((w * 0.25) / wide.len() as f64)
+        ((room - w * n as f64) / (n - 1) as f64).min(max_gap)
     };
-    Middle {
-        supply_h,
-        play_h: h - supply_h - gap,
-        k,
-        b,
-        basic_rows,
-        wide_w: ww,
-        wide_cols: wide,
-        ns_w: (1.2 * k).max(1.0),
-        ns_micro: true,
-        ns_rows,
-        width: w,
-    }
+    let total = w * n as f64 + gap * (n - 1) as f64;
+    let start = if centred {
+        x0 + (room - total) / 2.0
+    } else {
+        x0
+    };
+    (0..n).map(|i| start + i as f64 * (w + gap)).collect()
 }
 
-/// How a row of `n` cards sits in a box: their width, how many rows, and how far apart
-/// they start when they overlap.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Row {
-    pub w: f64,
-    /// Drawn as minis (art, name and cost) rather than full cards.
-    pub mini: bool,
-    pub rows: usize,
-    /// When set, cards start this far apart (less than their width: they overlap).
-    pub step: Option<f64>,
-}
-
-/// The play area: full cards in one row while they fit at nearly full size, then minis
-/// in two or three rows, overlapping only beyond that.
-pub fn play(n: usize, w: f64, h: f64, gap: f64, max_w: f64) -> Row {
-    let w0 = (h / FULL).min(max_w).max(1.0);
-    let n = n.max(1);
-    let need = |cw: f64, k: usize| k as f64 * cw + k.saturating_sub(1) as f64 * gap;
-    if need(w0, n) <= w {
-        return Row {
-            w: w0,
-            mini: false,
-            rows: 1,
-            step: None,
-        };
-    }
-    let shrunk = (w - (n - 1) as f64 * gap) / n as f64;
-    if shrunk >= 0.72 * w0 {
-        return Row {
-            w: shrunk,
-            mini: false,
-            rows: 1,
-            step: None,
-        };
-    }
-    for rows in 2..=3usize {
-        let mw = ((h - (rows - 1) as f64 * gap) / rows as f64 / MINI).min(w0);
-        let per = n.div_ceil(rows);
-        if need(mw, per) <= w {
-            return Row {
-                w: mw,
-                mini: true,
-                rows,
-                step: None,
-            };
-        }
-        let fit = (w - (per - 1) as f64 * gap) / per as f64;
-        if rows == 2 && fit >= 0.8 * mw {
-            return Row {
-                w: fit,
-                mini: true,
-                rows,
-                step: None,
-            };
+impl Geometry {
+    /// The hand's cards: `n` stacks, centred, at most 3vh apart.
+    pub fn hand_row(&self, n: usize) -> Row {
+        let w = self.hand_h / FULL;
+        Row {
+            xs: spread(n, w, self.hand_x, self.hand_right, 3.0 * self.vh, true),
+            w,
+            h: self.hand_h,
+            y: self.hand_y,
         }
     }
-    let rows = 3;
-    let mw = ((h - 2.0 * gap) / 3.0 / MINI).min(w0);
-    overlapped(n.div_ceil(rows), w, mw, true, rows)
+
+    /// The play row's cards: from the left, each over the last by at least 2vh. Their
+    /// tops step down 0, 4 and 8vh in turn ([`Geometry::play_top`]).
+    pub fn play_row(&self, n: usize) -> Row {
+        let w = self.play_h / FULL;
+        Row {
+            xs: spread(n, w, self.play_x, self.play_right, -2.0 * self.vh, false),
+            w,
+            h: self.play_h,
+            y: self.play_y,
+        }
+    }
+
+    pub fn play_top(&self, i: usize) -> f64 {
+        self.play_y + (i % 3) as f64 * 4.0 * self.vh
+    }
+
+    /// The active opponent's hand: backs overlapping, centred.
+    pub fn opp_hand_row(&self, n: usize) -> Row {
+        let w = self.opp_hand_h / FULL;
+        Row {
+            xs: spread(
+                n,
+                w,
+                self.opp_hand_x,
+                self.opp_hand_right,
+                -8.0 * self.vh,
+                true,
+            ),
+            w,
+            h: self.opp_hand_h,
+            y: self.opp_hand_y,
+        }
+    }
+
+    /// A window of `units` card widths (a landscape counts as two): centred over the
+    /// table, below the kingdom's top or, when a pile is to be clicked, over the hand.
+    pub fn window(&self, units: f64, low: bool) -> Rect {
+        let w = (48.0 * self.vw).min(30.0 * self.vh / FULL * (2.0 + 0.8 * units));
+        let h = 32.0 * self.vh;
+        let x = ((100.0 - RIGHT_COLUMN + LEFT_COLUMN) * self.vw - w) / 2.0;
+        let y = if low { 67.0 * self.vh } else { 17.5 * self.vh };
+        Rect::new(x, y.min(100.0 * self.vh - h), w, h)
+    }
+
+    /// The cards inside a window: `n` slots over 5% to 95% of its width.
+    pub fn window_row(&self, win: &Rect, n: usize, wide: &[bool]) -> Row {
+        let h = (30.0 * self.vh).min(0.6 * win.h);
+        let w = h / FULL;
+        let units: f64 = (0..n)
+            .map(|i| if wide.get(i) == Some(&true) { 2.0 } else { 1.0 })
+            .sum();
+        let room = 0.9 * win.w;
+        let max_gap = 1.5 * self.vh;
+        let gap = if n <= 1 {
+            0.0
+        } else {
+            ((room - w * units) / (n - 1) as f64).min(max_gap)
+        };
+        let total = w * units + gap * n.saturating_sub(1) as f64;
+        let mut x = win.x + 0.05 * win.w + (room - total).max(0.0) / 2.0;
+        let mut xs = vec![];
+        for i in 0..n {
+            xs.push(x);
+            let k = if wide.get(i) == Some(&true) { 2.0 } else { 1.0 };
+            x += w * k + gap;
+        }
+        Row {
+            xs,
+            w,
+            h,
+            y: win.y + (win.h - h) / 2.0 + 0.075 * h,
+        }
+    }
 }
 
-/// The least of a card left showing when cards overlap: more than half, so that a
-/// card's centre is always its own.
-const SHOWN: f64 = 0.52;
-
-/// `n` cards of width `cw` overlapping to fit `w`, shrinking further if they would
-/// cover more than half of each other.
-fn overlapped(n: usize, w: f64, cw: f64, mini: bool, rows: usize) -> Row {
-    let gaps = n.saturating_sub(1).max(1) as f64;
-    let cw = cw.min(w / (1.0 + SHOWN * gaps));
-    Row {
-        w: cw,
-        mini,
-        rows,
-        step: Some((w - cw) / gaps),
-    }
+/// One way of arranging the kingdom box, in units: a pile is one column wide (a pile's
+/// width) and one row tall.
+struct Grid {
+    cols: f64,
+    rows: f64,
+    /// (column, row, columns, rows) per pile, landscape and strip.
+    kingdom: Vec<(f64, f64, f64, f64)>,
+    landscapes: Vec<(f64, f64, f64, f64)>,
+    strips: Vec<(f64, f64, f64, f64)>,
 }
 
-/// The hand: full cards, shrinking to four fifths before they overlap.
-pub fn hand(n: usize, w: f64, h: f64, gap: f64) -> Row {
-    let w0 = (h / FULL).max(1.0);
-    let n = n.max(1);
-    let need = n as f64 * w0 + (n - 1) as f64 * gap;
-    if need <= w {
-        return Row {
-            w: w0,
-            mini: false,
-            rows: 1,
-            step: None,
-        };
+/// A strip is a fifth of a row tall; four go in a pile's cell.
+const STRIP_ROWS: f64 = 0.25;
+
+fn grid(
+    kingdom: usize,
+    landscapes: usize,
+    strips: usize,
+    rows: usize,
+    up: bool,
+    micro_rows: usize,
+) -> Grid {
+    let rows_f = rows as f64;
+    let cols = kingdom.div_ceil(rows).max(1) as f64;
+    let mut g = Grid {
+        cols,
+        rows: rows_f,
+        kingdom: vec![],
+        landscapes: vec![],
+        strips: vec![],
+    };
+    // Kingdom piles: cheapest at the bottom left, filled bottom row first.
+    for i in 0..kingdom {
+        let col = (i % cols as usize) as f64;
+        let row = rows_f - 1.0 - (i / cols as usize) as f64;
+        g.kingdom.push((col, row, 1.0, 1.0));
     }
-    let shrunk = (w - (n - 1) as f64 * gap) / n as f64;
-    if shrunk >= 0.8 * w0 {
-        return Row {
-            w: shrunk,
-            mini: false,
-            rows: 1,
-            step: None,
-        };
+    let mut free_cells: Vec<(f64, f64)> = vec![];
+    // The partial top row's empty cells take strips.
+    let used_top = kingdom % cols as usize;
+    if kingdom > 0 && used_top != 0 {
+        let top = rows_f - 1.0 - (kingdom / cols as usize) as f64;
+        for c in used_top..cols as usize {
+            free_cells.push((c as f64, top));
+        }
     }
-    overlapped(n, w, 0.8 * w0, false, 1)
+    let mut right = cols;
+    let mut bottom = rows_f;
+    if landscapes > 0 {
+        if up {
+            if landscapes == 3 && rows == 2 {
+                for i in 0..3 {
+                    g.landscapes
+                        .push((right, i as f64 * 2.0 / 3.0, 1.0, 2.0 / 3.0));
+                }
+                right += 1.0;
+            } else {
+                let per = rows;
+                let lcols = landscapes.div_ceil(per);
+                for i in 0..landscapes {
+                    let c = right + 1.5 * (i / per) as f64;
+                    let r = rows_f - 1.0 - (i % per) as f64;
+                    g.landscapes.push((c, r, 1.5, 1.0));
+                }
+                let last = landscapes % per;
+                if last != 0 {
+                    let c = right + 1.5 * (lcols - 1) as f64;
+                    for r in 0..(per - last) {
+                        free_cells.push((c, r as f64));
+                        free_cells.push((c + 0.5, r as f64));
+                    }
+                }
+                right += 1.5 * lcols as f64;
+            }
+        } else {
+            let per = cols as usize;
+            let lrows = landscapes.div_ceil(per);
+            for i in 0..landscapes {
+                let c = (i % per) as f64;
+                let r = bottom + (i / per) as f64 * 2.0 / 3.0;
+                g.landscapes.push((c, r, 1.0, 2.0 / 3.0));
+            }
+            bottom += lrows as f64 * 2.0 / 3.0;
+        }
+    }
+    let mut placed = 0;
+    'cells: for (c, r) in free_cells {
+        for k in 0..4 {
+            if placed == strips {
+                break 'cells;
+            }
+            g.strips
+                .push((c, r + k as f64 * STRIP_ROWS, 1.0, STRIP_ROWS));
+            placed += 1;
+        }
+    }
+    let left = strips - placed;
+    if left > 0 {
+        let per_row = (right.floor() as usize).max(1);
+        let rows_needed = left.div_ceil(per_row).min(micro_rows);
+        let under = (rows_needed * per_row).min(left);
+        for i in 0..under {
+            let c = (i % per_row) as f64;
+            let r = bottom + (i / per_row) as f64 * STRIP_ROWS;
+            g.strips.push((c, r, 1.0, STRIP_ROWS));
+        }
+        if under > 0 {
+            bottom += rows_needed as f64 * STRIP_ROWS;
+        }
+        let rest = left - under;
+        if rest > 0 {
+            let per_col = ((bottom / STRIP_ROWS).floor() as usize).max(1);
+            for i in 0..rest {
+                let c = right + (i / per_col) as f64;
+                let r = (i % per_col) as f64 * STRIP_ROWS;
+                g.strips.push((c, r, 1.0, STRIP_ROWS));
+            }
+            right += rest.div_ceil(per_col) as f64;
+        }
+    }
+    g.cols = right;
+    g.rows = bottom;
+    g
+}
+
+/// The kingdom box's best arrangement: the one giving the tallest pile.
+fn kingdom_layout(shape: &Shape, b: Rect) -> (Vec<Rect>, Vec<Rect>, Vec<Rect>) {
+    let mut best: Option<(f64, Grid)> = None;
+    for rows in 2..=5usize {
+        for up in [true, false] {
+            for micro in 0..=5usize {
+                let g = grid(
+                    shape.kingdom,
+                    shape.landscapes,
+                    shape.non_supply,
+                    rows,
+                    up,
+                    micro,
+                );
+                let unit = (b.h / g.rows).min(b.w / g.cols * MINI);
+                if best.as_ref().is_none_or(|(u, _)| unit > *u + 1e-6) {
+                    best = Some((unit, g));
+                }
+            }
+        }
+    }
+    let (unit, g) = best.expect("a layout");
+    let cw = unit / MINI;
+    let x0 = b.x + (b.w - g.cols * cw) / 2.0;
+    let y0 = b.y + (b.h - g.rows * unit) / 2.0;
+    let place = |&(c, r, w, h): &(f64, f64, f64, f64)| {
+        Rect::new(x0 + c * cw, y0 + r * unit, w * cw, h * unit).inset()
+    };
+    (
+        g.kingdom.iter().map(place).collect(),
+        g.landscapes.iter().map(place).collect(),
+        g.strips.iter().map(place).collect(),
+    )
+}
+
+/// The whole table for a window of `width` × `height` pixels.
+pub fn geometry(width: f64, height: f64, shape: &Shape) -> Geometry {
+    let vw = width.max(1.0) / 100.0;
+    let vh = height.max(1.0) / 100.0;
+    let opps = shape.opponents;
+    let base_rows = shape.victory.max(shape.treasures).max(1) as f64;
+    let bw = (50.0 * vh / base_rows / MINI).min(7.5 * vw);
+    let bh = bw * MINI;
+    let bar_h = 5.5 * vh;
+    let base_y = if opps > 0 {
+        4.5 * vh + opps as f64 * bar_h
+    } else {
+        0.0
+    };
+    let column = |x: f64, n: usize| -> Vec<Rect> {
+        (0..n)
+            .map(|i| Rect::new(x, base_y + i as f64 * bh, bw, bh).inset())
+            .collect()
+    };
+    let victory = column(0.0, shape.victory);
+    let treasures = column(bw, shape.treasures);
+
+    let r = (LEFT_COLUMN * vw).min(2.0 * bw);
+    let right = (100.0 - RIGHT_COLUMN) * vw;
+    let top = match (shape.lowered, opps > 0) {
+        (true, _) => 38.0 * vh,
+        (false, true) => 10.0 * vh,
+        (false, false) => 3.5 * vh,
+    };
+    let kingdom_box = Rect::new(r, top, right - r, 35.0 * vh);
+    let (kingdom, landscapes, non_supply) = kingdom_layout(shape, kingdom_box);
+
+    let play_y = if shape.lowered {
+        10.0 * vh
+    } else {
+        kingdom_box.bottom()
+    };
+    let your_card_h = 18.0 * vh;
+    let your_card_w = your_card_h / FULL;
+    let opp_card_h = 17.0 * vh;
+    let opp_card_w = opp_card_h / FULL;
+    let log_h = 95.5 * vh * 0.6;
+    Geometry {
+        vw,
+        vh,
+        victory,
+        treasures,
+        kingdom,
+        landscapes,
+        non_supply,
+        kingdom_box,
+        play_x: 16.0 * vw,
+        play_right: 76.0 * vw,
+        play_y,
+        play_h: 19.0 * vh,
+        status: Rect::new(15.0 * vw, 66.0 * vh, 56.0 * vw, 8.0 * vh),
+        buttons_cx: 43.0 * vw,
+        buttons_bottom: 65.0 * vh,
+        button: (21.0 * vh, 7.0 * vh),
+        end_button: Rect::new(70.0 * vw - 21.0 * vh, 66.5 * vh, 21.0 * vh, 7.0 * vh),
+        side_right: 76.0 * vw,
+        side_top: 40.0 * vh,
+        hand_x: 16.0 * vw,
+        hand_right: 76.0 * vw,
+        hand_y: 74.5 * vh,
+        hand_h: 24.5 * vh,
+        your_bar: Rect::new(0.0, 79.5 * vh, 12.5 * vw, 6.0 * vh),
+        your_discard: Rect::new(0.5 * vw, 86.0 * vh, your_card_w, your_card_h),
+        your_deck: Rect::new(1.0 * vw + your_card_w, 86.0 * vh, your_card_w, your_card_h),
+        opponent_bars: (0..opps)
+            .map(|i| Rect::new(0.0, 4.0 * vh + i as f64 * bar_h, 12.5 * vw, bar_h))
+            .collect(),
+        opp_discard: Rect::new(16.0 * vw, -10.0 * vh, opp_card_w, opp_card_h),
+        opp_deck: Rect::new(16.5 * vw + opp_card_w, -10.0 * vh, opp_card_w, opp_card_h),
+        opp_hand_x: 17.0 * vw + 36.0 * vh / FULL,
+        opp_hand_right: 76.0 * vw,
+        opp_hand_y: -12.0 * vh,
+        opp_hand_h: 20.0 * vh,
+        log: Rect::new(right, 0.0, RIGHT_COLUMN * vw, log_h),
+        below_log: Rect::new(right, log_h, RIGHT_COLUMN * vw, 100.0 * vh - log_h),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn worst() -> SupplyShape {
-        let mut wide = vec![WideItem::Landscape; 8];
-        wide.extend([WideItem::Deck, WideItem::Trash]);
-        SupplyShape {
-            treasures: 5,
-            others: 7,
-            kingdom_rows: 2,
-            kingdom_cols: 5,
-            wide,
-            non_supply: 24,
-        }
-    }
-
-    fn base() -> SupplyShape {
-        SupplyShape {
+    fn shape(kingdom: usize, landscapes: usize, non_supply: usize) -> Shape {
+        Shape {
+            opponents: 1,
+            victory: 4,
             treasures: 3,
-            others: 4,
-            kingdom_rows: 2,
-            kingdom_cols: 5,
-            wide: vec![WideItem::Trash],
-            non_supply: 0,
+            kingdom,
+            landscapes,
+            non_supply,
+            lowered: false,
         }
     }
 
-    fn check(shape: &SupplyShape, w: f64, h: f64) -> Middle {
-        let g = 3.6;
-        let m = middle(shape, w, h, g);
-        assert!(m.width <= w + 0.5, "{m:?} wider than {w}");
-        assert!(m.supply_h + g + m.play_h <= h + 0.5);
-        let rows = shape.kingdom_rows as f64;
-        assert!(rows * m.k * MINI + (rows - 1.0) * g <= m.supply_h + 0.5);
-        let br = m.basic_rows as f64;
-        assert!(br * m.b * MINI + (br - 1.0) * g <= m.supply_h + 0.5);
-        for col in &m.wide_cols {
-            let used: f64 = col
-                .iter()
-                .map(|&i| shape.wide[i].height(m.wide_w, g))
-                .sum::<f64>()
-                + (col.len() - 1) as f64 * g;
-            assert!(used <= m.supply_h + 0.5, "{m:?}");
-        }
-        if shape.non_supply > 0 {
-            let r = m.ns_rows as f64;
-            let ih = if m.ns_micro { MICRO } else { MINI } * m.ns_w;
-            assert!(r * ih + (r - 1.0) * g <= m.supply_h + 0.5);
-        }
-        m
+    fn overlaps(a: &Rect, b: &Rect) -> bool {
+        a.x < b.right() - 0.5
+            && b.x < a.right() - 0.5
+            && a.y < b.bottom() - 0.5
+            && b.y < a.bottom() - 0.5
     }
 
     #[test]
-    fn the_worst_boards_fit_every_window() {
-        // The middle row's box at 1280x720 .. 2560x1440.
+    fn ten_piles_are_two_rows_of_five_cheapest_bottom_left() {
+        let g = geometry(1920.0, 1080.0, &shape(10, 0, 0));
+        assert_eq!(g.kingdom.len(), 10);
+        // Cells of 200.5 × 189 (as dominion.games at 1080p), drawn inset.
+        assert!(
+            (g.kingdom[0].h - 189.0 * 0.97).abs() < 1.0,
+            "{:?}",
+            g.kingdom[0]
+        );
+        assert!(g.kingdom[0].y > g.kingdom[5].y);
+        assert!(g.kingdom[0].x < g.kingdom[4].x);
+        assert!((g.kingdom[0].x - g.kingdom[5].x).abs() < 0.1);
+    }
+
+    #[test]
+    fn nothing_in_the_kingdom_box_overlaps_or_leaves_it() {
         for (w, h) in [
-            (1009.6, 392.4),
-            (1010.0, 380.0),
-            (1270.0, 480.0),
-            (1530.0, 580.0),
-            (2050.0, 780.0),
+            (1920.0, 1080.0),
+            (1280.0, 720.0),
+            (1024.0, 768.0),
+            (2560.0, 1080.0),
         ] {
-            let m = check(&worst(), w, h);
-            assert!(m.k >= MIN_K, "{m:?}");
-            println!("worst {w}x{h}: {m:?}");
-            let m = check(&base(), w, h);
-            println!("base {w}x{h}: {m:?}");
-            assert!(m.k > 0.2 * h, "{m:?}");
+            for (k, l, n) in [(10, 0, 0), (10, 2, 3), (17, 4, 12), (8, 1, 0), (12, 3, 30)] {
+                let g = geometry(w, h, &shape(k, l, n));
+                let all: Vec<&Rect> = g
+                    .kingdom
+                    .iter()
+                    .chain(&g.landscapes)
+                    .chain(&g.non_supply)
+                    .collect();
+                assert_eq!(all.len(), k + l + n);
+                let b = g.kingdom_box;
+                for (i, a) in all.iter().enumerate() {
+                    assert!(
+                        a.x >= b.x - 0.5 && a.right() <= b.right() + 0.5,
+                        "{w}x{h} {k}/{l}/{n} {a:?} {b:?}"
+                    );
+                    assert!(
+                        a.y >= b.y - 0.5 && a.bottom() <= b.bottom() + 0.5,
+                        "{w}x{h} {k}/{l}/{n} {a:?} {b:?}"
+                    );
+                    for c in &all[i + 1..] {
+                        assert!(!overlaps(a, c), "{w}x{h} {k}/{l}/{n} {a:?} {c:?}");
+                    }
+                }
+            }
         }
     }
 
     #[test]
-    fn an_absurd_board_still_fits() {
-        let mut shape = worst();
-        shape.non_supply = 40;
-        shape.wide.extend([WideItem::Landscape; 4]);
-        check(&shape, 1010.0, 380.0);
+    fn rows_stay_in_their_range() {
+        let g = geometry(1280.0, 720.0, &shape(10, 0, 0));
+        for n in [1, 5, 9, 20] {
+            let r = g.hand_row(n);
+            assert!(r.xs[0] >= g.hand_x - 0.1);
+            assert!(r.xs[n - 1] + r.w <= g.hand_right + 0.1);
+            let p = g.play_row(n);
+            assert!((p.xs[0] - g.play_x).abs() < 0.1);
+            assert!(p.xs[n - 1] + p.w <= g.play_right + 0.1 || n == 1);
+            for w in p.xs.windows(2) {
+                assert!(w[1] - w[0] <= p.w - 2.0 * g.vh + 0.1);
+            }
+        }
     }
 
     #[test]
-    fn rows_shrink_before_they_overlap() {
-        let r = play(3, 1000.0, 200.0, 4.0, 300.0);
-        assert_eq!((r.mini, r.step), (false, None));
-        assert!((r.w - 200.0 / FULL).abs() < 0.01);
-        let r = play(20, 1000.0, 200.0, 4.0, 300.0);
-        assert!(r.mini && r.rows >= 2);
-        let r = hand(15, 600.0, 160.0, 4.0);
-        let step = r.step.unwrap();
-        assert!(step * 14.0 + r.w <= 600.01);
-        assert!(step > r.w / 2.0);
-        let r = hand(5, 600.0, 160.0, 4.0);
-        assert_eq!(r.step, None);
+    fn basic_piles_stack_below_the_opponents() {
+        let mut s = shape(10, 0, 0);
+        s.opponents = 3;
+        s.victory = 5;
+        let g = geometry(1920.0, 1080.0, &s);
+        assert!(g.victory[0].y >= g.opponent_bars[2].bottom() - 1.0);
+        assert!(g.treasures[0].x > g.victory[0].right() - 1.0);
+        assert!(g.victory[4].bottom() <= 1080.0);
     }
 }

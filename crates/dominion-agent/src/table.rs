@@ -1,6 +1,7 @@
 use crate::project::{self, Context};
 use crate::text;
 use dominion_engine::{Game, GameConfig, Knowledge, PlayerId, Response, SetupError};
+use dominion_protocol::api::{PlayerTable, TableExtras};
 use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -114,6 +115,23 @@ impl Table {
                 log_from,
             },
         )
+    }
+
+    /// What a graphical table shows beside `seat`'s view (play order, discard tops),
+    /// read through its engine view so that only what it may see is named.
+    pub fn extras(&self, seat: PlayerId) -> TableExtras {
+        let view = self.game.view(seat);
+        let name = |id| view.card(id).map(|c| c.name().to_string());
+        TableExtras {
+            players: view
+                .players()
+                .map(|p| PlayerTable {
+                    seat: p.id().0,
+                    in_play: p.in_play().iter().filter_map(|&id| name(id)).collect(),
+                    discard_top: p.discard_top().and_then(name),
+                })
+                .collect(),
+        }
     }
 
     /// The compact text rendering of `seat`'s view.

@@ -133,7 +133,10 @@ fn seat_board(table: &Table, seat: u8, cards: &CardDb) -> (Board, usize) {
     let v = table.view_from(PlayerId(seat), 0);
     let len = v.since_last_decision.len();
     let deciding = table.deciding().map(|p| p.0);
-    (board(&v, deciding, cards), len)
+    (
+        board(&v, deciding, &table.extras(PlayerId(seat)), cards),
+        len,
+    )
 }
 
 fn log_from(table: &Table, seat: u8, from: usize) -> Vec<LogEntry> {
@@ -426,7 +429,9 @@ fn clean_up_discards_play_and_hand_then_draws_five() {
         *faces.entry(m.card.clone().unwrap()).or_default() += 1;
     }
     assert_eq!(got.len() - n, 5);
-    assert_eq!(faces.into_iter().collect::<Vec<_>>(), s.hand(&s.new));
+    let mut hand = s.hand(&s.new);
+    hand.sort();
+    assert_eq!(faces.into_iter().collect::<Vec<_>>(), hand);
 }
 
 #[test]

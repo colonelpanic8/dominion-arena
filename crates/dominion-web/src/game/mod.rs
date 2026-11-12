@@ -8,6 +8,7 @@ pub mod moves;
 pub mod plain;
 pub mod state;
 pub mod table;
+pub mod wording;
 
 use crate::api;
 use crate::app::Route;

@@ -8,13 +8,15 @@ use dominion_protocol::assets::{CardAssets, Manifest};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-/// The fonts cards use, by the family names cards.css gives them.
-const FONTS: [(&str, &str, &str); 5] = [
+/// The fonts cards and the table use, by the family names the stylesheets give them.
+const FONTS: [(&str, &str, &str); 7] = [
     ("DomTitle", "400", "fonts/TrajanPro3SemiBold.ttf"),
     ("DomBody", "400", "fonts/times.ttf"),
     ("DomBody", "700", "fonts/timesbd.ttf"),
     ("DomNum", "700", "fonts/MinionPro-Bold.woff"),
     ("DomCount", "400", "fonts/Montserrat-SemiBold.ttf"),
+    ("DomUi", "400", "fonts/Raleway-Regular.ttf"),
+    ("DomUi", "700", "fonts/Raleway-Bold.ttf"),
 ];
 
 /// Icons cards.css draws through `--dc-<name>`, with a CSS stand-in when absent.
