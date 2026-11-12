@@ -2221,6 +2221,47 @@ fn a_private_order_of_cards_from_play_is_mixed_on_the_deck() {
     assert_eq!(digest(&a, &ka, P1), digest(&b, &kb, P1));
 }
 
+/// Order of Astrologers after Inn's shuffle: whether P0 puts a shuffled card on top, P1
+/// can't tell the shuffled cards apart.
+#[test]
+fn cards_put_on_top_out_of_a_shuffle_stay_mixed_for_the_others() {
+    let mut g = setup_with(GameConfig {
+        landscapes: vec![Card::OrderOfAstrologers],
+        ..GameConfig::new(2, vec![Card::Inn], 7)
+    });
+    g.players[0].favors = 1;
+    hand(&mut g, P0, &[Card::Gold, Card::Gold, Card::Copper]);
+    let shuffled = deck(
+        &mut g,
+        P0,
+        &[
+            Card::Silver,
+            Card::Silver,
+            Card::Silver,
+            Card::Estate,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    discard(&mut g, P0, &[]);
+    let (mut g, mut k) = start(g);
+    g.turn.buys = 2;
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Inn);
+    choose(&mut g, &[]);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    k.update(&mut g);
+    let [(a, ka), (b, kb)] = [vec![shuffled[0]], vec![]].map(|top| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &top);
+        k.update(&mut g);
+        (g, k)
+    });
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(digest(&a, &ka, P1), digest(&b, &kb, P1));
+}
+
 #[test]
 fn revealed_cards_split_between_hand_and_deck_stay_known() {
     let mut g = setup(&[Card::Seer]);

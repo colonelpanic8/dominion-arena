@@ -400,7 +400,9 @@ them.
   followed out of it and mixed once they have all left it.
   A shuffle records its mix before its individual zone moves, whose random order
   nobody can follow.
-  Mixing splits the mixed cards from groups containing untouched cards. Cards with
+  Mixing (a shuffle, a private order, cards leaving a held set unseen) splits the mixed
+  cards from groups containing untouched cards, unless they are all of one group (cards
+  the viewer already could not tell apart). Cards with
   only one possible identity are removed from their family's candidate pool.
   A family wholly in one zone is known there as its whole multiset, even when its
   groups still distinguish parts that could be followed later.

@@ -375,6 +375,18 @@ impl Mind {
         }
     }
 
+    /// The viewer can no longer tell `cards` apart, but nothing else moved with them: the
+    /// rest of their groups is some of what each was. Cards the viewer already couldn't
+    /// tell apart stay with the rest of their group.
+    fn mix(&mut self, cards: &[CardId]) {
+        let group = |c: &CardId| self.group_of[c.index()];
+        if cards.iter().all(|c| group(c) == group(&cards[0])) {
+            return;
+        }
+        self.split_off(cards);
+        self.merge(cards.iter().copied());
+    }
+
     /// The viewer sees that one of `among` is an `is`: `card`, but any of them that may be
     /// an `is` could be the one.
     fn identify_among(&mut self, card: CardId, is: Card, among: &[CardId]) {
@@ -507,8 +519,7 @@ impl Mind {
             }
             // Only the set's cards: the rest of their groups didn't go anywhere.
             let set: Vec<CardId> = l.left.into_iter().chain(l.rest).collect();
-            self.split_off(&set);
-            self.merge(set);
+            self.mix(&set);
         }
     }
 
@@ -798,8 +809,7 @@ impl Knowledge {
             for set in arrivals {
                 if set.iter().any(|c| cards.contains(c)) {
                     if set.iter().any(|c| !cards.contains(c)) {
-                        mind.split_off(&set);
-                        mind.merge(set);
+                        mind.mix(&set);
                     }
                 } else {
                     mind.arrived.push(set);
@@ -810,12 +820,10 @@ impl Knowledge {
                     .iter()
                     .any(|c| self.zone[c.index()].owner() != Some(PlayerId(v as u8)))
                 {
-                    mind.split_off(set);
-                    mind.merge(set.iter().copied());
+                    mind.mix(set);
                 }
             }
-            mind.split_off(&mixed);
-            mind.merge(mixed.iter().copied());
+            mind.mix(&mixed);
             for c in &mixed {
                 mind.recent.remove(c);
             }
