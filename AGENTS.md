@@ -397,6 +397,8 @@ them.
   it with every card the selection could have included, before following the moves.
   A shuffle records its mix before its individual zone moves, whose random order
   nobody can follow.
+  Mixing splits the mixed cards from groups containing untouched cards. Cards with
+  only one possible identity are removed from their family's candidate pool.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which

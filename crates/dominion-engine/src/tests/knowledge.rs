@@ -187,6 +187,40 @@ fn shuffling_searched_discards_with_a_discarded_hand_forgets_their_positions() {
     }
 }
 
+#[test]
+fn mixing_some_known_copies_keeps_the_untouched_copies_known() {
+    let mut g = setup(&[Card::Chapel, Card::Artist]);
+    let hand = hand(&mut g, P0, &[Card::Chapel, Card::Copper, Card::Artist]);
+    let deck = deck(&mut g, P0, &[Card::Copper; 5]);
+    let (mut g, mut k) = start(g);
+    for &c in hand.iter().chain(&deck) {
+        g.show(c);
+    }
+    g.mixed(deck.clone());
+    g.put_in_hand(deck[0], P0);
+    k.update(&mut g);
+    play(&mut g, Card::Chapel);
+    k.update(&mut g);
+    let world = |copy| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &[copy]);
+        k.update(&mut g);
+        next_turn(&mut g);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(hand[1]), world(deck[0]));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+    assert_eq!(
+        ka.known(&a, P1)
+            .zone(Zone::Hand(P0))
+            .known
+            .get(&Card::Copper),
+        Some(&4)
+    );
+}
+
 fn uncertain_over(known: &KnownCards, zones: &[Zone]) -> Option<CardCount> {
     known
         .uncertain
@@ -616,7 +650,10 @@ fn cards_put_back_in_a_forced_order_are_mixed_too() {
     k.update(&mut g);
     respond(&mut g, Response::option(Opt::Mode(1)));
     k.update(&mut g);
-    assert_eq!(k.known(&g, P0).zone(Zone::Deck(P1)).known, count(&[]));
+    assert_eq!(
+        k.known(&g, P0).zone(Zone::Deck(P1)).known,
+        count(&[(Card::Estate, 1)])
+    );
 }
 
 /// Sleigh is discarded onto the card just gained, which then moves in everyone's view.

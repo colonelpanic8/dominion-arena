@@ -253,6 +253,10 @@ impl Mind {
             self.identify_among(card, is, &among);
             return;
         }
+        self.identify_exact(card, is);
+    }
+
+    fn identify_exact(&mut self, card: CardId, is: Card) {
         let g = self.group_of[card.index()];
         let family = self.groups[g].family;
         if let Some(f) = family
@@ -283,6 +287,29 @@ impl Mind {
             group.ids = None;
         }
         self.new_group(vec![card], Some(CardCount::from([(is, 1)])));
+    }
+
+    /// Cards with only one possible identity no longer constrain their families.
+    fn reduce(&mut self) {
+        loop {
+            let known: Vec<_> = self
+                .groups
+                .iter()
+                .filter_map(|g| {
+                    let ids = g.ids.as_ref()?;
+                    (ids.len() == 1 && !g.cards.is_empty() && g.family.is_some())
+                        .then(|| (g.cards.clone(), *ids.keys().next().unwrap()))
+                })
+                .collect();
+            if known.is_empty() {
+                break;
+            }
+            for (cards, is) in known {
+                for c in cards {
+                    self.identify_exact(c, is);
+                }
+            }
+        }
     }
 
     /// A family down to one group: that group is exactly the family's cards.
@@ -359,7 +386,7 @@ impl Mind {
             .chain([card])
             .collect();
         // This may be a copy the viewer already counted in the held set.
-        let known = same.iter().copied().find(|c| {
+        let known = std::iter::once(card).chain(same.iter().copied()).find(|c| {
             self.groups[self.group_of[c.index()]]
                 .ids
                 .as_ref()
@@ -620,6 +647,7 @@ impl Knowledge {
         }
         self.settle();
         self.observe(game);
+        self.minds.iter_mut().for_each(Mind::reduce);
     }
 
     fn settle(&mut self) {
@@ -645,11 +673,8 @@ impl Knowledge {
             }
             Trace::Mixed { cards } => {
                 self.settle();
-                let mut held: Vec<_> = cards
-                    .iter()
-                    .filter(|c| matches!(self.zone[c.index()], Zone::Discard(_)))
-                    .filter_map(|&c| self.held_with(c))
-                    .collect();
+                self.minds.iter_mut().for_each(Mind::reduce);
+                let mut held: Vec<_> = cards.iter().filter_map(|&c| self.held_with(c)).collect();
                 held.sort_unstable();
                 held.dedup();
                 self.face_up.retain(|c| !cards.contains(c));
@@ -659,10 +684,11 @@ impl Knowledge {
                 if cards.iter().any(|c| set(c) != set(&cards[0])) {
                     cards.iter().for_each(|c| self.held[c.index()] = 0);
                 }
-                let mixed = cards
+                let mixed: Vec<_> = cards
                     .iter()
                     .copied()
-                    .filter(|c| !marked(self.is[c.index()]));
+                    .filter(|c| !marked(self.is[c.index()]))
+                    .collect();
                 for (v, mind) in self.minds.iter_mut().enumerate() {
                     let arrivals = std::mem::take(&mut mind.arrived);
                     for set in arrivals {
@@ -684,10 +710,11 @@ impl Knowledge {
                             mind.merge(set.iter().copied());
                         }
                     }
-                    mind.merge(mixed.clone());
-                    mixed.clone().for_each(|c| {
-                        mind.recent.remove(&c);
-                    });
+                    mind.split_off(&mixed);
+                    mind.merge(mixed.iter().copied());
+                    for c in &mixed {
+                        mind.recent.remove(c);
+                    }
                 }
             }
             Trace::Shown { card, to } => {
