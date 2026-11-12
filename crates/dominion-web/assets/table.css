@@ -302,6 +302,14 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-end:hover { filter: sepia(0.4) saturate(1.4); }
 
 /* Buttons: black boxes over the table. */
+.dt-start-game {
+  transform: translate(-50%, -100%);
+  width: calc(21 * var(--vh));
+  height: calc(7 * var(--vh));
+  font-size: calc(3.6 * var(--vh));
+  cursor: pointer;
+  z-index: 20;
+}
 .dt-btn {
   position: absolute;
   box-sizing: border-box;

@@ -589,6 +589,7 @@ pub fn TableGame(controls: Element) -> Element {
 
     let flight = motion::use_motion(board_memo, game);
     let muted = use_signal(sound::session_muted);
+    let mut started = use_signal(|| false);
     sound::use_sound(board_memo, game, muted);
     let mut viewport = use_signal(platform::viewport);
     use_future(move || async move {
@@ -645,8 +646,19 @@ pub fn TableGame(controls: Element) -> Element {
             }
         };
     };
+    let start_key = format!(
+        "dominion.started.{}.{}",
+        game_id.clone().unwrap_or_default(),
+        seat.map(|s| s.to_string()).unwrap_or_default()
+    );
+    let starting = !started() && at_start(&b) && platform::session_get(&start_key).is_none();
+    let b = if starting {
+        Rc::new(starting_board(&b))
+    } else {
+        b
+    };
     let sel = ctx.selection();
-    let ui_now = ui.read().clone();
+    let ui_now = if starting { None } else { ui.read().clone() };
     let g = geometry();
     let active = active_opponent(&b, *ctx.chosen_opponent.read());
     let can_treasures = ui_now
@@ -679,6 +691,19 @@ pub fn TableGame(controls: Element) -> Element {
                 g: g.clone(),
                 ui: ui_now.clone(),
                 error,
+                starting,
+            }
+            if starting {
+                button {
+                    class: "dt-btn dt-start-game",
+                    style: "left:{g.buttons_cx:.1}px;top:{g.buttons_bottom:.1}px;",
+                    "data-action": "start-game",
+                    onclick: move |_| {
+                        platform::session_set(&start_key, "1");
+                        started.set(true);
+                    },
+                    "Start Game"
+                }
             }
             prompt::Buttons {
                 g: g.clone(),
@@ -705,6 +730,36 @@ pub fn TableGame(controls: Element) -> Element {
             motion::GhostPool { flight: flight() }
         }
     }
+}
+
+/// Nothing has happened yet: every player still owns just their starting cards, and
+/// nothing is in play or in the trash.
+fn at_start(b: &Board) -> bool {
+    b.status.running
+        && b.play_area.cards.count == 0
+        && b.trash.count == 0
+        && b.you.as_ref().is_some_and(|y| y.owned.count > 0)
+        && b.you.iter().chain(&b.opponents).all(|p| {
+            p.in_play.count == 0 && p.owned.count == STARTING_CARDS && p.discard.count == 0
+        })
+}
+
+const STARTING_CARDS: u32 = 10;
+
+/// dominion.games' first frame: your starting cards in the hand, nothing to do yet.
+fn starting_board(b: &Board) -> Board {
+    let mut b = b.clone();
+    if let Some(y) = b.you.as_mut() {
+        y.hand = y.owned.clone();
+        y.deck = Default::default();
+        y.discard = Default::default();
+        y.discard_top = None;
+    }
+    b.status.actions = Some(0);
+    b.status.buys = Some(0);
+    b.status.coins = Some(0);
+    b.status.your_turn = false;
+    b
 }
 
 /// A window listing a pile's or mat's cards, as dominion.games opens them from tabs.

@@ -119,7 +119,12 @@ fn Cardlists() -> Element {
 
 #[component]
 fn Game(id: String) -> Element {
-    rsx! { crate::game::GamePage { key: "{id}", id } }
+    // A keyed list, so that another game's page is a new page.
+    rsx! {
+        for id in [id] {
+            crate::game::GamePage { key: "{id}", id }
+        }
+    }
 }
 
 #[component]
