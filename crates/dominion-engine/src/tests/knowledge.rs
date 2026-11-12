@@ -43,6 +43,36 @@ fn discarding_identical_revealed_cards_with_envoy_gives_the_same_log() {
     assert_eq!(ka.known(&a, P0), kb.known(&b, P0));
 }
 
+#[test]
+fn privately_ordering_discards_does_not_reveal_which_cards_were_selected() {
+    let mut g = setup(&[Card::Herald]);
+    hand(&mut g, P0, &[Card::Gold; 2]);
+    deck(&mut g, P0, &[Card::Silver; 8]);
+    discard(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Copper, Card::Estate, Card::Duchy],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Herald);
+    respond(&mut g, Response::Number(2));
+    k.update(&mut g);
+    let choices = candidates(&g);
+    let world = |chosen: &[CardId]| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, chosen);
+        k.update(&mut g);
+        choose(&mut g, chosen);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(&choices[..2]), world(&choices[2..4]));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+}
+
 fn uncertain_over(known: &KnownCards, zones: &[Zone]) -> Option<CardCount> {
     known
         .uncertain

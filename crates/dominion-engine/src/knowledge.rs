@@ -578,6 +578,13 @@ impl Knowledge {
             }
             Trace::Mixed { cards } => {
                 self.settle();
+                let mut held: Vec<_> = cards
+                    .iter()
+                    .filter(|c| matches!(self.zone[c.index()], Zone::Discard(_)))
+                    .filter_map(|&c| self.held_with(c))
+                    .collect();
+                held.sort_unstable();
+                held.dedup();
                 self.face_up.retain(|c| !cards.contains(c));
                 // Mixed with other cards (a whole deck shuffled), a held set's cards are
                 // no longer the ones looked at together.
@@ -589,7 +596,16 @@ impl Knowledge {
                     .iter()
                     .copied()
                     .filter(|c| !marked(self.is[c.index()]));
-                for mind in &mut self.minds {
+                for (v, mind) in self.minds.iter_mut().enumerate() {
+                    for set in &held {
+                        if set
+                            .iter()
+                            .any(|c| self.zone[c.index()].owner() != Some(PlayerId(v as u8)))
+                        {
+                            mind.split_off(set);
+                            mind.merge(set.iter().copied());
+                        }
+                    }
                     mind.merge(mixed.clone());
                     mixed.clone().for_each(|c| {
                         mind.recent.remove(&c);
