@@ -46,12 +46,18 @@ pub fn router(
             Error(StatusCode::METHOD_NOT_ALLOWED, "method not allowed".into())
         })
         .with_state(Api { hub, stop });
-    let assets = match &options.assets_dir {
-        Some(dir) => Router::new()
-            .fallback_service(ServeDir::new(dir).append_index_html_on_directories(false))
-            .layer(middleware::map_response(cache_forever)),
-        None => Router::new(),
-    };
+    // The web client's bundler puts its own (content-hashed) files under /assets too:
+    // the cache answers first, then the client's.
+    let dir = |d: &std::path::Path| ServeDir::new(d).append_index_html_on_directories(false);
+    let client = options.web_dir.as_ref().map(|d| d.join("assets"));
+    let assets = match (&options.assets_dir, &client) {
+        (Some(cache), Some(client)) => {
+            Router::new().fallback_service(dir(cache).fallback(dir(client)))
+        }
+        (Some(only), None) | (None, Some(only)) => Router::new().fallback_service(dir(only)),
+        (None, None) => Router::new(),
+    }
+    .layer(middleware::map_response(cache_forever));
     let site = Router::new()
         .nest("/api", api)
         .nest_service("/assets", assets);
