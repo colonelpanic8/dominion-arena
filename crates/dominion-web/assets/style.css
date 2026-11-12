@@ -89,33 +89,6 @@ input[type=checkbox] { padding: 0; }
 .actions { display: flex; gap: .5em; margin-top: .8em; align-items: center; }
 .right { margin-left: auto; }
 
-/* Lobby */
-.lobby-forms { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1em; align-items: start; }
-@media (max-width: 900px) { .lobby-forms { grid-template-columns: 1fr; } }
-.game-table { width: 100%; border-collapse: collapse; }
-.game-table th, .game-table td { text-align: left; padding: .4em .5em; border-bottom: 1px solid var(--line); vertical-align: top; }
-.game-table th { color: var(--muted); font-weight: 500; }
-.game-table tr.mine { background: #232a20; }
-.game-table .seat { margin-right: .6em; }
-.game-table .seat.held { color: var(--good); font-weight: 600; }
-.game-table .running { color: var(--good); }
-.game-table .finished { color: var(--muted); }
-.kingdom-cell { color: var(--muted); max-width: 40em; }
-.seats { display: flex; flex-direction: column; gap: .35em; margin: .4em 0 .6em; }
-.seat-row { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; }
-.seat-no { width: 4.5em; color: var(--muted); }
-.tristate { display: flex; gap: .3em; align-items: center; margin: .35em 0; }
-.tristate .label { width: 6em; color: var(--muted); }
-.set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(11em, 1fr)); gap: .2em .8em; margin: .4em 0 .6em; }
-.picker { margin: .6em 0; }
-.chips { display: flex; flex-wrap: wrap; gap: .3em; margin: .3em 0; }
-.chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: .1em .3em .1em .7em; }
-.chip-x { border: 0; background: none; padding: 0 .35em; color: var(--muted); }
-.tokens .token-row { border-top: 1px solid var(--line); padding: .6em 0; }
-.tokens code { background: #11131a; padding: .3em .5em; border-radius: 4px; word-break: break-all; }
-.tokens .row { margin: .3em 0; }
-.tokens .mcp { flex: 1; min-width: 20em; }
-
 /* Game page */
 .seat-bar { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; margin-bottom: .8em; }
 .plain-game { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 1em; align-items: start; }

@@ -11,6 +11,10 @@ From the repo root (direnv loads the Nix dev shell; otherwise prefix `nix develo
 - `just check`: fmt-check, clippy `-D warnings` (and dominion-web for wasm32), tests.
 - `just web-build` / `web-serve` / `web-dev`: build, serve or hot-reload the web client.
 - `just fmt`: format Rust and `flake.nix`.
+- Nix: `packages.default` is `dominion`, `packages.web` the client (dx in the sandbox,
+  with wasm-bindgen pinned to the crate's version), `packages.dominion-with-web` the binary
+  wrapped with `DOMINION_WEB_DIR`. Bumping wasm-bindgen means bumping both the crate pin
+  and `wasm-bindgen-cli_*` in `flake.nix`. `nix flake check` builds all but the wrapper.
 - Focused: `cargo test -p dominion-engine tests::<set>`.
 
 ## Layout
@@ -60,7 +64,10 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/board.rs       a view arranged for drawing: piles, players, stacks, status
   src/game/logfmt.rs      the log as display lines: turn headers, depth, card spans
   tests/table.rs          those three models property-tested over random real games
-  src/lobby.rs            game list, new game, join by token
+  src/lobby.rs            game list, new game (the kingdom builder), join by token
+  src/kingdom.rs          the builder's model: piles by set, tray, randomizer, NewGame (pure)
+  assets/lobby.css        lobby styles
+  tests/kingdom.rs        the randomizer and request building against the engine's cards
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

@@ -57,6 +57,9 @@ pub struct GameSummary {
     /// The seat that must decide now.
     pub deciding: Option<u8>,
     pub kingdom: Vec<String>,
+    /// Events, Landmarks, Projects, Ways, ... in the game.
+    #[serde(default)]
+    pub landscapes: Vec<String>,
 }
 
 /// `GET /api/seat`: the seat a token holds.

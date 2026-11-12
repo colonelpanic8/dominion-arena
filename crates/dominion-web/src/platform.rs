@@ -74,6 +74,18 @@ mod imp {
         js_sys::encode_uri_component(s).into()
     }
 
+    pub fn scroll_to_top() {
+        if let Some(w) = window() {
+            w.scroll_to_with_x_and_y(0.0, 0.0);
+        }
+    }
+
+    /// A seed for previews that need no reproducibility.
+    pub fn random_seed() -> u64 {
+        let half = || (js_sys::Math::random() * 4_294_967_296.0) as u64;
+        (half() << 32) | half()
+    }
+
     /// The window's inner size in CSS pixels.
     pub fn viewport() -> (f64, f64) {
         let Some(w) = window() else {
@@ -117,6 +129,14 @@ mod imp {
     }
 
     pub fn copy(_text: &str) {}
+
+    pub fn scroll_to_top() {}
+
+    pub fn random_seed() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos() as u64)
+    }
 
     pub fn viewport() -> (f64, f64) {
         (1280.0, 800.0)

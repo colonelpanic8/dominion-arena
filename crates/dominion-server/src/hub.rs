@@ -460,6 +460,12 @@ impl Hub {
                         .iter()
                         .map(|c| c.name().to_string())
                         .collect(),
+                    landscapes: t
+                        .game()
+                        .landscapes()
+                        .iter()
+                        .map(|c| c.name().to_string())
+                        .collect(),
                 }
             })
             .collect()
