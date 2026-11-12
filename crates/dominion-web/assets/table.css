@@ -317,7 +317,8 @@ body:has(.dt-root) .topbar { display: none; }
 }
 .dt-ticker .dt-name, .dt-ticker .dt-pc { font-family: var(--title); }
 .dt-error { color: #ff7f7f; }
-.dt-forfeit { color: #ffb347; }
+.dt-forfeit { color: #ffb347; margin-left: 0.8em; }
+.dt-watch-mark + .dt-forfeit, .dt-ticker > .dt-forfeit:first-child { margin-left: 0; }
 .dt-watch-mark { color: #f5d36a; }
 .dt-end {
   position: absolute;
