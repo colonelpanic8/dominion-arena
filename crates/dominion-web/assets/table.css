@@ -436,7 +436,7 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-score {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(12, 10, 8, 0.93);
   overflow-y: auto;
   z-index: 26000;
 }

@@ -62,20 +62,27 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
                           "Play Treasures" (`TreasureRun`)
   src/game/board.rs       a view arranged for drawing: piles, players, stacks, status
-  src/game/table/         the graphical table, the game page's default view (Plain is a toggle)
-    mod.rs                `TableGame`, `TableCtx` (selection, hover preview, popups, keys,
-                          the Play Treasures run), `Mark`: how a card takes part in a decision
+  src/game/table/         the graphical table, dominion.games' layout and behaviour; the game
+                          page's default view (Plain is a toggle)
+    mod.rs                `TableGame`, `TableCtx` (selection, study view, windows, keys,
+                          the Autoplay Treasures run), `Mark`: how a card takes part in a
+                          decision and the colour of its border
     model.rs              each target's `Spot` on the table; play area this turn / earlier (pure)
-    motion.rs             cards seen moving: DOM snapshot before a view change, ghost cards
-                          and slides after it (`moves`), the pool ghosts are cloned from
-    sound.rs              the turn chime, shuffle and end-of-game sounds; the mute toggle
-    layout.rs             pixel sizes of the Supply band, play area and hand from measured boxes
-                          (pure; the table measures `.dt-middle` and `.dt-hand`)
-    pieces.rs             `TableCard` (glow, picks, counts, badges), badges, `HoverName`, preview
-    supply.rs players.rs prompt.rs side.rs   Supply and strip; opponents, play area, your
-                          cards; status/prompt bar and tray; log, "more" panel, game over
+    motion.rs             cards seen moving: DOM snapshot before a view change, ghosts after
+                          it (`moves`) with dominion.games' per-destination scripts and
+                          Animation Type timings
+    sound.rs              your-turn and end-of-game sounds when dominion.games plays them
+    layout.rs             every zone's box from the window size, in dominion.games' vh/vw
+                          rules: basic columns, kingdom grid, rows, windows (pure)
+    pieces.rs             `TableCard` (action-coloured border, crosses, counts, plus, All),
+                          badges, `CardName`, the study view
+    supply.rs players.rs prompt.rs side.rs   Supply and tabs; player bars, peeking opponent
+                          piles, play row, your hand and piles; status bar, buttons, decision
+                          window; log, "more" panel, game end and score screen
+  src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
   assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
-  src/game/logfmt.rs      the log as display lines: turn headers, depth, card spans
+  src/game/logfmt.rs      the log in dominion.games' wording: initials, card lists with
+                          articles and plurals, merged runs, turn headers, depth
   src/game/moves.rs       which cards moved where between two boards, from the log and the
                           boards (pure); ghosts summarising them
   tests/table.rs          those models and the table's spots property-tested over random games

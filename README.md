@@ -81,12 +81,12 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | Route | Body | Returns |
 | --- | --- | --- |
 | `GET /api/cards` | | every card-shaped object as printed |
-| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationMs, webSounds, webVolume}` |
+| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume}` |
 | `GET /api/games` | | the games, as `list_games` gives them |
 | `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
-| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version}`; with `logFrom`, the log from entry N |
-| `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | `{view, version}` after it |
+| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them |
+| `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version}`: on connect and after every change |
 
 `/assets/` serves the asset cache (`assets_dir`), then the web client's own bundled files
@@ -106,7 +106,10 @@ keep_finished_days = 7         # serve: delete finished games this old at startu
 assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
 web_animations = true          # serve: the web client shows cards moving
-web_animation_ms = 250         # serve: how long one card takes to move, in milliseconds
+web_animation_speed = "standard"  # serve: slow, standard, sprightly, swift, speedy or none (dominion.games' Animation Type)
+web_move_kingdom = true        # serve: on other players' turns the kingdom drops and their play row goes above it
+web_confirm_single = false     # serve: a single card to trash, discard, exile or topdeck waits for a button
+web_background = "inheritance" # serve: the painting under the table, from the asset cache's images/large ("" for none)
 web_sounds = true              # serve: the web client plays dominion.games' sounds (from the asset cache)
 web_volume = 0.5               # serve: their volume, 0.0 to 1.0
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
@@ -142,15 +145,17 @@ cards, with Randomize filling the unlocked slots. A chosen kingdom is played exa
 given, also with fewer or more than ten piles; its landscapes are the ones in the tray,
 plus an Ally or Prophecy the kingdom needs.
 
-The game page is a table laid out like dominion.games': opponents along the top, the
-Supply with the play area under it, your hand, and the log on the right. The cards and
-piles you may choose glow and are clicked where they lie; other choices appear in a tray
-or as buttons. Hovering over a card or right-clicking it shows it large; Enter confirms,
-Escape clears, E ends a phase and T plays your Treasures. Cards are seen moving between
-zones, as inferred from the log and the change in the view (`web_animations`,
-`web_animation_ms`; none with `prefers-reduced-motion`), and dominion.games' sounds mark
-your turn, your shuffles and the end of the game (`web_sounds`, `web_volume`, and a
-mute toggle on the page for the session). A Plain toggle shows the same game as text
+The game page is a table laid out and behaving like dominion.games': player bars and
+the basic piles on the left, the kingdom sorted by cost with the turn player's play row
+under it, the status bar with the prompt and the phase's end button, a row of named
+buttons above it, your hand at the bottom, and the log on the right in dominion.games'
+wording. Cards are clicked where they lie, their borders coloured by what a click does;
+revealed or looked-at cards open in a window; right-click studies a card; hovering a
+tab opens the trash or a mat. Enter confirms, Escape clears, E ends a phase and T
+autoplays Treasures. Cards move as dominion.games moves them, at its Animation Type
+speeds (`web_animation_speed`, `web_animations`; none with `prefers-reduced-motion`),
+and its sounds play when it plays them: your turn coming back to you and the end of the
+game (`web_sounds`, `web_volume`, and a mute toggle on the page for the session). A Plain toggle shows the same game as text
 and buttons.
 
 The client keeps the seat tokens it holds in the browser's localStorage; a seat link
