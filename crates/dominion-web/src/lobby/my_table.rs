@@ -858,7 +858,9 @@ fn LockedKingdom(game: GameSummary, study: Signal<Option<String>>) -> Element {
                         }
                     }
                 }
-                div { class: "lb-landscapes narrow",
+                div {
+                    class: "lb-landscapes",
+                    style: "width: calc({game.landscapes.len().div_ceil(2).max(1) * 15} * var(--lu));",
                     for name in game.landscapes.iter().cloned() {
                         div {
                             key: "{name}",
