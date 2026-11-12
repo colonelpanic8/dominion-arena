@@ -319,3 +319,78 @@ async fn two_people_are_matched_and_play_through_their_sessions() {
         .json();
     assert_eq!(history["games"].as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn a_signed_in_onlooker_watches_a_lobby_game_and_sees_no_hands() {
+    let server = start().await;
+    let (ada, bo, cy) = (
+        server.register("Ada").await,
+        server.register("Bo").await,
+        server.register("Cy").await,
+    );
+    server
+        .post("/api/automatch", Some(&ada), Value::Null)
+        .await
+        .ok();
+    let found: QueueStatus = server
+        .post("/api/automatch", Some(&bo), Value::Null)
+        .await
+        .json();
+    let path = format!("/api/games/{}", found.game_id.unwrap());
+    server
+        .get(&format!("{path}/watch"), None)
+        .await
+        .error(StatusCode::UNAUTHORIZED);
+    let watched: SeatView = server.get(&format!("{path}/watch"), Some(&cy)).await.json();
+    assert!(watched.view.spectating && watched.view.seat.is_none());
+    assert!(watched.view.you.is_none() && watched.view.decision.is_none());
+    assert_eq!(watched.view.opponents.len(), 2);
+    for player in &watched.view.opponents {
+        assert_eq!((player.hand.count, player.hand.unknown), (5, 5));
+    }
+    assert!(watched.deciding.is_some());
+    // While the onlooker's feed is open, the players see that someone watches.
+    let mut feed = server
+        .http
+        .get(format!("{}{path}/events", server.base))
+        .bearer_auth(&cy)
+        .send()
+        .await
+        .unwrap()
+        .bytes_stream();
+    next_change(&mut feed).await;
+    let mine: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
+    assert_eq!(mine.meta.watchers, 1);
+    let chat = path.replace("/api/games/", "/api/chat/game-");
+    server
+        .post(&chat, Some(&cy), json!({ "text": "nice hand" }))
+        .await
+        .ok();
+    let log: ChatLog = server.get(&chat, Some(&ada)).await.json();
+    assert_eq!(
+        log.messages[0].kind,
+        dominion_protocol::lobby::ChatKind::Watcher
+    );
+    // A game made by hand is its seats' only, unless it says otherwise.
+    let made: Value = server
+        .post("/api/games", None, json!({ "players": 2 }))
+        .await
+        .ok()
+        .json();
+    let private = format!("/api/games/{}/watch", made["game_id"].as_str().unwrap());
+    server
+        .get(&private, Some(&cy))
+        .await
+        .error(StatusCode::FORBIDDEN);
+    let open: Value = server
+        .post(
+            "/api/games",
+            None,
+            json!({ "players": 2, "watchable": true }),
+        )
+        .await
+        .ok()
+        .json();
+    let public = format!("/api/games/{}/watch", open["game_id"].as_str().unwrap());
+    server.get(&public, Some(&cy)).await.ok();
+}

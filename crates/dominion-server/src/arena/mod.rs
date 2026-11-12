@@ -273,6 +273,7 @@ struct Limits {
     login: Limiter<IpAddr>,
     login_name: Limiter<String>,
     create: Limiter<IpAddr>,
+    deal: Limiter<IpAddr>,
     chat: Limiter<String>,
     lobby: Limiter<String>,
 }
@@ -286,6 +287,7 @@ impl Default for Limits {
             login: Limiter::new(20, minutes(5)),
             login_name: Limiter::new(10, minutes(5)),
             create: Limiter::new(30, minutes(10)),
+            deal: Limiter::new(60, minutes(1)),
             chat: Limiter::new(8, Duration::from_secs(10)),
             lobby: Limiter::new(60, minutes(1)),
         }
@@ -535,6 +537,7 @@ impl Arena {
         l.login.sweep();
         l.login_name.sweep();
         l.create.sweep();
+        l.deal.sweep();
         l.chat.sweep();
         l.lobby.sweep();
     }
@@ -542,5 +545,10 @@ impl Arena {
     /// Whether `ip` may create another game by hand now.
     pub fn may_create(&self, ip: IpAddr) -> Result<()> {
         limited(&self.limits.create, ip, "games created")
+    }
+
+    /// Whether `ip` may have another kingdom dealt now.
+    pub fn may_deal(&self, ip: IpAddr) -> Result<()> {
+        limited(&self.limits.deal, ip, "kingdoms dealt")
     }
 }

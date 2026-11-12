@@ -537,8 +537,9 @@ async fn create(
     Ok((StatusCode::CREATED, axum::Json(created)))
 }
 
-async fn deal(req: Bytes) -> Json<Dealt> {
+async fn deal(State(api): State<Api>, info: Peer, headers: HeaderMap, req: Bytes) -> Json<Dealt> {
     let req: DealRequest = body(&req)?;
+    api.arena.may_deal(api.ip(&headers, peer(info)))?;
     Ok(axum::Json(crate::hub::deal(&req)?))
 }
 

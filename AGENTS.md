@@ -42,12 +42,25 @@ crates/dominion-engine/
   src/tests/<set>.rs      each set's card tests
   src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
-crates/dominion-protocol/ serde types of agent-view@2, the HTTP API and the asset manifest; engine-free,
-                          builds for wasm
+crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; accounts and the
+                          lobby in `lobby`) and the asset manifest; engine-free, builds for wasm
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
+  src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
+                          came from, the accounts playing it, rated / watchable / timed),
+                          who is connected, forfeits; calls back when a game ends
+  src/arena/              who is playing (README "Accounts and the lobby"); its lock order
+                          is in mod.rs
+    mod.rs                `Arena`: state, the lobby snapshot, the sweep that runs every 5 s
+    accounts.rs           accounts, passwords, sessions, bots and their API keys
+    tables.rs matching.rs lobby tables; the automatch queue
+    chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard
+  src/rating.rs           Glicko-2 (pure)
+  src/limits.rs           token-bucket rate limits (pure)
+  src/store.rs            the state directory: JSON files written atomically
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
+  src/mcp.rs              the MCP tools, one `Session` per MCP session
 crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
                           only on dominion-protocol (engine crates are dev-dependencies)
   src/api.rs              typed client for /api and the SSE change feed
@@ -391,6 +404,11 @@ them.
   set whole), the cards of a deck or discard pile they looked through, until shuffled with
   other cards. `g.show` such a card first when everyone
   knows which it is; other cards of a deck or discard pile are followed by everyone.
+  `Knowledge::with_watcher` also keeps the mind of a viewer who is no player
+  (`Game::watch()` is their `View`, `Table::watch_view` their agent view): they follow
+  exactly what is public, and the agent crate's random-game test holds them to knowing no
+  more than any seat. `Game::resign` ends a game where it stands, out of band: the
+  resigner is last, and nothing is logged.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which
