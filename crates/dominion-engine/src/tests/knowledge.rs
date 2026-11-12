@@ -1612,3 +1612,45 @@ fn private_revealed_put_back_order_does_not_reach_other_seats() {
     assert_eq!(a.zone(Zone::Hand(P1)), b.zone(Zone::Hand(P1)));
     assert_eq!(a.zone(Zone::Deck(P1)), b.zone(Zone::Deck(P1)));
 }
+
+#[test]
+fn revealed_cards_split_between_hand_and_deck_stay_known() {
+    let mut g = setup(&[Card::Seer]);
+    hand(&mut g, P0, &[Card::Seer]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Estate,
+            Card::Silver,
+            Card::Copper,
+            Card::Duchy,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Seer);
+    k.update(&mut g);
+    // +1 Card drew the Gold; Estate and Silver went to the hand, the Copper back.
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Duchy]);
+    assert!(logged_in_order(
+        &g,
+        &[moved(
+            P0,
+            Zone::Looking(P0),
+            Zone::Deck(P0),
+            &[Card::Copper],
+            1
+        )]
+    ));
+    let theirs = k.known(&g, P1);
+    assert_eq!(
+        theirs.zone(Zone::Deck(P0)).known,
+        count(&[(Card::Copper, 1)]),
+        "{theirs:#?}"
+    );
+    assert_eq!(
+        theirs.zone(Zone::Hand(P0)).known,
+        count(&[(Card::Estate, 1), (Card::Silver, 1)])
+    );
+}
