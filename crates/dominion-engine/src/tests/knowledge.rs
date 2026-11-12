@@ -221,6 +221,27 @@ fn mixing_some_known_copies_keeps_the_untouched_copies_known() {
     );
 }
 
+#[test]
+fn a_family_in_one_zone_keeps_its_whole_known_multiset() {
+    let mut g = setup(&[Card::Sauna]);
+    hand(&mut g, P0, &[]);
+    let cards = deck(&mut g, P0, &[Card::Copper, Card::Sauna]);
+    let (g, k) = start(g);
+    let world = |mixed: Vec<CardId>| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        g.mixed(mixed);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(vec![cards[0]]), world(cards));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+    assert_eq!(
+        ka.known(&a, P1).zone(Zone::Deck(P0)).known,
+        count(&[(Card::Copper, 1), (Card::Sauna, 1)])
+    );
+}
+
 fn uncertain_over(known: &KnownCards, zones: &[Zone]) -> Option<CardCount> {
     known
         .uncertain

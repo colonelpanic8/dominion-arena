@@ -970,12 +970,24 @@ impl Knowledge {
             }
         };
         let mind = &self.minds[viewer.index()];
-        for family in mind.families.iter().filter(|f| !f.groups.is_empty()) {
+        let mut whole = HashSet::new();
+        let mut whole_zones = vec![];
+        for (i, family) in mind
+            .families
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| !f.groups.is_empty())
+        {
             let mut cards = family
                 .groups
                 .iter()
                 .flat_map(|&g| mind.groups[g].cards.iter().copied());
-            own(&zones_of(&mut cards), family.ids.as_ref());
+            let zones = zones_of(&mut cards);
+            own(&zones, family.ids.as_ref());
+            if let ([(zone, n)], Some(ids)) = (&zones[..], &family.ids) {
+                whole.insert(i);
+                whole_zones.push((*zone, *n, ids));
+            }
         }
         let groups = mind.groups.iter().filter(|g| !g.cards.is_empty());
         for (group, zones) in groups.map(|g| (g, zones_of(&mut g.cards.iter().copied()))) {
@@ -983,7 +995,17 @@ impl Knowledge {
                 own(&zones, group.ids.as_ref());
             }
         }
+        for (zone, n, ids) in whole_zones {
+            let z = out.zones.entry(zone).or_default();
+            z.count += n;
+            for (&c, &k) in ids {
+                add(&mut z.known, c, k);
+            }
+        }
         for group in mind.groups.iter().filter(|g| !g.cards.is_empty()) {
+            if group.family.is_some_and(|f| whole.contains(&f)) {
+                continue;
+            }
             let zones = zones_of(&mut group.cards.iter().copied());
             let mut extra = group.extra;
             let ids = match (&group.cards[..], &group.ids) {

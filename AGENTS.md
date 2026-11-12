@@ -399,6 +399,8 @@ them.
   nobody can follow.
   Mixing splits the mixed cards from groups containing untouched cards. Cards with
   only one possible identity are removed from their family's candidate pool.
+  A family wholly in one zone is known there as its whole multiset, even when its
+  groups still distinguish parts that could be followed later.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which
