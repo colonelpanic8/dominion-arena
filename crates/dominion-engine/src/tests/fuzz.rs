@@ -1734,7 +1734,6 @@ const TRANSIENT_EXT: &[(&str, &str)] = &[
     ("adventures", "extra_ports"),
     ("renaissance", "sewers"),
     ("renaissance", "experiments"),
-    ("menagerie", "chameleon"),
 ];
 
 fn numbers(v: &Json, out: &mut HashSet<u64>) {
@@ -1762,6 +1761,9 @@ fn check_invariants(g: &Game, flags: &mut Flags) {
         if !matches!(g.zone(c), Zone::InPlay(_)) {
             flags.bug("mask-on-a-card-not-in-play", || ctx(g));
         }
+    }
+    if g.coins_as_cards.is_some() {
+        flags.bug("coins-as-cards-outside-a-step", || ctx(g));
     }
     let counters = [t.actions, t.buys, t.coins, t.potions, g.trade_route_mat];
     if counters.iter().any(|&x| x > BIG) {

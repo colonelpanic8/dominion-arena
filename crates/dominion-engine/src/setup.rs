@@ -203,6 +203,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         holds: vec![],
         emptied_depth: 0,
         ext: Ext::default(),
+        coins_as_cards: None,
         stack: vec![],
         pending: None,
         log: vec![],
