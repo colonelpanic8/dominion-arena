@@ -118,6 +118,7 @@ pub(crate) fn moved(player: PlayerId, from: Zone, to: Zone, cards: &[Card], coun
         cards: cards.to_vec(),
         count,
         bottom: false,
+        under: 0,
     }
 }
 

@@ -191,12 +191,12 @@ fn apprentice(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
-            let cost = f.s.cost;
+            let cost = g.cost_of(f.s.pick.expect("set in step 1"));
             let n = cost.coins as usize + if cost.potions > 0 { 2 } else { 0 };
             f.pc = 3;
             Flow::Call(Frame::draw(f.player, n))

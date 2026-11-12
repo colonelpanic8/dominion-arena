@@ -700,6 +700,7 @@ fn resume_shuffle(
             g.mixed(mixed);
             *count = under.len();
             g.last_shuffle = under.clone();
+            g.shuffle_placed.clear();
             let pl = &mut g.players[p.index()];
             under.append(&mut pl.deck);
             pl.deck = under;
@@ -1632,9 +1633,10 @@ impl PlayFrame {
                     g.turn.buys += bonus.plus.buys as u32;
                     g.turn.potions += bonus.potions;
                 }
-                let had = g.turn.coins;
+                let had = g.player(p).coins_got;
                 g.add_coins(p, bonus.plus.coins as u32 + bonus.coins);
-                g.plays.last_mut().expect("play in progress").gave_coins |= g.turn.coins > had;
+                g.plays.last_mut().expect("play in progress").gave_coins |=
+                    g.player(p).coins_got > had;
                 self.pc = 5;
                 Flow::Call(Frame::draw(p, bonus.plus.cards as usize))
             }

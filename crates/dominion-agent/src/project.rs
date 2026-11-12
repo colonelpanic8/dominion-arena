@@ -1000,7 +1000,7 @@ fn place(game: &Game, zone: Zone, player: PlayerId, cx: &Context<'_>) -> String 
 fn put_text(
     game: &Game,
     player: PlayerId,
-    (from, to, bottom): (Option<Zone>, Zone, bool),
+    (from, to, bottom, under): (Option<Zone>, Zone, bool, usize),
     cards: &[Card],
     count: usize,
     cx: &Context<'_>,
@@ -1035,6 +1035,10 @@ fn put_text(
     match to {
         Zone::SetAside(p) if p == player => format!("sets aside {what}{from}"),
         Zone::Pile(_) => format!("returns {what}{from} to {to_text}"),
+        Zone::Deck(_) if under > 0 => format!(
+            "puts {what}{from} into {to_text}, under {}",
+            several(under, "card", "cards")
+        ),
         Zone::Deck(_) => format!("puts {what}{from} onto {to_text}"),
         Zone::Mat(..) => format!("puts {what}{from} on {to_text}"),
         _ => format!("puts {what}{from} into {to_text}"),
@@ -1169,6 +1173,11 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             Some(*card),
             format!("{} discards {card}", name(*player)),
         ),
+        Event::Exchanged { player, card, into } => (
+            Some(*player),
+            Some(*card),
+            format!("{} exchanges {card} for {into}", name(*player)),
+        ),
         Event::TopDecked { player, card } => (
             Some(*player),
             *card,
@@ -1228,8 +1237,10 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             cards,
             count,
             bottom,
+            under,
         } => {
-            let text = put_text(game, *player, (*from, *to, *bottom), cards, *count, cx);
+            let place = (*from, *to, *bottom, *under);
+            let text = put_text(game, *player, place, cards, *count, cx);
             let card = (*count == 1).then(|| cards.first().copied()).flatten();
             (Some(*player), card, format!("{} {text}", name(*player)))
         }

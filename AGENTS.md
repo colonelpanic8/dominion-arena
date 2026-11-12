@@ -306,7 +306,9 @@ them.
   known). Anything that reveals a specific card must record it: `g.reveal(p, id)`
   instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to` for other
   reveals and looks, `g.look_through_discard(p)` before a player picks from their
-  discard pile. Cards that change zones must go through `move_card` (or record a
+  discard pile, `g.look_through_shuffled(p)` (and `g.look_over_shuffled(p)` for the cards
+  left on the deck) where a "when you shuffle" choice looks through the shuffled cards,
+  then `g.reshuffle_unplaced(p, placed)` once the others are shuffled again. Cards that change zones must go through `move_card` (or record a
   `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
   Only its owner follows a card that leaves cards they hold out of sight: a hand,
   cards taken off their deck to look at, cards set aside face down together (move them one after the other), the cards of a
@@ -323,7 +325,8 @@ them.
   first thing it does, and `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
   Boon rather than a card's own play are logged as `Bonus`. So never emit a move or
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
-  it.
+  it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one
+  `Exchanged` line.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The

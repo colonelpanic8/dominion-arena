@@ -380,6 +380,33 @@ fn cargo_ships_say_what_keeps_them_in_play() {
     assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
 }
 
+/// Two Cargo Ships played one after the other are one option: no one can tell which of
+/// them stays in play.
+#[test]
+fn separately_played_cargo_ships_are_one_option() {
+    let mut g = setup(&[Card::CargoShip, Card::Village]);
+    let cards = [Card::Village, Card::CargoShip, Card::CargoShip];
+    hand(&mut g, P0, &cards);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::CargoShip);
+    play(&mut g, Card::CargoShip);
+    to_buy(&mut g);
+    buy(&mut g, Card::Silver);
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        [
+            "Cargo Ship: set Silver aside on Cargo Ship (optional)",
+            "Decline"
+        ]
+    );
+    trigger(&mut g, Card::CargoShip);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Silver]);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
+}
+
 #[test]
 fn cargo_ship_that_sets_nothing_aside_is_discarded() {
     let mut g = setup(&[Card::CargoShip, Card::Smithy]);

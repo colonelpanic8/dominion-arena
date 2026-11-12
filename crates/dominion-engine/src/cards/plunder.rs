@@ -424,7 +424,7 @@ impl SetRules for Rules {
     /// (Harbor Village). Way of the Chameleon's exchange (Menagerie's, which runs first)
     /// counts as what the step gave.
     fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, _flow: &mut Flow) {
-        if f.player != g.turn.player || g.turn.coins <= before.coins {
+        if g.player(f.player).coins_got <= before.coins {
             return;
         }
         let this = f.this.or_else(|| {
@@ -637,20 +637,21 @@ fn this_turn_lasting(g: &Game, card: Card, p: PlayerId) -> Option<&Lasting> {
         .find(|l| l.card == card && l.owner == p && l.until == Until::EndOfTurn)
 }
 
-/// The pile Trait `t` is on.
+/// The pile Trait `t` is on, unless Divine Wind removed it.
 fn trait_pile(g: &Game, t: Card) -> Option<PileId> {
     if !g.has_landscape(t) {
         return None;
     }
     (0..g.piles().len())
         .map(|i| PileId(i as u8))
-        .find(|&p| g.pile(p).traits.contains(&t))
+        .find(|&p| !g.pile(p).removed && g.pile(p).traits.contains(&t))
 }
 
 /// Whether cards named `card` are from the pile with Trait `t` (even once that pile is
 /// out of the game).
 fn is_trait(g: &Game, card: Card, t: Card) -> bool {
-    trait_pile(g, t).is_some_and(|pile| g.origin_pile(card) == Some(pile))
+    g.has_landscape(t)
+        && g.origin_pile(card).is_some_and(|pile| g.pile(pile).traits.contains(&t))
 }
 
 fn is_traited(g: &Game, id: CardId, t: Card) -> bool {
@@ -658,7 +659,7 @@ fn is_traited(g: &Game, id: CardId, t: Card) -> bool {
 }
 
 fn traited_in_hand(g: &Game, p: PlayerId, t: Card) -> Vec<CardId> {
-    if trait_pile(g, t).is_none() {
+    if !g.has_landscape(t) {
         return vec![];
     }
     g.hand(p)
@@ -1569,6 +1570,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 1;
                 let mut shuffled = g.shuffled(p).to_vec();
                 shuffled.sort();
+                g.look_through_shuffled(p);
                 return f.ask_cards(shuffled, 0, 3, Purpose::Move).question("put into your discard pile");
             }
             for c in input.cards() {
@@ -1576,6 +1578,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
             }
+            g.reshuffle_unplaced(p, &[]);
             Flow::done()
         }
         Card::Fated => fated(g, f, input),
@@ -1591,7 +1594,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 fn shuffled_fated(g: &Game, p: PlayerId) -> Vec<CardId> {
-    if trait_pile(g, Card::Fated).is_none() {
+    if !g.has_landscape(Card::Fated) {
         return vec![];
     }
     let mut fated: Vec<CardId> = g
@@ -1613,6 +1616,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let fated = shuffled_fated(g, p);
             let n = fated.len();
+            g.look_through_shuffled(p);
             f.s.cards = fated.clone();
             f.pc = 1;
             f.ask_cards(fated, 0, n, Purpose::TopDeck)
@@ -1667,7 +1671,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.s.cards.splice(top.., input.cards());
             }
             let in_deck = |c: &CardId| g.zone(*c) == Zone::Deck(p);
-            let on_top: Vec<CardId> = f.s.cards[..top].iter().copied().filter(in_deck).collect();
+            let mut on_top: Vec<CardId> = f.s.cards[..top].iter().copied().filter(in_deck).collect();
             let under: Vec<CardId> = f.s.cards[top..].iter().copied().filter(in_deck).collect();
             for &c in on_top.iter().chain(&under) {
                 if is_traited(g, c, Card::Fated) {
@@ -1683,6 +1687,8 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             new.extend(on_top.iter().rev());
             new.extend(&deck[rest..]);
             *deck = new;
+            on_top.extend(under);
+            g.reshuffle_unplaced(p, &on_top);
             Flow::done()
         }
     }
@@ -1846,8 +1852,9 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     };
     match f.pc {
         0 => {
+            // The opening hand is dealt again, as silently as the first time.
             for c in g.hand(p).to_vec() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
+                g.move_unlogged(c, Zone::Deck(p));
             }
             let mut kinds = vec![default];
             for &c in &starting {
@@ -1888,7 +1895,7 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let Some(&top) = g.players[p.index()].deck.last() else {
                     break;
                 };
-                g.move_card(top, Zone::Hand(p), Pos::Top);
+                g.move_unlogged(top, Zone::Hand(p));
             }
             Flow::done()
         }
@@ -1957,12 +1964,12 @@ fn remodel(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, extra: u8) -
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = base + 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = f.s.cost.plus_coins(extra);
+            let limit = g.cost_of(f.s.pick.expect("set when trashed")).plus_coins(extra);
             gain_up_to(g, f, input, base + 2, limit, Dest::Discard)
         }
     }
@@ -2114,12 +2121,13 @@ fn crucible(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            coins(g, f.player, f.s.cost.coins as u32);
+            let cost = g.cost_of(f.s.pick.expect("set in step 1"));
+            coins(g, f.player, cost.coins as u32);
             Flow::done()
         }
     }
@@ -2339,13 +2347,13 @@ fn pickaxe(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
             f.pc = 3;
-            if f.s.cost.coins >= 3 {
+            if g.cost_of(f.s.pick.expect("set in step 1")).coins >= 3 {
                 return gain_loot(g, f.player, Dest::Hand);
             }
             Flow::done()
@@ -2549,12 +2557,11 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if g.zone(this) != Zone::InPlay(p) {
                 return Flow::done();
             }
-            f.s.cost = g.cost_of(this);
             f.pc = 1;
             Flow::Call(Frame::trash(p, vec![this]))
         }
         1 => {
-            let limit = f.s.cost;
+            let limit = g.cost_of(this);
             let piles = g.supply_piles_where(|_, cost| cost.less_than(limit));
             if piles.is_empty() {
                 return Flow::done();

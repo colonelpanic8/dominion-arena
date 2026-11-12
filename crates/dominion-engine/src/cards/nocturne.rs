@@ -557,11 +557,6 @@ fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
     g.add_buys(p, n);
 }
 
-fn plus_coins(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.add_coins(p, n);
-    }
-}
 
 fn emit_hand(g: &mut Game, p: PlayerId) {
     let cards = g.hand(p).iter().map(|&c| g.card(c)).collect();
@@ -581,11 +576,7 @@ fn exchange(g: &mut Game, p: PlayerId, c: CardId, card: Card) -> bool {
     let Some(new) = g.pile_of(card).and_then(|pile| g.pile_top(pile)) else {
         return false;
     };
-    if !g.return_to_pile(c) {
-        return false;
-    }
-    g.move_card(new, Zone::Discard(p), Pos::Top);
-    true
+    g.exchange(p, c, new)
 }
 
 /// Gains a `card` from its pile (in the Supply or not) at step `at`, then goes to `next`.
@@ -807,7 +798,7 @@ fn boon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         let plus = f.card.def().plus;
         plus_actions(g, p, plus.actions as u32);
         plus_buys(g, p, plus.buys as u32);
-        plus_coins(g, p, plus.coins as u32);
+        g.add_coins(p, plus.coins as u32);
         // In front of its first receiver, whoever's turn it is.
         if kept_boon(f.card) && !g.players.iter().any(|pl| pl.boons_kept.contains(&f.card)) {
             g.players[p.index()].boons_kept.push(f.card);
@@ -1040,7 +1031,6 @@ fn locusts(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.s.pick = Some(c);
-            f.s.cost = g.cost_of(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
@@ -1049,7 +1039,7 @@ fn locusts(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if matches!(g.card(c), Card::Copper | Card::Estate) {
                 return gain_named(g, f, 2, Card::Curse, Dest::Discard, DONE);
             }
-            let (types, limit) = (g.types(c), f.s.cost);
+            let (types, limit) = (g.types(c), g.cost_of(c));
             let piles =
                 g.supply_piles_where(|t, cost| t.intersects(types) && cost.less_than(limit));
             if piles.is_empty() {
@@ -1469,12 +1459,12 @@ fn exorcist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let limit = f.s.cost;
+            let limit = g.cost_of(f.s.pick.expect("set in step 1"));
             let piles: Vec<PileId> = SPIRITS
                 .iter()
                 .filter_map(|&s| g.pile_of(s))
@@ -2149,12 +2139,13 @@ fn zombie_mason(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let piles = g.piles_costing_up_to(f.s.cost.plus_coins(1));
+            let cost = g.cost_of(f.s.pick.expect("set in step 1"));
+            let piles = g.piles_costing_up_to(cost.plus_coins(1));
             if piles.is_empty() {
                 return Flow::done();
             }

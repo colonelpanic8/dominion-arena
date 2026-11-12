@@ -98,6 +98,44 @@ impl Game {
         }
     }
 
+    /// Records that `p` looked through the cards they just shuffled ("when you shuffle"
+    /// choices); [`Game::reshuffle_unplaced`] then shuffles the others again.
+    pub(crate) fn look_through_shuffled(&mut self, p: PlayerId) {
+        if self.trace.is_some() {
+            for card in self.shuffled(p).to_vec() {
+                self.show_to(card, p);
+            }
+        }
+    }
+
+    /// Records that `p` looked at the cards left on their deck over the ones they just
+    /// shuffled, and returns them, top first.
+    pub(crate) fn look_over_shuffled(&mut self, p: PlayerId) -> Vec<CardId> {
+        let deck = &self.players[p.index()].deck;
+        let above: Vec<CardId> = deck[self.shuffled(p).len()..]
+            .iter()
+            .rev()
+            .copied()
+            .collect();
+        for &card in &above {
+            self.show_to(card, p);
+        }
+        above
+    }
+
+    /// After a look through the cards `p` shuffled, the ones still there that no choice
+    /// placed (`placed`, now, or earlier) are shuffled again.
+    pub(crate) fn reshuffle_unplaced(&mut self, p: PlayerId, placed: &[CardId]) {
+        self.shuffle_placed.extend_from_slice(placed);
+        let rest: Vec<CardId> = self
+            .shuffled(p)
+            .iter()
+            .copied()
+            .filter(|c| !self.shuffle_placed.contains(c))
+            .collect();
+        self.mixed(rest);
+    }
+
     /// Reveals `card` (one of `p`'s, or one they revealed): logs it and records it shown.
     pub(crate) fn reveal(&mut self, p: PlayerId, card: CardId) {
         self.show(card);

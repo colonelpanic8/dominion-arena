@@ -445,8 +445,20 @@ fn page_is_exchanged_for_a_treasure_hunter_when_discarded_from_play() {
         g.pile(g.pile_of(Card::TreasureHunter).unwrap()).cards.len(),
         4
     );
-    // Exchanging is not gaining.
+    // Exchanging is not gaining, and is one line of the log.
     assert!(!g.log().iter().any(|e| matches!(e, Event::Gained { .. })));
+    let exchanged = Event::Exchanged {
+        player: P0,
+        card: Card::Page,
+        into: Card::TreasureHunter,
+    };
+    assert!(g.log().contains(&exchanged));
+    assert!(
+        !g.log()
+            .iter()
+            .any(|e| matches!(e, Event::Moved { cards, .. }
+        if cards.contains(&Card::Page) || cards.contains(&Card::TreasureHunter)))
+    );
 }
 
 #[test]
@@ -1737,6 +1749,24 @@ fn bonus_tokens_apply_to_every_play_of_a_card_from_their_pile() {
     assert_eq!(g.turn().actions, 2);
     assert_eq!(g.turn().coins, 2);
     assert_eq!(g.hand(P0).len(), 2 * 4);
+}
+
+/// "When you play a card from that pile, you first get that bonus": before anything
+/// else answers the play (wiki, Adventures tokens: the card is drawn before Urchin is
+/// trashed).
+#[test]
+fn a_pile_tokens_bonus_comes_before_other_abilities_that_answer_the_play() {
+    let mut g = game(&[Card::Urchin, Card::Marauder], &[Card::Pathfinding]);
+    hand(&mut g, P0, &[Card::Urchin, Card::Marauder]);
+    deck(&mut g, P0, &[Card::Copper, Card::Gold]);
+    hand(&mut g, P1, &[Card::Copper; 3]);
+    g.start();
+    let marauder = g.supply_pile(Card::Marauder).unwrap();
+    place(&mut g, P0, Token::PlusCard, marauder);
+    play(&mut g, Card::Urchin);
+    play(&mut g, Card::Marauder);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Gold]);
 }
 
 #[test]

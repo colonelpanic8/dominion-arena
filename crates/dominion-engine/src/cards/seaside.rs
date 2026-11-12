@@ -149,8 +149,7 @@ impl SetRules for Rules {
             }
             Occasion::Play { player, card } => {
                 let silver_or_gold = |c: &Card| matches!(c, Card::Silver | Card::Gold);
-                let first = player == g.turn.player
-                    && silver_or_gold(&g.card(card))
+                let first = silver_or_gold(&g.card(card))
                     && g.turn.plays_by(player).filter(|(c, _)| silver_or_gold(c)).count() == 1;
                 if first
                     && active(g, Card::Corsair)
@@ -700,12 +699,13 @@ fn salvager(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            g.add_coins(f.player, f.s.cost.coins as u32);
+            let cost = g.cost_of(f.s.pick.expect("set in step 1"));
+            g.add_coins(f.player, cost.coins as u32);
             Flow::done()
         }
     }

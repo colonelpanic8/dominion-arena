@@ -57,6 +57,8 @@ impl Zone {
 pub(crate) enum Pos {
     Top,
     Bottom,
+    /// Under that many of the cards there.
+    Under(usize),
 }
 
 /// Adventures tokens a player can place.
@@ -105,6 +107,9 @@ pub struct Player {
     pub minus_card: bool,
     /// The -$1 token: the next time this player gets $, they get $1 less.
     pub minus_coin: bool,
+    /// The $ this player has got so far, on anyone's turn: "if it gave you +$".
+    #[serde(default)]
+    pub coins_got: u32,
     pub journey_face_up: bool,
     pub turns_taken: u32,
     /// How many of `turns_taken` were extra turns, which don't count for the tiebreaker.
@@ -466,6 +471,9 @@ pub struct Game {
     /// The cards of the latest shuffle (see [`Game::shuffled`]).
     #[serde(default)]
     pub(crate) last_shuffle: Vec<CardId>,
+    /// The cards of it that "when you shuffle" choices put on top of or under the others.
+    #[serde(default)]
+    pub(crate) shuffle_placed: Vec<CardId>,
     /// Cards taken off decks to be looked at or revealed, innermost last.
     #[serde(default)]
     pub(crate) holds: Vec<Hold>,
@@ -963,6 +971,7 @@ impl Game {
             plays: vec![],
             leaving: vec![],
             last_shuffle: vec![],
+            shuffle_placed: vec![],
             holds: vec![],
             emptied_depth: 0,
             ext: self.ext.clone(),
@@ -1107,7 +1116,7 @@ impl Game {
     }
 
     pub(crate) fn move_card(&mut self, id: CardId, to: Zone, pos: Pos) {
-        self.note_move(id, to, pos == Pos::Bottom);
+        self.note_move(id, to, pos);
         let from = self.zones[id.index()];
         let src = self.zone_vec(from);
         let i = src
@@ -1150,6 +1159,7 @@ impl Game {
         match pos {
             Pos::Top => dst.push(id),
             Pos::Bottom => dst.insert(0, id),
+            Pos::Under(n) => dst.insert(dst.len().saturating_sub(n), id),
         }
     }
 
@@ -1268,6 +1278,7 @@ impl Game {
         } else {
             n
         };
+        player.coins_got += n;
         if p == self.turn.player {
             self.turn.coins += n;
             self.note_bonus(p, 0, 0, n);
@@ -1309,6 +1320,23 @@ impl Game {
 
     pub(crate) fn put_on_mat(&mut self, id: CardId, p: PlayerId, mat: Mat) {
         self.move_card(id, Zone::Mat(p, mat), Pos::Top);
+    }
+
+    /// Exchanges `p`'s `id` for `new`, the top card of a pile: `id` returns to its pile and
+    /// `new` goes to `p`'s discard pile (nothing is gained). Returns whether it happened.
+    pub(crate) fn exchange(&mut self, p: PlayerId, id: CardId, new: CardId) -> bool {
+        let card = self.printed(id);
+        if !self.return_to_pile(id) {
+            return false;
+        }
+        self.move_card(new, Zone::Discard(p), Pos::Top);
+        let into = self.card(new);
+        self.emit(Event::Exchanged {
+            player: p,
+            card,
+            into,
+        });
+        true
     }
 
     /// Returns `id` to the pile it came from (no gain or trash happens). Returns whether

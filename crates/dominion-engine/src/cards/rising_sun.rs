@@ -155,12 +155,7 @@ impl SetRules for Rules {
                 plus_buys(g, f.player, 2);
                 Flow::done()
             }
-            (Card::Panic, Hook::Ability(PANIC_RETURN)) => {
-                for c in panic_returns(g, f.player) {
-                    g.return_to_pile(c);
-                }
-                Flow::done()
-            }
+            (Card::Panic, Hook::Ability(PANIC_RETURN)) => panic_return(g, f, input),
             (Card::Progress, Hook::Ability(PROGRESS)) => {
                 if let Some(Occasion::Gain { card, .. }) = f.occ {
                     g.top_deck(card, f.player);
@@ -709,6 +704,36 @@ fn panic_returns(g: &Game, p: PlayerId) -> Vec<CardId> {
         .collect()
 }
 
+/// Panic: returns the Treasures leaving play to their piles. Differently named ones going
+/// to one pile (Loots) return one at a time in the order their player picks: the last is
+/// on top.
+fn panic_return(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
+    let p = f.player;
+    if let Some(c) = input.card()
+        && g.zone(c) == Zone::InPlay(p)
+    {
+        g.return_to_pile(c);
+    }
+    let left = panic_returns(g, p);
+    let pile = |c: CardId| g.home_pile(g.printed(c));
+    let ordered: Vec<CardId> = left
+        .iter()
+        .copied()
+        .filter(|&c| {
+            left.iter()
+                .any(|&o| pile(o) == pile(c) && g.card(o) != g.card(c))
+        })
+        .collect();
+    if ordered.is_empty() {
+        for c in left {
+            g.return_to_pile(c);
+        }
+        return Flow::done();
+    }
+    f.ask_cards(ordered, 1, 1, Purpose::Return)
+        .question("return to its pile next (the last returned is on top)")
+}
+
 // ---- Lasting effects ----
 
 fn start(g: &mut Game, f: &mut CardFrame) -> Flow {
@@ -1168,12 +1193,12 @@ fn upgrade(g: &mut Game, f: &mut CardFrame, input: Input, extra: u8) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = f.s.cost.plus_coins(extra);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(extra);
             gain_where(g, f, input, 2, Dest::Discard, |_, c| c.at_most(limit))
         }
     }
@@ -1360,7 +1385,7 @@ fn kintsugi(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
@@ -1371,7 +1396,7 @@ fn kintsugi(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if f.pc == 2 && !gained_gold {
                 return Flow::done();
             }
-            let limit = f.s.cost.plus_coins(2);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(2);
             gain_where(g, f, input, 2, Dest::Discard, |_, c| c.at_most(limit))
         }
     }

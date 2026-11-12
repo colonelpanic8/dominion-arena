@@ -357,12 +357,12 @@ fn upgrade(
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
-            let limit = f.s.cost.plus_coins(extra);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(extra);
             let piles = g.supply_piles_where(|card_types, cost| {
                 cost.at_most(limit) && types.is_none_or(|t| card_types.intersects(t))
             });

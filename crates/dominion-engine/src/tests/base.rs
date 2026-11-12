@@ -342,3 +342,24 @@ fn adventurer_digs_for_two_treasures() {
     );
     assert_eq!(deck_kinds(&g, P0), [Card::Copper]);
 }
+
+/// Remodel reads the trashed card's cost when it gains, after what the trash set off: a
+/// Market Square discarded for a Gold makes the trashed Destrier cost $5, so Remodel gains
+/// up to $7, not a Province.
+#[test]
+fn remodel_reads_the_trashed_cards_cost_when_it_gains() {
+    let mut g = setup(&[Card::Remodel, Card::Destrier, Card::MarketSquare]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Remodel, Card::Destrier, Card::MarketSquare],
+    );
+    g.start();
+    play(&mut g, Card::Remodel);
+    choose_kinds(&mut g, &[Card::Destrier]);
+    super::intrigue::trigger(&mut g, Card::MarketSquare);
+    assert_eq!(g.cost(Card::Destrier), Cost::coins(5));
+    let piles = super::prosperity::pile_choices(&g);
+    assert!(piles.contains(&Card::Gold), "{piles:?}");
+    assert!(!piles.contains(&Card::Province), "{piles:?}");
+}
