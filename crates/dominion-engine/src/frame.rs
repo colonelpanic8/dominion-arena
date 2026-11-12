@@ -145,6 +145,9 @@ pub(crate) enum Frame {
         started: bool,
         /// One draw shuffles at most once, even if its discard pile refills meanwhile.
         shuffled: bool,
+        /// How many of `drawn` were drawn before the shuffle (and logged).
+        #[serde(default)]
+        before_shuffle: usize,
     },
     /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
     /// are shuffled.
@@ -235,6 +238,7 @@ impl Frame {
             drawn: vec![],
             started: false,
             shuffled: false,
+            before_shuffle: 0,
         }
     }
 
@@ -247,6 +251,7 @@ impl Frame {
             drawn: vec![],
             started: false,
             shuffled: false,
+            before_shuffle: 0,
         }
     }
 
@@ -407,6 +412,7 @@ impl Frame {
                 drawn,
                 started,
                 shuffled,
+                before_shuffle,
             } => {
                 let (p, to) = (*player, *to);
                 // Whether another card is to be drawn after `n` of `count`.
@@ -430,16 +436,23 @@ impl Frame {
                             break;
                         }
                         *shuffled = true;
+                        *before_shuffle = drawn.len();
+                        if !drawn.is_empty() {
+                            g.emit(Event::Drew {
+                                player: p,
+                                count: drawn.len(),
+                            });
+                        }
                         return Flow::Call(Frame::shuffle(p));
                     }
                     let top = *pl.deck.last().expect("deck is not empty");
                     g.move_card(top, Zone::Hand(p), Pos::Top);
                     drawn.push(top);
                 }
-                if !drawn.is_empty() {
+                if drawn.len() > *before_shuffle {
                     g.emit(Event::Drew {
                         player: p,
-                        count: drawn.len(),
+                        count: drawn.len() - *before_shuffle,
                     });
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))

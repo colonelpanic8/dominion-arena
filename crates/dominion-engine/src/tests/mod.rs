@@ -103,6 +103,12 @@ pub(crate) fn discard(g: &mut Game, p: PlayerId, cards: &[Card]) -> Vec<CardId> 
     replace(g, Zone::Discard(p), cards)
 }
 
+/// Whether the log has `events` in this order, maybe with others in between.
+pub(crate) fn logged_in_order(g: &Game, events: &[Event]) -> bool {
+    let mut log = g.log().iter();
+    events.iter().all(|e| log.any(|l| l == e))
+}
+
 pub(crate) fn respond(g: &mut Game, r: Response) {
     if let Err(e) = g.respond(r.clone()) {
         panic!("{r:?} rejected: {e} (pending {:?})", g.pending());
@@ -651,6 +657,19 @@ fn token_moves_are_not_offered_where_nothing_can_be_played() {
 }
 
 // ---- Shuffling ----
+
+#[test]
+fn a_draw_that_shuffles_partway_logs_the_cards_drawn_before_the_shuffle_first() {
+    let mut g = setup(&[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Gold]);
+    discard(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    let drew = |count| Event::Drew { player: P0, count };
+    let order = [drew(1), Event::Shuffled { player: P0 }, drew(2)];
+    assert!(logged_in_order(&g, &order));
+}
 
 /// Resolves a pending Star Chart trigger, picking `card` to go on top of the shuffle.
 #[test]
