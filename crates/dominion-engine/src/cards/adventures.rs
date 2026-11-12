@@ -1444,6 +1444,8 @@ fn magpie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             if g.is(c, Types::TREASURE) {
                 g.put_in_hand(c, p);
+            } else {
+                put_back(g, p, &[c]);
             }
             f.pc = 2;
             if g.is(c, Types::ACTION | Types::VICTORY)

@@ -1946,6 +1946,28 @@ fn sorcerer_curses_each_player_who_names_wrong_and_leaves_the_card() {
     assert_eq!(deck_kinds(&g, P1), [Card::Gold]);
 }
 
+/// The revealed card stays on the deck ("After revealing it, return it to wherever it
+/// was"), so a Sheepdog played when the Curse is gained draws it.
+#[test]
+fn sorcerer_leaves_the_revealed_card_on_the_deck_while_the_curse_is_gained() {
+    let mut g = game(&[Card::Wizards, Card::Sheepdog]);
+    hand(&mut g, P0, &[Card::Sorcerer]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    hand(&mut g, P1, &[Card::Sheepdog]);
+    deck(
+        &mut g,
+        P1,
+        &[Card::Gold, Card::Silver, Card::Estate, Card::Copper],
+    );
+    g.start();
+    play(&mut g, Card::Sorcerer);
+    name(&mut g, Card::Province);
+    super::intrigue::trigger(&mut g, Card::Sheepdog);
+    assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
+    assert_eq!(hand_kinds(&g, P1), [Card::Gold, Card::Silver]);
+    assert_eq!(deck_kinds(&g, P1), [Card::Estate, Card::Copper]);
+}
+
 #[test]
 fn lich_draws_six_and_skips_the_next_turn() {
     let mut g = game(&[Card::Wizards]);

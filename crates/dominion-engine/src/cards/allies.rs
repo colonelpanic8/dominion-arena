@@ -2587,8 +2587,11 @@ fn sorcerer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             f.pc = 3;
-            if let Some(c) = input.card()
-                && Some(g.card(c)) != f.s.card
+            let Some(c) = input.card() else {
+                return Flow::Continue;
+            };
+            put_back(g, target, &[c]);
+            if Some(g.card(c)) != f.s.card
                 && let Some(pile) = top_of(g, Card::Curse)
             {
                 return Flow::Call(Frame::gain(target, pile, Dest::Discard));

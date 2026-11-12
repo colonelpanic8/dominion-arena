@@ -1151,6 +1151,31 @@ fn magpie_takes_a_treasure_or_gains_a_magpie() {
     );
 }
 
+/// "If the card is not a Treasure, leave it on top of your deck" (FAQ): it is there when
+/// the Magpie is gained.
+#[test]
+fn magpie_leaves_the_revealed_card_on_the_deck_while_a_magpie_is_gained() {
+    let mut g = game(&[Card::Magpie, Card::Sheepdog], &[]);
+    hand(&mut g, P0, &[Card::Magpie, Card::Sheepdog]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+            Card::Silver,
+            Card::Duchy,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Magpie);
+    super::intrigue::trigger(&mut g, Card::Sheepdog);
+    assert_eq!(discard_kinds(&g, P0), [Card::Magpie]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Estate, Card::Gold]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Duchy]);
+}
+
 #[test]
 fn messenger_may_put_the_deck_into_the_discard_pile() {
     let mut g = game(&[Card::Messenger], &[]);

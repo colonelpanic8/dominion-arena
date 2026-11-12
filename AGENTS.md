@@ -213,8 +213,9 @@ them.
   if revealed. Draws and looks meanwhile take the cards under them. When that frame
   finishes, those it didn't move go back on top of the deck in their order, over
   anything put there meanwhile. Put them back in a chosen order with `cards::put_back`;
-  a card the text keeps "on the deck" before the effect draws, looks or shuffles again
-  is put back at once. Reveal-until scripts keep what they reveal there too (set aside
+  a card the text leaves "on the deck" is put back at once if the effect goes on to
+  anything other cards can answer or that touches the deck (a gain, trash, discard, play,
+  draw, look or shuffle). Reveal-until scripts keep what they reveal there too (set aside
   only what the text sets aside).
 - **Way of the Chameleon** exchanges what the card's own instructions give its player
   as +Cards and +$ during the turn of that play, and nothing else. Its frame gives the
