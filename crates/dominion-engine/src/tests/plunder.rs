@@ -3620,3 +3620,39 @@ fn shaman_still_gains_from_the_trash_after_divine_wind_removed_its_pile() {
         (Purpose::Gain, Some(Card::Shaman))
     );
 }
+
+#[test]
+fn duration_play_stamps_do_not_create_an_order_between_identical_effects() {
+    for card in [Card::CabinBoy, Card::Stowaway, Card::SecludedShrine] {
+        let mut g = setup(&[card, Card::Village]);
+        hand(&mut g, P0, &[Card::Village, card, card]);
+        deck(&mut g, P0, &[Card::Copper; 20]);
+        g.start();
+        play(&mut g, Card::Village);
+        play(&mut g, card);
+        play(&mut g, card);
+        if card == Card::SecludedShrine {
+            while g.turn().phase == crate::game::Phase::Action {
+                end_phase(&mut g);
+            }
+            buy(&mut g, Card::Copper);
+            assert_eq!(g.pending().unwrap().purpose, Purpose::Trash);
+            assert_eq!(g.pending().unwrap().source, Some(card));
+            choose(&mut g, &[]);
+            choose(&mut g, &[]);
+        } else {
+            while g.turn().player == P0 {
+                end_phase(&mut g);
+            }
+            while g.turn().player == P1 {
+                end_phase(&mut g);
+            }
+            assert_ne!(
+                g.pending().unwrap().purpose,
+                Purpose::Trigger,
+                "{card}: {:?}",
+                g.pending()
+            );
+        }
+    }
+}
