@@ -9,6 +9,7 @@ use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use dominion_protocol::{AgentDecision, AgentView, PlayerView, Tokens};
 use dominion_web::cards::CardDb;
 use dominion_web::game::board::{Board, PileAt, PileEntry, PlayerEntry, Zone, board};
+use dominion_web::game::entry;
 use dominion_web::game::interaction::{Interaction, Place, Target, TreasureRun, interaction};
 use dominion_web::game::logfmt::{Span, log_lines};
 use dominion_web::game::state::Selection;
@@ -685,4 +686,40 @@ fn log_lines_follow_a_real_game() {
         treasures > 0 && buys > 0 && under_smithy > 0 && cleanup > 0,
         "{treasures} {buys} {under_smithy} {cleanup}"
     );
+}
+
+#[test]
+fn every_log_entry_is_worded_by_a_rule() {
+    let cards = card_db();
+    let names: Vec<String> = ["Ann", "Bo Peep", "Cy", "Di"].map(String::from).to_vec();
+    let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+    for seed in 0..200 {
+        let players = 2 + (seed % 3) as usize;
+        let mut c = GameConfig::random(players as u8, Set::ALL, seed);
+        c.turn_limit = Some(16);
+        let seats = names[..players].to_vec();
+        let mut table = Table::new(format!("g{seed}"), c, seats.clone()).unwrap();
+        let mut rng = StdRng::seed_from_u64(seed);
+        for _ in 0..600 {
+            let Some(seat) = table.deciding() else { break };
+            let view = table.view(seat);
+            let d = view.decision.clone().unwrap();
+            let sel = click_until_legal(&d, &interaction(&view, &d, &cards), &mut rng);
+            table.answer(seat, &sel.answer(&d).unwrap()).unwrap();
+        }
+        let log = table.view_from(PlayerId(0), 0).since_last_decision;
+        for e in &log {
+            assert!(entry::parse(e, &seats).is_some(), "no rule reads {e:?}");
+            *kinds.entry(e.kind.clone()).or_default() += 1;
+        }
+        let short = dominion_web::game::logfmt::initials(&seats);
+        for l in log_lines(&log, &seats, &cards) {
+            let text = l.text(&short);
+            assert!(
+                l.is_turn() || text.ends_with('.') || text.ends_with(')'),
+                "{text}"
+            );
+        }
+    }
+    println!("{kinds:?}");
 }

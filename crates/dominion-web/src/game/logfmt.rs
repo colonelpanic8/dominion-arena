@@ -3,6 +3,7 @@
 //! "B trashes 2 Coppers and an Estate.", consecutive like entries merged into one list,
 //! and what follows from a play or buy indented under it.
 
+use super::entry::{self, Counter, CounterAt, Entry, GainTo, Marker, Moved, Place, seat_name};
 use crate::cards::CardDb;
 use dominion_protocol::{AgentView, LogEntry};
 
@@ -52,13 +53,6 @@ impl LogLine {
             })
             .collect()
     }
-}
-
-fn seat_name(names: &[String], p: u8) -> String {
-    names
-        .get(usize::from(p))
-        .cloned()
-        .unwrap_or_else(|| format!("P{}", p + 1))
 }
 
 /// The view's seat names, indexed by seat.
@@ -147,14 +141,14 @@ fn tally(cards: &[String]) -> Vec<(String, u32)> {
     out
 }
 
-/// "a Silver and 3 Coppers", "2 Coppers, a Silver, and an Estate".
-fn push_list(out: &mut Vec<Span>, items: &[(String, u32)], landscape: bool) {
-    if items.is_empty() {
+/// Parts of a list joined as English joins them: "A and B", "A, B, and C".
+fn join(out: &mut Vec<Span>, parts: Vec<Span>) {
+    if parts.is_empty() {
         out.push(Span::Text("nothing".into()));
         return;
     }
-    let n = items.len();
-    for (i, (card, k)) in items.iter().enumerate() {
+    let n = parts.len();
+    for (i, part) in parts.into_iter().enumerate() {
         if i > 0 {
             out.push(Span::Text(
                 match (n, i + 1 == n) {
@@ -165,17 +159,43 @@ fn push_list(out: &mut Vec<Span>, items: &[(String, u32)], landscape: bool) {
                 .into(),
             ));
         }
-        let text = if *k == 1 {
-            if landscape {
-                card.clone()
-            } else {
-                with_article(card)
-            }
-        } else {
-            format!("{k} {}", plural(card))
-        };
-        out.push(Span::Cards(card.clone(), text));
+        out.push(part);
     }
+}
+
+fn card_part(card: &str, k: u32, landscape: bool) -> Span {
+    let text = match (k, landscape) {
+        (1, true) => card.to_string(),
+        (1, false) => with_article(card),
+        _ => format!("{k} {}", plural(card)),
+    };
+    Span::Cards(card.to_string(), text)
+}
+
+/// "a Silver and 3 Coppers", "2 Coppers, a Silver, and an Estate".
+fn push_list(out: &mut Vec<Span>, items: &[(String, u32)], landscape: bool) {
+    let parts = items
+        .iter()
+        .map(|(c, k)| card_part(c, *k, landscape))
+        .collect();
+    join(out, parts);
+}
+
+/// Cards by name, then how many more no one could tell: "a Copper and 2 other cards".
+fn push_cards(out: &mut Vec<Span>, cards: &[String], hidden: u32) {
+    let mut parts: Vec<Span> = tally(cards)
+        .iter()
+        .map(|(c, k)| card_part(c, *k, false))
+        .collect();
+    if hidden > 0 {
+        parts.push(Span::Text(match (cards.is_empty(), hidden) {
+            (true, 1) => "a card".into(),
+            (true, n) => format!("{n} cards"),
+            (false, 1) => "another card".into(),
+            (false, n) => format!("{n} other cards"),
+        }));
+    }
+    join(out, parts);
 }
 
 fn is_own_move(kind: &str) -> bool {
@@ -234,16 +254,7 @@ fn coins_of(cards: &CardDb, played: &[(String, u32)]) -> Option<u32> {
     Some(sum)
 }
 
-/// The number at the end of "X draws 3 card(s)".
-fn drawn(e: &LogEntry) -> u32 {
-    e.text
-        .split_whitespace()
-        .rev()
-        .find_map(|w| w.parse().ok())
-        .unwrap_or(1)
-}
-
-/// What follows the player's name in an entry's own text, for kinds worded as they are.
+/// What follows the player's name in an entry's own text.
 fn rest_of(e: &LogEntry, names: &[String]) -> String {
     let full = e.player.map(|p| seat_name(names, p)).unwrap_or_default();
     e.text
@@ -253,139 +264,515 @@ fn rest_of(e: &LogEntry, names: &[String]) -> String {
         .to_string()
 }
 
-/// Kinds whose consecutive entries by one player merge into one list of cards.
-fn listed(kind: &str) -> Option<&'static str> {
-    Some(match kind {
-        "discarded" => "discards",
-        "trashed" => "trashes",
-        "revealed" => "reveals",
-        "received" => "receives",
+/// Kinds whose consecutive entries by one player merge into one list of cards, and how
+/// a line of them reads around the list.
+fn listed(e: &Entry) -> Option<(&'static str, &'static str, Option<&str>)> {
+    Some(match e {
+        Entry::Discarded(c) => ("discards ", ".", Some(c)),
+        Entry::Trashed(c) => ("trashes ", ".", Some(c)),
+        Entry::Revealed(c) => ("reveals ", ".", Some(c)),
+        Entry::Received(c) => ("receives ", ".", Some(c)),
+        Entry::SetAside(c) => ("sets ", " aside.", Some(c)),
+        Entry::TopDecked(c) => ("topdecks ", ".", c.as_deref()),
         _ => return None,
     })
 }
 
+fn amount(n: u32, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// A place's words, from `p`'s side: "their hand", "B's discard pile", "the Silver pile".
+fn place_spans(out: &mut Vec<Span>, place: &Place, p: u8) {
+    let whose = |out: &mut Vec<Span>, q: u8| {
+        if q == p {
+            out.push(Span::Text("their ".into()));
+        } else {
+            out.push(Span::Player(q));
+            out.push(Span::Text("'s ".into()));
+        }
+    };
+    match place {
+        Place::Pile(c) => {
+            out.push(Span::Text("the ".into()));
+            out.push(Span::Card(c.clone()));
+            out.push(Span::Text(" pile".into()));
+        }
+        Place::Trash => out.push(Span::Text("the trash".into())),
+        Place::InPlay(q) if *q == p => out.push(Span::Text("play".into())),
+        Place::Zone(q, "looking") => {
+            out.push(Span::Text("the top of ".into()));
+            whose(out, *q);
+            out.push(Span::Text("deck".into()));
+        }
+        Place::Hand(q)
+        | Place::Deck(q)
+        | Place::Discard(q)
+        | Place::InPlay(q)
+        | Place::Zone(q, _) => {
+            whose(out, *q);
+            out.push(Span::Text(
+                match place {
+                    Place::Hand(_) => "hand",
+                    Place::Deck(_) => "deck",
+                    Place::Discard(_) => "discard pile",
+                    Place::InPlay(_) => "play area",
+                    Place::Zone(_, k) => mat_name(k),
+                    Place::Pile(_) | Place::Trash => unreachable!(),
+                }
+                .into(),
+            ));
+        }
+    }
+}
+
+fn mat_name(key: &str) -> &'static str {
+    match key {
+        "tavern" => "Tavern mat",
+        "island" => "Island mat",
+        "nativeVillage" => "Native Village mat",
+        "exile" => "Exile mat",
+        "setAside" => "set-aside cards",
+        _ => "mat",
+    }
+}
+
+/// Cards moved with no event of their own, as dominion.games words each kind of move.
+fn moved_spans(out: &mut Vec<Span>, m: &Moved, p: u8) {
+    let text = |out: &mut Vec<Span>, t: &str| out.push(Span::Text(t.into()));
+    let cards = |out: &mut Vec<Span>| push_cards(out, &m.cards, m.hidden);
+    match (&m.from, &m.to) {
+        (_, Place::Deck(q)) if m.back && *q == p => {
+            text(out, "puts ");
+            cards(out);
+            text(
+                out,
+                if m.bottom {
+                    " back on the bottom of their deck."
+                } else {
+                    " back onto their deck."
+                },
+            );
+        }
+        (Some(Place::Hand(f)), Place::Hand(q)) if *f == p && *q != p => {
+            text(out, "passes ");
+            cards(out);
+            text(out, " to ");
+            out.push(Span::Player(*q));
+            text(out, ".");
+        }
+        (_, Place::Hand(q)) if *q == p => {
+            text(out, "puts ");
+            cards(out);
+            text(out, " into their hand.");
+        }
+        (_, Place::Deck(q)) if *q == p && m.bottom => {
+            text(out, "puts ");
+            cards(out);
+            text(out, " on the bottom of their deck.");
+        }
+        (_, Place::Deck(q)) if *q == p => {
+            text(out, "topdecks ");
+            cards(out);
+            text(out, ".");
+        }
+        (Some(Place::Zone(f, "exile")), Place::Discard(q)) if *f == p && *q == p => {
+            text(out, "discards ");
+            cards(out);
+            text(out, " from Exile.");
+        }
+        (_, Place::Discard(q)) if *q == p => {
+            text(out, "puts ");
+            cards(out);
+            text(out, " into their discard pile.");
+        }
+        (_, Place::Zone(q, "setAside")) if *q == p => {
+            text(out, "sets ");
+            cards(out);
+            text(out, " aside.");
+        }
+        (_, Place::Zone(q, "exile")) if *q == p => {
+            text(out, "exiles ");
+            cards(out);
+            text(out, ".");
+        }
+        (_, Place::Zone(q, "looking")) if *q == p => {
+            text(out, "looks at ");
+            cards(out);
+            text(out, ".");
+        }
+        (_, Place::Pile(_)) => {
+            text(out, if m.bottom { "puts " } else { "returns " });
+            cards(out);
+            text(
+                out,
+                if m.bottom {
+                    " on the bottom of "
+                } else {
+                    " to "
+                },
+            );
+            place_spans(out, &m.to, p);
+            text(out, ".");
+        }
+        (_, Place::Trash) => {
+            text(out, "trashes ");
+            cards(out);
+            text(out, ".");
+        }
+        (_, Place::InPlay(q)) if *q == p => {
+            text(out, "puts ");
+            cards(out);
+            text(out, " into play.");
+        }
+        (_, to) => {
+            text(out, "puts ");
+            cards(out);
+            let prep = match to {
+                Place::Deck(_) if m.bottom => " on the bottom of ",
+                Place::Deck(_) => " onto ",
+                Place::Zone(_, k) if *k != "setAside" => " on ",
+                _ => " into ",
+            };
+            text(out, prep);
+            place_spans(out, to, p);
+            text(out, ".");
+        }
+    }
+}
+
+fn counter_word(c: Counter, n: u32) -> String {
+    match c {
+        Counter::Coffers => format!("{n} Coffers"),
+        Counter::Villagers => amount(n, "Villager", "Villagers"),
+        Counter::Favors => amount(n, "Favor", "Favors"),
+        Counter::Debt => format!("{n} debt"),
+        Counter::VpTokens => format!("{n} VP"),
+        Counter::PirateShip => amount(n, "coin token", "coin tokens"),
+        Counter::Embargo => amount(n, "Embargo token", "Embargo tokens"),
+        Counter::TradeRoute => amount(n, "coin token", "coin tokens"),
+        Counter::Sun => amount(n, "Sun token", "Sun tokens"),
+        Counter::Other => amount(n, "token", "tokens"),
+    }
+}
+
+/// A player's counter: "gets +2 Coffers.", "uses 1 Coffers. (+$1)", "repays 2 debt.".
+fn player_counter(out: &mut Vec<Span>, c: Counter, delta: i32) {
+    let n = delta.unsigned_abs();
+    let what = counter_word(c, n);
+    let up = delta > 0;
+    out.push(Span::Text(match c {
+        Counter::Coffers if up => format!("gets +{what}."),
+        Counter::Coffers => format!("uses {what}. (+${n})"),
+        Counter::Villagers | Counter::Favors if up => format!("gets +{what}."),
+        Counter::Villagers => format!("uses {what}."),
+        Counter::Favors => format!("spends {what}."),
+        Counter::Debt if up => format!("takes {what}."),
+        Counter::Debt => format!("repays {what}."),
+        Counter::VpTokens if up => format!("gets {what}."),
+        Counter::VpTokens => format!("loses {what}."),
+        Counter::PirateShip if up => format!("adds {what} to their Pirate Ship mat."),
+        Counter::PirateShip => format!("removes {what} from their Pirate Ship mat."),
+        _ if up => format!("gets {what}."),
+        _ => format!("loses {what}."),
+    }));
+}
+
+fn counter_place(out: &mut Vec<Span>, at: &CounterAt) {
+    match at {
+        CounterAt::Pile(c) => place_spans(out, &Place::Pile(c.clone()), 0),
+        CounterAt::TradeRouteMat => out.push(Span::Text("the Trade Route mat".into())),
+        CounterAt::Prophecy(Some(c)) => out.push(Span::Card(c.clone())),
+        CounterAt::Prophecy(None) => out.push(Span::Text("the Prophecy".into())),
+    }
+}
+
+/// A pile's or the table's counter: "2 Debt tokens are put on the Silver pile.".
+fn table_counter(out: &mut Vec<Span>, c: Counter, delta: i32, at: &CounterAt) {
+    let n = delta.unsigned_abs();
+    let what = match c {
+        Counter::VpTokens => amount(n, "VP token", "VP tokens"),
+        Counter::Debt => amount(n, "Debt token", "Debt tokens"),
+        Counter::TradeRoute if matches!(at, CounterAt::Pile(_)) => {
+            amount(n, "Trade Route token", "Trade Route tokens")
+        }
+        c => counter_word(c, n),
+    };
+    let what = match what.strip_prefix("1 ") {
+        Some(one) => with_article(one),
+        None => what,
+    };
+    let verb = if n == 1 { "is" } else { "are" };
+    let how = if delta > 0 { "put on" } else { "removed from" };
+    out.push(Span::Text(capitalise(&format!("{what} {verb} {how} "))));
+    counter_place(out, at);
+    out.push(Span::Text(".".into()));
+}
+
+fn capitalise(s: &str) -> String {
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}
+
 pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<LogLine> {
     let depth = depths(entries);
+    let parsed: Vec<Option<Entry>> = entries.iter().map(|e| entry::parse(e, names)).collect();
     let mut out: Vec<LogLine> = vec![];
     let mut i = 0;
     while i < entries.len() {
         let e = &entries[i];
         let d = depth[i];
-        let same = |j: usize, kind: &str| {
-            entries
-                .get(j)
-                .is_some_and(|f| f.kind == kind && f.player == e.player && depth[j] == d)
+        // The entry at `j`, if it is by the same player at the same depth.
+        let next = |j: usize| -> Option<&Entry> {
+            let f = entries.get(j)?;
+            (f.player == e.player && depth[j] == d)
+                .then_some(parsed[j].as_ref())
+                .flatten()
+        };
+        // The entry right after, by the same player at any depth: what a play or buy did.
+        let then = || -> Option<&Entry> {
+            let f = entries.get(i + 1)?;
+            (f.player == e.player)
+                .then_some(parsed[i + 1].as_ref())
+                .flatten()
         };
         let mut spans: Vec<Span> = vec![];
         if let Some(p) = e.player {
             spans.push(Span::Player(p));
             spans.push(Span::Text(" ".into()));
         }
+        let text = |spans: &mut Vec<Span>, t: &str| spans.push(Span::Text(t.into()));
         let mut used = 1;
         let mut turn = None;
-        let card = e.card.clone().unwrap_or_default();
-        match e.kind.as_str() {
-            "turn-start" => {
+        let p = e.player.unwrap_or(0);
+        match &parsed[i] {
+            Some(Entry::TurnStart(n)) => {
                 spans.clear();
-                let n: Option<u32> = e.text.rsplit(' ').next().and_then(|n| n.parse().ok());
-                turn = n.or(Some(0));
-                let who = e.player.map(|p| seat_name(names, p)).unwrap_or_default();
-                spans.push(Span::Text(format!("Turn {} - ", n.unwrap_or(0))));
+                turn = Some(*n);
+                text(&mut spans, &format!("Turn {n} - "));
                 if let Some(p) = e.player {
-                    spans.push(Span::FullPlayer(p, who));
+                    spans.push(Span::FullPlayer(p, seat_name(names, p)));
                 }
             }
-            "played" if is_treasure(cards, &card) => {
+            Some(Entry::Played(card)) if is_treasure(cards, card) => {
                 let mut played = vec![card.clone()];
-                while same(i + used, "played")
-                    && entries[i + used]
-                        .card
-                        .as_deref()
-                        .is_some_and(|c| is_treasure(cards, c))
+                while let Some(Entry::Played(c)) = next(i + used)
+                    && is_treasure(cards, c)
                 {
-                    played.push(entries[i + used].card.clone().unwrap_or_default());
+                    played.push(c.clone());
                     used += 1;
                 }
                 let items = tally(&played);
-                spans.push(Span::Text("plays ".into()));
+                text(&mut spans, "plays ");
                 push_list(&mut spans, &items, false);
-                spans.push(Span::Text(".".into()));
+                text(&mut spans, ".");
                 if let Some(c) = coins_of(cards, &items) {
-                    spans.push(Span::Text(format!(" (+${c})")));
+                    text(&mut spans, &format!(" (+${c})"));
                 }
             }
-            "played" => {
-                spans.push(Span::Text("plays ".into()));
+            Some(Entry::Played(card)) => {
+                text(&mut spans, "plays ");
                 push_list(&mut spans, &[(card.clone(), 1)], false);
-                spans.push(Span::Text(".".into()));
+                match then() {
+                    Some(Entry::UsedWay { way, card: c }) if c == card => {
+                        used = 2;
+                        text(&mut spans, " using ");
+                        spans.push(Span::Card(way.clone()));
+                        text(&mut spans, ".");
+                    }
+                    _ => text(&mut spans, "."),
+                }
             }
-            "bought" | "bought-landscape" => {
+            Some(Entry::UsedWay { way, .. }) => {
+                text(&mut spans, "uses ");
+                spans.push(Span::Card(way.clone()));
+                text(&mut spans, ".");
+            }
+            Some(Entry::Named(card)) => {
+                text(&mut spans, "names ");
+                spans.push(Span::Card(card.clone()));
+                text(&mut spans, ".");
+            }
+            Some(Entry::Bought(card)) => {
                 let landscape = e.kind == "bought-landscape";
-                let gains = entries.get(i + 1).is_some_and(|f| {
-                    f.kind == "gained" && f.player == e.player && f.card == e.card
-                });
-                if gains {
+                let gained = match then() {
+                    Some(Entry::Gained(c, to)) if c == card => Some(*to),
+                    _ => None,
+                };
+                if gained.is_some() {
                     used = 2;
-                    spans.push(Span::Text("buys and gains ".into()));
+                    text(&mut spans, "buys and gains ");
                 } else {
-                    spans.push(Span::Text("buys ".into()));
+                    text(&mut spans, "buys ");
                 }
                 push_list(&mut spans, &[(card.clone(), 1)], landscape);
-                let tail = if gains {
-                    gain_tail(&entries[i + 1])
-                } else {
-                    ""
+                text(&mut spans, &format!("{}.", gained.map_or("", gain_tail)));
+            }
+            Some(Entry::Overpaid { coins, potions }) => {
+                let potions = match potions {
+                    0 => String::new(),
+                    n => format!(" and {}", amount(*n, "Potion", "Potions")),
                 };
-                spans.push(Span::Text(format!("{tail}.")));
+                text(&mut spans, &format!("overpays ${coins}{potions}."));
             }
-            "gained" => {
-                spans.push(Span::Text("gains ".into()));
+            Some(Entry::Gained(card, to)) => {
+                text(&mut spans, "gains ");
                 push_list(&mut spans, &[(card.clone(), 1)], false);
-                spans.push(Span::Text(format!("{}.", gain_tail(e))));
+                text(&mut spans, &format!("{}.", gain_tail(*to)));
             }
-            "drew" => {
-                let mut n = drawn(e);
-                while same(i + used, "drew") {
-                    n += drawn(&entries[i + used]);
+            Some(Entry::Drew(n)) => {
+                let mut n = *n;
+                while let Some(Entry::Drew(k)) = next(i + used) {
+                    n += k;
                     used += 1;
                 }
-                spans.push(Span::Text(if n == 1 {
-                    "draws a card.".into()
-                } else {
-                    format!("draws {n} cards.")
-                }));
+                text(
+                    &mut spans,
+                    &if n == 1 {
+                        "draws a card.".into()
+                    } else {
+                        format!("draws {n} cards.")
+                    },
+                );
             }
-            "shuffled" => spans.push(Span::Text("shuffles their deck.".into())),
-            "top-decked" => spans.push(Span::Text("topdecks a card.".into())),
-            "set-aside" => {
-                spans.push(Span::Text("sets ".into()));
-                push_list(&mut spans, &[(card.clone(), 1)], false);
-                spans.push(Span::Text(" aside.".into()));
+            Some(Entry::Shuffled) => text(&mut spans, "shuffles their deck."),
+            Some(Entry::RevealedHand(shown)) => {
+                text(&mut spans, "reveals their hand: ");
+                push_list(&mut spans, &tally(shown), false);
+                text(&mut spans, ".");
             }
-            "revealed-hand" => {
-                let list = rest_of(e, names);
-                let list = list.split_once(": ").map_or("", |(_, l)| l);
-                let shown: Vec<String> = if list == "nothing" || list.is_empty() {
-                    vec![]
-                } else {
-                    list.split(", ").map(str::to_string).collect()
-                };
-                spans.push(Span::Text("reveals their hand: ".into()));
-                push_list(&mut spans, &tally(&shown), false);
-                spans.push(Span::Text(".".into()));
-            }
-            kind if listed(kind).is_some() => {
-                let mut list = vec![card.clone()];
-                while same(i + used, kind) {
-                    list.push(entries[i + used].card.clone().unwrap_or_default());
+            Some(
+                first @ (Entry::Discarded(_)
+                | Entry::Trashed(_)
+                | Entry::Revealed(_)
+                | Entry::Received(_)
+                | Entry::SetAside(_)
+                | Entry::TopDecked(_)),
+            ) => {
+                let (verb, end, card) = listed(first).unwrap_or_default();
+                let same = |f: &Entry| std::mem::discriminant(f) == std::mem::discriminant(first);
+                let mut named: Vec<String> = card.map(str::to_string).into_iter().collect();
+                let mut hidden = u32::from(card.is_none());
+                while let Some(f) = next(i + used).filter(|f| same(f)) {
+                    match listed(f).and_then(|l| l.2) {
+                        Some(c) => named.push(c.to_string()),
+                        None => hidden += 1,
+                    }
                     used += 1;
                 }
-                let verb = listed(kind).unwrap_or_default();
-                spans.push(Span::Text(format!("{verb} ")));
-                push_list(&mut spans, &tally(&list), kind == "received");
-                spans.push(Span::Text(".".into()));
+                text(&mut spans, verb);
+                if matches!(first, Entry::Received(_)) {
+                    push_list(&mut spans, &tally(&named), true);
+                } else {
+                    push_cards(&mut spans, &named, hidden);
+                }
+                text(&mut spans, end);
             }
-            _ => {
+            Some(Entry::Rotated(pile)) => {
+                text(&mut spans, "rotates ");
+                place_spans(&mut spans, &Place::Pile(pile.clone()), p);
+                text(&mut spans, ".");
+            }
+            Some(Entry::Moved(m)) => moved_spans(&mut spans, m, p),
+            Some(Entry::Looked(n)) => text(
+                &mut spans,
+                &if *n == 1 {
+                    "looks at the top card of their deck.".into()
+                } else {
+                    format!("looks at the top {n} cards of their deck.")
+                },
+            ),
+            Some(Entry::PlayerCounter(c, delta)) => {
+                // Tokens taken from a pile: "takes 2 VP from the Shaman pile."
+                let from_pile = match next_table(&parsed, i + 1) {
+                    Some(Entry::TableCounter(k, back, CounterAt::Pile(pile)))
+                        if k == c
+                            && *back == -delta
+                            && *delta > 0
+                            && matches!(c, Counter::VpTokens | Counter::Debt) =>
+                    {
+                        Some(pile.clone())
+                    }
+                    _ => None,
+                };
+                match from_pile {
+                    Some(pile) => {
+                        used = 2;
+                        let what = counter_word(*c, delta.unsigned_abs());
+                        text(&mut spans, &format!("takes {what} from "));
+                        place_spans(&mut spans, &Place::Pile(pile), p);
+                        text(&mut spans, ".");
+                    }
+                    None => player_counter(&mut spans, *c, *delta),
+                }
+            }
+            Some(Entry::TableCounter(c, delta, at)) => table_counter(&mut spans, *c, *delta, at),
+            Some(Entry::TokenMoved { token, pile }) => match pile {
+                Some(pile) => {
+                    text(&mut spans, &format!("moves their {token} token to "));
+                    place_spans(&mut spans, &Place::Pile(pile.clone()), p);
+                    text(&mut spans, ".");
+                }
+                None => text(&mut spans, &format!("takes back their {token} token.")),
+            },
+            Some(Entry::Marker { marker, on }) => text(
+                &mut spans,
+                match (marker, on) {
+                    (Marker::MinusCard, true) => "takes the -1 Card token.",
+                    (Marker::MinusCard, false) => "returns their -1 Card token.",
+                    (Marker::MinusCoin, true) => "takes the -$1 token.",
+                    (Marker::MinusCoin, false) => "returns their -$1 token.",
+                    (Marker::Journey, true) => "flips their Journey token face up.",
+                    (Marker::Journey, false) => "flips their Journey token face down.",
+                },
+            ),
+            Some(Entry::Returned(card)) => {
+                text(&mut spans, "returns ");
+                spans.push(Span::Card(card.clone()));
+                text(&mut spans, ".");
+            }
+            Some(Entry::Resolved(card)) => {
+                spans.pop();
+                text(&mut spans, "'s ");
+                spans.push(Span::Card(card.clone()));
+                text(&mut spans, " resolves.");
+            }
+            Some(Entry::Bonus {
+                actions,
+                buys,
+                coins,
+            }) => {
+                let mut parts = vec![];
+                if *actions > 0 {
+                    parts.push(Span::Text(format!(
+                        "+{}",
+                        amount(*actions, "Action", "Actions")
+                    )));
+                }
+                if *buys > 0 {
+                    parts.push(Span::Text(format!("+{}", amount(*buys, "Buy", "Buys"))));
+                }
+                if *coins > 0 {
+                    parts.push(Span::Text(format!("+${coins}")));
+                }
+                text(&mut spans, "gets ");
+                join(&mut spans, parts);
+                text(&mut spans, ".");
+            }
+            Some(Entry::Unaffected { by, .. }) => {
+                text(&mut spans, "blocks with ");
+                spans.push(Span::Card(by.clone()));
+                text(&mut spans, ".");
+            }
+            Some(Entry::ReturnedToAction) => text(&mut spans, "returns to their Action phase."),
+            Some(Entry::Called(card)) => {
+                text(&mut spans, "calls ");
+                push_list(&mut spans, &[(card.clone(), 1)], false);
+                text(&mut spans, ".");
+            }
+            None => {
                 let rest = rest_of(e, names);
                 match e
                     .card
@@ -416,16 +803,21 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
     out
 }
 
+/// The entry at `j` if it is a table's counter (which has no player).
+fn next_table(parsed: &[Option<Entry>], j: usize) -> Option<&Entry> {
+    parsed
+        .get(j)?
+        .as_ref()
+        .filter(|e| matches!(e, Entry::TableCounter(..)))
+}
+
 /// Where a gain went, after the card: "to their hand", "onto their drawpile".
-fn gain_tail(e: &LogEntry) -> &'static str {
-    if e.text.ends_with(" to their hand") {
-        " to their hand"
-    } else if e.text.ends_with(" onto their deck") {
-        " onto their drawpile"
-    } else if e.text.ends_with(", setting it aside") {
-        " setting it aside"
-    } else {
-        ""
+fn gain_tail(to: GainTo) -> &'static str {
+    match to {
+        GainTo::Hand => " to their hand",
+        GainTo::Deck => " onto their drawpile",
+        GainTo::SetAside => " setting it aside",
+        GainTo::Discard => "",
     }
 }
 

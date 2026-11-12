@@ -91,7 +91,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           articles and plurals, merged runs, turn headers, depth
   src/game/moves.rs       which cards moved where between two boards, from the log and the
                           boards (pure); ghosts summarising them
-  tests/table.rs          those models and the table's spots property-tested over random games
+  tests/table.rs          those models and the table's spots property-tested over random games;
+                          every log entry of random games read by a rule in entry.rs
   tests/moves.rs          move inference over random games, and hand-checked steps
   src/lobby/              the lobby, dominion.games' layout and behaviour
     mod.rs                the frame and tabs, `TableState` (the table this browser sits at),
