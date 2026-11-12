@@ -85,6 +85,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           window; log, "more" panel, game end and score screen
   src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
   assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
+  src/game/entry.rs       log entries parsed back from their text in every form the agent
+                          log writes them (pure); what logfmt and moves read
   src/game/logfmt.rs      the log in dominion.games' wording: initials, card lists with
                           articles and plurals, merged runs, turn headers, depth
   src/game/moves.rs       which cards moved where between two boards, from the log and the

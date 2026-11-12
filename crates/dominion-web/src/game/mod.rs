@@ -2,6 +2,7 @@
 //! the change feed, and answering for it.
 
 pub mod board;
+pub mod entry;
 pub mod interaction;
 pub mod logfmt;
 pub mod moves;
