@@ -84,6 +84,7 @@ keep_finished_days = 7         # serve: delete finished games this old at startu
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
+solo_dir = "/srv/dominion/solo"    # solo: where its games are kept (default $XDG_STATE_HOME/dominion/solo)
 ```
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
@@ -92,6 +93,41 @@ its first seat in the terminal and prints the other seats' tokens;
 server restart: when it loses the server it keeps trying to reach it for
 `reconnect_seconds` (`--reconnect`), then gives up. `dominion card NAME` prints a card's
 text.
+
+## Playing a deck out alone
+
+`dominion solo` plays one seat of a game whose other seats sit idle: they end every phase,
+decline what they may and otherwise take the first options offered. It needs no server.
+The game is a file, so each command is one step of a script, and it answers "how fast is
+this deck with nobody in the way" with real shuffles and the engine's rules.
+
+```sh
+dominion solo new --kingdom Village,Smithy,Market,... [--landscapes ...] [--seed 7]
+dominion solo do "treasures; buy Silver; next"
+dominion solo do "play Village, Smithy x2; treasures; buy Province, Market; next"
+dominion solo show [--log]     # the whole game as it stands; --log adds everything so far
+dominion solo undo             # take back the last `do`
+```
+
+`new` also takes `--colonies`, `--shelters`, `--players N` and `--setup CARD=CHOICE` for
+what setup would choose at random (`--setup "Young Witch=Cellar"`,
+`--setup "Reckless=Smithy"`). `--game NAME` keeps several games side by side.
+
+`do` takes steps separated by `;` and stops at the first that can't be done, keeping the
+ones before it:
+
+- `play A, B x2`: play cards, the Action phase's or Treasures. `play A as Way of the Ox`
+  uses a Way; otherwise a card is played as itself.
+- `treasures`: play every Treasure in hand.
+- `buy A, B`: buy cards, Events or Projects, paying off Debt first when there is any.
+- `pay` pays off Debt; `coffers N` and `villagers N` spend tokens.
+- `end` ends the phase and `next` the turn. A turn with nothing left to do ends by itself.
+- `pick A, B x2` answers any question by card name, option text or option number, a
+  turn's moves included; `pick none` chooses nothing. `name CARD` answers "name a card".
+
+A step that belongs to a later phase ends the current one first. `do` prints what
+happened, your cards and the open question; `--full` adds the Supply, the landscapes and
+the idle seats, as `show` does. A step that can't be done says what is open instead.
 
 ## Development
 

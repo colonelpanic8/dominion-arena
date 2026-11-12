@@ -2,6 +2,8 @@ use clap::{ArgGroup, Args, Parser, Subcommand};
 use dominion_server::Options;
 use dominion_server::config::Config;
 use dominion_server::hub::{Hub, NewGame};
+use dominion_server::solo::{self, Solo};
+use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -42,6 +44,149 @@ enum Command {
         #[arg(required = true)]
         names: Vec<String>,
     },
+    /// Play a deck out alone, in a game whose other seats sit idle.
+    Solo(SoloArgs),
+}
+
+#[derive(Args)]
+struct SoloArgs {
+    /// Which solo game; each name is its own game.
+    #[arg(long, short, global = true, default_value = "solo")]
+    game: String,
+    /// Directory the games are kept in (default from the config file, else
+    /// $XDG_STATE_HOME/dominion/solo).
+    #[arg(long, global = true)]
+    dir: Option<PathBuf>,
+    #[command(subcommand)]
+    command: SoloCommand,
+}
+
+#[derive(Subcommand)]
+enum SoloCommand {
+    /// Start the game, replacing one of the same name.
+    New {
+        /// Kingdom piles, comma separated.
+        #[arg(long, value_delimiter = ',', required = true)]
+        kingdom: Vec<String>,
+        /// Events, Projects, Ways, Landmarks, Traits, an Ally or Prophecy, comma separated.
+        #[arg(long, value_delimiter = ',')]
+        landscapes: Vec<String>,
+        /// A setup choice as CARD=CHOICE[,CHOICE...]: "Young Witch=Cellar" (its Bane),
+        /// "Reckless=Smithy" (a Trait's pile), "Way of the Mouse=Crossroads". Repeatable.
+        #[arg(long, value_name = "CARD=CHOICE")]
+        setup: Vec<String>,
+        /// Use Platinum and Colony.
+        #[arg(long)]
+        colonies: bool,
+        /// Start with Shelters.
+        #[arg(long)]
+        shelters: bool,
+        /// Seats in all; every seat but yours sits idle (default 2).
+        #[arg(long, default_value_t = 2)]
+        players: u8,
+        /// The shuffle seed (default: random, and printed).
+        #[arg(long)]
+        seed: Option<u64>,
+    },
+    /// Do steps in order, separated by `;`, stopping at the first that can't be done:
+    /// `play A, B` · `treasures` (play every Treasure in hand) · `buy A, B` · `pay` (off
+    /// Debt) · `coffers N` · `villagers N` · `end` (the phase) · `next` (end the turn) ·
+    /// `pick A, B x2` or `pick none` (answer any question by card, option text or option
+    /// number) · `name CARD`.
+    Do {
+        #[arg(required = true)]
+        steps: Vec<String>,
+        /// Also print the Supply, the landscapes and the idle seats.
+        #[arg(long)]
+        full: bool,
+    },
+    /// Show the game as it stands.
+    Show {
+        /// Print the whole log first.
+        #[arg(long)]
+        log: bool,
+    },
+    /// Take back the last `do`.
+    Undo,
+}
+
+fn solo(args: SoloArgs, config: &Config) -> Result<(), String> {
+    let dir = args
+        .dir
+        .or_else(|| config.solo_dir())
+        .ok_or("no place to keep solo games: pass --dir, or set solo_dir or XDG_STATE_HOME")?;
+    let path = solo::path(&dir, &args.game)?;
+    let show = |solo: &Solo, log: &[String], brief: bool| {
+        if !log.is_empty() {
+            println!("LOG");
+            log.iter().for_each(|line| println!("  {line}"));
+        }
+        println!("{}", solo.text(brief));
+    };
+    match args.command {
+        SoloCommand::New {
+            kingdom,
+            landscapes,
+            setup,
+            colonies,
+            shelters,
+            players,
+            seed,
+        } => {
+            let setup = setup
+                .iter()
+                .map(|s| {
+                    let (by, chosen) = s
+                        .split_once('=')
+                        .ok_or_else(|| format!("--setup {s:?} is not CARD=CHOICE"))?;
+                    let chosen = chosen.split(',').map(|c| c.trim().to_string()).collect();
+                    Ok((by.trim().to_string(), chosen))
+                })
+                .collect::<Result<BTreeMap<String, Vec<String>>, String>>()?;
+            let game = Solo::new(
+                &args.game,
+                &NewGame {
+                    players,
+                    kingdom,
+                    landscapes,
+                    seed,
+                    colonies: Some(colonies),
+                    shelters: Some(shelters),
+                    setup,
+                    ..NewGame::default()
+                },
+            )?;
+            solo::save(&path, &game)?;
+            println!("solo game {:?}, seed {}", args.game, game.seed());
+            show(&game, game.log(), false);
+            Ok(())
+        }
+        SoloCommand::Do { steps, full } => {
+            let mut game = solo::load(&path)?;
+            let outcome = game.run(&steps.join(" "))?;
+            solo::save(&path, &game)?;
+            show(&game, &outcome.log, !full);
+            match outcome.stopped {
+                None => Ok(()),
+                Some((step, why)) => Err(format!(
+                    "stopped at {step:?}: {why}. The steps before it stand; the state above \
+                     is current"
+                )),
+            }
+        }
+        SoloCommand::Show { log } => {
+            let game = solo::load(&path)?;
+            show(&game, if log { game.log() } else { &[] }, false);
+            Ok(())
+        }
+        SoloCommand::Undo => {
+            let mut game = solo::load(&path)?;
+            game.undo()?;
+            solo::save(&path, &game)?;
+            show(&game, &[], true);
+            Ok(())
+        }
+    }
 }
 
 #[derive(Args)]
@@ -173,6 +318,7 @@ async fn main() -> ExitCode {
             let seat = args.game.zip(args.token);
             dominion_server::client::play(&url, new, seat, reconnect).await
         }
+        Command::Solo(args) => solo(args, &config),
         Command::Card { names } => names.iter().try_for_each(|name| {
             dominion_agent::glossary(name)
                 .map(|e| println!("{}\n", dominion_server::card_text(&e)))

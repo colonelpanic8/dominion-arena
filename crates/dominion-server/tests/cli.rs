@@ -354,3 +354,60 @@ fn play_checks_its_flags_before_it_connects() {
     let error = String::from_utf8_lossy(&run.stderr);
     assert!(error.contains("connecting"), "{error}");
 }
+
+#[test]
+fn solo_keeps_a_game_in_a_file_and_plays_it_by_steps() {
+    let home = tempfile::tempdir().unwrap();
+    let solo = |args: &[&str]| {
+        let run = dominion(&home).arg("solo").args(args).output().unwrap();
+        (
+            run.status.success(),
+            String::from_utf8_lossy(&run.stdout).into_owned(),
+            String::from_utf8_lossy(&run.stderr).into_owned(),
+        )
+    };
+    let (ok, text, error) = solo(&["do", "next"]);
+    assert!(
+        !ok && text.is_empty() && error.contains("dominion solo new"),
+        "{error}"
+    );
+    let kingdom = ["--kingdom", "Village,Smithy", "--seed", "7"];
+    let (ok, text, _) = solo(&[&["new"][..], &kingdom].concat());
+    assert!(
+        ok && text.contains("seed 7") && text.contains("turn 1"),
+        "{text}"
+    );
+    let (ok, text, _) = solo(&["do", "treasures; buy Silver; next"]);
+    assert!(
+        ok && text.contains("Solo buys Silver") && text.contains("turn 2"),
+        "{text}"
+    );
+    // A step that can't be done fails the command and still shows where the game is.
+    let (ok, text, error) = solo(&["do", "treasures; buy Province"]);
+    assert!(
+        !ok && error.contains("stopped at \"buy Province\""),
+        "{error}"
+    );
+    assert!(
+        text.contains("turn 2") && text.contains("Solo plays Copper"),
+        "{text}"
+    );
+    let (ok, text, _) = solo(&["undo"]);
+    assert!(ok && text.contains("coins 0"), "{text}");
+    // Games are kept apart by name.
+    let (ok, _, _) = solo(&[&["--game", "other", "new"][..], &kingdom].concat());
+    assert!(ok);
+    let (_, other, _) = solo(&["--game", "other", "show"]);
+    let (_, first, _) = solo(&["show", "--log"]);
+    assert!(
+        other.contains("turn 1") && !other.contains("LOG"),
+        "{other}"
+    );
+    assert!(
+        first.contains("turn 2") && first.contains("Solo buys Silver"),
+        "{first}"
+    );
+    assert!(home.path().join("state/dominion/solo/other.json").exists());
+    let (ok, _, error) = solo(&["new", "--kingdom", "Village", "--setup", "Village"]);
+    assert!(!ok && error.contains("CARD=CHOICE"), "{error}");
+}
