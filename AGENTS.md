@@ -8,7 +8,8 @@ in second editions). It ships no bots and no UI; anything that plays implements 
 
 From the repo root (direnv loads the Nix dev shell; otherwise prefix `nix develop -c`):
 
-- `just check`: fmt-check, clippy `-D warnings`, tests.
+- `just check`: fmt-check, clippy `-D warnings` (and dominion-web for wasm32), tests.
+- `just web-build` / `web-serve` / `web-dev`: build, serve or hot-reload the web client.
 - `just fmt`: format Rust and `flake.nix`.
 - Focused: `cargo test -p dominion-engine tests::<set>`.
 
@@ -37,6 +38,15 @@ crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection,
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
+crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
+                          only on dominion-protocol (engine crates are dev-dependencies)
+  src/api.rs              typed client for /api and the SSE change feed
+  src/session.rs          seat tokens held in localStorage
+  src/cards.rs            /api/cards data by name (provided as `app::Cards` context)
+  src/game/state.rs       the game page's model (view, version, log), selection -> Answer
+  src/game/mod.rs         GamePage: seat choice, keeping state current, `GameCtx` context
+  src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
+  src/lobby.rs            game list, new game, join by token
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

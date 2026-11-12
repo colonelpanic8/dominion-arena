@@ -58,6 +58,11 @@
           toolchain
           pkgs.just
           pkgs.alejandra
+          # The web client: dx drives the wasm build, with the wasm-bindgen matching
+          # crates/dominion-web's pin and wasm-opt for release builds.
+          pkgs.dioxus-cli
+          pkgs.wasm-bindgen-cli_0_2_130
+          pkgs.binaryen
         ];
         RUST_BACKTRACE = 1;
       };
