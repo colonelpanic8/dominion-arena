@@ -2577,7 +2577,8 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            if g.zone(c) != Zone::Discard(p) || !g.is(c, Types::ACTION | Types::TREASURE) {
+            // Wherever it was gained to (Nomad Camp: the deck), if it is still there.
+            if g.gained(p, c).is_none() || !g.is(c, Types::ACTION | Types::TREASURE) {
                 return Flow::done();
             }
             f.s.pick = Some(c);
@@ -2587,7 +2588,7 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         4 => {
             f.pc = 5;
             let c = f.s.pick.expect("set in step 3");
-            if input.is_yes() && g.zone(c) == Zone::Discard(p) {
+            if input.is_yes() {
                 return Flow::Call(Frame::play(p, c, true, vec![]));
             }
             Flow::done()
@@ -2838,9 +2839,7 @@ fn invasion(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         6 => {
             f.pc = 7;
             match input.card() {
-                Some(c) if g.zone(c) == Zone::Discard(p) => {
-                    Flow::Call(Frame::play(p, c, true, vec![]))
-                }
+                Some(c) if g.gained(p, c).is_some() => Flow::Call(Frame::play(p, c, true, vec![])),
                 _ => Flow::done(),
             }
         }
