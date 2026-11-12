@@ -1242,6 +1242,8 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let mut shuffled = g.shuffled(p).to_vec();
             shuffled.sort();
+            g.look_through_shuffled(p);
+            let above = g.look_over_shuffled(p);
             let n = favors(g, p) as usize;
             let max = if astrologers { n } else { 2 * n };
             f.pc = 1;
@@ -1250,7 +1252,9 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             } else {
                 (Purpose::Move, "put into your discard pile, a Favor per 2 cards")
             };
-            f.ask_cards(shuffled, 0, max, purpose).question(what)
+            f.ask_cards(shuffled, 0, max, purpose)
+                .question(what)
+                .about(above)
         }
         1 => {
             let chosen = input.cards();
@@ -1261,6 +1265,7 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     g.show_to(c, p);
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
+                g.reshuffle_unplaced(p, &[]);
                 return Flow::done();
             }
             f.pc = 2;
@@ -1279,6 +1284,7 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             new.extend(chosen.iter().rev());
             new.extend(deck[base..].iter().copied());
             *deck = new;
+            g.reshuffle_unplaced(p, &chosen);
             Flow::done()
         }
     }

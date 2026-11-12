@@ -872,18 +872,22 @@ fn star_chart(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let mut shuffled = g.shuffled(p).to_vec();
             shuffled.sort();
+            g.look_through_shuffled(p);
+            let above = g.look_over_shuffled(p);
             f.pc = 1;
-            f.ask_cards(shuffled, 1, 1, Purpose::TopDeck)
+            f.ask_cards(shuffled, 1, 1, Purpose::TopDeck).about(above)
         }
         _ => {
             let count = g.shuffled(p).len();
             let deck = &mut g.players[p.index()].deck;
-            if let Some(c) = input.card()
+            let picked = input.card();
+            if let Some(c) = picked
                 && let Some(i) = deck[..count].iter().position(|&x| x == c)
             {
                 deck.remove(i);
                 deck.insert(count - 1, c);
             }
+            g.reshuffle_unplaced(p, &Vec::from_iter(picked));
             Flow::done()
         }
     }

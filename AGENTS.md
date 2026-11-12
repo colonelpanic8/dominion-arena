@@ -238,7 +238,9 @@ them.
   known). Anything that reveals a specific card must record it: `g.reveal(p, id)`
   instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to` for other
   reveals and looks, `g.look_through_discard(p)` before a player picks from their
-  discard pile. Cards that change zones must go through `move_card` (or record a
+  discard pile, `g.look_through_shuffled(p)` (and `g.look_over_shuffled(p)` for the cards
+  left on the deck) where a "when you shuffle" choice looks through the shuffled cards,
+  then `g.reshuffle_unplaced(p, placed)` once the others are shuffled again. Cards that change zones must go through `move_card` (or record a
   `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
   Only its owner follows a card that leaves cards they hold out of sight: a hand,
   cards taken off their deck to look at, cards set aside face down together (move them one after the other), the cards of a

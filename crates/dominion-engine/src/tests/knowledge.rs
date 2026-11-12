@@ -542,6 +542,50 @@ fn a_player_knows_the_cards_avoid_kept_out_of_the_shuffle() {
     );
 }
 
+/// The groups of `viewer`'s knowledge with cards in `zone`.
+fn groups_in(g: &Game, k: &Knowledge, viewer: PlayerId, zone: Zone) -> Vec<Vec<CardId>> {
+    k.groups(viewer)
+        .filter(|group| group.cards.iter().any(|&c| g.zone(c) == zone))
+        .map(|group| group.cards.to_vec())
+        .collect()
+}
+
+/// Star Chart's player looks through the cards they shuffle and the ones left on the
+/// deck: they know the one they put on top, and the others are shuffled again.
+#[test]
+fn star_chart_shows_the_shuffled_cards_and_shuffles_the_others_again() {
+    let mut g = setup(&[Card::Smithy]);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Smithy]);
+    let above = deck(&mut g, P0, &[Card::Silver]);
+    let shuffled = discard(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Estate,
+            Card::Duchy,
+            Card::Province,
+            Card::Curse,
+            Card::Copper,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Smithy);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.pending().unwrap().about, above);
+    choose(&mut g, &[shuffled[0]]);
+    k.update(&mut g);
+    assert_eq!(hand_kinds(&g, P0)[..2], [Card::Silver, Card::Gold]);
+    let rest = g.player(P0).deck.clone();
+    assert_eq!(rest.len(), 4);
+    let mut groups = groups_in(&g, &k, P0, Zone::Deck(P0));
+    groups.iter_mut().for_each(|group| group.sort());
+    let mut rest_sorted = rest.clone();
+    rest_sorted.sort();
+    assert_eq!(groups, [rest_sorted]);
+}
+
 /// Bad Omens leaves two Coppers as the deck, as everyone knows.
 #[test]
 fn everyone_knows_the_coppers_bad_omens_leaves_on_the_deck() {

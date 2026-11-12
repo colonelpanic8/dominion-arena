@@ -469,6 +469,9 @@ pub struct Game {
     /// The cards of the latest shuffle (see [`Game::shuffled`]).
     #[serde(default)]
     pub(crate) last_shuffle: Vec<CardId>,
+    /// The cards of it that "when you shuffle" choices put on top of or under the others.
+    #[serde(default)]
+    pub(crate) shuffle_placed: Vec<CardId>,
     /// Cards taken off decks to be looked at or revealed, innermost last.
     #[serde(default)]
     pub(crate) holds: Vec<Hold>,
@@ -966,6 +969,7 @@ impl Game {
             plays: vec![],
             leaving: vec![],
             last_shuffle: vec![],
+            shuffle_placed: vec![],
             holds: vec![],
             emptied_depth: 0,
             ext: self.ext.clone(),

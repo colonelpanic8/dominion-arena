@@ -700,6 +700,7 @@ fn resume_shuffle(
             g.mixed(mixed);
             *count = under.len();
             g.last_shuffle = under.clone();
+            g.shuffle_placed.clear();
             let pl = &mut g.players[p.index()];
             under.append(&mut pl.deck);
             pl.deck = under;
