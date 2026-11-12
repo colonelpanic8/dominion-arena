@@ -1766,6 +1766,27 @@ fn populate_gains_one_card_from_each_action_supply_pile_in_a_chosen_order() {
     assert_eq!(gained(&g, P0), [Card::Smithy, Card::Village]);
 }
 
+/// A game may have up to 128 piles (`setup::MAX_PILES`): Populate takes one card from a
+/// pile past the 64th too.
+#[test]
+fn populate_gains_one_card_from_a_pile_past_the_64th() {
+    let mut g = setup_with_landscapes(&[Card::Smithy], &[Card::Populate]);
+    while g.piles().len() < 70 {
+        g.add_pile(crate::game::Pile::new(Card::Curse, false));
+    }
+    add_kingdom_piles(&mut g, &[Card::Village]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Gold, Card::Copper],
+    );
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Populate);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(gained(&g, P0), [Card::Smithy, Card::Village]);
+}
+
 #[test]
 fn populate_skips_treasure_piles_under_enlightenment() {
     let mut g = setup_with_landscapes(&[Card::Village], &[Card::Populate]);

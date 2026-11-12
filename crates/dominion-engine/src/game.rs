@@ -359,6 +359,9 @@ pub struct Scratch {
     pub card: Option<Card>,
     pub player: Option<PlayerId>,
     pub pile: Option<PileId>,
+    /// Piles the effect is done with (Populate's).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub piles: Vec<PileId>,
     /// Cards the effect goes on to move if they stay where they are.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) placed: Vec<Placed>,

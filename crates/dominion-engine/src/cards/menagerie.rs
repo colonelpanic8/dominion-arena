@@ -1859,20 +1859,9 @@ fn invest(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 fn populate(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
-    let done = |f: &CardFrame, pile: PileId| {
-        let bit = pile.0 as u64;
-        let mask = (f.s.n as u32 as u64) | ((f.s.m as u32 as u64) << 32);
-        bit < 64 && mask & (1 << bit) != 0
-    };
     if f.pc == 1 {
         if let Some(pile) = input.pile() {
-            let bit = pile.0 as u64;
-            let mut mask = (f.s.n as u32 as u64) | ((f.s.m as u32 as u64) << 32);
-            if bit < 64 {
-                mask |= 1 << bit;
-            }
-            f.s.n = mask as u32 as i32;
-            f.s.m = (mask >> 32) as u32 as i32;
+            f.s.piles.push(pile);
             f.pc = 0;
             return Flow::Call(Frame::gain(f.player, pile, Dest::Discard));
         }
@@ -1884,7 +1873,10 @@ fn populate(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let pile = g.pile(id);
             // By the pile's card as printed: Enlightenment and Inheritance change cards,
             // not piles.
-            pile.in_supply && pile.card.is(Types::ACTION) && !pile.cards.is_empty() && !done(f, id)
+            pile.in_supply
+                && pile.card.is(Types::ACTION)
+                && !pile.cards.is_empty()
+                && !f.s.piles.contains(&id)
         })
         .collect();
     if piles.is_empty() {
