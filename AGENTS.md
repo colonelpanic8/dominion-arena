@@ -46,6 +46,11 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/state.rs       the game page's model (view, version, log), selection -> Answer
   src/game/mod.rs         GamePage: seat choice, keeping state current, `GameCtx` context
   src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
+  src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
+                          "Play Treasures" (`TreasureRun`)
+  src/game/board.rs       a view arranged for drawing: piles, players, stacks, status
+  src/game/logfmt.rs      the log as display lines: turn headers, depth, card spans
+  tests/table.rs          those three models property-tested over random real games
   src/lobby.rs            game list, new game, join by token
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```

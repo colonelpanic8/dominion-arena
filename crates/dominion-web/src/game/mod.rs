@@ -1,6 +1,9 @@
 //! The game page: which seat this browser shows, keeping its [`GameState`] current over
 //! the change feed, and answering for it.
 
+pub mod board;
+pub mod interaction;
+pub mod logfmt;
 pub mod plain;
 pub mod state;
 
