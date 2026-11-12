@@ -258,6 +258,11 @@ server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (defaul
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 ```
 
+On NixOS the flake's `nixosModules.default` runs it as a service: `services.dominion.enable`,
+with `services.dominion.settings` holding the settings above (`state_dir` and `assets_dir`
+default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`), and
+`services.dominion.syncAssets` to fill the asset cache at boot.
+
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;
 `dominion play --game ID --token T` plays a seat of an existing game. Type option
