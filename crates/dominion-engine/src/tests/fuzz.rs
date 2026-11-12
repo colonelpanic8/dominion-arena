@@ -585,6 +585,50 @@ fn fam_ways(rng: &mut ChaCha8Rng, seed: u64) -> Kingdom {
     }
 }
 
+/// Way of the Chameleon over cards that give +$ or +Cards in the middle of their
+/// instructions or later in the turn, with what replays them, lets them choose more
+/// (Elder), plays them on other players' turns or makes Treasures Actions.
+fn fam_chameleon(rng: &mut ChaCha8Rng, seed: u64) -> Kingdom {
+    let givers = with_text(&[
+        "for +$",
+        "+$1 per",
+        "+$2 per",
+        ", +$",
+        ": +$",
+        "+1 card per",
+        "this turn",
+        "the next time",
+        "until your next turn",
+        "each of your turns",
+        "choose one",
+        "choose two",
+    ]);
+    let mut forced = vec![];
+    let mut ls = vec![Card::WayOfTheChameleon];
+    if seed.is_multiple_of(2) {
+        forced.push(Card::Townsfolk);
+    }
+    let mut also = with_text(&["twice", "three times", "replay"]);
+    if seed.is_multiple_of(3) {
+        ls.push(Card::Enlightenment);
+        also = with_type(&["Omen"]);
+    } else if seed % 3 == 1 {
+        also.extend(with_type(&["Reaction"]));
+    }
+    let n = forced.len() + 3;
+    let first = kingdom(rng, &forced, &also, 3);
+    ls.extend(
+        some_landscapes(rng, 2)
+            .into_iter()
+            .filter(|l| l.kind() != Kind::Way),
+    );
+    Kingdom {
+        cards: kingdom(rng, &first[..n.min(first.len())], &givers, 10),
+        landscapes: ls,
+        ..Kingdom::default()
+    }
+}
+
 fn fam_piles(rng: &mut ChaCha8Rng, _: u64) -> Kingdom {
     let split: Vec<Card> = pool()
         .into_iter()
@@ -3576,6 +3620,7 @@ fn drive(seed: u64, plan: Plan, report: &mut Report) {
     for e in g.log() {
         match e {
             Event::Played { card, .. } => *report.plays.entry(*card).or_default() += 1,
+            Event::UsedWay { way, .. } => *report.plays.entry(*way).or_default() += 1,
             Event::BoughtLandscape { card, .. } => {
                 report.landscapes_bought += 1;
                 *report.plays.entry(*card).or_default() += 1;
@@ -3706,8 +3751,8 @@ fn run_family(name: &str, family: Family, default_seeds: u64) {
             plays.values().sum::<u32>(),
         );
     }
-    // Cards and landscapes in games of this run, with how often they were used (played or
-    // bought), for finding what the families never reach.
+    // Cards and landscapes in games of this run, with how often they were used (played,
+    // bought, or used as a Way), for finding what the families never reach.
     if std::env::var("FUZZ_COVER").is_ok() {
         let mut present: BTreeMap<Card, (u32, u32)> = BTreeMap::new();
         for (_, r) in &reports {
@@ -3769,6 +3814,7 @@ families! {
     fuzz_attacks_and_reactions => fam_attacks, 6;
     fuzz_extra_turns => fam_extra_turns, 6;
     fuzz_ways => fam_ways, 6;
+    fuzz_way_of_the_chameleon => fam_chameleon, 6;
     fuzz_split_piles => fam_piles, 6;
     fuzz_prophecies => fam_prophecies, 6;
     fuzz_black_market_and_banes => fam_markets, 6;
