@@ -159,6 +159,7 @@ pub struct Session {
     ident: Arc<Mutex<Option<Ident>>>,
     /// Where its last request came from.
     peer: Arc<Mutex<Option<IpAddr>>>,
+    trust_proxy: bool,
     max_wait: Duration,
 }
 
@@ -187,8 +188,9 @@ fn view_result(view: &AgentView, text: String, format: Format) -> CallToolResult
 impl Session {
     /// `max_wait` caps `wait_for_decision`; it must be shorter than the time an idle
     /// session is kept, or a waiting call would outlive its session.
-    pub fn new(arena: Arc<Arena>, max_wait: Duration) -> Session {
+    pub fn new(arena: Arc<Arena>, max_wait: Duration, trust_proxy: bool) -> Session {
         Session {
+            trust_proxy,
             hub: arena.hub.clone(),
             arena,
             joined: Arc::new(Mutex::new(None)),
@@ -211,9 +213,10 @@ impl Session {
     /// Reads who an HTTP request of the session comes from: its address, and the account
     /// of an API key sent as a bearer token.
     fn greet(&self, parts: &Parts) {
-        if let Some(ConnectInfo(addr)) = parts.extensions.get::<ConnectInfo<SocketAddr>>() {
-            *self.peer.lock().unwrap_or_else(PoisonError::into_inner) = Some(addr.ip());
-        }
+        let peer = parts.extensions.get::<ConnectInfo<SocketAddr>>();
+        let peer = peer.map(|ConnectInfo(addr)| *addr);
+        let ip = crate::http::client_ip(&parts.headers, peer, self.trust_proxy);
+        *self.peer.lock().unwrap_or_else(PoisonError::into_inner) = Some(ip);
         let mut ident = self.ident.lock().unwrap_or_else(PoisonError::into_inner);
         if ident.is_some() {
             return;

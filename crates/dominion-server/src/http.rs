@@ -305,6 +305,22 @@ impl From<arena::Error> for Error {
 type Result<T> = std::result::Result<T, Error>;
 type Json<T> = Result<axum::Json<T>>;
 
+/// The address a request is counted against: where it came from, or behind a trusted
+/// proxy the last address of `X-Forwarded-For`, which the proxy wrote.
+pub(crate) fn client_ip(
+    headers: &HeaderMap,
+    peer: Option<SocketAddr>,
+    trust_proxy: bool,
+) -> IpAddr {
+    let forwarded = || {
+        let value = headers.get("x-forwarded-for")?.to_str().ok()?;
+        value.rsplit(',').next()?.trim().parse().ok()
+    };
+    (trust_proxy.then(forwarded).flatten())
+        .or(peer.map(|p| p.ip()))
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
+}
+
 fn body<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
     serde_json::from_slice(bytes).map_err(|e| {
         Error::new(
@@ -355,13 +371,7 @@ impl Api {
     }
 
     fn ip(&self, headers: &HeaderMap, peer: Option<SocketAddr>) -> IpAddr {
-        let forwarded = || {
-            let value = headers.get("x-forwarded-for")?.to_str().ok()?;
-            value.rsplit(',').next()?.trim().parse().ok()
-        };
-        (self.trust_proxy.then(forwarded).flatten())
-            .or(peer.map(|p| p.ip()))
-            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
+        client_ip(headers, peer, self.trust_proxy)
     }
 
     fn session_cookie(&self, token: &str, age: u32) -> HeaderValue {

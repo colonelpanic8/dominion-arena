@@ -604,3 +604,19 @@ async fn an_agent_sits_down_at_a_table_and_plays_when_it_starts() {
     agent.close().await;
     stop.cancel();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_address_makes_only_so_many_guests_over_mcp() {
+    let server = start_on("127.0.0.1:0", Options::default()).await;
+    let client = Client::connect(&server.url).await.unwrap();
+    let mut made = 0;
+    for _ in 0..25 {
+        made += usize::from(call(&client, "sign_in", json!({})).await.ok);
+    }
+    assert_eq!(made, 20);
+    let refused = call(&client, "sign_in", json!({})).await;
+    assert!(refused.text.contains("too many"), "{}", refused.text);
+    client.close().await;
+    server.stop.cancel();
+    let _ = server.done.await;
+}

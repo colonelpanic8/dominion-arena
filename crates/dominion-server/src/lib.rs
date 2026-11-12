@@ -97,8 +97,9 @@ pub async fn serve(
     sessions.session_config.keep_alive = options.session_idle;
     // A call in progress doesn't keep its session alive, so no wait may outlast it.
     let max_wait = options.session_idle.map_or(mcp::MAX_WAIT, |idle| idle / 2);
+    let trust_proxy = options.trust_proxy;
     let service = StreamableHttpService::new(
-        move || Ok(mcp::Session::new(arena.clone(), max_wait)),
+        move || Ok(mcp::Session::new(arena.clone(), max_wait, trust_proxy)),
         Arc::new(sessions),
         config,
     );
