@@ -396,6 +396,8 @@ them.
   nobody else follows which copy is on top; seeing that top may show the same copy
   revealed earlier. Privately ordering a selection from a searched discard pile mixes
   it with every card the selection could have included, before following the moves.
+  Cards put in a private order out of a public zone (Mandarin's Treasures from play) are
+  followed out of it and mixed once they have all left it.
   A shuffle records its mix before its individual zone moves, whose random order
   nobody can follow.
   Mixing splits the mixed cards from groups containing untouched cards. Cards with

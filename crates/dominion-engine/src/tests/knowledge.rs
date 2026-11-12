@@ -2184,6 +2184,43 @@ fn private_revealed_put_back_order_does_not_reach_other_seats() {
     assert_eq!(a.zone(Zone::Deck(P1)), b.zone(Zone::Deck(P1)));
 }
 
+/// Mandarin's Treasures go from play onto the deck in an order only their owner sees.
+#[test]
+fn a_private_order_of_cards_from_play_is_mixed_on_the_deck() {
+    let mut g = setup(&[Card::Mandarin]);
+    let treasures = [
+        Card::Gold,
+        Card::Silver,
+        Card::Copper,
+        Card::Copper,
+        Card::Copper,
+        Card::Copper,
+    ];
+    hand(&mut g, P0, &treasures);
+    deck(&mut g, P0, &[]);
+    let (mut g, mut k) = start(g);
+    for c in treasures {
+        play(&mut g, c);
+    }
+    buy(&mut g, Card::Mandarin);
+    k.update(&mut g);
+    let mut gold_last = candidates(&g);
+    gold_last.sort_by_key(|&c| g.card(c) == Card::Gold);
+    let mut gold_first = gold_last.clone();
+    gold_first.reverse();
+    let [(a, ka), (b, kb)] = [gold_first, gold_last].map(|order| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        respond_traced(&mut g, &mut k, Response::Cards(order));
+        next_turn(&mut g);
+        k.update(&mut g);
+        (g, k)
+    });
+    assert_eq!(a.player(P0).deck.len(), 1);
+    assert_ne!(a.card(a.player(P0).deck[0]), b.card(b.player(P0).deck[0]));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(digest(&a, &ka, P1), digest(&b, &kb, P1));
+}
+
 #[test]
 fn revealed_cards_split_between_hand_and_deck_stay_known() {
     let mut g = setup(&[Card::Seer]);
@@ -2329,12 +2366,13 @@ pub(super) fn check_revealed_order_twins(
     else {
         return Ok(());
     };
-    if *max < 2
-        || !candidates.iter().any(|&c| {
-            matches!(g.zone(c), Zone::Looking(p)
-        if g.player(p).face_up.contains(&c))
-        })
-    {
+    // Cards everyone saw, put back where the order is private.
+    let seen = |c: CardId| match g.zone(c) {
+        Zone::Looking(p) => g.player(p).face_up.contains(&c),
+        Zone::InPlay(_) | Zone::Trash => true,
+        _ => false,
+    };
+    if *max < 2 || !candidates.iter().any(|&c| seen(c)) {
         return Ok(());
     }
     let cards: Vec<_> = candidates.iter().copied().take(*max).collect();
