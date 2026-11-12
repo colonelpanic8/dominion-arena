@@ -54,13 +54,13 @@ fn phase(g: &Game) -> Option<Phase> {
 
 /// Uses `w` for the Action being played.
 fn way(g: &mut Game, w: Card) {
-    assert_eq!(purpose(g), Purpose::Mode);
+    assert_eq!(purpose(g), Purpose::Way);
     respond(g, Response::option(Opt::Card(w)));
 }
 
 /// Plays the Action being played for its own effect rather than a Way.
 fn own(g: &mut Game) {
-    assert_eq!(purpose(g), Purpose::Mode);
+    assert_eq!(purpose(g), Purpose::Way);
     no(g);
 }
 

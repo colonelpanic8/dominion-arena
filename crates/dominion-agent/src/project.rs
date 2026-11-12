@@ -25,7 +25,11 @@ pub(crate) fn kebab(name: &str) -> String {
 }
 
 pub(crate) fn purpose_name(p: Purpose) -> String {
-    kebab(&format!("{p:?}"))
+    match p {
+        // agent-view@2 has no purpose of its own for it.
+        Purpose::Way => "mode".into(),
+        p => kebab(&format!("{p:?}")),
+    }
 }
 
 pub(crate) fn phase_name(p: Phase) -> String {
@@ -522,6 +526,7 @@ fn verb(p: Purpose) -> Option<&'static str> {
         Purpose::Pass => "pass",
         Purpose::Trigger
         | Purpose::Mode
+        | Purpose::Way
         | Purpose::Either
         | Purpose::Overpay
         | Purpose::Name
