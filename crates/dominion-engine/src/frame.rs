@@ -1310,13 +1310,7 @@ fn resume_gain(
             let gain = g.gains.last_mut().expect("gain in progress");
             gain.cost = cost;
             gain.phase = g.turn.phase;
-            if let Some(pile) = g.home_pile(g.printed(st.card)) {
-                let pile = &mut g.piles[pile.index()];
-                if pile.trade_route {
-                    pile.trade_route = false;
-                    g.trade_route_mat += 1;
-                }
-            }
+            let home = g.home_pile(g.printed(st.card));
             g.show(st.card);
             g.move_card(st.card, zone, Pos::Top);
             g.gains.last_mut().expect("gain in progress").at = g.now();
@@ -1341,6 +1335,14 @@ fn resume_gain(
                 card: kind,
                 to: st.to,
             });
+            if let Some(pile) = home
+                && g.piles[pile.index()].trade_route
+            {
+                g.piles[pile.index()].trade_route = false;
+                g.trade_route_mat += 1;
+                // Logged after the gain that moved it.
+                g.sync_log(None);
+            }
             *pc = 2;
             Flow::Call(Frame::window(Occasion::Gain {
                 player: st.player,
