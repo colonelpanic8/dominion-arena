@@ -685,7 +685,7 @@ fn attack_on(g: &Game, card: Card, p: PlayerId) -> bool {
             && l.until == Until::Removed
             && l.owner != p
             && in_mask(l.data.n, p)
-            && g.player(l.owner).turns_taken == l.turn
+            && g.before_next_turn(l)
     })
 }
 

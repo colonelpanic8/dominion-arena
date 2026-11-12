@@ -309,7 +309,10 @@ impl SetRules for Rules {
                 attacker, target, ..
             } => {
                 let guarded = g.lasting().iter().any(|l| {
-                    l.card == Card::Guardian && l.owner == target && l.until == Until::Removed
+                    l.card == Card::Guardian
+                        && l.owner == target
+                        && l.until == Until::Removed
+                        && g.before_next_turn(l)
                 });
                 if guarded && attacker != target {
                     out.push(Trigger::new(target, Card::Guardian, GUARDIAN_SHIELD).protects());

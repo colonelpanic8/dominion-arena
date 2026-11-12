@@ -796,6 +796,7 @@ fn enchant_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trig
     let enchanted = g.lasting().iter().any(|l| {
         l.card == Card::Enchantress
             && l.until == Until::Removed
+            && g.before_next_turn(l)
             && l.owner != player
             && in_mask(l.data.n, player)
     });

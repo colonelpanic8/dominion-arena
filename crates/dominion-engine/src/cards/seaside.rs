@@ -143,7 +143,7 @@ impl SetRules for Rules {
         }
         match *occ {
             Occasion::Attack { target, .. } => {
-                if active(g, Card::Lighthouse).any(|l| l.owner == target) {
+                if until_then(g, Card::Lighthouse).any(|l| l.owner == target) {
                     out.push(Trigger::new(target, Card::Lighthouse, LIGHTHOUSE_SHIELD).protects());
                 }
             }
@@ -152,7 +152,7 @@ impl SetRules for Rules {
                 let first = silver_or_gold(&g.card(card))
                     && !g.plays_before(player, card).any(|(c, _)| silver_or_gold(&c));
                 if first
-                    && active(g, Card::Corsair)
+                    && until_then(g, Card::Corsair)
                         .any(|l| l.owner != player && in_mask(l.data.n, player))
                 {
                     out.push(Trigger::new(player, Card::Corsair, CORSAIR_TRASH).on(card));
@@ -196,7 +196,7 @@ impl SetRules for Rules {
 }
 
 fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
-    for l in active(g, Card::Monkey) {
+    for l in until_then(g, Card::Monkey) {
         if l.owner != gainer && g.right_of(l.owner) == gainer {
             out.push(Trigger::new(l.owner, Card::Monkey, MONKEY_DRAW).via_lasting(l.id));
         }
@@ -238,6 +238,11 @@ fn active(g: &Game, card: Card) -> impl Iterator<Item = &crate::Lasting> {
     g.lasting()
         .iter()
         .filter(move |l| l.card == card && l.until == Until::Removed)
+}
+
+/// The Duration effects of `card` whose "until your next turn" part is still on.
+fn until_then(g: &Game, card: Card) -> impl Iterator<Item = &crate::Lasting> {
+    active(g, card).filter(|l| g.before_next_turn(l))
 }
 
 fn mask(players: &[PlayerId]) -> i32 {

@@ -900,6 +900,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
         for l in g.lasting() {
             let hits = matches!(l.card, Card::HauntedWoods | Card::SwampHag)
                 && l.until == Until::Removed
+                && g.before_next_turn(l)
                 && l.owner != player
                 && l.data.i & (1 << player.index()) != 0;
             if hits {

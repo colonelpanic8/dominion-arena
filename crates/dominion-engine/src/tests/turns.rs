@@ -261,3 +261,54 @@ fn outpost_played_at_the_start_of_a_turn_stays_in_play_through_its_extra_turn() 
     end_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
 }
+
+/// "Until your next turn" ends the instant that turn starts. Lighthouse's page: "if you
+/// trash a Hunting Grounds with Donate and gain a Duchy, Lighthouse won't protect you from
+/// Black Cat"; Frigate's attack is over by then too.
+#[test]
+fn until_your_next_turn_effects_are_over_during_the_start_of_that_turn() {
+    let mut g = game(
+        2,
+        &[
+            Card::Lighthouse,
+            Card::Frigate,
+            Card::Workshop,
+            Card::Farmhands,
+            Card::BlackCat,
+        ],
+        &[],
+    );
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Lighthouse,
+            Card::Frigate,
+            Card::Workshop,
+            Card::Gold,
+            Card::Gold,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    let mut cards = vec![Card::BlackCat];
+    cards.extend([Card::Copper; 6]);
+    deck(&mut g, P1, &cards);
+    g.start();
+    play(&mut g, Card::Lighthouse);
+    play(&mut g, Card::Frigate);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Farmhands);
+    // Farmhands sets the Workshop aside to play at the start of the next turn.
+    super::intrigue::trigger(&mut g, Card::Farmhands);
+    assert_eq!(turn(&g), (P1, None));
+    end_turn(&mut g);
+    assert_eq!(turn(&g), (P0, None));
+    super::intrigue::trigger(&mut g, Card::Farmhands);
+    // P0 gains an Estate, and P1 plays Black Cat.
+    choose_pile(&mut g, Card::Estate);
+    super::intrigue::trigger(&mut g, Card::BlackCat);
+    assert_eq!(g.count_owned(P0, Card::Curse), 1);
+    assert_eq!(g.hand(P1).len(), 5 - 1 + 2, "no discarding down to 4");
+}

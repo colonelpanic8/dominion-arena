@@ -344,7 +344,7 @@ pub struct Scratch {
 pub enum Until {
     /// At the end of this turn (after Clean-up).
     EndOfTurn,
-    /// When that player's next turn starts (after start-of-turn effects); for one made
+    /// When that player's next turn starts (before start-of-turn effects); for one made
     /// during the start of a turn, that is the turn after.
     StartOfTurn(PlayerId),
     /// Only when an effect removes it (Durations remove themselves when they resolve).
@@ -819,6 +819,13 @@ impl Game {
             .rev()
             .find(|st| st.card == id)
             .map(|st| st.phase)
+    }
+
+    /// Whether `l`'s "until your next turn" part is still on: its owner hasn't begun a turn
+    /// since it was made. It ends the instant that turn starts, before anything at its start,
+    /// while the Duration's "at the start of your next turn" part is still to come.
+    pub fn before_next_turn(&self, l: &Lasting) -> bool {
+        self.player(l.owner).turns_taken == l.turn
     }
 
     /// `p`'s plays this turn before the play of `id` being resolved ("the first Silver you
