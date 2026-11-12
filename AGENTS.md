@@ -33,7 +33,8 @@ crates/dominion-engine/
   src/tests/<set>.rs      each set's card tests
   src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
-crates/dominion-protocol/ serde types of agent-view@2 and the HTTP API; engine-free, builds for wasm
+crates/dominion-protocol/ serde types of agent-view@2, the HTTP API and the asset manifest; engine-free,
+                          builds for wasm
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
@@ -43,6 +44,14 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/api.rs              typed client for /api and the SSE change feed
   src/session.rs          seat tokens held in localStorage
   src/cards.rs            /api/cards data by name (provided as `app::Cards` context)
+  src/assets.rs           /assets/manifest.json and the card fonts (`use_assets()`); absent cache is fine
+  src/card/               the card renderer: CardView / CardBack / CardHover at Full, Mini, Micro
+    text.rs               official text -> lines of styled words and icons (pure)
+    fit.rs                word wrapping and font-size fitting in card-width units (pure)
+    layout.rs             where things sit on a card, as fractions of its size (upstream's boxes)
+    measure.rs            text widths: canvas in the browser, an estimate natively
+  assets/cards.css        card styles (cqw units; images through --dc-* variables)
+  src/gallery.rs          /gallery: every card through the renderer, with filters
   src/game/state.rs       the game page's model (view, version, log), selection -> Answer
   src/game/mod.rs         GamePage: seat choice, keeping state current, `GameCtx` context
   src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
