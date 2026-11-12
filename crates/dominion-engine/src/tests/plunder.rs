@@ -1239,6 +1239,8 @@ fn swamp_shacks_draws_a_card_per_three_cards_in_play() {
     assert_eq!(g.turn().actions, 4);
 }
 
+/// Tools' page: "This can't gain a copy of a card that isn't in the Supply (such as Loots).
+/// However, you can still try to gain a copy of it (and gain nothing)."
 #[test]
 fn tools_gains_a_copy_of_a_card_anyone_has_in_play_but_not_a_loot() {
     let mut g = setup(&[Card::Tools, Card::Longship, Card::SackOfLoot]);
@@ -1251,12 +1253,17 @@ fn tools_gains_a_copy_of_a_card_anyone_has_in_play_but_not_a_loot() {
     play(&mut g, Card::Hammer);
     choose_pile(&mut g, Card::Copper);
     play(&mut g, Card::Tools);
-    let DecisionKind::Pile { piles, .. } = &g.pending().unwrap().kind else {
-        panic!()
+    let DecisionKind::Choose { options, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending())
     };
-    let names: Vec<Card> = piles.iter().map(|&p| g.pile(p).card).collect();
-    assert_eq!(names, [Card::Tools, Card::Longship]);
-    choose_pile(&mut g, Card::Longship);
+    assert_eq!(
+        options[..],
+        [Card::Hammer, Card::Tools, Card::Longship].map(Opt::Card)
+    );
+    let mut loot = g.clone();
+    respond(&mut loot, Response::option(Opt::Card(Card::Hammer)));
+    assert_eq!(gain_count(&loot, P0, Card::Hammer), 0);
+    respond(&mut g, Response::option(Opt::Card(Card::Longship)));
     assert_eq!(gain_count(&g, P0, Card::Longship), 1);
 }
 

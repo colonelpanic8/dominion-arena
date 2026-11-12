@@ -622,6 +622,30 @@ fn changeling_trashes_itself_and_gains_a_copy_of_a_card_in_play() {
     assert_eq!(discard_kinds(&g, P0), [Card::Silver]);
 }
 
+/// Changeling's page: "You can choose any card you have in play, but if ... that card has
+/// no pile (e.g. an Heirloom), you gain nothing."
+#[test]
+fn changeling_may_choose_a_card_in_play_it_cannot_gain_a_copy_of() {
+    let mut g = setup(&[Card::Changeling]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Silver, Card::HauntedMirror, Card::Changeling],
+    );
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::HauntedMirror);
+    to_night(&mut g);
+    play(&mut g, Card::Changeling);
+    assert_eq!(
+        kinds(&g, &candidates(&g)),
+        [Card::Silver, Card::HauntedMirror]
+    );
+    choose_kinds(&mut g, &[Card::HauntedMirror]);
+    assert!(!g.log().iter().any(|e| matches!(e, Event::Gained { .. })));
+}
+
 #[test]
 fn a_gained_card_costing_three_or_more_may_be_exchanged_for_a_changeling() {
     let mut g = setup(&[Card::Changeling, Card::Skulk]);
@@ -1308,7 +1332,7 @@ fn the_zombies() {
     assert!(pile_options(&g).contains(&Card::Smithy));
     assert!(!pile_options(&g).contains(&Card::Gold));
     respond(&mut g, Response::Pile(None));
-    assert!(g.player(P0).discard.is_empty());
+    assert_eq!(discard_kinds(&g, P0), []);
 
     let mut g = setup(&[Card::Necromancer]);
     hand(&mut g, P0, &[Card::ZombieSpy]);
@@ -1679,7 +1703,7 @@ fn a_throne_roomed_pixie_is_trashed_at_most_once() {
             .discard
             .ends_with(&[Card::TheSeasGift, Card::TheMountainsGift])
     );
-    assert!(g.player(P0).discard.is_empty());
+    assert_eq!(discard_kinds(&g, P0), []);
 }
 
 #[test]

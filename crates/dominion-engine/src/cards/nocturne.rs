@@ -309,7 +309,10 @@ impl SetRules for Rules {
                 attacker, target, ..
             } => {
                 let guarded = g.lasting().iter().any(|l| {
-                    l.card == Card::Guardian && l.owner == target && l.until == Until::Removed
+                    l.card == Card::Guardian
+                        && l.owner == target
+                        && l.until == Until::Removed
+                        && g.before_next_turn(l)
                 });
                 if guarded && attacker != target {
                     out.push(Trigger::new(target, Card::Guardian, GUARDIAN_SHIELD).protects());
@@ -1298,12 +1301,9 @@ fn changeling(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         1 => {
-            let candidates: Vec<CardId> = g
-                .in_play(p)
-                .iter()
-                .copied()
-                .filter(|&c| supply_pile_topped_by(g, g.card(c)).is_some())
-                .collect();
+            // Any card in play may be chosen; one with no copy on top of a Supply pile
+            // gains nothing.
+            let candidates = g.in_play(p).to_vec();
             if candidates.is_empty() {
                 return Flow::done();
             }
@@ -1551,11 +1551,6 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             };
             if g.is(c, Types::ACTION) {
-                g.set_aside_revealed(c, p);
-                g.emit(Event::SetAside {
-                    player: p,
-                    card: g.card(c),
-                });
                 f.s.pick = Some(c);
                 f.pc = 2;
             } else {
@@ -1569,7 +1564,13 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(p, std::mem::take(&mut f.s.cards)))
         }
         _ => {
-            if let Some(c) = f.s.pick {
+            // The others are discarded before the Action is set aside.
+            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) {
+                g.set_aside_revealed(c, p);
+                g.emit(Event::SetAside {
+                    player: p,
+                    card: g.card(c),
+                });
                 let data = Scratch {
                     pick: Some(c),
                     ..Scratch::default()

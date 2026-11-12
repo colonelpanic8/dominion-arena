@@ -852,7 +852,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         .is_some_and(|gain| st.exile_discarded.contains(&(card, gain.since)));
     if action_or_treasure && in_place && copies.is_empty() && !had_copies {
         for l in g.lasting() {
-            let active = l.until == Until::Removed && g.player(l.owner).turns_taken == l.turn;
+            let active = l.until == Until::Removed && g.before_next_turn(l);
             if l.card == Card::Gatekeeper && active && l.owner != gainer && in_mask(l.data.n, gainer)
             {
                 out.push(
@@ -1888,19 +1888,17 @@ fn pursue(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .cards()
                 .into_iter()
                 .partition(|&c| Some(g.card(c)) == named);
-            f.s.cards = matches;
+            f.s.cards = rest;
             f.pc = 3;
-            Flow::Call(Frame::discard(p, rest))
+            f.ask_order(matches, Purpose::TopDeck)
         }
         3 => {
-            f.s.cards = looking(g, p, &f.s.cards);
-            f.pc = 4;
-            f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
-        }
-        _ => {
             put_back(g, p, &input.cards());
-            Flow::done()
+            let rest = looking(g, p, &std::mem::take(&mut f.s.cards));
+            f.pc = 4;
+            Flow::Call(Frame::discard(p, rest))
         }
+        _ => Flow::done(),
     }
 }
 

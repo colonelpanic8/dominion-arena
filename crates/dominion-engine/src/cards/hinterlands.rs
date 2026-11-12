@@ -263,8 +263,7 @@ impl SetRules for Rules {
                     Flow::Call(Frame::draw(f.player, n))
                 }
                 _ => {
-                    let plays = g.turn.played_count(f.player, Card::Crossroads);
-                    if plays == 1 {
+                    if first_play_of(g, f, Card::Crossroads) {
                         g.add_actions(f.player, 3);
                     }
                     Flow::done()
@@ -272,8 +271,8 @@ impl SetRules for Rules {
             },
             (Card::Develop, _) => develop(g, f, input),
             (Card::FoolsGold, _) => {
-                let plays = g.turn.played_count(f.player, Card::FoolsGold);
-                g.add_coins(f.player, if plays <= 1 { 1 } else { 4 });
+                let first = first_play_of(g, f, Card::FoolsGold);
+                g.add_coins(f.player, if first { 1 } else { 4 });
                 Flow::done()
             }
             (Card::GuardDog, _) => {
@@ -507,6 +506,14 @@ impl SetRules for Rules {
             victory as i32 / 4
         })
     }
+}
+
+/// "If this is the first time you played a `name` this turn": this play is of a card named
+/// `name`, and none of its player's earlier plays this turn was.
+fn first_play_of(g: &Game, f: &CardFrame, name: Card) -> bool {
+    f.this.is_some_and(|c| {
+        g.card(c) == name && g.plays_before(f.player, c).all(|(played, _)| played != name)
+    })
 }
 
 /// Action cards the turn's player has gained this turn.

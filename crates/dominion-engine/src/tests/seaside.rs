@@ -1613,3 +1613,73 @@ fn random_seaside_games_keep_invariants() {
         check_zones(&g);
     }
 }
+
+/// Monkey's page: "The Duration effect ends instantaneously when your next turn starts.
+/// So if another player gains a card at the start of your turn (e.g. you play a Witch
+/// with Prepare), Monkey won't draw you a card from that."
+#[test]
+fn monkey_stops_drawing_when_its_owners_next_turn_starts() {
+    let mut g = setup(&[Card::Monkey, Card::Witch, Card::Farmhands]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Monkey, Card::Witch, Card::Gold, Card::Copper],
+    );
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    hand(&mut g, P1, &[]);
+    deck(&mut g, P1, &[Card::Copper; 12]);
+    g.start();
+    play(&mut g, Card::Monkey);
+    // No Action play is left for the Witch: the Buy phase has begun.
+    assert_eq!(g.turn().phase, Phase::Buy);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    buy(&mut g, Card::Farmhands);
+    // Farmhands sets the Witch aside to play at the start of the next turn.
+    super::intrigue::trigger(&mut g, Card::Farmhands);
+    // With no Buy left the turn ends.
+    assert_eq!(g.turn().player, P1);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.hand(P0).len(), 5);
+    // The Witch first: P1's Curse comes after Monkey's "until your next turn" is over.
+    super::intrigue::trigger(&mut g, Card::Farmhands);
+    assert_eq!(g.count_owned(P1, Card::Curse), 1);
+    assert_eq!(
+        g.hand(P0).len(),
+        8,
+        "5, Witch's +2 Cards and Monkey's +1 Card at the start of the turn"
+    );
+}
+
+/// Smugglers' page: "First you choose a card that the player to your right gained
+/// costing up to $6, and then you (try to) gain a copy of it from the Supply. This means
+/// you may be able to choose a card that is unavailable to be gained (e.g., a card whose
+/// Supply pile is empty, or a card from outside the Supply); and if you do, you gain
+/// nothing."
+#[test]
+fn smugglers_may_choose_a_gained_card_it_cannot_gain() {
+    let mut g = setup(&[Card::Smugglers, Card::BanditCamp]);
+    hand(&mut g, P0, &[]);
+    let mut cards = vec![Card::Smugglers];
+    cards.extend([Card::Copper; 6]);
+    deck(&mut g, P0, &cards);
+    hand(&mut g, P1, &[Card::BanditCamp]);
+    deck(&mut g, P1, &[Card::Copper; 12]);
+    g.start();
+    next_turn(&mut g);
+    play(&mut g, Card::BanditCamp);
+    buy(&mut g, Card::Curse);
+    // With no Buy left the turn ends.
+    assert_eq!(g.turn().player, P0);
+    play(&mut g, Card::Smugglers);
+    let DecisionKind::Choose { options, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending())
+    };
+    assert_eq!(options[..], [Card::Spoils, Card::Curse].map(Opt::Card));
+    // The Spoils isn't in the Supply: nothing is gained.
+    respond(&mut g, Response::option(Opt::Card(Card::Spoils)));
+    assert_eq!(g.count_owned(P0, Card::Spoils), 0);
+    assert_eq!(g.count_owned(P0, Card::Curse), 0);
+    assert_eq!(purpose(&g), Purpose::Turn);
+}

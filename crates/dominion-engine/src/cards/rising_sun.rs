@@ -402,7 +402,7 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::Panic, PANIC_BUYS).quiet());
                 }
                 let name = g.card(card);
-                let first = g.turn.played_count(player, name) == 1;
+                let first = g.plays_before(player, card).all(|(c, _)| c != name);
                 if active(Card::GoodHarvest) && player == turn && first {
                     out.push(Trigger::new(player, Card::GoodHarvest, GOOD_HARVEST).quiet());
                 }

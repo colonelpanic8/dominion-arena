@@ -2241,27 +2241,33 @@ fn maroon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn tools(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            let in_play: Vec<Card> = (0..g.num_players())
-                .flat_map(|p| g.in_play(PlayerId(p as u8)).iter().map(|&c| g.card(c)))
-                .collect();
-            let piles: Vec<PileId> = (0..g.piles().len())
-                .map(|i| PileId(i as u8))
-                .filter(|&id| {
-                    g.pile(id).in_supply
-                        && g.pile_top(id).is_some_and(|t| in_play.contains(&g.card(t)))
-                })
-                .collect();
-            if piles.is_empty() {
+            // Any card in play may be chosen; one with no copy on top of a Supply pile
+            // gains nothing.
+            let mut names = vec![];
+            for p in g.players_from(f.player) {
+                for &c in g.in_play(p) {
+                    if !names.contains(&g.card(c)) {
+                        names.push(g.card(c));
+                    }
+                }
+            }
+            if names.is_empty() {
                 return Flow::done();
             }
+            let labels = names.iter().map(|c| c.to_string()).collect();
+            let options = names.into_iter().map(Opt::Card).collect();
             f.pc = 1;
-            f.ask_pile(piles, false, Purpose::Gain)
+            f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Gain)
+                .question("choose a card in play to gain a copy of")
         }
         1 => {
             f.pc = 2;
-            match input.pile() {
-                Some(pile) => Flow::Call(Frame::gain(f.player, pile, Dest::Discard)),
-                None => Flow::done(),
+            match input.opt() {
+                Some(Opt::Card(card)) => match supply_pile_topped_by(g, card) {
+                    Some(pile) => Flow::Call(Frame::gain(f.player, pile, Dest::Discard)),
+                    None => Flow::done(),
+                },
+                _ => Flow::done(),
             }
         }
         _ => Flow::done(),

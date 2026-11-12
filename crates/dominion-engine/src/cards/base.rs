@@ -39,7 +39,11 @@ impl SetRules for Rules {
             (Card::Chapel, _) => chapel(g, f, input),
             (Card::Harbinger, _) => harbinger(g, f, input),
             (Card::Merchant, _) => {
-                let silvers = g.turn.played_count(f.player, Card::Silver);
+                // A Silver still resolving is not played yet for this Merchant.
+                let silvers = g
+                    .finished_plays(f.player)
+                    .filter(|&(c, _)| c == Card::Silver)
+                    .count();
                 let data = Scratch {
                     n: silvers as i32,
                     ..Scratch::default()
@@ -83,7 +87,7 @@ impl SetRules for Rules {
             Occasion::Play { player, card } => {
                 let first_silver = g.card(card) == Card::Silver
                     && player == g.turn.player
-                    && g.turn.played_count(player, Card::Silver) == 1;
+                    && g.plays_before(player, card).all(|(c, _)| c != Card::Silver);
                 if first_silver {
                     for l in g.lasting() {
                         if l.card == Card::Merchant && l.owner == player && l.data.n == 0 {

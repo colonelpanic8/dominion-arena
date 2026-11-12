@@ -138,8 +138,8 @@ them.
   as a `Frame`: a coroutine whose `pc` records where to resume. A frame returns
   `Flow::Ask` (a decision), `Flow::Call` (push a child; its result comes back as
   `Input::Return`), `Flow::Continue` (re-enter now) or `Flow::Done(value)`.
-- **Turns.** Start (`StartTurn` window, then `Until::StartOfTurn` lastings made before
-  this turn expire),
+- **Turns.** Start (`Until::StartOfTurn` lastings made before this turn expire, then the
+  `StartTurn` window),
   Action (moves: play an Action, spend a Villager, end), Buy (`StartBuyPhase`; play
   Treasures until something is bought, buy cards / Events / Projects; `EndBuyPhase`),
   Night (`StartNight`; play Night cards), Clean-up
@@ -220,7 +220,9 @@ them.
   which includes a turn the card is played at the start of;
   `cards::duration_trigger` builds the trigger), whose ability removes it
   (`f.end_lasting(g)`). "This turn" effects use `Until::EndOfTurn`, "until your next
-  turn" `Until::StartOfTurn(owner)`. Sets read `g.lasting()` for cost changes, triggers,
+  turn" `Until::StartOfTurn(owner)`; a Duration whose "until then" part comes with an "at
+  the start of your next turn" one keeps its lasting and asks `g.before_next_turn(l)`, as
+  the effect ends the instant that turn starts. Sets read `g.lasting()` for cost changes, triggers,
   immunity and so on. A lasting that keeps its `source` in play is that Duration's
   effect: when the card leaves play (`Game::move_card` notices), or was not in play when
   the lasting was made, the lasting is `ending`: it goes on working this turn and is
@@ -241,6 +243,10 @@ them.
   third Action you gain") count the types cards had then: `Turn::played_types` /
   `gained_types` (`played_of`, `gained_of`), never `Card::is` on `played` / `gained`.
   Plays are recorded for every player, off-turn ones too: count one player's (`plays_by`).
+  A play is in `played` from its start, so cards can be played while it still resolves:
+  "the first X you play" and "if this is the first time you played" ask
+  `g.plays_before(p, id)`, and an effect made mid-turn that counts what was played before
+  it asks `g.finished_plays(p)` (Merchant played during the first Silver's play).
   "During your turns" and "this turn" modifiers ask `g.turn_player()`, which is no one
   between turns and when the game is scored, never `g.turn.player`.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,

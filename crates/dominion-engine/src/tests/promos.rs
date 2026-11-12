@@ -136,10 +136,11 @@ fn a_configured_black_market_deck_takes_one_card_of_each_unused_kingdom_pile() {
     rejected(vec![Card::RuinedVillage], Card::RuinedVillage);
 }
 
-/// A card bought from Black Market in the Buy phase (a Treasure under Capitalism) is bought
-/// in that phase: no Treasures can be played after it.
+/// Black Market's page: "If you play Black Market while playing Treasures (for example
+/// with Crystal Ball or Capitalism), you can still continue to play Treasures after
+/// buying a card through Black Market".
 #[test]
-fn black_market_bought_in_the_buy_phase_ends_playing_treasures() {
+fn treasures_can_still_be_played_after_black_market_buys_in_the_buy_phase() {
     let mut g = setup_black_market();
     let bm = black_market_deck(&g);
     replace(
@@ -156,12 +157,12 @@ fn black_market_bought_in_the_buy_phase_ends_playing_treasures() {
     choose(&mut g, &[]);
     choose_kinds(&mut g, &[Card::Laboratory]);
     choose_kinds(&mut g, &[Card::Smithy, Card::Moat]);
+    assert_eq!(g.count_owned(P0, Card::Laboratory), 1);
     let copper = find(&g, P0, Card::Copper);
     let DecisionKind::Turn { moves, .. } = &g.pending().unwrap().kind else {
         panic!("{:?}", g.pending());
     };
-    assert!(!moves.contains(&Move::Play(copper)), "{moves:?}");
-    assert!(moves.contains(&Move::EndPhase));
+    assert!(moves.contains(&Move::Play(copper)), "{moves:?}");
 }
 
 #[test]

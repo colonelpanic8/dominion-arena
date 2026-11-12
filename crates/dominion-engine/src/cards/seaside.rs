@@ -11,7 +11,7 @@
 use super::{
     CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
 };
-use crate::decision::{DecisionKind, Purpose};
+use crate::decision::{DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Until, Zone};
@@ -143,16 +143,16 @@ impl SetRules for Rules {
         }
         match *occ {
             Occasion::Attack { target, .. } => {
-                if active(g, Card::Lighthouse).any(|l| l.owner == target) {
+                if until_then(g, Card::Lighthouse).any(|l| l.owner == target) {
                     out.push(Trigger::new(target, Card::Lighthouse, LIGHTHOUSE_SHIELD).protects());
                 }
             }
             Occasion::Play { player, card } => {
                 let silver_or_gold = |c: &Card| matches!(c, Card::Silver | Card::Gold);
                 let first = silver_or_gold(&g.card(card))
-                    && g.turn.plays_by(player).filter(|(c, _)| silver_or_gold(c)).count() == 1;
+                    && !g.plays_before(player, card).any(|(c, _)| silver_or_gold(&c));
                 if first
-                    && active(g, Card::Corsair)
+                    && until_then(g, Card::Corsair)
                         .any(|l| l.owner != player && in_mask(l.data.n, player))
                 {
                     out.push(Trigger::new(player, Card::Corsair, CORSAIR_TRASH).on(card));
@@ -196,7 +196,7 @@ impl SetRules for Rules {
 }
 
 fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
-    for l in active(g, Card::Monkey) {
+    for l in until_then(g, Card::Monkey) {
         if l.owner != gainer && g.right_of(l.owner) == gainer {
             out.push(Trigger::new(l.owner, Card::Monkey, MONKEY_DRAW).via_lasting(l.id));
         }
@@ -238,6 +238,11 @@ fn active(g: &Game, card: Card) -> impl Iterator<Item = &crate::Lasting> {
     g.lasting()
         .iter()
         .filter(move |l| l.card == card && l.until == Until::Removed)
+}
+
+/// The Duration effects of `card` whose "until your next turn" part is still on.
+fn until_then(g: &Game, card: Card) -> impl Iterator<Item = &crate::Lasting> {
+    active(g, card).filter(|l| g.before_next_turn(l))
 }
 
 fn mask(players: &[PlayerId]) -> i32 {
@@ -764,26 +769,31 @@ fn gained_last_turn(g: &Game, p: PlayerId) -> Vec<Card> {
 fn smugglers(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            let gained = gained_last_turn(g, g.right_of(f.player));
-            let piles = g.supply_piles_where(|_, _| true);
-            let piles: Vec<PileId> = piles
-                .into_iter()
-                .filter(|&id| {
-                    let top = g.pile_top(id).expect("non-empty");
-                    gained.contains(&g.card(top)) && g.cost_of(top).at_most(Cost::coins(6))
-                })
-                .collect();
-            if piles.is_empty() {
+            // Any card they gained may be chosen; one with no copy on top of a Supply pile
+            // gains nothing.
+            let mut names = vec![];
+            for card in gained_last_turn(g, g.right_of(f.player)) {
+                if !names.contains(&card) && g.cost(card).at_most(Cost::coins(6)) {
+                    names.push(card);
+                }
+            }
+            if names.is_empty() {
                 return Flow::done();
             }
+            let labels = names.iter().map(|c| c.to_string()).collect();
+            let options = names.into_iter().map(Opt::Card).collect();
             f.pc = 1;
-            f.ask_pile(piles, false, Purpose::Gain)
+            f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Gain)
+                .question("choose a card they gained to gain a copy of")
         }
         1 => {
             f.pc = 2;
-            match input.pile() {
-                Some(pile) => Flow::Call(Frame::gain(f.player, pile, Dest::Discard)),
-                None => Flow::done(),
+            match input.opt() {
+                Some(Opt::Card(card)) => match super::cornucopia_guilds::copy_pile(g, card) {
+                    Some(pile) => Flow::Call(Frame::gain(f.player, pile, Dest::Discard)),
+                    None => Flow::done(),
+                },
+                _ => Flow::done(),
             }
         }
         _ => Flow::done(),
