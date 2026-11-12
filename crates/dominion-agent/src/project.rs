@@ -602,12 +602,16 @@ fn may_ask_way(game: &Game, v: &View<'_>, d: &Decision) -> bool {
 }
 
 /// Whether `response` starts `p` playing an Action card before they are asked anything
-/// else: what `p` learns on answering anyway.
+/// else. Only a card `p` can see now counts: a card the answer would turn up (Piazza's
+/// reveal) must not show in the hint before it is given.
 fn starts_playing_an_action(game: &Game, p: PlayerId, response: Response) -> bool {
     let mut g = game.clone();
     let since = g.log().len();
+    let seen = game.view(p);
     g.respond(response).is_ok()
-        && (g.plays_in_progress()).any(|(q, c, at)| q == p && at >= since && g.is(c, Types::ACTION))
+        && (g.plays_in_progress()).any(|(q, c, at)| {
+            q == p && at >= since && seen.card(c).is_some() && g.is(c, Types::ACTION)
+        })
 }
 
 /// `text` written by the engine, which calls players by seat ("P2 attacks you", "P2's
