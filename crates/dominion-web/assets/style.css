@@ -115,7 +115,6 @@ input[type=checkbox] { padding: 0; }
 .tokens code { background: #11131a; padding: .3em .5em; border-radius: 4px; word-break: break-all; }
 .tokens .row { margin: .3em 0; }
 .tokens .mcp { flex: 1; min-width: 20em; }
-.gallery { columns: 14em; }
 
 /* Game page */
 .seat-bar { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; margin-bottom: .8em; }
@@ -171,3 +170,23 @@ input[type=checkbox] { padding: 0; }
 .log li.log-turn-start { color: var(--accent); margin-top: .4em; font-weight: 600; }
 .result table { border-collapse: collapse; }
 .result th, .result td { padding: .2em .8em .2em 0; text-align: left; }
+
+.gallery-controls { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: 1em; }
+.gallery-sizes { display: inline-flex; gap: .25em; }
+.gallery-width { display: inline-flex; gap: .4em; align-items: center; }
+.gallery-grid { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.gallery-item { cursor: pointer; flex: none; }
+.gallery-modal {
+  position: fixed; inset: 0; z-index: 900; background: rgba(0,0,0,.7);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.gallery-detail {
+  display: flex; gap: 1.2em; align-items: flex-start; max-width: 100%; max-height: 100%;
+  overflow: auto;
+}
+.gallery-detail-card { flex: none; max-width: 70vw; }
+.gallery-data { min-width: 240px; max-width: 360px; }
+.gallery-data table { border-collapse: collapse; font-size: .9em; }
+.gallery-data th { text-align: left; color: var(--muted); font-weight: normal; padding: .1em .8em .1em 0; vertical-align: top; }
+.gallery-data td { word-break: break-all; }
+.gallery-text { white-space: pre-wrap; font: inherit; font-size: .9em; color: var(--muted); }
