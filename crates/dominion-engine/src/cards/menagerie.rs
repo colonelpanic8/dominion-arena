@@ -2031,10 +2031,11 @@ fn butterfly(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if !input.is_yes() || g.zone(this) != Zone::InPlay(f.player) {
                 return Flow::done();
             }
-            let target = g.cost_of(this).plus_coins(1);
             if !g.return_to_pile(this) {
                 return Flow::done();
             }
+            // "$1 more than it": what it costs once returned (a Peddler no longer in play).
+            let target = g.cost_of(this).plus_coins(1);
             let piles = g.supply_piles_where(|_, c| c == target);
             f.pc = 2;
             gain_from(f, Input::Start, piles, 2, Dest::Discard)
