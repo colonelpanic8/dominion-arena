@@ -454,6 +454,71 @@ async fn a_server_on_ipv6_loopback_is_reached_at_its_bracketed_address() {
     server.stop.cancel();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn steps_play_a_turn_and_stop_where_the_seat_must_wait() {
+    let (url, stop) = start().await;
+    let client = Client::connect(&url).await.unwrap();
+    let (_, tokens) = create(&client).await;
+    let steps = |token: &str, steps: &str| json!({ "token": token, "steps": steps });
+    // The first seat's whole turn in one call: it ends on the other seat's turn.
+    let reply = call(
+        &client,
+        "steps",
+        steps(&tokens[0], "treasures; buy Silver; next"),
+    )
+    .await;
+    assert!(reply.ok, "{}", reply.text);
+    assert!(
+        reply.text.contains("DONE") && reply.text.contains("P1 buys Silver"),
+        "{}",
+        reply.text
+    );
+    assert!(!reply.text.contains("STOPPED"), "{}", reply.text);
+    // Out of turn, a step stops and says whose decision it is.
+    let reply = call(&client, "steps", steps(&tokens[0], "treasures")).await;
+    assert!(
+        reply.text.contains("STOPPED") && reply.text.contains("P2's decision"),
+        "{}",
+        reply.text
+    );
+    let reply = call(
+        &client,
+        "steps",
+        steps(&tokens[1], "treasures; buy Village; next"),
+    )
+    .await;
+    assert!(reply.text.contains("P2 buys Village"), "{}", reply.text);
+    // A step that can't be done keeps what came before it.
+    let reply = call(
+        &client,
+        "steps",
+        steps(&tokens[0], "treasures; buy Province; next"),
+    )
+    .await;
+    assert!(
+        reply.text.contains("STOPPED at \"buy Province\""),
+        "{}",
+        reply.text
+    );
+    let view = call(
+        &client,
+        "view",
+        json!({ "token": tokens[0], "format": "json" }),
+    )
+    .await;
+    let view = view.json.unwrap();
+    assert_eq!(view["turn"]["phase"], json!("buy"));
+    assert!(view["turn"]["coins"].as_u64().unwrap() > 0);
+    let reply = call(&client, "steps", steps(&tokens[0], "dance")).await;
+    assert!(
+        !reply.ok && reply.text.contains("not a step"),
+        "{}",
+        reply.text
+    );
+    client.close().await;
+    stop.cancel();
+}
+
 #[test]
 fn card_text_shows_costs_as_views_do() {
     let head = |name: &str| {

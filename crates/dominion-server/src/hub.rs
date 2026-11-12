@@ -1,5 +1,6 @@
 //! The games a server hosts, and the seat tokens that let a client act for a seat.
 
+use crate::steps::Runner;
 use dominion_agent::{AgentView, Answer, AnswerError, Answered, Table, WayChoice};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use rand::Rng;
@@ -45,6 +46,13 @@ pub struct NewGame {
     /// Black Market deck (top first), Druid's Boons, ...
     #[serde(default)]
     pub setup: BTreeMap<String, Vec<String>>,
+}
+
+/// What [`Hub::steps`] did.
+#[derive(Clone, Debug)]
+pub struct Stepped {
+    pub log: Vec<String>,
+    pub stopped: Option<(String, String)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -562,6 +570,33 @@ impl Hub {
         self.save(&table, &game.tokens);
         game.version.send_modify(|v| *v += 1);
         Ok(answered)
+    }
+
+    /// Plays `steps` for `seat` (see [`crate::steps`]) until one can't be done or the seat
+    /// has nothing left to decide. Returns the log lines the steps produced and the step that
+    /// stopped them, with why.
+    pub fn steps(&self, seat: &Seat, steps: &str) -> Result<Stepped, HubError> {
+        let game = self.game(&seat.game)?;
+        let mut table = lock(&game.table);
+        let seen = table
+            .view(seat.seat)
+            .since_last_decision
+            .iter()
+            .map(|e| e.seq)
+            .max();
+        let mut runner = Runner::new(table.clone(), seat.seat, false, seen);
+        let stopped = engine(|| runner.run(steps))?.map_err(bad)?;
+        if table.decision_id() != runner.table.decision_id()
+            || table.is_over() != runner.table.is_over()
+        {
+            *table = runner.table;
+            self.save(&table, &game.tokens);
+            game.version.send_modify(|v| *v += 1);
+        }
+        Ok(Stepped {
+            log: runner.log,
+            stopped,
+        })
     }
 
     /// Waits until `seat` must decide or the game is over, for at most `timeout`. Returns
