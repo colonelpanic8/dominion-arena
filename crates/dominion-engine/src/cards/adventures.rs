@@ -1636,7 +1636,7 @@ fn warrior(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let c = f.s.pick.take().expect("set in step 2");
             let cost = g.cost_of(c);
             f.pc = 1;
-            if g.zone(c) == Zone::Discard(t)
+            if g.put(c).is_some()
                 && cost.potions == 0
                 && cost.debt == 0
                 && (3..=4).contains(&cost.coins)

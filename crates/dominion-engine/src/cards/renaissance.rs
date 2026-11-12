@@ -798,7 +798,7 @@ fn piazza(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            if !g.is(c, Types::ACTION) || g.zone(c) != Zone::Looking(p) {
+            if !g.is(c, Types::ACTION) || !g.held(p, c) {
                 return Flow::done();
             }
             f.pc = 2;
@@ -1122,8 +1122,7 @@ fn scepter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             let mut candidates: Vec<CardId> = vec![];
-            let played = g.turn.played_ids.iter().zip(&g.turn.stayed_in_play);
-            for (&c, _) in played.filter(|(_, stayed)| **stayed) {
+            for c in g.stayed_in_play() {
                 let ok = g.zone(c) == Zone::InPlay(p)
                     && g.is(c, Types::ACTION)
                     && !g.is(c, Types::COMMAND)
@@ -1188,7 +1187,7 @@ fn seer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             for c in input.cards() {
                 let cost = g.cost_of(c);
                 let cheap = (2..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0;
-                if g.zone(c) != Zone::Looking(p) {
+                if !g.held(p, c) {
                     continue;
                 }
                 if cheap {

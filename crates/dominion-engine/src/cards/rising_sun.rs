@@ -1258,7 +1258,7 @@ fn continue_event(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         }
         2 => {
-            f.s.pick = input.card();
+            f.s.placed.extend(input.card().and_then(|c| g.gained(p, c)));
             f.pc = 3;
             Flow::Continue
         }
@@ -1269,12 +1269,10 @@ fn continue_event(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         4 => {
             f.pc = 5;
             // Wherever it was gained to (Nomad Camp: the deck), if it is still there.
-            if let Some(c) = f.s.pick
-                && g
-                    .gained_to(p, c)
-                    .is_some_and(|zone| g.still_where_put(c, zone))
+            if let Some(&gained) = f.s.placed.first()
+                && g.still(gained)
             {
-                return Flow::Call(Frame::play(p, c, true, vec![]));
+                return Flow::Call(Frame::play(p, gained.card, true, vec![]));
             }
             Flow::Continue
         }

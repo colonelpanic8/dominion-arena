@@ -499,26 +499,6 @@ fn up_to(coins: u8) -> impl Fn(&Game) -> Vec<PileId> {
     move |g| g.piles_costing_up_to(Cost::coins(coins))
 }
 
-fn dest_zone(to: Dest, p: PlayerId) -> Zone {
-    match to {
-        Dest::Discard => Zone::Discard(p),
-        Dest::Hand => Zone::Hand(p),
-        Dest::DeckTop => Zone::Deck(p),
-        Dest::SetAside => Zone::SetAside(p),
-    }
-}
-
-/// Where `p` gained `card`: the first such gain logged since `since`.
-fn gained_to(g: &Game, p: PlayerId, card: CardId, since: usize) -> Option<Zone> {
-    let kind = g.card(card);
-    g.log()[since..].iter().find_map(|e| match e {
-        Event::Gained { player, card, to } if *player == p && *card == kind => {
-            Some(dest_zone(*to, p))
-        }
-        _ => None,
-    })
-}
-
 /// What a card being gained cost when it was gained.
 fn gain_cost(g: &Game, card: CardId) -> Cost {
     g.gains
@@ -1846,7 +1826,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .cards
                     .iter()
                     .copied()
-                    .filter(|&c| g.is(c, kind) && g.zone(c) == Zone::Looking(p))
+                    .filter(|&c| g.is(c, kind) && g.held(p, c))
                     .collect();
                 if !matching.is_empty() {
                     f.pc = 3;
@@ -2417,7 +2397,6 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             f.pc = 2;
-            f.s.i = g.log().len();
             match input.pile() {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
                 None => {
@@ -2428,6 +2407,7 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             f.s.pick = input.card();
+            f.s.placed.extend(f.s.pick.and_then(|c| g.gained(p, c)));
             f.pc = 3;
             Flow::Continue
         }
@@ -2444,12 +2424,12 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             // The card is expected where it was gained to, which need not be the discard
             // pile.
             if m & 1 != 0
-                && let Some(c) = f.s.pick
-                && gained_to(g, p, c, f.s.i)
-                    .is_some_and(|zone| zone != Zone::Hand(p) && g.still_where_put(c, zone))
+                && let Some(&gained) = f.s.placed.first()
+                && g.still(gained)
+                && g.zone(gained.card) != Zone::Hand(p)
             {
-                g.show(c);
-                g.put_in_hand(c, p);
+                g.show(gained.card);
+                g.put_in_hand(gained.card, p);
             }
             if m & 2 != 0 {
                 plus_actions(g, p, 1);
@@ -2611,7 +2591,7 @@ fn lich_trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            if g.zone(this) == Zone::Trash {
+            if g.still_where_trashed(this) {
                 return Flow::Call(Frame::discard(p, vec![this]));
             }
             Flow::Continue

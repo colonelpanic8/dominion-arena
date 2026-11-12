@@ -403,14 +403,10 @@ pub(crate) fn names(g: &Game, cards: &[CardId]) -> String {
         .join(", ")
 }
 
-/// Those of `cards` still taken off `p`'s deck by a look or reveal ([`Zone::Looking`]):
-/// the stop-moving rule lets the effect move only those.
+/// Those of `cards` still taken off `p`'s deck by a look or reveal ([`Game::held`]): the
+/// stop-moving rule lets the effect move only those.
 pub(crate) fn looking(g: &Game, p: PlayerId, cards: &[CardId]) -> Vec<CardId> {
-    cards
-        .iter()
-        .copied()
-        .filter(|&c| g.zone(c) == Zone::Looking(p))
-        .collect()
+    cards.iter().copied().filter(|&c| g.held(p, c)).collect()
 }
 
 /// The window of `card` having left a Supply pile other than by a gain or trash: call it
@@ -424,7 +420,7 @@ pub(crate) fn left_supply(player: PlayerId, card: CardId) -> Flow {
 /// reveal.
 pub(crate) fn put_back(g: &mut Game, p: PlayerId, cards: &[CardId]) {
     for &c in cards.iter().rev() {
-        if g.zone(c) == Zone::Looking(p) {
+        if g.held(p, c) {
             g.move_card(c, Zone::Deck(p), Pos::Top);
         }
     }

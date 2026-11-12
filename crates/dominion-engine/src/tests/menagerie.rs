@@ -726,6 +726,25 @@ fn moat_protects_from_gatekeeper() {
     assert!(exile_kinds(&g, P1).is_empty());
 }
 
+/// Gatekeeper's page: "This does not lose track of a card if it never moves. So if you
+/// gain a Nomad Camp onto your deck, then revealing Watchtower to topdeck the Nomad Camp
+/// will not block Gatekeeper."
+#[test]
+fn gatekeeper_exiles_a_nomad_camp_that_watchtower_left_on_the_deck() {
+    let mut g = setup(&[Card::Gatekeeper, Card::NomadCamp, Card::Watchtower]);
+    hand(&mut g, P0, &[Card::Watchtower, Card::Silver, Card::Silver]);
+    hand(&mut g, P1, &[Card::Gatekeeper]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Gatekeeper);
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    play(&mut g, Card::Silver);
+    buy(&mut g, Card::NomadCamp);
+    trigger(&mut g, Card::Watchtower);
+    respond(&mut g, Response::option(Opt::Mode(1)));
+    assert_eq!(exile_kinds(&g, P0), [Card::NomadCamp]);
+}
+
 #[test]
 fn gatekeeper_works_on_the_turn_it_is_played() {
     let mut g = setup_with_landscapes(&[Card::Gatekeeper], &[Card::Bargain]);

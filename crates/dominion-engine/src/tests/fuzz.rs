@@ -1813,7 +1813,7 @@ fn check_invariants(g: &Game, flags: &mut Flags) {
     if counters.iter().any(|&x| x > BIG) {
         flags.bug("turn-counter-wrapped", || ctx(g));
     }
-    if t.played.len() != t.played_ids.len() || t.played.len() != t.stayed_in_play.len() {
+    if t.played.len() != t.played_ids.len() || t.played.len() != t.played_at.len() {
         flags.bug("turn-played-vectors-disagree", || ctx(g));
     }
     for (p, pl) in g.players.iter().enumerate() {
@@ -1990,12 +1990,43 @@ fn check_invariants(g: &Game, flags: &mut Flags) {
     }
 }
 
+/// A card that has stayed where an effect put it is there: nothing moves a card without
+/// the game noticing (the stop-moving rule's stamps), and on a deck nothing covers it.
+fn check_stayed(g: &Game, flags: &mut Flags) {
+    let on_top = |c: CardId| match g.zone(c) {
+        Zone::Deck(p) => g.player(p).deck.last() == Some(&c),
+        _ => true,
+    };
+    let mut wrong: Vec<CardId> = vec![];
+    for st in g.gains.iter().chain(&g.last_gain) {
+        if g.stayed(st.card, st.at) && !(g.zone(st.card) == st.zone() && on_top(st.card)) {
+            wrong.push(st.card);
+        }
+    }
+    for st in &g.trashing {
+        if g.stayed(st.card, st.at) && g.zone(st.card) != Zone::Trash {
+            wrong.push(st.card);
+        }
+    }
+    let t = &g.turn;
+    for (&c, &at) in t.played_ids.iter().zip(&t.played_at) {
+        if g.stayed(c, at) && !matches!(g.zone(c), Zone::InPlay(_)) {
+            wrong.push(c);
+        }
+    }
+    for c in wrong {
+        flags.bug(format!("stayed-card-elsewhere:{}", g.printed(c)), || {
+            format!("{c:?} is in {:?}; {}", g.zone(c), ctx(g))
+        });
+    }
+}
+
 /// Cards taken off a deck to be looked at are held by a frame still on the stack, which
 /// puts them back when it finishes.
 fn check_looking(g: &Game, flags: &mut Flags) {
     for (p, pl) in g.players.iter().enumerate() {
         for &c in &pl.looking {
-            let held = g.holds.iter().any(|h| h.cards.contains(&c));
+            let held = g.held(PlayerId(p as u8), c);
             if !held || g.holds.iter().any(|h| h.depth > g.stack.len()) {
                 flags.bug(format!("looking-card-not-held:{}", g.printed(c)), || {
                     format!("P{}'s {c:?}; holds {:?}; {}", p + 1, g.holds, ctx(g))
@@ -3119,6 +3150,7 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
         check_set_aside(g, m, flags);
     }
     check_looking(g, flags);
+    check_stayed(g, flags);
     check_turn_records(g, flags);
     if t.ignore_plus_actions {
         if let Some((turn, actions)) = m.frozen_actions

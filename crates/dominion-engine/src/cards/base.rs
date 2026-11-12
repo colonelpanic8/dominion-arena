@@ -180,7 +180,7 @@ fn vassal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
-            if !g.is(c, Types::ACTION) || g.zone(c) != Zone::Discard(f.player) {
+            if !g.is(c, Types::ACTION) || g.put(c).is_none() {
                 return Flow::done();
             }
             f.pc = 3;
@@ -732,7 +732,7 @@ fn thief(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             3 => {
                 let c = f.s.pick.expect("set in step 2");
-                if g.zone(c) != Zone::Trash {
+                if g.put(c).is_none() {
                     f.pc = 4;
                     continue;
                 }

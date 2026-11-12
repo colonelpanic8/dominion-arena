@@ -412,7 +412,7 @@ impl SetRules for Rules {
             }
             Occasion::Discard { player, card } => {
                 if g.card(card) == Card::VillageGreen
-                    && g.zone(card) == Zone::Discard(player)
+                    && g.still_where_discarded(card)
                     && g.turn.phase != Phase::Cleanup
                 {
                     out.push(Trigger::new(player, Card::VillageGreen, REACT).on(card).optional("reveal it to play it"));
@@ -706,11 +706,11 @@ fn stayed_in_play(g: &Game, card: CardId, nth: usize) -> bool {
         return true;
     };
     let t = &g.turn;
-    let plays = t.played_ids.iter().zip(&t.stayed_in_play);
+    let plays = t.played_ids.iter().zip(&t.played_at);
     plays
         .filter(|(c, _)| **c == card)
         .nth(skip)
-        .is_some_and(|(_, stayed)| *stayed)
+        .is_some_and(|(_, &at)| g.stayed(card, at))
 }
 
 /// Returns the played card to its pile if it is in play (Horse, Way of the Horse).
@@ -800,11 +800,16 @@ fn play_one_of(
     }
 }
 
-/// A reaction that plays this card from `zone` if it is still there.
+/// A reaction that plays this card from `zone` (its player's hand, or the discard pile it
+/// was just discarded to) if it is still there.
 fn play_from(g: &mut Game, f: &mut CardFrame, zone: Zone) -> Flow {
     let this = f.this();
     let allowed = !matches!(zone, Zone::Hand(_)) || super::can_play(g, f.player, this);
-    if f.pc == 0 && g.zone(this) == zone && allowed {
+    let there = match zone {
+        Zone::Discard(_) => g.still_where_discarded(this),
+        _ => g.zone(this) == zone,
+    };
+    if f.pc == 0 && there && allowed {
         f.pc = 1;
         if let Zone::Discard(p) = zone {
             g.reveal(p, this);
@@ -1281,7 +1286,7 @@ fn cardinal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             2 => {
                 for c in input.take().map(Input::cards).unwrap_or_default() {
-                    if g.zone(c) == Zone::Looking(target) {
+                    if g.held(target, c) {
                         exile(g, target, c);
                     }
                 }
@@ -1776,7 +1781,7 @@ fn gamble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
-            if g.zone(c) != Zone::Discard(p) || !g.is(c, Types::ACTION | Types::TREASURE) {
+            if g.put(c).is_none() || !g.is(c, Types::ACTION | Types::TREASURE) {
                 return Flow::done();
             }
             f.pc = 3;
@@ -1785,7 +1790,7 @@ fn gamble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 if input.is_yes() => {
             let c = f.s.pick.expect("set in step 1");
             f.pc = 4;
-            if g.zone(c) != Zone::Discard(p) {
+            if g.put(c).is_none() {
                 return Flow::done();
             }
             Flow::Call(Frame::play(p, c, true, vec![]))
@@ -1899,6 +1904,7 @@ fn reap(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
+                && g.gained(p, c).is_some()
                 && g.zone(c) == Zone::SetAside(p)
             {
                 let data = Scratch {

@@ -1618,7 +1618,7 @@ fn patrician(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
-                && g.zone(c) == Zone::Looking(p)
+                && g.held(p, c)
                 && g.cost_of(c).coins >= 5
             {
                 g.put_in_hand(c, p);
