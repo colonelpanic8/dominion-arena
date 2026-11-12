@@ -453,7 +453,7 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, kind, TRASHED).on(card));
                 }
                 if g.has_landscape(Card::Tomb) {
-                    out.push(Trigger::new(player, Card::Tomb, TOMB_VP).on(card));
+                    out.push(Trigger::new(player, Card::Tomb, TOMB_VP));
                 }
             }
             Occasion::StartBuyPhase { player } => {

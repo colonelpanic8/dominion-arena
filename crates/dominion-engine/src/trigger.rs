@@ -308,16 +308,8 @@ impl Window {
         if let Some(t) = mine.iter().find(|(_, t)| t.quiet && !t.optional) {
             return self.run(g, t.clone());
         }
-        // Copies of one mandatory ability for occasions that happen together (Tomb for
-        // each card trashed together, two Rats) resolve in occasion order.
-        let same = |t: &Trigger| {
-            let u = &mine[0].1;
-            (t.card, t.ability, t.optional, t.lasting, t.data)
-                == (u.card, u.ability, false, u.lasting, u.data)
-        };
-        if self.occs.len() > 1 && mine.iter().all(|(_, t)| same(t)) {
-            return self.run(g, mine[0].clone());
-        }
+        // Copies of one mandatory ability, also for occasions that happen together (Tomb
+        // for each card trashed together, two Rats), resolve in occasion order.
         if !mine[0].1.optional && mine.iter().all(|(_, t)| same_effect(g, t, &mine[0].1)) {
             return self.run(g, mine[0].clone());
         }
