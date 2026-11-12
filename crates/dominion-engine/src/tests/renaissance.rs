@@ -858,6 +858,30 @@ fn scepter_cannot_replay_a_card_that_left_play_and_came_back() {
     assert_eq!(in_play_kinds(&g, P0), [Card::Duplicate, Card::Scepter]);
 }
 
+/// "Scepter can replay an Action that isn't finished resolving, such as a Storyteller
+/// that played Scepter in the first place" (wiki, Scepter): on another player's turn too,
+/// "this turn" being that turn.
+#[test]
+fn scepter_played_on_another_players_turn_replays_an_action_played_then() {
+    let mut g = setup(&[
+        Card::Scepter,
+        Card::Storyteller,
+        Card::Ambassador,
+        Card::Gondola,
+    ]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(
+        &mut g,
+        P1,
+        &[Card::Storyteller, Card::Scepter, Card::Copper],
+    );
+    g.start();
+    play_on_another_players_turn(&mut g);
+    choose_kinds(&mut g, &[Card::Scepter]);
+    mode(&mut g, 1);
+    assert_eq!(g.turn().played_count(P1, Card::Storyteller), 2);
+}
+
 #[test]
 fn scholar_discards_the_hand_and_draws_seven() {
     let mut g = setup(&[Card::Scholar]);
