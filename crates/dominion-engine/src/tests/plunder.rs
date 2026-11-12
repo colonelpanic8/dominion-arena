@@ -1030,6 +1030,24 @@ fn harbor_village_adds_a_coin_after_the_next_action_if_it_gave_coins() {
     assert_eq!(g.turn().coins, 3);
 }
 
+/// +$ on another player's turn is still +$ the Action gave: the Harbor Village played with
+/// Way of the Chameleon then gives its +$1 as a card.
+#[test]
+fn harbor_village_counts_plus_coins_given_on_another_players_turn() {
+    let kingdom = [Card::HarborVillage, Card::Festival];
+    let mut g = setup_l(&kingdom, &[Card::WayOfTheChameleon]);
+    hand(&mut g, P1, &[Card::HarborVillage, Card::Festival]);
+    deck(&mut g, P1, &[Card::Silver; 10]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::HarborVillage);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheChameleon)));
+    assert_eq!(hand_kinds(&g, P1), [Card::Festival]);
+    play_out_of_turn(&mut g, P1, Card::Festival);
+    no(&mut g);
+    assert_eq!(hand_kinds(&g, P1), [Card::Silver]);
+    assert_eq!(g.turn().coins, 0);
+}
+
 #[test]
 fn harbor_village_played_twice_by_throne_room_pays_only_for_the_second_play() {
     let mut g = setup(&[Card::HarborVillage, Card::Militia, Card::ThroneRoom]);
@@ -2515,6 +2533,22 @@ fn inherited_replaces_an_estate_or_the_starting_card_each_player_chooses() {
     assert_eq!(g.pile(copper).cards.len(), 60 - 14 + 1);
     assert_eq!(gain_count(&g, P0, Card::Village), 0);
     check_zones(&g);
+    // The opening hands are dealt again as silently as the first time; the log says only
+    // that P1's Copper went back.
+    let start = g
+        .log()
+        .iter()
+        .position(|e| matches!(e, Event::TurnStart { .. }));
+    assert_eq!(
+        g.log()[..start.unwrap()],
+        [
+            Event::Resolved {
+                player: P1,
+                card: Card::Inherited
+            },
+            moved(P1, Zone::Deck(P1), Zone::Pile(copper), &[Card::Copper], 1),
+        ]
+    );
 }
 
 #[test]

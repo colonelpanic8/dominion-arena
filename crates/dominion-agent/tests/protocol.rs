@@ -1016,3 +1016,28 @@ fn cards_being_looked_at_are_the_lookers_and_counted_for_the_others() {
     let text = text::render(&looker);
     assert!(!text.contains("(from "), "{text}");
 }
+
+#[test]
+fn a_card_put_into_the_middle_of_a_deck_says_how_deep() {
+    let mut t = table(&[Card::SecretPassage], 0, &[]);
+    let asked = |_: PlayerId, d: &AgentDecision| {
+        d.source.as_deref() == Some("Secret Passage")
+            && d.kind == "number"
+            && d.options.iter().any(|o| o.value == Some(2))
+            && d.options.iter().any(|o| o.value == Some(3))
+    };
+    let seat = play_to(&mut t, "Secret Passage", asked).expect("Secret Passage was played");
+    let d = t.view(seat).decision.unwrap();
+    let two = pick(&d, |o| o.value == Some(2)).unwrap();
+    t.answer(seat, &two).unwrap();
+    let view = t.view(PlayerId(1 - seat.0));
+    let lines: Vec<&str> = view
+        .since_last_decision
+        .iter()
+        .map(|e| e.text.as_str())
+        .collect();
+    assert!(
+        lines.contains(&"P1 puts a card from their hand into their deck, under 2 cards"),
+        "{lines:?}"
+    );
+}

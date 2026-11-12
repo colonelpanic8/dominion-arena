@@ -61,6 +61,12 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
+    /// `player` exchanged `card` (returned to its pile) for `into` (to their discard pile).
+    Exchanged {
+        player: PlayerId,
+        card: Card,
+        into: Card,
+    },
     /// A card went onto the deck: `card` if everyone knew which it was.
     TopDecked {
         player: PlayerId,
@@ -113,6 +119,9 @@ pub enum Event {
         /// Under the cards already in `to`.
         #[serde(default)]
         bottom: bool,
+        /// Under that many of the cards already in `to`, if not on top or at the bottom.
+        #[serde(default)]
+        under: usize,
     },
     /// `player` looked at the top `count` cards of their deck.
     Looked {

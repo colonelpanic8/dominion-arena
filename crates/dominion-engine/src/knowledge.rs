@@ -639,17 +639,24 @@ impl Knowledge {
                 }
                 (_, ids) => ids.cloned(),
             };
+            // Cards that can only be one card are known wherever they are.
+            let only = match &ids {
+                Some(ids) if ids.len() == 1 => ids.keys().next().copied(),
+                _ => None,
+            };
             for &(zone, n) in &zones {
                 let z = out.zones.entry(zone).or_default();
                 z.count += n;
-                match &ids {
-                    Some(ids) if zones.len() == 1 => {
+                match (&ids, only) {
+                    (_, Some(card)) => add(&mut z.known, card, n as u32),
+                    (Some(ids), _) if zones.len() == 1 => {
                         ids.iter().for_each(|(&c, &n)| add(&mut z.known, c, n))
                     }
                     _ => z.unknown += n,
                 }
             }
             if zones.len() > 1
+                && only.is_none()
                 && let Some(candidates) = ids
             {
                 out.uncertain.push(UncertainCards { zones, candidates });

@@ -3,7 +3,7 @@
 //! the ability it happened in (see [`Event::Resolved`]).
 
 use crate::event::{Counter, Event, Marker};
-use crate::game::{Mat, Token, Zone};
+use crate::game::{Mat, Pos, Token, Zone};
 use crate::{Card, CardId, Game, PileId, PlayerId};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -26,6 +26,8 @@ struct Unlogged {
     from: Zone,
     to: Zone,
     bottom: bool,
+    #[serde(default)]
+    under: usize,
     /// Everyone knew which card it was.
     public: bool,
 }
@@ -136,7 +138,7 @@ impl Game {
     }
 
     /// Records that `id` is moving from where it is to `to`, for the log.
-    pub(crate) fn note_move(&mut self, id: CardId, to: Zone, bottom: bool) {
+    pub(crate) fn note_move(&mut self, id: CardId, to: Zone, pos: Pos) {
         if self.scribe.tally.is_none() {
             return;
         }
@@ -153,12 +155,16 @@ impl Game {
             card: id,
             from,
             to,
-            bottom,
+            bottom: pos == Pos::Bottom,
+            under: match pos {
+                Pos::Under(n) => n,
+                _ => 0,
+            },
             public,
         });
     }
 
-    /// Moves `id` without a line in the log (Clean-up's discards).
+    /// Moves `id` without a line in the log (Clean-up's discards, an opening hand dealt again).
     pub(crate) fn move_unlogged(&mut self, id: CardId, to: Zone) {
         self.move_card(id, to, crate::game::Pos::Top);
         self.scribe.moves.retain(|m| m.card != id);
@@ -273,15 +279,25 @@ impl Game {
             Event::Played { player, card } | Event::Called { player, card } => {
                 (Zone::InPlay(player), 1, Some(card))
             }
+            Event::Exchanged { player, card, into } => {
+                self.account(|z| matches!(z, Zone::Pile(_)), 1, Some(card));
+                (Zone::Discard(player), 1, Some(into))
+            }
             _ => return,
         };
+        self.account(|z| z == to, count, card);
+    }
+
+    /// Drops the last `count` pending moves of `card` (any card if `None`) to a zone `to`
+    /// accepts.
+    fn account(&mut self, to: impl Fn(Zone) -> bool, count: usize, card: Option<Card>) {
         let mut left = count;
         let mut i = self.scribe.moves.len();
         while left > 0 && i > 0 {
             i -= 1;
             let m = &self.scribe.moves[i];
             let id = m.card;
-            if m.to == to && card.is_none_or(|c| self.card(id) == c || self.printed(id) == c) {
+            if to(m.to) && card.is_none_or(|c| self.card(id) == c || self.printed(id) == c) {
                 self.scribe.moves.remove(i);
                 left -= 1;
             }
@@ -300,9 +316,10 @@ impl Game {
                 cards,
                 count,
                 bottom,
+                under,
                 ..
             }) = lines.last_mut()
-                && (*from, *to, *bottom) == (Some(m.from), m.to, m.bottom)
+                && (*from, *to, *bottom, *under) == (Some(m.from), m.to, m.bottom, m.under)
             {
                 cards.extend(card);
                 *count += 1;
@@ -316,6 +333,7 @@ impl Game {
                 cards: card.into_iter().collect(),
                 count: 1,
                 bottom: m.bottom,
+                under: m.under,
             });
         }
         lines

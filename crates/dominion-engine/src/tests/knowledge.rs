@@ -52,6 +52,24 @@ fn opponents_know_a_hand_only_as_part_of_the_starting_cards() {
     );
 }
 
+/// Cards that could only be one card are known wherever they are.
+#[test]
+fn cards_whose_candidates_are_all_one_card_are_known() {
+    let mut g = setup(&[Card::Village]);
+    hand(&mut g, P0, &[Card::Copper; 5]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    let (g, k) = start(g);
+    let theirs = k.known(&g, P1);
+    for zone in [Zone::Hand(P0), Zone::Deck(P0)] {
+        let known = theirs.zone(zone);
+        assert_eq!(
+            (known.known, known.unknown),
+            (count(&[(Card::Copper, 5)]), 0)
+        );
+    }
+    assert!(theirs.uncertain.is_empty());
+}
+
 #[test]
 fn a_shuffle_mixes_known_cards_into_the_deck() {
     let mut g = setup(&[Card::Moat]);
@@ -503,6 +521,35 @@ fn only_its_owner_follows_a_card_picked_out_of_a_discard_pile() {
     );
 }
 
+/// Harbinger taking the top card of the discard pile: its player needn't keep the pile in
+/// order (wiki, Discard: "it is not necessary to keep it in the same order"), so the card
+/// now on top doesn't tell the others which card was taken.
+#[test]
+fn the_new_top_of_a_discard_pile_looked_through_says_nothing_of_the_card_taken() {
+    let mut g = setup(&[Card::Harbinger]);
+    hand(&mut g, P0, &[Card::Harbinger]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    discard(&mut g, P0, &[]);
+    let (mut g, mut k) = start(g);
+    let pile: Vec<CardId> = [Card::Gold, Card::Estate, Card::Curse]
+        .into_iter()
+        .map(|card| g.create(card, Zone::Discard(P0)))
+        .collect();
+    k.update(&mut g);
+    play(&mut g, Card::Harbinger);
+    choose(&mut g, &[pile[2]]);
+    k.update(&mut g);
+    let theirs = k.known(&g, P1);
+    assert_eq!(
+        theirs.zone(Zone::Discard(P0)).known,
+        count(&[(Card::Estate, 1)])
+    );
+    assert_eq!(
+        uncertain_over(&theirs, &[Zone::Deck(P0), Zone::Discard(P0)]),
+        Some(count(&[(Card::Gold, 1), (Card::Curse, 1)]))
+    );
+}
+
 /// Avoid: its player knows which of the cards being shuffled they kept out.
 #[test]
 fn a_player_knows_the_cards_avoid_kept_out_of_the_shuffle() {
@@ -540,6 +587,50 @@ fn a_player_knows_the_cards_avoid_kept_out_of_the_shuffle() {
         k.known(&g, P0).zone(Zone::Discard(P0)).known,
         count(&[(Card::Curse, 1), (Card::Estate, 1)])
     );
+}
+
+/// The groups of `viewer`'s knowledge with cards in `zone`.
+fn groups_in(g: &Game, k: &Knowledge, viewer: PlayerId, zone: Zone) -> Vec<Vec<CardId>> {
+    k.groups(viewer)
+        .filter(|group| group.cards.iter().any(|&c| g.zone(c) == zone))
+        .map(|group| group.cards.to_vec())
+        .collect()
+}
+
+/// Star Chart's player looks through the cards they shuffle and the ones left on the
+/// deck: they know the one they put on top, and the others are shuffled again.
+#[test]
+fn star_chart_shows_the_shuffled_cards_and_shuffles_the_others_again() {
+    let mut g = setup(&[Card::Smithy]);
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Smithy]);
+    let above = deck(&mut g, P0, &[Card::Silver]);
+    let shuffled = discard(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Estate,
+            Card::Duchy,
+            Card::Province,
+            Card::Curse,
+            Card::Copper,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Smithy);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.pending().unwrap().about, above);
+    choose(&mut g, &[shuffled[0]]);
+    k.update(&mut g);
+    assert_eq!(hand_kinds(&g, P0)[..2], [Card::Silver, Card::Gold]);
+    let rest = g.player(P0).deck.clone();
+    assert_eq!(rest.len(), 4);
+    let mut groups = groups_in(&g, &k, P0, Zone::Deck(P0));
+    groups.iter_mut().for_each(|group| group.sort());
+    let mut rest_sorted = rest.clone();
+    rest_sorted.sort();
+    assert_eq!(groups, [rest_sorted]);
 }
 
 /// Bad Omens leaves two Coppers as the deck, as everyone knows.
@@ -598,7 +689,11 @@ fn only_its_owner_follows_a_card_taken_from_under_a_crypt() {
     let [(ga, ka), (gb, kb)] = worlds(&g, &k, under[0], under[1]);
     let theirs = ka.known(&ga, P1);
     assert_eq!(theirs, kb.known(&gb, P1));
-    assert_eq!(theirs.zone(Zone::Hand(P0)).known, count(&[]));
+    // The Estates it drew could only be Estates.
+    assert_eq!(
+        theirs.zone(Zone::Hand(P0)).known,
+        count(&[(Card::Estate, 5)])
+    );
     assert_eq!(
         uncertain_over(&theirs, &[Zone::Hand(P0), Zone::SetAside(P0)]),
         Some(count(&[(Card::Gold, 1), (Card::Copper, 1)]))
@@ -627,9 +722,10 @@ fn a_known_card_set_aside_face_down_with_others_is_lost_when_one_is_taken() {
     k.update(&mut g);
     play_from(&mut g, P1, Card::Archive);
     k.update(&mut g);
+    // The rest of P1's deck could only be Coppers.
     assert_eq!(
         k.known(&g, P0).zone(Zone::SetAside(P1)).known,
-        count(&[(Card::Duchy, 1)])
+        count(&[(Card::Duchy, 1), (Card::Copper, 2)])
     );
     let aside = candidates(&g);
     let duchy = *aside.iter().find(|&&c| g.card(c) == Card::Duchy).unwrap();
@@ -762,6 +858,29 @@ fn everyone_knows_what_a_shuffled_pile_is_made_of() {
         let known = k.known(&g, P0).zone(Zone::Pile(pile));
         let held = printed(&g, &g.pile(pile).cards);
         assert_eq!((known.known, known.unknown), (held, 0));
+    }
+}
+
+/// The Ruins are dealt face down from all fifty: only six players, who use them all, know
+/// what the pile holds; below six only its face-up top card is known.
+#[test]
+fn the_ruins_pile_is_known_only_when_six_players_use_all_fifty() {
+    for (players, size) in [(5, 40), (6, 50)] {
+        let (g, k) = start(setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            ..GameConfig::new(players, vec![Card::Cultist], 7)
+        }));
+        let pile = g.pile_of(Card::Ruins).unwrap();
+        let known = k.known(&g, P0).zone(Zone::Pile(pile));
+        let held = printed(&g, &g.pile(pile).cards);
+        assert_eq!(known.count, size);
+        if players == 6 {
+            assert_eq!((known.known, known.unknown), (held, 0));
+        } else {
+            let top = g.printed(g.pile_top(pile).unwrap());
+            assert_eq!((known.known, known.unknown), (count(&[(top, 1)]), size - 1));
+        }
     }
 }
 

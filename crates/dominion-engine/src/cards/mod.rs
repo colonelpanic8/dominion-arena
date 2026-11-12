@@ -149,6 +149,7 @@ pub(crate) trait SetRules {
 /// The game as it was before a step of an ability ran (see [`SetRules::after_step`]).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Step {
+    /// The step's player's [`Player::coins_got`](crate::game::Player::coins_got).
     pub coins: u32,
     pub actions: u32,
     /// [`Game::next_lasting`]: the lasting effects from this id on are the step's.
@@ -178,7 +179,7 @@ macro_rules! sets {
                 return *held;
             }
             let before = Step {
-                coins: g.turn.coins,
+                coins: g.player(f.player).coins_got,
                 actions: g.turn.actions,
                 lastings: g.next_lasting,
             };

@@ -213,11 +213,12 @@ pub(crate) fn trash_and_gain(
 
 /// Puts `id` (in `p`'s hand or elsewhere) into `p`'s deck with `pos` cards above it.
 pub(crate) fn put_into_deck(g: &mut Game, id: CardId, p: PlayerId, pos: usize) {
-    g.move_card(id, Zone::Deck(p), Pos::Top);
-    let deck = &mut g.players[p.index()].deck;
-    let card = deck.pop().expect("just put there");
-    let at = deck.len().saturating_sub(pos);
-    deck.insert(at, card);
+    let pos = match pos {
+        0 => Pos::Top,
+        n if n >= g.player(p).deck.len() => Pos::Bottom,
+        n => Pos::Under(n),
+    };
+    g.move_card(id, Zone::Deck(p), pos);
 }
 
 fn gain_from_supply(g: &Game, p: PlayerId, card: Card, to: Dest) -> Option<Frame> {

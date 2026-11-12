@@ -557,11 +557,6 @@ fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
     g.add_buys(p, n);
 }
 
-fn plus_coins(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.add_coins(p, n);
-    }
-}
 
 fn emit_hand(g: &mut Game, p: PlayerId) {
     let cards = g.hand(p).iter().map(|&c| g.card(c)).collect();
@@ -581,11 +576,7 @@ fn exchange(g: &mut Game, p: PlayerId, c: CardId, card: Card) -> bool {
     let Some(new) = g.pile_of(card).and_then(|pile| g.pile_top(pile)) else {
         return false;
     };
-    if !g.return_to_pile(c) {
-        return false;
-    }
-    g.move_card(new, Zone::Discard(p), Pos::Top);
-    true
+    g.exchange(p, c, new)
 }
 
 /// Gains a `card` from its pile (in the Supply or not) at step `at`, then goes to `next`.
@@ -807,7 +798,7 @@ fn boon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         let plus = f.card.def().plus;
         plus_actions(g, p, plus.actions as u32);
         plus_buys(g, p, plus.buys as u32);
-        plus_coins(g, p, plus.coins as u32);
+        g.add_coins(p, plus.coins as u32);
         // In front of its first receiver, whoever's turn it is.
         if kept_boon(f.card) && !g.players.iter().any(|pl| pl.boons_kept.contains(&f.card)) {
             g.players[p.index()].boons_kept.push(f.card);

@@ -477,7 +477,7 @@ fn throne_room_on_prince_sets_aside_two_cards() {
     choose_kinds(&mut g, &[Card::Village]);
     choose_kinds(&mut g, &[Card::Village]);
     next_turn(&mut g);
-    trigger(&mut g, Card::Prince);
+    // Two Princes with a Village each: which goes first makes no difference.
     assert_eq!(g.turn().played, [Card::Village, Card::Village]);
     assert_eq!(kinds(&g, g.in_play(P0)), [Card::ThroneRoom, Card::Prince]);
 }
