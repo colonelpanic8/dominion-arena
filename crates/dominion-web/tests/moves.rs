@@ -665,6 +665,32 @@ fn a_returned_card_goes_back_to_its_pile() {
 }
 
 #[test]
+fn an_exchange_returns_the_card_and_takes_the_other_from_its_pile() {
+    let steer = |v: &AgentView| {
+        choose(v, "play", Some("Page"))
+            .or_else(|| choose(v, "trigger", Some("Page")))
+            .or_else(|| choose(v, "buy", Some("Page")))
+    };
+    let s = find(&["Page"], 0, steer, |s| {
+        let k = s.kinds();
+        k.iter().find(|e| e.0 != "resolved") == Some(&("exchanged", Some(0), Some("Page")))
+    });
+    let got = s.moves();
+    assert_eq!(
+        got[..2],
+        [
+            mv(Some("Page"), Loc::InPlay(0), s.pile("Page")),
+            mv(
+                Some("Treasure Hunter"),
+                s.pile("Treasure Hunter"),
+                Loc::Discard(0)
+            ),
+        ],
+        "{got:#?}"
+    );
+}
+
+#[test]
 fn piles_are_where_the_view_says() {
     // A sanity check of the helpers above.
     let s = find(&BASE, 0, no_steer, |s| !s.log.is_empty());

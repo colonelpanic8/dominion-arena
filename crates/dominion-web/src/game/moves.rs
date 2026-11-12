@@ -192,6 +192,8 @@ enum Step {
     Gain(u8, String, Loc),
     Trash(u8, String),
     Discard(u8, String),
+    /// A card back to its pile, and another from its pile to the discard pile.
+    Exchange(u8, String, String),
     TopDeck(u8, Option<String>),
     SetAside(u8, String),
     Draw(u8, u32),
@@ -223,6 +225,7 @@ fn step(e: &LogEntry, names: &[String]) -> Option<Step> {
         }
         Entry::Trashed(c) => Step::Trash(p, c),
         Entry::Discarded(c) => Step::Discard(p, c),
+        Entry::Exchanged { card, into } => Step::Exchange(p, card, into),
         Entry::TopDecked(c) => Step::TopDeck(p, c),
         Entry::SetAside(c) => Step::SetAside(p, c),
         Entry::Drew(n) => Step::Draw(p, n),
@@ -667,6 +670,18 @@ impl Sim<'_> {
                     };
                 }
             }
+            Step::Exchange(p, card, into) => {
+                // From wherever it was: a place holding more of it than it will.
+                let from = self
+                    .player_locs(*p)
+                    .into_iter()
+                    .find(|l| self.held(l).of(card) > self.goal(l).of(card));
+                if let Some(pile) = self.dest_loc(&Place::Pile(card.clone()), Some(card)) {
+                    self.move_one(*p, Some(card), from.as_ref(), &pile);
+                }
+                let into_pile = self.source_loc(&Place::Pile(into.clone()), Some(into));
+                self.move_one(*p, Some(into), into_pile.as_ref(), &Loc::Discard(*p));
+            }
             Step::Call(p, c) => {
                 let tavern = Loc::Mat(*p, "tavern".into());
                 self.move_one(*p, Some(c), Some(&tavern), &Loc::InPlay(*p));
@@ -910,6 +925,7 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
                 | Step::Discard(..)
                 | Step::SetAside(..)
                 | Step::Call(..)
+                | Step::Exchange(..)
                 | Step::Reveal(..)
                 | Step::TopDeck(_, Some(_))
         ) || matches!(s, Step::Moved(_, m) if !m.cards.is_empty());

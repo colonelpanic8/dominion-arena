@@ -366,6 +366,11 @@ fn moved_spans(out: &mut Vec<Span>, m: &Moved, p: u8) {
             cards(out);
             text(out, " into their hand.");
         }
+        (_, Place::Deck(q)) if *q == p && m.under > 0 => {
+            text(out, "inserts ");
+            cards(out);
+            text(out, " into their deck.");
+        }
         (_, Place::Deck(q)) if *q == p && m.bottom => {
             text(out, "puts ");
             cards(out);
@@ -430,6 +435,7 @@ fn moved_spans(out: &mut Vec<Span>, m: &Moved, p: u8) {
             cards(out);
             let prep = match to {
                 Place::Deck(_) if m.bottom => " on the bottom of ",
+                Place::Deck(_) if m.under > 0 => " into ",
                 Place::Deck(_) => " onto ",
                 Place::Zone(_, k) if *k != "setAside" => " on ",
                 _ => " into ",
@@ -588,6 +594,13 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
             Some(Entry::UsedWay { way, .. }) => {
                 text(&mut spans, "uses ");
                 spans.push(Span::Card(way.clone()));
+                text(&mut spans, ".");
+            }
+            Some(Entry::Exchanged { card, into }) => {
+                text(&mut spans, "exchanges ");
+                push_list(&mut spans, &[(card.clone(), 1)], false);
+                text(&mut spans, " for ");
+                push_list(&mut spans, &[(into.clone(), 1)], false);
                 text(&mut spans, ".");
             }
             Some(Entry::Named(card)) => {

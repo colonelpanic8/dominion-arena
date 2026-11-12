@@ -42,6 +42,9 @@ pub struct Moved {
     pub to: Place,
     /// Under the cards already there.
     pub bottom: bool,
+    /// Under that many of the cards already there (into a deck), if not on top or at the
+    /// bottom.
+    pub under: u32,
     /// Put back onto the deck it came from.
     pub back: bool,
     /// The cards everyone knew, by name.
@@ -110,6 +113,11 @@ pub enum Entry {
     Gained(String, GainTo),
     Trashed(String),
     Discarded(String),
+    /// A card returned to its pile for another, gained to the discard pile.
+    Exchanged {
+        card: String,
+        into: String,
+    },
     TopDecked(Option<String>),
     SetAside(String),
     Revealed(String),
@@ -293,6 +301,7 @@ fn moved(s: &str, p: u8, names: &[String]) -> Option<Moved> {
             from,
             to,
             bottom,
+            under: 0,
             back,
             cards,
             hidden,
@@ -317,6 +326,21 @@ fn moved(s: &str, p: u8, names: &[String]) -> Option<Moved> {
         return None;
     }
     let rest = s.strip_prefix("puts ")?;
+    if let Some((rest, under)) = rest.rsplit_once(", under ") {
+        let under = match under {
+            "a card" => 1,
+            n => amount(n, "card", "cards")?,
+        };
+        for (at, _) in rest.rmatch_indices(" into ") {
+            if let Some((to @ Place::Deck(_), false)) = dest(&rest[at + 6..], p, names)
+                && let Some(what) = cards_from(&rest[..at], p, names)
+            {
+                let m = make(what, to, false, false)?;
+                return Some(Moved { under, ..m });
+            }
+        }
+        return None;
+    }
     for (at, _) in rest.rmatch_indices(" back onto ") {
         if let Some((to @ Place::Deck(_), bottom)) = dest(&rest[at + 11..], p, names)
             && let Some((cards, hidden)) = cards_list(&rest[..at])
@@ -516,6 +540,13 @@ pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
         }
         "trashed" => Entry::Trashed(card_after("trashes ")?),
         "discarded" => Entry::Discarded(card_after("discards ")?),
+        "exchanged" => {
+            let (card, into) = after("exchanges ")?.split_once(" for ")?;
+            Entry::Exchanged {
+                card: the_card(e, card)?,
+                into: card_name(into)?,
+            }
+        }
         "top-decked" => {
             let what = after("puts ")?.strip_suffix(" onto their deck")?;
             match (what, &e.card) {
@@ -683,6 +714,14 @@ mod tests {
             "Ann puts Copper from the top of their deck into their hand",
         );
         assert_eq!(m.from, Some(Place::Zone(0, "looking")));
+        let m = moved_of(
+            Some("Copper"),
+            "Ann puts Copper from their hand into their deck, under 2 cards",
+        );
+        assert_eq!(
+            (m.from, m.to, m.under),
+            (Some(Place::Hand(0)), Place::Deck(0), 2)
+        );
         let m = moved_of(None, "Ann sets aside a card from their hand");
         assert_eq!((m.to, m.hidden), (Place::Zone(0, "setAside"), 1));
         assert!(
