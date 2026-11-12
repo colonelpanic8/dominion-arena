@@ -1964,12 +1964,12 @@ fn remodel(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, extra: u8) -
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = base + 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = f.s.cost.plus_coins(extra);
+            let limit = g.cost_of(f.s.pick.expect("set when trashed")).plus_coins(extra);
             gain_up_to(g, f, input, base + 2, limit, Dest::Discard)
         }
     }
@@ -2121,12 +2121,13 @@ fn crucible(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            coins(g, f.player, f.s.cost.coins as u32);
+            let cost = g.cost_of(f.s.pick.expect("set in step 1"));
+            coins(g, f.player, cost.coins as u32);
             Flow::done()
         }
     }
@@ -2346,13 +2347,13 @@ fn pickaxe(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
             f.pc = 3;
-            if f.s.cost.coins >= 3 {
+            if g.cost_of(f.s.pick.expect("set in step 1")).coins >= 3 {
                 return gain_loot(g, f.player, Dest::Hand);
             }
             Flow::done()
@@ -2556,12 +2557,11 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if g.zone(this) != Zone::InPlay(p) {
                 return Flow::done();
             }
-            f.s.cost = g.cost_of(this);
             f.pc = 1;
             Flow::Call(Frame::trash(p, vec![this]))
         }
         1 => {
-            let limit = f.s.cost;
+            let limit = g.cost_of(this);
             let piles = g.supply_piles_where(|_, cost| cost.less_than(limit));
             if piles.is_empty() {
                 return Flow::done();

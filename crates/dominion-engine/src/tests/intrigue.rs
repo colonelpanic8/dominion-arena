@@ -742,6 +742,29 @@ fn upgrade_after_bridge_turns_a_copper_into_an_estate() {
     assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
 }
 
+/// Upgrade's helper (Replace, Dismantle, Governor) reads the trashed card's cost when it
+/// gains: a Fisherman trashed from a hand while the discard pile is empty costs $2, and $5
+/// once a Market Square has been discarded, so the card costing exactly $1 more is Gold.
+#[test]
+fn upgrade_reads_the_trashed_cards_cost_when_it_gains() {
+    let mut g = setup(&[Card::Upgrade, Card::Fisherman, Card::MarketSquare]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Upgrade, Card::Fisherman, Card::MarketSquare],
+    );
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Upgrade);
+    assert_eq!(g.cost(Card::Fisherman), Cost::coins(2));
+    choose_kinds(&mut g, &[Card::Fisherman]);
+    trigger(&mut g, Card::MarketSquare);
+    assert_eq!(g.cost(Card::Fisherman), Cost::coins(5));
+    // Gold is the only card costing exactly $6, so Upgrade gains it without asking.
+    assert_eq!(g.count_owned(P0, Card::Gold), 2);
+}
+
 #[test]
 fn wishing_well_takes_the_named_card() {
     let mut g = setup(&[Card::WishingWell]);

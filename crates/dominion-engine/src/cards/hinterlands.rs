@@ -663,12 +663,12 @@ fn farmland(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
-            let exact = f.s.cost.plus_coins(2);
+            let exact = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(2);
             let piles: Vec<PileId> = g
                 .supply_piles_where(|_, c| c == exact)
                 .into_iter()
@@ -881,9 +881,14 @@ fn trader(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.n = g.cost_of(c).coins as i32;
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
+        }
+        2 => {
+            f.s.n = g.cost_of(f.s.pick.expect("set in step 1")).coins as i32;
+            f.pc = 3;
+            Flow::Continue
         }
         _ => {
             if f.s.n <= 0 {
@@ -944,13 +949,13 @@ fn wheelwright(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::discard(f.player, vec![c]))
         }
         _ => {
             f.pc -= 2;
-            let limit = f.s.cost;
+            let limit = g.cost_of(f.s.pick.expect("set in step 1"));
             let flow = gain_where(g, f, input, Dest::Discard, |t, c| {
                 c.at_most(limit) && t.intersects(Types::ACTION)
             });

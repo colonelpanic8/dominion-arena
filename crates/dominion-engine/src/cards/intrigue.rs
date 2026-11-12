@@ -150,7 +150,8 @@ impl GainRule {
 
 /// Trash a card from `who`'s hand, then gain a Supply card whose cost follows `rule`.
 /// Uses `f.pc` from `base` to `base + 5`. Returns `None` once finished, with `f.s.n` = 1 if
-/// a card was trashed (0 if not), `f.s.cost` its cost and `f.s.pick` the card `who` gained.
+/// a card was trashed (0 if not), `f.s.cost` its cost after the trash and `f.s.pick` the
+/// card `who` gained.
 pub(crate) fn trash_and_gain(
     g: &mut Game,
     f: &mut CardFrame,
@@ -179,11 +180,12 @@ pub(crate) fn trash_and_gain(
                 return None;
             };
             f.s.n = 1;
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = base + 2;
             Some(Flow::Call(Frame::trash(who, vec![c])))
         }
         2 => {
+            f.s.cost = g.cost_of(f.s.pick.take().expect("set in step 1"));
             let piles = rule.piles(g, f.s.cost);
             if piles.is_empty() {
                 f.pc = base + 5;
@@ -839,12 +841,12 @@ fn swindler(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     f.pc = 5;
                     continue;
                 };
-                f.s.cost = g.cost_of(c);
+                f.s.pick = Some(c);
                 f.pc = 2;
                 return Flow::Call(Frame::trash(f.targets[f.s.i], vec![c]));
             }
             2 => {
-                let cost = f.s.cost;
+                let cost = g.cost_of(f.s.pick.expect("set in step 1"));
                 let piles = g.supply_piles_where(|_, c| c == cost);
                 if piles.is_empty() {
                     f.pc = 5;
@@ -974,18 +976,18 @@ fn saboteur(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     f.pc = 5;
                     continue;
                 };
-                let cost = g.cost_of(c);
-                if cost.coins < 3 {
+                if g.cost_of(c).coins < 3 {
                     f.s.cards.push(c);
                     f.pc = 1;
                     continue;
                 }
-                f.s.cost = cost;
+                f.s.pick = Some(c);
                 f.pc = 3;
                 return Flow::Call(Frame::trash(target, vec![c]));
             }
             3 => {
-                let piles = g.piles_costing_up_to(f.s.cost.minus_coins(2));
+                let cost = g.cost_of(f.s.pick.expect("set in step 2"));
+                let piles = g.piles_costing_up_to(cost.minus_coins(2));
                 f.pc = 4;
                 if !piles.is_empty() {
                     return f.ask_pile_for(f.targets[f.s.i], piles, true, Purpose::Gain);

@@ -404,7 +404,6 @@ fn trash_from_hand(g: &mut Game, f: &mut CardFrame, input: Input, pc: u8) -> Opt
         let c = input.card();
         f.s.pick = c;
         if let Some(c) = c {
-            f.s.cost = g.cost_of(c);
             f.s.m = g.is(c, Types::VICTORY) as i32;
         }
         f.pc = pc + 2;
@@ -548,12 +547,12 @@ fn improve_trash(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let target = f.s.cost.plus_coins(1);
+            let target = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(1);
             let piles = g.supply_piles_where(|_, cost| cost == target);
             if piles.is_empty() {
                 return Flow::done();
@@ -1069,8 +1068,8 @@ fn recruiter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     if let Some(flow) = trash_from_hand(g, f, input, 0) {
         return flow;
     }
-    if f.s.pick.is_some() {
-        villagers(g, f.player, f.s.cost.coins as u32);
+    if let Some(c) = f.s.pick {
+        villagers(g, f.player, g.cost_of(c).coins as u32);
     }
     Flow::done()
 }
@@ -1082,8 +1081,8 @@ fn research(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         2 => {
-            let n = f.s.cost.coins as usize;
-            if f.s.pick.is_none() || n == 0 {
+            let n = f.s.pick.map_or(0, |c| g.cost_of(c).coins as usize);
+            if n == 0 {
                 return Flow::done();
             }
             f.pc = 3;

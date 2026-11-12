@@ -914,12 +914,12 @@ fn graverobber(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 9;
                 return Flow::Continue;
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 4;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         _ => {
-            let limit = f.s.cost.plus_coins(3);
+            let limit = g.cost_of(f.s.pick.expect("set in step 3")).plus_coins(3);
             gain_pile(
                 g,
                 f,
@@ -1253,12 +1253,11 @@ fn rebuild(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
             f.pc = 6;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         6..=8 => {
-            let limit = f.s.cost.plus_coins(3);
+            let limit = g.cost_of(f.s.pick.expect("set when revealed")).plus_coins(3);
             gain_pile(
                 g,
                 f,

@@ -424,6 +424,35 @@ fn forge_trashing_nothing_gains_a_zero_cost_card() {
     assert_eq!(piles, [Card::Copper, Card::Curse]);
 }
 
+/// Forge totals the trashed cards' costs after trashing them: a Market Square's Gold makes
+/// the Destrier cost $5, so Estate and Destrier make $7, not $8.
+#[test]
+fn forge_totals_the_trashed_cards_costs_after_trashing_them() {
+    let mut g = setup(&[
+        Card::Forge,
+        Card::Destrier,
+        Card::MarketSquare,
+        Card::KingsCourt,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Forge,
+            Card::Destrier,
+            Card::Estate,
+            Card::MarketSquare,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Forge);
+    choose_kinds(&mut g, &[Card::Destrier, Card::Estate]);
+    trigger(&mut g, 0);
+    let piles = pile_choices(&g);
+    assert!(piles.contains(&Card::KingsCourt), "{piles:?}");
+    assert!(!piles.contains(&Card::Province), "{piles:?}");
+}
+
 #[test]
 fn grand_market_cannot_be_bought_with_a_copper_in_play() {
     let mut g = setup(&[Card::GrandMarket]);
