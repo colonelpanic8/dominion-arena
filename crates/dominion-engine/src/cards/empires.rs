@@ -1911,23 +1911,21 @@ fn annex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .question("keep in your discard pile (the rest are shuffled into your deck)")
         }
         1 => {
-            f.s.cards = input.cards();
-            for &c in &f.s.cards {
-                g.move_card(c, Zone::SetAside(p), Pos::Top);
-            }
-            let deck: Vec<CardId> = g.player(p).deck.clone();
-            for c in deck {
-                g.move_card(c, Zone::Discard(p), Pos::Top);
+            let kept = input.cards();
+            let rest: Vec<CardId> = g
+                .player(p)
+                .discard
+                .iter()
+                .copied()
+                .filter(|c| !kept.contains(c))
+                .collect();
+            for c in rest {
+                g.move_card(c, Zone::Deck(p), Pos::Top);
             }
             f.pc = 2;
-            Flow::Call(Frame::shuffle(p))
+            Flow::Call(Frame::shuffle_deck(p))
         }
         2 => {
-            for c in std::mem::take(&mut f.s.cards) {
-                if g.zone(c) == Zone::SetAside(p) {
-                    g.move_card(c, Zone::Discard(p), Pos::Top);
-                }
-            }
             f.pc = 3;
             match g.supply_pile(Card::Duchy) {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),

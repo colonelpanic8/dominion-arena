@@ -1489,6 +1489,38 @@ fn annex_shuffles_all_but_up_to_five_discarded_cards_into_the_deck_and_gains_a_d
         discard_kinds(&g, P0),
         [Card::Estate, Card::Curse, Card::Duchy]
     );
+    // The log says what Annex does: the others go into the deck, which is shuffled.
+    let at = g
+        .log()
+        .iter()
+        .position(|e| matches!(e, Event::BoughtLandscape { .. }))
+        .unwrap();
+    assert_eq!(
+        g.log()[at + 1..],
+        [
+            Event::Counter {
+                player: Some(P0),
+                pile: None,
+                counter: Counter::Debt,
+                delta: 8,
+            },
+            Event::Moved {
+                player: P0,
+                from: Some(Zone::Discard(P0)),
+                to: Zone::Deck(P0),
+                cards: vec![],
+                count: 2,
+                bottom: false,
+                under: 0,
+            },
+            Event::Shuffled { player: P0 },
+            Event::Gained {
+                player: P0,
+                card: Card::Duchy,
+                to: Dest::Discard,
+            },
+        ]
+    );
 }
 
 #[test]
