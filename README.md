@@ -131,7 +131,7 @@ ones before it:
 - `treasures`: play every Treasure in hand.
 - `buy A, B`: buy cards, Events or Projects, paying off Debt first when there is any.
 - `pay` pays off Debt; `coffers N` and `villagers N` spend tokens.
-- `end` ends the phase and `next` the turn. A turn with nothing left to do ends by itself.
+- `end` ends the Action phase (and does nothing in a later one) and `next` the turn. A turn with nothing left to do ends by itself.
 - `pick A, B x2` answers any question by card name, option text or option number, a
   turn's moves included; `pick none` chooses nothing. `name CARD` answers "name a card".
 

@@ -262,14 +262,16 @@ mod tests {
     }
 
     #[test]
-    fn end_after_a_phase_that_ended_itself_does_not_end_the_next() {
+    fn end_only_ends_the_action_phase() {
         let mut solo = game(&["Smithy"], 7);
         solo.run("treasures; buy Smithy; next").unwrap();
         while !solo.view().you.unwrap().hand.known.contains_key("Smithy") {
             solo.run("treasures; next").unwrap();
         }
         let turn = solo.view().turn.number;
-        let out = solo.run("play Smithy; end; treasures; buy Copper").unwrap();
+        // Playing the last Action ends the Action phase, in this call or an earlier one.
+        solo.run("play Smithy").unwrap();
+        let out = solo.run("end; treasures; buy Copper; end").unwrap();
         assert_eq!(out.stopped, None);
         assert!(out.log.iter().any(|l| l.contains("buys Copper")));
         assert_eq!(solo.view().turn.number, turn.map(|t| t + 1));
