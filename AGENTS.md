@@ -152,7 +152,8 @@ them.
   discard everything not kept by a Lasting, draw
   `turn.cleanup_draw`, `EndTurn`, `Until::EndOfTurn` lastings expire). Spending Coffers
   and paying off Debt are moves in the Action, Buy and Night phases alike (outside the Buy
-  phase, offered only where they could matter: `push_token_moves`). Extra turns queue
+  phase, offered only where they could matter: `push_token_moves`); Black Market asks for
+  both between revealing its cards and selling one. Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
   in a row: check `g.third_in_a_row(p)` before queuing one; Seize the Day: never), and
   extra turns don't count for the tiebreaker. Between turns the player who just took a turn takes

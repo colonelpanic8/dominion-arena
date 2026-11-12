@@ -381,6 +381,51 @@ fn black_market_lets_debt_be_paid_off_first() {
 }
 
 #[test]
+fn black_market_lets_coffers_be_spent_once_its_cards_are_seen() {
+    let mut g = setup_black_market();
+    let bm = black_market_deck(&g);
+    replace(&mut g, Zone::Pile(bm), &[Card::Laboratory, Card::Cellar]);
+    hand(&mut g, P0, &[Card::BlackMarket, Card::BlackMarket]);
+    g.players[0].coffers = 4;
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::BlackMarket);
+    assert_eq!(
+        g.pending().unwrap().kind,
+        DecisionKind::Number { min: 0, max: 4 }
+    );
+    respond(&mut g, Response::Number(3));
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Cellar, Card::Laboratory]);
+    choose_kinds(&mut g, &[Card::Laboratory]);
+    assert_eq!((g.player(P0).coffers, g.turn().coins), (1, 0));
+    assert_eq!(discard_kinds(&g, P0), [Card::Laboratory]);
+
+    // Nothing to ask once every card left can be paid for.
+    play(&mut g, Card::BlackMarket);
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Cellar]);
+}
+
+#[test]
+fn coffers_spent_during_a_black_market_played_as_a_chameleon_stay_coins() {
+    let mut g = setup_black_market();
+    let bm = black_market_deck(&g);
+    g.landscapes.push(Card::WayOfTheChameleon);
+    replace(&mut g, Zone::Pile(bm), &[Card::Cellar]);
+    hand(&mut g, P0, &[Card::BlackMarket]);
+    deck(&mut g, P0, &[Card::Estate, Card::Estate, Card::Estate]);
+    g.players[0].coffers = 2;
+    g.start();
+    play(&mut g, Card::BlackMarket);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheChameleon)));
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate, Card::Estate]);
+    respond(&mut g, Response::Number(2));
+    assert_eq!(g.turn().coins, 2);
+    choose_kinds(&mut g, &[Card::Cellar]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate, Card::Estate]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Cellar]);
+}
+
+#[test]
 fn black_market_sells_animal_fair_for_an_action_trashed_from_the_hand() {
     let mut g = setup_black_market();
     let bm = black_market_deck(&g);

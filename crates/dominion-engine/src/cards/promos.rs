@@ -294,9 +294,24 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         },
         3 => {
+            let in_deck = |g: &Game, c: CardId| g.zone(c) == Zone::Pile(bm);
+            // Coffers can be spent at any time in the player's turn, and this is the only
+            // moment between seeing these cards and paying for one.
+            let coffers = g.player(p).coffers;
+            if f.s.m & 2 == 0
+                && coffers > 0
+                && g.turn_player() == Some(p)
+                && (f.s.cards.iter()).any(|&c| in_deck(g, c) && !affordable(g, p, c))
+            {
+                f.s.m |= 2;
+                f.pc = 14;
+                return f
+                    .ask_number(0, coffers as i32, Purpose::Other)
+                    .question("spend how many Coffers first?");
+            }
             let (debt, coins) = (g.player(p).debt, g.funds(p).0);
-            if debt > 0 && coins > 0 && f.s.m == 0 {
-                f.s.m = 1;
+            if debt > 0 && coins > 0 && f.s.m & 1 == 0 {
+                f.s.m |= 1;
                 f.pc = 13;
                 return f
                     .ask_number(0, debt.min(coins) as i32, Purpose::Other)
@@ -306,7 +321,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.s.cards
                     .iter()
                     .copied()
-                    .filter(|&c| g.zone(c) == Zone::Pile(bm) && affordable(g, p, c))
+                    .filter(|&c| in_deck(g, c) && affordable(g, p, c))
                     .collect();
             if buyable.is_empty() {
                 f.pc = 5;
@@ -389,6 +404,13 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let n = input.number().unwrap_or(0).max(0) as u32;
             g.players[p.index()].debt -= n;
             g.turn.coins -= n;
+            f.pc = 3;
+            Flow::Continue
+        }
+        14 => {
+            let n = input.number().unwrap_or(0).max(0) as u32;
+            g.players[p.index()].coffers -= n;
+            g.get_coins(p, n);
             f.pc = 3;
             Flow::Continue
         }
