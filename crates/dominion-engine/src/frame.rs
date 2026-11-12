@@ -166,9 +166,6 @@ pub(crate) enum Frame {
         count: usize,
         reveal: bool,
         shuffled: bool,
-        /// Leave them on the deck instead (sets not yet using [`Zone::Looking`]).
-        #[serde(default)]
-        on_deck: bool,
     },
     Gain {
         player: PlayerId,
@@ -266,7 +263,6 @@ impl Frame {
             count,
             reveal: true,
             shuffled: false,
-            on_deck: false,
         }
     }
 
@@ -280,27 +276,6 @@ impl Frame {
             count,
             reveal: false,
             shuffled: false,
-            on_deck: false,
-        }
-    }
-
-    pub(crate) fn reveal_on_deck(player: PlayerId, count: usize) -> Frame {
-        Frame::TopCards {
-            player,
-            count,
-            reveal: true,
-            shuffled: false,
-            on_deck: true,
-        }
-    }
-
-    pub(crate) fn look_on_deck(player: PlayerId, count: usize) -> Frame {
-        Frame::TopCards {
-            player,
-            count,
-            reveal: false,
-            shuffled: false,
-            on_deck: true,
         }
     }
 
@@ -498,7 +473,6 @@ impl Frame {
                 count,
                 reveal,
                 shuffled,
-                on_deck,
             } => {
                 let p = *player;
                 let pl = &g.players[p.index()];
@@ -514,14 +488,6 @@ impl Frame {
                     });
                 }
                 for &c in &cards {
-                    if *on_deck {
-                        if *reveal {
-                            g.reveal(p, c);
-                        } else {
-                            g.show_to(c, p);
-                        }
-                        continue;
-                    }
                     // Revealed while still on the deck, so everyone sees which card it is.
                     if *reveal {
                         g.reveal(p, c);
@@ -535,7 +501,7 @@ impl Frame {
                         g.show_to(c, p);
                     }
                 }
-                if !*on_deck && !cards.is_empty() {
+                if !cards.is_empty() {
                     g.holds.push(crate::game::Hold {
                         player: p,
                         cards: cards.clone(),

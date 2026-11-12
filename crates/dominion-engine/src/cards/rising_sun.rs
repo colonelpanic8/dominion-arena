@@ -887,7 +887,7 @@ fn poet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(f.player, 1))
+            Flow::Call(Frame::reveal(f.player, 1))
         }
         _ => {
             if let Some(c) = input.card()
@@ -1276,15 +1276,15 @@ fn foresight(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(p, 1))
+            Flow::Call(Frame::reveal(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
                 f.pc = 2;
                 return Flow::Continue;
             };
-            g.set_aside_revealed(c, p);
             if g.is(c, Types::ACTION) {
+                g.set_aside_revealed(c, p);
                 g.add_lasting(
                     Card::Foresight,
                     p,

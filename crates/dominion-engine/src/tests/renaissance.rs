@@ -891,6 +891,8 @@ fn seer_ignores_potion_costs() {
     play(&mut g, Card::Seer);
     // Apprentice ($5) and Familiar ($3P) stay; Estate costs $2.
     assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Estate]);
+    let rest = candidates(&g);
+    choose(&mut g, &rest);
     assert_eq!(g.player(P0).deck.len(), 2);
 }
 

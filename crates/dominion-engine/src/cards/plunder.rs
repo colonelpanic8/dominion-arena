@@ -2132,13 +2132,10 @@ fn fortune_hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 3))
+            Flow::Call(Frame::look(p, 3))
         }
         1 => {
             let cards = input.cards();
-            for &c in &cards {
-                g.move_card(c, Zone::SetAside(p), Pos::Top);
-            }
             let treasures: Vec<CardId> = cards
                 .iter()
                 .copied()
@@ -2156,22 +2153,12 @@ fn fortune_hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         }
         3 => {
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::SetAside(p))
-                .collect();
+            let rest = looking(g, p, &f.s.cards);
             f.pc = 4;
             f.ask_order(rest, Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                if g.zone(c) == Zone::SetAside(p) {
-                    g.move_card(c, Zone::Deck(p), Pos::Top);
-                }
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }
@@ -2199,7 +2186,7 @@ fn mapmaker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 4))
+            Flow::Call(Frame::look(p, 4))
         }
         1 => {
             f.s.cards = input.cards();
@@ -2208,19 +2195,10 @@ fn mapmaker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .question("put into your hand (the rest are discarded)")
         }
         2 => {
-            let chosen = input.cards();
-            for &c in &chosen {
-                if g.zone(c) == Zone::Deck(p) {
-                    g.put_in_hand(c, p);
-                }
+            for c in looking(g, p, &input.cards()) {
+                g.put_in_hand(c, p);
             }
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::Deck(p))
-                .collect();
+            let rest = looking(g, p, &f.s.cards);
             f.pc = 3;
             Flow::Call(Frame::discard(p, rest))
         }

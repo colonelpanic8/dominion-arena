@@ -2,7 +2,7 @@
 //! Governor, Marchland, Sauna / Avanto, Walled Village and the Event Summon.
 
 use super::intrigue::{GainRule, trash_and_gain};
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, PAY_OTHERWISE, Value};
@@ -501,7 +501,7 @@ fn envoy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(f.player, 5))
+            Flow::Call(Frame::reveal(f.player, 5))
         }
         1 => {
             f.s.cards = input.cards();
@@ -519,10 +519,8 @@ fn envoy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, chosen))
         }
         _ => {
-            for c in std::mem::take(&mut f.s.cards) {
-                if g.zone(c) == Zone::Deck(f.player) {
-                    g.put_in_hand(c, f.player);
-                }
+            for c in looking(g, f.player, &std::mem::take(&mut f.s.cards)) {
+                g.put_in_hand(c, f.player);
             }
             Flow::done()
         }

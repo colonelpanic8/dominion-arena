@@ -8,7 +8,10 @@
 //! Guildmaster, Skirmisher, Garrison's tokens) are `Until::EndOfTurn` lastings; the
 //! players an Attack affects are a bit mask in the lasting's `data.n`.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask, take_mode};
+use super::{
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
+    take_mode,
+};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -1019,7 +1022,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             0 => {
                 spend(g, p, 1);
                 f.pc = 1;
-                Flow::Call(Frame::look_on_deck(p, 3))
+                Flow::Call(Frame::look(p, 3))
             }
             1 => {
                 f.s.cards = input.cards();
@@ -1034,14 +1037,12 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Flow::Call(Frame::discard(p, chosen))
             }
             3 => {
-                f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+                f.s.cards = looking(g, p, &f.s.cards);
                 f.pc = 4;
                 f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
             }
             _ => {
-                for &c in input.cards().iter().rev() {
-                    g.move_card(c, Zone::Deck(p), Pos::Top);
-                }
+                put_back(g, p, &input.cards());
                 Flow::done()
             }
         },
@@ -1414,7 +1415,7 @@ fn sentinel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 5))
+            Flow::Call(Frame::look(p, 5))
         }
         1 => {
             f.s.cards = input.cards();
@@ -1428,14 +1429,12 @@ fn sentinel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(p, chosen))
         }
         3 => {
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(p));
+            f.s.cards = looking(g, p, &f.s.cards);
             f.pc = 4;
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         _ => {
-            for &c in input.cards().iter().rev() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
     }
@@ -1539,7 +1538,7 @@ fn courier(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 1))
+            Flow::Call(Frame::look(p, 1))
         }
         1 => {
             f.pc = 2;
@@ -1679,7 +1678,7 @@ fn barbarian(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(target, 1))
+            Flow::Call(Frame::look(target, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1822,7 +1821,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(p, 3))
+            Flow::Call(Frame::reveal(p, 3))
         }
         1 => {
             f.s.cards = input.cards();
@@ -1836,7 +1835,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .cards
                     .iter()
                     .copied()
-                    .filter(|&c| g.is(c, kind) && g.zone(c) == Zone::Deck(p))
+                    .filter(|&c| g.is(c, kind) && g.zone(c) == Zone::Looking(p))
                     .collect();
                 if !matching.is_empty() {
                     f.pc = 3;
@@ -1844,10 +1843,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 }
                 f.s.i += 1;
             }
-            let rest: Vec<CardId> = std::mem::take(&mut f.s.cards)
-                .into_iter()
-                .filter(|&c| g.zone(c) == Zone::Deck(p))
-                .collect();
+            let rest = looking(g, p, &std::mem::take(&mut f.s.cards));
             f.pc = 4;
             Flow::Call(Frame::discard(p, rest))
         }
@@ -2132,7 +2128,7 @@ fn miller(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 4))
+            Flow::Call(Frame::look(p, 4))
         }
         1 => {
             f.s.cards = input.cards();
@@ -2244,7 +2240,7 @@ fn sorceress(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal_on_deck(p, 1))
+            Flow::Call(Frame::reveal(p, 1))
         }
         2 => {
             let Some(c) = input.card() else {
@@ -2577,7 +2573,7 @@ fn sorcerer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal_on_deck(target, 1))
+            Flow::Call(Frame::reveal(target, 1))
         }
         2 => {
             f.pc = 3;
