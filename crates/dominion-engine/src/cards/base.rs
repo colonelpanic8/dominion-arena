@@ -683,10 +683,11 @@ fn spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let target = victims[f.s.i];
             f.s.i += 1;
             f.pc = 0;
+            let c = f.s.pick.expect("set in step 1");
             if input.is_yes() {
-                let c = f.s.pick.expect("set in step 1");
                 return Flow::Call(Frame::discard(target, vec![c]));
             }
+            put_back(g, target, &[c]);
             Flow::Continue
         }
     }

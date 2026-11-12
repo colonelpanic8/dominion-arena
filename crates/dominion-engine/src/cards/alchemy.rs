@@ -1,9 +1,9 @@
 //! Alchemy, with the Potion.
 
 use super::prosperity::{
-    choose_and_gain, each_target_gains, put_back, reveal_until, supply_piles, this_turn, top_deck,
+    choose_and_gain, each_target_gains, reveal_until, supply_piles, this_turn, top_deck,
 };
-use super::{CardFrame, Hook, SetRules, whose};
+use super::{CardFrame, Hook, SetRules, put_back, whose};
 use crate::decision::Purpose;
 use crate::event::Dest;
 use crate::frame::{Flow, Frame, Input};
@@ -154,7 +154,7 @@ fn apothecary(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(f.player, 4))
+            Flow::Call(Frame::reveal(f.player, 4))
         }
         1 => {
             let (take, rest): (Vec<_>, Vec<_>) = input
@@ -171,7 +171,7 @@ fn apothecary(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_order(rest, Purpose::TopDeck)
         }
         _ => {
-            put_back(g, f.player, input.cards());
+            put_back(g, f.player, &input.cards());
             Flow::done()
         }
     }
@@ -247,7 +247,7 @@ fn golem(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.s.i += 1;
-            if g.zone(c) != Zone::SetAside(f.player) {
+            if g.zone(c) != Zone::Looking(f.player) {
                 return Flow::Continue;
             }
             Flow::Call(Frame::play(f.player, c, true, vec![]))
@@ -263,7 +263,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             });
         }
         for c in std::mem::take(&mut f.s.cards) {
-            if g.zone(c) == Zone::SetAside(f.player) {
+            if g.zone(c) == Zone::Looking(f.player) {
                 g.put_in_hand(c, f.player);
             }
         }
@@ -279,7 +279,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             };
             f.pc = 1;
-            Flow::Call(Frame::reveal_on_deck(victim, 1))
+            Flow::Call(Frame::reveal(victim, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -299,6 +299,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if input.is_yes() {
                 return Flow::Call(Frame::discard(victim, vec![c]));
             }
+            put_back(g, victim, &[c]);
             Flow::Continue
         }
     }

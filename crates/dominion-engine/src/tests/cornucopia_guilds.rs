@@ -1168,8 +1168,10 @@ fn doctor_trashes_named_cards_and_overpay_looks_at_the_top() {
     assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Estate));
 }
 
+/// The trashed Trail is played and draws a card: the cards Doctor revealed are off the
+/// deck, so it draws the one under them, and Doctor puts back the other two.
 #[test]
-fn doctor_does_not_put_back_a_card_that_left_the_deck() {
+fn a_draw_in_the_middle_of_doctor_takes_the_card_under_the_revealed_ones() {
     let mut g = setup(&[Card::Doctor, Card::Trail]);
     hand(&mut g, P0, &[Card::Doctor]);
     deck(
@@ -1180,10 +1182,10 @@ fn doctor_does_not_put_back_a_card_that_left_the_deck() {
     g.start();
     play(&mut g, Card::Doctor);
     respond(&mut g, Response::Name(Card::Trail));
-    // The trashed Trail is played and draws the revealed Gold.
     respond(&mut g, Response::option(Opt::Trigger(0)));
-    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
-    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Estate]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate]);
+    choose_kinds(&mut g, &[Card::Silver, Card::Gold]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Silver, Card::Gold]);
 }
 
 #[test]
