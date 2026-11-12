@@ -129,7 +129,11 @@ personal use and are never part of this repository or its package.
 
 `crates/dominion-web` is a browser client (Dioxus, compiled to wasm) for the same
 server: a lobby to create games and take seats, and a game page that shows a seat's view
-and answers its decisions. It keeps the seat tokens it holds in the browser's
+and answers its decisions. The game page is a table laid out like dominion.games' (the
+Supply, the play area, your hand, opponents, the log): the cards and piles you may choose
+glow and are clicked where they lie, other choices appear in a tray or as buttons, hovering
+or right-clicking a card shows it large, Enter confirms, Escape clears, E ends a phase and
+T plays your Treasures. A Plain toggle shows the same game as text and buttons. It keeps the seat tokens it holds in the browser's
 localStorage; a seat link `/game/<id>#token=<token>` opens a seat in another browser.
 Cards are drawn like dominion.games' own from the asset cache (`dominion assets sync`),
 which the client only references by URL; without a cache they are drawn in CSS. `/gallery`

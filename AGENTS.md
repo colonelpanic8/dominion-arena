@@ -58,8 +58,16 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
                           "Play Treasures" (`TreasureRun`)
   src/game/board.rs       a view arranged for drawing: piles, players, stacks, status
+  src/game/table/         the graphical table, the game page's default view (Plain is a toggle)
+    mod.rs                `TableGame`, `TableCtx` (selection, hover preview, popups, keys,
+                          the Play Treasures run), `Mark`: how a card takes part in a decision
+    model.rs              each target's `Spot` on the table; play area this turn / earlier (pure)
+    pieces.rs             `TableCard` (glow, picks, counts, badges), badges, `HoverName`, preview
+    supply.rs players.rs prompt.rs side.rs   Supply and strip; opponents, play area, your
+                          cards; status/prompt bar and tray; log, "more" panel, game over
+  assets/table.css        table styles, sized from --u and container units of the middle row
   src/game/logfmt.rs      the log as display lines: turn headers, depth, card spans
-  tests/table.rs          those three models property-tested over random real games
+  tests/table.rs          those models and the table's spots property-tested over random games
   src/lobby.rs            game list, new game, join by token
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
