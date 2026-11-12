@@ -28,9 +28,15 @@ pub fn CardlistsTab() -> Element {
         let all: Vec<&CardInfo> = cards.all().iter().filter(|c| selectable(c)).collect();
         search(&cards, &all, &q)
     };
+    let account = crate::account::use_account();
+    // The list is an account's: a guest's, when nobody is signed in.
     let save = move |next: Vec<String>| {
         spawn(async move {
-            match api::set_banned_cards(&next).await {
+            let saved = match account.ensure().await {
+                Ok(_) => api::set_banned_cards(&next).await,
+                Err(e) => Err(e),
+            };
+            match saved {
                 Ok(s) => settings.set(s),
                 Err(e) => flash(toast, e.message),
             }
