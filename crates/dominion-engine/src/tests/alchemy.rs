@@ -349,3 +349,34 @@ fn vineyard_is_worth_a_vp_per_three_actions() {
     let estates = g.count_owned(P0, Card::Estate) as i32;
     assert_eq!(g.score(P0), estates + 2 * 2);
 }
+
+/// A game saved while Transmute's trash was being answered, when the script kept the
+/// trashed card's types in `n` instead of the card.
+#[test]
+fn a_transmute_saved_before_its_steps_changed_goes_on() {
+    let mut g = setup(&[Card::Transmute, Card::MarketSquare]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Transmute, Card::Silver, Card::MarketSquare],
+    );
+    g.start();
+    play(&mut g, Card::Transmute);
+    choose_kinds(&mut g, &[Card::Silver]);
+    assert_eq!(trigger_cards(&g), [Card::MarketSquare]);
+    // The save as the engine before 30de7b7 wrote it: a Treasure is the second of
+    // Transmute's three types.
+    let mut save = serde_json::to_value(&g).unwrap();
+    let transmute = save["stack"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|f| f["Card"]["card"] == "Transmute")
+        .expect("Transmute's frame");
+    assert_eq!(transmute["Card"]["pc"], 2);
+    transmute["Card"]["s"]["pick"] = serde_json::Value::Null;
+    transmute["Card"]["s"]["n"] = serde_json::json!(2);
+    let mut g: Game = serde_json::from_value(save).unwrap();
+    no(&mut g);
+    assert!(kinds(&g, &g.player(P0).discard).contains(&Card::Transmute));
+}

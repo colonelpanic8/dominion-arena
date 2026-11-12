@@ -2344,9 +2344,12 @@ fn maroon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
-            let types = g.types(f.s.pick.expect("set in step 1"));
+            // A game saved before the types were read here has their number in `n`.
+            let types =
+                f.s.pick
+                    .map_or(f.s.n as usize, |c| g.types(c).names().count());
             f.pc = 3;
-            Flow::Call(Frame::draw(f.player, 2 * types.names().count()))
+            Flow::Call(Frame::draw(f.player, 2 * types))
         }
         _ => Flow::done(),
     }

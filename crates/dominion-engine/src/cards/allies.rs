@@ -2255,7 +2255,16 @@ fn elder(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 2;
             Flow::Call(Frame::play(p, c, true, vec![]))
         }
-        _ => Flow::done(),
+        _ => {
+            // A game saved when this frame still ended the effect itself.
+            let old = |l: &Lasting| {
+                l.card == Card::Elder && l.until == Until::Removed && l.source == f.this
+            };
+            while let Some(id) = g.lasting().iter().find(|l| old(l)).map(|l| l.id) {
+                g.remove_lasting(id);
+            }
+            Flow::done()
+        }
     }
 }
 
