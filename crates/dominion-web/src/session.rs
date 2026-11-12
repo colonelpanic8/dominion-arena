@@ -2,6 +2,7 @@
 //! several seats of one game (hot-seat play).
 
 use crate::platform;
+use dominion_protocol::api::SeatToken;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -56,4 +57,29 @@ pub fn forget(game: &str, token: &str) {
         }
     }
     save(&all);
+}
+
+const LINKS: &str = "dominion.links";
+
+fn load_links() -> BTreeMap<String, Vec<SeatToken>> {
+    platform::storage_get(LINKS)
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Remembers the tokens of `game`'s seats played elsewhere, to hand out.
+pub fn give_out(game: &str, links: &[SeatToken]) {
+    if links.is_empty() {
+        return;
+    }
+    let mut all = load_links();
+    all.insert(game.to_string(), links.to_vec());
+    if let Ok(s) = serde_json::to_string(&all) {
+        platform::storage_set(LINKS, &s);
+    }
+}
+
+/// The tokens of `game`'s seats this browser created and hands out.
+pub fn links(game: &str) -> Vec<SeatToken> {
+    load_links().remove(game).unwrap_or_default()
 }

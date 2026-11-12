@@ -23,6 +23,8 @@ pub struct GameState {
     pub error: Option<String>,
     /// An answer is on its way.
     pub answering: bool,
+    /// The server has no such game, or refused the seat's token: nothing will change.
+    pub gone: bool,
 }
 
 /// What to do after applying a response.

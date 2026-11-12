@@ -496,7 +496,12 @@ fn active_opponent(b: &Board, chosen: Option<u8>) -> Option<u8> {
 }
 
 /// The layout's inputs for a board.
-fn shape(b: &Board, settings: &dominion_protocol::api::WebSettings) -> layout::Shape {
+/// `deciding`: the shown seat has a decision open.
+fn shape(
+    b: &Board,
+    settings: &dominion_protocol::api::WebSettings,
+    deciding: bool,
+) -> layout::Shape {
     let (victory, treasures) = supply::basic_columns(b);
     layout::Shape {
         opponents: b.opponents.len(),
@@ -509,7 +514,9 @@ fn shape(b: &Board, settings: &dominion_protocol::api::WebSettings) -> layout::S
             && b.status.running
             && b.you.is_some()
             && b.status.player.is_some()
-            && !b.status.your_turn,
+            && !b.status.your_turn
+            && !deciding
+            && !at_start(b),
     }
 }
 
@@ -608,9 +615,10 @@ pub fn TableGame(controls: Element) -> Element {
     let geometry = use_memo(move || {
         let (w, h) = viewport();
         let b = board_memo.read();
+        let deciding = ui.read().is_some();
         let s = b
             .as_ref()
-            .map(|b| shape(b, &settings.read()))
+            .map(|b| shape(b, &settings.read(), deciding))
             .unwrap_or_default();
         Rc::new(layout::geometry(w, h, &s))
     });
@@ -715,6 +723,16 @@ pub fn TableGame(controls: Element) -> Element {
                 can_treasures,
             }
             prompt::DecisionWindow { g: g.clone(), ui: ui_now.clone(), sel: sel.clone() }
+            if !starting {
+                super::WaitingNotice {
+                    style: format!(
+                        "left:{:.1}px;top:{:.1}px;width:{:.1}px;",
+                        g.play_x,
+                        g.play_y + g.vh,
+                        g.play_right - g.play_x - 22.0 * g.vh,
+                    ),
+                }
+            }
             if let Some((p, _)) = ctx.popup.read().clone() {
                 PopupView { popup: p, g: g.clone() }
             }
@@ -734,12 +752,11 @@ pub fn TableGame(controls: Element) -> Element {
     }
 }
 
-/// Nothing has happened yet: every player still owns just their starting cards, and
-/// nothing is in play or in the trash.
+/// Nothing has happened yet: every player still owns just their starting cards, with
+/// nothing in play or discarded. (The trash may start with cards: Necromancer's Zombies.)
 fn at_start(b: &Board) -> bool {
     b.status.running
         && b.play_area.cards.count == 0
-        && b.trash.count == 0
         && b.you.as_ref().is_some_and(|y| y.owned.count > 0)
         && b.you.iter().chain(&b.opponents).all(|p| {
             p.in_play.count == 0 && p.owned.count == STARTING_CARDS && p.discard.count == 0

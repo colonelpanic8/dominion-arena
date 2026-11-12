@@ -66,8 +66,8 @@ pub struct Shape {
     pub landscapes: usize,
     /// Non-Supply piles, drawn as micro strips.
     pub non_supply: usize,
-    /// An opponent's turn with "move kingdom and play area" on: the kingdom drops and
-    /// their play row goes above it.
+    /// An opponent's turn with "move kingdom and play area" on, and nothing for you to
+    /// decide: the kingdom drops and their play row goes above it.
     pub lowered: bool,
 }
 
@@ -273,13 +273,14 @@ fn grid(
         let row = rows_f - 1.0 - (i / cols as usize) as f64;
         g.kingdom.push((col, row, 1.0, 1.0));
     }
-    let mut free_cells: Vec<(f64, f64)> = vec![];
+    // Empty cells that take strips: (column, row, columns wide).
+    let mut free_cells: Vec<(f64, f64, f64)> = vec![];
     // The partial top row's empty cells take strips.
     let used_top = kingdom % cols as usize;
     if kingdom > 0 && used_top != 0 {
         let top = rows_f - 1.0 - (kingdom / cols as usize) as f64;
         for c in used_top..cols as usize {
-            free_cells.push((c as f64, top));
+            free_cells.push((c as f64, top, 1.0));
         }
     }
     let mut right = cols;
@@ -304,8 +305,7 @@ fn grid(
                 if last != 0 {
                     let c = right + 1.5 * (lcols - 1) as f64;
                     for r in 0..(per - last) {
-                        free_cells.push((c, r as f64));
-                        free_cells.push((c + 0.5, r as f64));
+                        free_cells.push((c, r as f64, 1.5));
                     }
                 }
                 right += 1.5 * lcols as f64;
@@ -322,13 +322,12 @@ fn grid(
         }
     }
     let mut placed = 0;
-    'cells: for (c, r) in free_cells {
+    'cells: for (c, r, w) in free_cells {
         for k in 0..4 {
             if placed == strips {
                 break 'cells;
             }
-            g.strips
-                .push((c, r + k as f64 * STRIP_ROWS, 1.0, STRIP_ROWS));
+            g.strips.push((c, r + k as f64 * STRIP_ROWS, w, STRIP_ROWS));
             placed += 1;
         }
     }
@@ -425,7 +424,9 @@ pub fn geometry(width: f64, height: f64, shape: &Shape) -> Geometry {
         (false, true) => 10.0 * vh,
         (false, false) => 3.5 * vh,
     };
-    let kingdom_box = Rect::new(r, top, right - r, 35.0 * vh);
+    // Lowered, it ends above the status bar (dominion.games lets the two overlap).
+    let height = if shape.lowered { 27.0 } else { 35.0 };
+    let kingdom_box = Rect::new(r, top, right - r, height * vh);
     let (kingdom, landscapes, non_supply) = kingdom_layout(shape, kingdom_box);
 
     let play_y = if shape.lowered {
@@ -525,7 +526,15 @@ mod tests {
             (1024.0, 768.0),
             (2560.0, 1080.0),
         ] {
-            for (k, l, n) in [(10, 0, 0), (10, 2, 3), (17, 4, 12), (8, 1, 0), (12, 3, 30)] {
+            for (k, l, n) in [
+                (10, 0, 0),
+                (10, 2, 3),
+                (17, 4, 12),
+                (8, 1, 0),
+                (12, 3, 30),
+                (11, 7, 11),
+                (10, 5, 9),
+            ] {
                 let g = geometry(w, h, &shape(k, l, n));
                 let all: Vec<&Rect> = g
                     .kingdom
@@ -548,6 +557,19 @@ mod tests {
                         assert!(!overlaps(a, c), "{w}x{h} {k}/{l}/{n} {a:?} {c:?}");
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn a_lowered_kingdom_ends_above_the_status_bar() {
+        for (w, h) in [(2000.0, 772.0), (1920.0, 1080.0), (1280.0, 720.0)] {
+            let mut s = shape(10, 2, 4);
+            s.lowered = true;
+            let g = geometry(w, h, &s);
+            assert!(g.play_y < g.kingdom_box.y);
+            for r in g.kingdom.iter().chain(&g.landscapes).chain(&g.non_supply) {
+                assert!(r.bottom() <= g.status.y, "{w}x{h} {r:?} {:?}", g.status);
             }
         }
     }

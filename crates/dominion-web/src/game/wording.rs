@@ -277,6 +277,17 @@ pub fn decline(d: &AgentDecision) -> &'static str {
     }
 }
 
+/// Why the game ended, from the result's reason code.
+pub fn end_reason(code: &str) -> String {
+    match code {
+        "provinces-gone" => "The Provinces ran out.".into(),
+        "colonies-gone" => "The Colonies ran out.".into(),
+        "piles-empty" => "Supply piles ran out.".into(),
+        "turn-limit" => "The turn limit was reached.".into(),
+        other => other.into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

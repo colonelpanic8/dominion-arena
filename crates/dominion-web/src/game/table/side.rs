@@ -419,7 +419,7 @@ pub fn GameOver(board: Rc<Board>) -> Element {
                     button {
                         class: "lb-button lb-gold",
                         "data-action": "ready",
-                        onclick: move |_| { spawn(crate::lobby::my_table::start(table, banned.clone(), toast, nav)); },
+                        onclick: move |_| { spawn(crate::lobby::my_table::start(table, banned.clone(), toast, nav, false)); },
                         "Ready"
                     }
                 }

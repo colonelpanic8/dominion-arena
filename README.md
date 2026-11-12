@@ -92,7 +92,7 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | `GET /api/cards` | | every card-shaped object as printed |
 | `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume, bannedCards}` |
 | `PUT /api/settings/banned-cards` | `["Witch", ...]` | the settings, after writing `banned_cards` to the settings file (409 when the server has none) |
-| `GET /api/games` | | the games, as `list_games` gives them |
+| `GET /api/games` | | the games, as `list_games` gives them, with `joined`: per seat, whether its token has been used (MCP or this API) since the server started |
 | `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
 | `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
@@ -176,7 +176,12 @@ Ready. Ready has the server deal the rest (`POST /api/deal`) and creates the gam
 dominion.games seats bots, a seat here is for an agent (it joins over MCP with its
 token), for another browser (an empty slot: the seat link), or for this browser too (hot
 seat); the seats played elsewhere get their token, link and `join_game` line beside the
-players. **Automatch**'s Bot Game starts a table at once with 1 to 3 agent seats.
+players. While the table's game runs, My Table shows that game's kingdom and players,
+locked, with Play to return to it and whether each seat played elsewhere has joined;
+its rules can be changed once the game ends (or Leave Table to set up another).
+**Automatch**'s Bot Game starts a game at once with 1 to 3 agent seats and goes to it.
+When a game waits on a seat nobody has joined, the table and the game page say so, with
+the line to give that seat's agent.
 **Tables** lists this server's games; **Cardlists** edits the Banned cards list, kept in
 the config file. After a game the score page has the table's Ready (another game with
 the same rules), Edit Table and Leave Table, as dominion.games has.

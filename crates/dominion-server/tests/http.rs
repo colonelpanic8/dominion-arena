@@ -357,6 +357,25 @@ async fn a_token_names_its_seat() {
 }
 
 #[tokio::test]
+async fn games_say_which_seats_have_joined() {
+    let server = start().await;
+    let created = server
+        .create(json!({ "players": 3, "kingdom": ["Village"] }))
+        .await;
+    let id = &created.game_id;
+    assert_eq!(server.summary(id).await.joined, [false, false, false]);
+    server.view(id, &created.seats[2].token).await;
+    let wrong = server
+        .get(&format!("/api/games/{id}/view"), Some("nope"))
+        .await;
+    assert_eq!(wrong.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(server.summary(id).await.joined, [false, false, true]);
+    // MCP's join_game claims the seat this way.
+    server.hub.claim(id, &created.seats[0].token).unwrap();
+    assert_eq!(server.summary(id).await.joined, [true, false, true]);
+}
+
+#[tokio::test]
 async fn log_from_chooses_where_the_log_starts() {
     let server = start().await;
     let created = server

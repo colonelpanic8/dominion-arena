@@ -7,6 +7,7 @@ mod cardlists;
 mod home;
 pub mod my_table;
 pub mod rules;
+pub mod seat_link;
 mod selector;
 pub mod store;
 mod tables;

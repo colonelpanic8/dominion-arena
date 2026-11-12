@@ -727,6 +727,15 @@ body:has(.lb-page) .topbar { display: none; }
 }
 .lb-link-buttons { display: flex; gap: .5vh; }
 .lb-link-buttons .lb-oval { font-size: 1.5vh; padding: .3vh 1vh; margin: 0 .6vh 0 0; }
+.lb-link-state { margin-left: 1vh; font: italic 400 1.6vh var(--ui); }
+.lb-link-state.joined { color: #6c6; }
+.lb-link-state.waiting { color: #f5bc34; }
+.lb-copied { align-self: center; color: #ccc; font-size: 1.5vh; }
+.lb-waiting { color: #f5bc34; font: 700 1.9vh var(--ui); margin: .8vh 0 1.2vh; }
+.lb-locked-note { color: #f5bc34; font-size: 1.7vh; margin: 1.5vh 2vh; text-align: center; }
+.lb-person-fixed { overflow: hidden; text-overflow: ellipsis; }
+.lb-person-turn { margin-left: 1vh; font: italic 400 1.6vh var(--ui); color: #ccc; }
+.lb-icon-person { background-image: var(--dc-lb-person); }
 
 .lb-table-buttons { position: absolute; left: 0; top: calc(88vh - 2px); display: flex; justify-content: center; width: 100%; }
 .lb-table-buttons > .lb-button { width: 14vh; height: 5.8vh; padding: 1vh; font-size: 3vh; margin: 0 .25vw; }

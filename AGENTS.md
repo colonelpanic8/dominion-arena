@@ -61,7 +61,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   assets/cards.css        card styles (cqw units; images through --dc-* variables)
   src/gallery.rs          /gallery: every card through the renderer, with filters
   src/game/state.rs       the game page's model (view, version, log), selection -> Answer
-  src/game/mod.rs         GamePage: seat choice, keeping state current, `GameCtx` context
+  src/game/mod.rs         GamePage: seat choice, keeping state current, `GameCtx` context,
+                          the notice when the game waits on a seat nobody has joined
   src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
   src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
                           "Play Treasures" (`TreasureRun`)
@@ -101,7 +102,10 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           selector's search, `DealRequest` and `NewGame` from them (pure)
     store.rs              the table, your name and the last kingdom in localStorage
     my_table.rs           My Table: Kingdom Options, Game Options, Players, seat links,
-                          Ready (`start`) and Leave Table; shared with the score page
+                          Ready (`start`) and Leave Table; shared with the score page.
+                          `use_table_game` follows the table's game on the server: while
+                          it runs the table shows that game, locked
+    seat_link.rs          a seat handed out: its agent line, link, token, copy buttons
     selector.rs           "Select Cards", the card selector
     home.rs tables.rs cardlists.rs   Automatch (Bot Game, Create Table, Join a Seat),
                           Tables, Cardlists (the Banned list in the config file)

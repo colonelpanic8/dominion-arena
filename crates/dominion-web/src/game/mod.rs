@@ -13,11 +13,12 @@ pub mod wording;
 
 use crate::api;
 use crate::app::Route;
+use crate::lobby::seat_link::SeatLink;
 use crate::platform;
 use crate::session::{self, HeldSeat};
 use dioxus::prelude::*;
 use dominion_protocol::Answer;
-use dominion_protocol::api::Change;
+use dominion_protocol::api::{Change, GameSummary};
 use futures_util::StreamExt;
 pub use state::{Applied, GameState, Selection};
 
@@ -68,7 +69,9 @@ async fn refresh(ctx: Live, token: &str) {
                 }
             }
             Err(e) => {
-                state.write().error = Some(e.message);
+                let mut st = state.write();
+                st.gone = matches!(e.status, 401 | 404);
+                st.error = Some(e.message);
                 return;
             }
         }
@@ -77,13 +80,16 @@ async fn refresh(ctx: Live, token: &str) {
 
 /// Keeps the shown seat's state current until cancelled.
 async fn drive(ctx: Live, token: String) {
+    refresh(ctx, &token).await;
+    if ctx.state.peek().gone {
+        return;
+    }
     let (tx, mut rx) = futures_channel::mpsc::unbounded::<Change>();
     let game = ctx.game.peek().clone();
     let watcher = api::watch(&game, &token, move |c| {
         let _ = tx.unbounded_send(c);
     });
     let worker = async {
-        refresh(ctx, &token).await;
         while let Some(c) = rx.next().await {
             if ctx.state.peek().is_news(c) {
                 refresh(ctx, &token).await;
@@ -127,6 +133,72 @@ async fn send_answer(ctx: Live, answer: Answer) {
     }
 }
 
+/// The game as `/api/games` lists it, kept current while some seat hasn't joined.
+fn use_summary(game: Signal<String>) -> Signal<Option<GameSummary>> {
+    let mut summary = use_signal(|| None::<GameSummary>);
+    use_future(move || async move {
+        loop {
+            let id = game.peek().clone();
+            if let Ok(list) = api::games().await {
+                let g = list.into_iter().find(|g| g.game_id == id);
+                let done = g
+                    .as_ref()
+                    .is_none_or(|g| !g.running || g.joined.iter().all(|&j| j));
+                if *summary.peek() != g {
+                    summary.set(g);
+                }
+                if done {
+                    break;
+                }
+            }
+            platform::sleep(2000).await;
+        }
+    });
+    summary
+}
+
+/// The seat the game waits on when nobody has joined it: its number and name.
+pub fn waiting_for(g: &GameSummary, held: &[HeldSeat]) -> Option<(u8, String)> {
+    let d = g.deciding.filter(|_| g.running)?;
+    let joined = g.joined.get(usize::from(d)).copied().unwrap_or(true);
+    if joined || held.iter().any(|h| h.seat == d) {
+        return None;
+    }
+    Some((d, g.names.get(usize::from(d)).cloned().unwrap_or_default()))
+}
+
+/// Says the game is waiting for a seat nobody has joined, with what to give its agent
+/// when this browser handed the seat out.
+#[component]
+pub fn WaitingNotice(#[props(default)] style: String) -> Element {
+    let ctx = use_game();
+    let summary = use_context::<Signal<Option<GameSummary>>>();
+    let mut hidden = use_signal(|| false);
+    let game = ctx.game.read().clone();
+    let held = session::seats(&game);
+    let Some(g) = summary() else {
+        return rsx! {};
+    };
+    let Some((seat, name)) = waiting_for(&g, &held) else {
+        return rsx! {};
+    };
+    if hidden() {
+        return rsx! {};
+    }
+    let link = session::links(&game).into_iter().find(|l| l.seat == seat);
+    rsx! {
+        div { class: "waiting-notice", role: "status", style, "data-waiting-seat": "{seat}",
+            button { class: "waiting-hide", title: "Hide", onclick: move |_| hidden.set(true), "✕" }
+            if let Some(l) = link {
+                p { class: "waiting-title", "Waiting for {name} to join. Give its agent this line:" }
+                SeatLink { game, seat: l, joined: Some(false) }
+            } else {
+                p { class: "waiting-title", "Waiting for {name}, who hasn't joined this game yet." }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn GamePage(id: String) -> Element {
     let game = use_signal(|| id.clone());
@@ -139,6 +211,8 @@ pub fn GamePage(id: String) -> Element {
     let mut driver = use_signal(|| None::<dioxus::core::Task>);
 
     let live = Live { game, seat, state };
+    let summary = use_summary(game);
+    use_context_provider(|| summary);
     use_context_provider(|| GameCtx {
         game,
         seat,
@@ -176,6 +250,19 @@ pub fn GamePage(id: String) -> Element {
     use_hook(move || {
         if let Some(token) = platform::take_fragment_token() {
             take_token(token);
+        }
+    });
+
+    let gone = use_memo(move || {
+        let st = state.read();
+        st.gone.then(|| st.error.clone().unwrap_or_default())
+    });
+    use_effect(move || {
+        if gone().is_none() {
+            return;
+        }
+        if let Some(s) = seat.peek().as_ref() {
+            session::forget(&game.peek(), &s.token);
         }
     });
 
@@ -245,6 +332,20 @@ pub fn GamePage(id: String) -> Element {
             Link { class: "right", to: Route::Lobby {}, "Lobby" }
         }
     };
+    if let Some(e) = gone() {
+        let id = game.read().clone();
+        return rsx! {
+            div { class: "game-page",
+                {seat_bar}
+                section { class: "panel", "data-gone": "1",
+                    h2 { "This game can't be opened" }
+                    p { "The server said: {e}." }
+                    p { "It may have been started on a server that didn't keep its games, or this browser's seat token for game {id} is no longer valid. This browser has forgotten that seat." }
+                    Link { class: "button primary", to: Route::Lobby {}, "Back to the lobby" }
+                }
+            }
+        };
+    }
     if !held.is_empty() && table_on() && join_error().is_none() {
         return rsx! {
             table::TableGame { controls: seat_bar }
@@ -274,6 +375,7 @@ pub fn GamePage(id: String) -> Element {
                 if let Some(e) = join_error() {
                     p { class: "error", "{e}" }
                 }
+                WaitingNotice {}
                 plain::PlainGame {}
             }
         }

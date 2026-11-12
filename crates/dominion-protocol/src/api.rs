@@ -105,6 +105,10 @@ pub struct GameSummary {
     pub running: bool,
     /// The seat that must decide now.
     pub deciding: Option<u8>,
+    /// Per seat: its token has been used (`join_game`, any call with it, or the HTTP
+    /// API) since the server started.
+    #[serde(default)]
+    pub joined: Vec<bool>,
     pub kingdom: Vec<String>,
     /// Events, Landmarks, Projects, Ways, ... in the game.
     #[serde(default)]

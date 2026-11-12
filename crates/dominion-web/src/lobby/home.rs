@@ -62,7 +62,7 @@ fn BotGame() -> Element {
                                     }
                                     let mut table = table;
                                     table.set(Some(MyTable { rules, game: None, links: vec![] }));
-                                    spawn(start(table, banned.clone(), toast, nav));
+                                    spawn(start(table, banned.clone(), toast, nav, true));
                                 },
                                 if n == 1 { "1 Bot" } else { "{n} Bots" }
                             }
