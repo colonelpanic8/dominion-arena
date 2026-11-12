@@ -86,7 +86,6 @@ impl SetRules for Rules {
             }
             Occasion::Play { player, card } => {
                 let first_silver = g.card(card) == Card::Silver
-                    && player == g.turn.player
                     && g.plays_before(player, card).all(|(c, _)| c != Card::Silver);
                 if first_silver {
                     for l in g.lasting() {

@@ -82,6 +82,8 @@ pub(crate) enum Value {
     None,
     Cards(Vec<CardId>),
     Bool(bool),
+    /// A window's result: one flag per occasion.
+    Flags(Vec<bool>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,7 +136,7 @@ pub(crate) enum Frame {
     },
     Play(PlayFrame),
     Card(Box<CardFrame>),
-    Window(Window),
+    Window(Box<Window>),
     Draw {
         player: PlayerId,
         count: usize,
@@ -143,7 +145,8 @@ pub(crate) enum Frame {
         to: Option<usize>,
         drawn: Vec<CardId>,
         started: bool,
-        /// Whether it shuffled: once, before drawing, if the deck was short.
+        /// Whether it shuffled: once, before drawing, if the deck was short; a draw up to
+        /// a hand size each time the deck ran out.
         shuffled: bool,
     },
     /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
@@ -169,7 +172,7 @@ pub(crate) enum Frame {
         from: From,
         to: Dest,
         bought: bool,
-        /// For a bought card: which buy of the turn (see [`GainState::buy`]).
+        /// For a bought card: which buy (see [`GainState::buy`]).
         #[serde(default)]
         buy: Option<usize>,
         card: Option<CardId>,
@@ -183,8 +186,7 @@ pub(crate) enum Frame {
         pile: Option<PileId>,
         landscape: Option<Card>,
         card: Option<CardId>,
-        /// Which buy of the turn this is, once paid for: its position in
-        /// `Turn::bought_cards`, from 1.
+        /// Which buy this is, once paid for (see [`GainState::buy`]).
         #[serde(default)]
         index: usize,
         pc: u8,
@@ -211,6 +213,9 @@ pub(crate) enum Frame {
     Overpay {
         player: PlayerId,
         card: CardId,
+        /// Which buy (see [`GainState::buy`]).
+        #[serde(default)]
+        buy: usize,
         paid: crate::Cost,
         pc: u8,
     },
@@ -239,7 +244,8 @@ impl Frame {
         }
     }
 
-    /// Draw until `player` has `size` cards in hand, or has no more cards to draw.
+    /// Draw until `player` has `size` cards in hand, or has no more cards to draw, one
+    /// card at a time: it shuffles when the deck has run out and another card is needed.
     pub(crate) fn draw_to(player: PlayerId, size: usize) -> Frame {
         Frame::Draw {
             player,
@@ -349,10 +355,11 @@ impl Frame {
         }
     }
 
-    pub(crate) fn overpay(player: PlayerId, card: CardId) -> Frame {
+    pub(crate) fn overpay(player: PlayerId, card: CardId, buy: usize) -> Frame {
         Frame::Overpay {
             player,
             card,
+            buy,
             paid: crate::Cost::ZERO,
             pc: 0,
         }
@@ -430,29 +437,39 @@ impl Frame {
                     }
                     // Short of cards, the discard pile is shuffled under the deck first,
                     // and then they are all drawn; the token counts as a card for that.
-                    let needed = token
-                        + match to {
-                            Some(size) => size.saturating_sub(g.hand(p).len()),
-                            None => *count,
-                        };
+                    // A draw up to a hand size takes one card at a time.
+                    let needed = match to {
+                        Some(_) => 0,
+                        None => token + *count,
+                    };
                     let pl = &g.players[p.index()];
                     if pl.deck.len() < needed && !pl.discard.is_empty() {
                         *shuffled = true;
                         return Flow::Call(Frame::shuffle(p));
                     }
                 }
+                let had = drawn.len();
+                let mut shuffle = false;
                 while wants(g, *count, drawn.len()) {
-                    let Some(&top) = g.players[p.index()].deck.last() else {
+                    let pl = &g.players[p.index()];
+                    let Some(&top) = pl.deck.last() else {
+                        // One card at a time: the deck has run out and another card is
+                        // needed, even if an earlier shuffle left cards out.
+                        shuffle = to.is_some() && !pl.discard.is_empty();
                         break;
                     };
                     g.move_card(top, Zone::Hand(p), Pos::Top);
                     drawn.push(top);
                 }
-                if !drawn.is_empty() {
+                if drawn.len() > had {
                     g.emit(Event::Drew {
                         player: p,
-                        count: drawn.len(),
+                        count: drawn.len() - had,
                     });
+                }
+                if shuffle {
+                    *shuffled = true;
+                    return Flow::Call(Frame::shuffle(p));
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))
             }
@@ -570,25 +587,28 @@ impl Frame {
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
-                // Cards discarded together are all discarded before any reacts.
-                if *i == 0 {
-                    for &c in cards.iter() {
-                        g.show(c);
-                        g.move_card(c, Zone::Discard(*player), Pos::Top);
-                        g.emit(Event::Discarded {
-                            player: *player,
-                            card: g.card(c),
-                        });
-                    }
-                }
-                let Some(&c) = cards.get(*i) else {
+                // Cards discarded together are all discarded before any "when discarded"
+                // ability, and their abilities share one window.
+                if *i > 0 {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
-                };
-                *i += 1;
-                Flow::Call(Frame::window(Occasion::Discard {
-                    player: *player,
-                    card: c,
-                }))
+                }
+                *i = 1;
+                for &c in cards.iter() {
+                    g.show(c);
+                    g.move_card(c, Zone::Discard(*player), Pos::Top);
+                    g.emit(Event::Discarded {
+                        player: *player,
+                        card: g.card(c),
+                    });
+                }
+                let occs = cards
+                    .iter()
+                    .map(|&card| Occasion::Discard {
+                        player: *player,
+                        card,
+                    })
+                    .collect();
+                Flow::Call(Window::open_all(occs))
             }
             Frame::DiscardFromPlay { player, cards, pc } => match pc {
                 0 => {
@@ -607,9 +627,10 @@ impl Frame {
             Frame::Overpay {
                 player,
                 card,
+                buy,
                 paid,
                 pc,
-            } => resume_overpay(g, *player, *card, paid, pc, input),
+            } => resume_overpay(g, *player, (*card, *buy), paid, pc, input),
             Frame::Receive { player, card, pc } => match pc {
                 0 => {
                     *pc = 1;
@@ -754,6 +775,14 @@ fn fails(g: &Game, extra: &ExtraTurn) -> bool {
     }
 }
 
+/// Ends what kept a card in play for extra turn `e` (Outpost, Voyage), which is starting,
+/// skipped or lost: the card is discarded in that turn's Clean-up, or the next one.
+fn release(g: &mut Game, e: &ExtraTurn) {
+    if let Some(id) = e.lasting {
+        g.lasting.retain(|l| l.id != id);
+    }
+}
+
 fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> Flow {
     match pc {
         0 | 2 => {
@@ -765,9 +794,13 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
             };
             loop {
                 // An extra turn that can't follow the turn that just ended is lost.
-                let mut pending = std::mem::take(&mut g.extra_turns);
-                pending.retain(|e| !fails(g, e));
+                let (lost, pending) = std::mem::take(&mut g.extra_turns)
+                    .into_iter()
+                    .partition(|e| fails(g, e));
                 g.extra_turns = pending;
+                for e in lost {
+                    release(g, &e);
+                }
                 // The player who just took a turn takes theirs first, then the others in
                 // turn order; each chooses among their own.
                 let Some(p) = g
@@ -811,13 +844,9 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     .iter()
                     .position(|e| e.player == p && e.source == source)
                     .expect("the chosen extra turn is pending");
-                g.extra_turns.remove(i);
+                let e = g.extra_turns.remove(i).expect("found above");
+                release(g, &e);
                 if g.skips_turn(p, true) {
-                    // What kept its card in play for that turn (Voyage, Outpost) ends, so
-                    // the card is discarded in the next Clean-up.
-                    let until = Until::StartOfTurn(p);
-                    g.lasting
-                        .retain(|l| !(l.owner == p && l.card == source && l.until == until));
                     continue;
                 }
                 g.turn = Turn::new(p);
@@ -1117,12 +1146,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             for l in std::mem::take(&mut g.lasting) {
                 if l.until != Until::EndOfTurn && !l.ending {
                     g.lasting.push(l);
-                } else if l.until == Until::StartOfTurn(l.owner)
-                    && let Some(i) = g
-                        .extra_turns
-                        .iter()
-                        .position(|t| t.player == l.owner && t.source == l.card)
-                {
+                } else if let Some(i) = g.extra_turns.iter().position(|t| t.lasting == Some(l.id)) {
                     // The extra turn a Duration stayed in play for (Outpost, Voyage) is
                     // one of the things it no longer does.
                     g.extra_turns.remove(i);
@@ -1327,12 +1351,12 @@ fn resume_buy(
                 player: p,
                 card: kind,
             });
+            *index = g.log.len();
             pay(g, p, cost);
             g.turn.bought_cards.push(kind);
-            *index = g.turn.bought_cards.len();
             *pc = 2;
             if kind.def().overpay {
-                return Flow::Call(Frame::overpay(p, top));
+                return Flow::Call(Frame::overpay(p, top, *index));
             }
             Flow::Continue
         }
@@ -1374,11 +1398,12 @@ fn resume_buy(
 fn resume_overpay(
     g: &mut Game,
     p: PlayerId,
-    card: CardId,
+    (card, buy): (CardId, usize),
     paid: &mut crate::Cost,
     pc: &mut u8,
     input: Input,
 ) -> Flow {
+    let (coins, potions) = g.funds(p);
     let ask = |max: u32| {
         Flow::Ask(Decision {
             player: p,
@@ -1395,16 +1420,16 @@ fn resume_overpay(
     match pc {
         0 => {
             *pc = 1;
-            if g.turn.coins > 0 {
-                return ask(g.turn.coins);
+            if coins > 0 {
+                return ask(coins);
             }
             Flow::Continue
         }
         1 => {
             paid.coins = input.number().unwrap_or(0).max(0) as u8;
             *pc = 2;
-            if g.turn.potions > 0 {
-                return ask(g.turn.potions);
+            if potions > 0 {
+                return ask(potions);
             }
             Flow::Continue
         }
@@ -1424,6 +1449,7 @@ fn resume_overpay(
             let mut f = CardFrame::new(g.card(card), Hook::Ability(OVERPAY), p, Some(card));
             f.data = paid.coins as i32;
             f.s.cost = *paid;
+            f.s.i = buy;
             Flow::Call(Frame::Card(Box::new(f)))
         }
         _ => Flow::done(),
@@ -1546,23 +1572,24 @@ impl PlayFrame {
                 })
             }
             3 => {
-                if let Input::Return(Value::Bool(unaffected)) = input {
-                    let target = self.remaining.remove(0);
-                    if !unaffected {
-                        self.targets.push(target);
-                    }
+                // One window for all the players attacked: a Reaction one of them uses
+                // gives the others another chance to react.
+                if let Input::Return(Value::Flags(unaffected)) = input {
+                    let asked = unaffected.len().max(1).min(self.remaining.len());
+                    let asked = self.remaining.drain(..asked).zip(unaffected);
+                    self.targets
+                        .extend(asked.filter(|(_, safe)| !safe).map(|(t, _)| t));
                 }
-                match self.remaining.first() {
-                    Some(&target) => Flow::Call(Frame::window(Occasion::Attack {
-                        attacker: p,
-                        card: id,
-                        target,
-                    })),
-                    None => {
-                        self.pc = 2;
-                        Flow::Continue
-                    }
+                if self.remaining.is_empty() {
+                    self.pc = 2;
+                    return Flow::Continue;
                 }
+                let occs = self.remaining.iter().map(|&target| Occasion::Attack {
+                    attacker: p,
+                    card: id,
+                    target,
+                });
+                Flow::Call(Window::open_all(occs.collect()))
             }
             6 => {
                 if let Some(Opt::Card(way)) = input.opt() {

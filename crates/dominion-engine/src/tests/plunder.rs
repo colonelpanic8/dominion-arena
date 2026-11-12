@@ -414,6 +414,40 @@ fn search_is_trashed_for_a_loot_when_a_supply_pile_empties() {
     assert!(g.lasting().is_empty());
 }
 
+/// "If you Invest in the last card of a Supply pile, other players who also Invested in
+/// that card can order between the +2 Cards from Invest and trashing their Searches"
+/// (wiki): Search answers a pile an Event empties at once.
+#[test]
+fn search_answers_a_pile_emptied_by_invest_beside_invests_draw() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Invest],
+        ..GameConfig::new(2, vec![Card::Search, Card::Village], 7)
+    });
+    hand(&mut g, P0, &[Card::Search]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    last_one(&mut g, Card::Village);
+    let invested = g.create(Card::Village, Zone::Mat(P0, crate::game::Mat::Exile));
+    g.ext.menagerie.invested.push(invested);
+    g.start();
+    play(&mut g, Card::Search);
+    next_turn(&mut g);
+    money(&mut g, 4, 2);
+    to_buy(&mut g);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Invest)));
+    choose_pile(&mut g, Card::Village);
+    // P1 Invested in it: P0 orders their Invest and Search.
+    assert_eq!(g.pending().unwrap().player, P0);
+    assert_eq!(trigger_cards(&g), [Card::Invest, Card::Search]);
+    resolve_triggers(&mut g);
+    assert!(trash_kinds(&g).contains(&Card::Search));
+    assert_eq!(loot_gained(&g, P0), 1);
+    assert_eq!(g.hand(P0).len(), 7);
+    assert_eq!(g.pending().unwrap().player, P1);
+}
+
 #[test]
 fn search_ignores_a_pile_already_empty_when_it_was_played() {
     let mut g = setup(&[Card::Search, Card::Village, Card::Smithy]);

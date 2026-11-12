@@ -999,6 +999,34 @@ fn a_highwayman_leaving_play_at_the_start_of_the_turn_is_not_a_clean_up() {
     assert_eq!(g.hand(P0).len(), 6);
 }
 
+/// "First" is by play: with Kiln, a Treasure's copy gained and played (Mining Road) while
+/// the Treasure's play is resolved comes after it (Kiln's FAQ: a Conspirator played after
+/// Kiln and its copy played with Innovation both count three Actions played).
+#[test]
+fn highwayman_stops_the_first_treasure_when_kiln_and_mining_road_play_a_copy_first() {
+    let mut g = game(&[Card::Highwayman, Card::Kiln, Card::MiningRoad]);
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::MiningRoad, Card::Kiln, Card::Silver]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    play(&mut g, Card::MiningRoad);
+    play(&mut g, Card::Kiln);
+    assert_eq!(g.turn().coins, 4);
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    super::intrigue::trigger(&mut g, Card::Kiln);
+    yes(&mut g);
+    super::intrigue::trigger(&mut g, Card::MiningRoad);
+    while purpose(&g) == Purpose::Trigger {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(in_play_kinds(&g, P1)[2..], [Card::Silver, Card::Silver]);
+    assert_eq!(g.turn().coins, 4 + 2);
+}
+
 #[test]
 fn highwayman_is_not_cumulative_and_moat_blocks_it() {
     let mut g = game(&[Card::Highwayman, Card::Moat]);
@@ -1683,6 +1711,37 @@ fn garrison_with_no_gains_is_discarded_that_turn() {
     assert!(g.lasting().is_empty());
 }
 
+/// "This turn, when you gain a card, add a token here" is each Garrison's own: one that
+/// starts watching while a gain is resolved (Innovation plays it as it is gained) gets a
+/// token for that gain, whatever other Garrisons are watching.
+#[test]
+fn garrison_played_as_it_is_gained_gets_a_token_beside_another_garrison() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Innovation, Card::PlateauShepherds],
+        ..GameConfig::new(2, vec![Card::Forts], 7)
+    });
+    let forts = g.pile_of(Card::Forts).unwrap();
+    replace(&mut g, Zone::Pile(forts), &[Card::Garrison; 4]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Garrison, Card::Gold, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Garrison);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Forts);
+    super::intrigue::trigger(&mut g, Card::Innovation);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Garrison, Card::Garrison]);
+    next_turn(&mut g);
+    while purpose(&g) == Purpose::Trigger {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(g.hand(P0).len(), 7);
+}
+
 #[test]
 fn throne_roomed_garrison_gets_two_tokens_per_gain() {
     let mut g = game(&[Card::Forts, Card::ThroneRoom]);
@@ -1944,6 +2003,28 @@ fn sorcerer_curses_each_player_who_names_wrong_and_leaves_the_card() {
     name(&mut g, Card::Silver);
     assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
     assert_eq!(deck_kinds(&g, P1), [Card::Gold]);
+}
+
+/// The revealed card stays on the deck ("After revealing it, return it to wherever it
+/// was"), so a Sheepdog played when the Curse is gained draws it.
+#[test]
+fn sorcerer_leaves_the_revealed_card_on_the_deck_while_the_curse_is_gained() {
+    let mut g = game(&[Card::Wizards, Card::Sheepdog]);
+    hand(&mut g, P0, &[Card::Sorcerer]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    hand(&mut g, P1, &[Card::Sheepdog]);
+    deck(
+        &mut g,
+        P1,
+        &[Card::Gold, Card::Silver, Card::Estate, Card::Copper],
+    );
+    g.start();
+    play(&mut g, Card::Sorcerer);
+    name(&mut g, Card::Province);
+    super::intrigue::trigger(&mut g, Card::Sheepdog);
+    assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
+    assert_eq!(hand_kinds(&g, P1), [Card::Gold, Card::Silver]);
+    assert_eq!(deck_kinds(&g, P1), [Card::Estate, Card::Copper]);
 }
 
 #[test]
@@ -2348,7 +2429,9 @@ fn island_folk_and_voyage_in_one_turn_give_one_extra_turn_of_the_players_choice(
         assert_eq!(can_play(&g, Card::Village), taken == Card::IslandFolk);
         next_turn(&mut g);
         assert_eq!(g.turn().player, P1);
-        assert!(g.in_play(P0).is_empty());
+        // Voyage's turn, if it failed, was the one it stayed in play for.
+        let voyage = g.in_play(P0).iter().any(|&c| g.card(c) == Card::Voyage);
+        assert_eq!(voyage, taken == Card::IslandFolk);
     }
 }
 
@@ -2474,6 +2557,42 @@ fn order_of_masons_leaves_cards_out_of_the_shuffle_and_shuffles_only_once() {
     assert_eq!(hand_kinds(&g, P0), [Card::Curse, Card::Curse]);
     assert_eq!(discard_kinds(&g, P0), [Card::Province, Card::Province]);
     assert_eq!(favors(&g, P0), 0);
+}
+
+/// Order of Masons' page: "some cards access cards from your deck one at a time (e.g.
+/// Watchtower and Journeyman). If there aren't enough cards after shuffling for the first
+/// time, you will shuffle a second time."
+#[test]
+fn a_draw_up_to_a_hand_size_shuffles_again_when_the_first_shuffle_left_cards_out() {
+    let mut g = game_with(&[Card::Underling, Card::Watchtower], Card::OrderOfMasons);
+    set_favors(&mut g, P0, 1);
+    hand(&mut g, P0, &[Card::Watchtower]);
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Estate, Card::Estate],
+    );
+    g.start();
+    play(&mut g, Card::Watchtower);
+    // It doesn't shuffle before the deck has run out.
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+    accept(&mut g, Card::OrderOfMasons);
+    choose_kinds(&mut g, &[Card::Estate, Card::Estate]);
+    assert_eq!(
+        hand_kinds(&g, P0),
+        [
+            Card::Copper,
+            Card::Gold,
+            Card::Gold,
+            Card::Estate,
+            Card::Estate
+        ]
+    );
+    let drew = |count| Event::Drew { player: P0, count };
+    let shuffled = Event::Shuffled { player: P0 };
+    let order = [drew(1), shuffled.clone(), drew(2), shuffled, drew(2)];
+    assert!(logged_in_order(&g, &order));
 }
 
 #[test]

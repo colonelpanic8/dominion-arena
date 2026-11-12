@@ -2,8 +2,8 @@
 //! Adventures tokens.
 
 use super::{
-    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
-    turn_durations,
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, left_supply, looking, mode_mask,
+    put_back, turn_durations,
 };
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -307,6 +307,7 @@ impl SetRules for Rules {
                     player: f.player,
                     source: Card::Mission,
                     limit: ExtraLimit::ThirdInARow,
+                    lasting: None,
                 });
                 Flow::done()
             }
@@ -549,7 +550,8 @@ impl SetRules for Rules {
                 .iter()
                 .any(|l| l.card == card && l.owner == p && l.until == Until::EndOfTurn),
             Card::Inheritance => g.ext.adventures.inherited.iter().all(|&(q, _)| q != p),
-            _ => !(card.kind() == Kind::Card && g.turn.extra == Some(Card::Mission)),
+            // Only the Mission turn's player can't buy cards.
+            _ => !(card.kind() == Kind::Card && p == g.turn.player && g.turn.extra == Some(Card::Mission)),
         }
     }
 
@@ -699,18 +701,10 @@ fn inherited(g: &Game) -> bool {
         .is_some_and(|p| inherited_card(g, p).is_some())
 }
 
-/// How many cards `p` gained on their most recent turn.
+/// How many cards `p` gained on their last turn.
 fn gains_on_last_turn(g: &Game, p: PlayerId) -> usize {
-    let log = g.log();
-    let Some(start) = log
+    g.last_turn_log(p)
         .iter()
-        .rposition(|e| matches!(e, Event::TurnStart { player, .. } if *player == p))
-    else {
-        return 0;
-    };
-    log[start + 1..]
-        .iter()
-        .take_while(|e| !matches!(e, Event::TurnStart { .. }))
         .filter(|e| matches!(e, Event::Gained { player, .. } if *player == p))
         .count()
 }
@@ -1444,6 +1438,8 @@ fn magpie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             if g.is(c, Types::TREASURE) {
                 g.put_in_hand(c, p);
+            } else {
+                put_back(g, p, &[c]);
             }
             f.pc = 2;
             if g.is(c, Types::ACTION | Types::VICTORY)
@@ -1518,6 +1514,8 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let mut candidates = g.hand(p).to_vec();
             let this = f.this();
+            // Either choice may be made where it trashes nothing.
+            let min = usize::from(g.zone(this) == Zone::InPlay(p) && !candidates.is_empty());
             if g.zone(this) == Zone::InPlay(p) {
                 candidates.push(this);
             }
@@ -1525,7 +1523,7 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_cards(candidates, 1, 1, Purpose::Trash)
+            f.ask_cards(candidates, min, 1, Purpose::Trash)
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1922,7 +1920,7 @@ fn inheritance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 1;
             f.ask_pile(piles, false, Purpose::SetAside)
         }
-        _ => {
+        1 => {
             let Some(top) = input.pile().and_then(|pile| g.pile_top(pile)) else {
                 return Flow::done();
             };
@@ -1932,8 +1930,10 @@ fn inheritance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let st = &mut g.ext.adventures.inherited;
             st.retain(|&(q, _)| q != p);
             st.push((p, Some(top)));
-            Flow::done()
+            f.pc = 2;
+            left_supply(p, top)
         }
+        _ => Flow::done(),
     }
 }
 

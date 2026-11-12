@@ -269,6 +269,75 @@ fn black_market_played_on_another_players_turn_buys_nothing() {
     assert_eq!((g.turn().player, g.turn().coins), (P0, 2));
 }
 
+/// Overpaying is paying: a player buying from the Black Market deck on another player's
+/// turn (Farrier, made free by two Highways) has no $ or Potions to overpay with.
+#[test]
+fn black_market_on_another_players_turn_has_nothing_to_overpay_with() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        setup_choices: [(
+            Card::BlackMarket,
+            vec![Card::Farrier, Card::Village, Card::Smithy],
+        )]
+        .into(),
+        ..GameConfig::new(2, vec![Card::BlackMarket, Card::Highway, Card::Festival], 7)
+    });
+    hand(&mut g, P0, &[Card::Highway, Card::Highway, Card::Festival]);
+    deck(&mut g, P0, &[Card::Estate; 5]);
+    hand(&mut g, P1, &[Card::BlackMarket]);
+    g.start();
+    play(&mut g, Card::Highway);
+    play(&mut g, Card::Highway);
+    play(&mut g, Card::Festival);
+    play_out_of_turn(&mut g, P1, Card::BlackMarket);
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Farrier]);
+    choose_kinds(&mut g, &[Card::Farrier]);
+    assert_eq!(discard_kinds(&g, P1), [Card::Farrier]);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Move));
+    assert_eq!(g.turn().coins, 2);
+}
+
+/// A card bought from the Black Market deck by another player (Engineer, which costs only
+/// Debt) is none of the turn's: on their Mission turn, in their Buy phase, the turn's
+/// player can go on playing Treasures.
+#[test]
+fn black_market_on_another_players_turn_is_none_of_that_turns_buys() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Mission],
+        setup_choices: [(
+            Card::BlackMarket,
+            vec![Card::Engineer, Card::Village, Card::Smithy],
+        )]
+        .into(),
+        ..GameConfig::new(2, vec![Card::BlackMarket], 7)
+    });
+    hand(&mut g, P0, &[Card::Gold, Card::Copper]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::BlackMarket]);
+    g.start();
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Copper);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Mission)));
+    assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Mission)));
+    assert_eq!(g.turn().phase, Phase::Buy);
+    play(&mut g, Card::Copper);
+    play_out_of_turn(&mut g, P1, Card::BlackMarket);
+    choose_kinds(&mut g, &[Card::Engineer]);
+    choose_kinds(&mut g, &[Card::Village, Card::Smithy]);
+    assert_eq!(discard_kinds(&g, P1), [Card::Engineer]);
+    assert_eq!(g.player(P1).debt, 4);
+    assert!(g.turn().bought_cards.is_empty());
+    let copper = find(&g, P0, Card::Copper);
+    let DecisionKind::Turn { moves, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending());
+    };
+    assert!(moves.contains(&Move::Play(copper)), "{moves:?}");
+}
+
 #[test]
 fn black_market_offers_only_affordable_cards() {
     let mut g = setup_black_market();
@@ -765,6 +834,24 @@ fn walled_village_goes_on_the_deck_with_at_most_one_other_action() {
     finish_turn(&mut g);
     assert_eq!(g.count_owned(P0, Card::WalledVillage), 1);
     assert!(!hand_kinds(&g, P0).contains(&Card::WalledVillage));
+}
+
+/// "At the start of Clean-up" is the start of the turn's Clean-up, whoever's turn it is
+/// (no ruling found; Improve has the same words).
+#[test]
+fn walled_village_played_on_another_players_turn_may_go_onto_its_players_deck() {
+    let mut g = setup(&[Card::WalledVillage, Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P1, &[Card::WalledVillage]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play_on_another_players_turn(&mut g);
+    assert_eq!(kinds(&g, g.in_play(P1)), [Card::WalledVillage]);
+    end_phases(&mut g);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    trigger(&mut g, Card::WalledVillage);
+    assert_eq!(deck_kinds(&g, P1)[0], Card::WalledVillage);
 }
 
 #[test]

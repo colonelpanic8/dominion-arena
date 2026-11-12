@@ -350,6 +350,9 @@ pub enum Until {
     StartOfTurn(PlayerId),
     /// Only when an effect removes it (Durations remove themselves when they resolve).
     Removed,
+    /// When the extra turn it keeps cards in play for (Outpost, Voyage: the
+    /// [`ExtraTurn::lasting`] naming it) starts, or doesn't happen.
+    ExtraTurn,
 }
 
 /// An effect that outlives the play that created it: a Duration's future part, "this turn"
@@ -391,6 +394,9 @@ pub struct ExtraTurn {
     pub player: PlayerId,
     pub source: Card,
     pub limit: ExtraLimit,
+    /// The lasting effect that keeps its card in play for it (Outpost, Voyage).
+    #[serde(default)]
+    pub lasting: Option<u32>,
 }
 
 /// When an extra turn doesn't happen (each card's own "but not ..." clause).
@@ -516,8 +522,8 @@ pub struct GainState {
     pub card: CardId,
     pub to: crate::Dest,
     pub bought: bool,
-    /// For a bought card: which buy of the turn it is for (its position in
-    /// [`Turn::bought_cards`], from 1). Another buy may come between (Black Market).
+    /// For a bought card: which buy it is for (the log's length once its `Bought` event
+    /// was logged). Another buy may come between (Black Market).
     #[serde(default)]
     pub buy: Option<usize>,
     /// Set by a replacement effect (Trader's exchange, ...): the card is not gained.
@@ -621,6 +627,26 @@ impl Game {
         &self.log
     }
 
+    /// The log of `p`'s last finished turn ("their last turn"): never one in progress.
+    pub(crate) fn last_turn_log(&self, p: PlayerId) -> &[Event] {
+        let is_start = |e: &Event| matches!(e, Event::TurnStart { .. });
+        let mut end = self.log.len();
+        if self.turn.player == p {
+            end = self.log.iter().rposition(is_start).unwrap_or(0);
+        }
+        let Some(begin) = self.log[..end]
+            .iter()
+            .rposition(|e| matches!(e, Event::TurnStart { player, .. } if *player == p))
+        else {
+            return &[];
+        };
+        let len = self.log[begin + 1..end]
+            .iter()
+            .position(is_start)
+            .unwrap_or(end - begin - 1);
+        &self.log[begin + 1..begin + 1 + len]
+    }
+
     /// What `id` currently is: its printed card, or what it is acting as.
     pub fn card(&self, id: CardId) -> Card {
         self.masks
@@ -689,6 +715,15 @@ impl Game {
     /// "during your turns" and "this turn" effects apply to nobody (scoring).
     pub(crate) fn turn_player(&self) -> Option<PlayerId> {
         (self.turn.phase != Phase::End).then_some(self.turn.player)
+    }
+
+    /// `p`'s $ and Potions: they are the turn's, so none on another player's turn.
+    pub(crate) fn funds(&self, p: PlayerId) -> (u32, u32) {
+        if p == self.turn.player {
+            (self.turn.coins, self.turn.potions)
+        } else {
+            (0, 0)
+        }
     }
 
     pub fn landscapes(&self) -> &[Card] {

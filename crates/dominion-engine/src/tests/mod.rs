@@ -163,6 +163,13 @@ pub(crate) fn play_on_another_players_turn(g: &mut Game) {
     respond(g, Response::option(Opt::Trigger(0)));
 }
 
+/// Ends phases until a decision other than the turn's own comes up.
+pub(crate) fn end_phases(g: &mut Game) {
+    while let Some(DecisionKind::Turn { .. }) = g.pending().map(|d| &d.kind) {
+        end_phase(g);
+    }
+}
+
 /// The cards of the abilities a pending trigger decision offers, in option order.
 pub(crate) fn trigger_cards(g: &Game) -> Vec<Card> {
     let d = g.pending().expect("a decision is pending");
@@ -943,6 +950,62 @@ fn effects_on_several_players_start_with_the_turn_player_off_turn() {
     check(Card::Bishop, &[Card::Copper], |_| {}, P0);
     check(Card::Vault, &[Card::Copper], |g| choose(g, &[]), P0);
     check(Card::Duchess, &[], |_| {}, P0);
+}
+
+/// Wiki, Reaction: "If another player uses a Reaction, any previous players in turn order
+/// get another chance to react (starting with the current player). However, once all
+/// players have declined to use a Reaction, no one may use Reactions anymore."
+#[test]
+fn a_reaction_gives_players_who_declined_another_chance_to_react() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(3, vec![Card::Militia, Card::Moat], 7)
+    });
+    hand(&mut g, P0, &[Card::Militia]);
+    for p in [P1, P2] {
+        let coppers = [Card::Copper; 4];
+        hand(&mut g, p, &[&[Card::Moat], &coppers[..]].concat());
+    }
+    g.start();
+    play(&mut g, Card::Militia);
+    let asked = |g: &Game| {
+        let d = g.pending().unwrap();
+        (d.player, d.purpose)
+    };
+    assert_eq!(asked(&g), (P1, Purpose::Trigger));
+    no(&mut g);
+    assert_eq!(asked(&g), (P2, Purpose::Trigger));
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    // P2 revealed a Moat: P1, who declined, may reveal theirs after all.
+    assert_eq!(asked(&g), (P1, Purpose::Trigger));
+    no(&mut g);
+    // Everyone has declined now, and only P1 is affected.
+    assert_eq!(asked(&g), (P1, Purpose::Discard));
+    choose_kinds(&mut g, &[Card::Copper, Card::Copper]);
+    assert_eq!(g.pending().unwrap().player, P0);
+    assert_eq!(g.hand(P2).len(), 5);
+}
+
+/// "Note that this only applies to Reactions and not other abilities."
+#[test]
+fn a_reaction_does_not_bring_back_other_declined_abilities() {
+    let mut g = setup(&[Card::RoyalSeal, Card::FoolsGold]);
+    hand(&mut g, P0, &[Card::RoyalSeal, Card::Gold, Card::Gold]);
+    hand(&mut g, P1, &[Card::FoolsGold]);
+    g.start();
+    for card in [Card::RoyalSeal, Card::Gold, Card::Gold] {
+        play(&mut g, card);
+    }
+    buy(&mut g, Card::Province);
+    assert_eq!(trigger_cards(&g), [Card::RoyalSeal]);
+    no(&mut g);
+    assert_eq!(trigger_cards(&g), [Card::FoolsGold]);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(deck_kinds(&g, P1)[0], Card::Gold);
+    // Royal Seal is no Reaction: P0, who declined it, isn't asked again.
+    let d = g.pending().unwrap();
+    assert_ne!(d.purpose, Purpose::Trigger, "{d:?}");
 }
 
 #[test]
