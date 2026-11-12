@@ -1301,6 +1301,11 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                     let _ = writeln!(out, "{what} {from:?} -> {to:?} top {top}");
                 }
             }
+            Trace::LookedOver { player, cards } => {
+                for card in cards {
+                    let _ = writeln!(seen[player.index()], "looked at {}", g.printed(*card));
+                }
+            }
             Trace::Shown { card, to: Some(p) } => {
                 for (v, out) in seen.iter_mut().enumerate() {
                     let v = PlayerId(v as u8);
@@ -1568,4 +1573,186 @@ fn traced_games_play_like_untraced_ones_and_survive_serialization() {
             );
         }
     }
+}
+
+#[test]
+fn private_revealed_put_back_order_does_not_reach_other_seats() {
+    let mut g = setup(&[Card::Rabble, Card::Village]);
+    hand(&mut g, P0, &[Card::Rabble]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Village]);
+    deck(
+        &mut g,
+        P1,
+        &[
+            Card::Estate,
+            Card::Duchy,
+            Card::Province,
+            Card::Silver,
+            Card::Silver,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Rabble);
+    k.update(&mut g);
+    let revealed = candidates(&g);
+    assert_eq!(g.pending().unwrap().player, P1);
+    let world = |order: [usize; 3]| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &order.map(|i| revealed[i]));
+        k.update(&mut g);
+        while g.pending().unwrap().player == P0 {
+            end_phase(&mut g);
+            k.update(&mut g);
+        }
+        play(&mut g, Card::Village);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((ga, ka), (gb, kb)) = (world([0, 1, 2]), world([1, 2, 0]));
+    // The same public log, and P1 drew a different card in each world.
+    assert_eq!(ga.log(), gb.log());
+    assert_ne!(hand_kinds(&ga, P1), hand_kinds(&gb, P1));
+    let (a, b) = (ka.known(&ga, P0), kb.known(&gb, P0));
+    assert_eq!(a.zone(Zone::Hand(P1)), b.zone(Zone::Hand(P1)));
+    assert_eq!(a.zone(Zone::Deck(P1)), b.zone(Zone::Deck(P1)));
+}
+
+#[test]
+fn revealed_cards_split_between_hand_and_deck_stay_known() {
+    let mut g = setup(&[Card::Seer]);
+    hand(&mut g, P0, &[Card::Seer]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Estate,
+            Card::Silver,
+            Card::Copper,
+            Card::Duchy,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Seer);
+    k.update(&mut g);
+    // +1 Card drew the Gold; Estate and Silver went to the hand, the Copper back.
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper, Card::Duchy]);
+    assert!(logged_in_order(
+        &g,
+        &[moved(
+            P0,
+            Zone::Looking(P0),
+            Zone::Deck(P0),
+            &[Card::Copper],
+            1
+        )]
+    ));
+    let theirs = k.known(&g, P1);
+    assert_eq!(
+        theirs.zone(Zone::Deck(P0)).known,
+        count(&[(Card::Copper, 1)]),
+        "{theirs:#?}"
+    );
+    assert_eq!(
+        theirs.zone(Zone::Hand(P0)).known,
+        count(&[(Card::Estate, 1), (Card::Silver, 1)])
+    );
+}
+
+#[test]
+fn looking_over_a_shuffle_preserves_known_cards_left_above_it() {
+    for choice in [None, Some(Card::StarChart), Some(Card::OrderOfAstrologers)] {
+        let mut g = if choice == Some(Card::OrderOfAstrologers) {
+            setup_with(GameConfig {
+                landscapes: vec![Card::OrderOfAstrologers],
+                colonies: Some(false),
+                shelters: Some(false),
+                ..GameConfig::new(2, vec![Card::Underling, Card::Smithy], 7)
+            })
+        } else {
+            setup(&[Card::Smithy])
+        };
+        if choice == Some(Card::StarChart) {
+            g.players[0].projects.push(Card::StarChart);
+        }
+        g.players[0].favors = 2;
+        hand(&mut g, P0, &[Card::Smithy]);
+        deck(&mut g, P0, &[]);
+        let shuffled = discard(
+            &mut g,
+            P0,
+            &[
+                Card::Gold,
+                Card::Estate,
+                Card::Duchy,
+                Card::Province,
+                Card::Curse,
+                Card::Copper,
+            ],
+        );
+        let (mut g, mut k) = start(g);
+        g.create(Card::Silver, Zone::Deck(P0));
+        k.update(&mut g);
+        assert_eq!(
+            k.known(&g, P1).zone(Zone::Deck(P0)).known,
+            count(&[(Card::Silver, 1)])
+        );
+        play(&mut g, Card::Smithy);
+        k.update(&mut g);
+        if choice.is_some() {
+            respond(&mut g, Response::option(Opt::Trigger(0)));
+            k.update(&mut g);
+            choose(&mut g, &[shuffled[0]]);
+            k.update(&mut g);
+        }
+        assert_eq!(hand_kinds(&g, P0)[0], Card::Silver);
+        let theirs = k.known(&g, P1);
+        assert_eq!(
+            theirs.zone(Zone::Hand(P0)).known.get(&Card::Silver),
+            Some(&1),
+            "shuffle choice {choice:?}: {:?} {:?}",
+            theirs.zone(Zone::Hand(P0)),
+            theirs.uncertain
+        );
+    }
+}
+
+pub(super) fn check_revealed_order_twins(
+    g: &Game,
+    k: &Knowledge,
+    rng: &mut ChaCha8Rng,
+) -> Result<(), String> {
+    let Some(d) = g.pending() else { return Ok(()) };
+    let DecisionKind::Cards {
+        candidates,
+        max,
+        ordered: true,
+        ..
+    } = &d.kind
+    else {
+        return Ok(());
+    };
+    if *max < 2
+        || !candidates.iter().any(|&c| {
+            matches!(g.zone(c), Zone::Looking(p)
+        if g.player(p).face_up.contains(&c))
+        })
+    {
+        return Ok(());
+    }
+    let cards: Vec<_> = candidates.iter().copied().take(*max).collect();
+    let mut reversed = cards.clone();
+    reversed.reverse();
+    let mut a = (g.clone(), k.clone());
+    let mut b = a.clone();
+    let sa = respond_traced(&mut a.0, &mut a.1, Response::Cards(cards));
+    let sb = respond_traced(&mut b.0, &mut b.1, Response::Cards(reversed));
+    let same = sa
+        .iter()
+        .zip(&sb)
+        .enumerate()
+        .map(|(v, (a, b))| PlayerId(v as u8) != d.player && a == b)
+        .collect();
+    twins_agree(a, b, same, g.log().len(), rng)
 }

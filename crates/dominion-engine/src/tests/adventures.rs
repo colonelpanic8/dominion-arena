@@ -2190,3 +2190,60 @@ fn saves_card_is_set_aside_face_down() {
     assert_eq!(g.view(P1).card(gold), None);
     assert_eq!(g.view(P0).card(gold), Some(Card::Gold));
 }
+
+#[test]
+fn identical_swamp_hag_attacks_need_no_trigger_order() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(3, vec![Card::SwampHag], 7)
+    });
+    hand(&mut g, P0, &[Card::SwampHag]);
+    hand(&mut g, P1, &[Card::SwampHag]);
+    hand(&mut g, P2, &[Card::Copper]);
+    g.start();
+    play(&mut g, Card::SwampHag);
+    while g.pending().unwrap().player == P0 {
+        end_phase(&mut g);
+    }
+    play(&mut g, Card::SwampHag);
+    while g.pending().unwrap().player == P1 {
+        end_phase(&mut g);
+    }
+    assert_eq!(g.pending().unwrap().player, P2);
+    buy(&mut g, Card::Copper);
+    let d = g.pending().unwrap();
+    assert!(
+        d.purpose != Purpose::Trigger,
+        "{:?} {:?}",
+        d.question,
+        super::trigger_labels(&g)
+    );
+    assert_eq!(g.count_owned(P2, Card::Curse), 2);
+}
+
+#[test]
+fn lasting_swamp_hag_resolution_names_the_attacker() {
+    let mut g = setup(&[Card::SwampHag]);
+    hand(&mut g, P0, &[Card::SwampHag]);
+    hand(&mut g, P1, &[Card::Copper]);
+    g.start();
+    play(&mut g, Card::SwampHag);
+    while g.pending().unwrap().player == P0 {
+        end_phase(&mut g);
+    }
+    buy(&mut g, Card::Copper);
+    let curse = Event::Gained {
+        player: P1,
+        card: Card::Curse,
+        to: Dest::Discard,
+    };
+    let at = g.log().iter().position(|e| *e == curse).unwrap();
+    assert_eq!(
+        g.log()[at - 1],
+        Event::Resolved {
+            player: P0,
+            card: Card::SwampHag
+        }
+    );
+}

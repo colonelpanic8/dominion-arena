@@ -370,18 +370,22 @@ them.
   stay silent, `g.move_unlogged`); counters and tokens (Coffers, Villagers, Favors,
   Debt, VP tokens, Adventures tokens, -1 Card / -$1 / Journey, pile tokens, Sun tokens,
   States returned) become `Counter` / `TokenMoved` / `Marker` / `Returned`. A triggered
-  ability's `Resolved` header (unless the trigger is `labelled`) is logged before the
-  first thing it does, and `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
+  ability's `Resolved` header (unless the trigger is `labelled`) names its lasting
+  effect's owner and is logged when the ability begins, and `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
   Boon rather than a card's own play are logged as `Bonus`. So never emit a move or
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one
-  `Exchanged` line.
+  `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
+  decisions mark their labels public with `public_choice`, and labels referring to private
+  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors
+  are tallied as `CardCounter`.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
   tests validate every view, decision and answer against the vendored copy.
   `Table::answer_with` (the MCP `answer` tool's `way`) also answers the `Purpose::Way`
-  questions that follow an answer for its seat; decisions whose answer may play an
+  questions of the physical card an answer plays and that card's consecutive replays;
+  a different card's question remains open. Decisions whose answer may play an
   Action in a game with Ways end their prompt with `WAY_HINT`.
 
 ## Writing a set

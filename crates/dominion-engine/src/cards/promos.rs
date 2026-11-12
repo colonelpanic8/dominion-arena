@@ -736,6 +736,7 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 2;
             let above = g.look_over_shuffled(p);
             f.ask_number(0, shuffled as i32 - 1, Purpose::Move)
+                .public_choice()
                 .question("how many of the shuffled cards go above Stash? 0 puts it on top")
                 .about(above)
         }

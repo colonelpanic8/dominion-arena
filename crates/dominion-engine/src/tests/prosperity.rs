@@ -1223,3 +1223,19 @@ fn random_prosperity_games_keep_invariants() {
         random_game_with_kingdom_decks(config, seed);
     }
 }
+
+#[test]
+fn crystal_ball_does_not_announce_a_privately_seen_card_left_on_the_deck() {
+    let world = |card| {
+        let mut g = setup(&[Card::CrystalBall]);
+        hand(&mut g, P0, &[Card::CrystalBall]);
+        deck(&mut g, P0, &[card, Card::Copper]);
+        g.start();
+        play(&mut g, Card::CrystalBall);
+        respond(&mut g, Response::option(Opt::Mode(3)));
+        g
+    };
+    let (a, b) = (world(Card::Gold), world(Card::Silver));
+    assert_eq!(a.log(), b.log());
+    assert!(!a.log().iter().any(|e| matches!(e, Event::Chosen { .. })));
+}

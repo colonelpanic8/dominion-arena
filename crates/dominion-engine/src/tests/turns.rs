@@ -36,6 +36,11 @@ fn take_turn(g: &mut Game, p: PlayerId, source: Card) {
     let d = g.pending().expect("a decision is pending");
     assert_eq!((d.player, d.purpose), (p, Purpose::Either), "{d:?}");
     respond(g, Response::option(Opt::Card(source)));
+    assert!(g.log().contains(&Event::Chosen {
+        player: p,
+        source: None,
+        choices: vec![format!("Take the extra turn from {source}")],
+    }));
 }
 
 /// What the next turn is: its player and the extra turn's source.

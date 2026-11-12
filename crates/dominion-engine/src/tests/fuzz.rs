@@ -1377,6 +1377,16 @@ impl Tracker {
                     }
                 }
             }
+            Trace::LookedOver { player, cards } => {
+                for v in 0..n {
+                    if sees(self.turn, PlayerId(v as u8), *player) {
+                        for card in cards {
+                            self.seen[v][card.index()] = true;
+                            self.recent[v].insert(*card);
+                        }
+                    }
+                }
+            }
             Trace::Turn { player } => self.turn = (*player, *player),
             Trace::Changed { .. } => {}
         }
@@ -3624,6 +3634,11 @@ fn drive(seed: u64, mut plan: Plan, report: &mut Report) {
         }
         if rng.random_bool(view_rate) {
             check_view_noninterference(&g, &k, &mut rng, flags);
+            if let Err(error) = super::knowledge::check_revealed_order_twins(&g, &k, &mut rng) {
+                flags.bug("knowledge-depends-on-private-revealed-order", || {
+                    format!("{error}; {}", ctx(&g))
+                });
+            }
         }
 
         if matches!(

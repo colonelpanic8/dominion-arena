@@ -1062,3 +1062,22 @@ fn moat_blocks_torturer_and_swindler() {
     assert_eq!(deck_kinds(&g, P1), [Card::Gold]);
     assert_eq!(g.turn().coins, 2);
 }
+
+#[test]
+fn pawn_modes_are_announced() {
+    let world = |modes: [u8; 2]| {
+        let mut g = setup(&[Card::Pawn]);
+        hand(&mut g, P0, &[Card::Pawn, Card::Copper]);
+        g.start();
+        play(&mut g, Card::Pawn);
+        respond(
+            &mut g,
+            Response::Options(modes.iter().map(|&m| Opt::Mode(m)).collect()),
+        );
+        g
+    };
+    let (a, b) = (world([1, 2]), world([2, 3]));
+    assert_eq!((a.turn().buys, a.turn().coins), (2, 0));
+    assert_eq!((b.turn().buys, b.turn().coins), (2, 1));
+    assert_ne!(a.log(), b.log());
+}

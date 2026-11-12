@@ -27,6 +27,11 @@ pub enum Trace {
     /// to everyone just before it is set aside is set aside face up; cards of a deck or
     /// discard pile their owner looks at one after the other are looked at together.
     Shown { card: CardId, to: Option<PlayerId> },
+    /// `player` inspected the cards left above a shuffle without changing their positions.
+    LookedOver {
+        player: PlayerId,
+        cards: Vec<CardId>,
+    },
     /// A turn began: `player`'s.
     Turn { player: PlayerId },
     /// `card` became another card, publicly (Inherited's setup swap).
@@ -91,6 +96,7 @@ impl Game {
 
     /// Records that `p` looked through their discard pile.
     pub(crate) fn look_through_discard(&mut self, p: PlayerId) {
+        self.note_discard_search(p);
         if self.trace.is_some() {
             for card in self.players[p.index()].discard.clone() {
                 self.show_to(card, p);
@@ -117,9 +123,10 @@ impl Game {
             .rev()
             .copied()
             .collect();
-        for &card in &above {
-            self.show_to(card, p);
-        }
+        self.record(|| Trace::LookedOver {
+            player: p,
+            cards: above.clone(),
+        });
         above
     }
 

@@ -1007,6 +1007,7 @@ fn sleigh_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if still_where_gained(g, card) {
+                g.show(card);
                 if input.opt() == Some(Opt::Mode(0)) {
                     g.put_in_hand(card, p);
                 } else {

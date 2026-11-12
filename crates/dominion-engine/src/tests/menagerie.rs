@@ -1184,6 +1184,10 @@ fn sleigh_gains_two_horses_and_reacts_to_put_a_gained_card_on_the_deck() {
     trigger(&mut g, Card::Sleigh);
     modes(&mut g, &[1]);
     assert_eq!(deck_kinds(&g, P0), [Card::Horse, Card::Copper]);
+    assert!(g.log().contains(&Event::TopDecked {
+        player: P0,
+        card: Some(Card::Horse)
+    }));
     assert_eq!(discard_kinds(&g, P0), [Card::Sleigh, Card::Horse]);
 }
 

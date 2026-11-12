@@ -105,6 +105,12 @@ pub enum Entry {
         card: String,
     },
     Named(String),
+    Chosen(String),
+    CardCounter {
+        card: String,
+        pile: Option<String>,
+        delta: i32,
+    },
     Bought(String),
     Overpaid {
         coins: u32,
@@ -486,6 +492,29 @@ fn bonus(s: &str) -> Option<(u32, u32, u32)> {
 
 /// What `e` says, or `None` if no rule reads it. `names` are the seats' names.
 pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
+    if e.kind == "card-counter" {
+        let s = match e.player {
+            Some(p) => e.text.strip_prefix(&format!("{}: ", seat_name(names, p)))?,
+            None => &e.text,
+        };
+        let (count, rest) = s.split_once(' ')?;
+        let n = number(count)? as i32;
+        let rest = rest.strip_prefix(if n == 1 { "token " } else { "tokens " })?;
+        let (delta, at) = if let Some(at) = rest.strip_prefix("put on ") {
+            (n, at)
+        } else {
+            (-n, rest.strip_prefix("removed from ")?)
+        };
+        let (card, pile) = match at.split_once(" on the ") {
+            Some((card, pile)) => (card, Some(card_name(pile.strip_suffix(" pile")?)?)),
+            None => (at, None),
+        };
+        return Some(Entry::CardCounter {
+            card: the_card(e, card)?,
+            pile,
+            delta,
+        });
+    }
     if e.kind == "counter" && e.player.is_none() {
         let (c, delta, at) = table_counter(&e.text)?;
         return Some(Entry::TableCounter(c, delta, at));
@@ -513,6 +542,7 @@ pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
             }
         }
         "named" => Entry::Named(card_after("names ")?),
+        "chosen" => Entry::Chosen(after("chooses ")?.to_string()),
         "bought" | "bought-landscape" => Entry::Bought(card_after("buys ")?),
         "overpaid" => {
             let rest = after("overpays $")?;

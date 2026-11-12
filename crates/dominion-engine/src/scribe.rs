@@ -18,11 +18,17 @@ pub(crate) struct Scribe {
     shown: Vec<CardId>,
     /// Abilities resolving, innermost last.
     resolving: Vec<Resolving>,
+    #[serde(default)]
+    searched_discards: Vec<(PlayerId, usize)>,
+    #[serde(default)]
+    actor: Option<PlayerId>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Unlogged {
     card: CardId,
+    #[serde(default)]
+    actor: Option<PlayerId>,
     from: Zone,
     to: Zone,
     bottom: bool,
@@ -37,8 +43,6 @@ struct Resolving {
     /// How many plays were in progress when it began: +$ and the like are its own only
     /// while no other play has begun.
     plays: usize,
-    /// Logged before the first thing it does.
-    header: Option<Event>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -47,6 +51,10 @@ struct Tally {
     piles: Vec<[i32; 4]>,
     trade_route_mat: u32,
     suns: u32,
+    #[serde(default)]
+    plot: Vec<u32>,
+    #[serde(default)]
+    inventors: BTreeMap<PileId, u32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -113,6 +121,8 @@ impl Game {
                 .collect(),
             trade_route_mat: self.trade_route_mat,
             suns: self.prophecy.map_or(0, |(_, n)| n),
+            plot: self.ext.renaissance.plot.clone(),
+            inventors: self.ext.allies.inventors.iter().copied().collect(),
         }
     }
 
@@ -131,10 +141,27 @@ impl Game {
             // The top card, unless the pile is being gone through.
             Zone::Discard(p) => {
                 self.players[p.index()].discard.last() == Some(&id)
-                    && !self.scribe.moves.iter().any(|m| m.from == Zone::Discard(p))
+                    && !self.scribe.searched_discards.iter().any(|&(q, _)| p == q)
             }
             Zone::Hand(_) | Zone::Deck(_) => false,
         }
+    }
+
+    pub(crate) fn note_discard_search(&mut self, player: PlayerId) {
+        let search = (player, self.stack.len());
+        if !self.scribe.searched_discards.contains(&search) {
+            self.scribe.searched_discards.push(search);
+        }
+    }
+
+    pub(crate) fn end_discard_searches(&mut self) {
+        self.scribe
+            .searched_discards
+            .retain(|&(_, depth)| depth < self.stack.len());
+    }
+
+    pub(crate) fn log_actor(&mut self, actor: Option<PlayerId>) {
+        self.scribe.actor = actor;
     }
 
     /// Records that `id` is moving from where it is to `to`, for the log.
@@ -153,6 +180,7 @@ impl Game {
         self.scribe.shown.retain(|&c| c != id);
         self.scribe.moves.push(Unlogged {
             card: id,
+            actor: self.scribe.actor,
             from,
             to,
             bottom: pos == Pos::Bottom,
@@ -198,18 +226,53 @@ impl Game {
         self.scribe.shown.retain(|c| !cards.contains(c));
     }
 
-    /// An ability begins to resolve; `header`, if any, is logged before the first thing it
-    /// does.
-    pub(crate) fn begin_resolving(&mut self, header: Option<Event>) {
+    /// An ability begins to resolve.
+    pub(crate) fn begin_resolving(&mut self) {
         self.scribe.resolving.push(Resolving {
             plays: self.plays.len(),
-            header,
         });
     }
 
     pub(crate) fn end_resolving(&mut self) {
         self.sync_log(None);
         self.scribe.resolving.pop();
+    }
+
+    pub(crate) fn log_choice(&mut self, decision: &crate::Decision, response: &crate::Response) {
+        use crate::{DecisionKind, Response};
+        if !decision.public_choice {
+            return;
+        }
+        let choices = match (&decision.kind, response) {
+            (
+                DecisionKind::Choose {
+                    options, labels, ..
+                },
+                Response::Options(chosen),
+            ) => {
+                if decision.about.iter().any(|&c| !self.is_public(c)) {
+                    return;
+                }
+                options
+                    .iter()
+                    .zip(labels)
+                    .filter(|(o, _)| chosen.contains(o))
+                    .map(|(_, label)| label.clone())
+                    .collect()
+            }
+            (DecisionKind::Number { .. }, Response::Number(n)) => {
+                vec![match &decision.question {
+                    Some(question) => format!("{n} ({question})"),
+                    None => n.to_string(),
+                }]
+            }
+            _ => return,
+        };
+        self.emit(Event::Chosen {
+            player: decision.player,
+            source: decision.source,
+            choices,
+        });
     }
 
     /// Logs +Actions, +Buys and +$ given outside a card's own play.
@@ -250,11 +313,6 @@ impl Game {
         self.scribe.tally = Some(new);
         if lines.is_empty() && event.is_none() {
             return;
-        }
-        for r in &mut self.scribe.resolving {
-            if let Some(h) = r.header.take() {
-                self.log.push(h);
-            }
         }
         self.log.extend(lines);
     }
@@ -310,6 +368,12 @@ impl Game {
         let mut lines: Vec<Event> = vec![];
         for m in moves {
             let card = m.public.then(|| self.card(m.card));
+            let player = m
+                .from
+                .owner()
+                .or(m.to.owner())
+                .or(m.actor)
+                .unwrap_or(self.turn.player);
             if let Some(Event::Moved {
                 from,
                 to,
@@ -317,15 +381,15 @@ impl Game {
                 count,
                 bottom,
                 under,
-                ..
+                player: previous,
             }) = lines.last_mut()
-                && (*from, *to, *bottom, *under) == (Some(m.from), m.to, m.bottom, m.under)
+                && (*from, *to, *bottom, *under, *previous)
+                    == (Some(m.from), m.to, m.bottom, m.under, player)
             {
                 cards.extend(card);
                 *count += 1;
                 continue;
             }
-            let player = m.from.owner().or(m.to.owner()).unwrap_or(self.turn.player);
             lines.push(Event::Moved {
                 player,
                 from: Some(m.from),
@@ -400,6 +464,35 @@ fn counter_changes(old: &Tally, new: &Tally, out: &mut Vec<Event>) {
                     delta,
                 });
             }
+        }
+    }
+    for (i, &now) in new.plot.iter().enumerate() {
+        let was = old.plot.get(i).copied().unwrap_or(0);
+        if now != was {
+            out.push(Event::CardCounter {
+                player: Some(PlayerId(i as u8)),
+                card: Card::SinisterPlot,
+                pile: None,
+                delta: now as i32 - was as i32,
+            });
+        }
+    }
+    let piles: std::collections::BTreeSet<_> = old
+        .inventors
+        .keys()
+        .chain(new.inventors.keys())
+        .copied()
+        .collect();
+    for pile in piles {
+        let delta = new.inventors.get(&pile).copied().unwrap_or(0) as i32
+            - old.inventors.get(&pile).copied().unwrap_or(0) as i32;
+        if delta != 0 {
+            out.push(Event::CardCounter {
+                player: None,
+                card: Card::FamilyOfInventors,
+                pile: Some(pile),
+                delta,
+            });
         }
     }
     for (counter, now, was) in [

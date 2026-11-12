@@ -486,6 +486,10 @@ fn stash_goes_where_its_owner_chooses_when_shuffled() {
     );
     // Second from the top of the shuffled cards: drawn with the Gold and a Copper.
     respond(&mut g, Response::Number(1));
+    assert!(g.log().iter().any(|e| matches!(e,
+        Event::Chosen { player: P0, source: Some(Card::Stash), choices }
+        if choices == &["1 (how many of the shuffled cards go above Stash? 0 puts it on top)"]
+    )));
     let mut h = hand_kinds(&g, P0);
     h.sort();
     let mut want = vec![Card::Gold, Card::Copper, Card::Stash];

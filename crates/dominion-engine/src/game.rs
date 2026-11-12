@@ -668,6 +668,13 @@ impl Game {
         self.pending.as_ref()
     }
 
+    /// The physical card whose pending Way question is being answered.
+    pub fn way_card(&self) -> Option<CardId> {
+        self.pending()
+            .filter(|d| d.purpose == crate::Purpose::Way)?;
+        self.plays.last().map(|play| play.card)
+    }
+
     pub fn outcome(&self) -> Option<&Outcome> {
         self.outcome.as_ref()
     }
@@ -1249,23 +1256,45 @@ impl Game {
         let decision = self
             .pending
             .as_ref()
+            .cloned()
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
         let player = decision.player;
         if let Response::Name(card) = response {
             self.emit(Event::Named { player, card });
         }
+        self.record_answer(&decision, &response);
         self.pending = None;
         self.run(Input::Response(response));
         Ok(())
     }
 
+    fn record_answer(&mut self, decision: &Decision, response: &Response) {
+        self.log_choice(decision, response);
+
+        if let DecisionKind::Cards {
+            candidates,
+            ordered: true,
+            ..
+        } = &decision.kind
+            && candidates.len() > 1
+        {
+            self.mixed(candidates.clone());
+        }
+    }
+
     /// Resumes frames until one needs a real decision or the stack empties.
     pub(crate) fn run(&mut self, mut input: Input) {
         while let Some(mut frame) = self.stack.pop() {
+            self.log_actor(match &frame {
+                Frame::Card(f) => Some(f.player),
+                Frame::Trash { player, .. } => Some(*player),
+                _ => None,
+            });
             match frame.resume(self, input) {
                 Flow::Done(value) => {
                     self.release_holds();
+                    self.end_discard_searches();
                     input = Input::Return(value);
                 }
                 Flow::Continue => {
@@ -1282,28 +1311,21 @@ impl Game {
                         cards::modify_decision(self, f, &mut decision);
                     }
                     self.stack.push(frame);
-                    // Whatever the answer, the others can't follow the order.
-                    if let DecisionKind::Cards {
-                        candidates,
-                        ordered: true,
-                        ..
-                    } = &decision.kind
-                        && candidates.len() > 1
-                    {
-                        self.mixed(candidates.clone());
-                    }
                     if let Some(response) = decision.forced(self) {
+                        self.record_answer(&decision, &response);
                         input = Input::Response(response);
                     } else {
                         self.sync_log(None);
                         self.forget_hidden_shows();
                         self.pending = Some(decision);
+                        self.log_actor(None);
                         return;
                     }
                 }
             }
         }
         self.sync_log(None);
+        self.log_actor(None);
     }
 
     /// Puts back on top of their decks the held cards of frames that have finished.

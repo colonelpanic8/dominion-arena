@@ -779,6 +779,29 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
                 spans.push(Span::Card(by.clone()));
                 text(&mut spans, ".");
             }
+            Some(Entry::Chosen(choice)) => text(&mut spans, &format!("chooses {choice}.")),
+            Some(Entry::CardCounter { card, pile, delta }) => {
+                text(
+                    &mut spans,
+                    &format!(
+                        "{} {} {} ",
+                        delta.unsigned_abs(),
+                        if delta.unsigned_abs() == 1 {
+                            "token"
+                        } else {
+                            "tokens"
+                        },
+                        if *delta > 0 { "put on" } else { "removed from" }
+                    ),
+                );
+                spans.push(Span::Card(card.clone()));
+                if let Some(pile) = pile {
+                    text(&mut spans, " on the ");
+                    spans.push(Span::Card(pile.clone()));
+                    text(&mut spans, " pile");
+                }
+                text(&mut spans, ".");
+            }
             Some(Entry::ReturnedToAction) => text(&mut spans, "returns to their Action phase."),
             Some(Entry::Called(card)) => {
                 text(&mut spans, "calls ");

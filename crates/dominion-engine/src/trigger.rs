@@ -357,6 +357,7 @@ impl Window {
         self.asked = asked;
         self.offered = mine;
         Flow::Ask(Decision {
+            public_choice: false,
             player: owner,
             kind: DecisionKind::Choose {
                 options,
@@ -409,10 +410,16 @@ impl Window {
         self.done.push((i, t.clone()));
         // A label can say what only its owner knows.
         let header = t.label.is_none().then_some(crate::Event::Resolved {
-            player: t.owner,
+            player: t
+                .lasting
+                .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+                .map_or(t.owner, |l| l.owner),
             card: t.card,
         });
-        g.begin_resolving(header);
+        if let Some(header) = header {
+            g.emit(header);
+        }
+        g.begin_resolving();
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
         f.occ = Some(self.occs[i].clone());
         f.lasting = t.lasting;
@@ -445,13 +452,30 @@ fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
         t.lasting
             .and_then(|id| g.lasting().iter().find(|l| l.id == id))
             .map(|l| {
-                let rest = Scratch {
+                let mut rest = Scratch {
                     cards: vec![],
                     pick: None,
                     ..l.data.clone()
                 };
+                let victim = l.owner != t.owner
+                    && matches!(
+                        l.card,
+                        Card::SwampHag | Card::HauntedWoods | Card::Gatekeeper | Card::Frigate
+                    );
+                // Play stamps and attack masks decide when to trigger, not what to do.
+                if matches!(
+                    l.card,
+                    Card::SecludedShrine | Card::CabinBoy | Card::Stowaway
+                ) || victim
+                {
+                    rest.i = 0;
+                }
+                if victim {
+                    rest.n = 0;
+                }
+                let owner = if victim { t.owner } else { l.owner };
                 let cards: Vec<_> = l.data.cards.iter().map(look).collect();
-                (l.card, rest, cards, l.data.pick.as_ref().map(look))
+                (l.card, owner, rest, cards, l.data.pick.as_ref().map(look))
             })
     };
     (a.card, a.ability, a.data, a.optional) == (b.card, b.ability, b.data, b.optional)
@@ -506,7 +530,13 @@ fn label(g: &Game, t: &Trigger) -> String {
 /// When `occ` happens, as `me` is told: "P1 plays Militia", "Start of your turn".
 fn moment(g: &Game, occ: &Occasion, me: PlayerId) -> String {
     let view = g.view(me);
-    let name = |c: CardId| view.card(c).map_or("a card", |c| c.name());
+    let name = |c: CardId| match occ {
+        Occasion::Gain { .. }
+        | Occasion::Trash { .. }
+        | Occasion::Discard { .. }
+        | Occasion::LeaveSupply { .. } => g.card(c).name(),
+        _ => view.card(c).map_or("a card", |c| c.name()),
+    };
     let who = |p: PlayerId, you: &str, they: &str| {
         if p == me {
             format!("You {you}")

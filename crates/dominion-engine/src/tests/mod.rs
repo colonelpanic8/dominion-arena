@@ -1175,3 +1175,193 @@ fn cross_set_games_keep_invariants() {
         }
     }
 }
+
+fn public_table(g: &Game, v: PlayerId) -> String {
+    let mut out = String::new();
+    for p in 0..g.num_players() {
+        let p = PlayerId(p as u8);
+        let pl = g.player(p);
+        out += &format!(
+            "{p}: deck {} hand {} discard {} top {:?}\n",
+            pl.deck.len(),
+            pl.hand.len(),
+            pl.discard.len(),
+            pl.discard.last().map(|&c| g.card(c)),
+        );
+        if p == v {
+            out += &format!("{:?}\n", hand_kinds(g, p));
+        }
+    }
+    out
+}
+
+#[test]
+fn gain_prompts_name_the_card_after_it_is_covered() {
+    let mut g = setup(&[Card::Hoard, Card::RoyalSeal]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Hoard, Card::RoyalSeal, Card::Gold, Card::Gold],
+    );
+    g.start();
+    for card in [Card::Hoard, Card::RoyalSeal, Card::Gold, Card::Gold] {
+        play(&mut g, card);
+    }
+    buy(&mut g, Card::Province);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    assert!(
+        trigger_question(&g).starts_with("You gain Province"),
+        "{}",
+        trigger_question(&g)
+    );
+    let hoard = trigger_cards(&g)
+        .iter()
+        .position(|&c| c == Card::Hoard)
+        .unwrap();
+    respond(&mut g, Response::option(Opt::Trigger(hoard as u16)));
+    // Royal Seal for the Gold.
+    assert!(
+        trigger_question(&g).starts_with("You gain Gold"),
+        "{}",
+        trigger_question(&g)
+    );
+    respond(&mut g, Response::option(Opt::No));
+    // Royal Seal for the Province, now under the Gold.
+    assert_eq!(trigger_cards(&g), [Card::RoyalSeal]);
+    assert!(
+        trigger_question(&g).starts_with("You gain Province"),
+        "{}",
+        trigger_question(&g)
+    );
+}
+
+#[test]
+fn gain_reaction_prompts_name_cards_gained_to_another_hand() {
+    let mut g = setup(&[Card::BlackCat, Card::Artisan]);
+    hand(&mut g, P0, &[Card::Artisan, Card::Copper]);
+    hand(&mut g, P1, &[Card::BlackCat]);
+    g.start();
+    play(&mut g, Card::Artisan);
+    choose_pile(&mut g, Card::Duchy);
+    assert!(logged_in_order(
+        &g,
+        &[Event::Gained {
+            player: P0,
+            card: Card::Duchy,
+            to: Dest::Hand
+        }]
+    ));
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(
+        trigger_question(&g),
+        "P1 gains Duchy: you may use this ability"
+    );
+}
+
+#[test]
+fn discard_trigger_labels_name_every_card_discarded_together() {
+    let mut g = setup(&[Card::Trail, Card::Tunnel, Card::Militia]);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Tunnel,
+            Card::Trail,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    deck(&mut g, P1, &[Card::Silver; 3]);
+    g.start();
+    play(&mut g, Card::Militia);
+    choose_kinds(&mut g, &[Card::Tunnel, Card::Trail]);
+    let labels = trigger_labels(&g);
+    assert!(labels[0].ends_with("[You discard Tunnel]"), "{labels:?}");
+    assert!(labels[1].ends_with("[You discard Trail]"), "{labels:?}");
+}
+
+fn trigger_question(g: &Game) -> String {
+    g.pending().unwrap().question.clone().unwrap_or_default()
+}
+
+fn trigger_labels(g: &Game) -> Vec<String> {
+    match &g.pending().unwrap().kind {
+        DecisionKind::Choose { labels, .. } => labels.clone(),
+        k => panic!("expected a Choose decision, got {k:?}"),
+    }
+}
+
+#[test]
+fn lasting_attack_headers_name_the_attacker() {
+    for (attack, played) in [
+        (Card::SwampHag, None),
+        (Card::HauntedWoods, None),
+        (Card::Gatekeeper, None),
+        (Card::Frigate, Some(Card::Village)),
+        (Card::Corsair, Some(Card::Silver)),
+        (Card::Enchantress, Some(Card::Village)),
+        (Card::Highwayman, Some(Card::Silver)),
+    ] {
+        let mut g = setup(&[attack, Card::Village]);
+        hand(&mut g, P0, &[attack]);
+        hand(&mut g, P1, &[played.unwrap_or(Card::Copper); 6]);
+        deck(&mut g, P0, &[Card::Copper; 10]);
+        deck(&mut g, P1, &[Card::Copper; 10]);
+        g.start();
+        play(&mut g, attack);
+        while g.pending().unwrap().player == P0 {
+            end_phase(&mut g);
+        }
+        let before = g.log().len();
+        if let Some(card) = played {
+            play(&mut g, card);
+        } else {
+            buy(&mut g, Card::Copper);
+        }
+        // Optional/order questions need no answer: a header is emitted at its first effect.
+        if g.pending().unwrap().purpose == Purpose::TopDeck {
+            let cards = candidates(&g);
+            choose(&mut g, &cards);
+        }
+        if g.pending().unwrap().purpose == Purpose::Discard {
+            let cards = candidates(&g);
+            let min = match &g.pending().unwrap().kind {
+                DecisionKind::Cards { min, .. } => *min,
+                _ => unreachable!(),
+            };
+            choose(&mut g, &cards[..min]);
+        }
+        let headers: Vec<_> = g.log()[before..]
+            .iter()
+            .take_while(|e| !matches!(e, Event::TurnStart { .. }))
+            .filter_map(|e| match e {
+                Event::Resolved { player, card } if *card == attack => Some(*player),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(headers, [P0], "{attack}: {:?}", &g.log()[before..]);
+    }
+}
+
+#[test]
+fn ownerless_moves_keep_their_actor_until_the_log_is_flushed() {
+    let mut g = setup(&[Card::Village]);
+    g.start();
+    let id = g.pile_top(g.supply_pile(Card::Village).unwrap()).unwrap();
+    g.log_actor(Some(P1));
+    g.move_card(id, Zone::Trash, crate::game::Pos::Top);
+    g.log_actor(Some(P0));
+    g.sync_log(None);
+    assert_eq!(
+        g.log().last(),
+        Some(&moved(
+            P1,
+            g.home_pile(Card::Village).map(Zone::Pile).unwrap(),
+            Zone::Trash,
+            &[Card::Village],
+            1
+        ))
+    );
+}

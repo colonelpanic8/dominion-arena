@@ -52,6 +52,8 @@ pub struct Knowledge {
     /// The card the last entry showed to everyone.
     #[serde(default)]
     shown: Option<CardId>,
+    #[serde(default)]
+    face_up: HashSet<CardId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -367,6 +369,7 @@ impl Knowledge {
             sets: 0,
             joining: None,
             shown: None,
+            face_up: HashSet::new(),
         }
     }
 
@@ -402,6 +405,7 @@ impl Knowledge {
             }
             Trace::Mixed { cards } => {
                 self.settle();
+                self.face_up.retain(|c| !cards.contains(c));
                 let mixed = cards
                     .iter()
                     .copied()
@@ -434,6 +438,9 @@ impl Knowledge {
                 match to {
                     None => {
                         self.held[card.index()] = 0;
+                        if matches!(zone, Zone::Looking(_)) {
+                            self.face_up.insert(card);
+                        }
                         self.shown = Some(card);
                     }
                     Some(p) => {
@@ -443,6 +450,13 @@ impl Knowledge {
                             self.hold(card, zone, joining);
                         }
                     }
+                }
+            }
+            Trace::LookedOver { player, cards } => {
+                let mind = &mut self.minds[player.index()];
+                for card in cards {
+                    mind.see(card, self.is[card.index()], self.zone[card.index()], None);
+                    mind.recent.insert(card);
                 }
             }
             Trace::Turn { .. } => self.settle(),
@@ -501,7 +515,7 @@ impl Knowledge {
 
     /// The cards `card` is held with out of the other players' sight, itself included.
     fn held_with(&self, card: CardId) -> Option<Vec<CardId>> {
-        if marked(self.is[card.index()]) {
+        if marked(self.is[card.index()]) || self.face_up.contains(&card) {
             return None;
         }
         let zone = self.zone[card.index()];
@@ -515,7 +529,9 @@ impl Knowledge {
             _ => return None,
         };
         let with = |c: &CardId| {
-            !marked(self.is[c.index()]) && set.is_none_or(|set| self.held[c.index()] == set)
+            !marked(self.is[c.index()])
+                && !self.face_up.contains(c)
+                && set.is_none_or(|set| self.held[c.index()] == set)
         };
         Some(self.members[&zone].iter().copied().filter(with).collect())
     }
@@ -545,6 +561,10 @@ impl Knowledge {
     ) {
         let is = self.is[card.index()];
         let held = self.held_with(card);
+        self.face_up.remove(&card);
+        if matches!(to, Zone::Looking(_)) && face_up {
+            self.face_up.insert(card);
+        }
         self.zone[card.index()] = to;
         if let Some(cards) = self.members.get_mut(&from) {
             cards.retain(|&c| c != card);

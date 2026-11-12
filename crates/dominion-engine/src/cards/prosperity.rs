@@ -389,6 +389,7 @@ pub(super) fn choose_and_gain(
 /// Asks `player` (another player than the card's) to name a card.
 fn ask_name_for(f: &CardFrame, player: PlayerId) -> Flow {
     Flow::Ask(Decision {
+        public_choice: false,
         player,
         kind: DecisionKind::NameCard,
         purpose: Purpose::Name,
@@ -402,6 +403,7 @@ fn ask_name_for(f: &CardFrame, player: PlayerId) -> Flow {
 pub(super) fn ask_order_for(f: &CardFrame, player: PlayerId, cards: Vec<CardId>) -> Flow {
     let n = cards.len();
     Flow::Ask(Decision {
+        public_choice: false,
         player,
         kind: DecisionKind::Cards {
             candidates: cards,
