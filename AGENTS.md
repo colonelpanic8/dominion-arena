@@ -369,7 +369,8 @@ them.
   cards), cards shown to everyone or one player, turns, identity swaps. `Knowledge`
   consumes it and keeps, per player, groups of cards they can't tell apart with each
   group's known identities (a Stash or a Shadow card, with its own back, is always
-  known). Anything that reveals a specific card must record it: `g.reveal(p, id)`
+  known; a group split off when some of its cards left a set held out of sight is some
+  of its family's identities). Anything that reveals a specific card must record it: `g.reveal(p, id)`
   instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to` for other
   reveals and looks, `g.look_through_discard(p)` before a player picks from their
   discard pile, `g.look_through_shuffled(p)` (and `g.look_over_shuffled(p)` for the cards

@@ -2301,11 +2301,12 @@ fn check_knowledge(g: &Game, k: &Knowledge, flags: &mut Flags) {
                 for &c in group.cards {
                     *actual.entry(g.printed(c)).or_default() += 1;
                 }
-                if ids != &actual {
+                if !super::knowledge::some_of(ids, group.extra, &actual) {
                     flags.bug("knowledge-group-identities-wrong", || {
                         format!(
-                            "{v}'s group {:?} is {actual:?}, known as {ids:?}; {}",
+                            "{v}'s group {:?} is {actual:?}, known as {ids:?} less {}; {}",
                             group.cards,
+                            group.extra,
                             ctx(g)
                         )
                     });

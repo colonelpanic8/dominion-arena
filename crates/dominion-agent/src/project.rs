@@ -418,7 +418,7 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
             zones: u.zones.iter().map(|&(z, _)| zone_name(z)).collect(),
             count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
             candidates: count(&u.candidates),
-            outside: 0,
+            outside: u.outside as u32,
         })
         .collect();
     let mut counters = BTreeMap::new();

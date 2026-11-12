@@ -17,6 +17,11 @@
 //! it on. Stash and the Shadow cards have their own backs, so everyone always knows which
 //! card each of them is.
 //!
+//! When a card leaves such a set unseen, only the set's cards become one group: a group
+//! some of whose cards were in the set splits, each part being some of what the group
+//! was. The parts of a group are its family, which together are what it was, and become
+//! one again when all of them are mixed.
+//!
 //! [`Knowledge`] consumes a traced game's [`Trace`]; build it before the game's first
 //! [`Game::take_trace`] and call [`Knowledge::update`] after every response.
 
@@ -66,6 +71,8 @@ enum Container {
 struct Mind {
     group_of: Vec<usize>,
     groups: Vec<Group>,
+    #[serde(default)]
+    families: Vec<Family>,
     /// Cards shown to this viewer since the last decision that haven't moved since: they
     /// can follow them.
     recent: HashSet<CardId>,
@@ -111,14 +118,31 @@ struct Group {
     cards: Vec<CardId>,
     /// `None` when the viewer doesn't know which cards these are.
     ids: Option<CardCount>,
+    /// How many of `ids` are not these cards: the cards are some of `ids`, and the others
+    /// are in the other groups of its family.
+    #[serde(default)]
+    extra: u32,
+    #[serde(default)]
+    family: Option<usize>,
+}
+
+/// Groups split from one the viewer knew the cards of, when only some of its cards
+/// became indistinguishable from others (some left a set held out of sight): together
+/// they are exactly `ids`, each of them some of its own `ids`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct Family {
+    ids: Option<CardCount>,
+    groups: Vec<usize>,
 }
 
 /// One group of indistinguishable cards, as one viewer knows it.
 #[derive(Clone, Copy, Debug)]
 pub struct GroupView<'a> {
     pub cards: &'a [CardId],
-    /// Their identities as a multiset, if the viewer knows it.
+    /// Their identities as a multiset, if the viewer knows it: with `extra` more than
+    /// there are cards, which of them the cards are.
     pub ids: Option<&'a CardCount>,
+    pub extra: u32,
 }
 
 /// What a viewer knows about the cards in one zone.
@@ -135,6 +159,8 @@ pub struct UncertainCards {
     /// Each zone and how many of the cards are there.
     pub zones: Vec<(Zone, usize)>,
     pub candidates: CardCount,
+    /// How many of the candidates are not these cards but are elsewhere.
+    pub outside: usize,
 }
 
 /// A viewer's knowledge of every zone, as zone summaries.
@@ -155,6 +181,13 @@ impl KnownCards {
 
 fn add(count: &mut CardCount, card: Card, n: u32) {
     *count.entry(card).or_default() += n;
+}
+
+fn add_all(to: &mut Option<CardCount>, from: Option<&CardCount>) {
+    match (to.as_mut(), from) {
+        (Some(a), Some(b)) => b.iter().for_each(|(&c, &n)| add(a, c, n)),
+        _ => *to = None,
+    }
 }
 
 fn remove(count: &mut CardCount, card: Card) -> bool {
@@ -181,7 +214,11 @@ impl Mind {
             self.ensure(c);
             self.group_of[c.index()] = g;
         }
-        self.groups.push(Group { cards, ids });
+        self.groups.push(Group {
+            cards,
+            ids,
+            ..Group::default()
+        });
     }
 
     fn add_to(&mut self, g: usize, card: CardId, is: Card) {
@@ -192,14 +229,35 @@ impl Mind {
         if let Some(ids) = &mut group.ids {
             add(ids, is, 1);
         }
+        if let Some(f) = group.family
+            && let Some(ids) = &mut self.families[f].ids
+        {
+            add(ids, is, 1);
+        }
     }
 
     /// The viewer sees `card`, which is `is`.
     fn identify(&mut self, card: CardId, is: Card) {
         let g = self.group_of[card.index()];
+        let family = self.groups[g].family;
+        if let Some(f) = family
+            && let Some(ids) = &mut self.families[f].ids
+            && !remove(ids, is)
+        {
+            debug_assert!(
+                false,
+                "{card:?} ({is}) missing from its family's identities"
+            );
+            self.families[f].ids = None;
+        }
         let group = &mut self.groups[g];
         if group.cards.len() == 1 {
             group.ids = Some(CardCount::from([(is, 1)]));
+            group.extra = 0;
+            if let Some(f) = group.family.take() {
+                self.families[f].groups.retain(|&x| x != g);
+                self.tidy(f);
+            }
             return;
         }
         group.cards.retain(|&c| c != card);
@@ -210,6 +268,65 @@ impl Mind {
             group.ids = None;
         }
         self.new_group(vec![card], Some(CardCount::from([(is, 1)])));
+    }
+
+    /// A family down to one group: that group is exactly the family's cards.
+    fn tidy(&mut self, f: usize) {
+        if let [g] = self.families[f].groups[..] {
+            let family = std::mem::take(&mut self.families[f]);
+            let group = &mut self.groups[g];
+            group.ids = family.ids;
+            group.extra = 0;
+            group.family = None;
+        }
+    }
+
+    /// Splits the groups `cards` are in that also hold other cards, so that `cards` are
+    /// groups of their own: each part is some of what the group was.
+    fn split_off(&mut self, cards: &[CardId]) {
+        let inside: HashSet<CardId> = cards.iter().copied().collect();
+        let mut groups: Vec<usize> = cards.iter().map(|c| self.group_of[c.index()]).collect();
+        groups.sort_unstable();
+        groups.dedup();
+        for g in groups {
+            let (inn, out): (Vec<CardId>, Vec<CardId>) = self.groups[g]
+                .cards
+                .iter()
+                .partition(|c| inside.contains(c));
+            if out.is_empty() {
+                continue;
+            }
+            let group = &self.groups[g];
+            let (ids, extra) = (group.ids.clone(), group.extra);
+            let family = match group.family {
+                Some(f) => Some(f),
+                None if ids.is_some() => {
+                    self.families.push(Family {
+                        ids: ids.clone(),
+                        groups: vec![g],
+                    });
+                    Some(self.families.len() - 1)
+                }
+                None => None,
+            };
+            let new = self.groups.len();
+            for &c in &inn {
+                self.group_of[c.index()] = new;
+            }
+            let group = &mut self.groups[g];
+            group.extra = extra + inn.len() as u32;
+            group.family = family;
+            self.groups.push(Group {
+                ids,
+                extra: extra + out.len() as u32,
+                family,
+                cards: inn,
+            });
+            self.groups[g].cards = out;
+            if let Some(f) = family {
+                self.families[f].groups.push(new);
+            }
+        }
     }
 
     /// The viewer sees that one of `among` is an `is`: `card`, but any of them that may be
@@ -289,11 +406,15 @@ impl Mind {
         if let Some(l) = self.leaving.take()
             && !l.rest.is_empty()
         {
-            self.merge(l.left.into_iter().chain(l.rest));
+            // Only the set's cards: the rest of their groups didn't go anywhere.
+            let set: Vec<CardId> = l.left.into_iter().chain(l.rest).collect();
+            self.split_off(&set);
+            self.merge(set);
         }
     }
 
-    /// The viewer can no longer tell `cards` apart.
+    /// The viewer can no longer tell `cards` apart: their groups become one. A family all
+    /// of whose groups are among them is whole again.
     fn merge(&mut self, cards: impl IntoIterator<Item = CardId>) {
         let mut groups: Vec<usize> = cards
             .into_iter()
@@ -304,23 +425,74 @@ impl Mind {
         let Some((&into, rest)) = groups.split_first() else {
             return;
         };
+        if rest.is_empty() {
+            return;
+        }
+        let mut families: Vec<usize> = groups
+            .iter()
+            .filter_map(|&g| self.groups[g].family)
+            .collect();
+        families.sort_unstable();
+        families.dedup();
+        let (whole, partial): (Vec<usize>, Vec<usize>) = families
+            .into_iter()
+            .partition(|&f| self.families[f].groups.iter().all(|g| groups.contains(g)));
+        // What the cards outside partial families are, and what the others may be.
+        let mut exact = Some(CardCount::new());
+        let mut pool = Some(CardCount::new());
+        let mut extra = 0;
+        for &g in &groups {
+            let group = &self.groups[g];
+            match group.family {
+                Some(f) if partial.contains(&f) => {
+                    add_all(&mut pool, group.ids.as_ref());
+                    extra += group.extra;
+                }
+                Some(_) => {}
+                None => add_all(&mut exact, group.ids.as_ref()),
+            }
+        }
+        for &f in &whole {
+            let family = std::mem::take(&mut self.families[f]);
+            add_all(&mut exact, family.ids.as_ref());
+        }
         for &g in rest {
             let taken = std::mem::take(&mut self.groups[g]);
             for &c in &taken.cards {
                 self.group_of[c.index()] = into;
             }
-            let group = &mut self.groups[into];
-            group.cards.extend(taken.cards);
-            group.ids = match (group.ids.take(), taken.ids) {
-                (Some(mut a), Some(b)) => {
-                    for (card, n) in b {
-                        add(&mut a, card, n);
-                    }
-                    Some(a)
-                }
-                _ => None,
-            };
+            self.groups[into].cards.extend(taken.cards);
         }
+        let Some((&f, others)) = partial.split_first() else {
+            let group = &mut self.groups[into];
+            (group.ids, group.extra, group.family) = (exact, 0, None);
+            return;
+        };
+        // The partial families become one, which the cards that joined them are part of.
+        for &o in others {
+            let family = std::mem::take(&mut self.families[o]);
+            for &g in &family.groups {
+                self.groups[g].family = Some(f);
+            }
+            add_all(&mut self.families[f].ids, family.ids.as_ref());
+            self.families[f].groups.extend(family.groups);
+        }
+        add_all(&mut self.families[f].ids, exact.as_ref());
+        self.families[f].groups.retain(|g| !groups.contains(g));
+        self.families[f].groups.push(into);
+        add_all(&mut pool, exact.as_ref());
+        // No more of a card than the whole family has.
+        if let (Some(pool), Some(all)) = (&mut pool, &self.families[f].ids) {
+            for (card, n) in pool.iter_mut() {
+                let most = all.get(card).copied().unwrap_or(0);
+                extra -= n.saturating_sub(most);
+                *n = (*n).min(most);
+            }
+            pool.retain(|_, n| *n > 0);
+        }
+        let group = &mut self.groups[into];
+        (group.ids, group.extra, group.family) = (pool, extra, Some(f));
+        self.tidy(f);
     }
 }
 
@@ -469,6 +641,12 @@ impl Knowledge {
                         remove(ids, from);
                         add(ids, to, 1);
                     }
+                    if let Some(f) = group.family
+                        && let Some(ids) = &mut mind.families[f].ids
+                    {
+                        remove(ids, from);
+                        add(ids, to, 1);
+                    }
                     if marked(to) {
                         mind.identify(card, to);
                     }
@@ -613,6 +791,7 @@ impl Knowledge {
             .map(|g| GroupView {
                 cards: &g.cards,
                 ids: g.ids.as_ref(),
+                extra: g.extra,
             })
     }
 
@@ -625,9 +804,9 @@ impl Knowledge {
             owned: vec![(CardCount::new(), 0); game.num_players()],
             ..KnownCards::default()
         };
-        for group in self.groups(viewer) {
+        let zones_of = |cards: &mut dyn Iterator<Item = CardId>| {
             let mut zones: Vec<(Zone, usize)> = vec![];
-            for &c in group.cards {
+            for c in cards {
                 let zone = game.zone(c);
                 match zones.iter_mut().find(|(z, _)| *z == zone) {
                     Some((_, n)) => *n += 1,
@@ -636,28 +815,63 @@ impl Knowledge {
             }
             // Not in the cards' order, which says which card is where.
             zones.sort();
+            zones
+        };
+        // A card is owned as what it is printed as; how many cards each player owns is
+        // public, whoever's they can't be told apart from.
+        let mut own = |zones: &[(Zone, usize)], ids: Option<&CardCount>| {
             let owner = zones[0].0.owner();
             let one_owner = zones.iter().all(|(z, _)| z.owner() == owner);
-            // A card is owned as what it is printed as; how many cards each player owns
-            // is public, whoever's they can't be told apart from.
-            match (owner.filter(|_| one_owner), group.ids) {
+            match (owner.filter(|_| one_owner), ids) {
                 (Some(p), Some(ids)) => {
                     let owned = &mut out.owned[p.index()].0;
                     ids.iter().for_each(|(&c, &n)| add(owned, c, n));
                 }
                 _ => {
-                    for &(zone, n) in &zones {
+                    for &(zone, n) in zones {
                         if let Some(p) = zone.owner() {
                             out.owned[p.index()].1 += n;
                         }
                     }
                 }
             }
-            let ids = match (group.cards, group.ids) {
+        };
+        let mind = &self.minds[viewer.index()];
+        for family in mind.families.iter().filter(|f| !f.groups.is_empty()) {
+            let mut cards = family
+                .groups
+                .iter()
+                .flat_map(|&g| mind.groups[g].cards.iter().copied());
+            own(&zones_of(&mut cards), family.ids.as_ref());
+        }
+        let groups = mind.groups.iter().filter(|g| !g.cards.is_empty());
+        for (group, zones) in groups.map(|g| (g, zones_of(&mut g.cards.iter().copied()))) {
+            if group.family.is_none() {
+                own(&zones, group.ids.as_ref());
+            }
+        }
+        for group in mind.groups.iter().filter(|g| !g.cards.is_empty()) {
+            let zones = zones_of(&mut group.cards.iter().copied());
+            let mut extra = group.extra;
+            let ids = match (&group.cards[..], &group.ids) {
                 ([c], Some(_)) if view.card(*c).is_some() => {
                     view.card(*c).map(|card| CardCount::from([(card, 1)]))
                 }
-                (_, ids) => ids.cloned(),
+                (_, Some(ids)) => {
+                    // No more of a card than its whole family has.
+                    let all = group.family.and_then(|f| mind.families[f].ids.as_ref());
+                    let mut ids = ids.clone();
+                    if let Some(all) = all {
+                        for (card, n) in ids.iter_mut() {
+                            let most = all.get(card).copied().unwrap_or(0);
+                            extra -= n.saturating_sub(most);
+                            *n = (*n).min(most);
+                        }
+                        ids.retain(|_, n| *n > 0);
+                    }
+                    Some(ids)
+                }
+                (_, None) => None,
             };
             // Cards that can only be one card are known wherever they are.
             let only = match &ids {
@@ -669,8 +883,18 @@ impl Knowledge {
                 z.count += n;
                 match (&ids, only) {
                     (_, Some(card)) => add(&mut z.known, card, n as u32),
+                    // Some of the candidates: each is there as often as it is a candidate
+                    // more times than there are candidates elsewhere.
                     (Some(ids), _) if zones.len() == 1 => {
-                        ids.iter().for_each(|(&c, &n)| add(&mut z.known, c, n))
+                        let mut known = 0;
+                        for (&c, &k) in ids {
+                            let at_least = k.saturating_sub(extra);
+                            if at_least > 0 {
+                                add(&mut z.known, c, at_least);
+                                known += at_least as usize;
+                            }
+                        }
+                        z.unknown += n - known;
                     }
                     _ => z.unknown += n,
                 }
@@ -679,7 +903,11 @@ impl Knowledge {
                 && only.is_none()
                 && let Some(candidates) = ids
             {
-                out.uncertain.push(UncertainCards { zones, candidates });
+                out.uncertain.push(UncertainCards {
+                    zones,
+                    candidates,
+                    outside: extra as usize,
+                });
             }
         }
         out.uncertain
