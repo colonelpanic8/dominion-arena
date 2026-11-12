@@ -14,7 +14,8 @@ use axum::routing::get;
 use dominion_agent::{Answer, AnswerError};
 use dominion_engine::{Card, Kind};
 use dominion_protocol::api::{
-    ApiError, CardCost, CardInfo, Change, NewGame, SeatInfo, SeatView, ViewQuery, WebSettings,
+    ApiError, CardCost, CardInfo, Change, DealRequest, Dealt, NewGame, SeatInfo, SeatView,
+    ViewQuery, WebSettings,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -37,7 +38,12 @@ pub fn router(
     let api = Router::new()
         .route("/cards", get(cards))
         .route("/settings", get(settings))
+        .route(
+            "/settings/banned-cards",
+            axum::routing::put(set_banned_cards),
+        )
         .route("/games", get(list).post(create))
+        .route("/deal", axum::routing::post(deal))
         .route("/seat", get(seat))
         .route("/games/{id}/view", get(view))
         .route("/games/{id}/answer", axum::routing::post(answer))
@@ -49,7 +55,8 @@ pub fn router(
         .with_state(Api {
             hub,
             stop,
-            web: Arc::new(options.web.clone()),
+            web: Arc::new(std::sync::RwLock::new(options.web.clone())),
+            config_file: options.config_file.clone().map(Arc::new),
         });
     // The web client's bundler puts its own (content-hashed) files under /assets too:
     // the cache answers first, then the client's.
@@ -143,7 +150,8 @@ async fn check_host(State(allowed): State<Arc<Vec<String>>>, req: Request, next:
 struct Api {
     hub: Arc<Hub>,
     stop: CancellationToken,
-    web: Arc<WebSettings>,
+    web: Arc<std::sync::RwLock<WebSettings>>,
+    config_file: Option<Arc<std::path::PathBuf>>,
 }
 
 struct Error(StatusCode, String);
@@ -245,7 +253,42 @@ async fn cards() -> axum::Json<Vec<CardInfo>> {
 }
 
 async fn settings(State(api): State<Api>) -> axum::Json<WebSettings> {
-    axum::Json((*api.web).clone())
+    axum::Json(api.web.read().unwrap_or_else(|e| e.into_inner()).clone())
+}
+
+/// Replaces the Banned cards list, in the settings file and in what the server serves.
+async fn set_banned_cards(State(api): State<Api>, req: Bytes) -> Result<axum::Json<WebSettings>> {
+    let names: Vec<String> = body(&req)?;
+    let mut cards: Vec<&'static str> = vec![];
+    for name in &names {
+        let card = Card::from_name(name)
+            .filter(|c| c.def().kingdom || c.kind().is_landscape())
+            .ok_or_else(|| {
+                Error(
+                    StatusCode::BAD_REQUEST,
+                    format!("{name:?} is not a Kingdom pile or landscape"),
+                )
+            })?;
+        if !cards.contains(&card.name()) {
+            cards.push(card.name());
+        }
+    }
+    let Some(path) = &api.config_file else {
+        return Err(Error(
+            StatusCode::CONFLICT,
+            "the server has no settings file to write to".into(),
+        ));
+    };
+    let value = toml_edit::Item::Value(cards.iter().copied().collect::<toml_edit::Array>().into());
+    let config = crate::config::Config::write_key(path, "banned_cards", value).map_err(|e| {
+        Error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("cannot save: {e}"),
+        )
+    })?;
+    let mut web = api.web.write().unwrap_or_else(|e| e.into_inner());
+    web.banned_cards = config.web().banned_cards;
+    Ok(axum::Json(web.clone()))
 }
 
 async fn list(State(api): State<Api>) -> impl IntoResponse {
@@ -256,6 +299,11 @@ async fn create(State(api): State<Api>, req: Bytes) -> Result<impl IntoResponse>
     let req: NewGame = body(&req)?;
     let created = api.hub.create(&req)?;
     Ok((StatusCode::CREATED, axum::Json(created)))
+}
+
+async fn deal(req: Bytes) -> Result<axum::Json<Dealt>> {
+    let req: DealRequest = body(&req)?;
+    Ok(axum::Json(crate::hub::deal(&req)?))
 }
 
 async fn seat(State(api): State<Api>, headers: HeaderMap) -> Result<axum::Json<SeatInfo>> {

@@ -110,7 +110,7 @@ struct PlayArgs {
     names: Vec<String>,
 }
 
-async fn serve(config: Config) -> Result<(), String> {
+async fn serve(config: Config, config_file: Option<PathBuf>) -> Result<(), String> {
     let addr = SocketAddr::new(config.listen(), config.port());
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -162,6 +162,7 @@ async fn serve(config: Config) -> Result<(), String> {
         assets_dir: config.assets_dir(),
         web_dir,
         web: config.web(),
+        config_file,
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
@@ -219,7 +220,7 @@ async fn main() -> ExitCode {
             if ephemeral {
                 config.persist = Some(false);
             }
-            serve(config).await
+            serve(config, cli.config.clone().or_else(Config::default_path)).await
         }
         Command::Play(args) => {
             let url = args.server.clone().unwrap_or_else(|| config.server());

@@ -81,13 +81,25 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | Route | Body | Returns |
 | --- | --- | --- |
 | `GET /api/cards` | | every card-shaped object as printed |
-| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume}` |
+| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume, bannedCards}` |
+| `PUT /api/settings/banned-cards` | `["Witch", ...]` | the settings, after writing `banned_cards` to the settings file (409 when the server has none) |
 | `GET /api/games` | | the games, as `list_games` gives them |
 | `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
+| `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
 | `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them |
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version}`: on connect and after every change |
+
+`POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
+and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
+`sets` (default: every released set) shuffled into one stack fill the kingdom up to ten
+piles, a landscape going to a free slot that takes its kind (`slots`: `{kinds: ["event",
+"landmark", "project", "way", "trait"], optional}`; the default is the rulebook's two: any
+kind, then any but Way, both optional; a slot that isn't optional is always filled). Cards
+in `banned` are never dealt. Creating a game with the result's `kingdom`, `landscapes` and
+`seed` sets up exactly that kingdom, and `sets` alone with a seed deals what
+`POST /api/games` deals from those sets with that seed.
 
 `/assets/` serves the asset cache (`assets_dir`), then the web client's own bundled files
 (`web_dir/assets`), and every other path the built web client (`web_dir`, falling back to
@@ -112,6 +124,7 @@ web_confirm_single = false     # serve: a single card to trash, discard, exile o
 web_background = "inheritance" # serve: the painting under the table, from the asset cache's images/large ("" for none)
 web_sounds = true              # serve: the web client plays dominion.games' sounds (from the asset cache)
 web_volume = 0.5               # serve: their volume, 0.0 to 1.0
+banned_cards = []              # serve: dominion.games' Banned cards list (the web client's Cardlists tab writes it)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
