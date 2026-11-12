@@ -3274,9 +3274,9 @@ fn journey_keeps_a_card_played_at_the_start_of_clean_up() {
     money(&mut g, 3, 1);
     buy_event(&mut g, Card::Journey);
     // Start of Clean-up: Friendly discards the Village for another; Sheepdog is played.
-    assert_eq!(g.pending().unwrap().source, Some(Card::Friendly));
+    assert_eq!(trigger_cards(&g), [Card::Friendly]);
     yes_trigger(&mut g);
-    assert_eq!(g.pending().unwrap().source, Some(Card::Sheepdog));
+    assert_eq!(trigger_cards(&g), [Card::Sheepdog]);
     yes_trigger(&mut g);
     assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Journey)));
     assert_eq!(in_play_kinds(&g, P0), [Card::Copper, Card::Sheepdog]);

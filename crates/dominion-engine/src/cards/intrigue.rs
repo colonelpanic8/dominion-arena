@@ -93,7 +93,7 @@ impl SetRules for Rules {
                 out.push(
                     Trigger::new(target, g.card(c), ability)
                         .on(c)
-                        .optional()
+                        .optional(if ability == DIPLOMAT_REACT { "reveal it to draw 2 cards, then discard 3" } else { "reveal it to draw 2 cards, then put 2 cards from your hand onto your deck" })
                         .data(tag),
                 );
             }

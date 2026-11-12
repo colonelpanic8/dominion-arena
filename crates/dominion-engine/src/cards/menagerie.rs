@@ -399,7 +399,7 @@ impl SetRules for Rules {
                     && g.zone(card) == Zone::Discard(player)
                     && g.turn.phase != Phase::Cleanup
                 {
-                    out.push(Trigger::new(player, Card::VillageGreen, REACT).on(card).optional());
+                    out.push(Trigger::new(player, Card::VillageGreen, REACT).on(card).optional("reveal it to play it"));
                 }
             }
             Occasion::DiscardFromPlay { player } => {
@@ -773,8 +773,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         out.push(
             Trigger::new(gainer, kind, EXILE_DISCARD)
                 .on(card)
-                .optional()
-                .labelled(format!("Discard {kind} from Exile")),
+                .optional(format!("discard every {kind} from your Exile mat"))
+                .labelled("Exile".into()),
         );
     }
     let in_place = still_where_gained(g, card);
@@ -812,7 +812,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     Trigger::new(gainer, Card::WayOfTheSeal, SEAL_TOPDECK)
                         .via_lasting(l.id)
                         .on(card)
-                        .optional(),
+                        .optional(format!("put {} onto your deck", g.card(card))),
                 );
             }
             _ => {}
@@ -850,7 +850,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     Trigger::new(p, g.card(c), REACT)
                         .on(c)
                         .data(card.0 as i32)
-                        .optional(),
+                        .optional(if g.card(c) == Card::Sleigh { format!("discard it to put {} into your hand or onto your deck", g.card(card)) } else { "play it from your hand".into() }),
                 );
             }
         }

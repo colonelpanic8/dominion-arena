@@ -115,7 +115,7 @@ impl SetRules for Rules {
                             Trigger::new(player, Card::Alchemist, ALCHEMIST_TOPDECK)
                                 .on(src)
                                 .via_lasting(l.id)
-                                .optional(),
+                                .optional("put it onto your deck"),
                         );
                     }
                 }
@@ -129,7 +129,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Herbalist, HERBALIST_TOPDECK)
                                 .via_lasting(l.id)
-                                .optional(),
+                                .optional("put one of your Treasures from play onto your deck"),
                         );
                     }
                 }

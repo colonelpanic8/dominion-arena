@@ -139,7 +139,7 @@ impl SetRules for Rules {
                             out.push(
                                 Trigger::new(owner, Card::MarketSquare, MARKET_SQUARE_REACT)
                                     .on(c)
-                                    .optional(),
+                                    .optional("discard it from your hand to gain a Gold"),
                             );
                         }
                     }
@@ -152,7 +152,7 @@ impl SetRules for Rules {
                 if g.is(card, Types::VICTORY) {
                     for &c in g.hand(player) {
                         if g.card(c) == Card::Hovel {
-                            out.push(Trigger::new(player, Card::Hovel, HOVEL_REACT).on(c).optional());
+                            out.push(Trigger::new(player, Card::Hovel, HOVEL_REACT).on(c).optional("trash it from your hand"));
                         }
                     }
                 }
@@ -160,7 +160,7 @@ impl SetRules for Rules {
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
                     if g.card(c) == Card::Beggar {
-                        out.push(Trigger::new(target, Card::Beggar, BEGGAR_REACT).on(c).optional());
+                        out.push(Trigger::new(target, Card::Beggar, BEGGAR_REACT).on(c).optional("discard it to gain 2 Silvers, one onto your deck"));
                     }
                 }
             }
@@ -168,7 +168,7 @@ impl SetRules for Rules {
                 if g.is(card, Types::ATTACK) {
                     for &c in g.in_play(player) {
                         if c != card && g.card(c) == Card::Urchin {
-                            out.push(Trigger::new(player, Card::Urchin, URCHIN_REACT).on(c).optional());
+                            out.push(Trigger::new(player, Card::Urchin, URCHIN_REACT).on(c).optional("trash it to gain a Mercenary"));
                         }
                     }
                 }

@@ -363,8 +363,7 @@ fn stash_goes_where_its_owner_chooses_when_shuffled() {
     );
     g.start();
     play(&mut g, Card::Smithy);
-    let d = g.pending().unwrap();
-    assert_eq!((d.purpose, d.source), (Purpose::Trigger, Some(Card::Stash)));
+    assert_eq!(trigger_cards(&g), [Card::Stash]);
     trigger(&mut g, Card::Stash);
     assert_eq!(
         g.pending().unwrap().kind,

@@ -372,14 +372,14 @@ impl SetRules for Rules {
                     }
                 }
                 if kind == Card::Trail && not_cleanup && still_gained(g, card) {
-                    out.push(Trigger::new(player, kind, REACT_PLAY).on(card).optional());
+                    out.push(Trigger::new(player, kind, REACT_PLAY).on(card).optional("play it"));
                 }
                 if kind == Card::Duchy
                     && g
                         .supply_pile(Card::Duchess)
                         .is_some_and(|p| !g.pile(p).cards.is_empty())
                 {
-                    out.push(Trigger::new(player, Card::Duchess, DUCHESS_GAIN).optional());
+                    out.push(Trigger::new(player, Card::Duchess, DUCHESS_GAIN).optional("gain a Duchess"));
                 }
                 if kind == Card::Province {
                     for q in g.others(player) {
@@ -388,7 +388,7 @@ impl SetRules for Rules {
                                 out.push(
                                     Trigger::new(q, Card::FoolsGold, FOOLS_GOLD_TRASH)
                                         .on(c)
-                                        .optional(),
+                                        .optional("trash it from your hand to gain a Gold onto your deck"),
                                 );
                             }
                         }
@@ -405,7 +405,7 @@ impl SetRules for Rules {
                             out.push(
                                 Trigger::new(player, Card::Trader, TRADER_EXCHANGE)
                                     .on(c)
-                                    .optional(),
+                                    .optional(format!("reveal it to exchange {} for a Silver", g.card(card))),
                             );
                         }
                     }
@@ -440,7 +440,7 @@ impl SetRules for Rules {
             Occasion::Trash { player, card } => match g.card(card) {
                 Card::Nomads => out.push(Trigger::new(player, Card::Nomads, GAINED).on(card)),
                 Card::Trail if not_cleanup && g.zone(card) == Zone::Trash => {
-                    out.push(Trigger::new(player, Card::Trail, REACT_PLAY).on(card).optional());
+                    out.push(Trigger::new(player, Card::Trail, REACT_PLAY).on(card).optional("play it"));
                 }
                 _ => {}
             },
@@ -450,10 +450,10 @@ impl SetRules for Rules {
                 }
                 match g.card(card) {
                     Card::Tunnel => {
-                        out.push(Trigger::new(player, Card::Tunnel, TUNNEL_GOLD).on(card).optional());
+                        out.push(Trigger::new(player, Card::Tunnel, TUNNEL_GOLD).on(card).optional("reveal it to gain a Gold"));
                     }
                     k @ (Card::Trail | Card::Weaver) => {
-                        out.push(Trigger::new(player, k, REACT_PLAY).on(card).optional());
+                        out.push(Trigger::new(player, k, REACT_PLAY).on(card).optional("play it"));
                     }
                     _ => {}
                 }
@@ -469,7 +469,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::GuardDog, GUARD_DOG_PLAY)
                                 .on(c)
-                                .optional(),
+                                .optional("play it from your hand"),
                         );
                     }
                 }
@@ -483,7 +483,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Scheme, SCHEME_TOPDECK)
                                 .via_lasting(l.id)
-                                .optional(),
+                                .optional("put an Action card you discard from play onto your deck"),
                         );
                     }
                 }

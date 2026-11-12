@@ -135,7 +135,10 @@ them.
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
   trigger with `Value::Bool(true)` makes the target unaffected. Players choose among
   triggers by card name: give one `Trigger::labelled` when the name doesn't say what it
-  is (the Exile rule on a gained card, which card a Way's ability is on).
+  is (the Exile rule on a gained card, which card a Way's ability is on), and say what an
+  optional one does (`Trigger::optional("reveal it to be unaffected")`). The window's
+  decision has no `source`; its `question` names the moment ("P2 attacks you with
+  Militia").
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
   `f.add_duration(g, data)` (keeps the card in play with what played it:
   `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting

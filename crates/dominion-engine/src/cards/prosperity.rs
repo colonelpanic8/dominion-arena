@@ -154,7 +154,7 @@ impl SetRules for Rules {
             Occasion::StartTurn { player } => {
                 for &c in g.hand(player) {
                     if g.card(c) == Card::Clerk && super::can_play(g, player, c) {
-                        out.push(Trigger::new(player, Card::Clerk, CLERK_START).on(c).optional());
+                        out.push(Trigger::new(player, Card::Clerk, CLERK_START).on(c).optional("play it from your hand"));
                     }
                 }
             }
@@ -177,7 +177,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::Watchtower, WATCHTOWER_REACT)
                             .on(w)
-                            .optional(),
+                            .optional(format!("reveal it to trash {} or put it onto your deck", g.card(card))),
                     );
                 }
                 if g.card(card) == Card::Mint {
@@ -199,7 +199,7 @@ impl SetRules for Rules {
                 }
                 if in_place && g.zone(card) != Zone::Deck(player) {
                     if lastings(Card::Tiara).next().is_some() {
-                        out.push(Trigger::new(player, Card::Tiara, TIARA_TOPDECK).optional());
+                        out.push(Trigger::new(player, Card::Tiara, TIARA_TOPDECK).optional(format!("put {} onto your deck", g.card(card))));
                     }
                     if let Some(&seal) = g
                         .in_play(player)
@@ -209,7 +209,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::RoyalSeal, ROYAL_SEAL_TOPDECK)
                                 .on(seal)
-                                .optional(),
+                                .optional(format!("put {} onto your deck", g.card(card))),
                         );
                     }
                 }

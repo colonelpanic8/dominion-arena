@@ -528,3 +528,51 @@ fn a_yes_or_no_question_says_what_yes_does() {
     let labels: Vec<&str> = d.options.iter().map(|o| o.label.as_str()).collect();
     assert_eq!(labels, ["Trash Mining Village for +$2", "No"]);
 }
+
+#[test]
+fn a_reaction_says_what_it_answers_and_does_and_names_no_single_source() {
+    let mut t = table(&[Card::Militia], 5, &["Ada", "Bo"]);
+    let mut bought = false;
+    let mut asked = None;
+    for _ in 0..2000 {
+        let Some(seat) = t.deciding() else { break };
+        let d = t.view(seat).decision.unwrap();
+        if seat.0 == 1 && d.purpose == "trigger" {
+            asked = Some(d);
+            break;
+        }
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 == 0 {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| {
+                    pick(&d, |o| !bought && o.label.starts_with("Buy Militia"))
+                        .inspect(|_| bought = true)
+                })
+                .or_else(|| pick(&d, |o| o.action == "end-phase"))
+                .unwrap()
+        } else {
+            pick(&d, |o| {
+                o.action == "play" && o.card.as_deref() != Some("Moat")
+            })
+            .or_else(|| pick(&d, |o| o.label.starts_with("Buy Moat")))
+            .or_else(|| pick(&d, |o| o.action == "end-phase"))
+            .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    let d = asked.expect("Bo is asked about Moat");
+    assert_eq!(d.source, None);
+    let (decline, moats) = d.options.split_last().unwrap();
+    assert!(!moats.is_empty());
+    let prompt = match moats.len() {
+        1 => "P1 attacks you with Militia: you may use this ability",
+        _ => "P1 attacks you with Militia: choose an ability to use next, or decline all",
+    };
+    assert_eq!(d.prompt, prompt);
+    for o in moats {
+        assert_eq!(o.label, "Moat: reveal it to be unaffected (optional)");
+        assert_eq!(o.card.as_deref(), Some("Moat"));
+    }
+    assert!(decline.label.starts_with("Decline"), "{}", decline.label);
+}

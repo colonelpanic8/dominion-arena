@@ -1860,8 +1860,8 @@ fn famine_shuffling_the_deck_lets_stash_go_anywhere() {
             Card::Stash,
         ],
     );
-    let d = g.pending().unwrap();
-    assert_eq!((d.player, d.source), (P1, Some(Card::Stash)));
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(trigger_cards(&g), [Card::Stash]);
     respond(&mut g, Response::option(Opt::Trigger(0)));
     respond(&mut g, Response::Number(0));
     assert_eq!(deck_kinds(&g, P1)[0], Card::Stash);

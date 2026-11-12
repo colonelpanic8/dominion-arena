@@ -1,3 +1,4 @@
+use super::intrigue::trigger_labels;
 use super::*;
 use crate::game::{Mat, Token};
 
@@ -821,6 +822,40 @@ fn gear_sets_cards_aside_until_the_next_turn() {
     finish_turn(&mut g);
     assert_eq!(g.hand(P0).len(), 7);
     assert_eq!(g.zone(kept[1]), Zone::Hand(P0));
+}
+
+#[test]
+fn two_gears_are_told_apart_by_the_cards_they_hold() {
+    let mut g = game(&[Card::Gear], &[]);
+    let kept = hand(
+        &mut g,
+        P0,
+        &[
+            Card::Gear,
+            Card::Gear,
+            Card::Village,
+            Card::Gold,
+            Card::Estate,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Gear);
+    choose(&mut g, &kept[3..5]);
+    play(&mut g, Card::Gear);
+    choose_kinds(&mut g, &[Card::Copper]);
+    finish_turn(&mut g);
+    finish_turn(&mut g);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.source), (P0, None));
+    assert_eq!(
+        d.question.as_deref(),
+        Some(
+            "Start of your turn: choose which of your abilities resolves next (the others stay pending)"
+        )
+    );
+    assert_eq!(trigger_labels(&g), ["Gear (Gold, Estate)", "Gear (Copper)"]);
 }
 
 #[test]

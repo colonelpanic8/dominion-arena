@@ -292,7 +292,7 @@ impl SetRules for Rules {
             Occasion::StartTurn { player } => {
                 if has_state(g, player, Card::LostInTheWoods) && !g.hand(player).is_empty() {
                     out.push(
-                        Trigger::new(player, Card::LostInTheWoods, STATE_TRIGGER).optional(),
+                        Trigger::new(player, Card::LostInTheWoods, STATE_TRIGGER).optional("discard a card to receive a Boon"),
                     );
                 }
             }
@@ -332,7 +332,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::FaithfulHound, HOUND_SET_ASIDE)
                             .on(card)
-                            .optional(),
+                            .optional("set it aside, to put it into your hand at end of turn"),
                     );
                 }
             }
@@ -361,7 +361,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(owner, Card::HauntedMirror, MIRROR_TRASHED)
                                 .on(card)
-                                .optional(),
+                                .optional("discard an Action card to gain a Ghost"),
                         );
                     }
                 }
@@ -495,7 +495,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         out.push(
             Trigger::new(player, Card::Changeling, CHANGELING_EXCHANGE)
                 .on(card)
-                .optional(),
+                .optional(format!("exchange {} for a Changeling", g.card(card))),
         );
     }
     if where_gained(g, card) && g.zone(card) != Zone::Deck(player) {
@@ -505,7 +505,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
                     Trigger::new(player, Card::Tracker, TRACKER_TOPDECK)
                         .on(card)
                         .via_lasting(l.id)
-                        .optional(),
+                        .optional(format!("put {} onto your deck", g.card(card))),
                 );
             }
         }

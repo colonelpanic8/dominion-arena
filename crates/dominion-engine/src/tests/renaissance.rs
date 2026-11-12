@@ -370,10 +370,10 @@ fn cargo_ships_say_what_keeps_them_in_play() {
     assert_eq!(
         labels,
         &[
-            "Cargo Ship played by Throne Room (optional)",
-            "Cargo Ship played by Throne Room (optional)",
-            "Cargo Ship (optional)",
-            "Done"
+            "Cargo Ship played by Throne Room: set Silver aside on Cargo Ship (optional)",
+            "Cargo Ship played by Throne Room: set Silver aside on Cargo Ship (optional)",
+            "Cargo Ship: set Silver aside on Cargo Ship (optional)",
+            "Decline all"
         ]
     );
     respond(&mut g, Response::option(Opt::Trigger(2)));

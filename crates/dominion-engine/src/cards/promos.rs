@@ -119,7 +119,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Sauna, SAUNA_SILVER)
                                 .via_lasting(l.id)
-                                .optional(),
+                                .optional("trash a card from your hand"),
                         );
                     }
                 }
@@ -136,7 +136,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::Stash, STASH_SHUFFLE)
                             .on(stash)
-                            .optional(),
+                            .optional("put it anywhere in your deck"),
                     );
                 }
             }
@@ -154,7 +154,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::WalledVillage, WALLED_VILLAGE_TOPDECK)
                                 .on(c)
-                                .optional(),
+                                .optional("put it onto your deck"),
                         );
                     }
                 }

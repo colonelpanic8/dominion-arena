@@ -184,7 +184,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Treasury, TREASURY_TOPDECK)
                                 .on(c)
-                                .optional(),
+                                .optional("put it onto your deck"),
                         );
                     }
                 }
@@ -214,7 +214,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         for p in g.players_from(g.turn.player) {
             for &c in g.hand(p) {
                 if g.card(c) == Card::Pirate && super::can_play(g, p, c) {
-                    out.push(Trigger::new(p, Card::Pirate, PIRATE_PLAY).on(c).optional());
+                    out.push(Trigger::new(p, Card::Pirate, PIRATE_PLAY).on(c).optional("play it from your hand"));
                 }
             }
         }
@@ -225,7 +225,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 out.push(
                     Trigger::new(gainer, Card::Sailor, SAILOR_PLAY)
                         .via_lasting(l.id)
-                        .optional(),
+                        .optional(format!("play {}", g.card(card))),
                 );
             }
         }

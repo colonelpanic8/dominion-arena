@@ -314,7 +314,7 @@ impl SetRules for Rules {
                 for c in g.leaving_play(player) {
                     let kind = g.card(c);
                     if matches!(kind, Card::MerchantCamp | Card::Tent) {
-                        out.push(Trigger::new(player, kind, REACT).on(c).optional());
+                        out.push(Trigger::new(player, kind, REACT).on(c).optional("put it onto your deck"));
                     }
                 }
             }
@@ -767,7 +767,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         out.push(
             Trigger::new(player, Card::Bauble, REACT)
                 .via_lasting(l.id)
-                .optional(),
+                .optional(format!("put {} onto your deck", g.card(card))),
         );
     }
 }
@@ -855,7 +855,39 @@ fn ally_trigger(g: &Game, ally: Card, occ: &Occasion) -> Option<Trigger> {
         }
         _ => return None,
     };
-    ok.then(|| Trigger::new(player, ally, REACT).optional())
+    ok.then(|| Trigger::new(player, ally, REACT).optional(ally_does(ally)))
+}
+
+/// What using an optional Ally's ability does.
+fn ally_does(ally: Card) -> String {
+    match ally {
+        Card::ArchitectsGuild => "spend 2 Favors to gain a cheaper non-Victory card".into(),
+        Card::BandOfNomads => "spend a Favor for +1 Card, +1 Action or +1 Buy".into(),
+        Card::CaveDwellers => format!("spend a Favor to {CAVE_DWELLERS}"),
+        Card::CircleOfWitches => "spend 3 Favors so each other player gains a Curse".into(),
+        Card::CityState => "spend 2 Favors to play the gained card".into(),
+        Card::CoastalHaven => "spend Favors to keep that many cards in hand".into(),
+        Card::CraftersGuild => "spend 2 Favors to gain a card costing up to $4 onto your deck".into(),
+        Card::DesertGuides => format!("spend a Favor to {DESERT_GUIDES}"),
+        Card::FamilyOfInventors => "put a Favor on a non-Victory Supply pile".into(),
+        Card::FellowshipOfScribes => "spend a Favor for +1 Card".into(),
+        Card::ForestDwellers => {
+            "spend a Favor to look at your top 3 cards, discard any and put the rest back".into()
+        }
+        Card::IslandFolk => "spend 5 Favors to take an extra turn after this one".into(),
+        Card::MarketTowns => "spend a Favor to play an Action card from your hand".into(),
+        Card::MountainFolk => "spend 5 Favors for +3 Cards".into(),
+        Card::OrderOfAstrologers => "spend Favors to pick a card per Favor to go on top".into(),
+        Card::OrderOfMasons => {
+            "spend Favors to put up to 2 cards per Favor into your discard pile".into()
+        }
+        Card::PeacefulCult => "spend Favors to trash that many cards from your hand".into(),
+        Card::TrappersLodge => "spend a Favor to put the gained card onto your deck".into(),
+        Card::WoodworkersGuild => {
+            "spend a Favor to trash an Action card from your hand and gain an Action card".into()
+        }
+        _ => "use it".into(),
+    }
 }
 
 /// The piles Architects' Guild could gain from for gaining `card`.

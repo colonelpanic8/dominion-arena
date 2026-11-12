@@ -269,7 +269,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Farmhands, FARMHANDS_SET_ASIDE)
                                 .on(card)
-                                .optional(),
+                                .optional("set aside an Action or Treasure from your hand to play at the start of your next turn"),
                         );
                     }
                     Card::Ferryman if g.ext.cornucopia_guilds.ferryman.is_some() => {
@@ -320,7 +320,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::HorseTraders, HORSE_TRADERS_SET_ASIDE)
                                 .on(c)
-                                .optional(),
+                                .optional("set it aside: at the start of your next turn, +1 Card and it returns to your hand"),
                         );
                     }
                 }

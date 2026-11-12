@@ -76,7 +76,7 @@ impl SetRules for Rules {
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
                     if g.card(c) == Card::Moat {
-                        out.push(Trigger::new(target, Card::Moat, MOAT_REACT).on(c).optional());
+                        out.push(Trigger::new(target, Card::Moat, MOAT_REACT).on(c).optional("reveal it to be unaffected"));
                     }
                 }
             }

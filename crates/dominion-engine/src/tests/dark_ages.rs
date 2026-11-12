@@ -1571,8 +1571,11 @@ fn the_abilities_of_cards_trashed_together_resolve_in_the_players_order() {
         panic!("expected the trigger order, got {d:?}");
     };
     assert_eq!(d.purpose, Purpose::Trigger);
-    let cultist = labels.iter().position(|l| l == "Cultist").unwrap();
-    assert!(labels.contains(&"Rats".to_string()));
+    let cultist = labels
+        .iter()
+        .position(|l| l.starts_with("Cultist"))
+        .unwrap();
+    assert!(labels.iter().any(|l| l.starts_with("Rats")));
     respond(&mut g, Response::option(Opt::Trigger(cultist as u16)));
     // +3 Cards, +1 Card, then Mercenary's +2 Cards.
     assert_eq!(g.hand(P0).len(), 6);

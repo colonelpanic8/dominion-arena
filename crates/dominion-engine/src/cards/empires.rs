@@ -464,7 +464,7 @@ impl SetRules for Rules {
                 if g.has_landscape(Card::Arena)
                     && !g.cards_in_hand_where(player, Types::ACTION).is_empty()
                 {
-                    out.push(Trigger::new(player, Card::Arena, ARENA_DISCARD).optional());
+                    out.push(Trigger::new(player, Card::Arena, ARENA_DISCARD).optional("discard an Action card to take 2 VP from Arena"));
                 }
             }
             Occasion::StartCleanup { .. } => {

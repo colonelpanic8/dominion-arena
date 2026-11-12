@@ -56,6 +56,18 @@ const START_CALLS: [Card; 4] = [
     Card::Teacher,
 ];
 
+/// What calling one of [`START_CALLS`] does.
+fn call_does(card: Card) -> &'static str {
+    match card {
+        Card::Ratcatcher => "call it to trash a card from your hand",
+        Card::Guide => "call it to discard your hand and draw 5 cards",
+        Card::Transmogrify => {
+            "call it to trash a card from your hand and gain one costing up to $1 more into your hand"
+        }
+        _ => "call it to move your +1 Card, +1 Action, +1 Buy or +$1 token to an Action Supply pile",
+    }
+}
+
 impl SetRules for Rules {
     fn notes(g: &Game, out: &mut Vec<Note>) {
         for &(p, c) in &g.ext.adventures.inherited {
@@ -417,10 +429,10 @@ impl SetRules for Rules {
                     let replayable = g.zone(card) == Zone::InPlay(player);
                     match g.card(c) {
                         Card::CoinOfTheRealm => {
-                            out.push(Trigger::new(player, Card::CoinOfTheRealm, CALL).on(c).optional())
+                            out.push(Trigger::new(player, Card::CoinOfTheRealm, CALL).on(c).optional("call it for +2 Actions"))
                         }
                         Card::RoyalCarriage if replayable => {
-                            out.push(Trigger::new(player, Card::RoyalCarriage, CALL).on(c).optional())
+                            out.push(Trigger::new(player, Card::RoyalCarriage, CALL).on(c).optional(format!("call it to replay {}", g.card(card))))
                         }
                         _ => {}
                     }
@@ -435,7 +447,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::CaravanGuard, REACT)
                                 .on(c)
-                                .optional(),
+                                .optional("play it from your hand first"),
                         );
                     }
                 }
@@ -454,7 +466,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::WineMerchant, WINE_DISCARD)
                                 .on(c)
-                                .optional(),
+                                .optional("discard it from your Tavern mat"),
                         );
                     }
                 }
@@ -471,7 +483,7 @@ impl SetRules for Rules {
                             .pile_of(next)
                             .is_some_and(|p| !g.pile(p).cards.is_empty());
                     if g.card(c) == printed && available {
-                        out.push(Trigger::new(player, printed, EXCHANGE).on(c).optional());
+                        out.push(Trigger::new(player, printed, EXCHANGE).on(c).optional(format!("exchange it for a {next}")));
                     }
                 }
             }
@@ -824,7 +836,7 @@ fn start_turn_triggers(g: &Game, occ: &Occasion, player: PlayerId, out: &mut Vec
     for &c in tavern(g, player) {
         let card = g.card(c);
         if START_CALLS.contains(&card) {
-            out.push(Trigger::new(player, card, CALL).on(c).optional());
+            out.push(Trigger::new(player, card, CALL).on(c).optional(call_does(card)));
         }
     }
 }
@@ -877,7 +889,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
     let copyable = cost.at_most(Cost::coins(6)) && copy_pile(g, kind).is_some();
     for &c in tavern(g, player) {
         if copyable && g.card(c) == Card::Duplicate {
-            out.push(Trigger::new(player, Card::Duplicate, CALL).on(c).optional());
+            out.push(Trigger::new(player, Card::Duplicate, CALL).on(c).optional(format!("call it to gain a copy of {kind}")));
         }
     }
     let pl = g.player(player);
@@ -893,7 +905,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
         .any(|l| l.card == Card::TravellingFair && l.owner == player);
     let movable = g.still_where_gained(card) && g.zone(card) != Zone::Deck(player);
     if fair && movable && player == g.turn.player {
-        out.push(Trigger::new(player, Card::TravellingFair, FAIR).optional());
+        out.push(Trigger::new(player, Card::TravellingFair, FAIR).optional(format!("put {} onto your deck", g.card(card))));
     }
     if bought {
         for l in g.lasting() {
