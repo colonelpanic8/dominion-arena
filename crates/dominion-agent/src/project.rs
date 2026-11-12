@@ -327,7 +327,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
         counters: BTreeMap::new(),
         decision: v
             .pending()
-            .map(|d| decision(game, known, d, cx.decision_id.unwrap_or("?")).0),
+            .map(|d| decision(game, known, d, cx.decision_id.unwrap_or("?"), cx.names).0),
         since_last_decision: log(game, cx),
     }
 }
@@ -607,14 +607,62 @@ fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
     }
 }
 
+/// Where a card offered to `me` is, in words: "in play", "in Ann's hand".
+fn option_place(game: &Game, zone: Zone, me: PlayerId, names: &[String]) -> String {
+    let whose = |p: PlayerId| {
+        if p == me {
+            "your".to_string()
+        } else {
+            let name = names.get(p.index()).cloned();
+            format!("{}'s", name.unwrap_or_else(|| p.to_string()))
+        }
+    };
+    match zone {
+        Zone::InPlay(p) if p == me => "in play".into(),
+        Zone::InPlay(p) => format!("in {} play area", whose(p)),
+        Zone::Hand(p) => format!("in {} hand", whose(p)),
+        Zone::Deck(p) => format!("in {} deck", whose(p)),
+        Zone::Discard(p) => format!("in {} discard pile", whose(p)),
+        Zone::Looking(p) => format!("from the top of {} deck", whose(p)),
+        Zone::SetAside(p) if p == me => "set aside".into(),
+        Zone::SetAside(p) => format!("set aside by {}", whose(p).trim_end_matches("'s")),
+        Zone::Mat(p, mat) => format!("on {} {} mat", whose(p), mat_title(mat)),
+        Zone::Pile(id) => format!("in the {} pile", game.pile(id).card),
+        Zone::Trash => "in the trash".into(),
+    }
+}
+
+fn mat_title(mat: Mat) -> &'static str {
+    match mat {
+        Mat::Tavern => "Tavern",
+        Mat::Island => "Island",
+        Mat::NativeVillage => "Native Village",
+        Mat::Exile => "Exile",
+    }
+}
+
 /// The decision as agent-view@2 options, with what each option answers with.
 pub(crate) fn decision(
     game: &Game,
     known: &KnownCards,
     d: &Decision,
     id: &str,
+    names: &[String],
 ) -> (AgentDecision, Vec<Target>) {
     let v = game.view(d.player);
+    // Cards are said to be somewhere only where that tells options apart.
+    let cards: Vec<CardId> = match &d.kind {
+        DecisionKind::Turn { moves, .. } => (moves.iter())
+            .filter_map(|m| match m {
+                Move::Play(c) => Some(*c),
+                _ => None,
+            })
+            .collect(),
+        DecisionKind::Cards { candidates, .. } => candidates.clone(),
+        _ => vec![],
+    };
+    let zones: BTreeSet<Zone> = cards.iter().filter_map(|&c| v.zone(c)).collect();
+    let placed = zones.len() > 1;
     let source = d.source.map(|c| c.name().to_string());
     let about: Vec<&str> = d
         .about
@@ -636,6 +684,9 @@ pub(crate) fn decision(
         let mut o = option(i, action, name.clone());
         o.card = v.card(c).map(|c| c.name().to_string());
         o.zone = v.zone(c).map(zone_name);
+        if let Some(z) = v.zone(c).filter(|_| placed) {
+            o.label = format!("{name} ({})", option_place(game, z, d.player, names));
+        }
         o
     };
     let (kind, prompt, min, max, ordered, phase) = match &d.kind {

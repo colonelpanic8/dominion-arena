@@ -73,6 +73,7 @@ fn random_games_produce_valid_views_and_answerable_options() {
                 .clone()
                 .expect("the deciding seat has a decision");
             assert_valid(&decision_schema, &json["decision"], "decision");
+            assert_cards_placed_where_it_tells_them_apart(&d);
             if step % 25 == 0 {
                 for p in 0..players {
                     let json = serde_json::to_value(table.view(PlayerId(p))).unwrap();
@@ -121,6 +122,27 @@ fn random_games_produce_valid_views_and_answerable_options() {
         let json = serde_json::to_value(table.view(PlayerId(0))).unwrap();
         assert_valid(&view_schema, &json, "the final view");
         assert!(json["game"]["result"].is_object());
+    }
+}
+
+/// Card options say where their cards are when not all are in one place, in words.
+fn assert_cards_placed_where_it_tells_them_apart(d: &AgentDecision) {
+    let cards: Vec<&AgentOption> = (d.options.iter())
+        .filter(|o| matches!(o.action.as_str(), "select" | "play") && o.zone.is_some())
+        .collect();
+    let zones: std::collections::BTreeSet<_> = cards.iter().map(|o| &o.zone).collect();
+    for o in &cards {
+        let name = o.card.as_deref().unwrap_or("a card");
+        let plain = [name.to_string(), format!("Play {name}")];
+        assert!(
+            zones.len() == 1 || !plain.contains(&o.label),
+            "{o:?} in {}",
+            d.prompt
+        );
+        assert!(
+            !o.label.contains("(from ") || o.label.contains("(from the top of "),
+            "{o:?}"
+        );
     }
 }
 
@@ -1225,4 +1247,42 @@ fn way_pre_answer_waits_while_another_seat_reacts_to_the_attack() {
         t.answer(seat, &answer).unwrap();
     }
     panic!("P1 never has Militia while P2 holds Moat");
+}
+
+#[test]
+fn cards_offered_from_different_places_say_where_they_are() {
+    let mut t = table(&[Card::Fishmonger, Card::Merchant], 2, &[]);
+    let plays_from = |d: &AgentDecision, z: &str| {
+        (d.options.iter()).any(|o| o.action == "play" && o.zone.as_deref() == Some(z))
+    };
+    let mut buys = 0;
+    for _ in 0..3000 {
+        let seat = t.deciding().expect("the game goes on");
+        let d = t.view(seat).decision.unwrap();
+        if seat.0 == 0 && plays_from(&d, "deck") && plays_from(&d, "hand") {
+            for o in d.options.iter().filter(|o| o.action == "play") {
+                let card = o.card.as_deref().unwrap();
+                let place = match o.zone.as_deref() {
+                    Some("deck") => "in your deck",
+                    _ => "in your hand",
+                };
+                assert_eq!(o.label, format!("Play {card} ({place})"));
+            }
+            return;
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 || d.phase.as_deref() == Some("action") {
+            end.unwrap()
+        } else {
+            let want = ["Buy Fishmonger", "Buy Merchant"][buys % 2];
+            pick(&d, |o| o.action == "play")
+                .or_else(|| pick(&d, |o| o.label.starts_with(want)).inspect(|_| buys += 1))
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("P1 never may play a Shadow card from the deck and a card from the hand");
 }

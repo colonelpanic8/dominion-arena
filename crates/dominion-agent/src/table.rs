@@ -221,7 +221,7 @@ impl Table {
             });
         }
         let known = self.knowledge.known(&self.game, seat);
-        let (agent, targets) = project::decision(&self.game, &known, d, &open);
+        let (agent, targets) = project::decision(&self.game, &known, d, &open, &self.names);
         let response =
             project::response(d, &agent, &targets, answer).map_err(AnswerError::Invalid)?;
         d.validate(&response)

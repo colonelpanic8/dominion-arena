@@ -202,13 +202,7 @@ fn decision(out: &mut Vec<String>, d: &AgentDecision) {
             out.push(format!("  {}", notes.join("; ")));
         }
         for o in d.options.iter().filter(|o| o.group == g.group) {
-            let zone = match o.zone.as_deref() {
-                Some(z) if o.action == "select" && !["hand", "looking"].contains(&z) => {
-                    format!(" (from {z})")
-                }
-                _ => String::new(),
-            };
-            out.push(format!("    {}: {}{zone}", o.index, o.label));
+            out.push(format!("    {}: {}", o.index, o.label));
         }
     }
 }

@@ -1322,6 +1322,7 @@ fn changeling(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             f.ask_cards(candidates, 1, 1, Purpose::Gain)
+                .question("gain a copy of")
         }
         2 => {
             f.pc = 3;
