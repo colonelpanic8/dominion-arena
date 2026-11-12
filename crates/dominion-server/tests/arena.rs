@@ -458,7 +458,7 @@ fn a_rated_game_moves_ratings_and_is_recorded() {
     assert!(bo_row.resigned && bo_row.rank == 2);
     let (before, after) = bo_row.rating.unwrap();
     assert_eq!((before, after), (1500.0, loser.rating.rating));
-    let board = arena.leaderboard(10);
+    let board = arena.leaderboard(10).unwrap();
     let names: Vec<&str> = board.players.iter().map(|p| p.user.name.as_str()).collect();
     assert_eq!(names, ["Ada", "Bo"]);
     assert_eq!(arena.profile("ADA").unwrap().recent.len(), 1);
@@ -488,7 +488,7 @@ fn a_guests_game_is_recorded_and_moves_no_rating() {
         (false, "turn-limit")
     );
     assert!(record.players.iter().all(|p| p.rating.is_none()));
-    assert!(arena.leaderboard(10).players.is_empty());
+    assert!(arena.leaderboard(10).unwrap().players.is_empty());
     // The table is free for another game.
     let table = arena.lobby(Some(&ada)).table.unwrap();
     let info = arena.table(&table.id).unwrap();
@@ -611,11 +611,21 @@ fn accounts_sessions_and_records_outlive_the_server() {
             .unwrap();
         (token.unwrap(), game)
     };
+    // A server that stopped before noting the record written finds it there.
+    let file = dir.path().join(format!("{game}.json"));
+    let saved = std::fs::read_to_string(&file).unwrap();
+    assert!(saved.contains(r#""recorded":true"#));
+    std::fs::write(
+        &file,
+        saved.replace(r#""recorded":true"#, r#""recorded":false"#),
+    )
+    .unwrap();
     let arena = open();
     let ada = arena.identify(&token).expect("the session is still good");
     let me = arena.me(&ada).unwrap();
     assert_eq!(me.user.name, "Ada");
-    assert!(me.rating.rating > 1500.0 && me.stats.wins == 1);
+    assert!(me.rating.rating > 1500.0);
+    assert_eq!((me.rating.games, me.stats.games, me.stats.wins), (1, 1, 1));
     let history = arena.history(Some("Ada"), None, 10).unwrap();
     assert_eq!(
         history.games.len(),

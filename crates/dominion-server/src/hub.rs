@@ -688,7 +688,7 @@ impl Hub {
             meta: &meta,
         };
         if let Some(store) = &self.store
-            && let Err(e) = store.save(None, table.id(), &saved)
+            && let Err(e) = store.save(table.id(), &saved)
         {
             eprintln!("dominion: saving game {}: {e}", table.id());
         }
@@ -1178,7 +1178,7 @@ impl Hub {
             if (over || !connected) && u128::from(now.saturating_sub(last)) >= keep.as_millis() {
                 lock(&self.index).remove(&id);
                 if let Some(store) = &self.store
-                    && let Err(e) = store.remove(None, &id)
+                    && let Err(e) = store.remove(&id)
                 {
                     eprintln!("dominion: deleting game {id}: {e}");
                 }

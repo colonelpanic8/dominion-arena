@@ -53,12 +53,14 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and ter
   src/arena/              who is playing (README "Accounts and the lobby"); its lock order
                           is in mod.rs
     mod.rs                `Arena`: state, the lobby snapshot, the sweep that runs every 5 s
+    db.rs                 the SQLite database of accounts, sessions and records: the only
+                          place they are kept (`state` in mod.rs holds what is live)
     accounts.rs           accounts, passwords, sessions, bots and their API keys
     tables.rs matching.rs lobby tables; the automatch queue
     chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard
   src/rating.rs           Glicko-2 (pure)
   src/limits.rs           token-bucket rate limits (pure)
-  src/store.rs            the state directory: JSON files written atomically
+  src/store.rs            the state directory: its lock, a JSON file per game written atomically
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
 crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends

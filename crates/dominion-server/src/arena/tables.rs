@@ -2,7 +2,8 @@
 //! ready, and the game starts once every seat is taken and everyone is. Tables live in
 //! memory only: a restart empties the lobby, and the games go on.
 
-use super::{Arena, Error, Ident, Result, State, bad, conflict, limited};
+use super::db::Db;
+use super::{Arena, Error, Ident, Result, State, User, bad, conflict, limited};
 use crate::hub::{self, Meta, lock, seat_name};
 use dominion_protocol::api::{DealRequest, SeatToken};
 use dominion_protocol::lobby::{
@@ -57,18 +58,17 @@ impl Table {
         self.idle_since = Instant::now();
     }
 
-    pub(super) fn info(&self, state: &State) -> TableInfo {
-        let name = |id: &str| state.users.get(id).map(|u| u.name.clone());
+    pub(super) fn info(&self, state: &State, db: &Db) -> TableInfo {
         TableInfo {
             id: self.id.clone(),
-            host: name(&self.host).unwrap_or_default(),
+            host: db.user_ref(&self.host).map(|u| u.name).unwrap_or_default(),
             spec: self.spec.clone(),
             seats: (self.seats.iter())
                 .map(|seat| match seat {
                     Seat::Open => TableSeat::default(),
                     Seat::Player { user, ready } => TableSeat {
                         kind: SeatKind::Player,
-                        user: state.users.get(user).map(|u| state.user_ref(u)),
+                        user: db.user_ref(user),
                         name: None,
                         ready: *ready,
                         here: state.here(user),
@@ -141,9 +141,9 @@ fn check_seats(seats: &[Seat]) -> Result<()> {
 impl State {
     /// Takes `user` out of the table they sit at; the table goes with its last player,
     /// and the next one hosts when the host leaves.
-    pub(super) fn leave_table(&mut self, user: &str) -> Option<String> {
+    pub(super) fn leave_table(&mut self, db: &Db, user: &str) -> Option<String> {
         let id = self.seated.remove(user)?;
-        let name = self.users.get(user).map(|u| u.name.clone());
+        let name = db.user_ref(user).map(|u| u.name);
         let table = self.tables.get_mut(&id)?;
         for seat in &mut table.seats {
             if matches!(seat, Seat::Player { user: u, .. } if u == user) {
@@ -176,14 +176,14 @@ impl State {
     }
 
     /// Takes `user` out of the lobby: their table and their search.
-    pub(super) fn leave_all(&mut self, user: &str) {
-        self.leave_table(user);
+    pub(super) fn leave_all(&mut self, db: &Db, user: &str) {
+        self.leave_table(db, user);
         self.queue.retain(|e| e.user != user);
         self.matched.remove(user);
     }
 
     /// Removes the players who are gone from tables and the queue. Whether any were.
-    pub(super) fn drop_absent(&mut self) -> bool {
+    pub(super) fn drop_absent(&mut self, db: &Db) -> bool {
         let gone: Vec<String> = (self.tables.values())
             .filter(|t| t.game.is_none() && !t.starting && t.idle_since.elapsed() >= ABSENT)
             .flat_map(|t| t.players())
@@ -193,7 +193,7 @@ impl State {
             .map(str::to_string)
             .collect();
         for user in &gone {
-            self.leave_table(user);
+            self.leave_table(db, user);
         }
         let before = self.queue.len();
         let here: Vec<bool> = self.queue.iter().map(|e| self.here(&e.user)).collect();
@@ -235,7 +235,7 @@ impl Arena {
     fn table_info(&self, state: &State, id: &str) -> Result<TableInfo> {
         let table = state.tables.get(id);
         table
-            .map(|t| t.info(state))
+            .map(|t| t.info(state, &self.db))
             .ok_or_else(|| Error::NotFound(format!("there is no table {id}")))
     }
 
@@ -261,12 +261,12 @@ impl Arena {
         }
         check_seats(&seats)?;
         check_spec(&new.spec, seats.len())?;
+        self.user(&ident.user)?;
         let mut state = lock(&self.state);
-        state.user(&ident.user)?;
         if state.tables.len() >= MAX_TABLES {
             return conflict("the lobby is full of tables; join one");
         }
-        state.leave_all(&ident.user);
+        state.leave_all(&self.db, &ident.user);
         state.next_table += 1;
         let id = format!("t{}", state.next_table);
         let table = Table {
@@ -322,7 +322,7 @@ impl Arena {
                     seat_name(name).map_err(|e| Error::BadRequest(format!("a seat's name {e}")))?,
                 ),
                 SeatEdit::Player(name) => {
-                    let user = state.by_name(name).map(|u| u.id.clone());
+                    let user = self.db.user_by_name(name)?.map(|u| u.id);
                     let seat = old.iter().find(
                         |s| matches!(s, Seat::Player { user: u, .. } if Some(u) == user.as_ref()),
                     );
@@ -364,8 +364,8 @@ impl Arena {
     /// Sits `ident` down at a table: at seat `seat`, or the first open one.
     pub fn join_table(&self, ident: &Ident, id: &str, seat: Option<u8>) -> Result<TableInfo> {
         limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
+        let name = self.user(&ident.user)?.name;
         let mut state = lock(&self.state);
-        let name = state.user(&ident.user)?.name.clone();
         if state.seated.get(&ident.user).is_some_and(|t| t == id) {
             return self.table_info(&state, id);
         }
@@ -382,7 +382,7 @@ impl Arena {
                 None => return conflict("the table has no open seat"),
             },
         };
-        state.leave_all(&ident.user);
+        state.leave_all(&self.db, &ident.user);
         let table = state.table_of(id)?;
         if table.seats.get(at) != Some(&Seat::Open) {
             return conflict("the table has no open seat");
@@ -409,7 +409,7 @@ impl Arena {
 
     /// Takes `ident` out of the table they sit at.
     pub fn leave_table(&self, ident: &Ident) {
-        let left = lock(&self.state).leave_table(&ident.user);
+        let left = lock(&self.state).leave_table(&self.db, &ident.user);
         if left.is_some() {
             self.bump();
             self.chat.send_modify(|v| *v += 1);
@@ -466,8 +466,8 @@ impl Arena {
 
     fn starting(&self, state: &State, id: &str) -> Option<Start> {
         let table = state.tables.get(id)?;
-        let users: Vec<&super::User> = (table.players())
-            .filter_map(|u| state.users.get(u))
+        let users: Vec<User> = (table.players())
+            .filter_map(|u| self.db.user(u).ok().flatten())
             .collect();
         let mut banned: Vec<String> = vec![];
         if table.spec.respect_banned {
@@ -481,8 +481,8 @@ impl Arena {
             }
         }
         // A bot against its owner, or two bots of one owner, play for no rating.
-        let owner = |u: &super::User| u.owner().unwrap_or(&u.id).to_string();
-        let owners: std::collections::HashSet<String> = users.iter().map(|u| owner(u)).collect();
+        let owner = |u: &User| u.owner().unwrap_or(&u.id).to_string();
+        let owners: std::collections::HashSet<String> = users.iter().map(owner).collect();
         let rated = table.spec.rated
             && users.len() == table.seats.len()
             && owners.len() == users.len()
@@ -503,7 +503,7 @@ impl Arena {
             _ => None,
         });
         if let Some(user) = busy {
-            let name = lock(&self.state).user(&user).map(|u| u.name.clone());
+            let name = self.db.user_ref(&user).map(|u| u.name);
             return conflict(format!("{} is still in a game", name.unwrap_or_default()));
         }
         let request = deal_request(&start.spec, start.seats.len(), start.banned);
@@ -515,19 +515,16 @@ impl Arena {
         if start.spec.randomize_order {
             order.shuffle(&mut rand::rng());
         }
-        let (names, owners): (Vec<String>, Vec<Option<String>>) = {
-            let state = lock(&self.state);
-            (order.iter())
-                .map(|&i| match &start.seats[i] {
-                    Seat::Player { user, .. } => {
-                        let name = state.users.get(user).map(|u| u.name.clone());
-                        (name.unwrap_or_default(), Some(user.clone()))
-                    }
-                    Seat::Token(name) => (name.clone(), None),
-                    Seat::Open => (String::new(), None),
-                })
-                .unzip()
-        };
+        let (names, owners): (Vec<String>, Vec<Option<String>>) = (order.iter())
+            .map(|&i| match &start.seats[i] {
+                Seat::Player { user, .. } => {
+                    let name = self.db.user_ref(user).map(|u| u.name);
+                    (name.unwrap_or_default(), Some(user.clone()))
+                }
+                Seat::Token(name) => (name.clone(), None),
+                Seat::Open => (String::new(), None),
+            })
+            .unzip();
         if (1..names.len()).any(|i| {
             names[..i]
                 .iter()

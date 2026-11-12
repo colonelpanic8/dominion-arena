@@ -1,11 +1,7 @@
 //! Accounts, how they sign in, and what they keep: sessions, bots, the Banned list.
 
-use super::{
-    Arena, Error, Ident, Login, Result, SESSIONS, Session, State, USERS, User, bad, conflict,
-    limited,
-};
+use super::{Arena, Error, Ident, Login, Result, User, bad, conflict, limited};
 use crate::hub::{lock, now_ms};
-use crate::rating::Rating;
 use argon2::Argon2;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use dominion_engine::Card;
@@ -97,102 +93,36 @@ pub fn account_name(given: &str) -> Result<String> {
     Ok(name.to_string())
 }
 
-impl State {
-    fn free_name(&self, name: &str, but: Option<&str>) -> Result<()> {
-        match self.names.get(&name.to_lowercase()) {
-            Some(id) if Some(id.as_str()) != but => conflict(format!("the name {name} is taken")),
-            _ => Ok(()),
-        }
-    }
-
-    fn add_user(&mut self, name: String, login: Login) -> User {
-        self.next_user += 1;
-        let user = User {
-            id: format!("u{}", self.next_user),
-            name,
-            login,
-            created: now(),
-            rating: Rating::default(),
-            rated_games: 0,
-            games: 0,
-            wins: 0,
-            banned_cards: None,
-        };
-        self.names.insert(user.name.to_lowercase(), user.id.clone());
-        if let Login::Bot { key, .. } = &user.login {
-            self.keys.insert(key.clone(), user.id.clone());
-        }
-        self.users.insert(user.id.clone(), user.clone());
-        user
-    }
-
-    fn remove_user(&mut self, id: &str) -> Option<User> {
-        let user = self.users.remove(id)?;
-        self.names.remove(&user.name.to_lowercase());
-        if let Login::Bot { key, .. } = &user.login {
-            self.keys.remove(key);
-        }
-        self.presence.remove(id);
-        Some(user)
-    }
-}
-
 impl Arena {
-    fn start_session(&self, state: &mut State, user: &str) -> String {
-        let token = secret(32);
-        let session = Session {
-            user: user.to_string(),
-            created: now(),
-            seen: now(),
-        };
-        let key = sha256(&token);
-        if let Some(store) = &self.store
-            && let Err(e) = store.save(Some(SESSIONS), &key, &session)
-        {
-            eprintln!("dominion: saving a session: {e}");
+    fn taken(&self, name: &str, but: Option<&str>) -> Result<()> {
+        match self.db.name_free(name, but)? {
+            true => Ok(()),
+            false => conflict(format!("the name {name} is taken")),
         }
-        state.sessions.insert(key, session);
-        token
     }
 
-    fn end_session(&self, state: &mut State, key: &str) {
-        state.sessions.remove(key);
-        if let Some(store) = &self.store {
-            let _ = store.remove(Some(SESSIONS), key);
-        }
+    fn start_session(&self, user: &str) -> Result<String> {
+        let token = secret(32);
+        self.db.add_session(&sha256(&token), user, now())?;
+        Ok(token)
     }
 
     /// Who `token` is: a session's token or a bot's API key.
     pub fn identify(&self, token: &str) -> Option<Ident> {
         let key = sha256(token);
-        let mut state = lock(&self.state);
         if token.starts_with(KEY_PREFIX) {
-            let user = state.keys.get(&key)?.clone();
+            let user = self.db.bot_by_key(&key).ok()??;
             return Some(Ident { user, agent: true });
         }
-        let now = now();
-        let session = state.sessions.get_mut(&key)?;
-        let stale = now.saturating_sub(session.seen) >= DAY;
-        if stale {
-            session.seen = now;
-        }
-        let session = session.clone();
-        let Some(user) = state.users.get(&session.user) else {
-            self.end_session(&mut state, &key);
-            return None;
-        };
-        if stale && let Some(store) = &self.store {
-            let _ = store.save(Some(SESSIONS), &key, &session);
-        }
+        let (user, kind) = self.db.session(&key, now()).ok()??;
         Some(Ident {
-            user: user.id.clone(),
-            agent: user.kind() == UserKind::Bot,
+            user,
+            agent: kind == UserKind::Bot,
         })
     }
 
     pub fn me(&self, ident: &Ident) -> Result<Me> {
-        let state = lock(&self.state);
-        Ok(state.me(state.user(&ident.user)?))
+        self.me_of(&self.user(&ident.user)?)
     }
 
     /// A new account and a session for it. Asked by a guest, it is the guest's account
@@ -208,42 +138,26 @@ impl Arena {
             return Err(Error::Forbidden("this server takes no new accounts".into()));
         }
         check_password(&credentials.password)?;
-        let guest = current.filter(|i| {
-            let state = lock(&self.state);
-            state
-                .users
-                .get(&i.user)
-                .is_some_and(|u| u.kind() == UserKind::Guest)
-        });
-        let name = match (credentials.name.trim(), guest) {
-            ("", Some(guest)) => lock(&self.state).user(&guest.user)?.name.clone(),
+        let guest = current
+            .and_then(|i| self.db.user(&i.user).ok().flatten())
+            .filter(|u| u.kind() == UserKind::Guest);
+        let name = match (credentials.name.trim(), &guest) {
+            ("", Some(guest)) => guest.name.clone(),
             (name, _) => account_name(name)?,
         };
-        lock(&self.state).free_name(&name, guest.map(|g| g.user.as_str()))?;
+        self.taken(&name, guest.as_ref().map(|g| g.id.as_str()))?;
         limited(&self.limits.register, ip, "accounts registered from here")?;
         let hash = hash_password(&credentials.password)?;
-        let mut state = lock(&self.state);
-        state.free_name(&name, guest.map(|g| g.user.as_str()))?;
-        if let Some(guest) = guest
-            && let Some(mut user) = state.users.get(&guest.user).cloned()
-        {
-            state.names.remove(&user.name.to_lowercase());
-            user.name = name;
-            user.login = Login::Password(hash);
-            state
-                .names
-                .insert(user.name.to_lowercase(), user.id.clone());
-            state.users.insert(user.id.clone(), user.clone());
-            self.save_user(&user);
-            let me = state.me(&user);
-            drop(state);
+        if let Some(guest) = guest {
+            // The name is theirs unless someone took it meanwhile: then this fails.
+            self.db.make_registered(&guest.id, &name, &hash)?;
+            let me = self.me_of(&self.user(&guest.id)?)?;
             self.bump();
             return Ok((me, None));
         }
-        let user = state.add_user(name, Login::Password(hash));
-        self.save_user(&user);
-        let token = self.start_session(&mut state, &user.id);
-        Ok((state.me(&user), Some(token)))
+        let user = self.db.add_user(&name, &Login::Password(hash), now())?;
+        let token = self.start_session(&user.id)?;
+        Ok((self.me_of(&user)?, Some(token)))
     }
 
     /// A session for the account `credentials` name. This verifies a password: call it
@@ -256,24 +170,19 @@ impl Arena {
             name,
             "sign-in attempts for that name",
         )?;
-        let found = {
-            let state = lock(&self.state);
-            state
-                .by_name(&credentials.name)
-                .and_then(|u| match &u.login {
-                    Login::Password(hash) => Some((u.id.clone(), hash.clone())),
-                    _ => None,
-                })
-        };
+        let found = self.db.user_by_name(&credentials.name)?;
+        let hash = found.as_ref().and_then(|u| match &u.login {
+            Login::Password(hash) => Some(hash.clone()),
+            _ => None,
+        });
         // The same work whether or not the name is an account's.
-        let hash = found.as_ref().map_or(DUMMY_HASH, |(_, h)| h.as_str());
-        let right = verify_password(&credentials.password, hash);
-        let Some((id, _)) = found.filter(|_| right) else {
+        let known = hash.as_deref().unwrap_or(DUMMY_HASH);
+        let right = verify_password(&credentials.password, known) && hash.is_some();
+        let Some(user) = found.filter(|_| right) else {
             return Err(Error::Unauthorized("wrong name or password".into()));
         };
-        let mut state = lock(&self.state);
-        let token = self.start_session(&mut state, &id);
-        Ok((state.me(state.user(&id)?), token))
+        let token = self.start_session(&user.id)?;
+        Ok((self.me_of(&user)?, token))
     }
 
     /// A guest account and its session.
@@ -287,63 +196,48 @@ impl Arena {
             Some(name) => Some(account_name(name)?),
             None => None,
         };
-        let mut state = lock(&self.state);
         if let Some(name) = &name {
-            state.free_name(name, None)?;
+            self.taken(name, None)?;
         }
         limited(&self.limits.guest, ip, "guests from here")?;
-        let name = name.unwrap_or_else(|| {
-            let mut rng = rand::rng();
-            loop {
-                let name = format!("Guest {}", rng.random_range(1000..100_000));
-                if !state.names.contains_key(&name.to_lowercase()) {
-                    return name;
+        let user = match name {
+            Some(name) => self.db.add_user(&name, &Login::Guest, now())?,
+            None => loop {
+                let name = format!("Guest {}", rand::rng().random_range(1000..100_000));
+                match self.db.add_user(&name, &Login::Guest, now()) {
+                    Err(Error::Conflict(_)) => continue,
+                    made => break made?,
                 }
-            }
-        });
-        let user = state.add_user(name, Login::Guest);
-        self.save_user(&user);
-        let token = self.start_session(&mut state, &user.id);
-        Ok((state.me(&user), token))
+            },
+        };
+        let token = self.start_session(&user.id)?;
+        Ok((self.me_of(&user)?, token))
     }
 
     /// Ends the session `token` holds. A guest's account goes with its last session once
     /// its games are over ([`Arena::sweep`]).
     pub fn logout(&self, token: &str) {
-        let mut state = lock(&self.state);
-        self.end_session(&mut state, &sha256(token));
+        let _ = self.db.end_session(&sha256(token));
     }
 
     /// Replaces a password, which ends the account's other sessions. Hashes: call it off
     /// the async threads.
     pub fn set_password(&self, ident: &Ident, token: &str, current: &str, new: &str) -> Result<()> {
         check_password(new)?;
-        let hash = match &lock(&self.state).user(&ident.user)?.login {
-            Login::Password(hash) => hash.clone(),
+        let hash = match self.user(&ident.user)?.login {
+            Login::Password(hash) => hash,
             _ => return bad("this account has no password"),
         };
         if !verify_password(current, &hash) {
             return Err(Error::Unauthorized("wrong password".into()));
         }
-        let hash = hash_password(new)?;
-        let mut state = lock(&self.state);
-        let mut user = state.user(&ident.user)?.clone();
-        user.login = Login::Password(hash);
-        state.users.insert(user.id.clone(), user.clone());
-        self.save_user(&user);
-        let keep = sha256(token);
-        let others: Vec<String> = (state.sessions.iter())
-            .filter(|(key, s)| s.user == user.id && **key != keep)
-            .map(|(key, _)| key.clone())
-            .collect();
-        for key in others {
-            self.end_session(&mut state, &key);
-        }
-        Ok(())
+        self.db.set_password(&ident.user, &hash_password(new)?)?;
+        self.db.end_other_sessions(&ident.user, &sha256(token))
     }
 
-    fn owner(&self, state: &State, ident: &Ident) -> Result<String> {
-        match state.user(&ident.user)?.kind() {
+    /// The id of `ident`'s account, which may own bots.
+    fn owner(&self, ident: &Ident) -> Result<String> {
+        match self.user(&ident.user)?.kind() {
             UserKind::Registered => Ok(ident.user.clone()),
             _ => Err(Error::Forbidden(
                 "bots belong to registered accounts".into(),
@@ -355,16 +249,9 @@ impl Arena {
     /// which is shown this once.
     pub fn new_bot(&self, ident: &Ident, name: &str) -> Result<BotKey> {
         let name = account_name(name)?;
-        let mut state = lock(&self.state);
-        let owner = self.owner(&state, ident)?;
-        state.free_name(&name, None)?;
-        if state
-            .users
-            .values()
-            .filter(|u| u.owner() == Some(&owner))
-            .count()
-            >= MAX_BOTS
-        {
+        let owner = self.owner(ident)?;
+        self.taken(&name, None)?;
+        if self.db.bots_of(&owner)?.len() >= MAX_BOTS {
             return conflict(format!("an account has at most {MAX_BOTS} bots"));
         }
         let key = format!("{KEY_PREFIX}{}", secret(20));
@@ -372,41 +259,43 @@ impl Arena {
             owner,
             key: sha256(&key),
         };
-        let user = state.add_user(name, login);
-        self.save_user(&user);
-        let bot = state.user_ref(&user);
-        Ok(BotKey { bot, key })
+        let bot = self.db.add_user(&name, &login, now())?;
+        Ok(BotKey {
+            bot: self.user_ref(&bot),
+            key,
+        })
     }
 
-    fn bot_of(&self, state: &State, ident: &Ident, name: &str) -> Result<User> {
-        let owner = self.owner(state, ident)?;
-        (state.by_name(name))
+    fn bot_of(&self, ident: &Ident, name: &str) -> Result<User> {
+        let owner = self.owner(ident)?;
+        (self.db.user_by_name(name)?)
             .filter(|b| b.owner() == Some(&owner))
-            .cloned()
             .ok_or_else(|| Error::NotFound(format!("you have no bot named {name}")))
     }
 
     /// A new API key for a bot; the old one stops working.
     pub fn new_bot_key(&self, ident: &Ident, name: &str) -> Result<BotKey> {
-        let mut state = lock(&self.state);
-        let mut bot = self.bot_of(&state, ident, name)?;
+        let bot = self.bot_of(ident, name)?;
         let key = format!("{KEY_PREFIX}{}", secret(20));
-        if let Login::Bot { key: old, .. } = &mut bot.login {
-            state.keys.remove(old);
-            *old = sha256(&key);
-            state.keys.insert(old.clone(), bot.id.clone());
-        }
-        state.users.insert(bot.id.clone(), bot.clone());
-        self.save_user(&bot);
+        self.db.set_api_key(&bot.id, &sha256(&key))?;
         Ok(BotKey {
-            bot: state.user_ref(&bot),
+            bot: self.user_ref(&bot),
             key,
         })
     }
 
+    /// Deletes an account that is in no game, taking it out of the lobby.
+    fn delete_account(&self, id: &str) -> Result<()> {
+        let mut state = lock(&self.state);
+        state.leave_all(&self.db, id);
+        state.presence.remove(id);
+        drop(state);
+        self.db.delete_user(id)
+    }
+
     /// Deletes a bot that isn't in a game.
     pub fn delete_bot(&self, ident: &Ident, name: &str) -> Result<()> {
-        let bot = self.bot_of(&lock(&self.state), ident, name)?;
+        let bot = self.bot_of(ident, name)?;
         if !self
             .hub
             .seats_of(&bot.id, std::time::Duration::ZERO)
@@ -414,22 +303,15 @@ impl Arena {
         {
             return conflict(format!("{} is in a game", bot.name));
         }
-        let mut state = lock(&self.state);
-        state.leave_all(&bot.id);
-        state.remove_user(&bot.id);
-        if let Some(store) = &self.store {
-            let _ = store.remove(Some(USERS), &bot.id);
-        }
-        drop(state);
+        self.delete_account(&bot.id)?;
         self.bump();
         Ok(())
     }
 
     /// The Banned cards list that applies to `ident`: their own, else the server's.
     pub fn banned_cards(&self, ident: Option<&Ident>) -> Vec<String> {
-        let state = lock(&self.state);
-        ident
-            .and_then(|i| state.users.get(&i.user)?.banned_cards.clone())
+        let user = ident.and_then(|i| self.db.user(&i.user).ok().flatten());
+        user.and_then(|u| u.banned_cards)
             .unwrap_or_else(|| self.settings.banned_cards.clone())
     }
 
@@ -446,11 +328,8 @@ impl Arena {
                 cards.push(card.name().to_string());
             }
         }
-        let mut state = lock(&self.state);
-        let mut user = state.user(&ident.user)?.clone();
-        user.banned_cards = Some(cards.clone());
-        state.users.insert(user.id.clone(), user.clone());
-        self.save_user(&user);
+        self.user(&ident.user)?;
+        self.db.set_banned_cards(&ident.user, &cards)?;
         Ok(cards)
     }
 
@@ -458,36 +337,19 @@ impl Arena {
     /// without one whose games are over.
     pub(super) fn expire_sessions(&self) {
         let now = now();
-        let orphans: Vec<String> = {
-            let mut state = lock(&self.state);
-            let old: Vec<String> = (state.sessions.iter())
-                .filter(|(_, s)| {
-                    let guest =
-                        (state.users.get(&s.user)).is_none_or(|u| u.kind() == UserKind::Guest);
-                    let days = if guest { GUEST_DAYS } else { SESSION_DAYS };
-                    now.saturating_sub(s.seen) >= days * DAY
-                })
-                .map(|(key, _)| key.clone())
-                .collect();
-            for key in old {
-                self.end_session(&mut state, &key);
-            }
-            let state = &*state;
-            (state.users.values())
-                .filter(|u| u.kind() == UserKind::Guest && !state.here(&u.id))
-                .filter(|u| !state.sessions.values().any(|s| s.user == u.id))
-                .map(|u| u.id.clone())
-                .collect()
+        let before = |days: u64| now.saturating_sub(days * DAY);
+        let orphans = match self
+            .db
+            .expire_sessions(before(SESSION_DAYS), before(GUEST_DAYS))
+        {
+            Ok(orphans) => orphans,
+            Err(e) => return eprintln!("dominion: expiring sessions: {e}"),
         };
         for id in orphans {
-            if !self.hub.seats_of(&id, std::time::Duration::ZERO).is_empty() {
-                continue;
-            }
-            let mut state = lock(&self.state);
-            state.leave_all(&id);
-            state.remove_user(&id);
-            if let Some(store) = &self.store {
-                let _ = store.remove(Some(USERS), &id);
+            let around = lock(&self.state).here(&id)
+                || !self.hub.seats_of(&id, std::time::Duration::ZERO).is_empty();
+            if !around && let Err(e) = self.delete_account(&id) {
+                eprintln!("dominion: deleting guest {id}: {e}");
             }
         }
     }

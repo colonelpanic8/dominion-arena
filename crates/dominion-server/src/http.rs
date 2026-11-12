@@ -301,6 +301,7 @@ impl From<arena::Error> for Error {
             arena::Error::Forbidden(_) => StatusCode::FORBIDDEN,
             arena::Error::NotFound(_) => StatusCode::NOT_FOUND,
             arena::Error::Conflict(_) => StatusCode::CONFLICT,
+            arena::Error::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
             arena::Error::TooMany(_, wait) => {
                 return Error {
                     status: StatusCode::TOO_MANY_REQUESTS,
@@ -1011,7 +1012,7 @@ struct ListQuery {
 
 async fn leaderboard(State(api): State<Api>, list: Queried<ListQuery>) -> Json<Leaderboard> {
     let limit = query(list)?.limit.unwrap_or(50);
-    Ok(axum::Json(api.arena.leaderboard(limit)))
+    Ok(axum::Json(api.arena.leaderboard(limit)?))
 }
 
 async fn history(State(api): State<Api>, list: Queried<ListQuery>) -> Json<History> {

@@ -3,12 +3,17 @@
 //! the [`Hub`]'s; a lobby game's seats are still played by seat token, which their
 //! accounts are handed.
 //!
-//! Lock order: `state`, then anything of the hub's. The hub calls back (a game ended,
-//! naming accounts) with no lock of its own held, and those callbacks lock `state`, so no
-//! hub method that calls back is called with `state` locked.
+//! Accounts, sessions and records are the database's ([`db`]); `state` holds only what
+//! is live: tables, the queue, who is connected, chat.
+//!
+//! Lock order: `state`, then the database, then anything of the hub's. The hub calls
+//! back (a game ended, naming accounts) with no lock of its own held; the first of those
+//! callbacks locks `state`, so no hub method that can end a game is called with `state`
+//! locked.
 
 mod accounts;
 mod chat;
+mod db;
 mod matching;
 mod records;
 mod tables;
@@ -16,11 +21,10 @@ mod tables;
 use crate::hub::{Hub, HubError, Timing, lock, now_ms};
 use crate::limits::Limiter;
 use crate::rating::Rating;
-use crate::store::Store;
+use db::Db;
 use dominion_protocol::lobby::{
-    ChatMessage, GameRecord, Lobby, Me, RatingInfo, Searching, Stats, UserKind, UserRef,
+    ChatMessage, Lobby, Me, RatingInfo, Searching, Stats, UserKind, UserRef,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, Weak};
@@ -45,6 +49,9 @@ pub enum Error {
     /// Too many of something lately; try again after the duration.
     #[error("{0}")]
     TooMany(String, Duration),
+    /// The database failed.
+    #[error("the server could not read or keep its records ({0})")]
+    Storage(String),
     #[error(transparent)]
     Hub(#[from] HubError),
 }
@@ -99,7 +106,7 @@ pub struct Ident {
     pub agent: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 enum Login {
     /// An argon2 hash in PHC form.
     Password(String),
@@ -111,23 +118,18 @@ enum Login {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// An account, as the database has it.
+#[derive(Clone, Debug)]
 struct User {
+    /// `u<row>`.
     id: String,
     name: String,
     login: Login,
-    /// Seconds since the Unix epoch.
-    created: u64,
-    #[serde(default)]
     rating: Rating,
-    #[serde(default)]
     rated_games: u32,
-    #[serde(default)]
     games: u32,
-    #[serde(default)]
     wins: u32,
     /// Their own Banned cards list, once they have set one.
-    #[serde(default)]
     banned_cards: Option<Vec<String>>,
 }
 
@@ -163,15 +165,6 @@ impl User {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Session {
-    user: String,
-    /// Seconds since the Unix epoch.
-    created: u64,
-    /// When it was last used, as last saved: kept to the day.
-    seen: u64,
-}
-
 /// Who is connected: lobby feeds and waiting agents count as streams.
 struct Presence {
     streams: u32,
@@ -183,24 +176,8 @@ struct Chat {
     messages: VecDeque<ChatMessage>,
 }
 
-/// A finished game's record with the accounts that played it.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Stored {
-    record: GameRecord,
-    /// Per player of the record: the account's id.
-    users: Vec<Option<String>>,
-}
-
 #[derive(Default)]
 struct State {
-    users: BTreeMap<String, User>,
-    /// Lowercased name to id.
-    names: HashMap<String, String>,
-    /// API key hash to bot id.
-    keys: HashMap<String, String>,
-    /// Session token hash to session.
-    sessions: HashMap<String, Session>,
-    next_user: u64,
     tables: BTreeMap<String, tables::Table>,
     next_table: u64,
     /// The table each account sits at.
@@ -210,45 +187,9 @@ struct State {
     matched: HashMap<String, matching::Matched>,
     presence: HashMap<String, Presence>,
     chats: HashMap<String, Chat>,
-    /// Oldest first.
-    history: Vec<Stored>,
 }
 
 impl State {
-    fn user(&self, id: &str) -> Result<&User> {
-        self.users
-            .get(id)
-            .ok_or_else(|| Error::Unauthorized("that account no longer exists".into()))
-    }
-
-    fn user_ref(&self, user: &User) -> UserRef {
-        UserRef {
-            name: user.name.clone(),
-            kind: user.kind(),
-            rating: (user.rated_games > 0).then(|| user.rating.rating.round() as i32),
-            owner: user
-                .owner()
-                .and_then(|o| self.users.get(o))
-                .map(|o| o.name.clone()),
-        }
-    }
-
-    fn by_name(&self, name: &str) -> Option<&User> {
-        self.users.get(self.names.get(&name.trim().to_lowercase())?)
-    }
-
-    fn me(&self, user: &User) -> Me {
-        Me {
-            user: self.user_ref(user),
-            rating: user.rating_info(),
-            stats: user.stats(),
-            bots: (self.users.values())
-                .filter(|b| b.owner() == Some(&user.id))
-                .map(|b| self.user_ref(b))
-                .collect(),
-        }
-    }
-
     fn here(&self, user: &str) -> bool {
         self.presence
             .get(user)
@@ -303,7 +244,7 @@ fn limited<K: std::hash::Hash + Eq>(limiter: &Limiter<K>, key: K, what: &str) ->
 
 pub struct Arena {
     pub hub: Arc<Hub>,
-    store: Option<Arc<Store>>,
+    db: Db,
     settings: Settings,
     state: Mutex<State>,
     /// Bumped whenever what `Arena::lobby` returns may have changed.
@@ -335,61 +276,22 @@ impl Drop for Attendance {
     }
 }
 
-const USERS: &str = "users";
-const SESSIONS: &str = "sessions";
-const HISTORY: &str = "history";
-
 impl Arena {
-    /// The accounts and records kept with `hub`'s games (nothing is kept if it keeps
-    /// none), with the hub told about them.
+    /// The accounts and records kept with `hub`'s games (in memory if it keeps none),
+    /// with the hub told about them.
     pub fn open(hub: Arc<Hub>, settings: Settings) -> std::io::Result<Arc<Arena>> {
         let store = hub.store();
-        let mut state = State::default();
-        if let Some(store) = &store {
-            for (key, user) in store.load::<User>(USERS)? {
-                match user {
-                    Ok(user) if user.id == key => {
-                        let n = key.strip_prefix('u').and_then(|n| n.parse().ok());
-                        state.next_user = state.next_user.max(n.unwrap_or(0));
-                        state.names.insert(user.name.to_lowercase(), key.clone());
-                        if let Login::Bot { key: hash, .. } = &user.login {
-                            state.keys.insert(hash.clone(), key.clone());
-                        }
-                        state.users.insert(key, user);
-                    }
-                    Ok(_) => eprintln!("dominion: skipping account file {key}: it holds another"),
-                    Err(e) => eprintln!("dominion: skipping account file {key}: {e}"),
-                }
-            }
-            for (key, session) in store.load::<Session>(SESSIONS)? {
-                match session {
-                    Ok(s) if state.users.contains_key(&s.user) => {
-                        state.sessions.insert(key, s);
-                    }
-                    _ => store.remove(Some(SESSIONS), &key)?,
-                }
-            }
-            for (key, stored) in store.load::<Stored>(HISTORY)? {
-                match stored {
-                    Ok(stored) => state.history.push(stored),
-                    Err(e) => eprintln!("dominion: skipping game record {key}: {e}"),
-                }
-            }
-            state.history.sort_by_key(|s| s.record.ended);
-        }
+        let failed = |e: Error| std::io::Error::other(e.to_string());
+        let db = Db::open(store.as_deref().map(|s| s.dir())).map_err(failed)?;
         // A finished game's id stays its record's, after the game itself is deleted.
-        let recorded = state.history.iter();
-        let last = recorded
-            .filter_map(|s| s.record.game_id.strip_prefix('g')?.parse().ok())
-            .max();
-        hub.reserve_ids(last.unwrap_or(0));
+        hub.reserve_ids(db.last_game_number().map_err(failed)?);
         hub.set_timing(settings.timing);
         hub.set_max_games(settings.max_games);
         let arena = Arc::new(Arena {
             hub: hub.clone(),
-            store,
+            db,
             settings,
-            state: Mutex::new(state),
+            state: Mutex::default(),
             lobby: watch::channel(0).0,
             chat: watch::channel(0).0,
             limits: Limits::default(),
@@ -426,23 +328,34 @@ impl Arena {
         (self.lobby.subscribe(), self.chat.subscribe())
     }
 
-    fn save_user(&self, user: &User) {
-        if let Some(store) = &self.store
-            && let Err(e) = store.save(Some(USERS), &user.id, user)
-        {
-            eprintln!("dominion: saving account {}: {e}", user.id);
-        }
+    /// Account `id`, which whoever asks is signed in as.
+    fn user(&self, id: &str) -> Result<User> {
+        let gone = || Error::Unauthorized("that account no longer exists".into());
+        self.db.user(id)?.ok_or_else(gone)
+    }
+
+    fn user_ref(&self, user: &User) -> UserRef {
+        self.db.user_ref(&user.id).unwrap_or_else(|| UserRef {
+            name: user.name.clone(),
+            kind: user.kind(),
+            rating: None,
+            owner: None,
+        })
+    }
+
+    fn me_of(&self, user: &User) -> Result<Me> {
+        let bots = self.db.bots_of(&user.id)?;
+        Ok(Me {
+            user: self.user_ref(user),
+            rating: user.rating_info(),
+            stats: user.stats(),
+            bots: bots.iter().map(|b| self.user_ref(b)).collect(),
+        })
     }
 
     fn user_refs(&self, owners: &[Option<String>]) -> Vec<Option<UserRef>> {
-        let state = lock(&self.state);
-        owners
-            .iter()
-            .map(|o| {
-                let user = state.users.get(o.as_deref()?)?;
-                Some(state.user_ref(user))
-            })
-            .collect()
+        let who = |owner: &Option<String>| self.db.user_ref(owner.as_deref()?);
+        owners.iter().map(who).collect()
     }
 
     /// Counts `ident` as connected until the result is dropped.
@@ -472,28 +385,32 @@ impl Arena {
             Some(ident) => self.hub.seats_of(&ident.user, Duration::from_secs(3600)),
             None => vec![],
         };
+        let user = ident.and_then(|i| self.db.user(&i.user).ok().flatten());
+        let you = user.as_ref().and_then(|u| self.me_of(u).ok());
         let version = *self.lobby.borrow();
         let mut state = lock(&self.state);
-        if let Some(ident) = ident {
-            state.touch(&ident.user);
+        if let Some(user) = &user {
+            state.touch(&user.id);
         }
         let state = &*state;
-        let user = ident.and_then(|i| state.users.get(&i.user));
         let agents = state.queue.iter().filter(|e| e.agent).count() as u32;
+        let mine = user.as_ref().map(|u| u.id.as_str());
         Lobby {
             version,
-            you: user.map(|u| state.me(u)),
+            you,
             online: state.presence.keys().filter(|u| state.here(u)).count() as u32,
             searching: Searching {
                 humans: state.queue.len() as u32 - agents,
                 agents,
             },
-            tables: state.tables.values().map(|t| t.info(state)).collect(),
-            table: user.and_then(|u| {
-                let table = state.tables.get(state.seated.get(&u.id)?)?;
-                Some(table.mine(&u.id))
+            tables: (state.tables.values())
+                .map(|t| t.info(state, &self.db))
+                .collect(),
+            table: mine.and_then(|id| {
+                let table = state.tables.get(state.seated.get(id)?)?;
+                Some(table.mine(id))
             }),
-            queue: user.and_then(|u| state.queue_status(&u.id)),
+            queue: mine.and_then(|id| state.queue_status(id)),
             games,
         }
     }
@@ -506,7 +423,7 @@ impl Arena {
         }
         let changed = {
             let mut state = lock(&self.state);
-            let left = state.drop_absent();
+            let left = state.drop_absent(&self.db);
             let seen = state.forget_matches();
             left || seen
         };

@@ -218,9 +218,13 @@ names another site as its `Origin` is refused. The server hosts at most `max_gam
 unfinished games; finished ones are deleted after `keep_finished_days`, unfinished ones
 nobody has touched after `keep_idle_days`.
 
-Accounts, sessions and records are kept beside the games: `users/`, `sessions/` and
-`history/` under `state_dir`. The Banned cards list is each account's own; `banned_cards`
-in the settings file is the list of everyone who hasn't set theirs.
+Accounts, sessions and finished games' records are kept in a SQLite database beside the
+games, `dominion.sqlite` under `state_dir` (in memory with `--ephemeral`): a game's
+record and what it does to its players' ratings and tallies are written together or not
+at all, and a server that stopped in between finds the record there when it starts again.
+Tables, searches and chat are the running server's only. The Banned cards list is each
+account's own; `banned_cards` in the settings file is the list of everyone who hasn't
+set theirs.
 
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 

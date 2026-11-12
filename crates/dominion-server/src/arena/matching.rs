@@ -116,9 +116,9 @@ impl Arena {
         if self.hub.in_timed_game(&ident.user) {
             return conflict("finish or resign the game you are in first");
         }
+        let user = self.user(&ident.user)?;
         let mut state = lock(&self.state);
-        let user = state.user(&ident.user)?.clone();
-        state.leave_all(&user.id);
+        state.leave_all(&self.db, &user.id);
         state.touch(&user.id);
         let entry = Entry {
             owner: user.owner().unwrap_or(&user.id).to_string(),
@@ -198,12 +198,9 @@ impl Arena {
             ..DealRequest::default()
         };
         let (config, _) = hub::deal_config(&request)?;
-        let names: Vec<String> = {
-            let state = lock(&self.state);
-            (group.iter())
-                .map(|e| state.user(&e.user).map(|u| u.name.clone()))
-                .collect::<Result<_>>()?
-        };
+        let names: Vec<String> = (group.iter())
+            .map(|e| self.user(&e.user).map(|u| u.name))
+            .collect::<Result<_>>()?;
         let meta = Meta {
             source: Source::Automatch,
             owners: group.iter().map(|e| Some(e.user.clone())).collect(),

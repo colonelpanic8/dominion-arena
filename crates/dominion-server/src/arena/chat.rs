@@ -59,8 +59,8 @@ impl Arena {
     /// (`table-<id>`).
     pub fn say(&self, ident: &Ident, channel: &str, text: &str) -> Result<()> {
         let text = line(text)?;
+        let name = self.user(&ident.user)?.name;
         let mut state = lock(&self.state);
-        let name = state.user(&ident.user)?.name.clone();
         let seated = state.seated.get(&ident.user);
         let allowed = channel == "lobby"
             || channel
@@ -96,6 +96,6 @@ impl Arena {
 
     /// The name `ident` speaks under.
     pub fn name_of(&self, ident: &Ident) -> Result<String> {
-        Ok(lock(&self.state).user(&ident.user)?.name.clone())
+        Ok(self.user(&ident.user)?.name)
     }
 }

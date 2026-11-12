@@ -29,6 +29,7 @@ futures-util = "0.3"
 rand.workspace = true
 argon2 = "0.5"
 sha2 = "0.10"
+rusqlite = { version = "0.37", features = ["bundled"] }
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [lints]
