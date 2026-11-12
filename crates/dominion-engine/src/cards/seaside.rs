@@ -473,6 +473,7 @@ fn blockade(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
+                && g.gained(f.player, c).is_some()
                 && g.zone(c) == Zone::SetAside(f.player)
             {
                 let data = Scratch {

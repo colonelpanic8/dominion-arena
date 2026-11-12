@@ -2591,7 +2591,7 @@ fn lich_trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            if g.zone(this) == Zone::Trash {
+            if g.still_where_trashed(this) {
                 return Flow::Call(Frame::discard(p, vec![this]));
             }
             Flow::Continue

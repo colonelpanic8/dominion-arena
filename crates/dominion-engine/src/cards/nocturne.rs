@@ -165,7 +165,7 @@ impl SetRules for Rules {
             }
             (Card::FaithfulHound, Hook::Ability(HOUND_SET_ASIDE)) => {
                 let (c, p) = (f.this(), f.player);
-                if g.zone(c) == Zone::Discard(p) {
+                if g.still_where_discarded(c) {
                     g.set_aside(c, p);
                     let data = Scratch {
                         pick: Some(c),
@@ -331,7 +331,7 @@ impl SetRules for Rules {
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
             Occasion::Discard { player, card } => {
                 if g.card(card) == Card::FaithfulHound
-                    && g.zone(card) == Zone::Discard(player)
+                    && g.still_where_discarded(card)
                     && g.turn.phase != Phase::Cleanup
                 {
                     out.push(

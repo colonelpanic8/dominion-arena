@@ -1183,16 +1183,6 @@ fn cabin_boy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
-/// Whether an effect other than a Quartermaster holds set-aside card `c`: one that set it
-/// aside again as it was gained (Hasty, Rapid Expansion, ...), so it is no longer on the
-/// Quartermaster. A lasting the card made itself (Farmhands setting another card aside)
-/// does not hold it.
-fn held_elsewhere(g: &Game, c: CardId) -> bool {
-    g.lasting().iter().any(|l| {
-        l.card != Card::Quartermaster && (l.data.pick == Some(c) || l.data.cards.contains(&c))
-    })
-}
-
 fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     let this = f.this();
@@ -1241,8 +1231,8 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         4 => {
             if let Some(c) = input.card()
+                && g.gained(p, c).is_some()
                 && g.zone(c) == Zone::SetAside(p)
-                && !held_elsewhere(g, c)
                 && let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id))
             {
                 l.data.cards.push(c);

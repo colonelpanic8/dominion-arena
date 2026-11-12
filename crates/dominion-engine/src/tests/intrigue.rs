@@ -522,6 +522,31 @@ fn pawn_picks_two_different_options() {
     assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
 }
 
+/// Replace's page: "Replace will also fail to move a card if it moves away, and then
+/// moves back to the same place. For example, if you gain an Experiment, Exile it with
+/// Gatekeeper, then gain the second Experiment and discard the first Experiment from
+/// Exile, Replace will still fail to topdeck the Experiment, even though it's still in
+/// your discard pile."
+#[test]
+fn replace_cannot_topdeck_a_card_that_left_the_discard_pile_and_came_back() {
+    let mut g = setup(&[Card::Replace, Card::Gatekeeper, Card::Experiment]);
+    hand(&mut g, P0, &[Card::Replace, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(&mut g, P0, &[]);
+    hand(&mut g, P1, &[Card::Gatekeeper]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Gatekeeper);
+    play(&mut g, Card::Replace);
+    choose_pile(&mut g, Card::Experiment);
+    // The first Experiment is Exiled, then gains the second, which brings it back.
+    trigger(&mut g, Card::Gatekeeper);
+    assert_eq!(g.player(P0).mat(crate::game::Mat::Exile).len(), 1);
+    trigger_labelled(&mut g, "Exile");
+    assert_eq!(g.player(P0).mat(crate::game::Mat::Exile).len(), 0);
+    assert_eq!(discard_kinds(&g, P0), [Card::Experiment, Card::Experiment]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Copper]);
+}
+
 #[test]
 fn replace_topdecks_actions_and_curses_for_victory_cards() {
     let mut g = setup(&[Card::Replace, Card::Moat]);

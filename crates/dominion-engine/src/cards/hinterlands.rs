@@ -431,13 +431,13 @@ impl SetRules for Rules {
             }
             Occasion::Trash { player, card } => match g.card(card) {
                 Card::Nomads => out.push(Trigger::new(player, Card::Nomads, GAINED).on(card)),
-                Card::Trail if not_cleanup && g.zone(card) == Zone::Trash => {
+                Card::Trail if not_cleanup && g.still_where_trashed(card) => {
                     out.push(Trigger::new(player, Card::Trail, REACT_PLAY).on(card).optional("play it"));
                 }
                 _ => {}
             },
             Occasion::Discard { player, card } => {
-                if !not_cleanup || g.zone(card) != Zone::Discard(player) {
+                if !not_cleanup || !g.still_where_discarded(card) {
                     return;
                 }
                 match g.card(card) {
@@ -1047,9 +1047,7 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             1 => {
                 let revealed = input.take().map(Input::cards).unwrap_or_default();
-                let m = f.s.m as usize;
-                f.s.cards.truncate(m);
-                f.s.cards.extend(&revealed);
+                f.s.cards = revealed.clone();
                 f.s.n = revealed.iter().any(|&c| g.is(c, Types::TREASURE)) as i32;
                 f.s.pick = None;
                 let loot: Vec<CardId> = revealed
@@ -1071,11 +1069,9 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             3 => {
                 let t = f.targets[f.s.i];
-                let m = f.s.m as usize;
-                let revealed = f.s.cards.split_off(m);
+                let revealed = std::mem::take(&mut f.s.cards);
                 if let Some(c) = f.s.pick.take() {
-                    f.s.cards.push(c);
-                    f.s.m += 1;
+                    f.s.placed.extend(g.put(c));
                 }
                 let rest = looking(g, t, &revealed);
                 f.pc = 4;
@@ -1094,12 +1090,12 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 0;
             }
             _ => {
-                let Some(&c) = f.s.cards.get(f.s.i) else {
+                let Some(&trashed) = f.s.placed.get(f.s.i) else {
                     return Flow::done();
                 };
                 f.s.i += 1;
-                if g.zone(c) == Zone::Trash {
-                    return Flow::Call(Frame::gain_card(f.player, c, Dest::Discard));
+                if g.still(trashed) {
+                    return Flow::Call(Frame::gain_card(f.player, trashed.card, Dest::Discard));
                 }
             }
         }

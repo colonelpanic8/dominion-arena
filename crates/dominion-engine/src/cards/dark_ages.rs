@@ -415,7 +415,7 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::draw(p, 1))
         }
         Card::Fortress => {
-            if g.zone(this) == Zone::Trash {
+            if g.still_where_trashed(this) {
                 g.put_in_hand(this, p);
             }
             Flow::done()
@@ -735,13 +735,16 @@ fn play_twice_and_trash(g: &mut Game, f: &mut CardFrame, input: Input, types: Ty
         2 => {
             f.pc = 3;
             let c = f.s.pick.expect("set in step 1");
+            f.s.placed.extend(g.put(c));
             Flow::Call(Frame::play(p, c, false, f.chain_for_child()))
         }
         3 => {
             f.pc = 4;
-            let c = f.s.pick.expect("set in step 1");
-            if g.zone(c) == Zone::InPlay(p) {
-                return Flow::Call(Frame::trash(p, vec![c]));
+            // In play since the first play put it there.
+            if let Some(&played) = f.s.placed.first()
+                && g.still(played)
+            {
+                return Flow::Call(Frame::trash(p, vec![played.card]));
             }
             Flow::Continue
         }

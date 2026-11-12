@@ -1,4 +1,4 @@
-use super::intrigue::{modes, random_games_with_copies, trigger};
+use super::intrigue::{modes, random_games_with_copies, trigger, trigger_labelled};
 use super::*;
 
 fn discard_kinds(g: &Game, p: PlayerId) -> Vec<Card> {
@@ -927,6 +927,39 @@ fn summon_loses_track_of_a_card_royal_seal_put_onto_the_deck() {
     assert_eq!(g.player(P0).set_aside, []);
     // P0's turn is over: the Smithy was drawn from the deck.
     assert!(hand_kinds(&g, P0).contains(&Card::Smithy));
+    finish_turn(&mut g);
+    assert_eq!(g.turn().played, []);
+}
+
+/// Summon's page: "Summon will also fail to move a card if it moves away, and then moves
+/// back to the same place. For example, if you gain an Experiment, Exile it to
+/// Gatekeeper, then gain the second Experiment and discard the first Experiment from
+/// Exile, Summon will still fail to set aside the Experiment, even though it's still in
+/// your discard pile."
+#[test]
+fn summon_cannot_set_aside_a_card_that_left_the_discard_pile_and_came_back() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Summon],
+        ..GameConfig::new(2, vec![Card::Gatekeeper, Card::Experiment], 7)
+    });
+    hand(&mut g, P0, &[Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    discard(&mut g, P0, &[]);
+    hand(&mut g, P1, &[Card::Gatekeeper]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Gatekeeper);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    // Experiment is the only Action costing up to $4, so it is gained without asking.
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Summon)));
+    trigger(&mut g, Card::Gatekeeper);
+    assert_eq!(g.player(P0).mat(crate::game::Mat::Exile).len(), 1);
+    trigger_labelled(&mut g, "Exile");
+    assert_eq!(g.player(P0).mat(crate::game::Mat::Exile).len(), 0);
+    assert_eq!(g.player(P0).set_aside, []);
+    assert_eq!(g.count_owned(P0, Card::Experiment), 2);
     finish_turn(&mut g);
     assert_eq!(g.turn().played, []);
 }
