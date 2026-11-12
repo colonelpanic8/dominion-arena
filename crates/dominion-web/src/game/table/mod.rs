@@ -752,12 +752,11 @@ pub fn TableGame(controls: Element) -> Element {
     }
 }
 
-/// Nothing has happened yet: every player still owns just their starting cards, and
-/// nothing is in play or in the trash.
+/// Nothing has happened yet: every player still owns just their starting cards, with
+/// nothing in play or discarded. (The trash may start with cards: Necromancer's Zombies.)
 fn at_start(b: &Board) -> bool {
     b.status.running
         && b.play_area.cards.count == 0
-        && b.trash.count == 0
         && b.you.as_ref().is_some_and(|y| y.owned.count > 0)
         && b.you.iter().chain(&b.opponents).all(|p| {
             p.in_play.count == 0 && p.owned.count == STARTING_CARDS && p.discard.count == 0
