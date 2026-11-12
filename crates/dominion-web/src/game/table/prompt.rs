@@ -298,8 +298,8 @@ pub fn Buttons(
     // With abilities to choose from, every button joins their column at the right.
     if !side.is_empty() {
         rows.clear();
-        for i in 0..row.len() {
-            let w = width(&row[i]);
+        for (i, b) in row.iter().enumerate() {
+            let w = width(b);
             let y = g.side_top + (side.len() + i) as f64 * (bh + g.vh);
             placed.push((i, Rect::new(g.side_right - w, y, w, bh)));
         }
