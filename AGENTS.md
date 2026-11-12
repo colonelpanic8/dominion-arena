@@ -187,9 +187,7 @@ them.
   the deck, is the shuffled ones still in it; "when you shuffle" placements such as Stash,
   Star Chart and Fated resolve there, under any cards left on the deck). A draw, look or
   reveal that needs more cards than the deck holds shuffles first and then takes them all
-  (for a draw the -1 Card token counts as a card); one draw shuffles at most once. A
-  script step that must draw before its own flow goes on calls the draw and
-  `CardFrame::hold`s that flow (Way of the Chameleon).
+  (for a draw the -1 Card token counts as a card); one draw shuffles at most once.
 - **Looking and revealing** (`Frame::look` / `Frame::reveal`, the only way to take cards
   from the top of a deck to look at or reveal): the cards go to `Zone::Looking` of the
   deck's owner, off the deck, held (`Game::holds`) for the frame that called it, face up
@@ -199,6 +197,16 @@ them.
   a card the text keeps "on the deck" before the effect draws, looks or shuffles again
   is put back at once. Reveal-until scripts keep what they reveal there too (set aside
   only what the text sets aside).
+- **Way of the Chameleon** exchanges what the card's own instructions give its player
+  as +Cards and +$ during the turn of that play, and nothing else. Its frame gives the
+  vanilla bonuses exchanged and runs the card's `Hook::Main` marked
+  `CardFrame::exchange`; the lasting effects a step of an exchanged ability makes are
+  listed for the turn (`menagerie::State::chameleon_effects`), and their abilities are
+  exchanged until that turn ends, even once the lasting has. While a step of such an
+  ability runs, `g.add_coins` for that player counts the $ instead of giving it
+  (`Game::coins_as_cards`); after the step those cards are drawn, and the step's flow
+  waits for the draw (`CardFrame::hold`). A `Frame::draw` the step returns for a card
+  whose text says "+N Cards" beyond its vanilla bonus becomes +$.
 - **Decisions** are generic: `Turn { moves }`, `Cards`, `Pile`, `Choose` (options such as
   `Opt::Yes`, `Opt::Mode(i)`, `Opt::Card`, `Opt::Trigger`), `NameCard`, `Number`. Each
   carries a `Purpose` and its `source` card. Never add a card-specific decision kind.
@@ -277,6 +285,12 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   `g.add_actions(p, n)` and `g.add_buys(p, n)`: all three do nothing for a player whose
   turn it isn't, so never add to `g.turn` directly. Decisions are asked with the
   `CardFrame::ask_*` helpers.
+- Way of the Chameleon makes a script's `g.add_coins` a draw that happens when the step
+  returns, before the step's flow. So give +$ where the card's text does (after the
+  discard of "discard 2 cards for +$2"), unconditionally (no test of whose turn it is),
+  and end the step there (`Flow::Continue`) if the script goes on to list or move cards
+  of the player's hand, deck or discard pile. "+N Cards" is a `Frame::draw` the script
+  returns as its flow; $ that isn't "+$" (Fortune's doubling) is `g.get_coins`.
 - "Draw until you have N cards in hand" is `Frame::draw_to(p, n)`, never a draw of
   `n - hand`: the -1 Card token replaces a draw without making the hand smaller.
 - Set cards aside face up with `g.set_aside` (or `g.set_aside_revealed` for a card

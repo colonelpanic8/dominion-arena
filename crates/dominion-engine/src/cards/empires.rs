@@ -277,7 +277,7 @@ impl SetRules for Rules {
                         Until::EndOfTurn,
                         Scratch::default(),
                     );
-                    g.add_coins(p, g.turn.coins);
+                    g.get_coins(p, g.turn.coins);
                 }
                 Flow::done()
             }

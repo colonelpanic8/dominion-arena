@@ -474,6 +474,10 @@ pub struct Game {
     #[serde(default)]
     pub(crate) emptied_depth: usize,
     pub(crate) ext: Ext,
+    /// While a step of an ability runs whose +$ its player gets as +Cards instead (Way of
+    /// the Chameleon): that player, and the +$ the step has given so far.
+    #[serde(skip)]
+    pub(crate) coins_as_cards: Option<(PlayerId, u32)>,
     pub(crate) stack: Vec<Frame>,
     pub(crate) pending: Option<Decision>,
     pub(crate) rng: ChaCha8Rng,
@@ -962,6 +966,7 @@ impl Game {
             holds: vec![],
             emptied_depth: 0,
             ext: self.ext.clone(),
+            coins_as_cards: None,
             stack: vec![],
             pending: None,
             rng: self.rng.clone(),
@@ -1241,6 +1246,18 @@ impl Game {
 
     /// +$, respecting the -$1 token.
     pub(crate) fn add_coins(&mut self, p: PlayerId, n: u32) {
+        if let Some((q, coins)) = &mut self.coins_as_cards
+            && *q == p
+        {
+            *coins += n;
+            return;
+        }
+        self.get_coins(p, n);
+    }
+
+    /// $ that isn't "+$" (Fortune's doubling): the -$1 token applies, and nothing
+    /// exchanges it for cards.
+    pub(crate) fn get_coins(&mut self, p: PlayerId, n: u32) {
         if n == 0 {
             return;
         }

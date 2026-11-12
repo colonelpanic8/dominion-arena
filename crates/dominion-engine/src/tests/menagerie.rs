@@ -2195,6 +2195,422 @@ fn way_of_the_chameleon_leaves_the_minus_coin_token_for_cards() {
     assert!(g.player(P0).minus_coin);
 }
 
+/// The -1 Card token stays when +Cards become +$, the -$1 token applies to those $, and
+/// the -1 Card token applies to the cards that +$ become.
+#[test]
+fn way_of_the_chameleon_exchanges_before_the_minus_tokens_apply() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Smithy, Card::Moneylender]);
+    hand(&mut g, P0, &[Card::Smithy, Card::Moneylender, Card::Copper]);
+    deck(&mut g, P0, &[Card::Silver; 5]);
+    g.players[0].minus_card = true;
+    g.players[0].minus_coin = true;
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (2, 2));
+    assert!(g.player(P0).minus_card && !g.player(P0).minus_coin);
+    play(&mut g, Card::Moneylender);
+    way(&mut g, Card::WayOfTheChameleon);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (2, 2));
+    assert!(!g.player(P0).minus_card);
+}
+
+/// Enchantress and Highwayman change what the card does, whatever Way is used, and the
+/// Way doesn't apply to what Enchantress gives instead (wiki, Way of the Chameleon). The
+/// +1 Card and +$1 tokens on a card's pile are not its instructions.
+#[test]
+fn way_of_the_chameleon_exchanges_only_the_cards_instructions_as_followed() {
+    let kingdom = [Card::Enchantress, Card::Highwayman, Card::Smithy];
+    for (attack, got) in [(Card::Enchantress, (0, 1 + 1)), (Card::Highwayman, (0, 1))] {
+        let mut g = way_game(Card::WayOfTheChameleon, &kingdom);
+        g.players[1].projects.push(Card::Capitalism);
+        hand(&mut g, P0, &[attack]);
+        deck(&mut g, P0, &[Card::Copper; 10]);
+        hand(&mut g, P1, &[Card::Militia, Card::Estate]);
+        deck(&mut g, P1, &[Card::Copper; 10]);
+        g.start();
+        play(&mut g, attack);
+        own(&mut g);
+        next_turn(&mut g);
+        // An Action, and under Capitalism a Treasure: the first of each this turn.
+        play(&mut g, Card::Militia);
+        way(&mut g, Card::WayOfTheChameleon);
+        assert_eq!((g.turn().coins, g.hand(P1).len()), got, "{attack}");
+        assert_eq!(g.hand(P0).len(), 5, "{attack}");
+    }
+
+    let mut g = way_game(Card::WayOfTheChameleon, &kingdom);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    let smithy = g.pile_of(Card::Smithy).unwrap();
+    for token in [Token::PlusCard, Token::PlusCoin] {
+        g.players[0].tokens.insert(token, Some(smithy));
+        g.piles[smithy.index()].tokens.push((P0, token));
+    }
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1 + 3, 1));
+}
+
+/// Monkey: "Until your next turn, when the player to your right gains a card, +1 Card."
+/// The Way changes what the card's instructions give later the same turn too, whatever
+/// kind of effect gives it (wiki, Monkey).
+#[test]
+fn way_of_the_chameleon_changes_what_a_duration_gives_later_the_same_turn() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Monkey, Card::Witch]);
+    hand(&mut g, P0, &[Card::Monkey, Card::Witch]);
+    deck(&mut g, P0, &[Card::Gold; 12]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Monkey);
+    way(&mut g, Card::WayOfTheChameleon);
+    play(&mut g, Card::Witch);
+    own(&mut g);
+    // Witch's +2 Cards; the Curse P1 gains gives Monkey's +1 Card, which is +$1.
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1, 2));
+    let coin = Event::Bonus {
+        player: P0,
+        actions: 0,
+        buys: 0,
+        coins: 1,
+    };
+    let monkey = Event::Resolved {
+        player: P0,
+        card: Card::Monkey,
+    };
+    assert!(logged_in_order(&g, &[monkey, coin]));
+    // After that turn it gives cards: for the Copper P1 buys, and at the start of P0's
+    // next turn, which follows.
+    next_turn(&mut g);
+    to_buy(&mut g);
+    buy(&mut g, Card::Copper);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (0, 5 + 2));
+}
+
+/// Hireling and Samurai give their bonus at the start of each turn, the one they are
+/// played at the start of included (wiki, Hireling): that one is exchanged, and only for
+/// the play that used the Way.
+#[test]
+fn way_of_the_chameleon_changes_a_start_of_turn_bonus_given_the_turn_it_is_played() {
+    for (card, now, later) in [
+        (Card::Hireling, (1, 6), (0, 8)),
+        (Card::Samurai, (2, 5), (3, 5)),
+    ] {
+        let mut g = way_game(Card::WayOfTheChameleon, &[card, Card::Mastermind]);
+        hand(&mut g, P0, &[Card::Mastermind]);
+        let mut cards = vec![card];
+        cards.extend([Card::Copper; 4]);
+        cards.extend([Card::Estate; 12]);
+        deck(&mut g, P0, &cards);
+        // Samurai's Attack finds no more than 3 cards in P1's hand.
+        hand(&mut g, P1, &[Card::Copper; 3]);
+        deck(&mut g, P1, &[]);
+        discard(&mut g, P1, &[]);
+        g.start();
+        play(&mut g, Card::Mastermind);
+        own(&mut g);
+        next_turn(&mut g);
+        next_turn(&mut g);
+        // Mastermind plays it three times: with the Way, then twice without.
+        choose_kinds(&mut g, &[card]);
+        way(&mut g, Card::WayOfTheChameleon);
+        own(&mut g);
+        own(&mut g);
+        assert_eq!((g.turn().coins, g.hand(P0).len()), now, "{card}");
+        next_turn(&mut g);
+        next_turn(&mut g);
+        assert_eq!((g.turn().coins, g.hand(P0).len()), later, "{card}");
+    }
+}
+
+/// Abundance: "The next time you gain an Action card, +1 Buy and +$3." Played with the
+/// Way in a Buy phase after Enlightenment, when Treasures are Actions and nothing replaces
+/// what they do.
+#[test]
+fn way_of_the_chameleon_changes_a_next_time_effect_that_comes_the_same_turn() {
+    let mut g = enlightened(Card::WayOfTheChameleon);
+    hand(&mut g, P0, &[Card::Abundance, Card::Gold, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Abundance);
+    way(&mut g, Card::WayOfTheChameleon);
+    play(&mut g, Card::Gold);
+    own(&mut g);
+    play(&mut g, Card::Gold);
+    own(&mut g);
+    buy(&mut g, Card::Smithy);
+    assert_eq!((g.turn().coins, g.turn().buys), (2, 1));
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper; 3]);
+}
+
+/// Endless Chalice: "Now and at the start of each of your turns for the rest of the game:
+/// $1, +1 Buy." A Treasure's $ are +$ to the Way (wiki, Way of the Chameleon).
+#[test]
+fn way_of_the_chameleon_changes_only_what_endless_chalice_gives_now() {
+    let mut g = enlightened(Card::WayOfTheChameleon);
+    hand(&mut g, P0, &[Card::EndlessChalice]);
+    deck(&mut g, P0, &[Card::Estate; 20]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::EndlessChalice);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.turn().buys), (0, 2));
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!((g.turn().coins, g.turn().buys), (1, 2));
+    assert_eq!(g.hand(P0).len(), 5);
+}
+
+/// Harbor Village: "After the next Action you play this turn, if it gave you +$, +$1."
+/// The Way affects that +$1 too, though the effect is over by the time it is given
+/// (wiki, Harbor Village).
+#[test]
+fn way_of_the_chameleon_changes_harbor_villages_later_coin() {
+    let mut g = way_game(
+        Card::WayOfTheChameleon,
+        &[Card::HarborVillage, Card::Festival],
+    );
+    hand(&mut g, P0, &[Card::HarborVillage, Card::Festival]);
+    deck(&mut g, P0, &[Card::Gold; 5]);
+    g.start();
+    play(&mut g, Card::HarborVillage);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1, 1));
+    play(&mut g, Card::Festival);
+    own(&mut g);
+    // $1 for Harbor Village's +1 Card and Festival's $2; Harbor Village's +$1 is a card.
+    assert_eq!(g.turn().coins, 3);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
+    let harbor_village = Event::Resolved {
+        player: P0,
+        card: Card::HarborVillage,
+    };
+    let drew = Event::Drew {
+        player: P0,
+        count: 1,
+    };
+    assert!(logged_in_order(&g, &[harbor_village, drew]));
+    assert!(!g.log().iter().any(|e| matches!(e, Event::Bonus { .. })));
+}
+
+/// Harbor Village asks what the next Action gave after the Way changed it (wiki, Way of
+/// the Chameleon).
+#[test]
+fn harbor_village_counts_what_a_card_gave_after_way_of_the_chameleon() {
+    for (next, coins) in [
+        (Card::Smithy, 3 + 1),
+        (Card::Festival, 0),
+        (Card::Moneylender, 0),
+    ] {
+        let mut g = way_game(Card::WayOfTheChameleon, &[Card::HarborVillage, next]);
+        hand(&mut g, P0, &[Card::HarborVillage, next, Card::Copper]);
+        deck(&mut g, P0, &[Card::Estate; 6]);
+        g.start();
+        play(&mut g, Card::HarborVillage);
+        own(&mut g);
+        play(&mut g, next);
+        way(&mut g, Card::WayOfTheChameleon);
+        if next == Card::Moneylender {
+            choose_kinds(&mut g, &[Card::Copper]);
+        }
+        assert_eq!(g.turn().coins, coins, "{next}");
+    }
+}
+
+/// Taskmaster: "+1 Action, +$1, and if you gain a card costing exactly $5 this turn, then
+/// at the start of your next turn, repeat this ability." Only what the Way's turn gives is
+/// exchanged, and the repeat is no play a Way could be used on (wiki, Taskmaster).
+#[test]
+fn way_of_the_chameleon_does_not_change_taskmasters_repeat_on_a_later_turn() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Taskmaster, Card::Market]);
+    hand(&mut g, P0, &[Card::Taskmaster, Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Taskmaster);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (0, 3));
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    // The turn ends with its only Buy.
+    buy(&mut g, Card::Market);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1, 5));
+}
+
+/// +$ on another player's turn is still +$, so the Way makes it +Cards there, as much
+/// for $ given in the middle of a card's instructions as for its "+$2"; and +Cards are
+/// +$, which another player's turn has no use for.
+#[test]
+fn way_of_the_chameleon_exchanges_on_another_players_turn() {
+    let kingdom = [Card::Festival, Card::Moneylender, Card::Smithy];
+    let mut g = way_game(Card::WayOfTheChameleon, &kingdom);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Festival,
+            Card::Moneylender,
+            Card::Smithy,
+            Card::Copper,
+        ],
+    );
+    deck(&mut g, P1, &[Card::Silver; 10]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Festival);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!(g.hand(P1).len(), 3 + 2);
+    play_out_of_turn(&mut g, P1, Card::Moneylender);
+    way(&mut g, Card::WayOfTheChameleon);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert_eq!(g.hand(P1).len(), 3 + 3);
+    play_out_of_turn(&mut g, P1, Card::Smithy);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.hand(P1).len(), g.turn().coins), (5, 0));
+}
+
+/// Capital City: "You may discard 2 cards for +$2", so with the Way for +2 Cards (wiki,
+/// Capital City): the cards are discarded first, and can be the ones drawn.
+#[test]
+fn way_of_the_chameleon_draws_for_capital_city_after_its_discard() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::CapitalCity]);
+    hand(&mut g, P0, &[Card::CapitalCity, Card::Estate, Card::Estate]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::CapitalCity);
+    way(&mut g, Card::WayOfTheChameleon);
+    yes(&mut g);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate, Card::Estate]);
+    assert_eq!(g.turn().coins, 1);
+}
+
+/// Elder lets a card played with the Way do one more of its choices (wiki, Elder). The
+/// cards that +$ became are in the hand for what the card does next.
+#[test]
+fn way_of_the_chameleon_draws_before_the_rest_of_what_an_elders_card_does() {
+    let elder = |card: Card| {
+        let mut g = way_game(Card::WayOfTheChameleon, &[Card::Townsfolk, card]);
+        hand(&mut g, P0, &[Card::Elder, card, Card::Estate, Card::Estate]);
+        deck(&mut g, P0, &[Card::Gold; 10]);
+        hand(&mut g, P1, &[Card::Copper; 4]);
+        g.start();
+        play(&mut g, Card::Elder);
+        own(&mut g);
+        choose_kinds(&mut g, &[card]);
+        way(&mut g, Card::WayOfTheChameleon);
+        g
+    };
+    // Minion: +$2 is +2 Cards, which "discard your hand" discards; +4 Cards is +$4.
+    let mut g = elder(Card::Minion);
+    modes(&mut g, &[0, 1]);
+    assert_eq!(g.turn().coins, 2 + 4);
+    assert_eq!(hand_kinds(&g, P0), []);
+    // Steward: +$2 is +2 Cards, which can be the 2 cards trashed.
+    let mut g = elder(Card::Steward);
+    modes(&mut g, &[1, 2]);
+    assert_eq!(kinds(&g, &candidates(&g))[2..], [Card::Gold; 2]);
+    choose_kinds(&mut g, &[Card::Gold, Card::Gold]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate; 2]);
+    // Amulet: +$1 is +1 Card, which can be the card trashed.
+    let mut g = elder(Card::Amulet);
+    modes(&mut g, &[0, 1]);
+    choose_kinds(&mut g, &[Card::Gold]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate; 2]);
+    assert_eq!(g.turn().coins, 2);
+}
+
+/// The Way is used on a play, not on a card: Scepter replays a Storyteller that isn't
+/// finished (wiki, Scepter), and that play, made without the Way, is as printed.
+#[test]
+fn way_of_the_chameleon_does_not_change_another_play_of_the_same_card() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::Storyteller, Card::Scepter]);
+    hand(&mut g, P0, &[Card::Storyteller, Card::Scepter]);
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::Storyteller);
+    way(&mut g, Card::WayOfTheChameleon);
+    choose_kinds(&mut g, &[Card::Scepter]);
+    modes(&mut g, &[1]);
+    own(&mut g);
+    // The replay: +1 Card, pays $0. Then the first play: +$1 (for +1 Card), pays it, +$1.
+    assert_eq!(hand_kinds(&g, P0), [Card::Estate]);
+    assert_eq!(g.turn().coins, 1);
+
+    // Throne Room's two plays of a Merchant: only the first one's later +$1 is a card.
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::ThroneRoom, Card::Merchant]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::ThroneRoom, Card::Merchant, Card::Silver],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Merchant]);
+    way(&mut g, Card::WayOfTheChameleon);
+    own(&mut g);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1, 2));
+    play_treasure(&mut g, Card::Silver);
+    assert_eq!((g.turn().coins, g.hand(P0).len()), (1 + 2 + 1, 2));
+}
+
+/// A game saved in the middle of a play using the Way goes on exchanging, and a save
+/// without the fields the exchange keeps still loads.
+#[test]
+fn way_of_the_chameleon_goes_on_in_a_saved_game() {
+    let kingdom = [Card::Merchant, Card::Moneylender];
+    let mut g = way_game(Card::WayOfTheChameleon, &kingdom);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Merchant,
+            Card::Moneylender,
+            Card::Copper,
+            Card::Silver,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Gold; 5]);
+    g.start();
+    play(&mut g, Card::Merchant);
+    way(&mut g, Card::WayOfTheChameleon);
+    play(&mut g, Card::Moneylender);
+    way(&mut g, Card::WayOfTheChameleon);
+    let json = serde_json::to_string(&g).unwrap();
+    let mut g: Game = serde_json::from_str(&json).unwrap();
+    choose_kinds(&mut g, &[Card::Copper]);
+    play_treasure(&mut g, Card::Silver);
+    assert_eq!(g.turn().coins, 1 + 2);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold; 4]);
+
+    fn strip(v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::Object(o) => {
+                o.remove("exchange");
+                o.remove("chameleon_effects");
+                o.remove("chameleon_turn");
+                o.values_mut().for_each(strip);
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    let mut old: serde_json::Value = serde_json::from_str(&json).unwrap();
+    strip(&mut old);
+    let mut g: Game = serde_json::from_value(old).unwrap();
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert_eq!(g.turn().coins, 1 + 3);
+}
+
 #[test]
 fn way_of_the_frog_puts_the_card_onto_the_deck_when_discarded_from_play() {
     let mut g = way_game(Card::WayOfTheFrog, &[Card::Smithy]);
@@ -2206,6 +2622,30 @@ fn way_of_the_frog_puts_the_card_onto_the_deck_when_discarded_from_play() {
     assert_eq!(g.turn().actions, 1);
     next_turn(&mut g);
     assert!(hand_kinds(&g, P0).contains(&Card::Smithy));
+}
+
+/// The Way follows the play it was used for: a card that left play and came back has
+/// moved, so the effect can't put it onto the deck (the stop-moving rule).
+#[test]
+fn way_of_the_frog_cannot_move_a_card_that_left_play_and_came_back() {
+    let kingdom = [Card::Village, Card::Smithy, Card::Festival];
+    let mut g = way_game(Card::WayOfTheFrog, &kingdom);
+    hand(&mut g, P0, &kingdom);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Festival);
+    own(&mut g);
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheFrog);
+    leave_play(&mut g, P0, Card::Smithy);
+    let smithy = *g.trash().last().unwrap();
+    g.move_card(smithy, Zone::Hand(P0), crate::game::Pos::Top);
+    play(&mut g, Card::Village);
+    own(&mut g);
+    play(&mut g, Card::Smithy);
+    own(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.zone(smithy), Zone::Discard(P0));
 }
 
 #[test]
@@ -2474,6 +2914,17 @@ fn way_of_the_mouses_card_cannot_move_itself() {
     way(&mut g, Card::WayOfTheMouse);
     assert_eq!(g.hand(P0).len(), 2);
     assert_eq!(g.zone(mouse), holder);
+}
+
+/// "In games using this" holds while Shaman is only the card Way of the Mouse set aside
+/// (wiki, In games using this): the Way silences the rest of what is below its line.
+#[test]
+fn a_shaman_set_aside_by_way_of_the_mouse_is_used_by_the_game() {
+    let mut g = way_game(Card::WayOfTheMouse, &[Card::Smithy]);
+    set_mouse(&mut g, Card::Shaman);
+    replace(&mut g, Zone::Trash, &[Card::Silver]);
+    g.start();
+    assert_eq!(gained(&g, P0), [Card::Silver]);
 }
 
 /// A game whose Way of the Mouse card is `mouse`, with P0 about to play a Village.
@@ -2868,6 +3319,24 @@ fn enlightenment_still_replaces_a_treasure_played_with_way_of_the_chameleon() {
         (g.turn().actions, g.turn().coins, g.hand(P0).len()),
         (1, 0, 1)
     );
+}
+
+/// Fortune: "Double your $": not "+$", which is all the Way exchanges (as it leaves
+/// "draw until" alone). The -$1 token does apply to it (wiki, Fortune).
+#[test]
+fn way_of_the_chameleon_does_not_change_fortunes_doubling() {
+    let mut g = enlightened(Card::WayOfTheChameleon);
+    hand(&mut g, P0, &[Card::Gold, Card::Fortune]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    own(&mut g);
+    g.players[0].minus_coin = true;
+    play(&mut g, Card::Fortune);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.turn().buys), (3 + 3 - 1, 2));
+    assert!(g.hand(P0).is_empty());
 }
 
 #[test]

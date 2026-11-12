@@ -52,7 +52,10 @@ pub(crate) trait SetRules {
         true
     }
 
-    /// Called after each step of ability `f`, with the turn as it was before the step;
+    /// Called before each step of ability `f` (Way of the Chameleon).
+    fn before_step(g: &mut Game, f: &CardFrame) {}
+
+    /// Called after each step of ability `f`, with the game as it was before the step;
     /// may adjust what the step did and the flow it returned (Way of the Chameleon).
     /// [`CardFrame::hold`] defers the step's flow until after a frame it calls instead.
     fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, flow: &mut Flow) {}
@@ -143,13 +146,13 @@ pub(crate) trait SetRules {
     }
 }
 
-/// The turn as it was before a step of an ability ran (see [`SetRules::after_step`]).
+/// The game as it was before a step of an ability ran (see [`SetRules::after_step`]).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Step {
     pub coins: u32,
     pub actions: u32,
-    /// The ability's player's -$1 token.
-    pub minus_coin: bool,
+    /// [`Game::next_lasting`]: the lasting effects from this id on are the step's.
+    pub lastings: u32,
 }
 
 /// The bonuses a play gives before the card's script runs.
@@ -177,8 +180,9 @@ macro_rules! sets {
             let before = Step {
                 coins: g.turn.coins,
                 actions: g.turn.actions,
-                minus_coin: g.players[f.player.index()].minus_coin,
+                lastings: g.next_lasting,
             };
+            $(<$module::Rules as SetRules>::before_step(g, f);)*
             // The Exile rule applies to cards of every set.
             let set = match f.hook {
                 Hook::Ability(EXILE_DISCARD) => Set::Menagerie,
@@ -469,6 +473,10 @@ pub(crate) struct CardFrame {
     pub s: Scratch,
     /// A step's flow, deferred until the frame called in its place returns.
     pub held: Option<Box<Flow>>,
+    /// The +Cards this ability gives its player are +$ instead, and its +$ are +Cards:
+    /// the card's own instructions, followed for a play using Way of the Chameleon.
+    #[serde(default)]
+    pub exchange: bool,
 }
 
 impl CardFrame {
@@ -486,6 +494,7 @@ impl CardFrame {
             pc: 0,
             s: Scratch::default(),
             held: None,
+            exchange: false,
         }
     }
 

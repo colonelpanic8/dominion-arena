@@ -6,9 +6,13 @@
 //! while they stay on the mat.
 //!
 //! Ways run as the Way's `Hook::Main` with `f.this` = the card played; the engine applies
-//! a Way's own vanilla bonuses. Way of the Chameleon plays the card's own ability as a
-//! child frame and marks it in [`State::chameleon`]; [`Rules::after_step`] then exchanges
-//! the +$ and +Cards that frame (and its "this turn" effects) give.
+//! a Way's own vanilla bonuses. Way of the Chameleon gives the card's vanilla bonuses
+//! exchanged and runs the card's own ability as a child frame marked
+//! [`CardFrame::exchange`]. While a step of that frame runs, or one of an ability of a
+//! lasting effect it made earlier this turn ([`State::chameleon_effects`]),
+//! [`Game::add_coins`] counts the player's +$ instead of giving it
+//! ([`Game::coins_as_cards`]); [`Rules::after_step`] then draws that many cards before
+//! the step's flow goes on, and turns the "+Cards" draw a step asked for into +$.
 //!
 //! Effects that play a card at the start of the next turn (Delay, Reap, Way of the Turtle)
 //! and the Durations keep their card in `data.pick` of a lasting resolved by `START`.
@@ -17,7 +21,7 @@ use super::plunder::next_play;
 use super::{
     CardFrame, Hook, SetRules, Step, due_durations, duration_trigger, looking, put_back,
 };
-use crate::decision::{Opt, Purpose};
+use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
 use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Scratch, Until, Zone};
@@ -36,10 +40,13 @@ pub(crate) struct State {
     /// Gains in progress (the card and its `GainState::since`, which no other gain of
     /// that card shares) during which the gainer discarded copies of the card from Exile.
     pub exile_discarded: Vec<(CardId, usize)>,
-    /// Cards being played using Way of the Chameleon, innermost last.
-    pub chameleon: Vec<CardId>,
-    /// "This turn" effects made by plays using Way of the Chameleon.
-    pub chameleon_lastings: Vec<u32>,
+    /// The lasting effects made by plays using Way of the Chameleon in the turn
+    /// `chameleon_turn`, each with its play's player.
+    #[serde(default)]
+    pub chameleon_effects: Vec<(u32, PlayerId)>,
+    /// The turn `chameleon_effects` were made in: its player and their turn number.
+    #[serde(default)]
+    pub chameleon_turn: Option<(PlayerId, u32)>,
     /// Players who have bought Seize the Day.
     pub seized: Vec<PlayerId>,
     /// The turn Desperation was last bought in: its player and their turn number.
@@ -294,7 +301,17 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::WayOfTheChameleon, _) => chameleon(g, f),
-            (Card::WayOfTheFrog | Card::WayOfTheSeal | Card::WayOfTheSquirrel, _) => {
+            (Card::WayOfTheFrog, _) => {
+                // The effect follows one play of the card: which of the turn's it is.
+                let plays = g.turn.played_ids.iter().filter(|&&c| Some(c) == f.this);
+                let data = Scratch {
+                    i: plays.count(),
+                    ..Scratch::default()
+                };
+                g.add_lasting(f.card, f.player, f.this, vec![], Until::EndOfTurn, data);
+                Flow::done()
+            }
+            (Card::WayOfTheSeal | Card::WayOfTheSquirrel, _) => {
                 g.add_lasting(
                     f.card,
                     f.player,
@@ -409,6 +426,7 @@ impl SetRules for Rules {
                     let Some(c) = l.source else { continue };
                     if l.card == Card::WayOfTheFrog
                         && l.owner == player
+                        && stayed_in_play(g, c, l.data.i)
                         && g.leaving_play(player).contains(&c)
                     {
                         // Differently named cards go onto the deck in a chosen order.
@@ -481,20 +499,25 @@ impl SetRules for Rules {
         }
     }
 
-    fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, flow: &mut Flow) {
-        if !exchanges(g, f) {
-            return;
+    fn before_step(g: &mut Game, f: &CardFrame) {
+        if let Some(p) = exchanges(g, f) {
+            g.coins_as_cards = Some((p, 0));
         }
-        let p = f.player;
-        let mut got = 0;
-        if p == g.turn.player {
-            got = g.turn.coins.saturating_sub(before.coins);
-            g.turn.coins -= got;
-            let pl = &mut g.players[p.index()];
-            if before.minus_coin && !pl.minus_coin {
-                pl.minus_coin = true;
-                got += 1;
+    }
+
+    fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, flow: &mut Flow) {
+        let Some((p, coins)) = g.coins_as_cards.take() else {
+            return;
+        };
+        let made = before.lastings..g.next_lasting;
+        if !made.is_empty() {
+            let turn = Some(this_turn(g));
+            let st = &mut g.ext.menagerie;
+            if st.chameleon_turn != turn {
+                st.chameleon_effects.clear();
+                st.chameleon_turn = turn;
             }
+            st.chameleon_effects.extend(made.map(|l| (l, p)));
         }
         if let Flow::Call(Frame::Draw { player, count, .. }) = flow
             && *player == p
@@ -503,8 +526,13 @@ impl SetRules for Rules {
             let n = std::mem::take(count);
             g.add_coins(p, n as u32);
         }
-        if got > 0 {
-            let rest = std::mem::replace(flow, Flow::Call(Frame::draw(p, got as usize)));
+        if coins > 0 {
+            // The cards are drawn here, before the step's flow: a step that gives +$
+            // ends there if it would go on with the hand.
+            if cfg!(test) {
+                assert!(!lists_hand(g, p, flow), "{}: +$ and the hand in one step", f.card);
+            }
+            let rest = std::mem::replace(flow, Flow::Call(Frame::draw(p, coins as usize)));
             f.hold(rest);
         }
     }
@@ -625,15 +653,56 @@ fn says_plus_cards(card: Card) -> bool {
     count > usize::from(card.def().plus.cards > 0)
 }
 
-/// Whether ability `f` is one whose +$ and +Cards Way of the Chameleon exchanges.
-fn exchanges(g: &Game, f: &CardFrame) -> bool {
-    let st = &g.ext.menagerie;
-    if f.hook == Hook::Main && f.card.kind() == Kind::Card {
-        return f.this.is_some_and(|id| st.chameleon.contains(&id));
+/// The turn in progress: its player and their turn number.
+fn this_turn(g: &Game) -> (PlayerId, u32) {
+    let p = g.turn.player;
+    (p, g.player(p).turns_taken)
+}
+
+/// The player whose +$ and +Cards from ability `f` Way of the Chameleon exchanges, if it
+/// is one: the card's own instructions followed for a play using the Way, or an ability
+/// of a lasting effect that such a play made earlier this turn (it may have ended since).
+fn exchanges(g: &Game, f: &CardFrame) -> Option<PlayerId> {
+    if f.exchange {
+        return Some(f.player);
     }
-    f.lasting.is_some_and(|l| {
-        st.chameleon_lastings.contains(&l) && g.lasting().iter().any(|x| x.id == l)
-    })
+    exchanged_effect(g, f.lasting?)
+}
+
+/// The player whose +$ and +Cards from lasting effect `id` Way of the Chameleon exchanges
+/// this turn, if it does.
+pub(crate) fn exchanged_effect(g: &Game, id: u32) -> Option<PlayerId> {
+    let st = &g.ext.menagerie;
+    let &(_, p) = st.chameleon_effects.iter().find(|(l, _)| *l == id)?;
+    (st.chameleon_turn == Some(this_turn(g))).then_some(p)
+}
+
+/// Whether `flow` asks about or moves cards listed from `p`'s hand.
+fn lists_hand(g: &Game, p: PlayerId, flow: &Flow) -> bool {
+    let cards = match flow {
+        Flow::Ask(Decision {
+            kind: DecisionKind::Cards { candidates, .. },
+            ..
+        }) => candidates,
+        Flow::Call(Frame::Discard { cards, .. } | Frame::Trash { cards, .. }) => cards,
+        _ => return false,
+    };
+    cards.iter().any(|&c| g.zone(c) == Zone::Hand(p))
+}
+
+/// Whether `card` hasn't left play since the `nth` time it was played this turn (from 1;
+/// 0 is any play): one that left and came back has moved, and what that play set up can't
+/// move it.
+fn stayed_in_play(g: &Game, card: CardId, nth: usize) -> bool {
+    let Some(skip) = nth.checked_sub(1) else {
+        return true;
+    };
+    let t = &g.turn;
+    let plays = t.played_ids.iter().zip(&t.stayed_in_play);
+    plays
+        .filter(|(c, _)| **c == card)
+        .nth(skip)
+        .is_some_and(|(_, stayed)| *stayed)
 }
 
 /// Returns the played card to its pile if it is in play (Horse, Way of the Horse).
@@ -1964,7 +2033,6 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
             {
                 return Flow::Call(first);
             }
-            f.s.n = g.next_lasting as i32;
             let def = behavior.def();
             let mut bonus = super::Bonus {
                 plus: def.plus,
@@ -1987,36 +2055,16 @@ fn chameleon(g: &mut Game, f: &mut CardFrame) -> Flow {
             Flow::Call(Frame::draw(p, plus.coins as usize + bonus.coins as usize))
         }
         1 => {
-            g.ext.menagerie.chameleon.push(id);
             let behavior = f.s.card.expect("set in step 0");
             let mut child = CardFrame::new(behavior, Hook::Main, p, Some(id));
             child.targets = f.targets.clone();
             child.chain = f.chain.clone();
+            child.exchange = true;
             f.pc = 2;
             Flow::Call(Frame::Card(Box::new(child)))
         }
         3 => Flow::done(),
         _ => {
-            let st = &mut g.ext.menagerie;
-            if let Some(i) = st.chameleon.iter().rposition(|&c| c == id) {
-                st.chameleon.remove(i);
-            }
-            let behavior = f.s.card.expect("set in step 0");
-            let from = f.s.n as u32;
-            let lastings = &g.lasting;
-            st.chameleon_lastings
-                .retain(|l| lastings.iter().any(|x| x.id == *l));
-            st.chameleon_lastings.extend(
-                lastings
-                    .iter()
-                    .filter(|l| {
-                        l.id >= from
-                            && l.card == behavior
-                            && l.source == Some(id)
-                            && l.until == Until::EndOfTurn
-                    })
-                    .map(|l| l.id),
-            );
             f.s.i -= 1;
             if f.s.i > 0 {
                 f.s.card = None;

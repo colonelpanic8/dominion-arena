@@ -573,9 +573,7 @@ fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
 }
 
 fn coins(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.add_coins(p, n);
-    }
+    g.add_coins(p, n);
 }
 
 /// The gain of `card` in progress, if any.

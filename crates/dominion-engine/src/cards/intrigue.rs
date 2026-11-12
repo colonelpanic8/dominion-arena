@@ -584,37 +584,41 @@ fn minion(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 );
             }
             1 => {
-                let m = input.take().map(mode_mask).unwrap_or_default();
-                if m & 1 != 0 {
-                    g.add_coins(f.player, 2);
-                }
-                if m & 2 == 0 {
-                    return Flow::done();
-                }
+                f.s.m = input.take().map(mode_mask).unwrap_or_default();
                 f.pc = 2;
-                return Flow::Call(Frame::discard(f.player, g.hand(f.player).to_vec()));
+                if f.s.m & 1 != 0 {
+                    g.add_coins(f.player, 2);
+                    return Flow::Continue;
+                }
             }
             2 => {
+                if f.s.m & 2 == 0 {
+                    return Flow::done();
+                }
                 f.pc = 3;
-                return Flow::Call(Frame::draw(f.player, 4));
+                return Flow::Call(Frame::discard(f.player, g.hand(f.player).to_vec()));
             }
             3 => {
+                f.pc = 4;
+                return Flow::Call(Frame::draw(f.player, 4));
+            }
+            4 => {
                 let Some(&target) = f.targets.get(f.s.i) else {
                     return Flow::done();
                 };
                 if g.hand(target).len() >= 5 {
-                    f.pc = 4;
+                    f.pc = 5;
                     return Flow::Call(Frame::discard(target, g.hand(target).to_vec()));
                 }
                 f.s.i += 1;
             }
-            4 => {
-                f.pc = 5;
+            5 => {
+                f.pc = 6;
                 return Flow::Call(Frame::draw(f.targets[f.s.i], 4));
             }
             _ => {
                 f.s.i += 1;
-                f.pc = 3;
+                f.pc = 4;
             }
         }
     }
@@ -800,14 +804,18 @@ fn steward(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if f.s.m & 2 != 0 {
                 g.add_coins(f.player, 2);
             }
+            f.pc = 3;
+            Flow::Continue
+        }
+        3 => {
             if f.s.m & 4 == 0 {
                 return Flow::done();
             }
-            f.pc = 3;
+            f.pc = 4;
             f.ask_cards(g.hand(f.player).to_vec(), 2, 2, Purpose::Trash)
         }
-        3 => {
-            f.pc = 4;
+        4 => {
+            f.pc = 5;
             Flow::Call(Frame::trash(f.player, input.cards()))
         }
         _ => Flow::done(),

@@ -342,7 +342,10 @@ impl SetRules for Rules {
         }
         for l in turn_durations(g, occ) {
             if l.card == Card::Samurai {
-                out.push(duration_trigger(l, SAMURAI_COIN).quiet());
+                let t = duration_trigger(l, SAMURAI_COIN);
+                // Its +$1 is a card on the turn of a play using Way of the Chameleon.
+                let draws = super::menagerie::exchanged_effect(g, l.id).is_some();
+                out.push(if draws { t } else { t.quiet() });
             }
         }
         let active = |card| g.prophecy_active(card);
