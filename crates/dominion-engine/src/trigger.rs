@@ -11,7 +11,7 @@ use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose, Response};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{Mat, Scratch, Zone};
-use crate::{Card, CardId, Cost, Game, PlayerId};
+use crate::{Card, CardId, Cost, Game, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 
 /// Something that happened, or is about to, that abilities can respond to.
@@ -113,7 +113,7 @@ pub enum Occasion {
 }
 
 /// One triggered ability that could resolve.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Trigger {
     pub owner: PlayerId,
     /// The card (or landscape, State, ...) whose rules resolve it.
@@ -151,7 +151,56 @@ pub struct Trigger {
     /// not one of a card of the owner's.
     #[serde(default)]
     pub game_wide: bool,
+    /// Resolving it starts its owner playing an Action card they see, before anything else
+    /// is asked (a Reaction that plays itself, Innovation): a Way question may follow. Not
+    /// part of what the trigger is.
+    #[serde(default)]
+    pub plays: bool,
 }
+
+impl PartialEq for Trigger {
+    fn eq(&self, other: &Trigger) -> bool {
+        let Trigger {
+            owner,
+            card,
+            ability,
+            source,
+            lasting,
+            optional,
+            first,
+            quiet,
+            data,
+            label,
+            does,
+            protects,
+            reaction,
+            game_wide,
+            plays: _,
+        } = self;
+        (owner, card, ability, source, lasting, optional, first)
+            == (
+                &other.owner,
+                &other.card,
+                &other.ability,
+                &other.source,
+                &other.lasting,
+                &other.optional,
+                &other.first,
+            )
+            && (quiet, data, label, does, protects, reaction, game_wide)
+                == (
+                    &other.quiet,
+                    &other.data,
+                    &other.label,
+                    &other.does,
+                    &other.protects,
+                    &other.reaction,
+                    &other.game_wide,
+                )
+    }
+}
+
+impl Eq for Trigger {}
 
 impl Trigger {
     pub(crate) fn new(owner: PlayerId, card: Card, ability: u8) -> Trigger {
@@ -170,6 +219,7 @@ impl Trigger {
             protects: false,
             reaction: false,
             game_wide: false,
+            plays: false,
         }
     }
 
@@ -226,6 +276,27 @@ impl Trigger {
     pub(crate) fn game_wide(mut self) -> Trigger {
         self.game_wide = true;
         self
+    }
+
+    /// Resolving it starts its owner playing `card`, which they see: a Way question may
+    /// follow if it is an Action (see [`Trigger::plays`]).
+    pub(crate) fn plays(self, g: &Game, card: CardId) -> Trigger {
+        self.plays_one_of(g, &[card])
+    }
+
+    /// It plays one of `cards`, which its owner sees, asking which first if there are
+    /// several (a question that says itself that a Way question may follow).
+    pub(crate) fn plays_one_of(mut self, g: &Game, cards: &[CardId]) -> Trigger {
+        self.plays = cards.iter().any(|&c| g.is(c, Types::ACTION));
+        self
+    }
+
+    /// It plays the card lasting effect `l` set aside (`Scratch::pick`), if it still is.
+    pub(crate) fn plays_set_aside(self, g: &Game, l: &crate::game::Lasting) -> Trigger {
+        match l.data.pick {
+            Some(c) if g.zone(c) == Zone::SetAside(l.owner) => self.plays(g, c),
+            _ => self,
+        }
     }
 
     pub(crate) fn labelled(mut self, label: String) -> Trigger {
@@ -359,6 +430,10 @@ impl Window {
                 label
             })
             .collect();
+        let plays = (asked.iter().zip(&options))
+            .filter(|((_, t), _)| t.plays)
+            .map(|(_, &o)| o)
+            .collect();
         let all_optional = mine.iter().all(|(_, t)| t.optional);
         if all_optional {
             options.push(Opt::No);
@@ -400,6 +475,7 @@ impl Window {
             source: None,
             about: vec![],
             question: Some(question),
+            plays,
         })
     }
 

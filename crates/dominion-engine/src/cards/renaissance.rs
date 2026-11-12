@@ -229,7 +229,11 @@ impl SetRules for Rules {
                     && !used(g, Card::Citadel, player)
                     && first_action_play(g, player, card)
                 {
-                    out.push(Trigger::new(player, Card::Citadel, EFFECT).on(card));
+                    out.push(
+                        Trigger::new(player, Card::Citadel, EFFECT)
+                            .on(card)
+                            .plays(g, card),
+                    );
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
@@ -481,10 +485,13 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         && !used(g, Card::Innovation, gainer)
         && g.is(card, Types::ACTION)
     {
-        out.push(
-            Trigger::new(gainer, Card::Innovation, EFFECT)
-                .optional(format!("play {}", g.card(card))),
-        );
+        let t = Trigger::new(gainer, Card::Innovation, EFFECT)
+            .optional(format!("play {}", g.card(card)));
+        out.push(if g.still_where_gained(card) {
+            t.plays(g, card)
+        } else {
+            t
+        });
     }
     if !where_gained(g, card) {
         return;
@@ -1144,12 +1151,29 @@ fn research(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+/// The cards Scepter may replay: non-Command Actions `p` played this turn still in play.
+fn scepter_replayable(g: &Game, p: PlayerId) -> Vec<CardId> {
+    let mut candidates: Vec<CardId> = vec![];
+    for c in g.stayed_in_play() {
+        let ok = g.zone(c) == Zone::InPlay(p)
+            && g.is(c, Types::ACTION)
+            && !g.is(c, Types::COMMAND)
+            && !candidates.contains(&c);
+        if ok {
+            candidates.push(c);
+        }
+    }
+    candidates
+}
+
 fn scepter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
             f.pc = 1;
+            let replayable = scepter_replayable(g, p);
             f.ask_modes(&["+$2", "Replay an Action card you played this turn"], 1, 1)
+                .plays(g, Opt::Mode(1), &replayable)
         }
         1 => {
             let m = mode_mask(input);
@@ -1159,16 +1183,7 @@ fn scepter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if m & 2 == 0 {
                 return Flow::done();
             }
-            let mut candidates: Vec<CardId> = vec![];
-            for c in g.stayed_in_play() {
-                let ok = g.zone(c) == Zone::InPlay(p)
-                    && g.is(c, Types::ACTION)
-                    && !g.is(c, Types::COMMAND)
-                    && !candidates.contains(&c);
-                if ok {
-                    candidates.push(c);
-                }
-            }
+            let candidates = scepter_replayable(g, p);
             if candidates.is_empty() {
                 return Flow::done();
             }

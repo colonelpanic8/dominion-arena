@@ -578,8 +578,8 @@ fn nameable(game: &Game, known: &KnownCards, seat: PlayerId) -> Vec<Card> {
 pub const WAY_HINT: &str = "(to pre-answer the Way question, add way: \"none\" or a Way's name)";
 
 /// Whether answering `d` may play an Action card, in a game with Ways: a Way question
-/// may follow.
-fn may_ask_way(game: &Game, v: &View<'_>, d: &Decision) -> bool {
+/// may follow. Only what the seat is shown decides it.
+fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
     if !v.landscapes().iter().any(|l| l.kind() == Kind::Way) {
         return false;
     }
@@ -592,25 +592,10 @@ fn may_ask_way(game: &Game, v: &View<'_>, d: &Decision) -> bool {
             candidates.iter().any(|&c| action(c))
         }
         // Abilities that play a card (a Reaction playing itself, Innovation), "play it?":
-        // tried on a copy of the game. A Way question's pre-answer is for its replays.
-        DecisionKind::Choose { options, .. } if d.purpose != Purpose::Way => options
-            .iter()
-            .any(|&o| starts_playing_an_action(game, d.player, Response::Options(vec![o]))),
+        // the engine says which options do. A Way question's pre-answer is for its replays.
+        DecisionKind::Choose { .. } if d.purpose != Purpose::Way => !d.plays.is_empty(),
         _ => d.purpose == Purpose::Play,
     }
-}
-
-/// Whether `response` starts `p` playing an Action card before they are asked anything
-/// else. Only a card `p` can see now counts: a card the answer would turn up (Piazza's
-/// reveal) must not show in the hint before it is given.
-fn starts_playing_an_action(game: &Game, p: PlayerId, response: Response) -> bool {
-    let mut g = game.clone();
-    let since = g.log().len();
-    let seen = game.view(p);
-    g.respond(response).is_ok()
-        && (g.plays_in_progress()).any(|(q, c, at)| {
-            q == p && at >= since && seen.card(c).is_some() && g.is(c, Types::ACTION)
-        })
 }
 
 /// `text` written by the engine, which calls players by seat ("P2 attacks you", "P2's
@@ -676,7 +661,13 @@ fn announced(label: &str) -> String {
         if i == 0 && VERBS.contains(&word) {
             out.push_str("to ");
         }
-        if i == 0 && (VERBS.contains(&word) || LOWER.contains(&word)) {
+        // "chooses that they gain it"
+        if i == 0 && word == "They" {
+            out.push_str("that ");
+        }
+        if i == 0
+            && (VERBS.contains(&word) || LOWER.contains(&word) || ["They", "Their"].contains(&word))
+        {
             out.push_str(&word.to_lowercase());
         } else {
             out.push_str(word);
@@ -949,7 +940,7 @@ pub(crate) fn decision(
         }
     };
     let (options, targets): (Vec<AgentOption>, Vec<Target>) = items.into_iter().unzip();
-    let prompt = if may_ask_way(game, &v, d) {
+    let prompt = if may_ask_way(&v, d) {
         format!("{prompt} {WAY_HINT}")
     } else {
         prompt
@@ -1657,6 +1648,8 @@ mod tests {
                 "to take the extra turn from Mission",
             ),
             ("Gold", "Gold"),
+            ("You gain it", "that they gain it"),
+            ("Your choice", "their choice"),
             (
                 "2 (how many go on your deck?)",
                 "2 (how many go on their deck?)",

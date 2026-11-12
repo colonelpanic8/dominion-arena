@@ -323,7 +323,14 @@ impl SetRules for Rules {
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         for l in due_durations(g, occ) {
             if DURATIONS.contains(&l.card) {
-                out.push(duration_trigger(l, START));
+                let t = duration_trigger(l, START);
+                out.push(match (l.card, l.data.pick) {
+                    (Card::Contract, _) => t.plays_set_aside(g, l),
+                    (Card::RoyalGalley, Some(c)) if g.zone(c) == Zone::InPlay(l.owner) => {
+                        t.plays(g, c)
+                    }
+                    _ => t,
+                });
             }
         }
         match *occ {
@@ -904,7 +911,14 @@ fn ally_trigger(g: &Game, ally: Card, occ: &Occasion) -> Option<Trigger> {
         }
         _ => return None,
     };
-    ok.then(|| Trigger::new(player, ally, REACT).optional(ally_does(ally)))
+    if !ok {
+        return None;
+    }
+    let t = Trigger::new(player, ally, REACT).optional(ally_does(ally));
+    Some(match *occ {
+        Occasion::Gain { card, .. } if ally == Card::CityState => t.plays(g, card),
+        _ => t,
+    })
 }
 
 /// What using an optional Ally's ability does.
@@ -2046,11 +2060,13 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         2 => {
             f.pc = 3;
             let c = f.s.card.expect("set in step 1");
+            let played = f.s.pick.expect("set in step 1");
             f.ask_modes(
                 &[format!("Play {c} again"), format!("Gain a copy of {c}")],
                 1,
                 1,
             )
+            .plays(g, Opt::Mode(0), &[played])
         }
         3 => {
             f.s.m = mode_mask(input);

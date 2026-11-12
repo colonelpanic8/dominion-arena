@@ -26,6 +26,11 @@ pub struct Decision {
     /// the moment triggers are ordered at).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub question: Option<String>,
+    /// The options whose answer starts its player playing an Action card they see, before
+    /// anything else is asked (a Reaction that plays itself, "play it?"): those a Way
+    /// question may follow.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plays: Vec<Opt>,
 }
 
 /// Something a player can do in one of their turn's phases.

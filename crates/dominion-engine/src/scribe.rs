@@ -172,12 +172,16 @@ impl Game {
     }
 
     pub(crate) fn note_discard_search(&mut self, player: PlayerId) {
+        // What was shown of the pile's cards no longer tells which one is taken.
+        let pile = &self.players[player.index()].discard;
+        self.scribe.shown.retain(|c| !pile.contains(c));
         let search = (player, self.stack.len());
         if !self.scribe.searched_discards.contains(&search) {
             self.scribe.searched_discards.push(search);
         }
     }
 
+    /// Ends the searches of the frame running, and of those above it.
     pub(crate) fn end_discard_searches(&mut self) {
         self.scribe
             .searched_discards
@@ -294,7 +298,12 @@ impl Game {
                 },
                 Response::Options(chosen),
             ) => {
-                if decision.about.iter().any(|&c| !self.is_public(c)) {
+                // Not a choice about a card only its player looks at, which its labels name.
+                let names_private = |label: &String| {
+                    (decision.about.iter())
+                        .any(|&c| !self.is_public(c) && label.contains(self.card(c).name()))
+                };
+                if labels.iter().any(names_private) {
                     return;
                 }
                 options

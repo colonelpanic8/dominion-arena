@@ -5,8 +5,8 @@
 //! (one seed, with details), `FUZZ_THREADS`, `FUZZ_STATS` (coverage), `FUZZ_COVER` (uses
 //! per card), `FUZZ_AUDIT` (print the review-by-hand lists), `FUZZ_KEYS` (every game an
 //! oracle fired in), `FUZZ_VIEWS` (percentage of decisions at which a view is checked
-//! against hidden cards being swapped), `FUZZ_LOG` and `FUZZ_TRACE` (with `FUZZ_ONLY`: the
-//! log, and card moves, decisions and answers).
+//! against hidden cards being swapped, and twin worlds are played on), `FUZZ_LOG` and
+//! `FUZZ_TRACE` (with `FUZZ_ONLY`: the log, and card moves, decisions and answers).
 
 use super::*;
 use crate::frame::Frame;
@@ -1585,6 +1585,38 @@ fn check_decision(g: &Game, d: &Decision, flags: &mut Flags) {
 
 /// The numbers after each `phrase` in `text` ("costing up to $" -> 4): digits or a
 /// number word.
+/// An option said to play an Action (`Decision::plays`) starts its player playing one, or
+/// asks them which card to play first.
+fn check_plays(g: &Game, d: &Decision, flags: &mut Flags) {
+    let DecisionKind::Choose { options, .. } = &d.kind else {
+        if !d.plays.is_empty() {
+            flags.bug("plays-on-no-choice", || ctx(g));
+        }
+        return;
+    };
+    for &o in &d.plays {
+        let key = || format!("plays-but-does-not:{:?}:{o:?}", d.source);
+        if !options.contains(&o) {
+            flags.bug(key(), || ctx(g));
+            continue;
+        }
+        let mut after = g.clone();
+        let since = after.log().len();
+        if after.respond(Response::Options(vec![o])).is_err() {
+            continue;
+        }
+        let played = after.log()[since..]
+            .iter()
+            .any(|e| matches!(e, Event::Played { player, .. } if *player == d.player));
+        let asked = after
+            .pending()
+            .is_some_and(|n| n.player == d.player && n.purpose == Purpose::Play);
+        if !played && !asked {
+            flags.bug(key(), || ctx(g));
+        }
+    }
+}
+
 fn numbers_after(text: &str, phrase: &str) -> Vec<usize> {
     let words = ["zero", "a", "two", "three", "four", "five", "six", "seven"];
     text.match_indices(phrase)
@@ -3616,6 +3648,7 @@ fn drive(seed: u64, mut plan: Plan, report: &mut Report) {
         }
         let Some(d) = g.pending().cloned() else { break };
         check_decision(&g, &d, flags);
+        check_plays(&g, &d, flags);
         check_against_text(&g, &d, flags);
         check_invariants(&g, flags);
         check_progress(&g, &trace, &mut memory, flags);
@@ -3652,6 +3685,11 @@ fn drive(seed: u64, mut plan: Plan, report: &mut Report) {
             check_view_noninterference(&g, &k, &mut rng, flags);
             if let Err(error) = super::knowledge::check_revealed_order_twins(&g, &k, &mut rng) {
                 flags.bug("knowledge-depends-on-private-revealed-order", || {
+                    format!("{error}; {}", ctx(&g))
+                });
+            }
+            if let Err(error) = super::knowledge::check_hidden_twins(&g, &k, &mut rng) {
+                flags.bug("knowledge-or-log-depends-on-hidden-cards", || {
                     format!("{error}; {}", ctx(&g))
                 });
             }

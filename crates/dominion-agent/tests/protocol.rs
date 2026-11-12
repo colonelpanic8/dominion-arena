@@ -1379,3 +1379,120 @@ fn black_markets_purchase_is_a_buy_and_shows_each_cards_cost() {
         assert_eq!(o.label, format!("{card} (${})", cost.coins));
     }
 }
+
+/// `t` with the top card of `seat`'s deck swapped with a lower card that is `wanted`.
+fn with_top_card(t: &Table, seat: usize, wanted: impl Fn(Card) -> bool) -> Option<Table> {
+    let mut json: Value = serde_json::to_value(t).unwrap();
+    let deck: Vec<usize> = json["game"]["players"][seat]["deck"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| id.as_u64().unwrap() as usize)
+        .collect();
+    let card = |json: &Value, id: usize| -> Card {
+        serde_json::from_value(json["game"]["cards"][id].clone()).unwrap()
+    };
+    let &top = deck.last()?;
+    let &other = deck.iter().rev().find(|&&id| wanted(card(&json, id)))?;
+    for path in [["game", "cards"], ["knowledge", "is"]] {
+        json[path[0]][path[1]]
+            .as_array_mut()
+            .unwrap()
+            .swap(top, other);
+    }
+    Some(serde_json::from_value(json).unwrap())
+}
+
+/// Throne Room on Jester with three players: whether Jester asks P1 again before Throne
+/// Room replays it depends on P3's top card, which P1 can't see, so the hint on Jester's
+/// question can't either. Two tables differ only in that card.
+#[test]
+fn the_way_hint_does_not_depend_on_cards_the_seat_cannot_see() {
+    let estate = |card: Card| card == Card::Estate;
+    for seed in 0..60 {
+        let config = GameConfig {
+            landscapes: vec![Card::WayOfTheOx],
+            colonies: Some(false),
+            shelters: Some(false),
+            ..GameConfig::new(
+                3,
+                vec![
+                    Card::ThroneRoom,
+                    Card::Jester,
+                    Card::Cellar,
+                    Card::Market,
+                    Card::Mine,
+                    Card::Remodel,
+                    Card::Smithy,
+                    Card::Workshop,
+                    Card::Festival,
+                    Card::Laboratory,
+                ],
+                seed,
+            )
+        };
+        let mut t = Table::new("t", config, vec![]).unwrap();
+        let mut bought = [0; 2];
+        for _ in 0..2000 {
+            let Some(seat) = t.deciding() else { break };
+            let d = t.view(seat).decision.unwrap();
+            let end = pick(&d, |o| o.action == "end-phase");
+            let plays = |card: &str| {
+                pick(&d, |o| {
+                    o.action == "play" && o.card.as_deref() == Some(card)
+                })
+            };
+            if seat.0 == 0
+                && d.phase.as_deref() == Some("action")
+                && let (Some(throne), Some(_)) = (plays("Throne Room"), plays("Jester"))
+            {
+                // P2's top card is no Victory card, so Jester asks P1 about it.
+                let Some(base) = with_top_card(&t, 1, |c| !estate(c)) else {
+                    break;
+                };
+                let [Some(estate), Some(copper)] = [
+                    with_top_card(&base, 2, estate),
+                    with_top_card(&base, 2, |c| !estate(c)),
+                ] else {
+                    break;
+                };
+                let asked = |mut t: Table| {
+                    t.answer_with(PlayerId(0), &throne, Some(WayChoice::None))
+                        .unwrap();
+                    let d = t.view(PlayerId(0)).decision.unwrap();
+                    let jester = pick(&d, |o| o.card.as_deref() == Some("Jester")).unwrap();
+                    t.answer_with(PlayerId(0), &jester, Some(WayChoice::None))
+                        .unwrap();
+                    serde_json::to_value(t.view(PlayerId(0))).unwrap()
+                };
+                let (estate, copper) = (asked(estate), asked(copper));
+                let prompt = estate["decision"]["prompt"].as_str().unwrap();
+                assert!(prompt.starts_with("Jester:"), "{prompt}");
+                assert_eq!(estate, copper);
+                return;
+            }
+            let answer = if d.kind != "turn" {
+                first(&d)
+            } else if seat.0 != 0 || d.phase.as_deref() == Some("action") {
+                end.unwrap()
+            } else {
+                let buy = |i: usize, label: &str| {
+                    pick(&d, |o| bought[i] < 2 && o.label.starts_with(label))
+                };
+                if let Some(play) = pick(&d, |o| o.action == "play") {
+                    play
+                } else if let Some(jester) = buy(0, "Buy Jester") {
+                    bought[0] += 1;
+                    jester
+                } else if let Some(throne) = buy(1, "Buy Throne Room") {
+                    bought[1] += 1;
+                    throne
+                } else {
+                    end.unwrap()
+                }
+            };
+            t.answer(seat, &answer).unwrap();
+        }
+    }
+    panic!("no game had Throne Room and Jester in hand together");
+}

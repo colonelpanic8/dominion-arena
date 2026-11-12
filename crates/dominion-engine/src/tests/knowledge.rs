@@ -729,6 +729,76 @@ fn star_chart_shows_the_shuffled_cards_and_shuffles_the_others_again() {
     assert_eq!(groups, [rest_sorted]);
 }
 
+/// What `viewer` knows of `p`'s hand, deck and discard pile, the groups spread over them
+/// in a fixed order.
+fn known_of(g: &Game, k: &Knowledge, viewer: PlayerId, p: PlayerId) -> Vec<String> {
+    let known = k.known(g, viewer);
+    let zones = [Zone::Hand(p), Zone::Deck(p), Zone::Discard(p)];
+    let mut uncertain: Vec<String> = known.uncertain.iter().map(|u| format!("{u:?}")).collect();
+    uncertain.sort();
+    zones
+        .map(|z| format!("{:?}", known.zone(z)))
+        .into_iter()
+        .chain(uncertain)
+        .collect()
+}
+
+/// A shuffle of the whole deck (Annex; Inn and Famine shuffle the same way) mixes the
+/// cards Star Chart looked through on an earlier shuffle with the others: drawing some of
+/// them tells the others nothing.
+#[test]
+fn a_shuffle_of_the_whole_deck_mixes_cards_looked_through_before() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Annex, Card::StarChart],
+        ..GameConfig::new(2, vec![Card::Smithy], 7)
+    });
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    let mut pile = vec![Card::Gold; 4];
+    pile.extend([Card::Silver; 3]);
+    pile.extend([Card::Estate; 3]);
+    let pile = discard(&mut g, P0, &pile);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Smithy);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    choose(&mut g, &[pile[0]]);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    let pl = g.player(P0);
+    assert_eq!((pl.hand.len(), pl.deck.len(), pl.discard.len()), (5, 2, 4));
+    // Annex shuffles the 4 cards of the discard pile into the 2 of the deck, Star Chart
+    // declined; Clean-up draws 5 of the 6.
+    let world = |seed: u64| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        g.rng = ChaCha8Rng::seed_from_u64(seed);
+        respond(&mut g, Response::Move(Move::BuyLandscape(Card::Annex)));
+        choose(&mut g, &[]);
+        respond(&mut g, Response::option(Opt::No));
+        next_turn(&mut g);
+        k.update(&mut g);
+        (g, k)
+    };
+    let (first, first_k) = world(0);
+    let mut hands = std::collections::BTreeSet::new();
+    for seed in 0..12 {
+        let (g, k) = world(seed);
+        hands.insert(hand_kinds(&g, P0));
+        assert_eq!(g.log(), first.log());
+        assert_eq!(
+            known_of(&g, &k, P1, P0),
+            known_of(&first, &first_k, P1, P0),
+            "seed {seed}"
+        );
+    }
+    assert!(hands.len() > 1, "the shuffles all came out the same");
+}
+
 /// Bad Omens leaves two Coppers as the deck, as everyone knows.
 #[test]
 fn everyone_knows_the_coppers_bad_omens_leaves_on_the_deck() {
@@ -801,6 +871,61 @@ fn only_its_owner_follows_a_card_taken_from_under_a_crypt() {
             .get(&Card::Gold),
         Some(&1)
     );
+}
+
+/// A Stash set aside face down between two Treasures has its own back, and does not tell
+/// which of the others comes back first.
+#[test]
+fn a_stash_under_a_crypt_does_not_tell_which_treasure_is_taken() {
+    let mut g = setup(&[Card::Crypt, Card::Stash]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Stash, Card::Copper, Card::Crypt],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    let (mut g, mut k) = start(g);
+    for card in [Card::Gold, Card::Stash, Card::Copper] {
+        play(&mut g, card);
+    }
+    end_phase(&mut g);
+    play(&mut g, Card::Crypt);
+    let under = candidates(&g);
+    assert_eq!(kinds(&g, &under), [Card::Gold, Card::Stash, Card::Copper]);
+    choose(&mut g, &under);
+    k.update(&mut g);
+    while g.pending().unwrap().source != Some(Card::Crypt) {
+        end_phase(&mut g);
+        k.update(&mut g);
+    }
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, under[0], under[2]);
+    assert_eq!(ka.known(&ga, P1), kb.known(&gb, P1));
+}
+
+/// The same with Archive, for cards everyone saw go onto the deck around a Stash, or over
+/// it.
+#[test]
+fn a_stash_set_aside_with_cards_from_the_deck_does_not_tell_which_one_is_taken() {
+    for top in [
+        [Card::Gold, Card::Stash, Card::Copper],
+        [Card::Gold, Card::Copper, Card::Stash],
+    ] {
+        let mut g = setup(&[Card::Archive, Card::Stash]);
+        hand(&mut g, P0, &[Card::Archive]);
+        deck(&mut g, P0, &[]);
+        let (mut g, mut k) = start(g);
+        for &card in top.iter().rev() {
+            let id = g.create(card, Zone::Deck(P0));
+            g.show(id);
+        }
+        k.update(&mut g);
+        play(&mut g, Card::Archive);
+        k.update(&mut g);
+        let aside = candidates(&g);
+        let of = |card: Card| *aside.iter().find(|&&c| g.card(c) == card).unwrap();
+        let [(ga, ka), (gb, kb)] = worlds(&g, &k, of(Card::Gold), of(Card::Copper));
+        assert_eq!(ka.known(&ga, P1), kb.known(&gb, P1), "{top:?}");
+    }
 }
 
 /// Archive: P0 knows the Duchy on top of P1's deck goes under the Archive, but not which
@@ -1350,15 +1475,27 @@ fn translate(a: &Game, b: &Game, r: &Response) -> Option<Response> {
 /// log and the next decision don't show: every card movement (without the card, unless
 /// they see it) and the cards they looked at.
 fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
-    // Names and choices are announced.
+    // Names, choices and moves are announced.
     let said = match &r {
         Response::Name(_) | Response::Options(_) | Response::Number(_) | Response::Pile(_) => {
             format!("{r:?}\n")
         }
+        Response::Move(Move::Play(c)) => format!("play {}\n", g.card(*c)),
+        Response::Move(m) => format!("{m:?}\n"),
         _ => String::new(),
     };
+    let since = g.log().len();
     g.respond(r).unwrap();
     let mut seen = vec![said; g.num_players()];
+    // Boons and Hexes are revealed and received with no card id.
+    for e in &g.log()[since..] {
+        if let Event::Revealed { card, .. } | Event::Received { card, .. } = e
+            && matches!(card.kind(), Kind::Boon | Kind::Hex)
+        {
+            seen.iter_mut()
+                .for_each(|out| out.push_str(&format!("{card}\n")));
+        }
+    }
     for entry in g.trace().unwrap_or_default() {
         match entry {
             Trace::Moved {
@@ -1396,6 +1533,11 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                     let _ = writeln!(seen[player.index()], "looked at {}", g.printed(*card));
                 }
             }
+            Trace::Shown { card, to: None } => {
+                for out in seen.iter_mut() {
+                    let _ = writeln!(out, "shown {}", g.printed(*card));
+                }
+            }
             Trace::Shown { card, to: Some(p) } => {
                 for (v, out) in seen.iter_mut().enumerate() {
                     let v = PlayerId(v as u8);
@@ -1428,6 +1570,26 @@ fn twins_agree(
                 continue;
             }
             if observation(&a.0, p, log_from) != observation(&b.0, p, log_from) {
+                // The log says no more than the table and the moves they watched (which
+                // of two public cards of one name moved is no news).
+                let log = |g: &Game| -> Vec<Event> {
+                    let mut log = g.log()[log_from.min(g.log().len())..].to_vec();
+                    for e in &mut log {
+                        if let Event::Moved { cards, .. } = e {
+                            cards.sort();
+                        }
+                    }
+                    log
+                };
+                if observation(&a.0, p, usize::MAX) == observation(&b.0, p, usize::MAX)
+                    && log(&a.0) != log(&b.0)
+                {
+                    return Err(format!(
+                        "{p} observed the same in both worlds but the log differs:\n{:?}\n{:?}\nAnswers since the split:\n{history}",
+                        log(&a.0),
+                        log(&b.0)
+                    ));
+                }
                 *same = false;
                 continue;
             }
@@ -1806,6 +1968,36 @@ fn looking_over_a_shuffle_preserves_known_cards_left_above_it() {
             theirs.uncertain
         );
     }
+}
+
+/// Twin worlds from the pending decision: one where the hidden future differs (how the
+/// next shuffles come out), or one where the deciding player answers otherwise. A player
+/// who observed the same in both must know the same, and read the same log.
+pub(super) fn check_hidden_twins(
+    g: &Game,
+    k: &Knowledge,
+    rng: &mut ChaCha8Rng,
+) -> Result<(), String> {
+    let Some(d) = g.pending() else { return Ok(()) };
+    let mut chaos = Chaos(ChaCha8Rng::seed_from_u64(rng.random()));
+    let mut a = (g.clone(), k.clone());
+    let mut b = a.clone();
+    b.0.rng = ChaCha8Rng::seed_from_u64(rng.random());
+    let mut same = vec![true; g.num_players()];
+    let (r, other) = (
+        chaos.decide(&g.view(d.player), d),
+        chaos.decide(&g.view(d.player), d),
+    );
+    if rng.random_bool(0.5) && other != r {
+        b = a.clone();
+        let sa = respond_traced(&mut a.0, &mut a.1, r);
+        let sb = respond_traced(&mut b.0, &mut b.1, other);
+        for (same, (x, y)) in same.iter_mut().zip(sa.iter().zip(&sb)) {
+            *same &= x == y;
+        }
+        same[d.player.index()] = false;
+    }
+    twins_agree(a, b, same, g.log().len(), rng)
 }
 
 pub(super) fn check_revealed_order_twins(

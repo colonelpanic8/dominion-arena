@@ -103,7 +103,7 @@ impl SetRules for Rules {
                             .pick
                             .is_some_and(|c| g.zone(c) == Zone::SetAside(player))
                     {
-                        out.push(duration_trigger(l, PRINCE_PLAY));
+                        out.push(duration_trigger(l, PRINCE_PLAY).plays_set_aside(g, l));
                     }
                 }
                 for l in due_durations(g, occ) {
@@ -113,7 +113,12 @@ impl SetRules for Rules {
                         Card::Summon => SUMMON_PLAY,
                         _ => continue,
                     };
-                    out.push(duration_trigger(l, ability));
+                    let t = duration_trigger(l, ability);
+                    out.push(if l.card == Card::Summon {
+                        t.plays_set_aside(g, l)
+                    } else {
+                        t
+                    });
                 }
             }
             Occasion::Play { player, card } if g.card(card) == Card::Silver => {

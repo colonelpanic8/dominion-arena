@@ -728,6 +728,19 @@ fn tunnel_gains_a_gold_when_discarded() {
     assert_eq!(g.count_owned(P1, Card::Gold), 2);
 }
 
+/// P0 discards a Tunnel and a Copper to Cellar and reveals the Tunnel for a Gold, which
+/// covers both.
+pub(super) fn tunnel_under_a_gold(g: &mut Game) {
+    play(g, Card::Cellar);
+    choose_kinds(g, &[Card::Tunnel, Card::Copper]);
+    assert_eq!(trigger_cards(g), [Card::Tunnel]);
+    trigger(g, 0);
+    assert_eq!(
+        kinds(g, &g.player(P0).discard),
+        [Card::Tunnel, Card::Copper, Card::Gold]
+    );
+}
+
 #[test]
 fn tunnel_does_nothing_in_clean_up() {
     let mut g = setup(&[Card::Tunnel]);

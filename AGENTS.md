@@ -240,7 +240,11 @@ them.
   with different effects under one name say what tells them apart (where the card is,
   the lasting effect's cards, its count). The window's
   decision has no `source`; its `question` names the moment ("P2 attacks you with
-  Militia").
+  Militia"). A trigger whose ability starts by playing a card its owner sees (a Reaction
+  that plays itself, Innovation, Royal Carriage, a card set aside to play at the start of
+  the turn) says so with `Trigger::plays(g, card)` (`plays_one_of` when it asks which
+  first, `plays_set_aside` for a lasting's `pick`): the window lists those options in
+  `Decision::plays`.
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
   `f.add_duration(g, data)` (keeps the card in play with what played it:
   `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting
@@ -356,7 +360,10 @@ them.
   them. Where the purpose doesn't say what a card, pile or number choice is for, add
   `Flow::question` ("put onto your Island mat", "choose a Supply pile for an Embargo
   token", "how many cards go above it? 0 puts it on top"). Text that counts something,
-  here and in the agent crate, says it with `amount` ("1 token", "2 Cards").
+  here and in the agent crate, says it with `amount` ("1 token", "2 Cards"). A "choose"
+  option or a Yes that plays a card at once ("play it?", Crystal Ball, Specialist) is
+  marked with `Flow::plays(g, option, cards)`; the fuzz test holds every marked option to
+  starting a play.
 - **Agents** get a `View`, never the `Game`: everything public (piles and their
   tokens through `PileView`, each player's tokens, mats and zones through
   `PlayerView`, landscapes, Artifacts, the Prophecy, Boon/Hex discards, lasting effects,
@@ -378,13 +385,16 @@ them.
   then `g.reshuffle_unplaced(p, placed)` once the others are shuffled again. Cards that change zones must go through `move_card` (or record a
   `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
   Only its owner follows a card that leaves cards they hold out of sight: a hand,
-  cards taken off their deck to look at, cards set aside face down together (move them one after the other), the cards of a
-  deck or discard pile they looked through. `g.show` such a card first when everyone
+  cards taken off their deck to look at, cards set aside face down together (move them one
+  after the other; a Stash or Shadow card among them is known by its back and leaves the
+  set whole), the cards of a deck or discard pile they looked through, until shuffled with
+  other cards. `g.show` such a card first when everyone
   knows which it is; other cards of a deck or discard pile are followed by everyone.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which
-  it was: shown with `g.show`, or leaving or entering a public zone; Clean-up's discards
+  it was: shown with `g.show` since it last moved, and not before its owner looked through
+  the discard pile it lies in, or leaving or entering a public zone; Clean-up's discards
   stay silent, `g.move_unlogged`); counters and tokens (Coffers, Villagers, Favors,
   Debt, VP tokens, Adventures tokens, -1 Card / -$1 / Journey, pile tokens, Sun tokens,
   States returned) become `Counter` / `TokenMoved` / `Marker` / `Returned`. A triggered
@@ -398,8 +408,8 @@ them.
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one
   `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
-  decisions mark their labels public with `public_choice`, and labels referring to private
-  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors,
+  decisions mark their labels public with `public_choice`, and a choice whose labels name
+  a private `about` card is never announced. Set counters on Sinister Plot and Family of Inventors,
   and the tokens on a lasting effect's card (Garrison), are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
@@ -415,9 +425,11 @@ them.
   is over; a different card's question remains open. The engine's questions and labels
   call players by seat ("P2 attacks you"); `project::named` puts the players' names in,
   for every question, label and announced choice. Decisions whose answer may play an
-  Action in a game with Ways end their prompt with `WAY_HINT` (a choice's options are
-  tried on a copy of the game: one plays a card if its player starts playing one before
-  being asked anything else, which is also the card a pre-answer applies to).
+  Action in a game with Ways end their prompt with `WAY_HINT`, decided only from what the
+  seat is shown: a play move or `Purpose::Play` question offering an Action, or a choice
+  with `Decision::plays`. No hint where something hidden decides whether a play follows
+  (Jester replayed by Throne Room). A pre-answer applies to the card its answer started
+  playing, found on the real game after the answer.
 
 ## Writing a set
 

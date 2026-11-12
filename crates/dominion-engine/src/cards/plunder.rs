@@ -358,7 +358,17 @@ impl SetRules for Rules {
         for l in turn_durations(g, occ) {
             let due = permanent(l.card) || l.turn < g.player(l.owner).turns_taken;
             if due && l.card.set() == Set::Plunder && has_start(l.card) {
-                out.push(duration_trigger(l, START));
+                let t = duration_trigger(l, START);
+                out.push(match l.card {
+                    Card::Hasty => t.plays_set_aside(g, l),
+                    Card::Patient | Card::Prepare => {
+                        let held: Vec<CardId> = (l.data.cards.iter().copied())
+                            .filter(|&c| g.zone(c) == Zone::SetAside(l.owner))
+                            .collect();
+                        t.plays_one_of(g, &held)
+                    }
+                    _ => t,
+                });
             }
         }
         search_triggers(g, out);
@@ -839,7 +849,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         Card::Gondola if !g.playable(gainer, Types::ACTION).is_empty() => {
             out.push(
                 on(Trigger::new(gainer, kind, GAINED))
-                    .optional("play an Action card from your hand"),
+                    .optional("play an Action card from your hand")
+                    .plays_one_of(g, &g.playable(gainer, Types::ACTION)),
             );
         }
         Card::WealthyVillage if treasure_names_in_play(g, gainer) >= 3 => {
@@ -905,12 +916,19 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             Card::MiningRoad
                 if mine && types.contains(Types::TREASURE) && where_gained(g, card) =>
             {
-                out.push(via(THIS_TURN).optional(format!("play {}", g.card(card))));
+                out.push(
+                    via(THIS_TURN)
+                        .optional(format!("play {}", g.card(card)))
+                        .plays(g, card),
+                );
             }
             Card::Deliver if mine && where_gained(g, card) => {
                 out.push(via(THIS_TURN));
             }
-            Card::Rush | Card::Mirror if next(Types::ACTION) => {
+            Card::Rush if next(Types::ACTION) => {
+                out.push(via(THIS_TURN).plays(g, card));
+            }
+            Card::Mirror if next(Types::ACTION) => {
                 out.push(via(THIS_TURN));
             }
             _ => {}
@@ -932,7 +950,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     out.push(
                         Trigger::new(p, g.card(c), REACT)
                             .on(c)
-                            .reaction("play it from your hand"),
+                            .reaction("play it from your hand")
+                            .plays(g, c),
                     );
                 }
             }
@@ -957,7 +976,7 @@ fn after_play_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<T
                         t.contains(Types::ACTION) && !t.contains(Types::COMMAND)
                     }) =>
             {
-                out.push(via(WAITED));
+                out.push(via(WAITED).plays(g, card));
             }
             Card::HarborVillage
                 if l.owner == player && next_play(g, l, card, |t| t.contains(Types::ACTION)) =>
@@ -992,9 +1011,18 @@ fn after_play_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<T
         out.push(
             Trigger::new(player, Card::Inspiring, TRAIT)
                 .on(card)
-                .optional("play an Action from your hand that you have no copy of in play"),
+                .optional("play an Action from your hand that you have no copy of in play")
+                .plays_one_of(g, &inspiring_choices(g, player)),
         );
     }
+}
+
+/// The Actions Inspiring lets `p` play: those they have no copy of in play.
+fn inspiring_choices(g: &Game, p: PlayerId) -> Vec<CardId> {
+    let names: Vec<Card> = g.in_play(p).iter().map(|&c| g.card(c)).collect();
+    (g.playable(p, Types::ACTION).into_iter())
+        .filter(|&c| !names.contains(&g.card(c)))
+        .collect()
 }
 
 /// Whether the play whose Played event is at `since` was `p`'s first play this turn.
@@ -1905,12 +1933,7 @@ fn trait_ability(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         Card::Inspiring => match f.pc {
             0 => {
-                let names: Vec<Card> = g.in_play(p).iter().map(|&c| g.card(c)).collect();
-                let actions: Vec<CardId> = g
-                    .playable(p, Types::ACTION)
-                    .into_iter()
-                    .filter(|&c| !names.contains(&g.card(c)))
-                    .collect();
+                let actions = inspiring_choices(g, p);
                 if actions.is_empty() {
                     return Flow::done();
                 }
@@ -2713,6 +2736,7 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.pick = Some(c);
             f.pc = 4;
             f.ask_yes_no(Purpose::Play, format!("Play {}", g.card(c)))
+                .plays(g, Opt::Yes, &[c])
         }
         4 => {
             f.pc = 5;

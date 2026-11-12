@@ -45,7 +45,8 @@ pub struct Knowledge {
     created_in: Option<(Container, CardId)>,
     /// Per card, the set it is held in out of the other players' sight (0: none): the
     /// cards of a deck or discard pile their owner looked at together, or cards set aside
-    /// face down together. It lasts while the card stays there unrevealed.
+    /// face down together. It lasts while the card stays there unrevealed and is not
+    /// shuffled with other cards.
     #[serde(default)]
     held: Vec<u32>,
     #[serde(default)]
@@ -578,6 +579,12 @@ impl Knowledge {
             Trace::Mixed { cards } => {
                 self.settle();
                 self.face_up.retain(|c| !cards.contains(c));
+                // Mixed with other cards (a whole deck shuffled), a held set's cards are
+                // no longer the ones looked at together.
+                let set = |c: &CardId| self.held[c.index()];
+                if cards.iter().any(|c| set(c) != set(&cards[0])) {
+                    cards.iter().for_each(|c| self.held[c.index()] = 0);
+                }
                 let mixed = cards
                     .iter()
                     .copied()
@@ -750,8 +757,13 @@ impl Knowledge {
         self.members.entry(to).or_default().push(card);
         self.held[card.index()] = 0;
         // Set aside face down: with the cards set aside along with it.
-        if matches!(to, Zone::SetAside(_)) && !face_up && !marked(is) {
-            self.hold(card, to, joining);
+        if matches!(to, Zone::SetAside(_)) && !face_up {
+            if marked(is) {
+                // Its back is known, not which of the cards around it is which.
+                self.joining = joining;
+            } else {
+                self.hold(card, to, joining);
+            }
         }
         let shown = public(game, from) || public(game, to) || marked(is);
         for (v, mind) in self.minds.iter_mut().enumerate() {

@@ -116,6 +116,18 @@ impl Flow {
         self
     }
 
+    /// Marks `option` of the decision asked as playing one of `cards`, which its player
+    /// sees (asking which first if there are several), if one is an Action (see
+    /// [`Decision::plays`]).
+    pub(crate) fn plays(mut self, g: &Game, option: Opt, cards: &[CardId]) -> Flow {
+        if let Flow::Ask(d) = &mut self
+            && cards.iter().any(|&c| g.is(c, Types::ACTION))
+        {
+            d.plays.push(option);
+        }
+        self
+    }
+
     /// Says in words what the decision asked asks (see [`Decision::question`]).
     pub(crate) fn question(mut self, text: impl Into<String>) -> Flow {
         if let Flow::Ask(d) = &mut self {
@@ -768,6 +780,7 @@ fn resume_shuffle(
                 *pc = 2;
                 let n = bottom.len();
                 return Flow::Ask(Decision {
+                    plays: vec![],
                     public_choice: false,
                     player: p,
                     kind: DecisionKind::Cards {
@@ -897,6 +910,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                             .map(|&s| extra_turn_label(g, p, s, last == Some(p)))
                             .collect();
                         return Flow::Ask(Decision {
+                            plays: vec![],
                             public_choice: true,
                             player: p,
                             kind: DecisionKind::Choose {
@@ -1002,6 +1016,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
 
 fn ask_moves(player: PlayerId, phase: Phase, moves: Vec<Move>) -> Flow {
     Flow::Ask(Decision {
+        plays: vec![],
         public_choice: false,
         player,
         kind: DecisionKind::Turn { phase, moves },
@@ -1500,6 +1515,7 @@ fn resume_overpay(
     let (coins, potions) = g.funds(p);
     let ask = |max: u32| {
         Flow::Ask(Decision {
+            plays: vec![],
             public_choice: false,
             player: p,
             kind: DecisionKind::Number {
@@ -1661,6 +1677,7 @@ impl PlayFrame {
                     labels.push(w.to_string());
                 }
                 Flow::Ask(Decision {
+                    plays: vec![],
                     public_choice: false,
                     player: p,
                     kind: DecisionKind::Choose {

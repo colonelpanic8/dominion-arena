@@ -197,6 +197,7 @@ fn vassal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 3;
             f.ask_yes_no(Purpose::Play, format!("Play {}", g.card(c)))
+                .plays(g, crate::Opt::Yes, &[c])
         }
         3 if input.is_yes() => {
             f.pc = 4;

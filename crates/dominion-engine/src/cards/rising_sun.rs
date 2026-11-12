@@ -335,7 +335,12 @@ impl SetRules for Rules {
                 l.card,
                 Card::Riverboat | Card::RapidExpansion | Card::BidingTime
             ) {
-                out.push(duration_trigger(l, START));
+                let t = duration_trigger(l, START);
+                out.push(match (l.card, g.ext.rising_sun.riverboat) {
+                    (Card::Riverboat, Some(c)) => t.plays(g, c),
+                    (Card::RapidExpansion, _) => t.plays_set_aside(g, l),
+                    _ => t,
+                });
             }
         }
         for l in turn_durations(g, occ) {
@@ -418,7 +423,9 @@ impl SetRules for Rules {
                 for l in this_turn(g, Card::Daimyo, player) {
                     if l.data.pick == Some(card) {
                         out.push(
-                            Trigger::new(player, Card::Daimyo, DAIMYO_REPLAY).via_lasting(l.id),
+                            Trigger::new(player, Card::Daimyo, DAIMYO_REPLAY)
+                                .via_lasting(l.id)
+                                .plays(g, card),
                         );
                     }
                 }

@@ -1316,6 +1316,9 @@ impl Game {
                     input = Input::Start;
                 }
                 Flow::Call(child) => {
+                    // A frame that looked through a discard pile has taken what it takes
+                    // from it before it goes on.
+                    self.end_discard_searches();
                     self.stack.push(frame);
                     self.stack.push(child);
                     input = Input::Start;
