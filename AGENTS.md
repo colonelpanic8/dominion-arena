@@ -11,6 +11,10 @@ From the repo root (direnv loads the Nix dev shell; otherwise prefix `nix develo
 - `just check`: fmt-check, clippy `-D warnings` (and dominion-web for wasm32), tests.
 - `just web-build` / `web-serve` / `web-dev`: build, serve or hot-reload the web client.
 - `just fmt`: format Rust and `flake.nix`.
+- Nix: `packages.default` is `dominion`, `packages.web` the client (dx in the sandbox,
+  with wasm-bindgen pinned to the crate's version), `packages.dominion-with-web` the binary
+  wrapped with `DOMINION_WEB_DIR`. Bumping wasm-bindgen means bumping both the crate pin
+  and `wasm-bindgen-cli_*` in `flake.nix`. `nix flake check` builds all but the wrapper.
 - Focused: `cargo test -p dominion-engine tests::<set>`.
 
 ## Layout

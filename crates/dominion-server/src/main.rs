@@ -38,7 +38,7 @@ enum Command {
         /// Directory of the asset cache, served at /assets.
         #[arg(long)]
         assets_dir: Option<PathBuf>,
-        /// Directory of the built web client, served at /.
+        /// Directory of the built web client, served at / (default: web_dir, then $DOMINION_WEB_DIR).
         #[arg(long)]
         web_dir: Option<PathBuf>,
     },
@@ -146,7 +146,8 @@ async fn serve(config: Config) -> Result<(), String> {
         }
     };
     eprintln!("dominion: MCP endpoint http://{addr}/mcp");
-    if config.web_dir.is_some() {
+    let web_dir = config.web_dir();
+    if web_dir.is_some() {
         eprintln!("dominion: web client http://{addr}/");
     }
     let stop = CancellationToken::new();
@@ -159,7 +160,7 @@ async fn serve(config: Config) -> Result<(), String> {
         allowed_hosts: hosts,
         session_idle: config.session_idle(),
         assets_dir: config.assets_dir(),
-        web_dir: config.web_dir.clone(),
+        web_dir,
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await

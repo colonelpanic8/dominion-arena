@@ -10,6 +10,8 @@ pub const DEFAULT_PORT: u16 = 7317;
 pub const DEFAULT_KEEP_FINISHED_DAYS: u32 = 7;
 pub const DEFAULT_SESSION_IDLE_MINUTES: u32 = 24 * 60;
 pub const DEFAULT_RECONNECT_SECONDS: u32 = 30;
+/// The environment variable naming the web client to serve when `web_dir` is unset.
+pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +43,8 @@ pub struct Config {
     /// Where `dominion assets sync` keeps dominion.games' images, fonts and sounds, and
     /// `dominion serve` serves them from (default `$XDG_CACHE_HOME/dominion/assets`).
     pub assets_dir: Option<PathBuf>,
-    /// The built web client `dominion serve` serves at `/` (default none).
+    /// The built web client `dominion serve` serves at `/` (default `$DOMINION_WEB_DIR`,
+    /// which a packaged build sets to its own client; otherwise none).
     pub web_dir: Option<PathBuf>,
 }
 
@@ -79,6 +82,17 @@ impl Config {
         self.assets_dir
             .clone()
             .or_else(|| Some(xdg_dir("XDG_CACHE_HOME", ".cache")?.join("dominion/assets")))
+    }
+
+    /// The built web client to serve, if any.
+    pub fn web_dir(&self) -> Option<PathBuf> {
+        self.web_dir_or(std::env::var_os(WEB_DIR_ENV))
+    }
+
+    fn web_dir_or(&self, env: Option<std::ffi::OsString>) -> Option<PathBuf> {
+        self.web_dir
+            .clone()
+            .or_else(|| env.filter(|v| !v.is_empty()).map(PathBuf::from))
     }
 
     /// Reads `path`, or the default file if it exists; no file means default settings.
@@ -154,6 +168,20 @@ mod tests {
         assert_eq!(on.state_dir(), Some(PathBuf::from("/x")));
         let sessions: Config = toml::from_str("session_idle_minutes = 0").unwrap();
         assert_eq!(sessions.session_idle(), None);
+    }
+
+    #[test]
+    fn the_web_dir_setting_wins_over_the_environment() {
+        let env = || Some(std::ffi::OsString::from("/nix/store/web"));
+        let set: Config = toml::from_str("web_dir = \"/srv/web\"").unwrap();
+        assert_eq!(set.web_dir_or(env()), Some(PathBuf::from("/srv/web")));
+        let unset = Config::default();
+        assert_eq!(
+            unset.web_dir_or(env()),
+            Some(PathBuf::from("/nix/store/web"))
+        );
+        assert_eq!(unset.web_dir_or(Some("".into())), None);
+        assert_eq!(unset.web_dir_or(None), None);
     }
 
     #[test]
