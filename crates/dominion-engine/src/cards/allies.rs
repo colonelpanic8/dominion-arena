@@ -322,12 +322,16 @@ impl SetRules for Rules {
             },
             Occasion::Play { player, card } => {
                 if g.is(card, Types::TREASURE)
-                    && highwayman_attacks(g, player)
+                    && let Some(l) = attack_on(g, Card::Highwayman, player)
                     && !g
                         .plays_before(player, card)
                         .any(|(_, t)| t.contains(Types::TREASURE))
                 {
-                    out.push(Trigger::new(player, Card::Highwayman, HIGHWAYMAN_BLOCK).on(card));
+                    out.push(
+                        Trigger::new(player, Card::Highwayman, HIGHWAYMAN_BLOCK)
+                            .on(card)
+                            .via_lasting(l.id),
+                    );
                 }
             }
             Occasion::DiscardFromPlay { player } => {
@@ -714,8 +718,8 @@ fn draw_then_done(f: &mut CardFrame, pc: u8, n: usize) -> Flow {
 
 /// A Highwayman's or Warlord's Attack on `p` is on: played by another player whose
 /// next turn hasn't started yet.
-fn attack_on(g: &Game, card: Card, p: PlayerId) -> bool {
-    g.lasting().iter().any(|l| {
+fn attack_on(g: &Game, card: Card, p: PlayerId) -> Option<&crate::game::Lasting> {
+    g.lasting().iter().find(|l| {
         l.card == card
             && l.until == Until::Removed
             && l.owner != p
@@ -724,12 +728,8 @@ fn attack_on(g: &Game, card: Card, p: PlayerId) -> bool {
     })
 }
 
-fn highwayman_attacks(g: &Game, p: PlayerId) -> bool {
-    attack_on(g, Card::Highwayman, p)
-}
-
 fn warlord_attacks(g: &Game, p: PlayerId) -> bool {
-    attack_on(g, Card::Warlord, p)
+    attack_on(g, Card::Warlord, p).is_some()
 }
 
 /// Adds a token to the Garrison whose lasting `watcher` watches this turn's gains.

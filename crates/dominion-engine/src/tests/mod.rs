@@ -1292,3 +1292,55 @@ fn trigger_labels(g: &Game) -> Vec<String> {
         k => panic!("expected a Choose decision, got {k:?}"),
     }
 }
+
+#[test]
+fn lasting_attack_headers_name_the_attacker() {
+    for (attack, played) in [
+        (Card::SwampHag, None),
+        (Card::HauntedWoods, None),
+        (Card::Gatekeeper, None),
+        (Card::Frigate, Some(Card::Village)),
+        (Card::Corsair, Some(Card::Silver)),
+        (Card::Enchantress, Some(Card::Village)),
+        (Card::Highwayman, Some(Card::Silver)),
+    ] {
+        let mut g = setup(&[attack, Card::Village]);
+        hand(&mut g, P0, &[attack]);
+        hand(&mut g, P1, &[played.unwrap_or(Card::Copper); 6]);
+        deck(&mut g, P0, &[Card::Copper; 10]);
+        deck(&mut g, P1, &[Card::Copper; 10]);
+        g.start();
+        play(&mut g, attack);
+        while g.pending().unwrap().player == P0 {
+            end_phase(&mut g);
+        }
+        let before = g.log().len();
+        if let Some(card) = played {
+            play(&mut g, card);
+        } else {
+            buy(&mut g, Card::Copper);
+        }
+        // Optional/order questions need no answer: a header is emitted at its first effect.
+        if g.pending().unwrap().purpose == Purpose::TopDeck {
+            let cards = candidates(&g);
+            choose(&mut g, &cards);
+        }
+        if g.pending().unwrap().purpose == Purpose::Discard {
+            let cards = candidates(&g);
+            let min = match &g.pending().unwrap().kind {
+                DecisionKind::Cards { min, .. } => *min,
+                _ => unreachable!(),
+            };
+            choose(&mut g, &cards[..min]);
+        }
+        let headers: Vec<_> = g.log()[before..]
+            .iter()
+            .take_while(|e| !matches!(e, Event::TurnStart { .. }))
+            .filter_map(|e| match e {
+                Event::Resolved { player, card } if *card == attack => Some(*player),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(headers, [P0], "{attack}: {:?}", &g.log()[before..]);
+    }
+}

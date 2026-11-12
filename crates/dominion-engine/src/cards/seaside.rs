@@ -154,10 +154,14 @@ impl SetRules for Rules {
                         .plays_before(player, card)
                         .any(|(c, _)| silver_or_gold(&c));
                 if first
-                    && until_then(g, Card::Corsair)
-                        .any(|l| l.owner != player && in_mask(l.data.n, player))
+                    && let Some(l) = until_then(g, Card::Corsair)
+                        .find(|l| l.owner != player && in_mask(l.data.n, player))
                 {
-                    out.push(Trigger::new(player, Card::Corsair, CORSAIR_TRASH).on(card));
+                    out.push(
+                        Trigger::new(player, Card::Corsair, CORSAIR_TRASH)
+                            .on(card)
+                            .via_lasting(l.id),
+                    );
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),

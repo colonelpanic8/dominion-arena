@@ -370,8 +370,8 @@ them.
   stay silent, `g.move_unlogged`); counters and tokens (Coffers, Villagers, Favors,
   Debt, VP tokens, Adventures tokens, -1 Card / -$1 / Journey, pile tokens, Sun tokens,
   States returned) become `Counter` / `TokenMoved` / `Marker` / `Returned`. A triggered
-  ability's `Resolved` header (unless the trigger is `labelled`) is logged before the
-  first thing it does, and `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
+  ability's `Resolved` header (unless the trigger is `labelled`) names its lasting
+  effect's owner and is logged when the ability begins, and `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
   Boon rather than a card's own play are logged as `Bonus`. So never emit a move or
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one

@@ -802,15 +802,18 @@ fn enchant_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trig
         .plays
         .last()
         .is_some_and(|st| st.card == card && st.replaced.is_none());
-    let enchanted = g.lasting().iter().any(|l| {
+    let enchanted = g.lasting().iter().find(|l| {
         l.card == Card::Enchantress
             && l.until == Until::Removed
             && g.before_next_turn(l)
             && l.owner != player
             && in_mask(l.data.n, player)
     });
-    if first_action && open && enchanted {
-        out.push(Trigger::new(player, Card::Enchantress, ENCHANT));
+    if first_action
+        && open
+        && let Some(l) = enchanted
+    {
+        out.push(Trigger::new(player, Card::Enchantress, ENCHANT).via_lasting(l.id));
     }
 }
 

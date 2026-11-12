@@ -39,8 +39,6 @@ struct Resolving {
     /// How many plays were in progress when it began: +$ and the like are its own only
     /// while no other play has begun.
     plays: usize,
-    /// Logged before the first thing it does.
-    header: Option<Event>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -219,12 +217,10 @@ impl Game {
         self.scribe.shown.retain(|c| !cards.contains(c));
     }
 
-    /// An ability begins to resolve; `header`, if any, is logged before the first thing it
-    /// does.
-    pub(crate) fn begin_resolving(&mut self, header: Option<Event>) {
+    /// An ability begins to resolve.
+    pub(crate) fn begin_resolving(&mut self) {
         self.scribe.resolving.push(Resolving {
             plays: self.plays.len(),
-            header,
         });
     }
 
@@ -308,11 +304,6 @@ impl Game {
         self.scribe.tally = Some(new);
         if lines.is_empty() && event.is_none() {
             return;
-        }
-        for r in &mut self.scribe.resolving {
-            if let Some(h) = r.header.take() {
-                self.log.push(h);
-            }
         }
         self.log.extend(lines);
     }

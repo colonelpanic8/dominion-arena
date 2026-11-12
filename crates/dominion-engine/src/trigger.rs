@@ -410,10 +410,16 @@ impl Window {
         self.done.push((i, t.clone()));
         // A label can say what only its owner knows.
         let header = t.label.is_none().then_some(crate::Event::Resolved {
-            player: t.owner,
+            player: t
+                .lasting
+                .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+                .map_or(t.owner, |l| l.owner),
             card: t.card,
         });
-        g.begin_resolving(header);
+        if let Some(header) = header {
+            g.emit(header);
+        }
+        g.begin_resolving();
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
         f.occ = Some(self.occs[i].clone());
         f.lasting = t.lasting;
