@@ -84,7 +84,8 @@ impl Client {
 /// What the player typed.
 #[derive(Debug, PartialEq, Eq)]
 enum Input {
-    Indices(Vec<u32>),
+    /// Option numbers, and a pre-answer for the Way question.
+    Indices(Vec<u32>, Option<String>),
     Name(String),
     Quit,
 }
@@ -100,6 +101,16 @@ fn parse(line: &str) -> Result<Input, String> {
     {
         return Ok(Input::Name(name.trim().to_string()));
     }
+    let (line, way) = match line.split_once("way") {
+        Some((indices, way)) => {
+            let way = way.trim_start_matches([':', ' ']).trim().trim_matches('"');
+            if way.is_empty() {
+                return Err("`way` needs \"none\" or a Way's name".into());
+            }
+            (indices, Some(way.to_string()))
+        }
+        None => (line, None),
+    };
     line.split(|c: char| c == ',' || c.is_whitespace())
         .filter(|s| !s.is_empty())
         .map(|s| {
@@ -107,7 +118,7 @@ fn parse(line: &str) -> Result<Input, String> {
                 .map_err(|_| format!("{s:?} is not an option number"))
         })
         .collect::<Result<_, _>>()
-        .map(Input::Indices)
+        .map(|indices| Input::Indices(indices, way))
 }
 
 /// How long the terminal client waits for a reply; its longest call waits a minute.
@@ -280,14 +291,22 @@ pub async fn play(
             }
             let args = match parse(&line) {
                 Ok(Input::Quit) => break 'game,
-                Ok(Input::Indices(indices)) => {
-                    json!({ "token": seat.token, "decision_id": id, "indices": indices })
+                Ok(Input::Indices(indices, way)) => {
+                    let mut args =
+                        json!({ "token": seat.token, "decision_id": id, "indices": indices });
+                    if let Some(way) = way {
+                        args["way"] = json!(way);
+                    }
+                    args
                 }
                 Ok(Input::Name(name)) => {
                     json!({ "token": seat.token, "decision_id": id, "name": name })
                 }
                 Err(e) => {
-                    println!("{e}; type option numbers (space separated), `name <card>`, or q");
+                    println!(
+                        "{e}; type option numbers (space separated, then optionally \
+                         `way none` or `way <Way>`), `name <card>`, or q"
+                    );
                     continue;
                 }
             };
@@ -314,9 +333,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_indices_names_and_quit() {
-        assert_eq!(parse("2 0,1\n"), Ok(Input::Indices(vec![2, 0, 1])));
-        assert_eq!(parse("\n"), Ok(Input::Indices(vec![])));
+    fn parses_indices_names_ways_and_quit() {
+        assert_eq!(parse("2 0,1\n"), Ok(Input::Indices(vec![2, 0, 1], None)));
+        assert_eq!(parse("\n"), Ok(Input::Indices(vec![], None)));
+        assert_eq!(
+            parse("3 way none"),
+            Ok(Input::Indices(vec![3], Some("none".into())))
+        );
+        assert_eq!(
+            parse("3 way: \"Way of the Ox\""),
+            Ok(Input::Indices(vec![3], Some("Way of the Ox".into())))
+        );
+        assert!(parse("3 way").is_err());
         assert_eq!(parse("name Gold"), Ok(Input::Name("Gold".into())));
         assert_eq!(parse("q"), Ok(Input::Quit));
         assert!(parse("two").is_err());

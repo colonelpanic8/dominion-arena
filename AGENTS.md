@@ -237,6 +237,9 @@ them.
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
   tests validate every view, decision and answer against the vendored copy.
+  `Table::answer_with` (the MCP `answer` tool's `way`) also answers the `Purpose::Way`
+  questions that follow an answer for its seat; decisions whose answer may play an
+  Action in a game with Ways end their prompt with `WAY_HINT`.
 
 ## Writing a set
 

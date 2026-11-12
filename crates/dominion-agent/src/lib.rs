@@ -3,7 +3,8 @@
 //! A [`Table`] hosts one game and tracks what each seat knows. [`Table::view`] gives a
 //! seat's [`AgentView`]: everything that seat may know (with perfect recall), plus its
 //! open decision as a flat list of indexed options. [`Table::answer`] takes option
-//! indices (or a card name) and plays them. [`text::render`] renders a view compactly for
+//! indices (or a card name) and plays them; [`Table::answer_with`] can also answer the
+//! Way questions that follow in advance. [`text::render`] renders a view compactly for
 //! language models. The JSON Schema is vendored at `protocol/agent-view.schema.json`.
 
 mod project;
@@ -11,7 +12,8 @@ mod table;
 pub mod text;
 mod types;
 
-pub use table::{AnswerError, Table};
+pub use project::WAY_HINT;
+pub use table::{AnswerError, Answered, Table, WayChoice};
 pub use types::*;
 
 use dominion_engine::Card;

@@ -1,7 +1,8 @@
 use dominion_agent::{
-    AgentDecision, AgentOption, Answer, AnswerError, JSON_SCHEMA, Table, glossary_for, text,
+    AgentDecision, AgentOption, Answer, AnswerError, Answered, JSON_SCHEMA, Table, WayChoice,
+    glossary_for, text,
 };
-use dominion_engine::{Card, GameConfig, PlayerId, Set};
+use dominion_engine::{Card, GameConfig, Kind, PlayerId, Set};
 use jsonschema::Validator;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -100,7 +101,18 @@ fn random_games_produce_valid_views_and_answerable_options() {
                 &serde_json::to_value(&answer).unwrap(),
                 "answer",
             );
-            if let Err(e) = table.answer(seat, &answer) {
+            // Sometimes with a Way question answered in advance.
+            let ways: Vec<Card> = (table.game().landscapes().iter())
+                .copied()
+                .filter(|l| l.kind() == Kind::Way)
+                .collect();
+            let way = (!ways.is_empty() && rng.random_bool(0.3)).then(|| {
+                match ways.get(rng.random_range(0..=ways.len())) {
+                    Some(&w) => WayChoice::Way(w),
+                    None => WayChoice::None,
+                }
+            });
+            if let Err(e) = table.answer_with(seat, &answer, way) {
                 panic!("seed {seed}: random answer {answer:?} to {d:?} rejected: {e}");
             }
             step += 1;
@@ -677,4 +689,258 @@ fn the_final_view_knows_the_last_clean_ups_discard_top() {
     let known = t.knowledge().known(g, PlayerId(0));
     let discard = known.zone(dominion_engine::Zone::Discard(last));
     assert!(discard.known.contains_key(&g.card(top)), "{discard:?}");
+}
+
+/// A 2-player game with Throne Room, Laboratory and `landscapes`.
+fn way_table(landscapes: &[Card], seed: u64) -> Table {
+    let config = GameConfig {
+        landscapes: landscapes.to_vec(),
+        colonies: Some(false),
+        shelters: Some(false),
+        setup_choices: (landscapes.iter())
+            .filter(|&&l| l == Card::WayOfTheMouse)
+            .map(|&l| (l, vec![Card::Village]))
+            .collect(),
+        ..GameConfig::new(
+            2,
+            vec![
+                Card::ThroneRoom,
+                Card::Laboratory,
+                Card::Cellar,
+                Card::Market,
+                Card::Mine,
+                Card::Moat,
+                Card::Remodel,
+                Card::Smithy,
+                Card::Workshop,
+                Card::Festival,
+            ],
+            seed,
+        )
+    };
+    Table::new("t", config, vec![]).unwrap()
+}
+
+fn plays(d: &AgentDecision, card: &str) -> Option<u32> {
+    (d.options.iter())
+        .find(|o| o.action == "play" && o.card.as_deref() == Some(card))
+        .map(|o| o.index)
+}
+
+/// Seat 0 plays only Treasures and buys Throne Rooms and Laboratories; the other seat
+/// does nothing. Stops at seat 0's first Action phase decision `stop` accepts.
+fn wait_for_hand(t: &mut Table, stop: impl Fn(&AgentDecision) -> bool) -> AgentDecision {
+    let mut buys = 0;
+    for _ in 0..2000 {
+        let seat = t.deciding().expect("the game goes on");
+        let d = t.view(seat).decision.unwrap();
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 {
+            pick(&d, |o| o.action == "end-phase").unwrap()
+        } else if d.phase.as_deref() == Some("action") {
+            if stop(&d) {
+                return d;
+            }
+            pick(&d, |o| o.action == "end-phase").unwrap()
+        } else {
+            let want = ["Buy Laboratory", "Buy Throne Room"][buys % 2];
+            pick(&d, |o| o.action == "play")
+                .or_else(|| pick(&d, |o| o.label.starts_with(want)).inspect(|_| buys += 1))
+                .or_else(|| pick(&d, |o| o.action == "end-phase"))
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("seat 0 never gets the hand");
+}
+
+fn is_way_question(d: &AgentDecision) -> bool {
+    d.purpose == "mode" && d.prompt.contains("use a Way instead")
+}
+
+fn assert_views_valid(t: &Table) {
+    let schema = validator("view");
+    for p in 0..2 {
+        let json = serde_json::to_value(t.view(PlayerId(p))).unwrap();
+        assert_valid(&schema, &json, "view");
+    }
+}
+
+#[test]
+fn a_play_with_way_none_needs_no_second_answer() {
+    let mut t = way_table(&[Card::WayOfTheOx], 3);
+    let d = wait_for_hand(&mut t, |d| {
+        plays(d, "Throne Room").is_some() && plays(d, "Laboratory").is_some()
+    });
+    assert!(d.prompt.ends_with(dominion_agent::WAY_HINT), "{}", d.prompt);
+    let play = Answer::indices(&d.id, vec![plays(&d, "Laboratory").unwrap()]);
+    let mut separately = t.clone();
+
+    let answered = t
+        .answer_with(PlayerId(0), &play, Some(WayChoice::None))
+        .unwrap();
+    assert_eq!(
+        answered,
+        Answered {
+            ways_answered: 1,
+            way_not_offered: None
+        }
+    );
+    assert_eq!(answered.note(), None);
+    let after = t.view(PlayerId(0));
+    let next = after.decision.clone().unwrap();
+    assert_eq!(next.kind, "turn");
+    assert!(
+        after
+            .since_last_decision
+            .iter()
+            .any(|e| e.text.ends_with("plays Laboratory"))
+    );
+    assert_views_valid(&t);
+
+    separately.answer(PlayerId(0), &play).unwrap();
+    let asked = separately.view(PlayerId(0)).decision.unwrap();
+    assert!(is_way_question(&asked), "{asked:?}");
+    assert_eq!(asked.source.as_deref(), Some("Laboratory"));
+    assert_eq!(asked.options[0].label, "Play Laboratory");
+    separately
+        .answer(PlayerId(0), &Answer::indices(&asked.id, vec![0]))
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(separately.game()).unwrap(),
+        serde_json::to_value(t.game()).unwrap()
+    );
+    assert_eq!(separately.decision_id(), t.decision_id());
+
+    // The next play, answered without one, is asked again.
+    let throne = plays(&next, "Throne Room").unwrap();
+    t.answer(PlayerId(0), &Answer::indices(&next.id, vec![throne]))
+        .unwrap();
+    assert!(is_way_question(&t.view(PlayerId(0)).decision.unwrap()));
+}
+
+#[test]
+fn a_way_named_in_advance_is_used() {
+    let mut t = way_table(&[Card::WayOfTheOx], 1);
+    let d = wait_for_hand(&mut t, |d| plays(d, "Laboratory").is_some());
+    let play = Answer::indices(&d.id, vec![plays(&d, "Laboratory").unwrap()]);
+    let way = WayChoice::parse("way of the ox").unwrap();
+    let answered = t.answer_with(PlayerId(0), &play, Some(way)).unwrap();
+    assert_eq!(answered.ways_answered, 1);
+    let view = t.view(PlayerId(0));
+    assert!(
+        (view.since_last_decision.iter())
+            .any(|e| e.text.ends_with("uses Way of the Ox for Laboratory")),
+        "{:?}",
+        view.since_last_decision
+    );
+    // Way of the Ox's +2 Actions instead of Laboratory's +1 Action.
+    assert_eq!(view.turn.actions, Some(2));
+}
+
+#[test]
+fn a_way_answered_in_advance_answers_each_replay() {
+    let mut t = way_table(&[Card::WayOfTheOx], 3);
+    let d = wait_for_hand(&mut t, |d| {
+        plays(d, "Throne Room").is_some() && plays(d, "Laboratory").is_some()
+    });
+    let play = Answer::indices(&d.id, vec![plays(&d, "Throne Room").unwrap()]);
+    let answered = t
+        .answer_with(PlayerId(0), &play, Some(WayChoice::None))
+        .unwrap();
+    assert_eq!(answered.ways_answered, 1);
+    let choice = t.view(PlayerId(0)).decision.unwrap();
+    assert_eq!(choice.source.as_deref(), Some("Throne Room"));
+    assert!(
+        choice.prompt.ends_with(dominion_agent::WAY_HINT),
+        "{}",
+        choice.prompt
+    );
+    let lab = pick(&choice, |o| o.card.as_deref() == Some("Laboratory")).unwrap();
+    let answered = t
+        .answer_with(PlayerId(0), &lab, Some(WayChoice::None))
+        .unwrap();
+    assert_eq!(answered.ways_answered, 2);
+    let view = t.view(PlayerId(0));
+    assert_eq!(view.decision.unwrap().kind, "turn");
+    let labs = (view.since_last_decision.iter())
+        .filter(|e| e.text.ends_with("plays Laboratory"))
+        .count();
+    assert_eq!(labs, 2);
+    assert_views_valid(&t);
+}
+
+#[test]
+fn a_way_not_offered_for_a_play_leaves_its_question_open() {
+    // Way of the Mouse plays the set-aside Village, which can't use Way of the Mouse.
+    let mut t = way_table(&[Card::WayOfTheMouse, Card::WayOfTheOx], 1);
+    let d = wait_for_hand(&mut t, |d| plays(d, "Laboratory").is_some());
+    let play = Answer::indices(&d.id, vec![plays(&d, "Laboratory").unwrap()]);
+    let mouse = Some(WayChoice::Way(Card::WayOfTheMouse));
+    let answered = t.answer_with(PlayerId(0), &play, mouse).unwrap();
+    assert_eq!(
+        answered,
+        Answered {
+            ways_answered: 1,
+            way_not_offered: Some(Card::WayOfTheMouse)
+        }
+    );
+    assert!(
+        answered
+            .note()
+            .unwrap()
+            .contains("Way of the Mouse is not offered")
+    );
+    let open = t.view(PlayerId(0)).decision.unwrap();
+    assert!(is_way_question(&open), "{open:?}");
+    assert_eq!(open.source.as_deref(), Some("Village"));
+    assert_views_valid(&t);
+}
+
+#[test]
+fn a_way_not_in_the_game_rejects_the_answer() {
+    let mut t = way_table(&[Card::WayOfTheOx], 1);
+    let d = wait_for_hand(&mut t, |d| plays(d, "Laboratory").is_some());
+    let play = Answer::indices(&d.id, vec![plays(&d, "Laboratory").unwrap()]);
+    let before = serde_json::to_value(t.game()).unwrap();
+    let mole = Some(WayChoice::Way(Card::WayOfTheMole));
+    let Err(AnswerError::Invalid(msg)) = t.answer_with(PlayerId(0), &play, mole) else {
+        panic!("a Way not in the game is accepted");
+    };
+    assert_eq!(
+        msg,
+        "Way of the Mole is not in this game (its Ways: Way of the Ox)"
+    );
+    assert_eq!(serde_json::to_value(t.game()).unwrap(), before);
+    assert!(WayChoice::parse("Way of the Moose").is_err());
+    assert!(WayChoice::parse("Laboratory").is_err());
+}
+
+#[test]
+fn a_way_answered_in_advance_is_ignored_when_no_way_question_follows() {
+    let mut t = way_table(&[Card::WayOfTheOx], 1);
+    let d = wait_for_hand(&mut t, |d| plays(d, "Laboratory").is_some());
+    let end = pick(&d, |o| o.action == "end-phase").unwrap();
+    let answered = t
+        .answer_with(PlayerId(0), &end, Some(WayChoice::Way(Card::WayOfTheOx)))
+        .unwrap();
+    assert_eq!(answered, Answered::default());
+    let buy = t.view(PlayerId(0)).decision.unwrap();
+    assert_eq!(buy.phase.as_deref(), Some("buy"));
+    assert!(!buy.prompt.contains("Way"), "{}", buy.prompt);
+
+    let mut t = way_table(&[], 1);
+    let d = wait_for_hand(&mut t, |d| plays(d, "Laboratory").is_some());
+    assert!(!d.prompt.contains("Way"), "{}", d.prompt);
+    let play = Answer::indices(&d.id, vec![plays(&d, "Laboratory").unwrap()]);
+    let ox = Some(WayChoice::Way(Card::WayOfTheOx));
+    let Err(AnswerError::Invalid(msg)) = t.clone().answer_with(PlayerId(0), &play, ox) else {
+        panic!("a Way is accepted in a game without Ways");
+    };
+    assert_eq!(msg, "Way of the Ox is not in this game, which has no Ways");
+    let answered = t
+        .answer_with(PlayerId(0), &play, Some(WayChoice::None))
+        .unwrap();
+    assert_eq!(answered, Answered::default());
 }

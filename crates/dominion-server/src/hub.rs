@@ -1,6 +1,6 @@
 //! The games a server hosts, and the seat tokens that let a client act for a seat.
 
-use dominion_agent::{AgentView, Answer, AnswerError, Table};
+use dominion_agent::{AgentView, Answer, AnswerError, Answered, Table, WayChoice};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -530,15 +530,25 @@ impl Hub {
     }
 
     pub fn answer(&self, seat: &Seat, answer: &Answer) -> Result<(), HubError> {
+        self.answer_with(seat, answer, None).map(|_| ())
+    }
+
+    /// Answers, then answers the Way questions that follow with `way` (`Table::answer_with`).
+    pub fn answer_with(
+        &self,
+        seat: &Seat,
+        answer: &Answer,
+        way: Option<WayChoice>,
+    ) -> Result<Answered, HubError> {
         let game = self.game(&seat.game)?;
         let mut table = lock(&game.table);
         // Played on a copy, so an answer the engine fails on leaves the game as it was.
         let mut next = table.clone();
-        engine(|| next.answer(seat.seat, answer))??;
+        let answered = engine(|| next.answer_with(seat.seat, answer, way))??;
         *table = next;
         self.save(&table, &game.tokens);
         game.version.send_modify(|v| *v += 1);
-        Ok(())
+        Ok(answered)
     }
 
     /// Waits until `seat` must decide or the game is over, for at most `timeout`. Returns

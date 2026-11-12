@@ -66,6 +66,15 @@ server restarts, or after `session_idle_minutes` without a call), so keep the to
 come back as structured JSON plus their text rendering. Arguments a tool doesn't take are
 refused, as are `create_game` options that don't fit together.
 
+In a game with Ways, every Action played asks "play it as itself, or use a Way instead".
+`answer` takes `way` to answer that in advance: `"none"` (as itself) or a Way's name. It
+answers each Way question the answer leads to for that seat (both plays of a Throne
+Room'd card) until a decision that isn't one, and is ignored when none follows. A Way
+not in the game rejects the answer; one not offered for a play leaves that question open,
+and the reply's text says so. Without `way` the question is asked as usual, after "when
+you play" effects (a +1 Card token's draw), for agents that want to see those first.
+Decisions whose answer may play an Action say so in their prompt.
+
 Games survive restarts: the server saves each game (with its seat tokens, so the files
 are private to you) to `$XDG_STATE_HOME/dominion/games/<id>.json` after every change and
 resumes them on startup. Finished games are deleted on a later startup once they are a
@@ -88,7 +97,8 @@ reconnect_seconds = 30         # play: how long to keep trying to reach a server
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;
-`dominion play --game ID --token T` plays a seat of an existing game. It rides out a
+`dominion play --game ID --token T` plays a seat of an existing game. Type option
+numbers, optionally followed by `way none` or `way <Way>`, or `name <card>`. It rides out a
 server restart: when it loses the server it keeps trying to reach it for
 `reconnect_seconds` (`--reconnect`), then gives up. `dominion card NAME` prints a card's
 text.
