@@ -37,6 +37,8 @@ const COASTAL_HAVEN_RETURN: u8 = 1;
 
 /// A helper's `next` that finishes the ability instead of continuing.
 const DONE: u8 = u8::MAX;
+const CAVE_DWELLERS: &str = "discard a card, then draw a card";
+const DESERT_GUIDES: &str = "discard your hand and draw 5 cards";
 
 /// The split piles, each with its cards in pile order (top first), 4 copies each.
 const SPLIT_PILES: [(Card, [Card; 4]); 6] = [
@@ -533,6 +535,14 @@ fn supply_pile_topped_by(g: &Game, card: Card) -> Option<PileId> {
         .find(|&id| g.pile(id).in_supply && g.pile_top(id).is_some_and(|t| g.card(t) == card))
 }
 
+/// " (top: Sorceress)": the card on top of the pile named `card`, for a label.
+fn top_named(g: &Game, card: Card) -> String {
+    g.pile_of(card)
+        .and_then(|p| g.pile_top(p))
+        .map(|c| format!(" (top: {})", g.card(c)))
+        .unwrap_or_default()
+}
+
 fn top_of(g: &Game, card: Card) -> Option<PileId> {
     g.pile_of(card).filter(|&p| g.pile_top(p).is_some())
 }
@@ -577,7 +587,7 @@ fn may_rotate(g: &mut Game, f: &mut CardFrame, input: Input, name: Card, base: u
             return goto(f, next);
         }
         f.pc = base + 1;
-        return f.ask_yes_no(Purpose::Other);
+        return f.ask_yes_no(Purpose::Other, format!("Rotate the {name}"));
     }
     if input.is_yes()
         && let Some(pile) = pile
@@ -947,7 +957,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 3;
                 Flow::Call(Frame::draw(p, 1))
             }
-            3 => again(g, f),
+            3 => again(g, f, CAVE_DWELLERS),
             _ => {
                 if input.is_yes() {
                     f.pc = 0;
@@ -966,7 +976,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 2;
                 Flow::Call(Frame::draw(p, 5))
             }
-            2 => again(g, f),
+            2 => again(g, f, DESERT_GUIDES),
             _ => {
                 if input.is_yes() {
                     f.pc = 0;
@@ -1021,7 +1031,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 if favors(g, p) == 0 {
                     return Flow::Continue;
                 }
-                f.ask_yes_no(Purpose::Other)
+                f.ask_yes_or(Purpose::Other, "Spend a Favor to keep your hand", "Discard down to 4 cards")
             }
             1 => {
                 if input.is_yes() {
@@ -1048,6 +1058,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 }
                 f.pc = 1;
                 f.ask_pile(piles, false, Purpose::Other)
+                    .question("choose a non-Victory Supply pile for a Favor token")
             }
             _ => {
                 if let Some(pile) = input.pile() {
@@ -1190,12 +1201,12 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 /// Asks whether to spend another Favor and repeat ("Repeat as desired").
-fn again(g: &Game, f: &mut CardFrame) -> Flow {
+fn again(g: &Game, f: &mut CardFrame, what: &str) -> Flow {
     if favors(g, f.player) == 0 {
         return Flow::done();
     }
     f.pc = 4;
-    f.ask_yes_no(Purpose::Other)
+    f.ask_yes_no(Purpose::Other, format!("Spend another Favor to {what}"))
 }
 
 /// Order of Astrologers (cards onto the shuffled cards) and Order of Masons (cards
@@ -1210,12 +1221,12 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let n = favors(g, p) as usize;
             let max = if astrologers { n } else { 2 * n };
             f.pc = 1;
-            let purpose = if astrologers {
-                Purpose::TopDeck
+            let (purpose, what) = if astrologers {
+                (Purpose::TopDeck, "put on top of your deck, a Favor each")
             } else {
-                Purpose::Move
+                (Purpose::Move, "put into your discard pile, a Favor per 2 cards")
             };
-            f.ask_cards(shuffled, 0, max, purpose)
+            f.ask_cards(shuffled, 0, max, purpose).question(what)
         }
         1 => {
             let chosen = input.cards();
@@ -1436,10 +1447,10 @@ fn broker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 3;
             f.ask_modes(
                 &[
-                    "+1 Card per $1 it costs",
-                    "+1 Action per $1 it costs",
-                    "+$1 per $1 it costs",
-                    "+1 Favor per $1 it costs",
+                    format!("+1 Card per $1 it costs (+{})", f.s.n),
+                    format!("+1 Action per $1 it costs (+{})", f.s.n),
+                    format!("+$1 per $1 it costs (+${})", f.s.n),
+                    format!("+1 Favor per $1 it costs (+{})", f.s.n),
                 ],
                 1,
                 1,
@@ -1710,7 +1721,7 @@ fn capital_city(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Discard 2 cards for +$2")
         }
         1 => {
             if !input.is_yes() {
@@ -1735,7 +1746,7 @@ fn capital_city(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 4;
-            f.ask_yes_no(Purpose::Other)
+            f.ask_yes_no(Purpose::Other, "Pay $2 for +2 Cards")
         }
         4 => {
             if !input.is_yes() {
@@ -1811,7 +1822,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .collect();
                 if !matching.is_empty() {
                     f.pc = 3;
-                    return f.ask_cards(matching, 1, 1, Purpose::Move);
+                    return f.ask_cards(matching, 1, 1, Purpose::Move).question("put into your hand");
                 }
                 f.s.i += 1;
             }
@@ -1942,7 +1953,8 @@ fn specialist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             f.pc = 3;
-            f.ask_modes(&["Play it again", "Gain a copy of it"], 1, 1)
+            let c = f.s.card.expect("set in step 1");
+            f.ask_modes(&[format!("Play {c} again"), format!("Gain a copy of {c}")], 1, 1)
         }
         3 => {
             f.s.m = mode_mask(input);
@@ -2108,6 +2120,7 @@ fn miller(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.cards = input.cards();
             f.pc = 2;
             f.ask_cards(f.s.cards.clone(), 1, 1, Purpose::Move)
+                .question("put into your hand (the rest are discarded)")
         }
         2 => {
             let chosen = input.cards();
@@ -2182,7 +2195,7 @@ fn acolyte(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 4;
-            f.ask_yes_no(Purpose::Trash)
+            f.ask_yes_no(Purpose::Trash, format!("Trash {} to gain an Augur{}", g.card(f.this()), top_named(g, Card::Augurs)))
         }
         4 => {
             let this = f.this();
@@ -2238,13 +2251,13 @@ fn sibyl(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if hand.is_empty() {
                 return Flow::done();
             }
-            let purpose = if f.pc == 0 {
-                Purpose::TopDeck
+            let (purpose, what) = if f.pc == 0 {
+                (Purpose::TopDeck, "put on top of your deck")
             } else {
-                Purpose::Move
+                (Purpose::Move, "put on the bottom of your deck")
             };
             f.pc += 1;
-            f.ask_cards(hand, 1, 1, purpose)
+            f.ask_cards(hand, 1, 1, purpose).question(what)
         }
         1 => {
             for c in input.cards() {
@@ -2323,6 +2336,7 @@ fn battle_plan(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 3;
             f.ask_pile(piles, true, Purpose::Other)
+                .question("you may rotate a Supply pile")
         }
         _ => {
             if let Some(pile) = input.pile() {
@@ -2340,7 +2354,8 @@ fn archer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let hand = g.hand(target).to_vec();
                 if hand.len() >= 5 {
                     f.pc = 1;
-                    return f.ask_cards_for(target, hand, 1, 1, Purpose::Other);
+                    return f.ask_cards_for(target, hand, 1, 1, Purpose::Other)
+                        .question("keep hidden (the others are revealed)");
                 }
                 f.s.i += 1;
             }
@@ -2401,7 +2416,11 @@ fn hill_fort(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         3 => {
             f.pc = 4;
-            f.ask_modes(&["Put it into your hand", "+1 Card and +1 Action"], 1, 1)
+            let put = match f.s.pick {
+                Some(c) => format!("Put {} into your hand", g.card(c)),
+                None => "Put it into your hand".into(),
+            };
+            f.ask_modes(&[put, "+1 Card and +1 Action".into()], 1, 1)
         }
         4 => {
             let m = mode_mask(input);

@@ -515,3 +515,16 @@ fn text_introduces_the_seat_numbers_it_uses() {
         "{rendered}"
     );
 }
+
+#[test]
+fn a_yes_or_no_question_says_what_yes_does() {
+    let mut t = table(&[Card::MiningVillage], 3, &[]);
+    let asked = |_: PlayerId, d: &AgentDecision| {
+        d.source.as_deref() == Some("Mining Village") && d.kind == "choose"
+    };
+    let seat = play_to(&mut t, "Mining Village", asked).expect("Mining Village asks");
+    let d = t.view(seat).decision.unwrap();
+    assert_eq!(d.prompt, "Mining Village: trash Mining Village for +$2?");
+    let labels: Vec<&str> = d.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(labels, ["Trash Mining Village for +$2", "No"]);
+}

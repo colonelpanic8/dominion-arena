@@ -1235,7 +1235,7 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 }
                 f.pc = 5;
-                return f.ask_cards(cards, 1, 1, Purpose::Move);
+                return f.ask_cards(cards, 1, 1, Purpose::Move).question("put into your hand");
             }
             let piles = g.piles_costing_up_to(Cost::coins(4));
             if piles.is_empty() {
@@ -1583,7 +1583,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 1;
                 let mut shuffled = g.shuffled(p).to_vec();
                 shuffled.sort();
-                return f.ask_cards(shuffled, 0, 3, Purpose::Move);
+                return f.ask_cards(shuffled, 0, 3, Purpose::Move).question("put into your discard pile");
             }
             for c in input.cards() {
                 if g.zone(c) == Zone::Deck(p) {
@@ -1639,6 +1639,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let n = rest.len();
             f.pc = 2;
             f.ask_cards(rest, 0, n, Purpose::Move)
+                .question("put on the bottom of your deck")
         }
         2 => {
             let mut bottom = input.cards();
@@ -1670,7 +1671,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 4;
             let under = f.s.cards[top..].to_vec();
             if under.iter().any(|&c| g.card(c) != g.card(under[0])) {
-                return f.ask_order(under, Purpose::Move);
+                return f.ask_order(under, Purpose::Move).question("put on the bottom of your deck");
             }
             Flow::Continue
         }
@@ -2216,6 +2217,7 @@ fn mapmaker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.cards = input.cards();
             f.pc = 2;
             f.ask_cards(f.s.cards.clone(), 2, 2, Purpose::Move)
+                .question("put into your hand (the rest are discarded)")
         }
         2 => {
             let chosen = input.cards();
@@ -2630,7 +2632,7 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.s.pick = Some(c);
             f.pc = 4;
-            f.ask_yes_no(Purpose::Play)
+            f.ask_yes_no(Purpose::Play, format!("Play {}", g.card(c)))
         }
         4 => {
             f.pc = 5;
@@ -2656,7 +2658,7 @@ fn bury(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             return Flow::done();
         }
         f.pc = 1;
-        return f.ask_cards(discard, 1, 1, Purpose::Move);
+        return f.ask_cards(discard, 1, 1, Purpose::Move).question("put on the bottom of your deck");
     }
     for c in input.cards() {
         if g.zone(c) == Zone::Discard(p) {

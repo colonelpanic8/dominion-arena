@@ -380,6 +380,7 @@ fn ask_name_for(f: &CardFrame, player: PlayerId) -> Flow {
         purpose: Purpose::Name,
         source: Some(f.card),
         about: vec![],
+            question: None,
     })
 }
 
@@ -397,6 +398,7 @@ pub(super) fn ask_order_for(f: &CardFrame, player: PlayerId, cards: Vec<CardId>)
         purpose: Purpose::TopDeck,
         source: Some(f.card),
         about: vec![],
+            question: None,
     })
 }
 
@@ -898,7 +900,7 @@ fn vault(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     continue;
                 }
                 f.pc = 4;
-                return f.ask_yes_no_for(other, Purpose::Discard);
+                return f.ask_yes_no_for(other, Purpose::Discard, "Discard 2 cards to draw a card");
             }
             4 => {
                 let other = g.others_in_turn_order(f.player)[f.s.i];
@@ -1042,6 +1044,7 @@ fn counting_house(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let n = coppers.len();
             f.pc = 1;
             f.ask_cards(coppers, 0, n, Purpose::Move)
+                .question("put into your hand")
         }
         _ => {
             for c in input.cards() {
@@ -1130,7 +1133,7 @@ fn mountebank(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             0 => {
                 if curse.is_some() {
                     f.pc = 1;
-                    return f.ask_yes_no_for(target, Purpose::Discard);
+                    return f.ask_yes_or_for(target, Purpose::Discard, "Discard a Curse", "Gain a Curse and a Copper");
                 }
                 f.pc = 2;
             }

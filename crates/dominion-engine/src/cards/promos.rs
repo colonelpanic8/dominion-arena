@@ -302,7 +302,9 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if debt > 0 && coins > 0 && f.s.m == 0 {
                 f.s.m = 1;
                 f.pc = 13;
-                return f.ask_number(0, debt.min(coins) as i32, Purpose::Other);
+                return f
+                    .ask_number(0, debt.min(coins) as i32, Purpose::Other)
+                    .question("pay off how much Debt first?");
             }
             let buyable: Vec<CardId> = f
                 .s
@@ -404,6 +406,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .collect();
             f.pc = 6;
             f.ask_order(rest, Purpose::Move)
+                .question("put on the bottom of the Black Market deck")
         }
         _ => {
             for c in input.cards() {
@@ -725,6 +728,7 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 2;
             let deck = g.player(p).deck[..shuffled].iter().rev().copied().collect();
             f.ask_number(0, shuffled as i32 - 1, Purpose::Move)
+                .question("how many of the shuffled cards go above Stash? 0 puts it on top")
                 .about(deck)
         }
         _ => {

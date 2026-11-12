@@ -1100,6 +1100,7 @@ fn call(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
             1 => {
                 f.pc = 2;
                 f.ask_either(&["+1 Card", "+1 Action", "+1 Buy", "+$1"])
+                    .question("choose which token to move")
             }
             2 => {
                 let token = match input.opt() {
@@ -1117,7 +1118,10 @@ fn call(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
                     return Some(Flow::done());
                 }
                 f.pc = 3;
-                f.ask_pile(piles, false, Purpose::Other)
+                f.ask_pile(piles, false, Purpose::Other).question(format!(
+                    "choose an Action Supply pile for your {} token",
+                    token_name(token)
+                ))
             }
             _ => {
                 let token = [
@@ -1471,7 +1475,7 @@ fn messenger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Put your deck into your discard pile")
         }
         _ => {
             if input.is_yes() {
@@ -1560,6 +1564,7 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 4;
             f.ask_cards(f.s.cards.clone(), 1, 1, Purpose::Move)
+                .question("put into your hand (the rest are discarded)")
         }
         4 => {
             let chosen = input.cards();
@@ -1842,6 +1847,18 @@ fn scouting_party(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+fn token_name(token: Token) -> &'static str {
+    match token {
+        Token::PlusCard => "+1 Card",
+        Token::PlusAction => "+1 Action",
+        Token::PlusBuy => "+1 Buy",
+        Token::PlusCoin => "+$1",
+        Token::MinusCost => "-$2 cost",
+        Token::Trashing => "Trashing",
+        Token::Estate => "Estate",
+    }
+}
+
 fn move_token(g: &mut Game, f: &mut CardFrame, input: Input, token: Token) -> Flow {
     match f.pc {
         0 => {
@@ -1850,7 +1867,10 @@ fn move_token(g: &mut Game, f: &mut CardFrame, input: Input, token: Token) -> Fl
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_pile(piles, false, Purpose::Other)
+            f.ask_pile(piles, false, Purpose::Other).question(format!(
+                "choose an Action Supply pile for your {} token",
+                token_name(token)
+            ))
         }
         _ => {
             if let Some(pile) = input.pile() {

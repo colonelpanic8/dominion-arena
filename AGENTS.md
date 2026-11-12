@@ -189,6 +189,12 @@ them.
   to a `Purpose::Mode` "choose" (`ask_modes`), so scripts must handle every chosen mode,
   in printed order (`mode_mask` / `take_mode`). Alternatives that aren't a "choose"
   ("either ... or", which Artifact) use `ask_either` (`Purpose::Either`).
+  Every question says what its answers do, in the card's words: `ask_yes_no(purpose,
+  "Trash Engineer to gain a card costing up to $4")` labels Yes (`ask_yes_or` when No
+  does something too), and labels name the cards they are about where the player can see
+  them. Where the purpose doesn't say what a card, pile or number choice is for, add
+  `Flow::question` ("put onto your Island mat", "choose a Supply pile for an Embargo
+  token", "how many cards go above it? 0 puts it on top").
 - **Agents** get a `View`, never the `Game`: everything public (piles and their
   tokens through `PileView`, each player's tokens, mats and zones through
   `PlayerView`, landscapes, Artifacts, the Prophecy, Boon/Hex discards, lasting effects,

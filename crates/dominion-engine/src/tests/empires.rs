@@ -1,4 +1,4 @@
-use super::intrigue::{modes, random_games_with_copies, trigger};
+use super::intrigue::{modes, random_games_with_copies, trigger, trigger_labels};
 use super::*;
 
 /// Random games over Empires with copies of its cards in every deck, and two random
@@ -734,6 +734,10 @@ fn engineer_gains_up_to_four_never_debt_and_may_trash_itself_for_another() {
     assert!(names.contains(&Card::Village) && names.contains(&Card::Silver));
     assert!(!names.contains(&Card::Engineer) && !names.contains(&Card::Overlord));
     choose_pile(&mut g, Card::Village);
+    assert_eq!(
+        trigger_labels(&g),
+        ["Trash Engineer to gain a card costing up to $4", "No"]
+    );
     yes(&mut g);
     choose_pile(&mut g, Card::Village);
     assert_eq!(g.count_owned(P0, Card::Village), 2);

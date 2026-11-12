@@ -912,6 +912,7 @@ fn border_guard(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.cards = cards.clone();
             f.pc = 2;
             f.ask_cards(cards, 1, 1, Purpose::Move)
+                .question("put into your hand")
         }
         2 => {
             let chosen = input.cards();
@@ -1005,6 +1006,7 @@ fn mountain_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 1;
             f.ask_cards(discard, 1, 1, Purpose::Move)
+                .question("put into your hand")
         }
         1 => {
             if let Some(c) = input.card()

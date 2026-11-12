@@ -452,6 +452,7 @@ pub(crate) fn ask_ordered(
         purpose,
         source: Some(f.card),
         about: vec![],
+            question: None,
     })
 }
 
@@ -1234,7 +1235,7 @@ fn young_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.s.pick = Some(banes[0]);
             f.pc = 3;
-            f.ask_yes_no_for(t, Purpose::Reveal)
+            f.ask_yes_or_for(t, Purpose::Reveal, format!("Reveal {} to not gain a Curse", g.card(banes[0])), "Gain a Curse")
         }
         3 => {
             let t = f.targets[f.s.i];
@@ -1597,7 +1598,12 @@ fn tournament(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let has = g.hand(q).iter().any(|&c| g.card(c) == Card::Province);
                 if has {
                     f.pc = 1;
-                    return f.ask_yes_no_for(q, Purpose::Reveal);
+                    let yes = if q == f.player {
+                        "Reveal a Province, discard it and gain a Prize or a Duchy onto your deck".to_string()
+                    } else {
+                        format!("Reveal a Province, so {} doesn't get +1 Card and +$1", f.player)
+                    };
+                    return f.ask_yes_no_for(q, Purpose::Reveal, yes);
                 }
                 f.s.i += 1;
             }

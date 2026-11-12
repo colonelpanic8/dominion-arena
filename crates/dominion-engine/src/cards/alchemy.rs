@@ -3,7 +3,7 @@
 use super::prosperity::{
     choose_and_gain, each_target_gains, put_back, reveal_until, supply_piles, this_turn, top_deck,
 };
-use super::{CardFrame, Hook, SetRules};
+use super::{CardFrame, Hook, SetRules, whose};
 use crate::decision::Purpose;
 use crate::event::Dest;
 use crate::frame::{Flow, Frame, Input};
@@ -289,7 +289,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_or(Purpose::Discard, format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)), "Put it back")
         }
         _ => {
             let victim = victims[f.s.i];

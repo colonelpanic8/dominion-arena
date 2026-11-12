@@ -1002,7 +1002,7 @@ fn ironmonger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_or(Purpose::Discard, format!("Discard {}", g.card(c)), "Put it back")
         }
         2 => {
             f.pc = 3;
@@ -1062,7 +1062,7 @@ fn mercenary(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Trash)
+            f.ask_yes_no(Purpose::Trash, "Trash 2 cards from your hand for +2 Cards, +$2 and the attack")
         }
         1 => {
             if !input.is_yes() {
@@ -1351,7 +1351,7 @@ fn scavenger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Put your deck into your discard pile")
         }
         1 => {
             if input.is_yes() {

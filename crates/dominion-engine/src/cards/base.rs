@@ -1,6 +1,6 @@
 //! Dominion (2nd edition), its removed 1st-edition cards, and the basic cards.
 
-use super::{CardFrame, Hook, SetRules};
+use super::{CardFrame, Hook, SetRules, whose};
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -189,7 +189,7 @@ fn vassal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 3;
-            f.ask_yes_no(Purpose::Play)
+            f.ask_yes_no(Purpose::Play, format!("Play {}", g.card(c)))
         }
         3 if input.is_yes() => {
             f.pc = 4;
@@ -501,7 +501,7 @@ fn library(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if g.is(c, Types::ACTION) {
                 f.s.pick = Some(c);
                 f.pc = 2;
-                return f.ask_yes_no(Purpose::SetAside);
+                return f.ask_yes_or(Purpose::SetAside, format!("Set aside {}", g.card(c)), "Keep it");
             }
             f.pc = 0;
             Flow::Continue
@@ -642,7 +642,7 @@ fn chancellor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Put your deck into your discard pile")
         }
         _ => {
             if input.is_yes() {
@@ -668,7 +668,7 @@ fn feast(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     gain_up_to(g, f, input, 5, Dest::Discard)
 }
 
-fn spy(_g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
+fn spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let victims: Vec<PlayerId> = std::iter::once(f.player)
         .chain(f.targets.iter().copied())
         .collect();
@@ -688,7 +688,7 @@ fn spy(_g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_or(Purpose::Discard, format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)), "Put it back")
         }
         _ => {
             let target = victims[f.s.i];
@@ -744,7 +744,7 @@ fn thief(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     continue;
                 }
                 f.pc = 5;
-                return f.ask_yes_no(Purpose::Gain);
+                return f.ask_yes_no(Purpose::Gain, format!("Gain the trashed {}", g.card(c)));
             }
             5 => {
                 f.pc = 4;

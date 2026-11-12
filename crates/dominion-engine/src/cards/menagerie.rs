@@ -669,7 +669,7 @@ fn may_gain(g: &mut Game, f: &mut CardFrame, input: Input, card: Card) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Gain)
+            f.ask_yes_no(Purpose::Gain, format!("Gain a {card}"))
         }
         1 if input.is_yes() => {
             f.pc = 2;
@@ -899,7 +899,8 @@ fn sleigh_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 2;
-            f.ask_either(&["Put it into your hand", "Put it onto your deck"])
+            let c = g.card(card);
+            f.ask_either(&[format!("Put {c} into your hand"), format!("Put {c} onto your deck")])
         }
         _ => {
             if still_where_gained(g, card) {
@@ -975,7 +976,7 @@ fn kiln_copy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Gain)
+            f.ask_yes_no(Purpose::Gain, format!("Gain a copy of {}", g.card(card)))
         }
         1 if input.is_yes() => {
             f.pc = 2;
@@ -1004,7 +1005,11 @@ fn animal_fair_pay(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 2;
             if affordable {
                 f.pc = 1;
-                return f.ask_yes_no(Purpose::Trash);
+                return f.ask_yes_or(
+                    Purpose::Trash,
+                    format!("Trash an Action card from your hand instead of paying for {}", g.card(f.this())),
+                    "Pay its cost",
+                );
             }
             f.ask_cards(actions, 1, 1, Purpose::Trash)
         }
@@ -1371,7 +1376,7 @@ fn hunting_lodge(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Discard your hand for +5 Cards")
         }
         1 => {
             if !input.is_yes() {
@@ -1631,7 +1636,7 @@ fn desperation(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             g.ext.menagerie.desperation = Some((p, g.player(p).turns_taken));
             f.pc = 1;
-            f.ask_yes_no(Purpose::Gain)
+            f.ask_yes_no(Purpose::Gain, "Gain a Curse for +1 Buy and +$2")
         }
         1 => {
             if !input.is_yes() {
@@ -1708,7 +1713,7 @@ fn gamble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 3;
-            f.ask_yes_no(Purpose::Play)
+            f.ask_yes_no(Purpose::Play, format!("Play {}", g.card(c)))
         }
         3 if input.is_yes() => {
             let c = f.s.pick.expect("set in step 1");
@@ -1921,7 +1926,7 @@ fn butterfly(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Return)
+            f.ask_yes_no(Purpose::Return, format!("Return {} to its pile to gain a card costing exactly $1 more", g.card(this)))
         }
         1 => {
             if !input.is_yes() || g.zone(this) != Zone::InPlay(f.player) {

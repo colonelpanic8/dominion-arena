@@ -4,7 +4,7 @@ use super::cornucopia_guilds::{
     ask_ordered, discard_down, discard_n, each_gains, gain_one, put_back, reveal_hand,
     still_gained,
 };
-use super::{CardFrame, Hook, SetRules, mode_mask};
+use super::{CardFrame, Hook, SetRules, mode_mask, names, whose};
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -326,7 +326,7 @@ impl SetRules for Rules {
                         return Some(Flow::done());
                     }
                     f.pc = 1;
-                    f.ask_yes_no(Purpose::Gain)
+                    f.ask_yes_no(Purpose::Gain, "Gain a Copper to your hand")
                 }
                 1 if input.is_yes() => {
                     f.pc = 2;
@@ -714,6 +714,7 @@ fn inn_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 1;
             let n = actions.len();
             f.ask_cards(actions, 0, n, Purpose::Move)
+                .question("shuffle into your deck")
         }
         1 => {
             let p = f.player;
@@ -748,7 +749,7 @@ fn jack_of_all_trades(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 3;
-            f.ask_yes_no(Purpose::Discard).about(f.s.pick.into_iter().collect())
+            f.ask_yes_or(Purpose::Discard, format!("Discard {}", g.card(f.s.pick.expect("set above"))), "Put it back").about(f.s.pick.into_iter().collect())
         }
         3 => {
             f.pc = 4;
@@ -1010,7 +1011,7 @@ fn duchess(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 2;
-            f.ask_yes_no_for(q, Purpose::Discard)
+            f.ask_yes_or_for(q, Purpose::Discard, format!("Discard {}", g.card(f.s.pick.expect("set above"))), "Put it back")
                 .about(f.s.pick.into_iter().collect())
         }
         _ => {
@@ -1126,7 +1127,7 @@ fn oracle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 2;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_or(Purpose::Discard, format!("Discard {} {}", whose(f.player, q), names(g, &f.s.cards)), "Put them back")
         }
         2 => {
             let cards = std::mem::take(&mut f.s.cards);

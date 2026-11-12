@@ -564,6 +564,7 @@ fn island(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 1;
             f.ask_cards(hand, 1, 1, Purpose::Move)
+                .question("put onto your Island mat")
         }
         _ => {
             if let Some(c) = input.card() {
@@ -887,7 +888,7 @@ fn ambassador(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                         .filter(|&x| g.card(x) == card)
                         .collect();
                     f.pc = 2;
-                    return f.ask_cards(copies, 0, 2, Purpose::Return);
+                    return f.ask_cards(copies, 0, 2, Purpose::Return).question("return to the Supply");
                 }
             }
             2 => {
@@ -931,6 +932,7 @@ fn embargo(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .collect();
             f.pc = 2;
             f.ask_pile(piles, false, Purpose::Other)
+                .question("choose a Supply pile for an Embargo token")
         }
         _ => {
             if let Some(pile) = input.pile() {
