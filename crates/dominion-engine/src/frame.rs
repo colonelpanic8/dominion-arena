@@ -875,28 +875,35 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 Some(Opt::Card(source)) if *pc == 2 => Some(source),
                 _ => None,
             };
-            loop {
-                // An extra turn that can't follow the turn that just ended is lost.
-                let (lost, pending) = std::mem::take(&mut g.extra_turns)
-                    .into_iter()
-                    .partition(|e| fails(g, e));
+            // Extra turns go in turn order from the player of the most recent regular turn;
+            // each player chooses among their own.
+            let from = if started {
+                g.right_of(*next)
+            } else {
+                g.turn.player
+            };
+            while let Some(p) = g
+                .players_from(from)
+                .into_iter()
+                .find(|&p| g.extra_turns.iter().any(|e| e.player == p))
+            {
+                // One that can't follow the turn that just ended is lost, but only once
+                // it is up next: another player's extra turn may come first.
+                let (lost, pending): (std::collections::VecDeque<_>, _) =
+                    std::mem::take(&mut g.extra_turns)
+                        .into_iter()
+                        .partition(|e| e.player == p && fails(g, e));
                 g.extra_turns = pending;
-                for e in lost {
-                    release(g, &e);
-                    g.emit(Event::ExtraTurnLost {
-                        player: e.player,
-                        source: e.source,
-                    });
+                if !lost.is_empty() {
+                    for e in lost {
+                        release(g, &e);
+                        g.emit(Event::ExtraTurnLost {
+                            player: e.player,
+                            source: e.source,
+                        });
+                    }
+                    continue;
                 }
-                // The player who just took a turn takes theirs first, then the others in
-                // turn order; each chooses among their own.
-                let Some(p) = g
-                    .players_from(g.turn.player)
-                    .into_iter()
-                    .find(|&p| g.extra_turns.iter().any(|e| e.player == p))
-                else {
-                    break;
-                };
                 let mut sources: Vec<Card> = vec![];
                 for e in g.extra_turns.iter().filter(|e| e.player == p) {
                     if !sources.contains(&e.source) {
