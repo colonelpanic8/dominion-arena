@@ -47,6 +47,7 @@ pub fn router(
         .route("/seat", get(seat))
         .route("/games/{id}/view", get(view))
         .route("/games/{id}/answer", axum::routing::post(answer))
+        .route("/games/{id}/undo", axum::routing::post(undo))
         .route("/games/{id}/events", get(events))
         .fallback(|| async { Error(StatusCode::NOT_FOUND, "no such route".into()) })
         .method_not_allowed_fallback(|| async {
@@ -344,6 +345,17 @@ async fn answer(
     let answer: Answer = body(&req)?;
     api.hub.answer(&seat, &answer)?;
     seat_view(&api, &seat, None)
+}
+
+/// Takes back the seat's last answer; the view returned has the whole log.
+async fn undo(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<axum::Json<SeatView>> {
+    let seat = claim(&api, &id, token(&headers, None)?)?;
+    api.hub.undo(&seat)?;
+    seat_view(&api, &seat, Some(0))
 }
 
 #[derive(Deserialize)]

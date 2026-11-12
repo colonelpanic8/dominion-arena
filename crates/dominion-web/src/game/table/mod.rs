@@ -264,6 +264,17 @@ impl TableCtx {
         s.set(Sel::default());
     }
 
+    /// Takes back this seat's last answer, stopping an Autoplay Treasures run.
+    pub fn undo(&self) {
+        if !self.game.state.peek().can_undo || self.game.state.peek().answering {
+            return;
+        }
+        let mut run = self.run;
+        run.set(None);
+        self.clear();
+        self.game.undo.call(());
+    }
+
     /// Picks every option a target in `places` stands for ("Select All").
     pub fn select_all(&self) {
         let Some(ui) = self.ui.peek().clone() else {
@@ -405,6 +416,7 @@ impl TableCtx {
             }
             "e" | "E" => self.press("end-phase"),
             "t" | "T" => self.play_treasures(),
+            "undo" => self.undo(),
             _ => {}
         }
     }
@@ -420,9 +432,15 @@ window.__dtViewport();
 const KEYS_JS: &str = r#"
 if (window.__dtKeys) document.removeEventListener('keydown', window.__dtKeys);
 window.__dtKeys = (e) => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
   const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+    if (typing || !document.querySelector('.dt-root')) return;
+    e.preventDefault();
+    try { dioxus.send('undo'); } catch (_) {}
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (typing && e.key !== 'Escape') return;
   if (!['Enter', 'Escape', 'e', 'E', 't', 'T'].includes(e.key)) return;
   if (!document.querySelector('.dt-root')) return;
@@ -635,6 +653,7 @@ pub fn TableGame(controls: Element) -> Element {
     let st = game.state.read();
     let error = st.error.clone();
     let answering = st.answering || run.read().is_some();
+    let can_undo = st.can_undo;
     let log = st.log.clone();
     let names = st
         .view
@@ -739,6 +758,15 @@ pub fn TableGame(controls: Element) -> Element {
             side::Log { entries: log, names, g: g.clone(), game_id, board: b.clone() }
             div { class: "dt-below-log", style: "{g.below_log.style()}",
                 div { class: "dt-controls", {controls}
+                    if can_undo {
+                        button {
+                            "data-action": "undo",
+                            title: "Take back your last answer (Ctrl+Z)",
+                            disabled: answering,
+                            onclick: move |_| ctx.undo(),
+                            "Undo"
+                        }
+                    }
                     sound::MuteToggle { muted }
                 }
                 side::More { board: b.clone() }

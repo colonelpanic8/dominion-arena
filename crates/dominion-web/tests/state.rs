@@ -267,8 +267,24 @@ fn random_legal_selections_are_answers_the_table_accepts() {
     assert!(seen.choose_many > 0, "no multi-choice decision met");
 }
 
-/// One seat's client: loads with `logFrom=0`, refetches from its cursor, and takes the
-/// response to each of its answers.
+/// What the server sends `seat`: its view with the log from `log_from` (else from its
+/// last answer).
+fn seat_view(table: &Table, seat: PlayerId, log_from: Option<usize>, version: u64) -> SeatView {
+    SeatView {
+        view: match log_from {
+            Some(from) => table.view_from(seat, from),
+            None => table.view(seat),
+        },
+        version,
+        deciding: table.deciding().map(|p| p.0),
+        table: table.extras(seat),
+        undos: table.undos(),
+        can_undo: table.can_undo(seat),
+    }
+}
+
+/// One seat's client: loads with `logFrom=0`, refetches from its cursor (or from 0 after
+/// an undo), and takes the response to each of its answers.
 struct Client {
     seat: PlayerId,
     state: GameState,
@@ -276,14 +292,16 @@ struct Client {
 
 impl Client {
     fn fetch(&mut self, table: &Table, version: u64) -> Applied {
-        let from = self.state.log_from();
-        let view = table.view_from(self.seat, from);
-        self.state.apply(SeatView {
-            view,
-            version,
-            deciding: table.deciding().map(|p| p.0),
-            table: table.extras(self.seat),
-        })
+        let mut from = self.state.log_from();
+        loop {
+            match self
+                .state
+                .apply(seat_view(table, self.seat, Some(from), version))
+            {
+                Applied::Restart if from != 0 => from = 0,
+                applied => return applied,
+            }
+        }
     }
 }
 
@@ -329,24 +347,24 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
         });
         let answer = random_selection(&d, &mut rng).answer(&d).unwrap();
         if step % 7 == 0 {
-            stale = Some(SeatView {
-                view: table.view_from(seat, 0),
-                version,
-                deciding: Some(seat.0),
-                table: table.extras(seat),
-            });
+            stale = Some(seat_view(&table, seat, Some(0), version));
         }
         table.answer(seat, &answer).unwrap();
         version += 1;
         // The server's response to an answer carries its own cursor.
-        let applied = cl.state.apply(SeatView {
-            view: table.view(seat),
-            version,
-            deciding: table.deciding().map(|p| p.0),
-            table: table.extras(seat),
-        });
+        let applied = cl.state.apply(seat_view(&table, seat, None, version));
         if applied == Applied::Refetch {
             assert_eq!(cl.fetch(&table, version), Applied::Done);
+        }
+        assert!(cl.state.can_undo);
+        if rng.random_bool(0.2) {
+            assert!(table.undo(seat));
+            version += 1;
+            // The response to an undo has the whole log.
+            let applied = cl.state.apply(seat_view(&table, seat, Some(0), version));
+            assert_eq!(applied, Applied::Done);
+            assert_eq!(cl.state.log, table.view_from(seat, 0).since_last_decision);
+            continue;
         }
         if let Some(old) = stale.take().filter(|_| step % 7 == 3) {
             let before = cl.state.clone();

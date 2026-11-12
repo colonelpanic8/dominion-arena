@@ -33,6 +33,8 @@ pub struct GameCtx {
     pub deciding: Memo<Option<u8>>,
     /// Sends an answer for the shown seat.
     pub submit: Callback<Answer>,
+    /// Takes back the shown seat's last answer.
+    pub undo: Callback<()>,
 }
 
 pub fn use_game() -> GameCtx {
@@ -55,8 +57,8 @@ fn still_shown(seat: Signal<Option<HeldSeat>>, token: &str) -> bool {
 async fn refresh(ctx: Live, token: &str) {
     let game = ctx.game.peek().clone();
     let mut state = ctx.state;
+    let mut from = state.peek().log_from();
     for _ in 0..3 {
-        let from = state.peek().log_from();
         let result = api::view(&game, token, Some(from)).await;
         if !still_shown(ctx.seat, token) {
             return;
@@ -64,8 +66,11 @@ async fn refresh(ctx: Live, token: &str) {
         match result {
             Ok(sv) => {
                 table::before_change();
-                if state.write().apply(sv) == Applied::Done {
-                    break;
+                let applied = state.write().apply(sv);
+                match applied {
+                    Applied::Done => break,
+                    Applied::Refetch => from = state.peek().log_from(),
+                    Applied::Restart => from = 0,
                 }
             }
             Err(e) => {
@@ -115,7 +120,7 @@ async fn send_answer(ctx: Live, answer: Answer) {
             table::before_change();
             let mut st = state.write();
             st.answering = false;
-            st.apply(sv) == Applied::Refetch
+            st.apply(sv) != Applied::Done
         }
         Err(e) => {
             let stale = state.write().answer_failed(&e);
@@ -129,6 +134,34 @@ async fn send_answer(ctx: Live, answer: Answer) {
         }
     };
     if stale {
+        refresh(ctx, &seat.token).await;
+    }
+}
+
+async fn send_undo(ctx: Live) {
+    let Some(seat) = ctx.seat.peek().clone() else {
+        return;
+    };
+    let mut state = ctx.state;
+    if state.peek().answering {
+        return;
+    }
+    let game = ctx.game.peek().clone();
+    state.write().answering = true;
+    let result = api::undo(&game, &seat.token).await;
+    if !still_shown(ctx.seat, &seat.token) {
+        return;
+    }
+    let refetch = match result {
+        Ok(sv) => {
+            table::before_change();
+            let mut st = state.write();
+            st.answering = false;
+            st.apply(sv) != Applied::Done
+        }
+        Err(e) => state.write().answer_failed(&e),
+    };
+    if refetch {
         refresh(ctx, &seat.token).await;
     }
 }
@@ -220,6 +253,9 @@ pub fn GamePage(id: String) -> Element {
         deciding,
         submit: Callback::new(move |answer: Answer| {
             spawn(send_answer(live, answer));
+        }),
+        undo: Callback::new(move |()| {
+            spawn(send_undo(live));
         }),
     });
 

@@ -144,7 +144,13 @@ impl Session {
 
     fn view_of(&self, seat: &Seat, format: Format) -> CallToolResult {
         match self.hub.view(seat) {
-            Ok((view, text)) => view_result(&view, text, format),
+            Ok((view, text, note)) => {
+                let mut result = view_result(&view, text, format);
+                if let Some(note) = note {
+                    result.content.insert(0, ContentBlock::text(note));
+                }
+                result
+            }
             Err(e) => failure(e.to_string()),
         }
     }

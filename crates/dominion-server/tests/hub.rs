@@ -42,7 +42,7 @@ fn an_engine_panic_stays_in_its_game() {
             hub.claim(&game.game_id, &game.seats[0].token).unwrap(),
             seat
         );
-        let (view, _) = hub.view(&seat).unwrap();
+        let (view, _, _) = hub.view(&seat).unwrap();
         assert!(view.decision.is_some());
     }
 }

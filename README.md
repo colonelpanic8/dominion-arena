@@ -96,8 +96,9 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
 | `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
-| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them |
+| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the answers taken back: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat answered last |
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
+| `POST /api/games/{id}/undo` | | the same with the whole log, after taking back the seat's last answer (and the Way answers that came with it); 409 when another seat has answered since. A seat can keep undoing back to the last answer of another seat. The game, with its shuffles, is restored exactly, and decision ids are never reused. The server keeps nothing to undo across a restart |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version}`: on connect and after every change |
 
 `POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles

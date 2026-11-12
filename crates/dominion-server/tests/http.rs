@@ -376,6 +376,58 @@ async fn games_say_which_seats_have_joined() {
 }
 
 #[tokio::test]
+async fn undo_takes_back_the_seats_last_answer() {
+    let server = start().await;
+    let created = server
+        .create(json!({ "players": 2, "kingdom": ["Village"], "seed": 3 }))
+        .await;
+    let id = &created.game_id;
+    let (token, d) = server.deciding(&created).await;
+    let before: SeatView = server
+        .get(&format!("/api/games/{id}/view?logFrom=0"), Some(&token))
+        .await
+        .json();
+    assert!(!before.can_undo);
+    let after = server.answer_first(&created).await;
+    assert!(after.can_undo);
+
+    let undo = |token: String| {
+        let server = &server;
+        async move {
+            server
+                .post(&format!("/api/games/{id}/undo"), Some(&token), "")
+                .await
+        }
+    };
+    let other = created
+        .seats
+        .iter()
+        .find(|s| s.token != token)
+        .unwrap()
+        .token
+        .clone();
+    assert_eq!(undo(other).await.status, StatusCode::CONFLICT);
+
+    let reply = undo(token.clone()).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    let undone: SeatView = reply.json();
+    assert_eq!(undone.undos, 1);
+    assert!(undone.version > after.version);
+    assert!(!undone.can_undo);
+    assert_eq!(
+        undone.view.since_last_decision,
+        before.view.since_last_decision
+    );
+    // The same position, under a new decision id: the old one is stale.
+    let open = undone.view.decision.clone().unwrap();
+    assert_ne!(open.id, d.id);
+    assert_eq!(open.options, d.options);
+    let stale = server.answer(id, &token, &first_answer(&d)).await;
+    assert_eq!(stale.status, StatusCode::CONFLICT);
+    assert_eq!(undo(token).await.status, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn log_from_chooses_where_the_log_starts() {
     let server = start().await;
     let created = server
