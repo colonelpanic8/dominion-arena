@@ -341,8 +341,8 @@ fn cargo_ship_sets_aside_a_gained_card_for_next_turn() {
     assert!(g.in_play(P0).is_empty());
 }
 
-/// Each Cargo Ship says what keeps it in play, and once one has set the card aside the
-/// others aren't offered.
+/// Each Cargo Ship says what keeps it in play (the two effects of one played by a Throne
+/// Room are one option), and once one has set the card aside the others aren't offered.
 #[test]
 fn cargo_ships_say_what_keeps_them_in_play() {
     let mut g = setup(&[Card::CargoShip, Card::ThroneRoom, Card::Village]);
@@ -371,12 +371,11 @@ fn cargo_ships_say_what_keeps_them_in_play() {
         labels,
         &[
             "Cargo Ship played by Throne Room: set Silver aside on Cargo Ship (optional)",
-            "Cargo Ship played by Throne Room: set Silver aside on Cargo Ship (optional)",
             "Cargo Ship: set Silver aside on Cargo Ship (optional)",
             "Decline all"
         ]
     );
-    respond(&mut g, Response::option(Opt::Trigger(2)));
+    respond(&mut g, Response::option(Opt::Trigger(1)));
     assert_eq!(g.turn().player, P1);
     assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
 }
@@ -408,6 +407,13 @@ fn throne_room_cargo_ship_sets_aside_two_cards_and_both_stay() {
     assert_eq!(g.turn().coins, 4);
     to_buy(&mut g);
     buy(&mut g, Card::Village);
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        [
+            "Cargo Ship played by Throne Room: set Village aside on Cargo Ship (optional)",
+            "Decline"
+        ]
+    );
     trigger(&mut g, Card::CargoShip);
     assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Village]);
     assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::CargoShip]);

@@ -142,7 +142,7 @@ impl SetRules for Rules {
         match *occ {
             Occasion::Attack { target, .. } => {
                 if active(g, Card::Lighthouse).any(|l| l.owner == target) {
-                    out.push(Trigger::new(target, Card::Lighthouse, LIGHTHOUSE_SHIELD));
+                    out.push(Trigger::new(target, Card::Lighthouse, LIGHTHOUSE_SHIELD).protects());
                 }
             }
             Occasion::Play { player, card } => {

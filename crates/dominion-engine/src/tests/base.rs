@@ -51,6 +51,57 @@ fn moat_blocks_militia() {
     assert!(logged_in_order(&g, &[revealed, unaffected]));
 }
 
+/// Two Moats are one option; once one is revealed the other can't matter and isn't offered.
+#[test]
+fn two_moats_are_one_option() {
+    let mut g = setup(&[Card::Militia, Card::Moat]);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Moat,
+            Card::Copper,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Militia);
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        ["Moat: reveal it to be unaffected (optional)", "Decline"]
+    );
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.hand(P1).len(), 5);
+    assert_eq!(g.pending().unwrap().player, P0);
+}
+
+#[test]
+fn declining_two_moats_declines_both() {
+    let mut g = setup(&[Card::Militia, Card::Moat]);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Moat,
+            Card::Moat,
+            Card::Copper,
+            Card::Estate,
+            Card::Estate,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Militia);
+    no(&mut g);
+    assert_eq!(
+        (g.pending().unwrap().player, purpose(&g)),
+        (P1, Purpose::Discard)
+    );
+}
+
 #[test]
 fn militia_without_moat_discards_to_three() {
     let mut g = setup(&[Card::Militia, Card::Moat]);

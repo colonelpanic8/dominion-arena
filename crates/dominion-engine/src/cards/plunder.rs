@@ -384,7 +384,7 @@ impl SetRules for Rules {
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
                     if g.card(c) == Card::Shield {
-                        out.push(Trigger::new(target, Card::Shield, REACT).on(c).optional("reveal it to be unaffected"));
+                        out.push(Trigger::new(target, Card::Shield, REACT).on(c).optional("reveal it to be unaffected").protects());
                     }
                 }
             }

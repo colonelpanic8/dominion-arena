@@ -1106,6 +1106,37 @@ fn sheepdog_is_played_when_its_owner_gains_a_card() {
     );
 }
 
+/// Two Sheepdogs are one option, and the second is offered again once the first is played.
+#[test]
+fn two_sheepdogs_are_one_option_each_playable() {
+    let mut g = setup(&[Card::Sheepdog]);
+    hand(&mut g, P0, &[Card::Sheepdog, Card::Sheepdog, Card::Copper]);
+    deck(&mut g, P0, &[Card::Silver; 4]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Copper);
+    let labels = trigger_labels(&g);
+    assert_eq!(labels.len(), 2, "{labels:?}");
+    trigger(&mut g, Card::Sheepdog);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Copper, Card::Sheepdog]);
+    assert_eq!(trigger_labels(&g), labels);
+    trigger(&mut g, Card::Sheepdog);
+    let sheepdogs = g
+        .log()
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                Event::Played {
+                    card: Card::Sheepdog,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(sheepdogs, 2);
+}
+
 #[test]
 fn sleigh_gains_two_horses_and_reacts_to_put_a_gained_card_on_the_deck() {
     let mut g = setup(&[Card::Sleigh]);
