@@ -191,6 +191,33 @@ fn royal_carriage_replays_the_action_it_follows() {
     );
 }
 
+/// "You may make either choice ... even if the played card is not in play anymore (e.g.
+/// from playing it twice with Throne Room) or you have no cards in your hand. You won't
+/// look at any cards if the choice you made causes you to not trash a card" (wiki).
+#[test]
+fn raze_may_choose_a_choice_that_trashes_nothing() {
+    let mut g = game(&[Card::Raze, Card::ThroneRoom], &[]);
+    hand(&mut g, P0, &[Card::ThroneRoom, Card::Raze, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::ThroneRoom);
+    choose_kinds(&mut g, &[Card::Raze]);
+    choose_kinds(&mut g, &[Card::Raze]);
+    // It put one of two Coppers into the hand. Raze is in the trash: choosing it again
+    // trashes and looks at nothing.
+    assert_eq!(kinds(&g, &candidates(&g)), [Card::Gold, Card::Copper]);
+    choose(&mut g, &[]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold, Card::Copper]);
+    assert_eq!(purpose(&g), Purpose::Turn);
+    // With an empty hand, a Raze in play need not trash itself.
+    let mut g = game(&[Card::Raze], &[]);
+    hand(&mut g, P0, &[Card::Raze]);
+    g.start();
+    play(&mut g, Card::Raze);
+    choose(&mut g, &[]);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::Raze]);
+}
+
 #[test]
 fn royal_carriage_is_not_offered_for_a_raze_that_trashed_itself() {
     let mut g = game(&[Card::RoyalCarriage, Card::Raze], &[]);
@@ -199,7 +226,8 @@ fn royal_carriage_is_not_offered_for_a_raze_that_trashed_itself() {
     deck(&mut g, P0, &[Card::Copper, Card::Silver, Card::Gold]);
     g.start();
     play(&mut g, Card::Raze);
-    // The hand is empty, so Raze trashes itself; Raze costs $2: look at two.
+    // Raze trashes itself; it costs $2: look at two.
+    choose_kinds(&mut g, &[Card::Raze]);
     assert_eq!(kinds(&g, &candidates(&g)), [Card::Copper, Card::Silver]);
     choose_kinds(&mut g, &[Card::Silver]);
     assert_eq!(g.zone(raze), Zone::Trash);

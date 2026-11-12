@@ -1306,11 +1306,26 @@ fn small_castle_trashes_itself_or_a_castle_to_gain_the_top_castle() {
     assert_eq!(vp(&g, P0), 1);
     assert_eq!(g.count_owned(P0, Card::Silver), 1);
     assert_eq!(g.count_owned(P0, Card::HumbleCastle), 1);
-    // With no Castle in hand, the second one trashes itself.
+    // With no Castle in hand, the second one may trash itself.
     play(&mut g, Card::SmallCastle);
+    choose_kinds(&mut g, &[Card::SmallCastle]);
     assert_eq!(g.count_owned(P0, Card::SmallCastle), 1);
     assert_eq!(g.count_owned(P0, Card::CrumblingCastle), 1);
     assert_eq!(vp(&g, P0), 2);
+}
+
+/// "You are allowed to choose to trash a Castle from your hand, even if you don't have any
+/// Castles in your hand, though this means you will not gain a Castle" (wiki).
+#[test]
+fn small_castle_need_not_trash_itself_with_no_castle_in_hand() {
+    let mut g = setup(&[Card::Castles]);
+    hand(&mut g, P0, &[Card::SmallCastle, Card::Copper]);
+    g.start();
+    play(&mut g, Card::SmallCastle);
+    choose(&mut g, &[]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::SmallCastle]);
+    assert_eq!(g.count_owned(P0, Card::SmallCastle), 1);
+    assert_eq!(g.count_owned(P0, Card::HumbleCastle), 0);
 }
 
 #[test]

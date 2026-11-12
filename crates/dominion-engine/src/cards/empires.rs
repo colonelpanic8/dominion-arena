@@ -1673,6 +1673,8 @@ fn small_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let this = f.this();
             let mut candidates = g.cards_in_hand_where(p, Types::CASTLE);
+            // Either choice may be made where it trashes nothing.
+            let min = usize::from(g.zone(this) == Zone::InPlay(p) && !candidates.is_empty());
             if g.zone(this) == Zone::InPlay(p) {
                 candidates.insert(0, this);
             }
@@ -1680,7 +1682,7 @@ fn small_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_cards(candidates, 1, 1, Purpose::Trash)
+            f.ask_cards(candidates, min, 1, Purpose::Trash)
         }
         1 => {
             let Some(c) = input.card() else {

@@ -1520,6 +1520,8 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let mut candidates = g.hand(p).to_vec();
             let this = f.this();
+            // Either choice may be made where it trashes nothing.
+            let min = usize::from(g.zone(this) == Zone::InPlay(p) && !candidates.is_empty());
             if g.zone(this) == Zone::InPlay(p) {
                 candidates.push(this);
             }
@@ -1527,7 +1529,7 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_cards(candidates, 1, 1, Purpose::Trash)
+            f.ask_cards(candidates, min, 1, Purpose::Trash)
         }
         1 => {
             let Some(c) = input.card() else {
