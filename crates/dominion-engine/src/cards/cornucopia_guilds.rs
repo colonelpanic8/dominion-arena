@@ -225,7 +225,13 @@ impl SetRules for Rules {
             }
             (Card::BagOfGold, _) => gain_one(g, f, Card::Gold, Dest::DeckTop),
             (Card::Diadem, _) => {
-                g.add_coins(f.player, g.turn.actions);
+                // Actions are the turn's: none on another player's turn.
+                let actions = if f.player == g.turn.player {
+                    g.turn.actions
+                } else {
+                    0
+                };
+                g.add_coins(f.player, actions);
                 Flow::done()
             }
             (Card::Followers, _) => followers(g, f, input),
