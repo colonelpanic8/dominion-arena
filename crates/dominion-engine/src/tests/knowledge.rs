@@ -521,6 +521,35 @@ fn only_its_owner_follows_a_card_picked_out_of_a_discard_pile() {
     );
 }
 
+/// Harbinger taking the top card of the discard pile: its player needn't keep the pile in
+/// order (wiki, Discard: "it is not necessary to keep it in the same order"), so the card
+/// now on top doesn't tell the others which card was taken.
+#[test]
+fn the_new_top_of_a_discard_pile_looked_through_says_nothing_of_the_card_taken() {
+    let mut g = setup(&[Card::Harbinger]);
+    hand(&mut g, P0, &[Card::Harbinger]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    discard(&mut g, P0, &[]);
+    let (mut g, mut k) = start(g);
+    let pile: Vec<CardId> = [Card::Gold, Card::Estate, Card::Curse]
+        .into_iter()
+        .map(|card| g.create(card, Zone::Discard(P0)))
+        .collect();
+    k.update(&mut g);
+    play(&mut g, Card::Harbinger);
+    choose(&mut g, &[pile[2]]);
+    k.update(&mut g);
+    let theirs = k.known(&g, P1);
+    assert_eq!(
+        theirs.zone(Zone::Discard(P0)).known,
+        count(&[(Card::Estate, 1)])
+    );
+    assert_eq!(
+        uncertain_over(&theirs, &[Zone::Deck(P0), Zone::Discard(P0)]),
+        Some(count(&[(Card::Gold, 1), (Card::Curse, 1)]))
+    );
+}
+
 /// Avoid: its player knows which of the cards being shuffled they kept out.
 #[test]
 fn a_player_knows_the_cards_avoid_kept_out_of_the_shuffle() {
