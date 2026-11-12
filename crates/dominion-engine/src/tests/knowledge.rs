@@ -765,6 +765,29 @@ fn everyone_knows_what_a_shuffled_pile_is_made_of() {
     }
 }
 
+/// The Ruins are dealt face down from all fifty: only six players, who use them all, know
+/// what the pile holds; below six only its face-up top card is known.
+#[test]
+fn the_ruins_pile_is_known_only_when_six_players_use_all_fifty() {
+    for (players, size) in [(5, 40), (6, 50)] {
+        let (g, k) = start(setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            ..GameConfig::new(players, vec![Card::Cultist], 7)
+        }));
+        let pile = g.pile_of(Card::Ruins).unwrap();
+        let known = k.known(&g, P0).zone(Zone::Pile(pile));
+        let held = printed(&g, &g.pile(pile).cards);
+        assert_eq!(known.count, size);
+        if players == 6 {
+            assert_eq!((known.known, known.unknown), (held, 0));
+        } else {
+            let top = g.printed(g.pile_top(pile).unwrap());
+            assert_eq!((known.known, known.unknown), (count(&[(top, 1)]), size - 1));
+        }
+    }
+}
+
 /// After a card passes between two other players, a viewer can't say whose each of their
 /// cards is, but still knows how many each of them owns.
 #[test]
