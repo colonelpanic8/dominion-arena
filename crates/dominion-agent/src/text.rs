@@ -105,14 +105,15 @@ fn player(out: &mut Vec<String>, label: &str, p: &PlayerView) {
     .filter(|(_, n)| *n != 0)
     .map(|(name, n)| format!("{name} {n}"))
     .collect();
-    for (flag, name) in [
-        (t.minus_card, "-1 Card token"),
-        (t.minus_coin, "-$1 token"),
-        (t.journey_face_up, "Journey token face up"),
-    ] {
+    for (flag, name) in [(t.minus_card, "-1 Card token"), (t.minus_coin, "-$1 token")] {
         if flag {
             extras.push(name.into());
         }
+    }
+    match t.journey_face_up {
+        Some(true) => extras.push("Journey token face up".into()),
+        Some(false) => extras.push("Journey token face down".into()),
+        None => {}
     }
     for (token, pile) in &p.adventure_tokens {
         extras.push(match pile {
@@ -249,12 +250,20 @@ pub fn render(v: &AgentView) -> String {
     };
     let mut out = vec![format!("GAME {id}{over}{status}")];
     if let Some(r) = &v.game.result {
-        let players: Vec<String> = r
-            .players
+        let mut ranked: Vec<&ResultPlayer> = r.players.iter().collect();
+        ranked.sort_by_key(|p| (p.rank, p.index));
+        let players: Vec<String> = ranked
             .iter()
             .map(|p| format!("{}. {} {} VP ({} turns)", p.rank, p.name, p.vp, p.turns))
             .collect();
-        out.push(format!("RESULT {}", players.join(", ")));
+        let reason = match r.reason.as_deref() {
+            Some("provinces-gone") => " (the Provinces ran out)",
+            Some("colonies-gone") => " (the Colonies ran out)",
+            Some("piles-empty") => " (Supply piles ran out)",
+            Some("turn-limit") => " (the turn limit was reached)",
+            _ => "",
+        };
+        out.push(format!("RESULT{reason}: {}", players.join(", ")));
     }
     if let Some(you) = &v.you {
         player(&mut out, "YOU", you);

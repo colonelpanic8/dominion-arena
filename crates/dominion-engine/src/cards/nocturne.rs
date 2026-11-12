@@ -292,7 +292,7 @@ impl SetRules for Rules {
             Occasion::StartTurn { player } => {
                 if has_state(g, player, Card::LostInTheWoods) && !g.hand(player).is_empty() {
                     out.push(
-                        Trigger::new(player, Card::LostInTheWoods, STATE_TRIGGER).optional(),
+                        Trigger::new(player, Card::LostInTheWoods, STATE_TRIGGER).optional("discard a card to receive a Boon"),
                     );
                 }
             }
@@ -332,7 +332,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::FaithfulHound, HOUND_SET_ASIDE)
                             .on(card)
-                            .optional(),
+                            .optional("set it aside, to put it into your hand at end of turn"),
                     );
                 }
             }
@@ -361,7 +361,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(owner, Card::HauntedMirror, MIRROR_TRASHED)
                                 .on(card)
-                                .optional(),
+                                .optional("discard an Action card to gain a Ghost"),
                         );
                     }
                 }
@@ -495,7 +495,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         out.push(
             Trigger::new(player, Card::Changeling, CHANGELING_EXCHANGE)
                 .on(card)
-                .optional(),
+                .optional(format!("exchange {} for a Changeling", g.card(card))),
         );
     }
     if where_gained(g, card) && g.zone(card) != Zone::Deck(player) {
@@ -505,7 +505,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
                     Trigger::new(player, Card::Tracker, TRACKER_TOPDECK)
                         .on(card)
                         .via_lasting(l.id)
-                        .optional(),
+                        .optional(format!("put {} onto your deck", g.card(card))),
                 );
             }
         }
@@ -885,7 +885,7 @@ fn boon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 }
                 f.pc = 2;
-                f.ask_yes_no(Purpose::Discard)
+                f.ask_yes_no(Purpose::Discard, "Discard 3 cards to gain a Gold")
             }
             2 => {
                 if !input.is_yes() {
@@ -1223,6 +1223,7 @@ fn crypt_start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 1;
             f.ask_cards(cards, 1, 1, Purpose::Move)
+                .question("put into your hand")
         }
         _ => {
             for c in input.cards() {
@@ -1284,7 +1285,10 @@ fn blessed_village_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow
             });
             f.s.card = Some(boon);
             f.pc = 1;
-f.ask_either(&["Receive it now", "Receive it at the start of your next turn"])
+f.ask_either(&[
+                format!("Receive {boon} now"),
+                format!("Receive {boon} at the start of your next turn"),
+            ])
         }
         1 => {
             let boon = f.s.card.expect("set in step 0");
@@ -1808,7 +1812,7 @@ fn pixie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Trash)
+            f.ask_yes_no(Purpose::Trash, format!("Trash {} to receive {boon} twice", g.card(f.this())))
         }
         1 => {
             if !input.is_yes() {
@@ -1926,7 +1930,7 @@ fn sacred_grove(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             match others.get(f.s.i) {
                 Some(&other) if !gives_coin => {
                     f.pc = 2;
-                    f.ask_yes_no_for(other, Purpose::Other)
+                    f.ask_yes_no_for(other, Purpose::Other, format!("Receive {boon}"))
                 }
                 _ => {
                     release_boon(g, boon);
@@ -1955,7 +1959,7 @@ fn secret_cave(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Discard 3 cards for +$3 at the start of your next turn")
         }
         1 => {
             if !input.is_yes() {
@@ -2197,7 +2201,7 @@ fn zombie_spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_no(Purpose::Discard).about(vec![c])
+            f.ask_yes_or(Purpose::Discard, format!("Discard {}", g.card(c)), "Put it back").about(vec![c])
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");

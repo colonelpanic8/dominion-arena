@@ -10,6 +10,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose, Response};
 use crate::frame::{Flow, Frame, Input, Value};
+use crate::game::Zone;
 use crate::{Card, CardId, Cost, Game, PlayerId};
 use serde::{Deserialize, Serialize};
 
@@ -128,6 +129,10 @@ pub struct Trigger {
     /// What the choice is called when `card`'s name doesn't say it: a rule applied to
     /// `card` rather than its own ability, or which card a shared ability is on.
     pub label: Option<String>,
+    /// What resolving an optional one does, said to its owner ("reveal it to be
+    /// unaffected").
+    #[serde(default)]
+    pub does: Option<String>,
 }
 
 impl Trigger {
@@ -143,6 +148,7 @@ impl Trigger {
             quiet: false,
             data: 0,
             label: None,
+            does: None,
         }
     }
 
@@ -156,8 +162,10 @@ impl Trigger {
         self
     }
 
-    pub(crate) fn optional(mut self) -> Trigger {
+    /// "You may": `does` says what resolving it does ("exchange it for a Soldier").
+    pub(crate) fn optional(mut self, does: impl Into<String>) -> Trigger {
         self.optional = true;
+        self.does = Some(does.into());
         self
     }
 
@@ -265,23 +273,42 @@ impl Window {
         if !mine[0].1.optional && mine.iter().all(|(_, t)| same_effect(g, t, &mine[0].1)) {
             return self.run(g, mine[0].clone());
         }
+        let several = self.occs.len() > 1;
         let mut options: Vec<Opt> = (0..mine.len()).map(|i| Opt::Trigger(i as u16)).collect();
         let mut labels: Vec<String> = mine
             .iter()
-            .map(|(_, t)| {
-                let name = t.label.clone().unwrap_or_else(|| t.card.to_string());
-                if t.optional {
-                    format!("{name} (optional)")
-                } else {
-                    name
+            .map(|(i, t)| {
+                let mut label = label(g, t);
+                if several {
+                    label = format!("{label} [{}]", moment(g, &self.occs[*i], owner));
                 }
+                label
             })
             .collect();
-        if mine.iter().all(|(_, t)| t.optional) {
+        let all_optional = mine.iter().all(|(_, t)| t.optional);
+        if all_optional {
             options.push(Opt::No);
-            labels.push("Done".to_string());
+            labels.push(
+                if mine.len() == 1 {
+                    "Decline"
+                } else {
+                    "Decline all"
+                }
+                .to_string(),
+            );
         }
-        let source = mine.first().map(|(_, t)| t.card);
+        let ask = if all_optional && mine.len() == 1 {
+            "you may use this ability"
+        } else if all_optional {
+            "choose an ability to use next, or decline all"
+        } else {
+            "choose which of your abilities resolves next (the others stay pending)"
+        };
+        let question = if several {
+            format!("Several things happened: {ask}")
+        } else {
+            format!("{}: {ask}", moment(g, &self.occs[0], owner))
+        };
         self.asked = mine;
         Flow::Ask(Decision {
             player: owner,
@@ -292,8 +319,9 @@ impl Window {
                 max: 1,
             },
             purpose: Purpose::Trigger,
-            source,
+            source: None,
             about: vec![],
+            question: Some(question),
         })
     }
 
@@ -332,4 +360,113 @@ fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
     };
     (a.card, a.ability, a.data, a.optional) == (b.card, b.ability, b.data, b.optional)
         && lasting(a) == lasting(b)
+}
+
+/// How the owner is offered `t`: its card (or label), what an optional one does, and the
+/// cards its lasting effect has set aside that the owner can see, which tell two of one
+/// Duration apart.
+fn label(g: &Game, t: &Trigger) -> String {
+    let name = t.label.clone().unwrap_or_else(|| {
+        let view = g.view(t.owner);
+        let held: Vec<&str> = t
+            .lasting
+            .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+            .into_iter()
+            .flat_map(|l| l.data.cards.iter().chain(&l.data.pick))
+            .filter(|&&c| matches!(g.zone(c), Zone::SetAside(_)))
+            .filter_map(|&c| view.card(c))
+            .map(|c| c.name())
+            .collect();
+        if held.is_empty() {
+            t.card.to_string()
+        } else {
+            format!("{} ({})", t.card, held.join(", "))
+        }
+    });
+    match &t.does {
+        Some(does) => format!("{name}: {does} (optional)"),
+        None => name,
+    }
+}
+
+/// When `occ` happens, as `me` is told: "P1 plays Militia", "Start of your turn".
+fn moment(g: &Game, occ: &Occasion, me: PlayerId) -> String {
+    let view = g.view(me);
+    let name = |c: CardId| view.card(c).map_or("a card", |c| c.name());
+    let who = |p: PlayerId, you: &str, they: &str| {
+        if p == me {
+            format!("You {you}")
+        } else {
+            format!("{p} {they}")
+        }
+    };
+    let whose = |p: PlayerId| cards::whose(me, p);
+    match occ {
+        Occasion::GameStart => "Before the first turn".into(),
+        Occasion::StartTurn { player } => format!("Start of {} turn", whose(*player)),
+        Occasion::StartBuyPhase { player } => format!("Start of {} Buy phase", whose(*player)),
+        Occasion::EndBuyPhase { player } => format!("End of {} Buy phase", whose(*player)),
+        Occasion::StartNight { player } => format!("Start of {} Night phase", whose(*player)),
+        Occasion::StartCleanup { player } => format!("Start of {} Clean-up", whose(*player)),
+        Occasion::DiscardFromPlay { player } => who(
+            *player,
+            "discard cards from play",
+            "discards cards from play",
+        ),
+        Occasion::EndTurn { player } => format!("End of {} turn", whose(*player)),
+        Occasion::Play { player, card } => {
+            let c = name(*card);
+            who(*player, &format!("play {c}"), &format!("plays {c}"))
+        }
+        Occasion::AfterPlay { player, card } => {
+            let c = name(*card);
+            who(*player, &format!("played {c}"), &format!("played {c}"))
+        }
+        Occasion::Attack {
+            attacker,
+            card,
+            target,
+        } => {
+            let c = name(*card);
+            let target = if *target == me {
+                "you".to_string()
+            } else {
+                target.to_string()
+            };
+            who(
+                *attacker,
+                &format!("attack {target} with {c}"),
+                &format!("attacks {target} with {c}"),
+            )
+        }
+        Occasion::Buy { player, card, .. } => {
+            let c = name(*card);
+            who(*player, &format!("buy {c}"), &format!("buys {c}"))
+        }
+        Occasion::BuyLandscape { player, card } => {
+            who(*player, &format!("buy {card}"), &format!("buys {card}"))
+        }
+        Occasion::WouldGain { player, card } => {
+            let c = name(*card);
+            who(
+                *player,
+                &format!("would gain {c}"),
+                &format!("would gain {c}"),
+            )
+        }
+        Occasion::Gain { player, card, .. } => {
+            let c = name(*card);
+            who(*player, &format!("gain {c}"), &format!("gains {c}"))
+        }
+        Occasion::Trash { player, card } => {
+            let c = name(*card);
+            who(*player, &format!("trash {c}"), &format!("trashes {c}"))
+        }
+        Occasion::Discard { player, card } => {
+            let c = name(*card);
+            who(*player, &format!("discard {c}"), &format!("discards {c}"))
+        }
+        Occasion::WouldShuffle { player } => who(*player, "would shuffle", "would shuffle"),
+        Occasion::Shuffled { player, .. } => who(*player, "shuffled", "shuffled"),
+    }
 }

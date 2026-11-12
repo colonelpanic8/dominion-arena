@@ -515,3 +515,110 @@ fn text_introduces_the_seat_numbers_it_uses() {
         "{rendered}"
     );
 }
+
+#[test]
+fn a_yes_or_no_question_says_what_yes_does() {
+    let mut t = table(&[Card::MiningVillage], 3, &[]);
+    let asked = |_: PlayerId, d: &AgentDecision| {
+        d.source.as_deref() == Some("Mining Village") && d.kind == "choose"
+    };
+    let seat = play_to(&mut t, "Mining Village", asked).expect("Mining Village asks");
+    let d = t.view(seat).decision.unwrap();
+    assert_eq!(d.prompt, "Mining Village: trash Mining Village for +$2?");
+    let labels: Vec<&str> = d.options.iter().map(|o| o.label.as_str()).collect();
+    assert_eq!(labels, ["Trash Mining Village for +$2", "No"]);
+}
+
+#[test]
+fn a_reaction_says_what_it_answers_and_does_and_names_no_single_source() {
+    let mut t = table(&[Card::Militia], 5, &["Ada", "Bo"]);
+    let mut bought = false;
+    let mut asked = None;
+    for _ in 0..2000 {
+        let Some(seat) = t.deciding() else { break };
+        let d = t.view(seat).decision.unwrap();
+        if seat.0 == 1 && d.purpose == "trigger" {
+            asked = Some(d);
+            break;
+        }
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 == 0 {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| {
+                    pick(&d, |o| !bought && o.label.starts_with("Buy Militia"))
+                        .inspect(|_| bought = true)
+                })
+                .or_else(|| pick(&d, |o| o.action == "end-phase"))
+                .unwrap()
+        } else {
+            pick(&d, |o| {
+                o.action == "play" && o.card.as_deref() != Some("Moat")
+            })
+            .or_else(|| pick(&d, |o| o.label.starts_with("Buy Moat")))
+            .or_else(|| pick(&d, |o| o.action == "end-phase"))
+            .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    let d = asked.expect("Bo is asked about Moat");
+    assert_eq!(d.source, None);
+    let (decline, moats) = d.options.split_last().unwrap();
+    assert!(!moats.is_empty());
+    let prompt = match moats.len() {
+        1 => "P1 attacks you with Militia: you may use this ability",
+        _ => "P1 attacks you with Militia: choose an ability to use next, or decline all",
+    };
+    assert_eq!(d.prompt, prompt);
+    for o in moats {
+        assert_eq!(o.label, "Moat: reveal it to be unaffected (optional)");
+        assert_eq!(o.card.as_deref(), Some("Moat"));
+    }
+    assert!(decline.label.starts_with("Decline"), "{}", decline.label);
+}
+
+#[test]
+fn the_result_lists_players_by_rank_and_says_why_the_game_ended() {
+    let t = table(&[Card::Militia], 11, &["Ada", "Bo"]);
+    let mut view = t.view(PlayerId(0));
+    view.game.result = Some(dominion_agent::GameResult {
+        reason: Some("provinces-gone".into()),
+        players: vec![
+            dominion_agent::ResultPlayer {
+                index: 0,
+                name: "Ada".into(),
+                vp: 10,
+                rank: 2,
+                turns: 14,
+                resigned: false,
+            },
+            dominion_agent::ResultPlayer {
+                index: 1,
+                name: "Bo".into(),
+                vp: 20,
+                rank: 1,
+                turns: 14,
+                resigned: false,
+            },
+        ],
+    });
+    let rendered = text::render(&view);
+    assert!(
+        rendered.contains(
+            "RESULT (the Provinces ran out): 1. Bo 20 VP (14 turns), 2. Ada 10 VP (14 turns)"
+        ),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn the_journey_token_is_shown_face_up_or_down_in_games_using_it() {
+    let journey = |t: &Table| t.view(PlayerId(0)).you.unwrap().tokens.journey_face_up;
+    assert_eq!(journey(&table(&[Card::Militia], 1, &[])), None);
+    let t = table(&[Card::Ranger], 1, &[]);
+    assert_eq!(journey(&t), Some(true));
+    assert!(t.text(PlayerId(1)).contains("Journey token face up"));
+    let mut view = t.view(PlayerId(0));
+    view.you.as_mut().unwrap().tokens.journey_face_up = Some(false);
+    assert!(text::render(&view).contains("Journey token face down"));
+}

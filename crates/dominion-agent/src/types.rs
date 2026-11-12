@@ -181,8 +181,9 @@ pub struct Tokens {
     pub minus_card: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub minus_coin: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub journey_face_up: bool,
+    /// Whether the Journey token is face up, in games that use it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub journey_face_up: Option<bool>,
 }
 
 fn is_zero_i32(n: &i32) -> bool {

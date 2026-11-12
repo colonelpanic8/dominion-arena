@@ -380,6 +380,24 @@ pub(crate) fn prelude(card: Card, player: PlayerId, id: CardId) -> Option<Frame>
     })
 }
 
+/// "your" or "P2's", for a label shown to `me` about `owner`'s cards.
+pub(crate) fn whose(me: PlayerId, owner: PlayerId) -> String {
+    if me == owner {
+        "your".into()
+    } else {
+        format!("{owner}'s")
+    }
+}
+
+/// The names of `cards`, for a label: "Copper, Estate".
+pub(crate) fn names(g: &Game, cards: &[CardId]) -> String {
+    cards
+        .iter()
+        .map(|&c| g.card(c).name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The chosen `Opt::Mode`s as a bit mask, to resolve in printed order with [`take_mode`].
 pub(crate) fn mode_mask(input: Input) -> i32 {
     input.options().iter().fold(0, |m, o| match o {
@@ -511,6 +529,7 @@ impl CardFrame {
             purpose,
             source: Some(self.card),
             about: vec![],
+            question: None,
         })
     }
 
@@ -576,15 +595,43 @@ impl CardFrame {
         self.ask(player, DecisionKind::Pile { piles, optional }, purpose)
     }
 
-    pub(crate) fn ask_yes_no(&self, purpose: Purpose) -> Flow {
-        self.ask_yes_no_for(self.player, purpose)
+    /// Ask whether to do `yes` ("Trash Engineer to gain a card costing up to $4"), what
+    /// answering `Opt::Yes` does, in the card's words.
+    pub(crate) fn ask_yes_no(&self, purpose: Purpose, yes: impl Into<String>) -> Flow {
+        self.ask_yes_no_for(self.player, purpose, yes)
     }
 
-    pub(crate) fn ask_yes_no_for(&self, player: PlayerId, purpose: Purpose) -> Flow {
+    pub(crate) fn ask_yes_no_for(
+        &self,
+        player: PlayerId,
+        purpose: Purpose,
+        yes: impl Into<String>,
+    ) -> Flow {
+        self.ask_yes_or_for(player, purpose, yes, "No")
+    }
+
+    /// [`CardFrame::ask_yes_no`] where answering `Opt::No` does something too ("Put it
+    /// back").
+    pub(crate) fn ask_yes_or(
+        &self,
+        purpose: Purpose,
+        yes: impl Into<String>,
+        no: impl Into<String>,
+    ) -> Flow {
+        self.ask_yes_or_for(self.player, purpose, yes, no)
+    }
+
+    pub(crate) fn ask_yes_or_for(
+        &self,
+        player: PlayerId,
+        purpose: Purpose,
+        yes: impl Into<String>,
+        no: impl Into<String>,
+    ) -> Flow {
         self.ask_choose_for(
             player,
             vec![Opt::Yes, Opt::No],
-            vec!["Yes".into(), "No".into()],
+            vec![yes.into(), no.into()],
             1,
             1,
             purpose,
@@ -592,26 +639,26 @@ impl CardFrame {
     }
 
     /// Ask to pick `min..=max` of the card's numbered choices; answers are `Opt::Mode(i)`.
-    pub(crate) fn ask_modes(&self, labels: &[&str], min: usize, max: usize) -> Flow {
+    pub(crate) fn ask_modes(&self, labels: &[impl AsRef<str>], min: usize, max: usize) -> Flow {
         self.ask_numbered(self.player, labels, min, max, Purpose::Mode)
     }
 
     /// Ask to pick one of alternatives that aren't a "choose" (`Purpose::Either`); answers
     /// are `Opt::Mode(i)`.
-    pub(crate) fn ask_either(&self, labels: &[&str]) -> Flow {
+    pub(crate) fn ask_either(&self, labels: &[impl AsRef<str>]) -> Flow {
         self.ask_numbered(self.player, labels, 1, 1, Purpose::Either)
     }
 
     pub(crate) fn ask_numbered(
         &self,
         player: PlayerId,
-        labels: &[&str],
+        labels: &[impl AsRef<str>],
         min: usize,
         max: usize,
         purpose: Purpose,
     ) -> Flow {
         let options = (0..labels.len()).map(|i| Opt::Mode(i as u8)).collect();
-        let labels = labels.iter().map(|s| s.to_string()).collect();
+        let labels = labels.iter().map(|s| s.as_ref().to_string()).collect();
         self.ask_choose_for(player, options, labels, min, max, purpose)
     }
 

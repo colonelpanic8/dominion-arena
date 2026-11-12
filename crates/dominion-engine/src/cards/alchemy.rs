@@ -3,7 +3,7 @@
 use super::prosperity::{
     choose_and_gain, each_target_gains, put_back, reveal_until, supply_piles, this_turn, top_deck,
 };
-use super::{CardFrame, Hook, SetRules};
+use super::{CardFrame, Hook, SetRules, whose};
 use crate::decision::Purpose;
 use crate::event::Dest;
 use crate::frame::{Flow, Frame, Input};
@@ -115,7 +115,7 @@ impl SetRules for Rules {
                             Trigger::new(player, Card::Alchemist, ALCHEMIST_TOPDECK)
                                 .on(src)
                                 .via_lasting(l.id)
-                                .optional(),
+                                .optional("put it onto your deck"),
                         );
                     }
                 }
@@ -129,7 +129,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Herbalist, HERBALIST_TOPDECK)
                                 .via_lasting(l.id)
-                                .optional(),
+                                .optional("put one of your Treasures from play onto your deck"),
                         );
                     }
                 }
@@ -289,7 +289,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_or(Purpose::Discard, format!("Discard {} {}", whose(f.player, victims[f.s.i]), g.card(c)), "Put it back")
         }
         _ => {
             let victim = victims[f.s.i];

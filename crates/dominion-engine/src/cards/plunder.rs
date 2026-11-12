@@ -355,15 +355,15 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::Shaman, SHAMAN_GAIN));
                 }
                 if !traited_in_hand(g, player, Card::Shy).is_empty() {
-                    out.push(Trigger::new(player, Card::Shy, TRAIT).optional());
+                    out.push(Trigger::new(player, Card::Shy, TRAIT).optional("discard a Shy card for +2 Cards"));
                 }
             }
             Occasion::StartCleanup { player } => {
                 if !traited_in_hand(g, player, Card::Friendly).is_empty() {
-                    out.push(Trigger::new(player, Card::Friendly, TRAIT).optional());
+                    out.push(Trigger::new(player, Card::Friendly, TRAIT).optional("discard a Friendly card to gain a Friendly card"));
                 }
                 if !traited_in_hand(g, player, Card::Patient).is_empty() {
-                    out.push(Trigger::new(player, Card::Patient, TRAIT).optional());
+                    out.push(Trigger::new(player, Card::Patient, TRAIT).optional("set aside Patient cards from your hand to play at the start of your next turn"));
                 }
                 journey_trigger(g, player, out);
             }
@@ -384,7 +384,7 @@ impl SetRules for Rules {
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
                     if g.card(c) == Card::Shield {
-                        out.push(Trigger::new(target, Card::Shield, REACT).on(c).optional());
+                        out.push(Trigger::new(target, Card::Shield, REACT).on(c).optional("reveal it to be unaffected"));
                     }
                 }
             }
@@ -401,7 +401,7 @@ impl SetRules for Rules {
                     }
                 }
                 if !shuffled_fated(g, player).is_empty() {
-                    out.push(Trigger::new(player, Card::Fated, THIS_TURN).optional());
+                    out.push(Trigger::new(player, Card::Fated, THIS_TURN).optional("reveal Fated cards you shuffled to put them on the top or bottom of your deck"));
                 }
             }
             _ => {}
@@ -783,7 +783,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             out.push(on(Trigger::new(gainer, kind, GAINED)));
         }
         Card::Gondola if !g.playable(gainer, Types::ACTION).is_empty() => {
-            out.push(on(Trigger::new(gainer, kind, GAINED)).optional());
+            out.push(on(Trigger::new(gainer, kind, GAINED)).optional("play an Action card from your hand"));
         }
         Card::WealthyVillage if treasure_names_in_play(g, gainer) >= 3 => {
             out.push(on(Trigger::new(gainer, kind, GAINED)));
@@ -798,7 +798,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         }
     }
     if is_trait(g, kind, Card::Pious) && !g.hand(gainer).is_empty() {
-        out.push(on(Trigger::new(gainer, Card::Pious, GAINED)).optional());
+        out.push(on(Trigger::new(gainer, Card::Pious, GAINED)).optional("trash a card from your hand"));
     }
     if kind == Card::Province
         && let Some(pile) = trait_pile(g, Card::Fawning)
@@ -846,10 +846,10 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     && where_gained(g, card)
                     && !matches!(g.zone(card), Zone::Deck(_)) =>
             {
-                out.push(via(THIS_TURN).optional());
+                out.push(via(THIS_TURN).optional(format!("put {} onto your deck", g.card(card))));
             }
             Card::MiningRoad if mine && types.contains(Types::TREASURE) && where_gained(g, card) => {
-                out.push(via(THIS_TURN).optional());
+                out.push(via(THIS_TURN).optional(format!("play {}", g.card(card))));
             }
             Card::Deliver if mine && where_gained(g, card) => {
                 out.push(via(THIS_TURN));
@@ -873,7 +873,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     _ => false,
                 };
                 if react && super::can_play(g, p, c) {
-                    out.push(Trigger::new(p, g.card(c), REACT).on(c).optional());
+                    out.push(Trigger::new(p, g.card(c), REACT).on(c).optional("play it from your hand"));
                 }
             }
         }
@@ -925,7 +925,7 @@ fn after_play_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<T
         }
     }
     if player == g.turn.player && is_traited(g, card, Card::Inspiring) {
-        out.push(Trigger::new(player, Card::Inspiring, TRAIT).on(card).optional());
+        out.push(Trigger::new(player, Card::Inspiring, TRAIT).on(card).optional("play an Action from your hand that you have no copy of in play"));
     }
 }
 
@@ -976,7 +976,7 @@ fn discard_from_play_triggers(g: &Game, player: PlayerId, out: &mut Vec<Trigger>
                 out.push(
                     Trigger::new(player, Card::Trickster, THIS_TURN)
                         .via_lasting(l.id)
-                        .optional(),
+                        .optional("set aside a Treasure you discard from play, to put it into your hand at end of turn"),
                 );
             }
         }
@@ -1235,7 +1235,7 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 }
                 f.pc = 5;
-                return f.ask_cards(cards, 1, 1, Purpose::Move);
+                return f.ask_cards(cards, 1, 1, Purpose::Move).question("put into your hand");
             }
             let piles = g.piles_costing_up_to(Cost::coins(4));
             if piles.is_empty() {
@@ -1583,7 +1583,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 1;
                 let mut shuffled = g.shuffled(p).to_vec();
                 shuffled.sort();
-                return f.ask_cards(shuffled, 0, 3, Purpose::Move);
+                return f.ask_cards(shuffled, 0, 3, Purpose::Move).question("put into your discard pile");
             }
             for c in input.cards() {
                 if g.zone(c) == Zone::Deck(p) {
@@ -1639,6 +1639,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let n = rest.len();
             f.pc = 2;
             f.ask_cards(rest, 0, n, Purpose::Move)
+                .question("put on the bottom of your deck")
         }
         2 => {
             let mut bottom = input.cards();
@@ -1670,7 +1671,7 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 4;
             let under = f.s.cards[top..].to_vec();
             if under.iter().any(|&c| g.card(c) != g.card(under[0])) {
-                return f.ask_order(under, Purpose::Move);
+                return f.ask_order(under, Purpose::Move).question("put on the bottom of your deck");
             }
             Flow::Continue
         }
@@ -2216,6 +2217,7 @@ fn mapmaker(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.cards = input.cards();
             f.pc = 2;
             f.ask_cards(f.s.cards.clone(), 2, 2, Purpose::Move)
+                .question("put into your hand (the rest are discarded)")
         }
         2 => {
             let chosen = input.cards();
@@ -2630,7 +2632,7 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.s.pick = Some(c);
             f.pc = 4;
-            f.ask_yes_no(Purpose::Play)
+            f.ask_yes_no(Purpose::Play, format!("Play {}", g.card(c)))
         }
         4 => {
             f.pc = 5;
@@ -2656,7 +2658,7 @@ fn bury(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             return Flow::done();
         }
         f.pc = 1;
-        return f.ask_cards(discard, 1, 1, Purpose::Move);
+        return f.ask_cards(discard, 1, 1, Purpose::Move).question("put on the bottom of your deck");
     }
     for c in input.cards() {
         if g.zone(c) == Zone::Discard(p) {

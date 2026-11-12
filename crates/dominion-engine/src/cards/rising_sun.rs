@@ -942,7 +942,7 @@ fn rustic_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Discard 2 cards for +1 Card")
         }
         1 => {
             if !input.is_yes() {
@@ -1038,7 +1038,7 @@ fn gold_mine(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            f.ask_yes_no(Purpose::Gain)
+            f.ask_yes_no(Purpose::Gain, "Gain a Gold and get +4 Debt")
         }
         1 => {
             if !input.is_yes() {
@@ -1131,7 +1131,7 @@ fn snake_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Reveal)
+            f.ask_yes_no(Purpose::Reveal, format!("Reveal your hand and return {} to its pile, so each other player gains a Curse", g.card(f.this())))
         }
         1 => {
             if !input.is_yes() {
@@ -1197,6 +1197,7 @@ fn asceticism(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 1;
             f.ask_number(0, max as i32, Purpose::Trash)
+                .question("pay how much $ to trash that many cards?")
         }
         1 => {
             let n = input.number().unwrap_or(0).max(0) as usize;

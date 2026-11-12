@@ -391,6 +391,7 @@ impl SetRules for Rules {
                         .collect();
                     f.pc = 1;
                     f.ask_pile(piles, false, Purpose::Other)
+                        .question("choose a Supply pile to add 2 Debt to")
                 }
                 _ => {
                     if let Some(pile) = input.pile() {
@@ -463,7 +464,7 @@ impl SetRules for Rules {
                 if g.has_landscape(Card::Arena)
                     && !g.cards_in_hand_where(player, Types::ACTION).is_empty()
                 {
-                    out.push(Trigger::new(player, Card::Arena, ARENA_DISCARD).optional());
+                    out.push(Trigger::new(player, Card::Arena, ARENA_DISCARD).optional("discard an Action card to take 2 VP from Arena"));
                 }
             }
             Occasion::StartCleanup { .. } => {
@@ -998,6 +999,7 @@ fn take_from_discard(g: &mut Game, f: &mut CardFrame, input: Input, card: Card) 
             }
             f.pc = 1;
             f.ask_cards(found, 0, 1, Purpose::Move)
+                .question("put into your hand")
         }
         _ => {
             if let Some(c) = input.card()
@@ -1036,6 +1038,7 @@ fn archive(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.cards = cards.clone();
             f.pc = 2;
             f.ask_cards(cards, 1, 1, Purpose::Move)
+                .question("put into your hand")
         }
         _ => {
             if let Some(c) = input.card()
@@ -1083,6 +1086,7 @@ fn archive_start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 1;
             f.ask_cards(cards, 1, 1, Purpose::Move)
+                .question("put into your hand")
         }
         _ => {
             if let Some(c) = input.card()
@@ -1273,6 +1277,7 @@ fn capital_debt(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 1;
             f.ask_number(0, max as i32, Purpose::Other)
+                .question("pay off how much Debt now?")
         }
         _ => {
             let n = input.number().unwrap_or(0).max(0) as u32;
@@ -1368,7 +1373,7 @@ fn engineer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 4;
-            f.ask_yes_no(Purpose::Trash)
+            f.ask_yes_no(Purpose::Trash, format!("Trash {} to gain a card costing up to $4", g.card(f.this())))
         }
         4 => {
             if !input.is_yes() {
@@ -1884,6 +1889,7 @@ fn annex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let discard = g.player(p).discard.clone();
             f.pc = 1;
             f.ask_cards(discard, 0, 5, Purpose::Other)
+                .question("keep in your discard pile (the rest are shuffled into your deck)")
         }
         1 => {
             f.s.cards = input.cards();
@@ -2100,6 +2106,10 @@ fn mountain_pass(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 purpose: Purpose::Other,
                 source: Some(Card::MountainPass),
                 about: vec![],
+                question: Some(format!(
+                    "bid Debt for +8 VP; bidding {} passes",
+                    f.s.n
+                )),
             })
         }
         _ => {

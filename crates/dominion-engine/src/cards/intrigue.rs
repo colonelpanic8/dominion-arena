@@ -93,7 +93,7 @@ impl SetRules for Rules {
                 out.push(
                     Trigger::new(target, g.card(c), ability)
                         .on(c)
-                        .optional()
+                        .optional(if ability == DIPLOMAT_REACT { "reveal it to draw 2 cards, then discard 3" } else { "reveal it to draw 2 cards, then put 2 cards from your hand onto your deck" })
                         .data(tag),
                 );
             }
@@ -482,6 +482,7 @@ fn masquerade(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 Some(&q) => {
                     f.pc = 1;
                     f.ask_cards_for(q, g.hand(q).to_vec(), 1, 1, Purpose::Pass)
+                        .question(format!("pass to {}", passers[(f.s.i + 1) % passers.len()]))
                 }
                 None => {
                     f.pc = 2;
@@ -530,7 +531,7 @@ fn mill(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard)
+            f.ask_yes_no(Purpose::Discard, "Discard 2 cards for +$2")
         }
         1 => {
             if !input.is_yes() {
@@ -561,7 +562,7 @@ fn mining_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Trash)
+            f.ask_yes_no(Purpose::Trash, format!("Trash {} for +$2", g.card(f.this())))
         }
         1 => {
             if !input.is_yes() {
@@ -748,6 +749,7 @@ fn secret_passage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 1;
             f.ask_cards(hand, 1, 1, Purpose::Move)
+                .question("put anywhere in your deck")
         }
         1 => {
             let Some(c) = input.card() else {
@@ -756,7 +758,10 @@ fn secret_passage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.pick = Some(c);
             f.pc = 2;
             let n = g.player(f.player).deck.len() as i32;
-            f.ask_number(0, n, Purpose::Move)
+            f.ask_number(0, n, Purpose::Move).question(format!(
+                "how many cards go above {} in your deck? 0 puts it on top",
+                g.card(c)
+            ))
         }
         _ => {
             let c = f.s.pick.expect("set in step 1");

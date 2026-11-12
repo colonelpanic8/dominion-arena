@@ -105,6 +105,14 @@ impl Flow {
         }
         self
     }
+
+    /// Says in words what the decision asked asks (see [`Decision::question`]).
+    pub(crate) fn question(mut self, text: impl Into<String>) -> Flow {
+        if let Flow::Ask(d) = &mut self {
+            d.question = Some(text.into());
+        }
+        self
+    }
 }
 
 /// Where a gain takes its card from.
@@ -676,6 +684,7 @@ fn resume_shuffle(
                     purpose: Purpose::Move,
                     source: None,
                     about: vec![],
+                    question: Some("put on the bottom of your deck".into()),
                 });
             }
             Flow::Continue
@@ -756,6 +765,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                             purpose: Purpose::Either,
                             source: None,
                             about: vec![],
+                            question: None,
                         });
                     }
                     None => sources[0],
@@ -844,6 +854,7 @@ fn ask_moves(player: PlayerId, phase: Phase, moves: Vec<Move>) -> Flow {
         purpose: Purpose::Turn,
         source: None,
         about: vec![],
+        question: None,
     })
 }
 
@@ -1340,6 +1351,7 @@ fn resume_overpay(
             purpose: Purpose::Overpay,
             source: Some(g.card(card)),
             about: vec![],
+            question: None,
         })
     };
     match pc {
@@ -1490,6 +1502,7 @@ impl PlayFrame {
                     purpose: Purpose::Mode,
                     source: Some(g.card(id)),
                     about: vec![],
+                    question: Some("play it as itself, or use a Way instead".into()),
                 })
             }
             3 => {

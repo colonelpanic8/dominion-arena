@@ -366,6 +366,41 @@ fn lighthouse_gives_a_coin_now_and_next_turn_and_blocks_attacks_until_then() {
 }
 
 #[test]
+fn ordering_moat_and_lighthouse_says_what_attacks_and_what_moat_does() {
+    let mut g = setup(&[Card::Lighthouse, Card::Militia, Card::Moat]);
+    hand(&mut g, P0, &[Card::Lighthouse]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Militia]);
+    g.start();
+    play(&mut g, Card::Lighthouse);
+    next_turn(&mut g);
+    hand(&mut g, P0, &[Card::Moat]);
+    play(&mut g, Card::Militia);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.source), (P0, None));
+    assert_eq!(
+        d.question.as_deref(),
+        Some(
+            "P2 attacks you with Militia: choose which of your abilities resolves next (the others stay pending)"
+        )
+    );
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        ["Moat: reveal it to be unaffected (optional)", "Lighthouse"]
+    );
+    super::intrigue::trigger(&mut g, Card::Lighthouse);
+    let d = g.pending().unwrap();
+    assert_eq!(
+        d.question.as_deref(),
+        Some("P2 attacks you with Militia: you may use this ability")
+    );
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        ["Moat: reveal it to be unaffected (optional)", "Decline"]
+    );
+}
+
+#[test]
 fn lighthouse_does_not_protect_after_it_resolves() {
     let mut g = setup(&[Card::Lighthouse, Card::Militia]);
     hand(&mut g, P0, &[Card::Lighthouse]);
@@ -715,11 +750,7 @@ fn a_sailor_played_by_a_gained_gondola_can_play_that_gondola() {
     buy(&mut g, Card::Gondola);
     // Gondola's when-gain ability plays the Sailor.
     respond(&mut g, Response::option(Opt::Trigger(0)));
-    let d = g.pending().unwrap();
-    assert_eq!(
-        (d.purpose, d.source),
-        (Purpose::Trigger, Some(Card::Sailor))
-    );
+    assert_eq!(trigger_cards(&g), [Card::Sailor]);
     respond(&mut g, Response::option(Opt::Trigger(0)));
     // The Gondola, for its +$2 next turn.
     mode(&mut g, 1);
@@ -1132,11 +1163,8 @@ fn treasury_played_on_another_players_turn_may_go_on_the_deck() {
     play(&mut g, Card::Gondola);
     mode(&mut g, 0);
     buy(&mut g, Card::Estate);
-    let d = g.pending().unwrap();
-    assert_eq!(
-        (d.player, d.purpose, d.source),
-        (P1, Purpose::Trigger, Some(Card::Treasury))
-    );
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(trigger_cards(&g), [Card::Treasury]);
     respond(&mut g, Response::option(Opt::Trigger(0)));
     assert_eq!(g.turn().player, P1);
     assert_eq!(deck_kinds(&g, P1)[0], Card::Treasury);

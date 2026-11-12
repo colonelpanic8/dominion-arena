@@ -454,7 +454,7 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
             pirate_ship: pv.pirate_ship(),
             minus_card: pv.minus_card(),
             minus_coin: pv.minus_coin(),
-            journey_face_up: pv.journey_face_up() && uses_journey,
+            journey_face_up: uses_journey.then(|| pv.journey_face_up()),
         },
         adventure_tokens: pv
             .tokens()
@@ -505,8 +505,9 @@ fn option(index: usize, action: &str, label: String) -> AgentOption {
     }
 }
 
-fn verb(p: Purpose) -> &'static str {
-    match p {
+/// What choosing cards or a pile for `p` does to them, if the purpose says.
+fn verb(p: Purpose) -> Option<&'static str> {
+    Some(match p {
         Purpose::Discard => "discard",
         Purpose::Trash => "trash",
         Purpose::Gain => "gain",
@@ -516,16 +517,17 @@ fn verb(p: Purpose) -> &'static str {
         Purpose::SetAside => "set aside",
         Purpose::Reveal => "reveal",
         Purpose::Reaction => "react with",
-        Purpose::Trigger => "resolve next",
-        Purpose::Mode => "choose",
-        Purpose::Either => "choose",
         Purpose::Exile => "exile",
         Purpose::Return => "return",
         Purpose::Pass => "pass",
-        Purpose::Overpay => "overpay",
-        Purpose::Name => "name",
-        Purpose::Turn | Purpose::Other => "choose",
-    }
+        Purpose::Trigger
+        | Purpose::Mode
+        | Purpose::Either
+        | Purpose::Overpay
+        | Purpose::Name
+        | Purpose::Turn
+        | Purpose::Other => return None,
+    })
 }
 
 fn bounds(min: usize, max: usize) -> String {
@@ -533,6 +535,26 @@ fn bounds(min: usize, max: usize) -> String {
         format!("{min}")
     } else {
         format!("{min}-{max}")
+    }
+}
+
+fn lower_first(s: &str) -> String {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .map(|c| c.to_lowercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+/// "a card", "2 cards", "up to 3 cards", "1 to 3 cards".
+fn how_many(min: usize, max: usize, one: &str, many: &str) -> String {
+    let noun = |n: usize| if n == 1 { one } else { many };
+    match (min, max) {
+        (1, 1) if one.starts_with(['a', 'e', 'i', 'o', 'u']) => format!("an {one}"),
+        (1, 1) => format!("a {one}"),
+        (a, b) if a == b => format!("{a} {}", noun(a)),
+        (0, b) => format!("up to {b} {}", noun(b)),
+        (a, b) => format!("{a} to {b} {many}"),
     }
 }
 
@@ -643,11 +665,13 @@ pub(crate) fn decision(
             } else {
                 ""
             };
-            let prompt = format!(
-                "{prefix}choose {} card(s) to {}{order}",
-                bounds(*min, *max),
-                verb(d.purpose)
-            );
+            let what = how_many(*min, *max, "card", "cards");
+            let ask = match (&d.question, verb(d.purpose)) {
+                (Some(q), _) => format!("choose {what} to {q}"),
+                (None, Some(verb)) => format!("choose {what} to {verb}"),
+                (None, None) => format!("choose {what}"),
+            };
+            let prompt = format!("{prefix}{ask}{order}");
             ("cards", prompt, *min, *max, *ordered, None)
         }
         DecisionKind::Pile { piles, optional } => {
@@ -665,7 +689,11 @@ pub(crate) fn decision(
                 let i = items.len();
                 items.push((option(i, "decline", "None".into()), Target::Pile(None)));
             }
-            let prompt = format!("{prefix}choose a pile to {}", verb(d.purpose));
+            let prompt = match (&d.question, verb(d.purpose)) {
+                (Some(q), _) => format!("{prefix}{q}"),
+                (None, Some(verb)) => format!("{prefix}choose a pile to {verb} from"),
+                (None, None) => format!("{prefix}choose a pile"),
+            };
             ("pile", prompt, 1, 1, false, None)
         }
         DecisionKind::Choose {
@@ -709,7 +737,16 @@ pub(crate) fn decision(
                 }
                 items.push((o, Target::Opt(opt)));
             }
-            let prompt = format!("{prefix}choose {} option(s)", bounds(*min, *max));
+            let prompt = match (&d.question, opts.as_slice()) {
+                (Some(q), _) => format!("{prefix}{q}"),
+                (None, [Opt::Yes, Opt::No]) => {
+                    format!("{prefix}{}?", lower_first(&items[0].0.label))
+                }
+                (None, _) => format!(
+                    "{prefix}choose {}",
+                    how_many(*min, *max, "option", "options")
+                ),
+            };
             ("choose", prompt, *min, *max, false, None)
         }
         DecisionKind::NameCard => {
@@ -729,7 +766,13 @@ pub(crate) fn decision(
                 o.value = Some(n);
                 items.push((o, Target::Number(n)));
             }
-            let prompt = format!("{prefix}choose a number from {min} to {max}");
+            let prompt = match (&d.question, d.purpose) {
+                (Some(q), _) => format!("{prefix}{q} ({min} to {max})"),
+                (None, Purpose::Overpay) => {
+                    format!("{prefix}choose how much to overpay (${min} to ${max})")
+                }
+                (None, _) => format!("{prefix}choose a number from {min} to {max}"),
+            };
             ("number", prompt, 1, 1, false, None)
         }
     };

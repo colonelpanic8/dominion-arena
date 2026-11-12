@@ -135,7 +135,10 @@ them.
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
   trigger with `Value::Bool(true)` makes the target unaffected. Players choose among
   triggers by card name: give one `Trigger::labelled` when the name doesn't say what it
-  is (the Exile rule on a gained card, which card a Way's ability is on).
+  is (the Exile rule on a gained card, which card a Way's ability is on), and say what an
+  optional one does (`Trigger::optional("reveal it to be unaffected")`). The window's
+  decision has no `source`; its `question` names the moment ("P2 attacks you with
+  Militia").
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call
   `f.add_duration(g, data)` (keeps the card in play with what played it:
   `CardFrame::keeps`) only when the play has something left to do, and produce a `StartTurn` trigger from that lasting
@@ -189,6 +192,12 @@ them.
   to a `Purpose::Mode` "choose" (`ask_modes`), so scripts must handle every chosen mode,
   in printed order (`mode_mask` / `take_mode`). Alternatives that aren't a "choose"
   ("either ... or", which Artifact) use `ask_either` (`Purpose::Either`).
+  Every question says what its answers do, in the card's words: `ask_yes_no(purpose,
+  "Trash Engineer to gain a card costing up to $4")` labels Yes (`ask_yes_or` when No
+  does something too), and labels name the cards they are about where the player can see
+  them. Where the purpose doesn't say what a card, pile or number choice is for, add
+  `Flow::question` ("put onto your Island mat", "choose a Supply pile for an Embargo
+  token", "how many cards go above it? 0 puts it on top").
 - **Agents** get a `View`, never the `Game`: everything public (piles and their
   tokens through `PileView`, each player's tokens, mats and zones through
   `PlayerView`, landscapes, Artifacts, the Prophecy, Boon/Hex discards, lasting effects,

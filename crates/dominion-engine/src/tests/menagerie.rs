@@ -123,7 +123,7 @@ fn gained(g: &Game, p: PlayerId) -> Vec<Card> {
 fn discard_from_exile(g: &mut Game) {
     let i = trigger_labels(g)
         .iter()
-        .position(|l| l.ends_with("from Exile (optional)"))
+        .position(|l| l.starts_with("Exile: "))
         .expect("an offer to discard from Exile");
     respond(g, Response::option(Opt::Trigger(i as u16)));
 }
@@ -216,14 +216,13 @@ fn gaining_a_card_lets_you_discard_its_copies_from_exile() {
     play_treasures(&mut g);
     buy(&mut g, Card::Silver);
     // The offer is about the gained card, whatever put its copies into Exile.
-    let d = g.pending().unwrap();
-    assert_eq!(
-        (d.purpose, d.source),
-        (Purpose::Trigger, Some(Card::Silver))
-    );
+    assert_eq!(trigger_cards(&g)[0], Card::Silver);
     assert_eq!(
         trigger_labels(&g),
-        ["Discard Silver from Exile (optional)", "Done"]
+        [
+            "Exile: discard every Silver from your Exile mat (optional)",
+            "Decline"
+        ]
     );
     discard_from_exile(&mut g);
     assert_eq!(exile_kinds(&g, P0), [Card::Estate]);
@@ -1158,7 +1157,7 @@ fn sleigh_is_discarded_not_played_so_voyages_limit_does_not_stop_it() {
     // Three plays from the hand: Sheepdog can no longer be played, Sleigh still reacts.
     play_treasures(&mut g);
     buy(&mut g, Card::Silver);
-    assert_eq!(trigger_labels(&g), ["Sleigh (optional)", "Done"]);
+    assert_eq!(trigger_cards(&g), [Card::Sleigh]);
     trigger(&mut g, Card::Sleigh);
     modes(&mut g, &[0]);
     assert!(hand_kinds(&g, P0).contains(&Card::Silver));
@@ -1536,7 +1535,13 @@ fn enclave_gains_a_gold_then_exiles_a_duchy() {
     play_treasures(&mut g);
     buy_event(&mut g, Card::Enclave);
     // Sleigh may react to the Gold, before the Duchy is Exiled.
-    assert_eq!(trigger_labels(&g), ["Sleigh (optional)", "Done"]);
+    assert_eq!(
+        trigger_labels(&g),
+        [
+            "Sleigh: discard it to put Gold into your hand or onto your deck (optional)",
+            "Decline"
+        ]
+    );
     assert!(exile_kinds(&g, P0).is_empty());
     no(&mut g);
     assert_eq!(gained(&g, P0), [Card::Gold]);

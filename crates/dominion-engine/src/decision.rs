@@ -17,6 +17,12 @@ pub struct Decision {
     /// its options (cards they look at while asked what to do with them).
     #[serde(default)]
     pub about: Vec<CardId>,
+    /// What is asked, in words, where the purpose and options don't say it: for a `Cards`
+    /// decision what happens to the chosen cards ("put into your hand"), otherwise the
+    /// whole question ("choose a Supply pile for an Embargo token", what a number means,
+    /// the moment triggers are ordered at).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question: Option<String>,
 }
 
 /// Something a player can do in one of their turn's phases.

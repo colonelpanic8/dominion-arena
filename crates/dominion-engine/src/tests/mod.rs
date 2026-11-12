@@ -144,6 +144,17 @@ pub(crate) fn play_on_another_players_turn(g: &mut Game) {
     respond(g, Response::option(Opt::Trigger(0)));
 }
 
+/// The cards of the abilities a pending trigger decision offers, in option order.
+pub(crate) fn trigger_cards(g: &Game) -> Vec<Card> {
+    let d = g.pending().expect("a decision is pending");
+    assert_eq!(d.purpose, Purpose::Trigger, "{d:?}");
+    g.view(d.player)
+        .pending_triggers()
+        .iter()
+        .map(|t| t.card)
+        .collect()
+}
+
 pub(crate) fn yes(g: &mut Game) {
     respond(g, Response::option(Opt::Yes));
 }
@@ -679,11 +690,7 @@ fn cost_reductions_leave_events_and_projects_alone() {
 }
 
 fn star_chart(g: &mut Game, card: Card) {
-    let d = g.pending().expect("a decision is pending");
-    assert_eq!(
-        (d.purpose, d.source),
-        (Purpose::Trigger, Some(Card::StarChart))
-    );
+    assert_eq!(trigger_cards(g)[0], Card::StarChart);
     respond(g, Response::option(Opt::Trigger(0)));
     choose_kinds(g, &[card]);
 }
