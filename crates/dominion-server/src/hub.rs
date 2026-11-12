@@ -490,10 +490,12 @@ impl Hub {
             Some(from) => table.view_from(seat.seat, from),
             None => table.view(seat.seat),
         })?;
+        let extras = engine(|| table.extras(seat.seat))?;
         Ok(SeatView {
             view,
             version: *game.version.borrow(),
             deciding: table.deciding().map(|p| p.0),
+            table: extras,
         })
     }
 

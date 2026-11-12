@@ -1,6 +1,8 @@
 use dominion_agent::{AgentDecision, Answer};
 use dominion_engine::{Card, PlayerId};
-use dominion_protocol::api::{CardInfo, Created, GameSummary, SeatInfo, SeatView, WebSettings};
+use dominion_protocol::api::{
+    AnimationSpeed, CardInfo, Created, GameSummary, SeatInfo, SeatView, WebSettings,
+};
 use dominion_server::Options;
 use dominion_server::client::Client;
 use dominion_server::hub::{Hub, Seat};
@@ -182,6 +184,27 @@ fn random_answer(d: &AgentDecision, rng: &mut StdRng) -> Answer {
     Answer::indices(&d.id, indices)
 }
 
+/// The table extras agree with the view: every player's cards in play in some order, and
+/// a top card exactly when the discard pile has cards.
+fn check_extras(sv: &SeatView) {
+    let players: Vec<_> = sv.view.you.iter().chain(&sv.view.opponents).collect();
+    assert_eq!(sv.table.players.len(), players.len());
+    for p in players {
+        let t = sv.table.players.iter().find(|t| t.seat == p.index).unwrap();
+        let mut counted: std::collections::BTreeMap<String, u32> = Default::default();
+        for c in &t.in_play {
+            *counted.entry(c.clone()).or_default() += 1;
+        }
+        assert_eq!(counted, p.in_play.known, "{}'s cards in play", p.name);
+        assert_eq!(
+            t.discard_top.is_some(),
+            p.discard.count > 0,
+            "{}'s discard",
+            p.name
+        );
+    }
+}
+
 /// Plays a whole game over HTTP with random legal answers and returns seat 0's last view.
 async fn play_out(server: &Server, req: Value, seed: u64) -> SeatView {
     let created = server.create(req).await;
@@ -202,6 +225,7 @@ async fn play_out(server: &Server, req: Value, seed: u64) -> SeatView {
             .await;
         assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
         let after: SeatView = reply.json();
+        check_extras(&after);
         assert_eq!(after.version, version + 1);
         assert_eq!(after.deciding, server.summary(id).await.deciding);
         version = after.version;
@@ -617,9 +641,10 @@ async fn settings_serve_the_web_client_settings_without_a_token() {
     let server = start_with(Options {
         web: WebSettings {
             web_animations: false,
-            web_animation_ms: 300,
+            web_animation_speed: AnimationSpeed::Speedy,
             web_sounds: true,
             web_volume: 0.25,
+            ..WebSettings::default()
         },
         ..Options::default()
     })
@@ -627,7 +652,15 @@ async fn settings_serve_the_web_client_settings_without_a_token() {
     let raw: Value = server.get("/api/settings", None).await.json();
     assert_eq!(
         raw,
-        json!({ "webAnimations": false, "webAnimationMs": 300, "webSounds": true, "webVolume": 0.25 })
+        json!({
+            "webAnimations": false,
+            "webAnimationSpeed": "speedy",
+            "webMoveKingdom": true,
+            "webConfirmSingle": false,
+            "webBackground": "inheritance",
+            "webSounds": true,
+            "webVolume": 0.25
+        })
     );
     let defaults: WebSettings = start().await.get("/api/settings", None).await.json();
     assert_eq!(defaults, WebSettings::default());

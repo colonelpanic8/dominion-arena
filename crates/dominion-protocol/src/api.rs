@@ -73,22 +73,46 @@ pub struct SeatInfo {
 
 /// `GET /api/settings`: how the web client behaves, from the server's config file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct WebSettings {
-    /// Cards are seen moving between zones.
+    /// Cards are seen moving.
     pub web_animations: bool,
-    /// How long one card takes to move, in milliseconds.
-    pub web_animation_ms: u32,
+    /// How fast they move: dominion.games' Animation Type.
+    pub web_animation_speed: AnimationSpeed,
+    /// On other players' turns the kingdom drops and their play area goes above it.
+    pub web_move_kingdom: bool,
+    /// A single card to trash, discard, exile or put on the deck is confirmed with a
+    /// button rather than sent on the click.
+    pub web_confirm_single: bool,
+    /// The painting under the table: a name in the asset cache's `images/large`
+    /// (`inheritance`, `dark-wood`, ...), or empty for none.
+    pub web_background: String,
     pub web_sounds: bool,
     /// 0.0 to 1.0.
     pub web_volume: f32,
+}
+
+/// dominion.games' animation speeds, slowest first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AnimationSpeed {
+    Slow,
+    #[default]
+    Standard,
+    Sprightly,
+    Swift,
+    Speedy,
+    None,
 }
 
 impl Default for WebSettings {
     fn default() -> WebSettings {
         WebSettings {
             web_animations: true,
-            web_animation_ms: 250,
+            web_animation_speed: AnimationSpeed::Standard,
+            web_move_kingdom: true,
+            web_confirm_single: false,
+            web_background: "inheritance".into(),
             web_sounds: true,
             web_volume: 0.5,
         }
@@ -104,6 +128,27 @@ pub struct SeatView {
     /// The seat that must decide now, if any, as of the same version.
     #[serde(default)]
     pub deciding: Option<u8>,
+    /// What the table shows that the view doesn't carry, as the seat may see it.
+    #[serde(default)]
+    pub table: TableExtras,
+}
+
+/// Public facts the graphical table draws beside the view.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableExtras {
+    /// Every player, by seat.
+    pub players: Vec<PlayerTable>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerTable {
+    pub seat: u8,
+    /// Their cards in play, in the order they came into play.
+    pub in_play: Vec<String>,
+    /// The face-up card on top of their discard pile.
+    pub discard_top: Option<String>,
 }
 
 /// The data of an SSE `change` event.
