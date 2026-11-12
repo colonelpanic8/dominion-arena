@@ -27,6 +27,16 @@ mod imp {
         }
     }
 
+    pub fn session_get(key: &str) -> Option<String> {
+        window()?.session_storage().ok()??.get_item(key).ok()?
+    }
+
+    pub fn session_set(key: &str, value: &str) {
+        if let Some(s) = window().and_then(|w| w.session_storage().ok().flatten()) {
+            let _ = s.set_item(key, value);
+        }
+    }
+
     /// Takes `#token=<token>` out of the address bar, keeping the token for the game page.
     pub fn capture_fragment_token() {
         let Some(w) = window() else { return };
@@ -116,6 +126,14 @@ mod imp {
 
     pub fn storage_set(key: &str, value: &str) {
         STORAGE.with(|s| s.borrow_mut().insert(key.into(), value.into()));
+    }
+
+    pub fn session_get(key: &str) -> Option<String> {
+        storage_get(&format!("session:{key}"))
+    }
+
+    pub fn session_set(key: &str, value: &str) {
+        storage_set(&format!("session:{key}"), value);
     }
 
     pub fn capture_fragment_token() {}

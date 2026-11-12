@@ -6,6 +6,7 @@ pub mod interaction;
 pub mod logfmt;
 pub mod plain;
 pub mod state;
+pub mod table;
 
 use crate::api;
 use crate::app::Route;
@@ -196,33 +197,57 @@ pub fn GamePage(id: String) -> Element {
 
     let held = seats();
     let mut paste = use_signal(String::new);
+    let mut table_on = use_signal(table::table_mode);
+    let seat_bar = rsx! {
+        div { class: "seat-bar",
+            span { class: "mono", "Game {game}" }
+            if held.len() > 1 {
+                span { class: "muted", "Seat:" }
+                for s in held.iter().cloned() {
+                    button {
+                        key: "{s.seat}",
+                        class: if seat().as_ref().is_some_and(|c| c.seat == s.seat) { "toggle on" } else { "toggle" },
+                        "data-seat-button": "{s.seat}",
+                        onclick: move |_| seat.set(Some(s.clone())),
+                        "{s.name}"
+                    }
+                }
+                label { class: "check",
+                    input {
+                        r#type: "checkbox",
+                        checked: follow(),
+                        onchange: move |e| follow.set(e.checked()),
+                    }
+                    "follow the deciding seat"
+                }
+            } else if let Some(s) = held.first() {
+                span { "playing as {s.name}" }
+            }
+            span { class: "view-toggle",
+                button {
+                    class: if table_on() { "toggle on" } else { "toggle" },
+                    "data-view": "table",
+                    onclick: move |_| { table::set_table_mode(true); table_on.set(true); },
+                    "Table"
+                }
+                button {
+                    class: if table_on() { "toggle" } else { "toggle on" },
+                    "data-view": "plain",
+                    onclick: move |_| { table::set_table_mode(false); table_on.set(false); },
+                    "Plain"
+                }
+            }
+            Link { class: "right", to: Route::Lobby {}, "Lobby" }
+        }
+    };
+    if !held.is_empty() && table_on() && join_error().is_none() {
+        return rsx! {
+            table::TableGame { controls: seat_bar }
+        };
+    }
     rsx! {
         div { class: "game-page",
-            div { class: "seat-bar",
-                span { class: "mono", "Game {game}" }
-                if held.len() > 1 {
-                    span { class: "muted", "Seat:" }
-                    for s in held.iter().cloned() {
-                        button {
-                            key: "{s.seat}",
-                            class: if seat().as_ref().is_some_and(|c| c.seat == s.seat) { "toggle on" } else { "toggle" },
-                            onclick: move |_| seat.set(Some(s.clone())),
-                            "{s.name}"
-                        }
-                    }
-                    label { class: "check",
-                        input {
-                            r#type: "checkbox",
-                            checked: follow(),
-                            onchange: move |e| follow.set(e.checked()),
-                        }
-                        "follow the deciding seat"
-                    }
-                } else if let Some(s) = held.first() {
-                    span { "playing as {s.name}" }
-                }
-                Link { class: "right", to: Route::Lobby {}, "Lobby" }
-            }
+            {seat_bar}
             if held.is_empty() {
                 section { class: "panel",
                     h2 { "Take a seat" }
