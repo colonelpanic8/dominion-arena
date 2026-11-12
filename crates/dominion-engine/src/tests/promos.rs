@@ -400,9 +400,30 @@ fn black_market_lets_coffers_be_spent_once_its_cards_are_seen() {
     assert_eq!((g.player(P0).coffers, g.turn().coins), (1, 0));
     assert_eq!(discard_kinds(&g, P0), [Card::Laboratory]);
 
-    // Nothing to ask once every card left can be paid for.
+    // Asked also when every card left can be paid for: Coffers can overpay.
     play(&mut g, Card::BlackMarket);
+    respond(&mut g, Response::Number(0));
     assert_eq!(kinds(&g, &candidates(&g)), [Card::Cellar]);
+}
+
+#[test]
+fn black_market_lets_coffers_be_spent_to_overpay() {
+    let mut g = setup_black_market();
+    let bm = black_market_deck(&g);
+    replace(&mut g, Zone::Pile(bm), &[Card::Masterpiece]);
+    hand(&mut g, P0, &[Card::BlackMarket, Card::Copper]);
+    g.players[0].coffers = 4;
+    g.start();
+    play(&mut g, Card::BlackMarket);
+    choose_kinds(&mut g, &[Card::Copper]);
+    respond(&mut g, Response::Number(4));
+    choose_kinds(&mut g, &[Card::Masterpiece]);
+    respond(&mut g, Response::Number(4));
+    let silvers = discard_kinds(&g, P0)
+        .iter()
+        .filter(|&&c| c == Card::Silver)
+        .count();
+    assert_eq!((silvers, g.player(P0).coffers), (4, 0));
 }
 
 #[test]

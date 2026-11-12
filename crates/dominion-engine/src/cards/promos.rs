@@ -301,12 +301,12 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 => {
             let in_deck = |g: &Game, c: CardId| g.zone(c) == Zone::Pile(bm);
             // Coffers can be spent at any time in the player's turn, and this is the only
-            // moment between seeing these cards and paying for one.
+            // moment between seeing these cards and paying (or overpaying) for one.
             let coffers = g.player(p).coffers;
             if f.s.m & 2 == 0
                 && coffers > 0
                 && g.turn_player() == Some(p)
-                && (f.s.cards.iter()).any(|&c| in_deck(g, c) && !affordable(g, p, c))
+                && f.s.cards.iter().any(|&c| in_deck(g, c))
             {
                 f.s.m |= 2;
                 f.pc = 14;
