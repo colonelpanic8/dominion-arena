@@ -736,9 +736,18 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             let above = g.look_over_shuffled(p);
+            let top = match g.player(p).deck.len() - shuffled {
+                0 => "on top".to_string(),
+                n => format!(
+                    "on top of them, under the {} left on the deck",
+                    crate::amount(n as i64, "card", "cards")
+                ),
+            };
             f.ask_number(0, shuffled as i32 - 1, Purpose::Move)
                 .public_choice()
-                .question("how many of the shuffled cards go above Stash? 0 puts it on top")
+                .question(format!(
+                    "how many of the shuffled cards go above Stash? 0 puts it {top}"
+                ))
                 .about(above)
         }
         _ => {
