@@ -458,12 +458,12 @@ fn upgrade(g: &mut Game, f: &mut CardFrame, input: Input, extra: u8) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = f.s.cost.plus_coins(extra);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(extra);
             choose_and_gain(
                 f,
                 input,
@@ -701,13 +701,13 @@ fn forge(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_cards(hand, 0, n, Purpose::Trash)
         }
         1 => {
-            let chosen = input.cards();
-            f.s.n = chosen.iter().map(|&c| g.cost_of(c).coins as i32).sum();
+            f.s.cards = input.cards();
             f.pc = 2;
-            Flow::Call(Frame::trash(f.player, chosen))
+            Flow::Call(Frame::trash(f.player, f.s.cards.clone()))
         }
         _ => {
-            let total = Cost::coins(f.s.n.min(255) as u8);
+            let sum: u32 = f.s.cards.iter().map(|&c| u32::from(g.cost_of(c).coins)).sum();
+            let total = Cost::coins(sum.min(255) as u8);
             choose_and_gain(
                 f,
                 input,

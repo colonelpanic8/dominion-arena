@@ -1071,12 +1071,13 @@ fn call(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
                 let Some(c) = input.card() else {
                     return Some(Flow::done());
                 };
-                f.s.cost = g.cost_of(c);
+                f.s.pick = Some(c);
                 f.pc = 3;
                 Flow::Call(Frame::trash(p, vec![c]))
             }
             3 => {
-                let piles = g.piles_costing_up_to(f.s.cost.plus_coins(1));
+                let cost = g.cost_of(f.s.pick.expect("set in step 2"));
+                let piles = g.piles_costing_up_to(cost.plus_coins(1));
                 if piles.is_empty() {
                     return Some(Flow::done());
                 }

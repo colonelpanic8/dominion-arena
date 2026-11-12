@@ -547,12 +547,12 @@ fn improve_trash(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let target = f.s.cost.plus_coins(1);
+            let target = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(1);
             let piles = g.supply_piles_where(|_, cost| cost == target);
             if piles.is_empty() {
                 return Flow::done();

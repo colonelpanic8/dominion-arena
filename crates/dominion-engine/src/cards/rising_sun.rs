@@ -1193,12 +1193,12 @@ fn upgrade(g: &mut Game, f: &mut CardFrame, input: Input, extra: u8) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = f.s.cost.plus_coins(extra);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(extra);
             gain_where(g, f, input, 2, Dest::Discard, |_, c| c.at_most(limit))
         }
     }
@@ -1385,7 +1385,7 @@ fn kintsugi(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
@@ -1396,7 +1396,7 @@ fn kintsugi(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if f.pc == 2 && !gained_gold {
                 return Flow::done();
             }
-            let limit = f.s.cost.plus_coins(2);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(2);
             gain_where(g, f, input, 2, Dest::Discard, |_, c| c.at_most(limit))
         }
     }

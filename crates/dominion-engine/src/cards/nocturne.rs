@@ -1031,7 +1031,6 @@ fn locusts(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.s.pick = Some(c);
-            f.s.cost = g.cost_of(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
@@ -1040,7 +1039,7 @@ fn locusts(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if matches!(g.card(c), Card::Copper | Card::Estate) {
                 return gain_named(g, f, 2, Card::Curse, Dest::Discard, DONE);
             }
-            let (types, limit) = (g.types(c), f.s.cost);
+            let (types, limit) = (g.types(c), g.cost_of(c));
             let piles =
                 g.supply_piles_where(|t, cost| t.intersects(types) && cost.less_than(limit));
             if piles.is_empty() {
@@ -1460,12 +1459,12 @@ fn exorcist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let limit = f.s.cost;
+            let limit = g.cost_of(f.s.pick.expect("set in step 1"));
             let piles: Vec<PileId> = SPIRITS
                 .iter()
                 .filter_map(|&s| g.pile_of(s))
@@ -2140,12 +2139,13 @@ fn zombie_mason(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let piles = g.piles_costing_up_to(f.s.cost.plus_coins(1));
+            let cost = g.cost_of(f.s.pick.expect("set in step 1"));
+            let piles = g.piles_costing_up_to(cost.plus_coins(1));
             if piles.is_empty() {
                 return Flow::done();
             }

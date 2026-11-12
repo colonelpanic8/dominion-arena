@@ -1522,12 +1522,12 @@ fn carpenter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2..=4 => {
-            let limit = f.s.cost.plus_coins(2);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(2);
             gain_step(
                 g,
                 f,
@@ -1694,19 +1694,18 @@ fn barbarian(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 4;
                 return Flow::Continue;
             };
-            f.s.cost = g.cost_of(c);
             f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(target, vec![c]))
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
-            if f.s.cost.coins < 3 {
+            let limit = g.cost_of(c);
+            if limit.coins < 3 {
                 f.pc = 4;
                 return Flow::Continue;
             }
             let types = g.types(c);
-            let limit = f.s.cost;
             let piles = g.supply_piles_where(|t, cost| cost.less_than(limit) && t.intersects(types));
             if piles.is_empty() {
                 f.pc = 5;
@@ -1912,10 +1911,7 @@ fn modify(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             let chosen = input.cards();
-            if let Some(&c) = chosen.first() {
-                f.s.cost = g.cost_of(c);
-                f.s.pick = Some(c);
-            }
+            f.s.pick = chosen.first().copied();
             f.pc = 2;
             Flow::Call(Frame::trash(p, chosen))
         }
@@ -1947,7 +1943,7 @@ fn modify(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             _ => Flow::done(),
         },
         _ => {
-            let limit = f.s.cost.plus_coins(2);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(2);
             gain_step(
                 g,
                 f,

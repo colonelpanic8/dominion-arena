@@ -793,6 +793,37 @@ fn stonemason_gains_two_cheaper_cards() {
     assert_eq!(discard_kinds(&g, P0), [Card::Duchy, Card::Silver]);
 }
 
+/// Menagerie rulebook, "Unusual costs": "You play Stonemason to trash a card ... If you
+/// trash a Destrier, you could first gain a Duchy, which costs less than $6; then you
+/// would have to gain a card costing up to $4, as Destrier would now cost $5."
+#[test]
+fn stonemason_reads_the_trashed_destriers_cost_at_each_gain() {
+    let mut g = setup(&[Card::Stonemason, Card::Destrier]);
+    hand(&mut g, P0, &[Card::Stonemason, Card::Destrier]);
+    g.start();
+    play(&mut g, Card::Stonemason);
+    choose_pile(&mut g, Card::Duchy);
+    assert_eq!(g.cost(Card::Destrier), Cost::coins(5));
+    let second = super::prosperity::pile_choices(&g);
+    assert!(second.contains(&Card::Silver), "{second:?}");
+    assert!(!second.contains(&Card::Duchy), "{second:?}");
+}
+
+/// Wayfarer's page: "if you play a Stonemason and trash a $6-cost Wayfarer, you first gain
+/// a cheaper card, and then you gain a card costing less than that card."
+#[test]
+fn stonemason_reads_the_trashed_wayfarers_cost_at_each_gain() {
+    let mut g = setup(&[Card::Stonemason, Card::Wayfarer]);
+    hand(&mut g, P0, &[Card::Stonemason, Card::Wayfarer]);
+    g.start();
+    play(&mut g, Card::Stonemason);
+    choose_pile(&mut g, Card::Silver);
+    assert_eq!(g.cost(Card::Wayfarer), Cost::coins(3));
+    let second = super::prosperity::pile_choices(&g);
+    assert!(second.contains(&Card::Estate), "{second:?}");
+    assert!(!second.contains(&Card::Silver), "{second:?}");
+}
+
 #[test]
 fn stonemason_overpay_gains_two_actions_costing_the_overpay() {
     let mut g = setup(&[Card::Stonemason, Card::Village, Card::Smithy]);

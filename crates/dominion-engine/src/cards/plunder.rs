@@ -1964,12 +1964,12 @@ fn remodel(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, extra: u8) -
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = base + 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = f.s.cost.plus_coins(extra);
+            let limit = g.cost_of(f.s.pick.expect("set when trashed")).plus_coins(extra);
             gain_up_to(g, f, input, base + 2, limit, Dest::Discard)
         }
     }
@@ -2557,12 +2557,11 @@ fn spell_scroll(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if g.zone(this) != Zone::InPlay(p) {
                 return Flow::done();
             }
-            f.s.cost = g.cost_of(this);
             f.pc = 1;
             Flow::Call(Frame::trash(p, vec![this]))
         }
         1 => {
-            let limit = f.s.cost;
+            let limit = g.cost_of(this);
             let piles = g.supply_piles_where(|_, cost| cost.less_than(limit));
             if piles.is_empty() {
                 return Flow::done();

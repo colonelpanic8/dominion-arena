@@ -738,13 +738,13 @@ fn butcher(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
             let coffers = g.player(f.player).coffers.min(255) as u8;
-            let limit = f.s.cost.plus_coins(coffers);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(coffers);
             let piles = g.piles_costing_up_to(limit);
             if piles.is_empty() {
                 return Flow::done();
@@ -757,7 +757,8 @@ fn butcher(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             let top = g.pile_top(pile).expect("offered piles are not empty");
-            let spend = g.cost_of(top).coins.saturating_sub(f.s.cost.coins);
+            let trashed = g.cost_of(f.s.pick.expect("set in step 1"));
+            let spend = g.cost_of(top).coins.saturating_sub(trashed.coins);
             g.players[f.player.index()].coffers -= spend as u32;
             f.pc = 4;
             Flow::Call(Frame::gain(f.player, pile, Dest::Discard))
@@ -1074,12 +1075,12 @@ fn remake(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
-            let exact = f.s.cost.plus_coins(1);
+            let exact = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(1);
             let piles = g.supply_piles_where(|_, c| c == exact);
             f.pc = 0;
             if piles.is_empty() {
@@ -1170,7 +1171,7 @@ fn stonemason(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
@@ -1179,7 +1180,7 @@ fn stonemason(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.s.n += 1;
-            let limit = f.s.cost;
+            let limit = g.cost_of(f.s.pick.expect("set in step 1"));
             let piles = g.supply_piles_where(|_, c| c.less_than(limit));
             if piles.is_empty() {
                 return Flow::done();
@@ -1530,7 +1531,7 @@ fn taxman(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.s.card = Some(g.card(c));
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
@@ -1564,7 +1565,7 @@ fn taxman(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         4 => {
-            let limit = f.s.cost.plus_coins(3);
+            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(3);
             let piles =
                 g.supply_piles_where(|t, c| c.at_most(limit) && t.intersects(Types::TREASURE));
             if piles.is_empty() {

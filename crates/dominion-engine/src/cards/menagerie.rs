@@ -1740,12 +1740,13 @@ fn enhance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let piles = g.piles_costing_up_to(f.s.cost.plus_coins(2));
+            let cost = g.cost_of(f.s.pick.expect("set in step 1"));
+            let piles = g.piles_costing_up_to(cost.plus_coins(2));
             gain_from(f, Input::Start, piles, 2, Dest::Discard)
         }
         3 => gain_from(f, input, vec![], 2, Dest::Discard),

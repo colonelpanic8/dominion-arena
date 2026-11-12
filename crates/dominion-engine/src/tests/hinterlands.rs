@@ -750,6 +750,24 @@ fn wheelwright_discards_to_gain_an_action_costing_as_much() {
     assert_eq!(discard_kinds(&g, P0), [Card::Smithy, Card::Smithy]);
 }
 
+/// Wheelwright reads the discarded card's cost when it gains: a Fisherman discarded onto
+/// an empty discard pile costs $5 from then on (Change's page: "if your discard pile is
+/// empty and you trash Fisherman (which costs $2) and gain a Silver, you take 2 Debt
+/// because Fisherman now costs $5").
+#[test]
+fn wheelwright_reads_the_discarded_cards_cost_when_it_gains() {
+    let mut g = setup(&[Card::Wheelwright, Card::Fisherman, Card::Market]);
+    hand(&mut g, P0, &[Card::Wheelwright, Card::Fisherman]);
+    deck(&mut g, P0, &[Card::Copper, Card::Copper]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Wheelwright);
+    assert_eq!(g.cost(Card::Fisherman), Cost::coins(2));
+    choose_kinds(&mut g, &[Card::Fisherman]);
+    let offered = offered_piles(&g);
+    assert!(offered.contains(&Card::Market), "{offered:?}");
+}
+
 #[test]
 fn witchs_hut_curses_when_both_discards_are_actions() {
     let mut g = setup(&[Card::WitchsHut, Card::Village]);
