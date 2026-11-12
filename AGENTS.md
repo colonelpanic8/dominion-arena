@@ -80,8 +80,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           selection -> Answer
   src/game/mod.rs         GamePage: the seat shown (one held here, else the account's from
                           `/api/me/games`, else none: watching), keeping state current (the
-                          feed for the game and its chat; who is connected isn't on the
-                          feed, so the view is fetched again every 10 s), `GameCtx` context
+                          feed for the game and its chat), `GameCtx` context
                           (answer, resign, say), `use_forfeit`, the notice when the game
                           waits on a seat nobody has joined
   src/game/meta.rs        what `SeatView.meta` makes the page say: the account on a bar,

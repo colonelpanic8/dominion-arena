@@ -88,6 +88,15 @@ fn now_ms() -> u64 {
     0
 }
 
+/// How far the server's clock is ahead of this one, from a response just received; `was`
+/// when either clock can't be read.
+fn server_ahead(sv: &SeatView, was: i64) -> i64 {
+    match (sv.meta.now, now_ms()) {
+        (0, _) | (_, 0) => was,
+        (server, here) => server as i64 - here as i64,
+    }
+}
+
 /// The deciding seat's time running out, when there is something to say about it; the
 /// calling component is drawn again every second while it counts down.
 pub fn use_forfeit() -> Option<(meta::Forfeit, String)> {
@@ -107,7 +116,11 @@ pub fn use_forfeit() -> Option<(meta::Forfeit, String)> {
     });
     let st = game.state.read();
     let view = st.view.as_ref()?;
-    let f = meta::forfeit(&st.meta, st.deciding, view.seat, now())?;
+    let server_now = match now() {
+        0 => 0,
+        here => (here as i64 + st.server_ahead).max(1) as u64,
+    };
+    let f = meta::forfeit(&st.meta, st.deciding, view.seat, server_now)?;
     let names = logfmt::names(view);
     let name = names.get(usize::from(f.seat)).cloned().unwrap_or_default();
     let text = f.text(&name);
@@ -262,7 +275,11 @@ async fn refresh(ctx: Live, via: &Via) -> bool {
                     break;
                 }
                 table::before_change();
-                let applied = state.write().apply(sv);
+                let applied = {
+                    let mut st = state.write();
+                    st.server_ahead = server_ahead(&sv, st.server_ahead);
+                    st.apply(sv)
+                };
                 match applied {
                     Applied::Done => break,
                     Applied::Refetch => from = state.peek().log_from(),
@@ -277,10 +294,6 @@ async fn refresh(ctx: Live, via: &Via) -> bool {
     }
     true
 }
-
-/// How often the view is fetched to see who is still connected: that changes without the
-/// game changing, so the feed doesn't say.
-const PRESENCE_MS: u32 = 10_000;
 
 /// Keeps the shown game's state current until cancelled.
 async fn drive(ctx: Live, via: Via) {
@@ -312,20 +325,7 @@ async fn drive(ctx: Live, via: Via) {
             }
         }
     };
-    let presence = async {
-        while now_ms() != 0 {
-            platform::sleep(PRESENCE_MS).await;
-            let wanted = {
-                let st = ctx.state.peek();
-                let running = st.view.as_ref().is_some_and(|v| v.game.running);
-                running && st.meta.users.iter().any(Option::is_some)
-            };
-            if wanted {
-                refresh(ctx, &via).await;
-            }
-        }
-    };
-    futures_util::future::join3(feed, worker, presence).await;
+    futures_util::future::join(feed, worker).await;
 }
 
 /// Takes in the answer to an answer or a resignation.
@@ -339,6 +339,7 @@ async fn sent(ctx: Live, via: Via, result: api::Result<SeatView>) {
             table::before_change();
             let mut st = state.write();
             st.answering = false;
+            st.server_ahead = server_ahead(&sv, st.server_ahead);
             st.apply(sv) != Applied::Done
         }
         Err(e) => {

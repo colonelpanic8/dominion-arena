@@ -418,6 +418,7 @@ impl Arena {
     /// What happens on its own: forfeits, people who left, matches, things that expire.
     /// Called every few seconds.
     pub fn sweep(&self) {
+        self.hub.notice_presence();
         for seat in self.hub.overdue() {
             let _ = self.hub.resign(&seat, "abandoned");
         }

@@ -33,6 +33,9 @@ pub struct GameState {
     pub gone: bool,
     /// Who plays, who is connected and what kind of game it is, as of the last response.
     pub meta: GameMeta,
+    /// How far the server's clock is ahead of this browser's, in milliseconds: times the
+    /// server names (`meta.forfeit_at`) are on its clock.
+    pub server_ahead: i64,
     /// The game's chat, in order.
     pub chat: Vec<ChatMessage>,
     /// The feed's chat counter the chat was last fetched at, once it has been.
@@ -113,7 +116,11 @@ impl GameState {
         self.view.is_some()
             && self.error.is_none()
             && sv.version == self.version
-            && sv.meta == self.meta
+            // But for when the server read it.
+            && sv.meta.connected == self.meta.connected
+            && sv.meta.forfeit_at == self.meta.forfeit_at
+            && sv.meta.watchers == self.meta.watchers
+            && sv.meta.ended == self.meta.ended
             && sv
                 .view
                 .since_last_decision
