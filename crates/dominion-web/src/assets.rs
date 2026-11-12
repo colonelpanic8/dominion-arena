@@ -176,7 +176,7 @@ mod imp {
             .map_err(|_| ())?;
         match resp.status() {
             200 => Ok(resp.json::<Manifest>().await.ok()),
-            404 => Ok(None),
+            204 | 404 => Ok(None),
             _ => Err(()),
         }
     }

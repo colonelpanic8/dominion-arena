@@ -91,8 +91,8 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 
 `/assets/` serves the asset cache (`assets_dir`), then the web client's own bundled files
 (`web_dir/assets`), and every other path the built web client (`web_dir`, falling back to
-its `index.html`). These routes accept the same Host
-headers as `/mcp`.
+its `index.html`); without a cache, `/assets/manifest.json` is 204 No Content. These
+routes accept the same Host headers as `/mcp`.
 
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 

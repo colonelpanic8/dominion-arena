@@ -62,7 +62,8 @@ pub fn router(
         (Some(only), None) | (None, Some(only)) => Router::new().fallback_service(dir(only)),
         (None, None) => Router::new(),
     }
-    .layer(middleware::map_response(cache_forever));
+    .layer(middleware::map_response(cache_forever))
+    .layer(middleware::from_fn(no_manifest));
     let site = Router::new()
         .nest("/api", api)
         .nest_service("/assets", assets);
@@ -79,6 +80,17 @@ pub fn router(
 
 async fn no_client() -> &'static str {
     "dominion: the MCP endpoint is /mcp; the web client isn't installed here.\n"
+}
+
+/// Without an asset cache the manifest is 204 No Content rather than 404, so that a
+/// browser asking for it has no failed request to report.
+async fn no_manifest(req: Request, next: Next) -> Response {
+    let manifest = req.uri().path() == "/manifest.json";
+    let res = next.run(req).await;
+    if manifest && res.status() == StatusCode::NOT_FOUND {
+        return StatusCode::NO_CONTENT.into_response();
+    }
+    res
 }
 
 async fn cache_forever(mut res: Response) -> Response {

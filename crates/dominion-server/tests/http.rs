@@ -606,6 +606,10 @@ async fn without_a_client_the_root_says_where_the_mcp_endpoint_is() {
         server.get("/assets/images/x.png", None).await.status,
         StatusCode::NOT_FOUND
     );
+    assert_eq!(
+        server.get("/assets/manifest.json", None).await.status,
+        StatusCode::NO_CONTENT
+    );
 }
 
 #[tokio::test]
