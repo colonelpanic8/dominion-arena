@@ -549,7 +549,8 @@ impl SetRules for Rules {
                 .iter()
                 .any(|l| l.card == card && l.owner == p && l.until == Until::EndOfTurn),
             Card::Inheritance => g.ext.adventures.inherited.iter().all(|&(q, _)| q != p),
-            _ => !(card.kind() == Kind::Card && g.turn.extra == Some(Card::Mission)),
+            // Only the Mission turn's player can't buy cards.
+            _ => !(card.kind() == Kind::Card && p == g.turn.player && g.turn.extra == Some(Card::Mission)),
         }
     }
 

@@ -340,12 +340,13 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 card: kind,
             });
             f.s.i = g.log().len();
-            // Off-turn, a player has no $ or Potions to pay with (`affordable`).
+            // Off-turn, a player has no $ or Potions to pay with (`affordable`), and their
+            // purchase is none of the turn's.
             if p == g.turn.player {
                 g.turn.coins -= cost.coins as u32;
                 g.turn.potions -= cost.potions as u32;
+                g.turn.bought_cards.push(kind);
             }
-            g.turn.bought_cards.push(kind);
             g.add_debt(p, cost.debt as u32);
             f.pc = 11;
             if kind.def().overpay {
