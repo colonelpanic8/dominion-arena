@@ -115,8 +115,8 @@ them.
   card's cost then in `GainState::cost` and the phase in `GainState::phase`: a gain
   "in your Buy phase" is tested with `g.gain_phase(id)`, because Cavalry and Villa change
   `turn.phase` while their gain's window is open), `Gain` window. An effect that goes on
-  with the card it gained asks `g.gained_to(p, id)` where `p` gained it to rather than
-  assuming the discard pile.
+  to move the card it had `p` gain asks `g.gained(p, id)`: the card where it was gained
+  to, which need not be the discard pile, if it has stayed there.
   **Buying** (`Move::Buy`): pay (coins, Potions, Debt taken), overpay
   (`Frame::overpay`: $, then Potions; the card's `Hook::Ability(frame::OVERPAY)` with
   `f.data` = the $ and `f.s.cost` = all of it), `Buy` window (`Occasion::Buy` carries
@@ -219,6 +219,23 @@ them.
   anything other cards can answer or that touches the deck (a gain, trash, discard, play,
   draw, look or shuffle). Reveal-until scripts keep what they reveal there too (set aside
   only what the text sets aside).
+- **The stop-moving rule.** An effect moves a card it "expects" somewhere (where it was
+  gained to, in the trash since it was trashed, in play since it was played) only if the
+  card has stayed there, and where the card is now doesn't tell: one that left and came
+  back, was shuffled, was looked at and put back, or was covered up on top of its deck
+  has moved (one covered up in a discard pile has not). The game stamps a card each time
+  that happens (`Game::move_card` and `Frame::shuffle`; putting a card into the hand it
+  is in, or onto the deck it is on top of, moves nothing), and `g.stayed(id, since)`
+  compares the stamp with a `Mark` (`g.now()`). The frames keep the marks: a gain in its
+  `GainState` (`g.still_where_gained(id)` while its window is open; `g.gained(p, id)`
+  once it has returned), a trash and a discard while their windows are open
+  (`g.still_where_trashed(id)`, `g.still_where_discarded(id)`), a trash, discard or
+  play for the effect that called it (`g.put(id)`, asked right after the frame
+  returns), a look or reveal in its `Hold` (`g.held(p, id)`), each play of the turn in
+  `Turn::played_at` (`g.stayed_in_play()`: Scepter, Way of the Frog). `gained` and `put`
+  give a `Placed`, and so does `g.placed(id)` for a card a script put somewhere itself:
+  keep it in `f.s.placed` over later steps and ask `g.still(placed)`. Agents never see
+  marks.
 - **Way of the Chameleon** exchanges what the card's own instructions give its player
   as +Cards and +$ during the turn of that play, and nothing else. Its frame gives the
   vanilla bonuses exchanged and runs the card's `Hook::Main` marked
@@ -323,11 +340,18 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
 - Set cards aside face up with `g.set_aside` (or `g.set_aside_revealed` for a card
   just revealed); `move_card` to `SetAside` leaves it face down, seen only by its owner.
   Public state kept in the set's `State` goes to agents through `SetRules::notes`.
-- Respect the stop-moving rule: before moving a card an effect "expects" somewhere,
-  check `g.zone(id)` is still that zone. That includes cards from `Frame::look` /
-  `Frame::reveal`, which something may move while they are held (`cards::looking` lists
-  those still in `Zone::Looking`). An on-gain ability that moves the gained card (or plays it)
-  checks `g.still_where_gained(id)`.
+- Respect the stop-moving rule: before moving a card an effect "expects" somewhere, ask
+  the game whether it has stayed there, never `g.zone(id)` alone. An on-gain ability
+  that moves the gained card (or plays it) checks `g.still_where_gained(id)`; an effect
+  that goes on with the card it gained, `g.gained(p, id)`; with a card it trashed,
+  discarded or played, `g.put(id)`; a "when you trash / discard this" ability,
+  `g.still_where_trashed(id)` / `g.still_where_discarded(id)`; cards from `Frame::look`
+  / `Frame::reveal`, which something may move while they are held, `g.held(p, id)`
+  (`cards::looking` filters a list). A zone comparison is enough where the text names
+  the place the card comes from ("from your hand", "discard this from play", a played
+  card that moves itself: it expects to be in play), right after the script's own
+  question, and for a card only the script's own lasting effect moves (one it set
+  aside).
 - `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
   "discard / trash the top card" takes it with `Frame::look`.
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
