@@ -580,6 +580,12 @@ fn secret_passage_puts_a_card_anywhere_in_the_deck() {
         deck_kinds(&g, P0),
         [Card::Estate, Card::Silver, Card::Gold, Card::Duchy]
     );
+    // Everyone sees where it went, not which card it is.
+    let mut line = moved(P0, Zone::Hand(P0), Zone::Deck(P0), &[], 1);
+    if let Event::Moved { under, .. } = &mut line {
+        *under = 2;
+    }
+    assert!(g.log().contains(&line), "{:?}", g.log());
 }
 
 #[test]

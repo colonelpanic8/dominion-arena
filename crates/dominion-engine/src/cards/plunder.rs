@@ -1851,8 +1851,9 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     };
     match f.pc {
         0 => {
+            // The opening hand is dealt again, as silently as the first time.
             for c in g.hand(p).to_vec() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
+                g.move_unlogged(c, Zone::Deck(p));
             }
             let mut kinds = vec![default];
             for &c in &starting {
@@ -1893,7 +1894,7 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let Some(&top) = g.players[p.index()].deck.last() else {
                     break;
                 };
-                g.move_card(top, Zone::Hand(p), Pos::Top);
+                g.move_unlogged(top, Zone::Hand(p));
             }
             Flow::done()
         }

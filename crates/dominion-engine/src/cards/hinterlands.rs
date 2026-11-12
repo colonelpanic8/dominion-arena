@@ -173,9 +173,7 @@ impl SetRules for Rules {
                         player: f.player,
                         card: Card::Trader,
                     });
-                    if g.return_to_pile(card) {
-                        g.move_card(silver, Zone::Discard(f.player), Pos::Top);
-                    }
+                    g.exchange(f.player, card, silver);
                 }
                 Flow::done()
             }

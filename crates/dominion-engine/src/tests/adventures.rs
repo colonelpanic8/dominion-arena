@@ -445,8 +445,20 @@ fn page_is_exchanged_for_a_treasure_hunter_when_discarded_from_play() {
         g.pile(g.pile_of(Card::TreasureHunter).unwrap()).cards.len(),
         4
     );
-    // Exchanging is not gaining.
+    // Exchanging is not gaining, and is one line of the log.
     assert!(!g.log().iter().any(|e| matches!(e, Event::Gained { .. })));
+    let exchanged = Event::Exchanged {
+        player: P0,
+        card: Card::Page,
+        into: Card::TreasureHunter,
+    };
+    assert!(g.log().contains(&exchanged));
+    assert!(
+        !g.log()
+            .iter()
+            .any(|e| matches!(e, Event::Moved { cards, .. }
+        if cards.contains(&Card::Page) || cards.contains(&Card::TreasureHunter)))
+    );
 }
 
 #[test]

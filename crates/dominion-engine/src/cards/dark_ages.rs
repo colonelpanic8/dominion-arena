@@ -548,11 +548,11 @@ fn hermit_exchange(g: &mut Game, f: &mut CardFrame) {
     let Some(madman) = top_of(g, Card::Madman) else {
         return;
     };
-    if g.zone(this) != Zone::InPlay(p) || !g.return_to_pile(this) {
+    if g.zone(this) != Zone::InPlay(p) {
         return;
     }
     let top = g.pile_top(madman).expect("checked above");
-    g.move_card(top, Zone::Discard(p), Pos::Top);
+    g.exchange(p, this, top);
 }
 
 fn altar(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

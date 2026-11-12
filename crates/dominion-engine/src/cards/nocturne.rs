@@ -576,11 +576,7 @@ fn exchange(g: &mut Game, p: PlayerId, c: CardId, card: Card) -> bool {
     let Some(new) = g.pile_of(card).and_then(|pile| g.pile_top(pile)) else {
         return false;
     };
-    if !g.return_to_pile(c) {
-        return false;
-    }
-    g.move_card(new, Zone::Discard(p), Pos::Top);
-    true
+    g.exchange(p, c, new)
 }
 
 /// Gains a `card` from its pile (in the Supply or not) at step `at`, then goes to `next`.

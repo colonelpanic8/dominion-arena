@@ -944,10 +944,7 @@ fn exchange(g: &mut Game, f: &mut CardFrame) -> Flow {
     let Some(top) = top else {
         return Flow::done();
     };
-    if !g.return_to_pile(this) {
-        return Flow::done();
-    }
-    g.move_card(top, Zone::Discard(p), Pos::Top);
+    g.exchange(p, this, top);
     Flow::done()
 }
 

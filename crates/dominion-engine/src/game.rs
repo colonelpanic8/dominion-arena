@@ -57,6 +57,8 @@ impl Zone {
 pub(crate) enum Pos {
     Top,
     Bottom,
+    /// Under that many of the cards there.
+    Under(usize),
 }
 
 /// Adventures tokens a player can place.
@@ -1114,7 +1116,7 @@ impl Game {
     }
 
     pub(crate) fn move_card(&mut self, id: CardId, to: Zone, pos: Pos) {
-        self.note_move(id, to, pos == Pos::Bottom);
+        self.note_move(id, to, pos);
         let from = self.zones[id.index()];
         let src = self.zone_vec(from);
         let i = src
@@ -1157,6 +1159,7 @@ impl Game {
         match pos {
             Pos::Top => dst.push(id),
             Pos::Bottom => dst.insert(0, id),
+            Pos::Under(n) => dst.insert(dst.len().saturating_sub(n), id),
         }
     }
 
@@ -1317,6 +1320,23 @@ impl Game {
 
     pub(crate) fn put_on_mat(&mut self, id: CardId, p: PlayerId, mat: Mat) {
         self.move_card(id, Zone::Mat(p, mat), Pos::Top);
+    }
+
+    /// Exchanges `p`'s `id` for `new`, the top card of a pile: `id` returns to its pile and
+    /// `new` goes to `p`'s discard pile (nothing is gained). Returns whether it happened.
+    pub(crate) fn exchange(&mut self, p: PlayerId, id: CardId, new: CardId) -> bool {
+        let card = self.printed(id);
+        if !self.return_to_pile(id) {
+            return false;
+        }
+        self.move_card(new, Zone::Discard(p), Pos::Top);
+        let into = self.card(new);
+        self.emit(Event::Exchanged {
+            player: p,
+            card,
+            into,
+        });
+        true
     }
 
     /// Returns `id` to the pile it came from (no gain or trash happens). Returns whether

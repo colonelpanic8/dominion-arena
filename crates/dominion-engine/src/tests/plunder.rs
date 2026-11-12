@@ -2533,6 +2533,22 @@ fn inherited_replaces_an_estate_or_the_starting_card_each_player_chooses() {
     assert_eq!(g.pile(copper).cards.len(), 60 - 14 + 1);
     assert_eq!(gain_count(&g, P0, Card::Village), 0);
     check_zones(&g);
+    // The opening hands are dealt again as silently as the first time; the log says only
+    // that P1's Copper went back.
+    let start = g
+        .log()
+        .iter()
+        .position(|e| matches!(e, Event::TurnStart { .. }));
+    assert_eq!(
+        g.log()[..start.unwrap()],
+        [
+            Event::Resolved {
+                player: P1,
+                card: Card::Inherited
+            },
+            moved(P1, Zone::Deck(P1), Zone::Pile(copper), &[Card::Copper], 1),
+        ]
+    );
 }
 
 #[test]
