@@ -74,6 +74,9 @@ pub struct SeatInfo {
 pub struct SeatView {
     pub view: AgentView,
     pub version: u64,
+    /// The seat that must decide now, if any, as of the same version.
+    #[serde(default)]
+    pub deciding: Option<u8>,
 }
 
 /// The data of an SSE `change` event.

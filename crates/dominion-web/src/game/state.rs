@@ -13,6 +13,8 @@ pub struct GameState {
     /// the whole log from `log`.
     pub view: Option<AgentView>,
     pub version: u64,
+    /// The seat deciding as of `version`, if any.
+    pub deciding: Option<u8>,
     /// Every log entry from seq 0, without gaps.
     pub log: Vec<LogEntry>,
     /// The message of the last failed call, until the next success.
@@ -58,6 +60,7 @@ impl GameState {
         if self.view.is_none() || sv.version >= self.version {
             self.version = sv.version;
             self.view = Some(sv.view);
+            self.deciding = sv.deciding;
         }
         self.error = None;
         if complete {

@@ -133,8 +133,13 @@ impl Server {
     async fn deciding(&self, created: &Created) -> (String, AgentDecision) {
         let seat = self.summary(&created.game_id).await.deciding.unwrap();
         let token = created.seats[usize::from(seat)].token.clone();
-        let view = self.view(&created.game_id, &token).await.view;
-        (token, view.decision.unwrap())
+        let sv = self.view(&created.game_id, &token).await;
+        assert_eq!(sv.deciding, Some(seat));
+        let other = &created.seats[(usize::from(seat) + 1) % created.seats.len()];
+        let theirs = self.view(&created.game_id, &other.token).await;
+        assert_eq!(theirs.deciding, Some(seat));
+        assert!(theirs.view.decision.is_none());
+        (token, sv.view.decision.unwrap())
     }
 
     /// Answers the open decision with its first option, over HTTP.
@@ -188,6 +193,7 @@ async fn play_out(server: &Server, req: Value, seed: u64) -> SeatView {
         if !summary.running {
             let last = server.view(id, &created.seats[0].token).await;
             assert_eq!(last.version, version);
+            assert_eq!(last.deciding, None);
             return last;
         }
         let (token, d) = server.deciding(&created).await;
@@ -197,6 +203,7 @@ async fn play_out(server: &Server, req: Value, seed: u64) -> SeatView {
         assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
         let after: SeatView = reply.json();
         assert_eq!(after.version, version + 1);
+        assert_eq!(after.deciding, server.summary(id).await.deciding);
         version = after.version;
     }
     panic!("the game does not end");
@@ -451,7 +458,7 @@ async fn every_change_reaches_event_subscribers() {
         game: id.clone(),
         seat: PlayerId(0),
     };
-    assert_eq!(server.hub.seat_view(&seat0, None).unwrap().1, 3);
+    assert_eq!(server.hub.seat_view(&seat0, None).unwrap().version, 3);
 }
 
 #[tokio::test]

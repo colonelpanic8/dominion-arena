@@ -312,7 +312,11 @@ impl Client {
     fn fetch(&mut self, table: &Table, version: u64) -> Applied {
         let from = self.state.log_from();
         let view = table.view_from(self.seat, from);
-        self.state.apply(SeatView { view, version })
+        self.state.apply(SeatView {
+            view,
+            version,
+            deciding: table.deciding().map(|p| p.0),
+        })
     }
 }
 
@@ -361,6 +365,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
             stale = Some(SeatView {
                 view: table.view_from(seat, 0),
                 version,
+                deciding: Some(seat.0),
             });
         }
         table.answer(seat, &answer).unwrap();
@@ -369,6 +374,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
         let applied = cl.state.apply(SeatView {
             view: table.view(seat),
             version,
+            deciding: table.deciding().map(|p| p.0),
         });
         if applied == Applied::Refetch {
             assert_eq!(cl.fetch(&table, version), Applied::Done);

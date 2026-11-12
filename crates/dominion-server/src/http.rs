@@ -250,8 +250,7 @@ async fn seat(State(api): State<Api>, headers: HeaderMap) -> Result<axum::Json<S
 }
 
 fn seat_view(api: &Api, seat: &Seat, log_from: Option<usize>) -> Result<axum::Json<SeatView>> {
-    let (view, version) = api.hub.seat_view(seat, log_from)?;
-    Ok(axum::Json(SeatView { view, version }))
+    Ok(axum::Json(api.hub.seat_view(seat, log_from)?))
 }
 
 async fn view(
