@@ -644,6 +644,44 @@ pub(crate) fn named(text: &str, names: &[String]) -> String {
     out
 }
 
+/// A label written for its chooser, as the log says it of them: "Put Silver into your
+/// hand" is chosen "to put Silver into their hand".
+fn announced(label: &str) -> String {
+    const VERBS: &[&str] = &[
+        "Add", "Buy", "Discard", "Draw", "Exile", "Gain", "Keep", "Look", "Move", "Pass", "Play",
+        "Put", "Receive", "Remove", "Replay", "Return", "Reveal", "Set", "Spend", "Take", "Trash",
+    ];
+    const LOWER: &[&str] = &["At", "Each", "Now", "The"];
+    let mut words: Vec<String> = vec![];
+    for c in label.chars() {
+        match words.last_mut() {
+            Some(w) if w.chars().all(char::is_alphabetic) == c.is_alphabetic() => w.push(c),
+            _ => words.push(c.to_string()),
+        }
+    }
+    let mut out = String::with_capacity(label.len() + 8);
+    for (i, word) in words.iter().enumerate() {
+        let word = match word.as_str() {
+            "you" => "they",
+            "You" => "They",
+            "your" => "their",
+            "Your" => "Their",
+            "yours" => "theirs",
+            "yourself" => "themselves",
+            w => w,
+        };
+        if i == 0 && VERBS.contains(&word) {
+            out.push_str("to ");
+        }
+        if i == 0 && (VERBS.contains(&word) || LOWER.contains(&word)) {
+            out.push_str(&word.to_lowercase());
+        } else {
+            out.push_str(word);
+        }
+    }
+    out
+}
+
 /// Where a card offered to `me` is, in words: "in play", "in Ann's hand".
 fn option_place(game: &Game, zone: Zone, me: PlayerId, names: &[String]) -> String {
     let whose = |p: PlayerId| {
@@ -1267,7 +1305,12 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             format!(
                 "{} chooses {}{}",
                 name(*player),
-                named(&choices.join("; "), cx.names),
+                named(
+                    &(choices.iter().map(|c| announced(c)))
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    cx.names
+                ),
                 source.map_or(String::new(), |c| format!(" ({c})"))
             ),
         ),
@@ -1569,6 +1612,29 @@ fn log(game: &Game, cx: &Context<'_>) -> Vec<LogEntry> {
 #[cfg(test)]
 mod tests {
     use super::named;
+
+    #[test]
+    fn a_chosen_label_is_announced_in_the_third_person() {
+        for (label, said) in [
+            ("Put Silver into your hand", "to put Silver into their hand"),
+            ("+1 Card and +1 Action", "+1 Card and +1 Action"),
+            (
+                "At the start of your next turn",
+                "at the start of their next turn",
+            ),
+            (
+                "Take the extra turn from Mission",
+                "to take the extra turn from Mission",
+            ),
+            ("Gold", "Gold"),
+            (
+                "2 (how many go on your deck?)",
+                "2 (how many go on their deck?)",
+            ),
+        ] {
+            assert_eq!(super::announced(label), said);
+        }
+    }
 
     #[test]
     fn engine_text_names_players_by_name() {
