@@ -15,6 +15,7 @@ use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 use tokio::sync::watch;
@@ -56,6 +57,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 struct Hosted {
     table: Mutex<Table>,
     tokens: Vec<String>,
+    /// Per seat: its token has been used since the server started.
+    joined: Vec<AtomicBool>,
     /// Bumped after every answer, for waiters.
     version: watch::Sender<u64>,
 }
@@ -64,6 +67,7 @@ impl Hosted {
     fn new(table: Table, tokens: Vec<String>) -> Hosted {
         Hosted {
             table: Mutex::new(table),
+            joined: tokens.iter().map(|_| AtomicBool::new(false)).collect(),
             tokens,
             version: watch::channel(0).0,
         }
@@ -161,6 +165,17 @@ struct Index {
 }
 
 impl Index {
+    /// Records that `seat`'s token has been used.
+    fn mark_joined(&self, seat: &Seat) {
+        if let Some(j) = self
+            .games
+            .get(&seat.game)
+            .and_then(|g| g.joined.get(seat.seat.index()))
+        {
+            j.store(true, Ordering::Relaxed);
+        }
+    }
+
     fn insert(&mut self, id: &str, hosted: Hosted) {
         for (i, token) in hosted.tokens.iter().enumerate() {
             let seat = Seat {
@@ -499,21 +514,26 @@ impl Hub {
         if !index.games.contains_key(id) {
             return Err(HubError::UnknownGame(id.into()));
         }
-        index
+        let seat = index
             .seats
             .get(token)
             .filter(|seat| seat.game == id)
             .cloned()
-            .ok_or_else(|| HubError::BadToken(id.into()))
+            .ok_or_else(|| HubError::BadToken(id.into()))?;
+        index.mark_joined(&seat);
+        Ok(seat)
     }
 
     /// The seat `token` claims in whichever game it belongs to.
     pub fn find(&self, token: &str) -> Result<Seat, HubError> {
-        lock(&self.index)
+        let index = lock(&self.index);
+        let seat = index
             .seats
             .get(token)
             .cloned()
-            .ok_or_else(|| bad("unknown seat token".into()))
+            .ok_or_else(|| bad("unknown seat token".into()))?;
+        index.mark_joined(&seat);
+        Ok(seat)
     }
 
     pub fn list(&self) -> Vec<GameSummary> {
@@ -527,6 +547,7 @@ impl Hub {
                     names: t.names().to_vec(),
                     running: !t.is_over(),
                     deciding: t.deciding().map(|p| p.0),
+                    joined: g.joined.iter().map(|j| j.load(Ordering::Relaxed)).collect(),
                     kingdom: t
                         .game()
                         .config()
