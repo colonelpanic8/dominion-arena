@@ -696,6 +696,36 @@ fn quarry_makes_actions_cost_two_less_cumulatively() {
     assert_eq!(g.cost(Card::KingsCourt), Cost::coins(7));
 }
 
+/// Each player does all of it before the next one starts.
+#[test]
+fn rabble_puts_a_lone_card_back_before_the_next_player_reveals() {
+    let mut g = crate::tests::intrigue::setup3(&[Card::Rabble, Card::Weaver]);
+    hand(&mut g, P0, &[Card::Rabble]);
+    deck(&mut g, P0, &[Card::Copper; 3]);
+    deck(
+        &mut g,
+        P1,
+        &[
+            Card::Estate,
+            Card::Copper,
+            Card::Copper,
+            Card::Silver,
+            Card::Gold,
+        ],
+    );
+    deck(
+        &mut g,
+        P2,
+        &[Card::Weaver, Card::Copper, Card::Copper, Card::Duchy],
+    );
+    g.start();
+    play(&mut g, Card::Rabble);
+    // P2 may play the Weaver they discarded.
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P2, Purpose::Trigger));
+    assert_eq!(deck_kinds(&g, P1), [Card::Estate, Card::Silver, Card::Gold]);
+}
+
 #[test]
 fn rabble_discards_actions_and_treasures_and_the_victim_orders_the_rest() {
     let mut g = setup(&[Card::Rabble, Card::Smithy]);

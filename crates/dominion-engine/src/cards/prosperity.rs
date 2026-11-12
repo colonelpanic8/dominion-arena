@@ -875,6 +875,8 @@ fn rabble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     f.pc = 3;
                     return ask_order_for(f, target, f.s.cards.clone());
                 }
+                // Back on the deck before the next player reveals.
+                put_back(g, target, &f.s.cards);
                 f.s.i += 1;
                 f.pc = 0;
             }
