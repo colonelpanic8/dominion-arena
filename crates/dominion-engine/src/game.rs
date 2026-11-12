@@ -141,7 +141,8 @@ pub struct Pile {
     pub tokens: Vec<(PlayerId, Token)>,
     pub traits: Vec<Card>,
     /// Not a pile any more (Divine Wind removed it from the game) or never one (a holder for
-    /// cards set aside in setup, like Riverboat's): lookups by name skip it.
+    /// cards set aside in setup, like Riverboat's and Way of the Mouse's): lookups by name
+    /// skip it, so it is no card's pile.
     pub removed: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
