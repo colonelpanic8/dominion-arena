@@ -316,6 +316,33 @@ fn ferryman_gains_a_card_from_its_pile() {
     assert_eq!(g.pile(pile).cards.len(), 9);
 }
 
+/// A 2-player game in which `by` set aside or added `pile` in setup.
+fn with_setup_choice(kingdom: &[Card], by: Card, pile: Card) -> Game {
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, kingdom.to_vec(), 7)
+    };
+    config.setup_choices.insert(by, vec![pile]);
+    setup_with(config)
+}
+
+/// "It is the cost listed on the pile's randomizer card that determines whether it is
+/// eligible to be set aside for Ferryman" (wiki, Ferryman); a split pile whose top card
+/// costs $2 or $3 can be the Bane (wiki, Young Witch). The Augurs randomizer costs $3.
+#[test]
+fn ferryman_and_young_witch_take_a_split_pile_by_its_randomizers_cost() {
+    let g = with_setup_choice(&[Card::Ferryman], Card::Ferryman, Card::Augurs);
+    let pile = g.ext.cornucopia_guilds.ferryman.expect("Ferryman's pile");
+    assert_eq!(
+        (g.pile(pile).card, g.pile(pile).in_supply),
+        (Card::Augurs, false)
+    );
+    let g = with_setup_choice(&[Card::YoungWitch], Card::YoungWitch, Card::Augurs);
+    assert!(g.ext.cornucopia_guilds.bane.is_some());
+    assert_eq!(g.ext.cornucopia_guilds.bane, g.supply_pile(Card::Augurs));
+}
+
 #[test]
 fn footpad_draws_on_gains_in_action_phases_only() {
     let mut g = setup(&[Card::Footpad, Card::Workshop]);
