@@ -38,6 +38,9 @@ pub struct Config {
     pub state_dir: Option<PathBuf>,
     /// Days a finished game is kept before it is deleted, checked at startup (default 7).
     pub keep_finished_days: Option<u32>,
+    /// Where `dominion assets sync` keeps dominion.games' images, fonts and sounds, and
+    /// `dominion serve` serves them from (default `$XDG_CACHE_HOME/dominion/assets`).
+    pub assets_dir: Option<PathBuf>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -67,6 +70,13 @@ impl Config {
             .keep_finished_days
             .unwrap_or(DEFAULT_KEEP_FINISHED_DAYS);
         Duration::from_secs(u64::from(days) * 24 * 60 * 60)
+    }
+
+    /// The asset cache directory.
+    pub fn assets_dir(&self) -> Option<PathBuf> {
+        self.assets_dir
+            .clone()
+            .or_else(|| Some(xdg_dir("XDG_CACHE_HOME", ".cache")?.join("dominion/assets")))
     }
 
     /// Reads `path`, or the default file if it exists; no file means default settings.
