@@ -801,6 +801,23 @@ fn salvager_gives_coins_equal_to_the_trashed_cost() {
     assert_eq!((g.turn().coins, g.turn().buys), (6, 2));
 }
 
+/// "+$1 per $1 it costs" is counted after the trash and what it set off.
+#[test]
+fn salvager_counts_the_trashed_cards_cost_after_trashing_it() {
+    let mut g = setup(&[Card::Salvager, Card::Destrier, Card::MarketSquare]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Salvager, Card::Destrier, Card::MarketSquare],
+    );
+    g.start();
+    play(&mut g, Card::Salvager);
+    choose_kinds(&mut g, &[Card::Destrier]);
+    super::intrigue::trigger(&mut g, Card::MarketSquare);
+    assert_eq!(g.cost(Card::Destrier), Cost::coins(5));
+    assert_eq!(g.turn().coins, 5);
+}
+
 /// A "when you gain" effect set up while a card is being gained applies to that gain.
 #[test]
 fn a_sailor_played_by_a_gained_gondola_can_play_that_gondola() {

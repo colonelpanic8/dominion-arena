@@ -488,6 +488,25 @@ fn broker_gets_nothing_for_a_potion_in_the_cost() {
     assert_eq!(g.turn().coins, 0);
 }
 
+/// Broker reads the trashed card's cost after the trash and what it set off: a Fisherman
+/// trashed with an empty discard pile costs $5 once a Market Square has been discarded.
+#[test]
+fn broker_reads_the_trashed_cards_cost_after_trashing_it() {
+    let mut g = game(&[Card::Broker, Card::Fisherman, Card::MarketSquare]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Broker, Card::Fisherman, Card::MarketSquare],
+    );
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Broker);
+    choose_kinds(&mut g, &[Card::Fisherman]);
+    accept(&mut g, Card::MarketSquare);
+    modes(&mut g, &[2]);
+    assert_eq!(g.turn().coins, 5);
+}
+
 #[test]
 fn carpenter_gives_an_action_and_gains_while_no_pile_is_empty() {
     let mut g = game(&[Card::Carpenter, Card::Smithy]);

@@ -514,6 +514,24 @@ fn trader_trashes_for_silvers() {
     assert_eq!(discard_kinds(&g, P0), [Card::Silver, Card::Silver]);
 }
 
+/// Trader counts the trashed card's cost once, after the trash and what it set off: a
+/// Market Square's Gold makes the Destrier cost $5, and the Silvers gained meanwhile don't
+/// lower the count.
+#[test]
+fn trader_counts_the_trashed_cards_cost_after_trashing_it() {
+    let mut g = setup(&[Card::Trader, Card::Destrier, Card::MarketSquare]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Trader, Card::Destrier, Card::MarketSquare],
+    );
+    g.start();
+    play(&mut g, Card::Trader);
+    choose_kinds(&mut g, &[Card::Destrier]);
+    trigger(&mut g, 0);
+    assert_eq!(g.count_owned(P0, Card::Silver), 5);
+}
+
 #[test]
 fn trader_exchanges_a_gained_card_after_its_when_gain() {
     let mut g = setup(&[Card::Trader, Card::BorderVillage]);

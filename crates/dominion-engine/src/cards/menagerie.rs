@@ -1494,12 +1494,12 @@ fn scrap(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.cost = g.cost_of(c);
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            let n = (f.s.cost.coins as usize).min(6);
+            let n = (g.cost_of(f.s.pick.expect("set in step 1")).coins as usize).min(6);
             f.pc = 3;
             f.ask_modes(&SCRAP_MODES, n, n)
         }

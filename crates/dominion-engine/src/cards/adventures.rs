@@ -1529,16 +1529,17 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.n = g.cost_of(c).coins as i32;
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         2 => {
-            if f.s.n <= 0 {
+            let n = g.cost_of(f.s.pick.expect("set in step 1")).coins as usize;
+            if n == 0 {
                 return Flow::done();
             }
             f.pc = 3;
-            Flow::Call(Frame::look(p, f.s.n as usize))
+            Flow::Call(Frame::look(p, n))
         }
         3 => {
             f.s.cards = input.cards();

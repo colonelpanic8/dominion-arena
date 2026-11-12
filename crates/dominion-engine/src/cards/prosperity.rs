@@ -583,12 +583,13 @@ fn bishop(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     f.pc = 3;
                     continue;
                 };
-                f.s.cost = g.cost_of(c);
+                f.s.pick = Some(c);
                 f.pc = 2;
                 return Flow::Call(Frame::trash(f.player, vec![c]));
             }
             2 => {
-                g.players[f.player.index()].vp_tokens += (f.s.cost.coins / 2) as i32;
+                let cost = g.cost_of(f.s.pick.expect("set in step 1"));
+                g.players[f.player.index()].vp_tokens += (cost.coins / 2) as i32;
                 f.pc = 3;
             }
             3 => {

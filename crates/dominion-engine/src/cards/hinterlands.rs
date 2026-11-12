@@ -881,9 +881,14 @@ fn trader(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.n = g.cost_of(c).coins as i32;
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
+        }
+        2 => {
+            f.s.n = g.cost_of(f.s.pick.expect("set in step 1")).coins as i32;
+            f.pc = 3;
+            Flow::Continue
         }
         _ => {
             if f.s.n <= 0 {
