@@ -25,16 +25,19 @@ fn picks_text(ui: &Ui, sel: &Selection) -> String {
 
 /// The prompt with its source card's name hoverable: leading the prompt where it
 /// already names it, else in front of it.
-fn prompt_line(d: &dominion_protocol::AgentDecision) -> Element {
+/// `owner` is whose card asks, when it's another player's (an Attack being answered).
+fn prompt_line(d: &dominion_protocol::AgentDecision, owner: Option<String>) -> Element {
     let Some(src) = d.source.clone() else {
         return rsx! { "{d.prompt}" };
     };
+    let owner = owner.map(|o| format!("{o}'s ")).unwrap_or_default();
     let rest = d
         .prompt
         .strip_prefix(src.as_str())
         .map(str::to_string)
         .unwrap_or_else(|| format!(": {}", d.prompt));
     rsx! {
+        "{owner}"
         HoverName { name: src }
         "{rest}"
     }
@@ -99,6 +102,9 @@ pub fn Bar(
     error: Option<String>,
     busy: bool,
     can_treasures: bool,
+    /// Whose card the decision is from, when it's another player's.
+    #[props(default)]
+    source_owner: Option<String>,
 ) -> Element {
     let ctx = use_table();
     let waiting = if !status.running {
@@ -136,7 +142,7 @@ pub fn Bar(
                 }
                 if let Some(u) = ui.clone() {
                     span { class: "dt-prompt-text", "data-prompt": "{u.decision.purpose}",
-                        {prompt_line(&u.decision)}
+                        {prompt_line(&u.decision, source_owner.clone())}
                     }
                     if !u.click_answers {
                         span { class: "dt-picks", "{picks_text(&u, &sel)}" }

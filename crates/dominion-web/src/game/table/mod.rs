@@ -537,6 +537,18 @@ pub fn TableGame(controls: Element) -> Element {
     });
 
     let flight = motion::use_motion(board_memo, game);
+    use_effect(move || {
+        board_memo.read();
+        let shown = ctx.hover.peek().as_ref().map(|h| h.name.clone());
+        if let Some(name) = shown
+            && !platform::js_bool(&format!(
+                "!!document.querySelector('[data-name=\"' + CSS.escape({}) + '\"]:hover, .dt-name:hover')",
+                serde_json::Value::String(name)
+            ))
+        {
+            ctx.hover_leave();
+        }
+    });
     let muted = use_signal(sound::session_muted);
     sound::use_sound(board_memo, game, muted);
     let mut boxes = use_signal(Boxes::guess);
@@ -605,6 +617,20 @@ pub fn TableGame(controls: Element) -> Element {
     };
     let sel = ctx.selection();
     let ui_now = ui.read().clone();
+    let source_owner = ui_now.as_ref().and_then(|u| {
+        let src = u.decision.source.as_ref()?;
+        let who = b
+            .play_area
+            .player
+            .as_ref()
+            .filter(|_| !b.status.your_turn)?;
+        b.play_area
+            .cards
+            .known
+            .iter()
+            .any(|s| &s.card == src)
+            .then(|| who.name.clone())
+    });
     let lay = middle();
     let bx = boxes();
     let mid_style = format!(
@@ -657,6 +683,7 @@ pub fn TableGame(controls: Element) -> Element {
                     error,
                     busy: answering,
                     can_treasures,
+                    source_owner,
                 }
                 players::YourArea {
                     board: b.clone(),

@@ -102,6 +102,14 @@ mod imp {
         let _ = js_sys::eval(code);
     }
 
+    /// Evaluates a script to a boolean (false if it fails).
+    pub fn js_bool(code: &str) -> bool {
+        js_sys::eval(code)
+            .ok()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
     /// The window's inner size in CSS pixels.
     pub fn viewport() -> (f64, f64) {
         let Some(w) = window() else {
@@ -167,6 +175,10 @@ mod imp {
     }
 
     pub fn run_js(_code: &str) {}
+
+    pub fn js_bool(_code: &str) -> bool {
+        false
+    }
 
     pub fn encode(s: &str) -> String {
         s.chars()

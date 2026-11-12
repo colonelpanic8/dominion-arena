@@ -43,6 +43,7 @@ fn LogRow(line: LogLine, names: Vec<String>) -> Element {
 pub fn Log(entries: Vec<LogEntry>, names: Vec<String>) -> Element {
     let lines = use_memo(use_reactive!(|entries, names| log_lines(&entries, &names)));
     let mut stick = use_signal(|| true);
+    let mut reading = use_signal(|| false);
     let len = entries.len();
     use_effect(use_reactive!(|len| {
         let _ = len;
@@ -57,12 +58,22 @@ pub fn Log(entries: Vec<LogEntry>, names: Vec<String>) -> Element {
             ol {
                 id: "dt-log",
                 class: "dt-log",
+                // Only the reader scrolling up stops it following the end, not the log
+                // reflowing when the window is resized.
                 onscroll: move |e| {
                     let end = e.scroll_top() + f64::from(e.client_height()) >= f64::from(e.scroll_height()) - 12.0;
-                    if end != *stick.peek() {
-                        stick.set(end);
+                    let unstick = !end && *reading.peek();
+                    if end && !*stick.peek() {
+                        stick.set(true);
+                    } else if unstick && *stick.peek() {
+                        stick.set(false);
                     }
                 },
+                onwheel: move |_| reading.set(true),
+                onmousedown: move |_| reading.set(true),
+                ontouchstart: move |_| reading.set(true),
+                onkeydown: move |_| reading.set(true),
+                onmouseleave: move |_| reading.set(false),
                 for l in lines.read().iter() {
                     LogRow { key: "{l.seq}", line: l.clone(), names: names.clone() }
                 }
