@@ -43,6 +43,21 @@ fn alchemist_goes_onto_the_deck_with_a_potion_in_play() {
 }
 
 #[test]
+fn alchemist_played_on_another_players_turn_may_go_onto_its_players_deck() {
+    let mut g = setup(&[Card::Alchemist]);
+    hand(&mut g, P1, &[Card::Alchemist, Card::Potion]);
+    deck(&mut g, P1, &[Card::Copper; 8]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Alchemist);
+    play_out_of_turn(&mut g, P1, Card::Potion);
+    end_phases(&mut g);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    trigger(&mut g, 0);
+    assert_eq!(deck_kinds(&g, P1)[0], Card::Alchemist);
+}
+
+#[test]
 fn alchemist_stays_without_a_potion_in_play() {
     let mut g = setup(&[Card::Alchemist]);
     hand(&mut g, P0, &[Card::Alchemist, Card::Potion]);

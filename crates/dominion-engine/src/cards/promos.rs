@@ -140,22 +140,25 @@ impl SetRules for Rules {
                     );
                 }
             }
-            Occasion::StartCleanup { player } => {
-                let in_play = g.in_play(player);
-                for &c in in_play {
-                    if g.card(c) != Card::WalledVillage {
-                        continue;
-                    }
-                    let others = in_play
-                        .iter()
-                        .filter(|&&o| o != c && g.is(o, Types::ACTION))
-                        .count();
-                    if others <= 1 {
-                        out.push(
-                            Trigger::new(player, Card::WalledVillage, WALLED_VILLAGE_TOPDECK)
-                                .on(c)
-                                .optional("put it onto your deck"),
-                        );
+            Occasion::StartCleanup { .. } => {
+                // Whoever played it, on whoever's turn.
+                for player in g.players_from(g.turn.player) {
+                    let in_play = g.in_play(player);
+                    for &c in in_play {
+                        if g.card(c) != Card::WalledVillage {
+                            continue;
+                        }
+                        let others = in_play
+                            .iter()
+                            .filter(|&&o| o != c && g.is(o, Types::ACTION))
+                            .count();
+                        if others <= 1 {
+                            out.push(
+                                Trigger::new(player, Card::WalledVillage, WALLED_VILLAGE_TOPDECK)
+                                    .on(c)
+                                    .optional("put it onto your deck"),
+                            );
+                        }
                     }
                 }
             }

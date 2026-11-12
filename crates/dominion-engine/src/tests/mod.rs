@@ -163,6 +163,13 @@ pub(crate) fn play_on_another_players_turn(g: &mut Game) {
     respond(g, Response::option(Opt::Trigger(0)));
 }
 
+/// Ends phases until a decision other than the turn's own comes up.
+pub(crate) fn end_phases(g: &mut Game) {
+    while let Some(DecisionKind::Turn { .. }) = g.pending().map(|d| &d.kind) {
+        end_phase(g);
+    }
+}
+
 /// The cards of the abilities a pending trigger decision offers, in option order.
 pub(crate) fn trigger_cards(g: &Game) -> Vec<Card> {
     let d = g.pending().expect("a decision is pending");

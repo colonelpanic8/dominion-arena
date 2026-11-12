@@ -836,6 +836,24 @@ fn walled_village_goes_on_the_deck_with_at_most_one_other_action() {
     assert!(!hand_kinds(&g, P0).contains(&Card::WalledVillage));
 }
 
+/// "At the start of Clean-up" is the start of the turn's Clean-up, whoever's turn it is
+/// (no ruling found; Improve has the same words).
+#[test]
+fn walled_village_played_on_another_players_turn_may_go_onto_its_players_deck() {
+    let mut g = setup(&[Card::WalledVillage, Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P1, &[Card::WalledVillage]);
+    deck(&mut g, P1, &[Card::Copper; 10]);
+    g.start();
+    play_on_another_players_turn(&mut g);
+    assert_eq!(kinds(&g, g.in_play(P1)), [Card::WalledVillage]);
+    end_phases(&mut g);
+    let d = g.pending().unwrap();
+    assert_eq!((d.player, d.purpose), (P1, Purpose::Trigger));
+    trigger(&mut g, Card::WalledVillage);
+    assert_eq!(deck_kinds(&g, P1)[0], Card::WalledVillage);
+}
+
 #[test]
 fn two_walled_villages_alone_can_both_go_on_the_deck() {
     let mut g = setup(&[Card::WalledVillage]);
