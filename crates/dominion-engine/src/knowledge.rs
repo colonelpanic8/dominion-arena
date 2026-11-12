@@ -43,7 +43,8 @@ enum Container {
 struct Mind {
     group_of: Vec<usize>,
     groups: Vec<Group>,
-    /// Cards this viewer identified since the last decision: they can follow them.
+    /// Cards this viewer saw at the last decision or identified since: they can follow
+    /// them.
     recent: HashSet<CardId>,
 }
 
@@ -381,17 +382,19 @@ impl Knowledge {
     }
 
     /// Every card a player sees now (their hand, public cards, cards offered to them)
-    /// becomes known to them.
+    /// becomes known to them, and they can follow it wherever it goes next (a card
+    /// picked from the discard pile Harbinger let them look through).
     fn observe(&mut self, game: &Game) {
         for (v, mind) in self.minds.iter_mut().enumerate() {
             let view = game.view(PlayerId(v as u8));
+            mind.recent.clear();
             for (i, &is) in self.is.iter().enumerate() {
                 let id = CardId(i as u32);
                 if view.card(id).is_some() {
                     mind.identify(id, is);
+                    mind.recent.insert(id);
                 }
             }
-            mind.recent.clear();
         }
     }
 
