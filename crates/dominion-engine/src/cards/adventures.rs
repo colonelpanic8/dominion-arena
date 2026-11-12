@@ -2,8 +2,8 @@
 //! Adventures tokens.
 
 use super::{
-    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
-    turn_durations,
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, left_supply, looking, mode_mask,
+    put_back, turn_durations,
 };
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -1444,6 +1444,8 @@ fn magpie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             if g.is(c, Types::TREASURE) {
                 g.put_in_hand(c, p);
+            } else {
+                put_back(g, p, &[c]);
             }
             f.pc = 2;
             if g.is(c, Types::ACTION | Types::VICTORY)
@@ -1518,6 +1520,8 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             let mut candidates = g.hand(p).to_vec();
             let this = f.this();
+            // Either choice may be made where it trashes nothing.
+            let min = usize::from(g.zone(this) == Zone::InPlay(p) && !candidates.is_empty());
             if g.zone(this) == Zone::InPlay(p) {
                 candidates.push(this);
             }
@@ -1525,7 +1529,7 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_cards(candidates, 1, 1, Purpose::Trash)
+            f.ask_cards(candidates, min, 1, Purpose::Trash)
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1922,7 +1926,7 @@ fn inheritance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 1;
             f.ask_pile(piles, false, Purpose::SetAside)
         }
-        _ => {
+        1 => {
             let Some(top) = input.pile().and_then(|pile| g.pile_top(pile)) else {
                 return Flow::done();
             };
@@ -1932,8 +1936,10 @@ fn inheritance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let st = &mut g.ext.adventures.inherited;
             st.retain(|&(q, _)| q != p);
             st.push((p, Some(top)));
-            Flow::done()
+            f.pc = 2;
+            left_supply(p, top)
         }
+        _ => Flow::done(),
     }
 }
 

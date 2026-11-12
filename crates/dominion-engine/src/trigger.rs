@@ -88,6 +88,13 @@ pub enum Occasion {
         player: PlayerId,
         card: CardId,
     },
+    /// `card` left a Supply pile other than by being gained or trashed: Exiled (Invest,
+    /// Transport, ...) or set aside (Inheritance). The window [`Game::answers_emptying`]
+    /// of a pile that emptied so (Search).
+    LeaveSupply {
+        player: PlayerId,
+        card: CardId,
+    },
     /// A card was discarded other than in Clean-up.
     Discard {
         player: PlayerId,
@@ -568,6 +575,14 @@ fn moment(g: &Game, occ: &Occasion, me: PlayerId) -> String {
         Occasion::Trash { player, card } => {
             let c = name(*card);
             who(*player, &format!("trash {c}"), &format!("trashes {c}"))
+        }
+        Occasion::LeaveSupply { player, card } => {
+            let c = name(*card);
+            who(
+                *player,
+                &format!("take {c} from the Supply"),
+                &format!("takes {c} from the Supply"),
+            )
         }
         Occasion::Discard { player, card } => {
             let c = name(*card);

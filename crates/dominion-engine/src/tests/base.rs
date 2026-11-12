@@ -178,6 +178,31 @@ fn merchant_played_while_the_first_silver_resolves_boosts_it() {
     assert_eq!(g.turn().coins, 2 + 1);
 }
 
+/// The first Silver is the one played first, even when Kiln's copy of it is played (Mining
+/// Road) while it is resolved.
+#[test]
+fn merchant_boosts_the_first_silver_played_when_kiln_plays_a_copy_first() {
+    let mut g = setup(&[Card::Merchant, Card::Kiln, Card::MiningRoad]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Merchant, Card::MiningRoad, Card::Kiln, Card::Silver],
+    );
+    deck(&mut g, P0, &[Card::Estate; 5]);
+    g.start();
+    play(&mut g, Card::Merchant);
+    play(&mut g, Card::MiningRoad);
+    play(&mut g, Card::Kiln);
+    play(&mut g, Card::Silver);
+    super::intrigue::trigger(&mut g, Card::Kiln);
+    yes(&mut g);
+    super::intrigue::trigger(&mut g, Card::MiningRoad);
+    while purpose(&g) == Purpose::Trigger {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(g.turn().coins, 4 + 2 + 2 + 1);
+}
+
 #[test]
 fn library_sets_aside_actions_and_discards_them() {
     let mut g = setup(&[Card::Library, Card::Village]);

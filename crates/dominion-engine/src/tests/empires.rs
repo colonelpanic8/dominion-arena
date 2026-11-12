@@ -1306,11 +1306,26 @@ fn small_castle_trashes_itself_or_a_castle_to_gain_the_top_castle() {
     assert_eq!(vp(&g, P0), 1);
     assert_eq!(g.count_owned(P0, Card::Silver), 1);
     assert_eq!(g.count_owned(P0, Card::HumbleCastle), 1);
-    // With no Castle in hand, the second one trashes itself.
+    // With no Castle in hand, the second one may trash itself.
     play(&mut g, Card::SmallCastle);
+    choose_kinds(&mut g, &[Card::SmallCastle]);
     assert_eq!(g.count_owned(P0, Card::SmallCastle), 1);
     assert_eq!(g.count_owned(P0, Card::CrumblingCastle), 1);
     assert_eq!(vp(&g, P0), 2);
+}
+
+/// "You are allowed to choose to trash a Castle from your hand, even if you don't have any
+/// Castles in your hand, though this means you will not gain a Castle" (wiki).
+#[test]
+fn small_castle_need_not_trash_itself_with_no_castle_in_hand() {
+    let mut g = setup(&[Card::Castles]);
+    hand(&mut g, P0, &[Card::SmallCastle, Card::Copper]);
+    g.start();
+    play(&mut g, Card::SmallCastle);
+    choose(&mut g, &[]);
+    assert_eq!(in_play_kinds(&g, P0), [Card::SmallCastle]);
+    assert_eq!(g.count_owned(P0, Card::SmallCastle), 1);
+    assert_eq!(g.count_owned(P0, Card::HumbleCastle), 0);
 }
 
 #[test]
@@ -1813,6 +1828,29 @@ fn colonnade_pays_for_an_action_bought_with_a_copy_in_play() {
     buy(&mut g, Card::Smithy);
     assert_eq!(vp(&g, P0), 0);
     buy(&mut g, Card::Village);
+    assert_eq!(vp(&g, P0), 2);
+}
+
+/// "If gaining an Action allows you to immediately play it (e.g. you gained a Trail, or you
+/// use Innovation), that will let you take 2 VP from this" (wiki).
+#[test]
+fn colonnade_pays_for_an_action_innovation_plays_as_it_is_gained() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Colonnade, Card::Innovation]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Silver, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Silver);
+    play_all(&mut g, Card::Copper);
+    buy(&mut g, Card::Village);
+    trigger(&mut g, Card::Innovation);
+    assert!(g.log().iter().any(|e| matches!(
+        e,
+        Event::Played {
+            card: Card::Village,
+            ..
+        }
+    )));
     assert_eq!(vp(&g, P0), 2);
 }
 

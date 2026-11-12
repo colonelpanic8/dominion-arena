@@ -19,7 +19,8 @@
 
 use super::plunder::next_play;
 use super::{
-    CardFrame, Hook, SetRules, Step, due_durations, duration_trigger, looking, put_back,
+    CardFrame, Hook, SetRules, Step, due_durations, duration_trigger, left_supply, looking,
+    put_back,
 };
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -119,10 +120,7 @@ impl SetRules for Rules {
             }
             (Card::VillageGreen, Hook::Ability(REACT)) => play_from(g, f, Zone::Discard(f.player)),
             (Card::Sleigh, Hook::Ability(REACT)) => sleigh_react(g, f, input),
-            (Card::CamelTrain, Hook::Ability(ON_GAIN)) => {
-                exile_from_supply(g, f.player, Card::Gold);
-                Flow::done()
-            }
+            (Card::CamelTrain, Hook::Ability(ON_GAIN)) => exile_step(g, f, Card::Gold, 0),
             (Card::Cavalry, Hook::Ability(ON_GAIN)) => cavalry_gain(g, f),
             (Card::Hostelry, Hook::Ability(ON_GAIN)) => hostelry_gain(g, f, input),
             (Card::Gatekeeper, Hook::Ability(GATEKEEPER_EXILE)) => {
@@ -251,8 +249,7 @@ impl SetRules for Rules {
                         return Some(Flow::Call(Frame::gain(f.player, gold, Dest::Discard)));
                     }
                 }
-                exile_from_supply(g, f.player, Card::Duchy);
-                Flow::done()
+                exile_step(g, f, Card::Duchy, 1)
             }
             (Card::Enhance, _) => enhance(g, f, input),
             (Card::Gamble, _) => gamble(g, f, input),
@@ -296,10 +293,7 @@ impl SetRules for Rules {
 
             // ---- Ways ----
             (Card::WayOfTheButterfly, _) => butterfly(g, f, input),
-            (Card::WayOfTheCamel, _) => {
-                exile_from_supply(g, f.player, Card::Gold);
-                Flow::done()
-            }
+            (Card::WayOfTheCamel, _) => exile_step(g, f, Card::Gold, 0),
             (Card::WayOfTheChameleon, _) => chameleon(g, f),
             (Card::WayOfTheFrog, _) => {
                 // The effect follows one play of the card: which of the turn's it is.
@@ -376,10 +370,7 @@ impl SetRules for Rules {
                 }
                 Flow::done()
             }
-            (Card::WayOfTheWorm, _) => {
-                exile_from_supply(g, f.player, Card::Estate);
-                Flow::done()
-            }
+            (Card::WayOfTheWorm, _) => exile_step(g, f, Card::Estate, 0),
             // The other Ways are only their vanilla bonuses.
             (c, _) if c.kind() == Kind::Way => Flow::done(),
             _ => return None,
@@ -413,6 +404,11 @@ impl SetRules for Rules {
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
+            Occasion::LeaveSupply { player, card } => {
+                if g.ext.menagerie.invested.contains(&card) {
+                    invest_draws(g, player, card, out);
+                }
+            }
             Occasion::Discard { player, card } => {
                 if g.card(card) == Card::VillageGreen
                     && g.zone(card) == Zone::Discard(player)
@@ -626,6 +622,17 @@ fn exile_from_supply(g: &mut Game, p: PlayerId, card: Card) -> Option<CardId> {
     Some(top)
 }
 
+/// Exiles the top card of `card`'s Supply pile at step `at`; done after that.
+fn exile_step(g: &mut Game, f: &mut CardFrame, card: Card, at: u8) -> Flow {
+    if f.pc == at {
+        f.pc = at + 1;
+        if let Some(top) = exile_from_supply(g, f.player, card) {
+            return left_supply(f.player, top);
+        }
+    }
+    Flow::done()
+}
+
 /// The copies of `card` on `p`'s Exile mat.
 fn exiled_copies(g: &Game, p: PlayerId, card: Card) -> Vec<CardId> {
     g.player(p)
@@ -829,6 +836,18 @@ fn trashed_last_turn(g: &Game, p: PlayerId) -> usize {
 
 // ---- Triggers ----
 
+/// Invest: `player` gained or Invested in `card`; each other player's Invested copy draws.
+fn invest_draws(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
+    for &c in &g.ext.menagerie.invested {
+        if let Zone::Mat(owner, Mat::Exile) = g.zone(c)
+            && owner != player
+            && g.card(c) == g.card(card)
+        {
+            out.push(Trigger::new(owner, Card::Invest, INVEST_DRAW).on(c).data(card.0 as i32));
+        }
+    }
+}
+
 fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
     let kind = g.card(card);
     let st = &g.ext.menagerie;
@@ -886,14 +905,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         }
     }
 
-    for &c in &st.invested {
-        if let Zone::Mat(owner, Mat::Exile) = g.zone(c)
-            && owner != gainer
-            && g.card(c) == kind
-        {
-            out.push(Trigger::new(owner, Card::Invest, INVEST_DRAW).on(c).data(card.0 as i32));
-        }
-    }
+    invest_draws(g, gainer, card, out);
 
     match kind {
         Card::CamelTrain | Card::Cavalry | Card::Hostelry => {
@@ -1235,14 +1247,17 @@ fn camel_train(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 1;
             f.ask_pile(piles, false, Purpose::Exile)
         }
-        _ => {
+        1 => {
+            f.pc = 2;
             if let Some(pile) = input.pile()
                 && let Some(top) = g.pile_top(pile)
             {
                 exile(g, f.player, top);
+                return left_supply(f.player, top);
             }
             Flow::done()
         }
+        _ => Flow::done(),
     }
 }
 
@@ -1300,11 +1315,12 @@ fn cardinal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn coven(g: &mut Game, f: &mut CardFrame) -> Flow {
     while let Some(&target) = f.targets.get(f.s.i) {
         f.s.i += 1;
-        if exile_from_supply(g, target, Card::Curse).is_none() {
-            let curses = exiled_copies(g, target, Card::Curse);
-            if !curses.is_empty() {
-                return Flow::Call(Frame::discard(target, curses));
-            }
+        if let Some(curse) = exile_from_supply(g, target, Card::Curse) {
+            return left_supply(target, curse);
+        }
+        let curses = exiled_copies(g, target, Card::Curse);
+        if !curses.is_empty() {
+            return Flow::Call(Frame::discard(target, curses));
         }
     }
     Flow::done()
@@ -1807,29 +1823,10 @@ fn invest(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             exile(g, p, top);
             g.ext.menagerie.invested.push(top);
-            let name = g.card(top);
-            // Every other player's Investment in a copy draws them 2 cards, in turn order.
-            for q in g.others_in_turn_order(p) {
-                for &c in &g.ext.menagerie.invested {
-                    if g.zone(c) == Zone::Mat(q, Mat::Exile) && g.card(c) == name {
-                        f.s.cards.push(c);
-                    }
-                }
-            }
             f.pc = 2;
-            Flow::Continue
+            left_supply(p, top)
         }
-        _ => {
-            if f.s.i < f.s.cards.len() {
-                let c = f.s.cards[f.s.i];
-                f.s.i += 1;
-                if let Zone::Mat(owner, _) = g.zone(c) {
-                    return Flow::Call(Frame::draw(owner, 2));
-                }
-                return Flow::Continue;
-            }
-            Flow::done()
-        }
+        _ => Flow::done(),
     }
 }
 
@@ -1958,18 +1955,21 @@ fn transport(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_cards(exiled, 1, 1, Purpose::TopDeck)
         }
         2 => {
+            f.pc = 4;
             if let Some(top) = input.pile().and_then(|pile| g.pile_top(pile)) {
                 exile(g, p, top);
+                return left_supply(p, top);
             }
             Flow::done()
         }
-        _ => {
+        3 => {
             if let Some(c) = input.card() {
                 g.ext.menagerie.invested.retain(|&x| x != c);
                 g.top_deck(c, p);
             }
             Flow::done()
         }
+        _ => Flow::done(),
     }
 }
 

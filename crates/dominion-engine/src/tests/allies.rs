@@ -999,6 +999,34 @@ fn a_highwayman_leaving_play_at_the_start_of_the_turn_is_not_a_clean_up() {
     assert_eq!(g.hand(P0).len(), 6);
 }
 
+/// "First" is by play: with Kiln, a Treasure's copy gained and played (Mining Road) while
+/// the Treasure's play is resolved comes after it (Kiln's FAQ: a Conspirator played after
+/// Kiln and its copy played with Innovation both count three Actions played).
+#[test]
+fn highwayman_stops_the_first_treasure_when_kiln_and_mining_road_play_a_copy_first() {
+    let mut g = game(&[Card::Highwayman, Card::Kiln, Card::MiningRoad]);
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::MiningRoad, Card::Kiln, Card::Silver]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    play(&mut g, Card::MiningRoad);
+    play(&mut g, Card::Kiln);
+    assert_eq!(g.turn().coins, 4);
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    super::intrigue::trigger(&mut g, Card::Kiln);
+    yes(&mut g);
+    super::intrigue::trigger(&mut g, Card::MiningRoad);
+    while purpose(&g) == Purpose::Trigger {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(in_play_kinds(&g, P1)[2..], [Card::Silver, Card::Silver]);
+    assert_eq!(g.turn().coins, 4 + 2);
+}
+
 #[test]
 fn highwayman_is_not_cumulative_and_moat_blocks_it() {
     let mut g = game(&[Card::Highwayman, Card::Moat]);
@@ -1683,6 +1711,37 @@ fn garrison_with_no_gains_is_discarded_that_turn() {
     assert!(g.lasting().is_empty());
 }
 
+/// "This turn, when you gain a card, add a token here" is each Garrison's own: one that
+/// starts watching while a gain is resolved (Innovation plays it as it is gained) gets a
+/// token for that gain, whatever other Garrisons are watching.
+#[test]
+fn garrison_played_as_it_is_gained_gets_a_token_beside_another_garrison() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Innovation, Card::PlateauShepherds],
+        ..GameConfig::new(2, vec![Card::Forts], 7)
+    });
+    let forts = g.pile_of(Card::Forts).unwrap();
+    replace(&mut g, Zone::Pile(forts), &[Card::Garrison; 4]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Garrison, Card::Gold, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Garrison);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Forts);
+    super::intrigue::trigger(&mut g, Card::Innovation);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Garrison, Card::Garrison]);
+    next_turn(&mut g);
+    while purpose(&g) == Purpose::Trigger {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(g.hand(P0).len(), 7);
+}
+
 #[test]
 fn throne_roomed_garrison_gets_two_tokens_per_gain() {
     let mut g = game(&[Card::Forts, Card::ThroneRoom]);
@@ -1944,6 +2003,28 @@ fn sorcerer_curses_each_player_who_names_wrong_and_leaves_the_card() {
     name(&mut g, Card::Silver);
     assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
     assert_eq!(deck_kinds(&g, P1), [Card::Gold]);
+}
+
+/// The revealed card stays on the deck ("After revealing it, return it to wherever it
+/// was"), so a Sheepdog played when the Curse is gained draws it.
+#[test]
+fn sorcerer_leaves_the_revealed_card_on_the_deck_while_the_curse_is_gained() {
+    let mut g = game(&[Card::Wizards, Card::Sheepdog]);
+    hand(&mut g, P0, &[Card::Sorcerer]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    hand(&mut g, P1, &[Card::Sheepdog]);
+    deck(
+        &mut g,
+        P1,
+        &[Card::Gold, Card::Silver, Card::Estate, Card::Copper],
+    );
+    g.start();
+    play(&mut g, Card::Sorcerer);
+    name(&mut g, Card::Province);
+    super::intrigue::trigger(&mut g, Card::Sheepdog);
+    assert_eq!(discard_kinds(&g, P1), [Card::Curse]);
+    assert_eq!(hand_kinds(&g, P1), [Card::Gold, Card::Silver]);
+    assert_eq!(deck_kinds(&g, P1), [Card::Estate, Card::Copper]);
 }
 
 #[test]
