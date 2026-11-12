@@ -68,6 +68,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     model.rs              each target's `Spot` on the table; play area this turn / earlier (pure)
     motion.rs             cards seen moving: DOM snapshot before a view change, ghost cards
                           and slides after it (`moves`), the pool ghosts are cloned from
+    sound.rs              the turn chime, shuffle and end-of-game sounds; the mute toggle
     layout.rs             pixel sizes of the Supply band, play area and hand from measured boxes
                           (pure; the table measures `.dt-middle` and `.dt-hand`)
     pieces.rs             `TableCard` (glow, picks, counts, badges), badges, `HoverName`, preview

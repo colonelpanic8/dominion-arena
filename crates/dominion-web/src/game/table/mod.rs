@@ -11,6 +11,7 @@ mod pieces;
 mod players;
 mod prompt;
 mod side;
+mod sound;
 mod supply;
 
 use super::board::{Board, Stack, board};
@@ -536,6 +537,8 @@ pub fn TableGame(controls: Element) -> Element {
     });
 
     let flight = motion::use_motion(board_memo, game);
+    let muted = use_signal(sound::session_muted);
+    sound::use_sound(board_memo, game, muted);
     let mut boxes = use_signal(Boxes::guess);
     use_future(move || async move {
         let mut eval = document::eval(MEASURE_JS);
@@ -666,6 +669,7 @@ pub fn TableGame(controls: Element) -> Element {
             }
             aside { class: "dt-side",
                 div { class: "dt-controls", {controls}
+                    sound::MuteToggle { muted }
                 }
                 players::YouPanel { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
                 side::More { board: b.clone() }

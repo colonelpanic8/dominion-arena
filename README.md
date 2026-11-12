@@ -148,13 +148,15 @@ piles you may choose glow and are clicked where they lie; other choices appear i
 or as buttons. Hovering over a card or right-clicking it shows it large; Enter confirms,
 Escape clears, E ends a phase and T plays your Treasures. Cards are seen moving between
 zones, as inferred from the log and the change in the view (`web_animations`,
-`web_animation_ms`; none with `prefers-reduced-motion`). A Plain toggle shows the same
-game as text and buttons.
+`web_animation_ms`; none with `prefers-reduced-motion`), and dominion.games' sounds mark
+your turn, your shuffles and the end of the game (`web_sounds`, `web_volume`, and a
+mute toggle on the page for the session). A Plain toggle shows the same game as text
+and buttons.
 
 The client keeps the seat tokens it holds in the browser's localStorage; a seat link
 `/game/<id>#token=<token>` opens a seat in another browser. Cards are drawn like
 dominion.games' own from the asset cache (`dominion assets sync`), which the client only
-references by URL; without a cache they are drawn in CSS.
+references by URL; without a cache they are drawn in CSS and the table is silent.
 `/gallery` shows every card at each size.
 
 ```sh
