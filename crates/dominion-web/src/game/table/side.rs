@@ -294,65 +294,101 @@ pub fn GameOver(board: Rc<Board>) -> Element {
             }
         });
     let entries: Vec<_> = board.you.iter().chain(&board.opponents).cloned().collect();
+    let game_id = crate::game::use_game().game.read().clone();
+    let table = crate::lobby::use_table();
+    let toast = crate::lobby::use_toast();
+    let banned = crate::lobby::use_banned();
+    let nav = navigator();
+    let at_table = table
+        .read()
+        .as_ref()
+        .is_some_and(|t| t.game.as_deref() == Some(game_id.as_str()));
+    let mut focus_score = use_signal(|| true);
+    let painting = match me.and_then(|s| players.iter().find(|p| p.index == s)) {
+        None => "watch",
+        Some(p) if p.rank > 1 => "lose",
+        Some(_) => "win",
+    };
+    let selector = use_signal(|| false);
+    let study = use_signal(|| None::<String>);
     rsx! {
-        div { class: "dt-score", "data-gameover": "1",
-            div { class: "dt-score-panel",
-                if let Some(h) = headline {
-                    h1 { "{h}" }
+        div { class: "lb-page lb-score-page {painting}", "data-gameover": "1",
+            div { class: "lb-spear lb-spear-left" }
+            div { class: "lb-spear lb-spear-right" }
+            ul { class: "lb-tabs",
+                li {
+                    class: if focus_score() { "lb-tab selected" } else { "lb-tab" },
+                    onclick: move |_| focus_score.set(true),
+                    button { class: "lb-tab-button", "Score" }
                 }
-                if let Some(r) = &board.end_reason {
-                    p { class: "dt-note", "{r}" }
-                }
-                div { class: "dt-score-rows",
-                    for p in players.iter() {
-                        div { key: "{p.index}", class: "dt-score-row",
-                            span { class: "dt-rank", "{p.rank}" }
-                            span { class: "dt-score-name", "{p.name}" }
-                            span { class: "dt-score-line" }
-                            span { class: "dt-score-vp", "{p.vp}" }
-                            span { class: "dt-score-turns", "Turns: {p.turns}" }
-                            if p.resigned { span { class: "dt-note", " (resigned)" } }
-                        }
+                if at_table {
+                    li {
+                        class: if focus_score() { "lb-tab" } else { "lb-tab selected" },
+                        "data-tab": "edit-table",
+                        onclick: move |_| focus_score.set(false),
+                        button { class: "lb-tab-button", "Edit Table" }
                     }
                 }
-                for p in players.iter() {
-                    {
-                        let entry = entries.iter().find(|e| e.seat == p.index);
-                        let owned = entry.map(|e| e.owned.known.clone()).unwrap_or_default();
-                        let tokens = entry
-                            .and_then(|e| e.badges.iter().find(|b| b.kind == "vp"))
-                            .and_then(|b| b.count)
-                            .unwrap_or(0);
-                        let sources = vp_sources(&owned, tokens, p.vp, &cards);
-                        let half = owned.len().div_ceil(2);
-                        let (left, right) = owned.split_at(half);
-                        rsx! {
-                            fieldset { key: "f{p.index}", class: "dt-score-box",
-                                legend { "{p.name}" }
-                                div { class: "dt-score-sources",
-                                    for (i, (card, n, vp)) in sources.iter().enumerate() {
-                                        div { key: "{i}", class: "dt-score-source",
-                                            if card.is_empty() {
-                                                span { class: "dt-strip-n", "{n}" }
-                                                span { class: "dt-strip-text", "VP tokens" }
-                                            } else if card == "Other" {
-                                                span { class: "dt-strip-text", "Other" }
-                                            } else {
-                                                div { class: "dt-strip",
-                                                    TableCard { name: card.clone(), size: CardSize::Micro, count: Some(*n) }
+            }
+            if focus_score() {
+                div { class: "lb-score-panel dt-score-panel",
+                if let Some(h) = headline {
+                        h1 { "{h}" }
+                    }
+                    if let Some(r) = &board.end_reason {
+                        p { class: "dt-note", "{r}" }
+                    }
+                    div { class: "dt-score-rows",
+                        for p in players.iter() {
+                            div { key: "{p.index}", class: "dt-score-row",
+                                span { class: "dt-rank", "{p.rank}" }
+                                span { class: "dt-score-name", "{p.name}" }
+                                span { class: "dt-score-line" }
+                                span { class: "dt-score-vp", "{p.vp}" }
+                                span { class: "dt-score-turns", "Turns: {p.turns}" }
+                                if p.resigned { span { class: "dt-note", " (resigned)" } }
+                            }
+                        }
+                    }
+                    for p in players.iter() {
+                        {
+                            let entry = entries.iter().find(|e| e.seat == p.index);
+                            let owned = entry.map(|e| e.owned.known.clone()).unwrap_or_default();
+                            let tokens = entry
+                                .and_then(|e| e.badges.iter().find(|b| b.kind == "vp"))
+                                .and_then(|b| b.count)
+                                .unwrap_or(0);
+                            let sources = vp_sources(&owned, tokens, p.vp, &cards);
+                            let half = owned.len().div_ceil(2);
+                            let (left, right) = owned.split_at(half);
+                            rsx! {
+                                fieldset { key: "f{p.index}", class: "dt-score-box",
+                                    legend { "{p.name}" }
+                                    div { class: "dt-score-sources",
+                                        for (i, (card, n, vp)) in sources.iter().enumerate() {
+                                            div { key: "{i}", class: "dt-score-source",
+                                                if card.is_empty() {
+                                                    span { class: "dt-strip-n", "{n}" }
+                                                    span { class: "dt-strip-text", "VP tokens" }
+                                                } else if card == "Other" {
+                                                    span { class: "dt-strip-text", "Other" }
+                                                } else {
+                                                    div { class: "dt-strip",
+                                                        TableCard { name: card.clone(), size: CardSize::Micro, count: Some(*n) }
+                                                    }
                                                 }
+                                                span { class: "dt-score-line" }
+                                                span { class: "dt-score-vp", "{vp}" }
                                             }
-                                            span { class: "dt-score-line" }
-                                            span { class: "dt-score-vp", "{vp}" }
                                         }
                                     }
-                                }
-                                div { class: "dt-score-deck",
-                                    for col in [left, right] {
-                                        div { class: "dt-score-col",
-                                            for s in col.iter() {
-                                                div { key: "{s.card}", class: "dt-strip",
-                                                    TableCard { name: s.card.clone(), size: CardSize::Micro, count: Some(s.count) }
+                                    div { class: "dt-score-deck",
+                                        for col in [left, right] {
+                                            div { class: "dt-score-col",
+                                                for s in col.iter() {
+                                                    div { key: "{s.card}", class: "dt-strip",
+                                                        TableCard { name: s.card.clone(), size: CardSize::Micro, count: Some(s.count) }
+                                                    }
                                                 }
                                             }
                                         }
@@ -362,11 +398,49 @@ pub fn GameOver(board: Rc<Board>) -> Element {
                         }
                     }
                 }
-                div { class: "dt-score-actions",
-                    button { class: "dt-big dt-big-stone", onclick: move |_| stage.set(2), "See the Table" }
-                    Link { class: "dt-big dt-big-copper", to: Route::Lobby {}, "Leave Table" }
+            } else {
+                div { class: "lb-score-table",
+                    crate::lobby::my_table::KingdomOptions { table, selector, study }
+                    crate::lobby::my_table::GameOptions { table }
+                }
+                if selector() {
+                    div { class: "lb-selector-shield lb-score-shield", onclick: { let mut selector = selector; move |_| selector.set(false) } }
+                    crate::lobby::my_table::CardSelectorFor { table, selector, study }
+                }
+                crate::lobby::my_table::StudyView { study }
+            }
+            if at_table {
+                div { class: "lb-score-side",
+                    crate::lobby::my_table::Players { table }
                 }
             }
+            div { class: "lb-score-buttons",
+                if at_table {
+                    button {
+                        class: "lb-button lb-gold",
+                        "data-action": "ready",
+                        onclick: move |_| { spawn(crate::lobby::my_table::start(table, banned.clone(), toast, nav)); },
+                        "Ready"
+                    }
+                }
+                button {
+                    class: "lb-button lb-copper",
+                    "data-action": "leave-table",
+                    onclick: move |_| {
+                        if at_table {
+                            let mut table = table;
+                            table.set(None);
+                        }
+                        nav.push(Route::Lobby {});
+                    },
+                    "Leave Table"
+                }
+                button { class: "lb-button lb-stone", "data-action": "see-table", onclick: move |_| stage.set(2), "See the Table" }
+            }
+            if let Some(m) = toast() {
+                div { class: "lb-status", role: "status", "{m}" }
+            }
+            crate::lobby::TooltipLayer {}
         }
     }
 }
