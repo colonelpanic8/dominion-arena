@@ -1286,6 +1286,11 @@ impl Game {
     /// Resumes frames until one needs a real decision or the stack empties.
     pub(crate) fn run(&mut self, mut input: Input) {
         while let Some(mut frame) = self.stack.pop() {
+            self.log_actor(match &frame {
+                Frame::Card(f) => Some(f.player),
+                Frame::Trash { player, .. } => Some(*player),
+                _ => None,
+            });
             match frame.resume(self, input) {
                 Flow::Done(value) => {
                     self.release_holds();
@@ -1313,12 +1318,14 @@ impl Game {
                         self.sync_log(None);
                         self.forget_hidden_shows();
                         self.pending = Some(decision);
+                        self.log_actor(None);
                         return;
                     }
                 }
             }
         }
         self.sync_log(None);
+        self.log_actor(None);
     }
 
     /// Puts back on top of their decks the held cards of frames that have finished.

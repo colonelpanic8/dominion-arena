@@ -1344,3 +1344,24 @@ fn lasting_attack_headers_name_the_attacker() {
         assert_eq!(headers, [P0], "{attack}: {:?}", &g.log()[before..]);
     }
 }
+
+#[test]
+fn ownerless_moves_keep_their_actor_until_the_log_is_flushed() {
+    let mut g = setup(&[Card::Village]);
+    g.start();
+    let id = g.pile_top(g.supply_pile(Card::Village).unwrap()).unwrap();
+    g.log_actor(Some(P1));
+    g.move_card(id, Zone::Trash, crate::game::Pos::Top);
+    g.log_actor(Some(P0));
+    g.sync_log(None);
+    assert_eq!(
+        g.log().last(),
+        Some(&moved(
+            P1,
+            g.home_pile(Card::Village).map(Zone::Pile).unwrap(),
+            Zone::Trash,
+            &[Card::Village],
+            1
+        ))
+    );
+}

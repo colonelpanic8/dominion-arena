@@ -118,7 +118,7 @@ pub enum Event {
     /// Cards moved from one zone to another with no event of their own (onto a mat, into a
     /// hand from set aside, a deck into its discard pile, back to a pile, ...): `count` of
     /// them, of which `cards` are the ones everyone knew which they were. `player` is the
-    /// owner of `from`, else of `to`. Logged by the game itself, for every card moved
+    /// owner of `from`, else of `to`, else the acting player. Logged by the game itself, for every card moved
     /// with no other event. (`from` is `None` only in logs saved before it was recorded.)
     Moved {
         player: PlayerId,

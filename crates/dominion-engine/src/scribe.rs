@@ -20,11 +20,15 @@ pub(crate) struct Scribe {
     resolving: Vec<Resolving>,
     #[serde(default)]
     searched_discards: Vec<(PlayerId, usize)>,
+    #[serde(default)]
+    actor: Option<PlayerId>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Unlogged {
     card: CardId,
+    #[serde(default)]
+    actor: Option<PlayerId>,
     from: Zone,
     to: Zone,
     bottom: bool,
@@ -156,6 +160,10 @@ impl Game {
             .retain(|&(_, depth)| depth < self.stack.len());
     }
 
+    pub(crate) fn log_actor(&mut self, actor: Option<PlayerId>) {
+        self.scribe.actor = actor;
+    }
+
     /// Records that `id` is moving from where it is to `to`, for the log.
     pub(crate) fn note_move(&mut self, id: CardId, to: Zone, pos: Pos) {
         if self.scribe.tally.is_none() {
@@ -172,6 +180,7 @@ impl Game {
         self.scribe.shown.retain(|&c| c != id);
         self.scribe.moves.push(Unlogged {
             card: id,
+            actor: self.scribe.actor,
             from,
             to,
             bottom: pos == Pos::Bottom,
@@ -359,6 +368,12 @@ impl Game {
         let mut lines: Vec<Event> = vec![];
         for m in moves {
             let card = m.public.then(|| self.card(m.card));
+            let player = m
+                .from
+                .owner()
+                .or(m.to.owner())
+                .or(m.actor)
+                .unwrap_or(self.turn.player);
             if let Some(Event::Moved {
                 from,
                 to,
@@ -366,15 +381,15 @@ impl Game {
                 count,
                 bottom,
                 under,
-                ..
+                player: previous,
             }) = lines.last_mut()
-                && (*from, *to, *bottom, *under) == (Some(m.from), m.to, m.bottom, m.under)
+                && (*from, *to, *bottom, *under, *previous)
+                    == (Some(m.from), m.to, m.bottom, m.under, player)
             {
                 cards.extend(card);
                 *count += 1;
                 continue;
             }
-            let player = m.from.owner().or(m.to.owner()).unwrap_or(self.turn.player);
             lines.push(Event::Moved {
                 player,
                 from: Some(m.from),
