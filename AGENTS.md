@@ -60,7 +60,10 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/board.rs       a view arranged for drawing: piles, players, stacks, status
   src/game/logfmt.rs      the log as display lines: turn headers, depth, card spans
   tests/table.rs          those three models property-tested over random real games
-  src/lobby.rs            game list, new game, join by token
+  src/lobby.rs            game list, new game (the kingdom builder), join by token
+  src/kingdom.rs          the builder's model: piles by set, tray, randomizer, NewGame (pure)
+  assets/lobby.css        lobby styles
+  tests/kingdom.rs        the randomizer and request building against the engine's cards
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

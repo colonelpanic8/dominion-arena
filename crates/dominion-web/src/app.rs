@@ -8,6 +8,7 @@ use std::rc::Rc;
 
 const CSS: &str = include_str!("../assets/style.css");
 const CARD_CSS: &str = include_str!("../assets/cards.css");
+const LOBBY_CSS: &str = include_str!("../assets/lobby.css");
 
 #[derive(Routable, Clone, PartialEq, Debug)]
 #[rustfmt::skip]
@@ -52,6 +53,7 @@ pub fn App() -> Element {
         document::Title { "Dominion" }
         document::Style { "{CSS}" }
         document::Style { "{CARD_CSS}" }
+        document::Style { "{LOBBY_CSS}" }
         style { "{asset_css}" }
         Router::<Route> {}
     }

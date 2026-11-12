@@ -3,7 +3,7 @@
 use dominion_protocol::api::CardInfo;
 use std::collections::{BTreeMap, BTreeSet};
 
-const LANDSCAPE_KINDS: [&str; 7] = [
+pub const LANDSCAPE_KINDS: [&str; 7] = [
     "event", "landmark", "project", "way", "ally", "trait", "prophecy",
 ];
 
