@@ -399,9 +399,9 @@ impl Window {
 }
 
 /// Whether resolving `a` or `b` makes no difference: the same ability with the same data,
-/// from lasting effects (if any) holding the same data, up to cards no one can tell apart
-/// (the same card, printed and now, in the same zone). Which physical card it is on does
-/// not matter.
+/// on cards (if any) and from lasting effects (if any) holding the same data, up to cards
+/// no one can tell apart (the same card, printed and now, in the same zone). A Trait on
+/// two differently named cards (Reckless returning both to a split pile) is two effects.
 fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
     let look = |&c: &CardId| (g.printed(c), g.card(c), g.zone(c));
     let lasting = |t: &Trigger| {
@@ -418,6 +418,7 @@ fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
             })
     };
     (a.card, a.ability, a.data, a.optional) == (b.card, b.ability, b.data, b.optional)
+        && a.source.as_ref().map(look) == b.source.as_ref().map(look)
         && lasting(a) == lasting(b)
 }
 
@@ -427,19 +428,23 @@ fn interchangeable(g: &Game, a: &(usize, Trigger), b: &(usize, Trigger)) -> bool
     a.0 == b.0 && same_effect(g, &a.1, &b.1) && label(g, &a.1) == label(g, &b.1)
 }
 
-/// How the owner is offered `t`: its card (or label), what an optional one does, and the
-/// cards its lasting effect has set aside that the owner can see, which tell two of one
-/// Duration apart.
+/// How the owner is offered `t`: its card (or label), what an optional one does, the card
+/// it is on when that is another card (a Trait's), and the cards its lasting effect has
+/// set aside that the owner can see, which tell two of one Duration apart.
 fn label(g: &Game, t: &Trigger) -> String {
     let name = t.label.clone().unwrap_or_else(|| {
         let view = g.view(t.owner);
-        let held: Vec<&str> = t
-            .lasting
-            .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+        let on = t.source.and_then(|c| view.card(c)).filter(|&c| c != t.card);
+        let held: Vec<&str> = on
             .into_iter()
-            .flat_map(|l| l.data.cards.iter().chain(&l.data.pick))
-            .filter(|&&c| matches!(g.zone(c), Zone::SetAside(_)))
-            .filter_map(|&c| view.card(c))
+            .chain(
+                t.lasting
+                    .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+                    .into_iter()
+                    .flat_map(|l| l.data.cards.iter().chain(&l.data.pick))
+                    .filter(|&&c| matches!(g.zone(c), Zone::SetAside(_)))
+                    .filter_map(|&c| view.card(c)),
+            )
             .map(|c| c.name())
             .collect();
         if held.is_empty() {

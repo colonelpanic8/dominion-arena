@@ -1483,6 +1483,26 @@ fn panic_gives_buys_for_treasures_and_returns_them_to_their_piles() {
     assert_eq!(g.count_owned(P0, Card::Copper), 0);
 }
 
+/// "Loot is returned to the top of the pile" (Panic, official FAQ): differently named Loots
+/// go back in the order their player chooses.
+#[test]
+fn panic_returns_differently_named_loots_in_a_chosen_order() {
+    let mut g = with_prophecy(&[Card::Cutthroat], Card::Panic);
+    let ids = hand(&mut g, P0, &[Card::Doubloons, Card::Shield, Card::Copper]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    to_buy(&mut g);
+    for c in [Card::Doubloons, Card::Shield, Card::Copper] {
+        play(&mut g, c);
+    }
+    end_phase(&mut g);
+    assert_eq!(purpose(&g), Purpose::Return);
+    choose_kinds(&mut g, &[Card::Shield]);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.pile_top(g.pile_of(Card::Loot).unwrap()), Some(ids[0]));
+    assert_eq!(g.count_owned(P0, Card::Copper), 5);
+}
+
 #[test]
 fn capitals_debt_is_taken_though_panic_returns_it_to_its_pile() {
     let mut g = with_prophecy(&[Card::Capital], Card::Panic);
