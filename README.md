@@ -149,14 +149,27 @@ personal use and are never part of this repository or its package.
 ## The web client
 
 `crates/dominion-web` is a browser client (Dioxus, compiled to wasm) for the same
-server: a lobby to create games and take seats, and a game page that shows a seat's view
+server: a lobby to set up games and take seats, and a game page that shows a seat's view
 and answers its decisions.
 
-The lobby's kingdom builder picks the sets, then either leaves the kingdom to the server
-(ten piles dealt at random from those sets) or fills a tray of ten slots by clicking
-cards, with Randomize filling the unlocked slots. A chosen kingdom is played exactly as
-given, also with fewer or more than ten piles; its landscapes are the ones in the tray,
-plus an Ally or Prophecy the kingdom needs.
+The lobby is laid out and behaves like dominion.games': a tab column on the left
+(Automatch, New Table / My Table, Tables, Cardlists) over its painting. **My Table** holds
+a table's rules until Ready starts a game: the ten Kingdom slots (cards you require, a
+random card from one set, or left to chance) with the kingdom written out under them,
+the landscape slots (each set to the kinds it may be dealt, or emptied), the expansions
+random cards come from, Colonies and Shelters (Random, Yes, No), whether the Banned
+cards list applies, a random seed and a turn limit, and the players. "Select Kingdom
+Cards" opens dominion.games' card selector: the expansions, a search (Enter adds a typed
+list, `smithy, witch, Colonies` as the table writes it), Replay Last Kingdom, and
+Randomize, which deals the random slots at once so the kingdom can be changed before
+Ready. Ready has the server deal the rest (`POST /api/deal`) and creates the game. Where
+dominion.games seats bots, a seat here is for an agent (it joins over MCP with its
+token), for another browser (an empty slot: the seat link), or for this browser too (hot
+seat); the seats played elsewhere get their token, link and `join_game` line beside the
+players. **Automatch**'s Bot Game starts a table at once with 1 to 3 agent seats.
+**Tables** lists this server's games; **Cardlists** edits the Banned cards list, kept in
+the config file. After a game the score page has the table's Ready (another game with
+the same rules), Edit Table and Leave Table, as dominion.games has.
 
 The game page is a table laid out and behaving like dominion.games': player bars and
 the basic piles on the left, the kingdom sorted by cost with the turn player's play row

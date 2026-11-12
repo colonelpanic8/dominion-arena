@@ -87,10 +87,19 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           boards (pure); ghosts summarising them
   tests/table.rs          those models and the table's spots property-tested over random games
   tests/moves.rs          move inference over random games, and hand-checked steps
-  src/lobby.rs            game list, new game (the kingdom builder), join by token
-  src/kingdom.rs          the builder's model: piles by set, tray, randomizer, NewGame (pure)
-  assets/lobby.css        lobby styles
-  tests/kingdom.rs        the randomizer and request building against the engine's cards
+  src/lobby/              the lobby, dominion.games' layout and behaviour
+    mod.rs                the frame and tabs, `TableState` (the table this browser sits at),
+                          toast, tooltips, fieldsets, rows, switches
+    rules.rs              a table's rules (Kingdom Options, seats), kingdom text, the
+                          selector's search, `DealRequest` and `NewGame` from them (pure)
+    store.rs              the table, your name and the last kingdom in localStorage
+    my_table.rs           My Table: Kingdom Options, Game Options, Players, seat links,
+                          Ready (`start`) and Leave Table; shared with the score page
+    selector.rs           "Select Cards", the card selector
+    home.rs tables.rs cardlists.rs   Automatch (Bot Game, Create Table, Join a Seat),
+                          Tables, Cardlists (the Banned list in the config file)
+  assets/lobby.css        lobby styles, in dominion.games' vh/vw
+  tests/lobby.rs          table rules against the engine's cards
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 
