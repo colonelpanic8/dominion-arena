@@ -23,7 +23,7 @@ pub(crate) fn trigger_labelled(g: &mut Game, label: &str) {
     };
     let i = labels
         .iter()
-        .position(|l| l.starts_with(label))
+        .position(|l| unowned(l).starts_with(label))
         .unwrap_or_else(|| panic!("no {label} trigger in {labels:?}"));
     respond(g, Response::option(options[i]));
 }

@@ -895,7 +895,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 out.push(
                     Trigger::new(gainer, Card::Gatekeeper, GATEKEEPER_EXILE)
                         .via_lasting(l.id)
-                        .on(card),
+                        .on(card)
+                        .doing("Exile it"),
                 );
             }
         }

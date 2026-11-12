@@ -975,7 +975,11 @@ fn after_play_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<T
                     && in_mask(l.data.n, player)
                     && g.hand(player).len() > 4 =>
             {
-                out.push(Trigger::new(player, Card::Frigate, THIS_TURN).via_lasting(l.id));
+                out.push(
+                    Trigger::new(player, Card::Frigate, THIS_TURN)
+                        .via_lasting(l.id)
+                        .doing("discard down to 4 cards in hand"),
+                );
             }
             _ => {}
         }

@@ -928,7 +928,15 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, bought: bool, out: &m
                 && l.owner != player
                 && l.data.i & (1 << player.index()) != 0;
             if hits {
-                out.push(Trigger::new(player, l.card, VICTIM).via_lasting(l.id));
+                let does = match l.card {
+                    Card::SwampHag => "gain a Curse",
+                    _ => "put your hand onto your deck in any order",
+                };
+                out.push(
+                    Trigger::new(player, l.card, VICTIM)
+                        .via_lasting(l.id)
+                        .doing(does),
+                );
             }
         }
     }

@@ -1023,6 +1023,37 @@ fn swamp_hag_curses_buyers_and_gives_three_coins_next_turn() {
 }
 
 #[test]
+fn another_players_lasting_effects_say_whose_they_are_and_what_they_do() {
+    let mut g = game(&[Card::SwampHag, Card::HauntedWoods, Card::Village], &[]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Village, Card::SwampHag, Card::HauntedWoods],
+    );
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::SwampHag);
+    play(&mut g, Card::HauntedWoods);
+    finish_turn(&mut g);
+    buy(&mut g, Card::Copper);
+    let d = g.pending().unwrap();
+    assert_eq!(d.player, P1);
+    assert_eq!(
+        d.question.as_deref(),
+        Some("You gain Copper: choose which ability resolves next (the others stay pending)")
+    );
+    assert_eq!(
+        trigger_labels(&g),
+        [
+            "P1's Swamp Hag: gain a Curse",
+            "P1's Haunted Woods: put your hand onto your deck in any order"
+        ]
+    );
+}
+
+#[test]
 fn moat_blocks_swamp_hag_only_when_it_is_played() {
     let mut g = game(&[Card::SwampHag, Card::Moat], &[]);
     hand(&mut g, P0, &[Card::SwampHag]);

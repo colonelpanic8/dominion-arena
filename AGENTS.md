@@ -234,7 +234,9 @@ them.
   `Value::Flags`, one per occasion). Players choose among
   triggers by card name: give one `Trigger::labelled` when the name doesn't say what it
   is (the Exile rule on a gained card, which card a Way's ability is on), and say what an
-  optional one does (`Trigger::optional("reveal it to be unaffected")`). Two options
+  optional one does (`Trigger::optional("reveal it to be unaffected")`), and a mandatory
+  one another player's lasting effect makes (`Trigger::doing("gain a Curse")`; its label
+  names that player). Two options
   with different effects under one name say what tells them apart (where the card is,
   the lasting effect's cards, its count). The window's
   decision has no `source`; its `question` names the moment ("P2 attacks you with

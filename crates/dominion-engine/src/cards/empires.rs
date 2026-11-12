@@ -812,7 +812,11 @@ fn enchant_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trig
         && open
         && let Some(l) = enchanted
     {
-        out.push(Trigger::new(player, Card::Enchantress, ENCHANT).via_lasting(l.id));
+        out.push(
+            Trigger::new(player, Card::Enchantress, ENCHANT)
+                .via_lasting(l.id)
+                .doing("+1 Card and +1 Action instead of its instructions"),
+        );
     }
 }
 

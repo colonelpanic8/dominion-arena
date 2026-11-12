@@ -160,7 +160,8 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::Corsair, CORSAIR_TRASH)
                             .on(card)
-                            .via_lasting(l.id),
+                            .via_lasting(l.id)
+                            .doing("trash it"),
                     );
                 }
             }
