@@ -452,6 +452,13 @@ impl Knowledge {
                     }
                 }
             }
+            Trace::LookedOver { player, cards } => {
+                let mind = &mut self.minds[player.index()];
+                for card in cards {
+                    mind.see(card, self.is[card.index()], self.zone[card.index()], None);
+                    mind.recent.insert(card);
+                }
+            }
             Trace::Turn { .. } => self.settle(),
             Trace::Changed { card, from, to } => {
                 self.settle();

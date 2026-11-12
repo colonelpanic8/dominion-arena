@@ -1301,6 +1301,11 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                     let _ = writeln!(out, "{what} {from:?} -> {to:?} top {top}");
                 }
             }
+            Trace::LookedOver { player, cards } => {
+                for card in cards {
+                    let _ = writeln!(seen[player.index()], "looked at {}", g.printed(*card));
+                }
+            }
             Trace::Shown { card, to: Some(p) } => {
                 for (v, out) in seen.iter_mut().enumerate() {
                     let v = PlayerId(v as u8);
@@ -1653,4 +1658,62 @@ fn revealed_cards_split_between_hand_and_deck_stay_known() {
         theirs.zone(Zone::Hand(P0)).known,
         count(&[(Card::Estate, 1), (Card::Silver, 1)])
     );
+}
+
+#[test]
+fn looking_over_a_shuffle_preserves_known_cards_left_above_it() {
+    for choice in [None, Some(Card::StarChart), Some(Card::OrderOfAstrologers)] {
+        let mut g = if choice == Some(Card::OrderOfAstrologers) {
+            setup_with(GameConfig {
+                landscapes: vec![Card::OrderOfAstrologers],
+                colonies: Some(false),
+                shelters: Some(false),
+                ..GameConfig::new(2, vec![Card::Underling, Card::Smithy], 7)
+            })
+        } else {
+            setup(&[Card::Smithy])
+        };
+        if choice == Some(Card::StarChart) {
+            g.players[0].projects.push(Card::StarChart);
+        }
+        g.players[0].favors = 2;
+        hand(&mut g, P0, &[Card::Smithy]);
+        deck(&mut g, P0, &[]);
+        let shuffled = discard(
+            &mut g,
+            P0,
+            &[
+                Card::Gold,
+                Card::Estate,
+                Card::Duchy,
+                Card::Province,
+                Card::Curse,
+                Card::Copper,
+            ],
+        );
+        let (mut g, mut k) = start(g);
+        g.create(Card::Silver, Zone::Deck(P0));
+        k.update(&mut g);
+        assert_eq!(
+            k.known(&g, P1).zone(Zone::Deck(P0)).known,
+            count(&[(Card::Silver, 1)])
+        );
+        play(&mut g, Card::Smithy);
+        k.update(&mut g);
+        if choice.is_some() {
+            respond(&mut g, Response::option(Opt::Trigger(0)));
+            k.update(&mut g);
+            choose(&mut g, &[shuffled[0]]);
+            k.update(&mut g);
+        }
+        assert_eq!(hand_kinds(&g, P0)[0], Card::Silver);
+        let theirs = k.known(&g, P1);
+        assert_eq!(
+            theirs.zone(Zone::Hand(P0)).known.get(&Card::Silver),
+            Some(&1),
+            "shuffle choice {choice:?}: {:?} {:?}",
+            theirs.zone(Zone::Hand(P0)),
+            theirs.uncertain
+        );
+    }
 }

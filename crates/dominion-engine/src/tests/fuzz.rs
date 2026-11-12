@@ -1377,6 +1377,16 @@ impl Tracker {
                     }
                 }
             }
+            Trace::LookedOver { player, cards } => {
+                for v in 0..n {
+                    if sees(self.turn, PlayerId(v as u8), *player) {
+                        for card in cards {
+                            self.seen[v][card.index()] = true;
+                            self.recent[v].insert(*card);
+                        }
+                    }
+                }
+            }
             Trace::Turn { player } => self.turn = (*player, *player),
             Trace::Changed { .. } => {}
         }
