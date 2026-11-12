@@ -1793,6 +1793,11 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                 .for_each(|out| out.push_str(&format!("{card}\n")));
         }
     }
+    // Stash and Shadow cards show through their backs wherever they are.
+    let marked = |c: &CardId| {
+        let card = g.printed(*c);
+        card == Card::Stash || card.is(Types::SHADOW)
+    };
     for entry in g.trace().unwrap_or_default() {
         match entry {
             Trace::Moved {
@@ -1820,11 +1825,12 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                         Zone::Pile(pile) => !g.pile(pile).hidden,
                         _ => false,
                     };
-                    let what = if mine(from) || mine(to) || public(from) || public(to) {
-                        g.printed(*card).name()
-                    } else {
-                        "a card"
-                    };
+                    let what =
+                        if mine(from) || mine(to) || public(from) || public(to) || marked(card) {
+                            g.printed(*card).name()
+                        } else {
+                            "a card"
+                        };
                     // Whether it was the top card shows only for decks and piles.
                     let top = matches!(from, Zone::Deck(_) | Zone::Pile(_)) && *top;
                     let placement = if matches!(to, Zone::Deck(_)) {
@@ -1836,16 +1842,21 @@ fn respond_traced(g: &mut Game, k: &mut Knowledge, r: Response) -> Vec<String> {
                 }
             }
             Trace::Positioned {
+                card,
                 player,
                 bottom,
                 under,
-                ..
             } => {
+                let what = if marked(card) {
+                    g.printed(*card).name()
+                } else {
+                    "a card"
+                };
                 for out in &mut seen {
                     let zone = Zone::Deck(*player);
                     let _ = writeln!(
                         out,
-                        "a card {zone:?} -> {zone:?} top false bottom {bottom} under {under}"
+                        "{what} {zone:?} -> {zone:?} top false bottom {bottom} under {under}"
                     );
                 }
             }
@@ -2260,6 +2271,24 @@ fn cards_put_on_top_out_of_a_shuffle_stay_mixed_for_the_others() {
     });
     assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
     assert_eq!(digest(&a, &ka, P1), digest(&b, &kb, P1));
+}
+
+/// A Shadow card put onto the deck from the hand shows its back: worlds where it or another
+/// card goes are no twins, even when it is drawn again before anyone is asked anything.
+#[test]
+fn a_shadow_card_put_onto_the_deck_is_seen_by_its_back() {
+    let mut g = setup(&[Card::Courtyard, Card::Alley]);
+    hand(&mut g, P0, &[Card::Courtyard, Card::Alley, Card::Copper]);
+    deck(&mut g, P0, &[Card::Estate; 3]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Courtyard);
+    k.update(&mut g);
+    let [alley, copper] = [Card::Alley, Card::Copper].map(|c| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        let card = *g.hand(P0).iter().find(|&&h| g.card(h) == c).unwrap();
+        respond_traced(&mut g, &mut k, Response::Cards(vec![card]))
+    });
+    assert_ne!(alley[P1.index()], copper[P1.index()]);
 }
 
 #[test]
