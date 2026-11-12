@@ -601,6 +601,7 @@ impl CardFrame {
 
     fn ask(&self, player: PlayerId, kind: DecisionKind, purpose: Purpose) -> Flow {
         Flow::Ask(Decision {
+            plays: vec![],
             public_choice: matches!(purpose, Purpose::Mode | Purpose::Either),
             player,
             kind,

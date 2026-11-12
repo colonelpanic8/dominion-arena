@@ -384,9 +384,9 @@ impl SetRules for Rules {
                 let t = duration_trigger(l, START);
                 out.push(match l.data.pick {
                     // Delay, Reap, Way of the Turtle: which set-aside card it plays.
-                    Some(c) if l.source.is_none() => {
-                        t.labelled(format!("{} ({})", l.card, g.card(c)))
-                    }
+                    Some(c) if l.source.is_none() => t
+                        .labelled(format!("{} ({})", l.card, g.card(c)))
+                        .plays_set_aside(g, l),
                     _ => t,
                 });
             }
@@ -422,7 +422,8 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::VillageGreen, REACT)
                             .on(card)
-                            .reaction("reveal it to play it"),
+                            .reaction("reveal it to play it")
+                            .plays(g, card),
                     );
                 }
             }
@@ -948,9 +949,14 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             };
             // Sleigh is discarded, not played.
             if react && (g.card(c) == Card::Sleigh || super::can_play(g, p, c)) {
+                let t = Trigger::new(p, g.card(c), REACT);
+                let t = if g.card(c) == Card::Sleigh {
+                    t
+                } else {
+                    t.plays(g, c)
+                };
                 out.push(
-                    Trigger::new(p, g.card(c), REACT)
-                        .on(c)
+                    t.on(c)
                         .data(card.0 as i32)
                         .reaction(if g.card(c) == Card::Sleigh {
                             format!(
@@ -1829,6 +1835,7 @@ fn gamble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 3;
             f.ask_yes_no(Purpose::Play, format!("Play {}", g.card(c)))
+                .plays(g, Opt::Yes, &[c])
         }
         3 if input.is_yes() => {
             let c = f.s.pick.expect("set in step 1");

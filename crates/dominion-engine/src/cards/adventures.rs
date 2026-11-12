@@ -435,7 +435,8 @@ impl SetRules for Rules {
                         Card::RoyalCarriage if replayable => out.push(
                             Trigger::new(player, Card::RoyalCarriage, CALL)
                                 .on(c)
-                                .optional(format!("call it to replay {}", g.card(card))),
+                                .optional(format!("call it to replay {}", g.card(card)))
+                                .plays(g, card),
                         ),
                         _ => {}
                     }
@@ -450,7 +451,8 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::CaravanGuard, REACT)
                                 .on(c)
-                                .reaction("play it from your hand first"),
+                                .reaction("play it from your hand first")
+                                .plays(g, c),
                         );
                     }
                 }

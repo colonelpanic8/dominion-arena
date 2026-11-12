@@ -306,7 +306,9 @@ impl SetRules for Rules {
             if l.card.set() != Set::Nocturne {
                 continue;
             }
-            if l.card.is(Types::DURATION) {
+            if l.card == Card::Ghost {
+                out.push(duration_trigger(l, START).plays_set_aside(g, l));
+            } else if l.card.is(Types::DURATION) {
                 out.push(duration_trigger(l, START));
             } else if l.card == Card::BlessedVillage {
                 out.push(duration_trigger(l, LATER_BOON));

@@ -2115,6 +2115,7 @@ fn mountain_pass(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.pc = 2;
             Flow::Ask(Decision {
+                plays: vec![],
                 public_choice: false,
                 player: bidder,
                 kind: DecisionKind::Number {

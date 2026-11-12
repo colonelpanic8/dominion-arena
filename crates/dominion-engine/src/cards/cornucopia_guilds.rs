@@ -310,7 +310,12 @@ impl SetRules for Rules {
                     };
                     // "Your next turn": not the turn the card was set aside on.
                     if l.owner == player && l.turn < g.player(player).turns_taken {
-                        out.push(Trigger::new(player, l.card, ability).via_lasting(l.id));
+                        let t = Trigger::new(player, l.card, ability).via_lasting(l.id);
+                        out.push(if l.card == Card::Farmhands {
+                            t.plays_set_aside(g, l)
+                        } else {
+                            t
+                        });
                     }
                 }
             }
@@ -467,6 +472,7 @@ pub(crate) fn ask_ordered(
 ) -> Flow {
     let n = n.min(candidates.len());
     Flow::Ask(Decision {
+        plays: vec![],
         public_choice: false,
         player,
         kind: DecisionKind::Cards {
@@ -586,6 +592,7 @@ fn trash_optional(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 /// Reveals cards from `who`'s deck one at a time, keeping each that doesn't match `pred`
 /// in `f.s.cards`, until one matches. Uses pcs `at` and `at + 1`. `Ok(found)` when done
 /// (`None` if the cards ran out); the match is held like the others.
+#[allow(clippy::result_large_err)]
 pub(crate) fn reveal_until(
     g: &mut Game,
     f: &mut CardFrame,

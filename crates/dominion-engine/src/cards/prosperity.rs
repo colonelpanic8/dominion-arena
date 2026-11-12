@@ -157,7 +157,8 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Clerk, CLERK_START)
                                 .on(c)
-                                .reaction("play it from your hand"),
+                                .reaction("play it from your hand")
+                                .plays(g, c),
                         );
                     }
                 }
@@ -388,6 +389,7 @@ pub(super) fn choose_and_gain(
 /// Asks `player` (another player than the card's) to name a card.
 fn ask_name_for(f: &CardFrame, player: PlayerId) -> Flow {
     Flow::Ask(Decision {
+        plays: vec![],
         public_choice: false,
         player,
         kind: DecisionKind::NameCard,
@@ -402,6 +404,7 @@ fn ask_name_for(f: &CardFrame, player: PlayerId) -> Flow {
 pub(super) fn ask_order_for(f: &CardFrame, player: PlayerId, cards: Vec<CardId>) -> Flow {
     let n = cards.len();
     Flow::Ask(Decision {
+        plays: vec![],
         public_choice: false,
         player,
         kind: DecisionKind::Cards {
@@ -701,6 +704,7 @@ fn crystal_ball(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             labels.push("Leave it".into());
             f.ask_choose_for(f.player, options, labels, 1, 1, Purpose::Either)
                 .about(vec![c])
+                .plays(g, Opt::Mode(2), &[c])
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");

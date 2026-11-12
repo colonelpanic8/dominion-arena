@@ -226,7 +226,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     out.push(
                         Trigger::new(p, Card::Pirate, PIRATE_PLAY)
                             .on(c)
-                            .reaction("play it from your hand"),
+                            .reaction("play it from your hand")
+                            .plays(g, c),
                     );
                 }
             }
@@ -238,7 +239,8 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                 out.push(
                     Trigger::new(gainer, Card::Sailor, SAILOR_PLAY)
                         .via_lasting(l.id)
-                        .optional(format!("play {}", g.card(card))),
+                        .optional(format!("play {}", g.card(card)))
+                        .plays(g, card),
                 );
             }
         }

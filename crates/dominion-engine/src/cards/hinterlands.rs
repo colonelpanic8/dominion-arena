@@ -367,14 +367,20 @@ impl SetRules for Rules {
                         || (still_gained(g, card)
                             && g.in_play(player).iter().any(|&c| g.is(c, Types::ACTION)));
                     if applies {
-                        out.push(Trigger::new(player, kind, GAINED).on(card));
+                        let t = Trigger::new(player, kind, GAINED).on(card);
+                        out.push(if kind == Card::Berserker {
+                            t.plays(g, card)
+                        } else {
+                            t
+                        });
                     }
                 }
                 if kind == Card::Trail && not_cleanup && still_gained(g, card) {
                     out.push(
                         Trigger::new(player, kind, REACT_PLAY)
                             .on(card)
-                            .reaction("play it"),
+                            .reaction("play it")
+                            .plays(g, card),
                     );
                 }
                 if kind == Card::Duchy
@@ -452,7 +458,8 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::Trail, REACT_PLAY)
                             .on(card)
-                            .reaction("play it"),
+                            .reaction("play it")
+                            .plays(g, card),
                     );
                 }
                 _ => {}
@@ -473,7 +480,8 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, k, REACT_PLAY)
                                 .on(card)
-                                .reaction("play it"),
+                                .reaction("play it")
+                                .plays(g, card),
                         );
                     }
                     _ => {}
@@ -490,7 +498,8 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::GuardDog, GUARD_DOG_PLAY)
                                 .on(c)
-                                .reaction("play it from your hand"),
+                                .reaction("play it from your hand")
+                                .plays(g, c),
                         );
                     }
                 }
