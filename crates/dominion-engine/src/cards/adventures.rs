@@ -700,18 +700,10 @@ fn inherited(g: &Game) -> bool {
         .is_some_and(|p| inherited_card(g, p).is_some())
 }
 
-/// How many cards `p` gained on their most recent turn.
+/// How many cards `p` gained on their last turn.
 fn gains_on_last_turn(g: &Game, p: PlayerId) -> usize {
-    let log = g.log();
-    let Some(start) = log
+    g.last_turn_log(p)
         .iter()
-        .rposition(|e| matches!(e, Event::TurnStart { player, .. } if *player == p))
-    else {
-        return 0;
-    };
-    log[start + 1..]
-        .iter()
-        .take_while(|e| !matches!(e, Event::TurnStart { .. }))
         .filter(|e| matches!(e, Event::Gained { player, .. } if *player == p))
         .count()
 }

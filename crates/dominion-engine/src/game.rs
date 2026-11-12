@@ -621,6 +621,26 @@ impl Game {
         &self.log
     }
 
+    /// The log of `p`'s last finished turn ("their last turn"): never one in progress.
+    pub(crate) fn last_turn_log(&self, p: PlayerId) -> &[Event] {
+        let is_start = |e: &Event| matches!(e, Event::TurnStart { .. });
+        let mut end = self.log.len();
+        if self.turn.player == p {
+            end = self.log.iter().rposition(is_start).unwrap_or(0);
+        }
+        let Some(begin) = self.log[..end]
+            .iter()
+            .rposition(|e| matches!(e, Event::TurnStart { player, .. } if *player == p))
+        else {
+            return &[];
+        };
+        let len = self.log[begin + 1..end]
+            .iter()
+            .position(is_start)
+            .unwrap_or(end - begin - 1);
+        &self.log[begin + 1..begin + 1 + len]
+    }
+
     /// What `id` currently is: its printed card, or what it is acting as.
     pub fn card(&self, id: CardId) -> Card {
         self.masks

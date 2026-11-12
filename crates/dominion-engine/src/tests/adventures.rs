@@ -564,6 +564,30 @@ fn treasure_hunter_gains_a_silver_per_card_the_right_player_gained_last_turn() {
     assert_eq!((g.turn().actions, g.turn().coins), (1, 1));
 }
 
+/// "Their last turn" is a finished one: "If you play this during the player to your
+/// right's turn ... this checks that player's last completed turn, not their current
+/// turn" (wiki, Smugglers, whose words Treasure Hunter shares).
+#[test]
+fn treasure_hunter_on_the_right_players_turn_counts_their_last_finished_turn() {
+    let mut g = game(&[Card::Page, Card::Workshop], &[]);
+    hand(&mut g, P0, &[Card::Copper; 5]);
+    let mut d0 = vec![Card::Workshop];
+    d0.extend([Card::Copper; 9]);
+    deck(&mut g, P0, &d0);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    let mut d1 = vec![Card::TreasureHunter];
+    d1.extend([Card::Copper; 9]);
+    deck(&mut g, P1, &d1);
+    g.start();
+    // A round in which no one gains anything.
+    finish_turn(&mut g);
+    finish_turn(&mut g);
+    play(&mut g, Card::Workshop);
+    choose_pile(&mut g, Card::Silver);
+    play_out_of_turn(&mut g, P1, Card::TreasureHunter);
+    assert_eq!(g.count_owned(P1, Card::Silver), 0);
+}
+
 #[test]
 fn warrior_hits_once_per_traveller_in_play() {
     let mut g = game(&[Card::Page], &[]);

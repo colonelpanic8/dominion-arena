@@ -813,23 +813,10 @@ fn play_from(g: &mut Game, f: &mut CardFrame, zone: Zone) -> Flow {
     Flow::done()
 }
 
-/// The number of cards `p` trashed during their most recent finished turn.
+/// The number of cards `p` trashed on their last turn.
 fn trashed_last_turn(g: &Game, p: PlayerId) -> usize {
-    let log = g.log();
-    let is_start = |e: &Event| matches!(e, Event::TurnStart { .. });
-    let mut end = log.len();
-    if g.turn.player == p {
-        end = log.iter().rposition(is_start).unwrap_or(0);
-    }
-    let Some(begin) = log[..end]
+    g.last_turn_log(p)
         .iter()
-        .rposition(|e| matches!(e, Event::TurnStart { player, .. } if *player == p))
-    else {
-        return 0;
-    };
-    log[begin + 1..]
-        .iter()
-        .take_while(|e| !is_start(e))
         .filter(|e| matches!(e, Event::Trashed { player, .. } if *player == p))
         .count()
 }

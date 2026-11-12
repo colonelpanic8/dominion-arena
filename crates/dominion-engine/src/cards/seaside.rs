@@ -742,23 +742,10 @@ fn sea_witch(g: &mut Game, f: &mut CardFrame) -> Flow {
     Flow::done()
 }
 
-/// The cards `p` gained during their most recent turn (not one in progress).
+/// The cards `p` gained on their last turn.
 fn gained_last_turn(g: &Game, p: PlayerId) -> Vec<Card> {
-    let log = g.log();
-    let is_start = |e: &Event| matches!(e, Event::TurnStart { .. });
-    let mut end = log.len();
-    if g.turn.player == p {
-        end = log.iter().rposition(is_start).unwrap_or(0);
-    }
-    let Some(begin) = log[..end]
+    g.last_turn_log(p)
         .iter()
-        .rposition(|e| matches!(e, Event::TurnStart { player, .. } if *player == p))
-    else {
-        return vec![];
-    };
-    log[begin + 1..]
-        .iter()
-        .take_while(|e| !is_start(e))
         .filter_map(|e| match e {
             Event::Gained { player, card, .. } if *player == p => Some(*card),
             _ => None,
