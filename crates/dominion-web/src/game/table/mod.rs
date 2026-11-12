@@ -4,6 +4,7 @@
 //! model and answers through the [`interaction`](super::interaction) model: every
 //! target of the open decision has one [`Spot`] where it glows and is clicked.
 
+pub mod layout;
 pub mod model;
 mod pieces;
 mod players;
@@ -339,6 +340,58 @@ impl TableCtx {
     }
 }
 
+/// The measured boxes the layout is computed for: the middle row, the hand and the
+/// gap between things, in CSS pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Boxes {
+    pub middle: (f64, f64),
+    pub hand: (f64, f64),
+    pub gap: f64,
+}
+
+impl Boxes {
+    /// A guess from the window's size, until the first measurement.
+    fn guess() -> Boxes {
+        let (vw, vh) = platform::viewport();
+        let u = (vh / 100.0).min(vw * 0.005625);
+        let side = (vw * 0.19).clamp(230.0, 520.0);
+        let w = vw - side - u;
+        Boxes {
+            middle: (w, vh * 0.5),
+            hand: (w * 0.75, 24.0 * u),
+            gap: 0.5 * u,
+        }
+    }
+}
+
+const MEASURE_JS: &str = r#"
+if (window.__dtMeasure) { clearInterval(window.__dtMeasure.timer); window.removeEventListener('resize', window.__dtMeasure.fn); }
+(() => {
+  let last = '';
+  const fn = () => {
+    const m = document.querySelector('.dt-middle');
+    if (!m) return;
+    const h = document.querySelector('.dt-hand');
+    const cs = getComputedStyle(m);
+    const px = k => parseFloat(cs[k]) || 0;
+    const content = (el) => {
+      if (!el) return [0, 0];
+      const b = el.getBoundingClientRect(), c = getComputedStyle(el), p = k => parseFloat(c[k]) || 0;
+      return [b.width - p('paddingLeft') - p('paddingRight'), b.height - p('paddingTop') - p('paddingBottom')];
+    };
+    const g = px('rowGap') || 4;
+    const v = [...content(m), ...content(h), g].map(x => Math.round(x * 10) / 10);
+    const key = v.join(',');
+    if (key === last) return;
+    last = key;
+    try { dioxus.send(v); } catch (_) {}
+  };
+  window.__dtMeasure = { fn, timer: setInterval(fn, 250) };
+  window.addEventListener('resize', fn);
+  fn();
+})();
+"#;
+
 const KEYS_JS: &str = r#"
 if (window.__dtKeys) document.removeEventListener('keydown', window.__dtKeys);
 window.__dtKeys = (e) => {
@@ -457,6 +510,36 @@ pub fn TableGame(controls: Element) -> Element {
         }
     });
 
+    let mut boxes = use_signal(Boxes::guess);
+    use_future(move || async move {
+        let mut eval = document::eval(MEASURE_JS);
+        while let Ok(v) = eval.recv::<Vec<f64>>().await {
+            if let [mw, mh, hw, hh, g] = v[..] {
+                let b = Boxes {
+                    middle: (mw, mh),
+                    hand: (hw, hh),
+                    gap: g,
+                };
+                if *boxes.peek() != b {
+                    boxes.set(b);
+                }
+            }
+        }
+    });
+    let shape = use_memo(move || {
+        let b = board_memo.read();
+        b.as_ref().map(|b| supply::shape(b)).unwrap_or_default()
+    });
+    let middle = use_memo(move || {
+        let bx = boxes();
+        Rc::new(layout::middle(
+            &shape.read(),
+            bx.middle.0,
+            bx.middle.1,
+            bx.gap,
+        ))
+    });
+
     use_future(move || async move {
         let mut eval = document::eval(KEYS_JS);
         while let Ok(key) = eval.recv::<String>().await {
@@ -493,6 +576,12 @@ pub fn TableGame(controls: Element) -> Element {
     };
     let sel = ctx.selection();
     let ui_now = ui.read().clone();
+    let lay = middle();
+    let bx = boxes();
+    let mid_style = format!(
+        "--sh:{:.1}px;--k:{:.1}px;--b:{:.1}px;--ww:{:.1}px;--nw:{:.1}px;",
+        lay.supply_h, lay.k, lay.b, lay.wide_w, lay.ns_w
+    );
     let can_treasures = ui_now
         .as_ref()
         .is_some_and(|u| !u.inter.treasures.is_empty());
@@ -512,10 +601,19 @@ pub fn TableGame(controls: Element) -> Element {
                 }
             },
             div { class: "dt-main",
-                players::Opponents { opponents: b.opponents.clone(), ui: ui_now.clone(), sel: sel.clone() }
-                div { class: "dt-middle",
-                    supply::SupplyArea { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
-                    players::PlayArea { board: b.clone(), log: log.clone(), ui: ui_now.clone(), sel: sel.clone() }
+                players::Opponents { opponents: b.opponents.clone() }
+                div { class: "dt-middle", style: "{mid_style}",
+                    supply::SupplyArea { board: b.clone(), lay: lay.clone(), ui: ui_now.clone(), sel: sel.clone() }
+                    players::PlayArea {
+                        board: b.clone(),
+                        log: log.clone(),
+                        ui: ui_now.clone(),
+                        sel: sel.clone(),
+                        w: bx.middle.0,
+                        h: lay.play_h,
+                        gap: bx.gap,
+                        max_w: lay.k * 1.15,
+                    }
                     prompt::Tray { ui: ui_now.clone(), sel: sel.clone() }
                     if let Some(p) = ctx.popup.read().clone() {
                         PopupView { popup: p }
@@ -529,10 +627,18 @@ pub fn TableGame(controls: Element) -> Element {
                     busy: answering,
                     can_treasures,
                 }
-                players::YourArea { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
+                players::YourArea {
+                    board: b.clone(),
+                    ui: ui_now.clone(),
+                    sel: sel.clone(),
+                    hand_w: bx.hand.0,
+                    hand_h: bx.hand.1,
+                    gap: bx.gap,
+                }
             }
             aside { class: "dt-side",
                 div { class: "dt-controls", {controls} }
+                players::YouPanel { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
                 side::More { board: b.clone() }
                 side::Log { entries: log, names }
             }

@@ -134,20 +134,26 @@ personal use and are never part of this repository or its package.
 
 `crates/dominion-web` is a browser client (Dioxus, compiled to wasm) for the same
 server: a lobby to create games and take seats, and a game page that shows a seat's view
-and answers its decisions. The lobby's kingdom builder picks the sets, then either leaves
-the kingdom to the server (ten piles dealt at random from those sets) or fills a tray of
-ten slots by clicking cards, with Randomize filling the unlocked slots. A chosen kingdom
-is played exactly as given, also with fewer or more than ten piles; its landscapes are
-the ones in the tray, plus an Ally or Prophecy the kingdom needs.
-The game page is a table laid out like dominion.games' (the
-Supply, the play area, your hand, opponents, the log): the cards and piles you may choose
-glow and are clicked where they lie, other choices appear in a tray or as buttons, hovering
-or right-clicking a card shows it large, Enter confirms, Escape clears, E ends a phase and
-T plays your Treasures. A Plain toggle shows the same game as text and buttons. It keeps the seat tokens it holds in the browser's
-localStorage; a seat link `/game/<id>#token=<token>` opens a seat in another browser.
-Cards are drawn like dominion.games' own from the asset cache (`dominion assets sync`),
-which the client only references by URL; without a cache they are drawn in CSS. `/gallery`
-shows every card at each size.
+and answers its decisions.
+
+The lobby's kingdom builder picks the sets, then either leaves the kingdom to the server
+(ten piles dealt at random from those sets) or fills a tray of ten slots by clicking
+cards, with Randomize filling the unlocked slots. A chosen kingdom is played exactly as
+given, also with fewer or more than ten piles; its landscapes are the ones in the tray,
+plus an Ally or Prophecy the kingdom needs.
+
+The game page is a table laid out like dominion.games': opponents along the top, the
+Supply with the play area under it, your hand, and the log on the right. The cards and
+piles you may choose glow and are clicked where they lie; other choices appear in a tray
+or as buttons. Hovering over a card or right-clicking it shows it large; Enter confirms,
+Escape clears, E ends a phase and T plays your Treasures. A Plain toggle shows the same
+game as text and buttons.
+
+The client keeps the seat tokens it holds in the browser's localStorage; a seat link
+`/game/<id>#token=<token>` opens a seat in another browser. Cards are drawn like
+dominion.games' own from the asset cache (`dominion assets sync`), which the client only
+references by URL; without a cache they are drawn in CSS.
+`/gallery` shows every card at each size.
 
 ```sh
 just web-build                  # release build into target/web-client

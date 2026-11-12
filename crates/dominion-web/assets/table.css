@@ -9,7 +9,8 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-root {
   --u: min(1vh, 0.5625vw);
   --g: calc(0.5 * var(--u));
-  --hand-h: calc(28 * var(--u));
+  --hand-h: calc(25 * var(--u));
+  --opp-h: calc(12.5 * var(--u));
   --side-w: clamp(230px, 19vw, 520px);
   --gold: #f2cf6b;
   --pick: #6cb6ff;
@@ -65,7 +66,9 @@ body:has(.dt-root) .topbar { display: none; }
   container-type: size;
   position: relative;
   display: flex;
-  gap: var(--u);
+  flex-direction: column;
+  gap: var(--g);
+  padding: var(--u) var(--u) 0;
   min-height: 0;
   min-width: 0;
 }
@@ -80,6 +83,7 @@ body:has(.dt-root) .topbar { display: none; }
 /* A card on the table. */
 .dt-c {
   position: relative;
+  isolation: isolate;
   container-type: inline-size;
   flex: none;
   width: calc(12 * var(--u));
@@ -224,15 +228,16 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-cube img { width: 100%; height: 100%; display: block; }
 .dt-tokens .dt-cube { width: 13cqw; height: 13cqw; }
 
-/* Opponents. */
-.dt-opps { display: flex; gap: var(--u); min-width: 0; max-height: calc(17 * var(--u)); }
+/* Opponents: a small panel each, all on one row. */
+.dt-opps { display: grid; grid-template-columns: repeat(var(--n), minmax(0, calc(62 * var(--u)))); gap: var(--u); min-width: 0; height: var(--opp-h); }
 .dt-opps:empty { display: none; }
 .dt-opp {
-  flex: 1 1 0;
   min-width: 0;
-  overflow: auto;
-  scrollbar-width: thin;
-  padding: calc(0.5 * var(--u)) var(--u);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.3 * var(--u));
+  padding: calc(0.4 * var(--u)) var(--u) calc(0.3 * var(--u));
   border-radius: calc(0.6 * var(--u));
   background: var(--panel-bg);
   border: 1px solid var(--panel-line);
@@ -241,6 +246,55 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-opp.dt-turn { box-shadow: 0 0 0 1px var(--gold), 0 0 calc(1.2 * var(--u)) rgba(242, 207, 107, 0.35); }
 .dt-opp.dt-decides { animation: dt-pulse 1.4s ease-in-out infinite; }
 @keyframes dt-pulse { 50% { box-shadow: 0 0 0 2px var(--pick), 0 0 calc(1.5 * var(--u)) rgba(108, 182, 255, 0.5); } }
+.dt-opp-head { flex: none; flex-wrap: nowrap; overflow: hidden; height: calc(2.6 * var(--u)); }
+.dt-opp-head .dt-badges { flex-wrap: nowrap; }
+.dt-opp-head .dt-badge { height: calc(2.4 * var(--u)); }
+.dt-opp-head .dt-vp { height: calc(2.6 * var(--u)); }
+.dt-opp-body { flex: 1; min-height: 0; display: flex; gap: var(--u); align-items: stretch; }
+.dt-opp { --sp-h: calc(var(--opp-h) - 4.6 * var(--u) - 1.1em); --sp-w: calc(var(--sp-h) * 630 / 994); }
+.dt-spile { flex: none; display: flex; flex-direction: column; align-items: center; }
+.dt-spile-cards { position: relative; height: var(--sp-h); width: var(--sp-w); }
+.dt-fan .dt-spile-cards { width: calc(var(--sp-w) * (1 + (var(--fan) - 1) * 0.22)); }
+.dt-spile-card { position: absolute; top: 0; left: 0; width: var(--sp-w); container-type: inline-size; }
+.dt-fan .dt-spile-card { left: calc(var(--sp-w) * 0.22 * var(--i)); transform: rotate(calc((var(--i) - (var(--fan) - 1) / 2) * 5deg)); transform-origin: 50% 120%; }
+.dt-spile-card .dc-card { width: 100%; border-radius: 6% / 4%; }
+.dt-spile-n {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  min-width: 1.6em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.9em;
+  text-align: center;
+}
+.dt-spile-empty .dt-spile-cards { border: 1px dashed rgba(255, 255, 255, 0.2); border-radius: 0.3em; }
+.dt-spile-label { flex: none; font-size: 0.72em; color: #b7b09f; line-height: 1.1; }
+.dt-ochips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0.25em; overflow: hidden; }
+.dt-ochip {
+  font: inherit;
+  font-size: 0.78em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  max-width: 100%;
+  padding: 0.05em 0.4em;
+  border-radius: 0.4em;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dt-ochip-k { color: #b7b09f; text-transform: uppercase; letter-spacing: 0.03em; font-size: 0.9em; }
+.dt-ochip-n { font-weight: 800; }
+.dt-ochip-held { cursor: default; }
 .dt-opp-head, .dt-you-head { display: flex; align-items: center; gap: 0.5em; flex-wrap: wrap; }
 .dt-pname { color: var(--pc); font-weight: 700; font-size: 1.1em; }
 .dt-vp {
@@ -257,7 +311,6 @@ body:has(.dt-root) .topbar { display: none; }
 }
 .dt-flag { font-size: 0.8em; padding: 0 0.5em; border-radius: 999px; background: rgba(242, 207, 107, 0.2); color: var(--gold); }
 .dt-flag-decides { background: rgba(108, 182, 255, 0.2); color: var(--pick); }
-.dt-opp-row { display: flex; gap: 0.4em; flex-wrap: wrap; align-items: center; margin: 0.25em 0; }
 .dt-count-chip {
   font-size: 0.85em;
   padding: 0.05em 0.5em;
@@ -277,64 +330,64 @@ body:has(.dt-root) .topbar { display: none; }
   background: var(--dc-back, none) center / cover, repeating-linear-gradient(45deg, #2a3f7a 0 3px, #233569 3px 6px);
 }
 .dt-uncertain { font-size: 0.8em; color: #a8a294; }
-.dt-opp-zones { display: flex; flex-wrap: wrap; gap: 0.3em 0.8em; }
 
 /* Zones as small labelled stacks. */
 .dt-zone { min-width: 0; }
 .dt-zone-label { font-size: 0.78em; color: #b7b09f; text-transform: uppercase; letter-spacing: 0.04em; }
 .dt-zone-n { color: #fff; }
 .dt-zone-cards { display: flex; flex-wrap: wrap; gap: 2px 4px; }
-.dt-zone .dt-c.dt-micro { width: calc(15 * var(--u)); }
+.dt-zone .dt-c.dt-micro { width: min(100%, calc(16 * var(--u))); }
 .dt-zone-unknown { font-size: 0.8em; color: #a8a294; font-style: italic; }
 .dt-counters { display: flex; gap: 0.6em; font-size: 0.85em; color: #cfc8b8; }
 
-/* The Supply. */
+/* The Supply: a band of columns sized by the layout (--sh, --k, --b, --ww, --nw). */
 .dt-supply {
-  --k: min(calc((100cqh - (var(--rows) + var(--srows)) * var(--g)) / (var(--rows) * 0.9434 + 0.7 * var(--ss) * var(--srows))), 11cqw);
-  --b: min(calc((100cqh - (var(--brows) - 1) * var(--g)) / var(--brows) / 0.9434), calc(var(--k) * 0.74));
   flex: none;
+  height: var(--sh);
   display: flex;
-  gap: var(--u);
-  min-height: 0;
-  max-width: 76cqw;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--g);
+  min-width: 0;
 }
 .dt-basic { display: flex; gap: var(--g); }
+.dt-basic + .dt-kingdom, .dt-kingdom + .dt-wcol, .dt-kingdom + .dt-nscol, .dt-wcol + .dt-nscol { margin-left: var(--g); }
 .dt-bcol { display: flex; flex-direction: column; gap: var(--g); }
 .dt-bcol .dt-c { width: var(--b); }
-.dt-kingdom-col { display: flex; flex-direction: column; gap: var(--g); min-width: 0; }
 .dt-kingdom { display: flex; flex-direction: column; gap: var(--g); }
-.dt-krow { display: flex; gap: var(--g); justify-content: flex-start; }
+.dt-krow { display: flex; gap: var(--g); justify-content: center; }
 .dt-krow .dt-c { width: var(--k); }
-.dt-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--g);
-  align-items: flex-end;
-  max-width: calc(5 * var(--k) + 4 * var(--g));
-}
-.dt-strip .dt-c { width: calc(var(--k) * 0.72 * var(--ss)); }
-.dt-strip .dt-c.dt-landscape { width: calc(var(--k) * 1.08 * var(--ss)); }
-.dt-deckbox, .dt-artifact { flex: none; display: flex; flex-direction: column; align-items: center; }
-.dt-deckbox-label { font-size: 0.75em; color: #cfc8b8; white-space: nowrap; display: flex; gap: 0.3em; align-items: center; }
-.dt-deckbox-empty {
-  width: calc(var(--k) * 1.08 * var(--ss));
+.dt-wcol, .dt-nscol { display: flex; flex-direction: column; gap: var(--g); flex: none; }
+.dt-wcol { width: var(--ww); }
+.dt-nscol { width: var(--nw); }
+.dt-wcol > .dt-c, .dt-wcol > * > .dt-c { width: 100%; }
+.dt-nscol .dt-c { width: var(--nw); }
+.dt-deckbox, .dt-artifact { flex: none; display: flex; gap: var(--g); width: 100%; }
+.dt-artifact > .dt-c { width: 100%; }
+.dt-deckbox > * { flex: 1 1 0; min-width: 0; }
+.dt-deckback {
+  position: relative;
   aspect-ratio: 994 / 630;
   border-radius: 0.4em;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   font-family: var(--title-font);
-  font-size: 1.1em;
   color: #fff;
   text-shadow: 0 0 4px #000;
   box-shadow: inset 0 0 0 calc(0.4 * var(--u)) rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.6);
   background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0 6px, transparent 6px 12px), linear-gradient(160deg, #c9a24a, #7a5a1c);
 }
-.dt-deckbox-empty.dt-deck-hexes { background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 6px, transparent 6px 12px), linear-gradient(160deg, #7b5aa6, #3b2558); }
+.dt-deckback.dt-deck-hexes { background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0 6px, transparent 6px 12px), linear-gradient(160deg, #7b5aa6, #3b2558); }
+.dt-deckback-label { font-size: 0.8em; }
+.dt-deckback-n { font-weight: 800; font-size: 1.1em; font-family: system-ui, sans-serif; }
+.dt-deck-none { aspect-ratio: 994 / 630; border: 1px dashed rgba(255, 255, 255, 0.18); border-radius: 0.4em; }
 .dt-trash {
   flex: none;
-  width: calc(var(--k) * 0.95 * var(--ss));
-  aspect-ratio: 400 / 260;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
   border-radius: 0.4em;
   background: var(--dt-trash-mat, none) center / cover, linear-gradient(160deg, #4b3b33, #2a211c);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
@@ -349,44 +402,50 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-trash-n { font-weight: 800; font-size: 1.2em; }
 .dt-trash-empty { opacity: 0.65; }
 
-/* The play area. */
+/* The play area: under the Supply, as wide as the table. */
 .dt-play {
-  --pw: min(calc(84cqh / 1.578), calc(17 * var(--u)));
-  --ew: min(calc(30cqh / 1.578), calc(10 * var(--u)));
   flex: 1 1 0;
+  min-height: 0;
   min-width: 0;
-  container-type: size;
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  gap: var(--g);
+  justify-content: center;
+  align-items: center;
   padding: var(--u);
   border-radius: calc(0.8 * var(--u));
-  background: rgba(0, 0, 0, 0.18);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  background: radial-gradient(ellipse at 50% 60%, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.08) 70%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
-.dt-play.dt-has-earlier { --pw: min(calc(56cqh / 1.578), calc(17 * var(--u))); }
 .dt-play-label {
   position: absolute;
-  top: calc(0.4 * var(--u));
-  right: var(--u);
-  font-size: 0.8em;
+  top: calc(0.3 * var(--u));
+  left: var(--u);
+  font-size: 0.78em;
   color: var(--pc);
-  opacity: 0.8;
+  opacity: 0.75;
+  pointer-events: none;
 }
-.dt-earlier { display: flex; flex-direction: column; gap: 0.2em; }
-.dt-earlier-label { font-size: 0.75em; color: #b7b09f; text-transform: uppercase; letter-spacing: 0.04em; }
-.dt-earlier .dt-slot { flex-basis: var(--ew); }
-.dt-earlier .dt-c { width: var(--ew); }
-.dt-play-row .dt-slot { flex-basis: var(--pw); }
-.dt-play-row .dt-c { width: var(--pw); }
-.dt-play-empty { color: rgba(255, 255, 255, 0.25); font-style: italic; align-self: center; margin: auto; }
+.dt-play-rows { display: flex; flex-direction: column; gap: var(--g); align-items: center; max-width: 100%; }
+.dt-play-row { justify-content: center; }
+.dt-earlier .dt-c > .dc-card { filter: saturate(0.85); }
+.dt-split { margin-right: calc(4 * var(--g)) !important; }
+.dt-split::after {
+  content: "";
+  position: absolute;
+  top: 8%;
+  bottom: 8%;
+  right: calc(-2 * var(--g));
+  border-right: 1px dashed rgba(255, 255, 255, 0.2);
+}
+.dt-play-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.2); font-style: italic; pointer-events: none; }
 
-/* Rows of cards that overlap when they don't fit: every slot but the last shrinks. */
-.dt-row { display: flex; min-width: 0; align-items: flex-end; }
-.dt-slot { position: relative; flex: 0 1 auto; min-width: 0; margin-right: calc(0.6 * var(--u)); }
-.dt-slot:last-child { flex-shrink: 0; margin-right: 0; }
+/* Rows of cards, sized (and overlapped when they must) by the layout through each
+   slot's width and margin. */
+.dt-row { display: flex; min-width: 0; align-items: flex-end; gap: 0; }
+.dt-slot { position: relative; isolation: isolate; flex: none; margin-right: var(--g); }
+.dt-slot:last-child { margin-right: 0; }
+.dt-slot > .dt-c { width: 100%; }
 .dt-slot:hover { z-index: 6; }
 
 /* The status and prompt bar. */
@@ -476,21 +535,24 @@ body:has(.dt-root) .topbar { display: none; }
   font-size: 1em;
 }
 
-/* Your cards. */
+/* Your cards: deck, hand and discard pile. */
 .dt-you {
-  --hw: calc((var(--hand-h) - 2.2 * var(--u)) / 1.578);
+  --hw: calc((var(--hand-h) - 2.6 * var(--u)) / 1.578);
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(calc(16 * var(--u)), calc(30 * var(--u)));
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--u);
   align-items: end;
   min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
   padding: 0 calc(0.4 * var(--u));
 }
 .dt-pilebox { display: flex; flex-direction: column; align-items: center; gap: 0.1em; }
-.dt-pilebox .dt-c { width: calc(var(--hw) * 0.82); }
+.dt-pilebox .dt-c { width: calc(var(--hw) * 0.78); }
 .dt-pile-label { font-size: 0.8em; color: #b7b09f; }
 .dt-empty-slot {
-  width: calc(var(--hw) * 0.82);
+  width: calc(var(--hw) * 0.78);
   aspect-ratio: 630 / 994;
   border: 1px dashed rgba(255, 255, 255, 0.2);
   border-radius: 0.5em;
@@ -499,21 +561,18 @@ body:has(.dt-root) .topbar { display: none; }
   justify-content: center;
   color: rgba(255, 255, 255, 0.3);
 }
-.dt-hand { display: flex; justify-content: center; align-items: flex-end; min-width: 0; height: 100%; padding-top: calc(2.2 * var(--u)); }
-.dt-hand .dt-slot { flex-basis: var(--hw); }
-.dt-hand .dt-c { width: var(--hw); }
+.dt-hand { display: flex; justify-content: center; align-items: flex-end; min-width: 0; min-height: 0; align-self: stretch; overflow: visible; padding: calc(2.6 * var(--u)) var(--g) 0; box-sizing: border-box; }
 .dt-hand-empty { align-self: center; color: rgba(255, 255, 255, 0.3); font-style: italic; }
 .dt-yzones {
-  align-self: stretch;
+  flex: none;
+  max-height: 30%;
   overflow: auto;
   scrollbar-width: thin;
   display: flex;
   flex-direction: column;
   gap: 0.35em;
-  padding: calc(0.4 * var(--u)) calc(0.6 * var(--u));
-  border-radius: calc(0.6 * var(--u));
-  background: var(--panel-bg);
-  border: 1px solid var(--panel-line);
+  padding: calc(0.5 * var(--u)) var(--u);
+  border-bottom: 1px solid var(--panel-line);
   border-left: calc(0.5 * var(--u)) solid var(--pc);
 }
 .dt-yzones .dt-zone .dt-c.dt-micro { width: calc(16 * var(--u)); }
@@ -665,18 +724,13 @@ body:has(.dt-root) .topbar { display: none; }
 @media (max-width: 999px) {
   .dt-root { position: static; display: block; min-height: 100vh; overflow: visible; --u: 1.1vw; --hand-h: 34vw; font-size: 12px; }
   .dt-main { grid-template-rows: auto auto auto auto; }
-  .dt-opps { flex-wrap: wrap; max-height: none; }
-  .dt-opp { flex-basis: 40%; }
-  .dt-middle { container-type: normal; flex-direction: column; }
-  .dt-supply { --k: 14vw; --b: 10vw; max-width: none; }
-  .dt-play { container-type: normal; flex: none; height: 40vw; --pw: 16vw; --ew: 10vw; }
-  .dt-play.dt-has-earlier { --pw: 14vw; height: 52vw; }
+  .dt-middle { height: 80vw; }
+  .dt-opps { height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dt-opp { height: calc(14 * var(--u)); }
   .dt-tray { position: fixed; left: 0; right: 0; bottom: 0; max-height: 60vh; }
   .dt-tslot .dt-c { width: 18vw; }
   .dt-tslot-wide .dt-c { width: 30vw; }
   .dt-popup { position: fixed; }
-  .dt-you { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: var(--hand-h) auto; }
-  .dt-yzones { grid-column: 1 / -1; }
   .dt-side { height: 70vh; border-left: 0; border-top: 1px solid var(--panel-line); }
   .dt-show-result { right: 1em; }
 }
