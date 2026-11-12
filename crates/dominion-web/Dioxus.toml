@@ -1,0 +1,5 @@
+[application]
+name = "dominion-web"
+
+[web.app]
+title = "Dominion"

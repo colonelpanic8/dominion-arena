@@ -1,0 +1,42 @@
+[package]
+name = "dominion-web"
+description = "Browser client for dominion serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "dominion-web"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+dioxus = { version = "=0.7.10", default-features = false, features = ["launch", "lib", "router"] }
+dominion-protocol = { path = "../dominion-protocol" }
+futures-channel = "0.3"
+futures-util = "0.3"
+serde.workspace = true
+serde_json.workspace = true
+
+[features]
+web = ["dioxus/web", "dep:gloo-net", "dep:gloo-timers", "dep:web-sys", "dep:wasm-bindgen", "dep:js-sys"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-net = { version = "0.6", default-features = false, features = ["http", "json", "eventsource"], optional = true }
+gloo-timers = { version = "0.3", features = ["futures"], optional = true }
+# wasm-bindgen must match flake.nix's wasm-bindgen-cli; js-sys and web-sys ship in lockstep with it.
+js-sys = { version = "=0.3.107", optional = true }
+wasm-bindgen = { version = "=0.2.130", optional = true }
+web-sys = { version = "=0.3.107", features = ["Window", "Storage", "Location", "History", "Document", "Element", "Navigator", "Clipboard"], optional = true }
+
+[dev-dependencies]
+dominion-agent = { path = "../dominion-agent" }
+dominion-engine = { path = "../dominion-engine" }
+rand.workspace = true
+
+[lints]
+workspace = true
