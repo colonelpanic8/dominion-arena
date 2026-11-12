@@ -42,6 +42,29 @@ enum Command {
         #[arg(required = true)]
         names: Vec<String>,
     },
+    /// Manage the local cache of dominion.games' images, fonts and sounds.
+    Assets {
+        #[command(subcommand)]
+        command: AssetsCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum AssetsCommand {
+    /// Download the assets and write the manifest mapping cards to them.
+    Sync {
+        /// Cache directory (default from the config file).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Download files already in the cache again.
+        #[arg(long)]
+        force: bool,
+        /// Report what would be downloaded, fetching only the client's bundles.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Print the cache directory.
+    Path,
 }
 
 #[derive(Args)]
@@ -131,6 +154,30 @@ async fn serve(config: Config) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+async fn assets(command: AssetsCommand, mut config: Config) -> Result<(), String> {
+    let no_dir = || "no asset cache directory: set assets_dir (or XDG_CACHE_HOME or HOME)";
+    match command {
+        AssetsCommand::Sync {
+            dir,
+            force,
+            dry_run,
+        } => {
+            config.assets_dir = dir.or(config.assets_dir);
+            let dir = config.assets_dir().ok_or_else(no_dir)?;
+            let options = dominion_server::assets::SyncOptions {
+                dir,
+                force,
+                dry_run,
+            };
+            dominion_server::assets::sync(&options).await
+        }
+        AssetsCommand::Path => {
+            println!("{}", config.assets_dir().ok_or_else(no_dir)?.display());
+            Ok(())
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -173,6 +220,7 @@ async fn main() -> ExitCode {
             let seat = args.game.zip(args.token);
             dominion_server::client::play(&url, new, seat, reconnect).await
         }
+        Command::Assets { command } => assets(command, config).await,
         Command::Card { names } => names.iter().try_for_each(|name| {
             dominion_agent::glossary(name)
                 .map(|e| println!("{}\n", dominion_server::card_text(&e)))

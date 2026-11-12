@@ -1,0 +1,17 @@
+        <link rel="shortcut icon" href="favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="css/dominion-webclient-head-2.3.7.min.css"/>
+        <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
+        <script src="connection-properties4.js"></script>
+        <script src="connection-selection.js"></script>
+        <script src="js/dominion-webclient-head-2.3.7.min.js"></script>
+        <div class="loading-page" ng-if="pageDisplay.shouldShowLoadingPage">
+            <div class="loading-page-content-container">
+                <img class="dom-icon unselectable"  src="images/dom-icon-black.png"/>
+                <div class="loading-spinner unselectable"></div>
+            </div>
+        </div>
+        <div class="login-page"
+             ng-include="'html/login-page-2.3.7.html'"
+             ng-if="pageDisplay.shouldShowLoginPage"
+        <link rel="stylesheet" type="text/css" href="css/dominion-webclient-body-2.3.7.min.css"/>
+        <script src="js/dominion-webclient-body-2.3.7.min.js"></script>

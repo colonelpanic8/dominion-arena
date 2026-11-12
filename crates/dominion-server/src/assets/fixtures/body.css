@@ -1,0 +1,4 @@
+@font-face{font-family:TrajanPro-Bold;src:url(../fonts/TrajanPro3SemiBold.ttf) format("truetype")}
+@font-face{font-family:FontAwesome;src:url(font/fontawesome-webfont.eot);src:url(font/fontawesome-webfont.eot?#iefix) format('eot'),url(font/fontawesome-webfont.woff) format('woff'),url(font/fontawesome-webfont.ttf) format('truetype'),url(font/fontawesome-webfont.svg#FontAwesome) format('svg');font-weight:400;font-style:normal}
+.minus-coin-token{background:url(../images/elements/coin.png) no-repeat;z-index:4;min-width:143px;min-height:130px;float:left}
+.cardlist-window .random-landscape{background-image:url(../images/cards/templates/randomizer-back-landscape.jpg)}

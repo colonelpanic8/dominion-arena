@@ -1,6 +1,7 @@
 //! `dominion`: an MCP server hosting Dominion games over streamable HTTP, and a terminal
 //! client for it.
 
+pub mod assets;
 pub mod client;
 pub mod config;
 pub mod hub;

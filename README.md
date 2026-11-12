@@ -81,6 +81,7 @@ allowed_hosts = []             # serve: extra Host header values to accept
 persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: delete finished games this old at startup
+assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
@@ -92,6 +93,15 @@ its first seat in the terminal and prints the other seats' tokens;
 server restart: when it loses the server it keeps trying to reach it for
 `reconnect_seconds` (`--reconnect`), then gives up. `dominion card NAME` prints a card's
 text.
+
+`dominion assets sync` downloads the card art, frame templates, icons, fonts and sounds
+of [dominion.games](https://dominion.games) into a local cache (`assets_dir`, or `--dir`)
+and writes `manifest.json` there, which maps every card to its art and templates and
+lists what couldn't be found. It reads the card tables out of the site's current client,
+skips files it already has (`--force` fetches them again) and prints what is covered;
+`--dry-run` only reports what it would fetch. `dominion assets path` prints the
+directory. These assets belong to their owners: they are only cached locally for
+personal use and are never part of this repository or its package.
 
 ## Development
 
