@@ -8,7 +8,6 @@ pub mod card;
 pub mod cards;
 pub mod gallery;
 pub mod game;
-pub mod kingdom;
 pub mod lobby;
 pub mod platform;
 pub mod session;

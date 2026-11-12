@@ -29,6 +29,41 @@ const ICONS: [(&str, &str); 6] = [
     ("back", "images/cards/templates/back.jpg"),
 ];
 
+/// The lobby's pictures and materials, through `--dc-lb-<name>`; without them it is
+/// drawn in plain colours.
+const LOBBY_IMAGES: [(&str, &str); 30] = [
+    ("painting", "images/large/adventures.webp"),
+    ("score-lose", "images/large/survivors.webp"),
+    ("score-win", "images/large/triumphal-arch.webp"),
+    ("score-watch", "images/large/arena.webp"),
+    ("spear-left", "images/spear-left.png"),
+    ("spear-right", "images/spear-right.png"),
+    ("divider", "images/materials/gold_divider.png"),
+    ("gold", "images/materials/gold_button.jpg"),
+    ("stone", "images/materials/stone_button.png"),
+    ("stone-small", "images/materials/stone_button_small.png"),
+    ("copper", "images/materials/copper_button.jpg"),
+    ("copper-small", "images/materials/copper_button_small.png"),
+    ("copper-round", "images/materials/copper_button_round.png"),
+    ("person", "images/materials/copper_person.png"),
+    ("refresh", "images/materials/refresh.png"),
+    ("up-down", "images/materials/copper_up_down.png"),
+    ("up", "images/materials/copper_up.png"),
+    ("crown", "images/elements/crown.png"),
+    ("bot", "images/elements/bot.png"),
+    ("add-bot", "images/elements/add-bot.png"),
+    ("play", "images/elements/play.png"),
+    ("exit", "images/elements/exit.png"),
+    ("minus", "images/elements/minus.png"),
+    ("add", "images/elements/add.png"),
+    ("dice", "images/elements/dice.png"),
+    ("on", "images/elements/indicator-on.png"),
+    ("off", "images/elements/indicator-off.png"),
+    ("red-cross", "images/elements/red-cross.png"),
+    ("all", "images/elements/fullscreen-icon.png"),
+    ("back-mini", "images/cards/templates/back-mini.jpg"),
+];
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Status {
     #[default]
@@ -109,6 +144,11 @@ impl AssetDb {
         for (name, path) in ICONS {
             if self.has(path) {
                 css.push_str(&format!("--dc-{name}:url('{}');", url(path)));
+            }
+        }
+        for (name, path) in LOBBY_IMAGES {
+            if self.has(path) {
+                css.push_str(&format!("--dc-lb-{name}:url('{}');", url(path)));
             }
         }
         css.push_str("}\n");

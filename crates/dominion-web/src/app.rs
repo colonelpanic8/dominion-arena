@@ -17,6 +17,12 @@ pub enum Route {
     #[layout(Shell)]
     #[route("/")]
     Lobby {},
+    #[route("/table")]
+    MyTable {},
+    #[route("/tables")]
+    Tables {},
+    #[route("/cardlists")]
+    Cardlists {},
     #[route("/game/:id")]
     Game { id: String },
     #[route("/gallery")]
@@ -64,6 +70,7 @@ pub fn App() -> Element {
             }
         }
     });
+    crate::lobby::use_provide_lobby();
     let assets = crate::assets::use_provide_assets();
     let asset_css = assets.read().css();
     rsx! {
@@ -92,7 +99,22 @@ fn Shell() -> Element {
 
 #[component]
 fn Lobby() -> Element {
-    rsx! { crate::lobby::LobbyPage {} }
+    rsx! { crate::lobby::AutomatchTab {} }
+}
+
+#[component]
+fn MyTable() -> Element {
+    rsx! { crate::lobby::MyTableTab {} }
+}
+
+#[component]
+fn Tables() -> Element {
+    rsx! { crate::lobby::TablesTab {} }
+}
+
+#[component]
+fn Cardlists() -> Element {
+    rsx! { crate::lobby::CardlistsTab {} }
 }
 
 #[component]
