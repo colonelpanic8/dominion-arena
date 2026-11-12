@@ -136,8 +136,8 @@ pub struct Trigger {
     /// What the choice is called when `card`'s name doesn't say it: a rule applied to
     /// `card` rather than its own ability, or which card a shared ability is on.
     pub label: Option<String>,
-    /// What resolving an optional one does, said to its owner ("reveal it to be
-    /// unaffected").
+    /// What resolving it does, said to its owner ("reveal it to be unaffected"): every
+    /// optional one, and a mandatory one where its card's name doesn't say.
     #[serde(default)]
     pub does: Option<String>,
     /// All it does is make the attacked player unaffected: not offered once they are.
@@ -181,6 +181,13 @@ impl Trigger {
     /// "You may": `does` says what resolving it does ("exchange it for a Soldier").
     pub(crate) fn optional(mut self, does: impl Into<String>) -> Trigger {
         self.optional = true;
+        self.does = Some(does.into());
+        self
+    }
+
+    /// What a mandatory one does, where its card's name doesn't say: another player's
+    /// lasting effect on its owner ("gain a Curse").
+    pub(crate) fn doing(mut self, does: impl Into<String>) -> Trigger {
         self.does = Some(does.into());
         self
     }
@@ -358,6 +365,8 @@ impl Window {
             "you may use this ability"
         } else if all_optional {
             "choose an ability to use next, or decline all"
+        } else if (asked.iter()).any(|(_, t)| lasting_owner(g, t).is_some_and(|o| o != owner)) {
+            "choose which ability resolves next (the others stay pending)"
         } else {
             "choose which of your abilities resolves next (the others stay pending)"
         };
@@ -389,7 +398,7 @@ impl Window {
     fn interchangeable(&self, g: &Game, a: &(usize, Trigger), b: &(usize, Trigger)) -> bool {
         alike(g, &self.occs[a.0], &self.occs[b.0])
             && same_effect(g, &a.1, &b.1)
-            && label(g, &a.1, false) == label(g, &b.1, false)
+            && core_label(g, &a.1, false) == core_label(g, &b.1, false)
     }
 
     /// The pending triggers the decision being asked is about.
@@ -492,6 +501,21 @@ fn alike(g: &Game, a: &Occasion, b: &Occasion) -> bool {
 /// card is if not in play, its lasting effect's other cards, and its count (a Garrison's
 /// tokens).
 fn label(g: &Game, t: &Trigger, detail: bool) -> String {
+    match lasting_owner(g, t).filter(|&o| o != t.owner) {
+        Some(o) => format!("{o}'s {}", core_label(g, t, detail)),
+        None => core_label(g, t, detail),
+    }
+}
+
+/// Who made the lasting effect `t` comes from, if any.
+fn lasting_owner(g: &Game, t: &Trigger) -> Option<PlayerId> {
+    let id = t.lasting?;
+    g.lasting().iter().find(|l| l.id == id).map(|l| l.owner)
+}
+
+/// `label` without whose lasting effect it is: abilities alike but for that are one
+/// option (two players' Swamp Hags).
+fn core_label(g: &Game, t: &Trigger, detail: bool) -> String {
     let name = t.label.clone().unwrap_or_else(|| {
         let view = g.view(t.owner);
         let lasting = t
@@ -542,7 +566,8 @@ fn label(g: &Game, t: &Trigger, detail: bool) -> String {
         }
     });
     match &t.does {
-        Some(does) => format!("{name}: {does} (optional)"),
+        Some(does) if t.optional => format!("{name}: {does} (optional)"),
+        Some(does) => format!("{name}: {does}"),
         None => name,
     }
 }

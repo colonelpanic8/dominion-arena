@@ -7,8 +7,7 @@ use super::wording;
 use crate::app::use_cards;
 use dioxus::prelude::*;
 use dominion_protocol::{
-    AgentDecision, AgentOption, AgentView, Answer, CardCount, Cost, LogEntry, PileView, PlayerView,
-    Tokens,
+    AgentDecision, AgentView, Answer, CardCount, Cost, LogEntry, PileView, PlayerView, Tokens,
 };
 
 pub fn cost_text(c: &Cost) -> String {
@@ -557,15 +556,6 @@ pub fn LogPanel(entries: Vec<LogEntry>) -> Element {
     }
 }
 
-fn option_label(o: &AgentOption) -> String {
-    match o.zone.as_deref() {
-        Some(z) if o.action == "select" && !matches!(z, "hand" | "looking") => {
-            format!("{} (from {z})", o.label)
-        }
-        _ => o.label.clone(),
-    }
-}
-
 fn bounds_text(min: u32, max: u32) -> String {
     if min == max {
         format!("choose {min}")
@@ -596,7 +586,7 @@ pub fn DecisionControls(
         d.options
             .iter()
             .find(|o| o.index == i)
-            .map(option_label)
+            .map(|o| o.label.clone())
             .unwrap_or_default()
     };
     rsx! {
@@ -634,7 +624,7 @@ pub fn DecisionControls(
                                         if let (Some(p), true) = (pos, d.ordered) {
                                             span { class: "order", "{p + 1}" }
                                         }
-                                        "{option_label(&o)}"
+                                        "{o.label}"
                                     }
                                 }
                             }

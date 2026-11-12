@@ -407,7 +407,10 @@ fn counter(s: &str) -> Option<(Counter, i32)> {
     };
     let (n, c) = [
         (
-            rest.strip_suffix(" Coffers").and_then(number),
+            match rest {
+                "a Coffers" => Some(1),
+                _ => rest.strip_suffix(" Coffers").and_then(number),
+            },
             Counter::Coffers,
         ),
         (rest.strip_suffix(" Debt").and_then(number), Counter::Debt),
@@ -514,8 +517,11 @@ pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
         } else {
             (-n, rest.strip_prefix("removed from ")?)
         };
-        let (card, pile) = match at.split_once(" on the ") {
-            Some((card, pile)) => (card, Some(card_name(pile.strip_suffix(" pile")?)?)),
+        let (card, pile) = match at.strip_prefix("the ") {
+            Some(rest) => {
+                let (pile, card) = rest.strip_suffix(')')?.split_once(" pile (")?;
+                (card, Some(card_name(pile)?))
+            }
             None => (at, None),
         };
         return Some(Entry::CardCounter {
@@ -556,7 +562,7 @@ pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
         "overpaid" => {
             let rest = after("overpays $")?;
             let (coins, potions) = match rest.split_once(" and ") {
-                Some((c, pot)) => (c, pot.strip_suffix(" Potion(s)").and_then(number)?),
+                Some((c, pot)) => (c, amount(pot, "Potion", "Potions")?),
                 None => (rest, 0),
             };
             Entry::Overpaid {
@@ -603,7 +609,7 @@ pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
                 l => l.split(", ").map(card_name).collect::<Option<_>>()?,
             })
         }
-        "drew" => Entry::Drew(after("draws ")?.strip_suffix(" card(s)").and_then(number)?),
+        "drew" => Entry::Drew(amount(after("draws ")?, "card", "cards")?),
         "shuffled" if s == "shuffles" => Entry::Shuffled,
         "received" => Entry::Received(card_after("receives ")?),
         "rotated" => Entry::Rotated(card_name(after("rotates the ")?.strip_suffix(" pile")?)?),
@@ -800,5 +806,23 @@ mod tests {
             ))
         );
         assert_eq!(p(Some(0), "Ann spends 1 Debt"), None);
+        assert_eq!(
+            p(Some(0), "Ann spends a Coffers"),
+            Some(Entry::PlayerCounter(Counter::Coffers, -1))
+        );
+        let on_pile = entry(
+            "card-counter",
+            Some(0),
+            Some("Family of Inventors"),
+            "Ann: 1 token put on the Odysseys pile (Family of Inventors)",
+        );
+        assert_eq!(
+            parse(&on_pile, &names()),
+            Some(Entry::CardCounter {
+                card: "Family of Inventors".into(),
+                pile: Some("Odysseys".into()),
+                delta: 1
+            })
+        );
     }
 }

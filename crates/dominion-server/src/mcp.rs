@@ -67,8 +67,9 @@ pub struct AnswerParams {
     /// A card name, instead of indices, when the decision allows naming any card.
     pub name: Option<String>,
     /// Answers the Way question in advance: "none" plays the card as itself, a Way's name
-    /// uses that Way. Applies to each Way question this answer leads to (a Throne Room's
-    /// replays too) and is ignored when none does. A Way that isn't in the game rejects
+    /// uses that Way. Applies to the Way questions of the card this answer plays (a Throne
+    /// Room's replays too), also when other seats react first, and is ignored when none
+    /// comes before you are asked something else. A Way that isn't in the game rejects
     /// the answer.
     pub way: Option<String>,
     #[serde(default)]

@@ -17,7 +17,7 @@ LOG
   Bo buys Silver
   Bo gains Silver
   Bo shuffles
-  Bo draws 5 card(s)
+  Bo draws 5 cards
   Ada starts turn 3
   Ada plays Militia
 DECISION d20: Militia: choose 2 cards to discard

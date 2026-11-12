@@ -438,7 +438,10 @@ fn hamlet_discards_for_an_action_and_a_buy() {
     deck(&mut g, P0, &[Card::Copper]);
     g.start();
     play(&mut g, Card::Hamlet);
+    let question = |g: &Game| g.pending().unwrap().question.clone().unwrap();
+    assert_eq!(question(&g), "discard for +1 Action");
     choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(question(&g), "discard for +1 Buy");
     choose_kinds(&mut g, &[Card::Curse]);
     assert_eq!(g.turn().actions, 2);
     assert_eq!(g.turn().buys, 2);

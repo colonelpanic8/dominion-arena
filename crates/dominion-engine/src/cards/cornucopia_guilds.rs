@@ -828,7 +828,9 @@ fn hamlet(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 | 3 => {
             f.pc += 1;
             let hand = g.hand(f.player).to_vec();
+            let bonus = if f.pc == 1 { "+1 Action" } else { "+1 Buy" };
             f.ask_cards(hand, 0, 1, Purpose::Discard)
+                .question(format!("discard for {bonus}"))
         }
         1 | 4 => {
             let chosen = input.cards();
@@ -1299,7 +1301,10 @@ fn play_twice(g: &mut Game, f: &mut CardFrame, input: Input, types: Types, at: u
             .filter(|&c| !g.is(c, Types::REWARD))
             .collect();
         f.pc = at + 1;
-        return Some(f.ask_cards(cands, 0, 1, Purpose::Play));
+        return Some(
+            f.ask_cards(cands, 0, 1, Purpose::Play)
+                .question("play twice"),
+        );
     }
     if f.pc == at + 1 {
         let c = input.card()?;

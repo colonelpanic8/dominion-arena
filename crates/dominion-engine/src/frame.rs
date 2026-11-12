@@ -813,6 +813,36 @@ fn fails(g: &Game, extra: &ExtraTurn) -> bool {
     }
 }
 
+/// Taking `p`'s extra turn from `source` next, and which of their other extra turns are then
+/// lost: all that can't be a third turn in a row, if `p` took the turn that just ended.
+fn extra_turn_label(g: &Game, p: PlayerId, source: Card, after_own: bool) -> String {
+    let mut others: Vec<&ExtraTurn> = g.extra_turns.iter().filter(|e| e.player == p).collect();
+    if let Some(i) = others.iter().position(|e| e.source == source) {
+        others.remove(i);
+    }
+    others.retain(|e| after_own && e.limit == ExtraLimit::ThirdInARow);
+    let take = format!("Take the extra turn from {source}");
+    if others.is_empty() {
+        return take;
+    }
+    let mut names: Vec<String> = vec![];
+    for e in &others {
+        let name = e.source.to_string();
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let (turns, are) = if others.len() == 1 {
+        ("turn", "is")
+    } else {
+        ("turns", "are")
+    };
+    format!(
+        "{take} (the extra {turns} from {} {are} then lost: no third turn in a row)",
+        names.join(" and ")
+    )
+}
+
 /// Ends what kept a card in play for extra turn `e` (Outpost, Voyage), which is starting,
 /// skipped or lost: the card is discarded in that turn's Clean-up, or the next one.
 fn release(g: &mut Game, e: &ExtraTurn) {
@@ -858,14 +888,15 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     Some(source) => source,
                     None if sources.len() > 1 => {
                         *pc = 2;
+                        let labels = sources
+                            .iter()
+                            .map(|&s| extra_turn_label(g, p, s, last == Some(p)))
+                            .collect();
                         return Flow::Ask(Decision {
                             public_choice: true,
                             player: p,
                             kind: DecisionKind::Choose {
-                                labels: sources
-                                    .iter()
-                                    .map(|s| format!("Take the extra turn from {s}"))
-                                    .collect(),
+                                labels,
                                 options: sources.into_iter().map(Opt::Card).collect(),
                                 min: 1,
                                 max: 1,
@@ -873,7 +904,9 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                             purpose: Purpose::Either,
                             source: None,
                             about: vec![],
-                            question: None,
+                            question: Some(
+                                "Between turns: which extra turn do you take next?".into(),
+                            ),
                         });
                     }
                     None => sources[0],

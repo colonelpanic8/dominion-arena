@@ -798,7 +798,14 @@ fn sinister_plot(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             let n = g.ext.renaissance.plot[p.index()];
-            let remove = format!("Remove your {n} tokens for +{n} Cards");
+            let remove = match n {
+                0 => "Remove your tokens (you have none)".to_string(),
+                n => format!(
+                    "Remove your {} for +{}",
+                    crate::amount(n, "token", "tokens"),
+                    crate::amount(n, "Card", "Cards")
+                ),
+            };
             f.pc = 1;
             f.ask_either(&["Add a token", &remove])
         }

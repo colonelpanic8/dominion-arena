@@ -234,7 +234,9 @@ them.
   `Value::Flags`, one per occasion). Players choose among
   triggers by card name: give one `Trigger::labelled` when the name doesn't say what it
   is (the Exile rule on a gained card, which card a Way's ability is on), and say what an
-  optional one does (`Trigger::optional("reveal it to be unaffected")`). Two options
+  optional one does (`Trigger::optional("reveal it to be unaffected")`), and a mandatory
+  one another player's lasting effect makes (`Trigger::doing("gain a Curse")`; its label
+  names that player). Two options
   with different effects under one name say what tells them apart (where the card is,
   the lasting effect's cards, its count). The window's
   decision has no `source`; its `question` names the moment ("P2 attacks you with
@@ -348,7 +350,8 @@ them.
   does something too), and labels name the cards they are about where the player can see
   them. Where the purpose doesn't say what a card, pile or number choice is for, add
   `Flow::question` ("put onto your Island mat", "choose a Supply pile for an Embargo
-  token", "how many cards go above it? 0 puts it on top").
+  token", "how many cards go above it? 0 puts it on top"). Text that counts something,
+  here and in the agent crate, says it with `amount` ("1 token", "2 Cards").
 - **Agents** get a `View`, never the `Game`: everything public (piles and their
   tokens through `PileView`, each player's tokens, mats and zones through
   `PlayerView`, landscapes, Artifacts, the Prophecy, Boon/Hex discards, lasting effects,
@@ -398,9 +401,15 @@ them.
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
   tests validate every view, decision and answer against the vendored copy.
   `Table::answer_with` (the MCP `answer` tool's `way`) also answers the `Purpose::Way`
-  questions of the physical card an answer plays and that card's consecutive replays;
-  a different card's question remains open. Decisions whose answer may play an
-  Action in a game with Ways end their prompt with `WAY_HINT`.
+  questions of the physical card an answer plays and that card's consecutive replays,
+  also after other seats are asked something first (Reactions to an Attack): the table
+  keeps the pre-answer, saved with it, until its seat is asked anything else or the play
+  is over; a different card's question remains open. The engine's questions and labels
+  call players by seat ("P2 attacks you"); `project::named` puts the players' names in,
+  for every question, label and announced choice. Decisions whose answer may play an
+  Action in a game with Ways end their prompt with `WAY_HINT` (a choice's options are
+  tried on a copy of the game: one plays a card if its player starts playing one before
+  being asked anything else, which is also the card a pre-answer applies to).
 
 ## Writing a set
 

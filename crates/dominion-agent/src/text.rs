@@ -202,13 +202,7 @@ fn decision(out: &mut Vec<String>, d: &AgentDecision) {
             out.push(format!("  {}", notes.join("; ")));
         }
         for o in d.options.iter().filter(|o| o.group == g.group) {
-            let zone = match o.zone.as_deref() {
-                Some(z) if o.action == "select" && !["hand", "looking"].contains(&z) => {
-                    format!(" (from {z})")
-                }
-                _ => String::new(),
-            };
-            out.push(format!("    {}: {}{zone}", o.index, o.label));
+            out.push(format!("    {}: {}", o.index, o.label));
         }
     }
 }
@@ -292,7 +286,7 @@ pub fn render(v: &AgentView) -> String {
                     let _ = write!(s, " {vp} VP");
                 }
                 if let Some(suns) = l.suns {
-                    let _ = write!(s, " {suns} suns");
+                    let _ = write!(s, " {}", dominion_engine::amount(suns, "Sun", "Suns"));
                 }
                 if l.active == Some(true) {
                     s.push_str(" active");

@@ -330,7 +330,8 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::Highwayman, HIGHWAYMAN_BLOCK)
                             .on(card)
-                            .via_lasting(l.id),
+                            .via_lasting(l.id)
+                            .doing("it does nothing"),
                     );
                 }
             }

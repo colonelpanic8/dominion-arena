@@ -1,6 +1,6 @@
 use dominion_agent::{
-    AgentDecision, AgentOption, Answer, AnswerError, Answered, JSON_SCHEMA, Table, WayChoice,
-    glossary_for, text,
+    AgentDecision, AgentOption, Answer, AnswerError, Answered, JSON_SCHEMA, Table, WAY_HINT,
+    WayChoice, glossary_for, text,
 };
 use dominion_engine::{Card, GameConfig, Kind, PlayerId, Set};
 use jsonschema::Validator;
@@ -73,6 +73,7 @@ fn random_games_produce_valid_views_and_answerable_options() {
                 .clone()
                 .expect("the deciding seat has a decision");
             assert_valid(&decision_schema, &json["decision"], "decision");
+            assert_cards_placed_where_it_tells_them_apart(&d);
             if step % 25 == 0 {
                 for p in 0..players {
                     let json = serde_json::to_value(table.view(PlayerId(p))).unwrap();
@@ -121,6 +122,27 @@ fn random_games_produce_valid_views_and_answerable_options() {
         let json = serde_json::to_value(table.view(PlayerId(0))).unwrap();
         assert_valid(&view_schema, &json, "the final view");
         assert!(json["game"]["result"].is_object());
+    }
+}
+
+/// Card options say where their cards are when not all are in one place, in words.
+fn assert_cards_placed_where_it_tells_them_apart(d: &AgentDecision) {
+    let cards: Vec<&AgentOption> = (d.options.iter())
+        .filter(|o| matches!(o.action.as_str(), "select" | "play") && o.zone.is_some())
+        .collect();
+    let zones: std::collections::BTreeSet<_> = cards.iter().map(|o| &o.zone).collect();
+    for o in &cards {
+        let name = o.card.as_deref().unwrap_or("a card");
+        let plain = [name.to_string(), format!("Play {name}")];
+        assert!(
+            zones.len() == 1 || !plain.contains(&o.label),
+            "{o:?} in {}",
+            d.prompt
+        );
+        assert!(
+            !o.label.contains("(from ") || o.label.contains("(from the top of "),
+            "{o:?}"
+        );
     }
 }
 
@@ -554,8 +576,8 @@ fn the_black_market_deck_is_a_face_down_pile_of_known_cards() {
     assert!(line.contains("Black Market (face down) x60"), "{line}");
 }
 
-/// The text names seats P1, P2, ... (as engine-made labels do), so each player's header
-/// says which seat they are.
+/// The text names seats P1, P2, ... in its sections, so each player's header says which
+/// seat they are.
 #[test]
 fn text_introduces_the_seat_numbers_it_uses() {
     let t = table(&[Card::Militia], 11, &["Ada", "Bo"]);
@@ -626,8 +648,8 @@ fn a_reaction_says_what_it_answers_and_does_and_names_no_single_source() {
     let (decline, moats) = d.options.split_last().unwrap();
     assert!(!moats.is_empty());
     let prompt = match moats.len() {
-        1 => "P1 attacks you with Militia: you may use this ability",
-        _ => "P1 attacks you with Militia: choose an ability to use next, or decline all",
+        1 => "Ada attacks you with Militia: you may use this ability",
+        _ => "Ada attacks you with Militia: choose an ability to use next, or decline all",
     };
     assert_eq!(d.prompt, prompt);
     for o in moats {
@@ -710,7 +732,7 @@ fn the_log_says_which_ability_changed_which_tokens() {
         lines[at + 1..at + 4],
         [
             "Ada's Silk Merchant resolves",
-            "Ada takes 1 Coffers",
+            "Ada takes a Coffers",
             "Ada takes 1 Villager"
         ],
         "{lines:#?}"
@@ -1162,4 +1184,172 @@ fn way_pre_answer_stops_at_a_different_physical_herald() {
         }
     }
     panic!("no game got a Herald in hand with another second from the top of the deck");
+}
+
+#[test]
+fn way_pre_answer_waits_while_another_seat_reacts_to_the_attack() {
+    let config = GameConfig {
+        landscapes: vec![Card::WayOfTheOx],
+        ..table(&[Card::Militia], 5, &[]).game().config().clone()
+    };
+    let mut t = Table::new("t", config, vec![]).unwrap();
+    let moat_in_hand = |t: &Table| {
+        let g = t.game();
+        (g.player(PlayerId(1)).hand.iter()).any(|&c| g.card(c) == Card::Moat)
+    };
+    let mut bought = [false; 2];
+    for _ in 0..3000 {
+        let Some(seat) = t.deciding() else { break };
+        let d = t.view(seat).decision.unwrap();
+        let militia = pick(&d, |o| {
+            o.action == "play" && o.card.as_deref() == Some("Militia")
+        });
+        if let Some(play) = militia.filter(|_| seat.0 == 0 && moat_in_hand(&t)) {
+            let answered = t
+                .answer_with(PlayerId(0), &play, Some(WayChoice::None))
+                .unwrap();
+            assert_eq!(answered.ways_answered, 0);
+            let reveal = t.view(PlayerId(1)).decision.unwrap();
+            assert_eq!(reveal.purpose, "trigger", "{}", reveal.prompt);
+            // Revealing Moat plays nothing.
+            assert!(!reveal.prompt.contains(WAY_HINT), "{}", reveal.prompt);
+            // It survives a save, and another seat's answer with a Way doesn't drop it.
+            let mut t: Table = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
+            let moat = pick(&reveal, |o| o.card.as_deref() == Some("Moat")).unwrap();
+            t.answer_with(PlayerId(1), &moat, Some(WayChoice::None))
+                .unwrap();
+            let next = t.view(PlayerId(0));
+            let d = next.decision.unwrap();
+            assert!(!is_way_question(&d), "{}", d.prompt);
+            assert_eq!(d.kind, "turn");
+            let log: Vec<&str> = next
+                .since_last_decision
+                .iter()
+                .map(|e| e.text.as_str())
+                .collect();
+            assert!(log.iter().any(|e| e.ends_with("plays Militia")), "{log:?}");
+            assert!(!log.iter().any(|e| e.contains("Way of the Ox")), "{log:?}");
+            return;
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let want = ["Buy Militia", "Buy Moat"][seat.index()];
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if d.phase.as_deref() == Some("action") {
+            end.unwrap()
+        } else {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| {
+                    pick(&d, |o| !bought[seat.index()] && o.label.starts_with(want))
+                        .inspect(|_| bought[seat.index()] = true)
+                })
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("P1 never has Militia while P2 holds Moat");
+}
+
+#[test]
+fn cards_offered_from_different_places_say_where_they_are() {
+    let mut t = table(&[Card::Fishmonger, Card::Merchant], 2, &[]);
+    let plays_from = |d: &AgentDecision, z: &str| {
+        (d.options.iter()).any(|o| o.action == "play" && o.zone.as_deref() == Some(z))
+    };
+    let mut buys = 0;
+    for _ in 0..3000 {
+        let seat = t.deciding().expect("the game goes on");
+        let d = t.view(seat).decision.unwrap();
+        if seat.0 == 0 && plays_from(&d, "deck") && plays_from(&d, "hand") {
+            for o in d.options.iter().filter(|o| o.action == "play") {
+                let card = o.card.as_deref().unwrap();
+                let place = match o.zone.as_deref() {
+                    Some("deck") => "in your deck",
+                    _ => "in your hand",
+                };
+                assert_eq!(o.label, format!("Play {card} ({place})"));
+            }
+            return;
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 || d.phase.as_deref() == Some("action") {
+            end.unwrap()
+        } else {
+            let want = ["Buy Fishmonger", "Buy Merchant"][buys % 2];
+            pick(&d, |o| o.action == "play")
+                .or_else(|| pick(&d, |o| o.label.starts_with(want)).inspect(|_| buys += 1))
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("P1 never may play a Shadow card from the deck and a card from the hand");
+}
+
+#[test]
+fn an_ability_that_plays_the_gained_card_hints_at_the_way_question() {
+    let config = GameConfig {
+        landscapes: vec![Card::Innovation, Card::WayOfTheOx],
+        ..table(&[], 3, &[]).game().config().clone()
+    };
+    let mut t = Table::new("t", config, vec![]).unwrap();
+    let mut innovation = false;
+    for _ in 0..3000 {
+        let seat = t.deciding().expect("the game goes on");
+        let d = t.view(seat).decision.unwrap();
+        if d.purpose == "trigger" && pick(&d, |o| o.card.as_deref() == Some("Innovation")).is_some()
+        {
+            assert!(d.prompt.ends_with(WAY_HINT), "{}", d.prompt);
+            let play = pick(&d, |o| o.card.as_deref() == Some("Innovation")).unwrap();
+            let answered = t.answer_with(seat, &play, Some(WayChoice::None)).unwrap();
+            assert_eq!(answered.ways_answered, 1);
+            return;
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 || d.phase.as_deref() == Some("action") {
+            end.unwrap()
+        } else {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| {
+                    pick(&d, |o| {
+                        !innovation && o.label.starts_with("Buy Project Innovation")
+                    })
+                    .inspect(|_| innovation = true)
+                })
+                .or_else(|| {
+                    let want = if innovation {
+                        "Buy Village"
+                    } else {
+                        "Buy Silver"
+                    };
+                    pick(&d, |o| o.label.starts_with(want))
+                })
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("Innovation is never asked about");
+}
+
+#[test]
+fn black_markets_purchase_is_a_buy_and_shows_each_cards_cost() {
+    let mut t = table(&[Card::BlackMarket], 4, &[]);
+    let buying = |_: PlayerId, d: &AgentDecision| {
+        d.source.as_deref() == Some("Black Market") && d.prompt.contains("to buy")
+    };
+    assert_eq!(play_to(&mut t, "Black Market", buying), Some(PlayerId(0)));
+    let d = t.view(PlayerId(0)).decision.unwrap();
+    assert_eq!(d.prompt, "Black Market: choose up to 1 card to buy");
+    assert!(!d.options.is_empty());
+    for o in &d.options {
+        let cost = o.cost.as_ref().expect("a cost");
+        let card = o.card.as_deref().unwrap();
+        assert_eq!(o.label, format!("{card} (${})", cost.coins));
+    }
 }

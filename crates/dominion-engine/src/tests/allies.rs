@@ -71,7 +71,7 @@ fn accept(g: &mut Game, card: Card) {
     };
     let i = labels
         .iter()
-        .position(|l| l.starts_with(card.name()))
+        .position(|l| unowned(l).starts_with(card.name()))
         .unwrap_or_else(|| panic!("no {card} trigger in {labels:?}"));
     let opt = options[i];
     respond(g, Response::option(opt));

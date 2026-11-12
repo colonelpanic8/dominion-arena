@@ -23,7 +23,7 @@ pub(crate) fn trigger_labelled(g: &mut Game, label: &str) {
     };
     let i = labels
         .iter()
-        .position(|l| l.starts_with(label))
+        .position(|l| unowned(l).starts_with(label))
         .unwrap_or_else(|| panic!("no {label} trigger in {labels:?}"));
     respond(g, Response::option(options[i]));
 }
@@ -957,10 +957,10 @@ fn secret_chamber_reacts_by_drawing_and_putting_back() {
     g.start();
     play(&mut g, Card::Militia);
     // In its own words, not Diplomat's ("then discard 3").
-    let labels = trigger_labels(&g);
-    assert!(
-        labels[0].contains("put 2 cards from your hand onto your deck"),
-        "{labels:?}"
+    assert_eq!(
+        trigger_labels(&g)[0],
+        "Secret Chamber: reveal it for +2 Cards, then put 2 cards from your hand on top of \
+         your deck (optional)"
     );
     trigger(&mut g, Card::SecretChamber);
     assert_eq!(g.hand(P1).len(), 6);

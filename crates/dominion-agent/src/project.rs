@@ -327,7 +327,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
         counters: BTreeMap::new(),
         decision: v
             .pending()
-            .map(|d| decision(game, known, d, cx.decision_id.unwrap_or("?")).0),
+            .map(|d| decision(game, known, d, cx.decision_id.unwrap_or("?"), cx.names).0),
         since_last_decision: log(game, cx),
     }
 }
@@ -580,7 +580,7 @@ pub const WAY_HINT: &str = "(to pre-answer the Way question, add way: \"none\" o
 
 /// Whether answering `d` may play an Action card, in a game with Ways: a Way question
 /// may follow.
-fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
+fn may_ask_way(game: &Game, v: &View<'_>, d: &Decision) -> bool {
     if !v.landscapes().iter().any(|l| l.kind() == Kind::Way) {
         return false;
     }
@@ -592,18 +592,127 @@ fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
         DecisionKind::Cards { candidates, .. } if d.purpose == Purpose::Play => {
             candidates.iter().any(|&c| action(c))
         }
-        // Reactions and Reserves that play themselves or replay a card.
-        DecisionKind::Choose { .. } if d.purpose == Purpose::Trigger => {
-            v.pending_triggers().iter().any(|t| {
-                t.source.is_some_and(|c| {
-                    matches!(
-                        v.zone(c),
-                        Some(Zone::Hand(p) | Zone::Mat(p, Mat::Tavern)) if p == d.player
-                    ) && action(c)
-                })
-            })
-        }
+        // Abilities that play a card (a Reaction playing itself, Innovation), "play it?":
+        // tried on a copy of the game. A Way question's pre-answer is for its replays.
+        DecisionKind::Choose { options, .. } if d.purpose != Purpose::Way => options
+            .iter()
+            .any(|&o| starts_playing_an_action(game, d.player, Response::Options(vec![o]))),
         _ => d.purpose == Purpose::Play,
+    }
+}
+
+/// Whether `response` starts `p` playing an Action card before they are asked anything
+/// else: what `p` learns on answering anyway.
+fn starts_playing_an_action(game: &Game, p: PlayerId, response: Response) -> bool {
+    let mut g = game.clone();
+    let since = g.log().len();
+    g.respond(response).is_ok()
+        && (g.plays_in_progress()).any(|(q, c, at)| q == p && at >= since && g.is(c, Types::ACTION))
+}
+
+/// `text` written by the engine, which calls players by seat ("P2 attacks you", "P2's
+/// Copper"), with the players' names.
+pub(crate) fn named(text: &str, names: &[String]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find('P') {
+        let (before, at) = rest.split_at(i);
+        out.push_str(before);
+        let digits = at[1..].len()
+            - at[1..]
+                .trim_start_matches(|c: char| c.is_ascii_digit())
+                .len();
+        let after = at[1 + digits..].chars().next();
+        let seat = at[1..1 + digits].parse::<usize>().ok();
+        let word = !out.ends_with(|c: char| c.is_alphanumeric())
+            && !after.is_some_and(|c| c.is_alphanumeric());
+        match seat
+            .filter(|_| word)
+            .and_then(|n| names.get(n.wrapping_sub(1)))
+        {
+            Some(name) => {
+                out.push_str(name);
+                rest = &at[1 + digits..];
+            }
+            None => {
+                out.push('P');
+                rest = &at[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A label written for its chooser, as the log says it of them: "Put Silver into your
+/// hand" is chosen "to put Silver into their hand".
+fn announced(label: &str) -> String {
+    const VERBS: &[&str] = &[
+        "Add", "Buy", "Discard", "Draw", "Exile", "Gain", "Keep", "Look", "Move", "Pass", "Play",
+        "Put", "Receive", "Remove", "Replay", "Return", "Reveal", "Set", "Spend", "Take", "Trash",
+    ];
+    const LOWER: &[&str] = &["At", "Each", "Now", "The"];
+    let mut words: Vec<String> = vec![];
+    for c in label.chars() {
+        match words.last_mut() {
+            Some(w) if w.chars().all(char::is_alphabetic) == c.is_alphabetic() => w.push(c),
+            _ => words.push(c.to_string()),
+        }
+    }
+    let mut out = String::with_capacity(label.len() + 8);
+    for (i, word) in words.iter().enumerate() {
+        let word = match word.as_str() {
+            "you" => "they",
+            "You" => "They",
+            "your" => "their",
+            "Your" => "Their",
+            "yours" => "theirs",
+            "yourself" => "themselves",
+            w => w,
+        };
+        if i == 0 && VERBS.contains(&word) {
+            out.push_str("to ");
+        }
+        if i == 0 && (VERBS.contains(&word) || LOWER.contains(&word)) {
+            out.push_str(&word.to_lowercase());
+        } else {
+            out.push_str(word);
+        }
+    }
+    out
+}
+
+/// Where a card offered to `me` is, in words: "in play", "in Ann's hand".
+fn option_place(game: &Game, zone: Zone, me: PlayerId, names: &[String]) -> String {
+    let whose = |p: PlayerId| {
+        if p == me {
+            "your".to_string()
+        } else {
+            let name = names.get(p.index()).cloned();
+            format!("{}'s", name.unwrap_or_else(|| p.to_string()))
+        }
+    };
+    match zone {
+        Zone::InPlay(p) if p == me => "in play".into(),
+        Zone::InPlay(p) => format!("in {} play area", whose(p)),
+        Zone::Hand(p) => format!("in {} hand", whose(p)),
+        Zone::Deck(p) => format!("in {} deck", whose(p)),
+        Zone::Discard(p) => format!("in {} discard pile", whose(p)),
+        Zone::Looking(p) => format!("from the top of {} deck", whose(p)),
+        Zone::SetAside(p) if p == me => "set aside".into(),
+        Zone::SetAside(p) => format!("set aside by {}", whose(p).trim_end_matches("'s")),
+        Zone::Mat(p, mat) => format!("on {} {} mat", whose(p), mat_title(mat)),
+        Zone::Pile(id) => format!("in the {} pile", game.pile(id).card),
+        Zone::Trash => "in the trash".into(),
+    }
+}
+
+fn mat_title(mat: Mat) -> &'static str {
+    match mat {
+        Mat::Tavern => "Tavern",
+        Mat::Island => "Island",
+        Mat::NativeVillage => "Native Village",
+        Mat::Exile => "Exile",
     }
 }
 
@@ -613,8 +722,24 @@ pub(crate) fn decision(
     known: &KnownCards,
     d: &Decision,
     id: &str,
+    names: &[String],
 ) -> (AgentDecision, Vec<Target>) {
     let v = game.view(d.player);
+    // Cards are said to be somewhere only where that tells options apart.
+    let cards: Vec<CardId> = match &d.kind {
+        DecisionKind::Turn { moves, .. } => (moves.iter())
+            .filter_map(|m| match m {
+                Move::Play(c) => Some(*c),
+                _ => None,
+            })
+            .collect(),
+        DecisionKind::Cards { candidates, .. } => candidates.clone(),
+        _ => vec![],
+    };
+    let zones: BTreeSet<Zone> = cards.iter().filter_map(|&c| v.zone(c)).collect();
+    let placed = zones.len() > 1;
+    let gains = matches!(d.kind, DecisionKind::Cards { .. }) && d.purpose == Purpose::Gain;
+    let question = d.question.as_deref().map(|q| named(q, names));
     let source = d.source.map(|c| c.name().to_string());
     let about: Vec<&str> = d
         .about
@@ -636,6 +761,18 @@ pub(crate) fn decision(
         let mut o = option(i, action, name.clone());
         o.card = v.card(c).map(|c| c.name().to_string());
         o.zone = v.zone(c).map(zone_name);
+        let mut about = vec![];
+        // What a card to gain or buy costs now.
+        if let Some(cost) = v.cost_of(c).filter(|_| gains) {
+            about.push(cost.to_string());
+            o.cost = Some(self::cost(cost));
+        }
+        if let Some(z) = v.zone(c).filter(|_| placed) {
+            about.push(option_place(game, z, d.player, names));
+        }
+        if !about.is_empty() {
+            o.label = format!("{name} ({})", about.join(", "));
+        }
         o
     };
     let (kind, prompt, min, max, ordered, phase) = match &d.kind {
@@ -698,7 +835,7 @@ pub(crate) fn decision(
                 ""
             };
             let what = how_many(*min, *max, "card", "cards");
-            let ask = match (&d.question, verb(d.purpose)) {
+            let ask = match (&question, verb(d.purpose)) {
                 (Some(q), _) => format!("choose {what} to {q}"),
                 (None, Some(verb)) => format!("choose {what} to {verb}"),
                 (None, None) => format!("choose {what}"),
@@ -721,7 +858,7 @@ pub(crate) fn decision(
                 let i = items.len();
                 items.push((option(i, "decline", "None".into()), Target::Pile(None)));
             }
-            let prompt = match (&d.question, verb(d.purpose)) {
+            let prompt = match (&question, verb(d.purpose)) {
                 (Some(q), _) => format!("{prefix}{q}"),
                 (None, Some(verb)) => format!("{prefix}choose a pile to {verb} from"),
                 (None, None) => format!("{prefix}choose a pile"),
@@ -737,7 +874,7 @@ pub(crate) fn decision(
             let triggers = v.pending_triggers();
             for (j, &opt) in opts.iter().enumerate() {
                 let i = items.len();
-                let label = labels.get(j).cloned().unwrap_or_default();
+                let label = labels.get(j).map_or(String::new(), |l| named(l, names));
                 let mut o = match opt {
                     Opt::Yes => option(i, "yes", label),
                     Opt::No => option(i, "no", label),
@@ -769,7 +906,7 @@ pub(crate) fn decision(
                 }
                 items.push((o, Target::Opt(opt)));
             }
-            let prompt = match (&d.question, opts.as_slice()) {
+            let prompt = match (&question, opts.as_slice()) {
                 (Some(q), _) => format!("{prefix}{q}"),
                 (None, [Opt::Yes, Opt::No]) => {
                     format!("{prefix}{}?", lower_first(&items[0].0.label))
@@ -798,7 +935,7 @@ pub(crate) fn decision(
                 o.value = Some(n);
                 items.push((o, Target::Number(n)));
             }
-            let prompt = match (&d.question, d.purpose) {
+            let prompt = match (&question, d.purpose) {
                 (Some(q), _) => format!("{prefix}{q} ({min} to {max})"),
                 (None, Purpose::Overpay) => {
                     format!("{prefix}choose how much to overpay (${min} to ${max})")
@@ -809,7 +946,7 @@ pub(crate) fn decision(
         }
     };
     let (options, targets): (Vec<AgentOption>, Vec<Target>) = items.into_iter().unzip();
-    let prompt = if may_ask_way(&v, d) {
+    let prompt = if may_ask_way(game, &v, d) {
         format!("{prompt} {WAY_HINT}")
     } else {
         prompt
@@ -949,9 +1086,7 @@ fn several(n: usize, one: &str, many: &str) -> String {
     }
 }
 
-fn amount(n: i32, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
-}
+use dominion_engine::amount;
 
 /// A token's printed name.
 fn token_text(t: Token) -> &'static str {
@@ -1059,7 +1194,10 @@ fn counter_text(
     let up = delta > 0;
     if let Some(p) = player {
         let (verb, what) = match counter {
-            C::Coffers => (if up { "takes" } else { "spends" }, format!("{n} Coffers")),
+            C::Coffers => (
+                if up { "takes" } else { "spends" },
+                several(n as usize, "Coffers", "Coffers"),
+            ),
             C::Villagers => (
                 if up { "takes" } else { "spends" },
                 amount(n, "Villager", "Villagers"),
@@ -1168,7 +1306,12 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             format!(
                 "{} chooses {}{}",
                 name(*player),
-                choices.join("; "),
+                named(
+                    &(choices.iter().map(|c| announced(c)))
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                    cx.names
+                ),
                 source.map_or(String::new(), |c| format!(" ({c})"))
             ),
         ),
@@ -1181,16 +1324,14 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             *player,
             Some(*card),
             format!(
-                "{}{} token{} {} {}{}",
+                "{}{} {} {}",
                 player.map_or(String::new(), |p| format!("{}: ", name(p))),
-                delta.unsigned_abs(),
-                if delta.unsigned_abs() == 1 { "" } else { "s" },
+                amount(delta.unsigned_abs(), "token", "tokens"),
                 if *delta > 0 { "put on" } else { "removed from" },
-                card,
-                pile.map_or(String::new(), |p| format!(
-                    " on the {} pile",
-                    game.pile(p).card
-                ))
+                match pile {
+                    Some(p) => format!("the {} pile ({card})", game.pile(*p).card),
+                    None => card.to_string(),
+                }
             ),
         ),
         Event::Bought { player, card } | Event::BoughtLandscape { player, card } => (
@@ -1204,7 +1345,10 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             potions,
         } => {
             let p = if *potions > 0 {
-                format!(" and {potions} Potion(s)")
+                format!(
+                    " and {}",
+                    dominion_engine::amount(*potions as i64, "Potion", "Potions")
+                )
             } else {
                 String::new()
             };
@@ -1277,7 +1421,11 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
         Event::Drew { player, count } => (
             Some(*player),
             None,
-            format!("{} draws {count} card(s)", name(*player)),
+            format!(
+                "{} draws {}",
+                name(*player),
+                amount(*count as i64, "card", "cards")
+            ),
         ),
         Event::Shuffled { player } => (Some(*player), None, format!("{} shuffles", name(*player))),
         Event::Received { player, card } => (
@@ -1465,4 +1613,45 @@ fn log(game: &Game, cx: &Context<'_>) -> Vec<LogEntry> {
         .skip(cx.log_from)
         .map(|(i, e)| log_entry(i, e, game, cx))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::named;
+
+    #[test]
+    fn a_chosen_label_is_announced_in_the_third_person() {
+        for (label, said) in [
+            ("Put Silver into your hand", "to put Silver into their hand"),
+            ("+1 Card and +1 Action", "+1 Card and +1 Action"),
+            (
+                "At the start of your next turn",
+                "at the start of their next turn",
+            ),
+            (
+                "Take the extra turn from Mission",
+                "to take the extra turn from Mission",
+            ),
+            ("Gold", "Gold"),
+            (
+                "2 (how many go on your deck?)",
+                "2 (how many go on their deck?)",
+            ),
+        ] {
+            assert_eq!(super::announced(label), said);
+        }
+    }
+
+    #[test]
+    fn engine_text_names_players_by_name() {
+        let names = ["Ann".to_string(), "Ben".to_string()];
+        assert_eq!(named("P2 attacks you", &names), "Ben attacks you");
+        assert_eq!(
+            named("discard P1's Copper, P2's Estate?", &names),
+            "discard Ann's Copper, Ben's Estate?"
+        );
+        for text in ["Transmute ($0P, 8 left)", "P3 gains it", "P", "Pawn", "1P2"] {
+            assert_eq!(named(text, &names), text);
+        }
+    }
 }

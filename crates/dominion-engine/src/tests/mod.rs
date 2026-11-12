@@ -1339,6 +1339,14 @@ fn trigger_question(g: &Game) -> String {
     g.pending().unwrap().question.clone().unwrap_or_default()
 }
 
+/// A trigger's label without whose lasting effect it is ("P2's Gatekeeper").
+pub(crate) fn unowned(label: &str) -> &str {
+    match label.split_once("'s ") {
+        Some((who, rest)) if who.starts_with('P') && who[1..].parse::<u8>().is_ok() => rest,
+        _ => label,
+    }
+}
+
 fn trigger_labels(g: &Game) -> Vec<String> {
     match &g.pending().unwrap().kind {
         DecisionKind::Choose { labels, .. } => labels.clone(),
