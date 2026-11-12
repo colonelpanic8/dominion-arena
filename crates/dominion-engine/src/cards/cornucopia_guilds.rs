@@ -334,7 +334,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::HorseTraders, HORSE_TRADERS_SET_ASIDE)
                                 .on(c)
-                                .optional("set it aside: at the start of your next turn, +1 Card and it returns to your hand"),
+                                .reaction("set it aside: at the start of your next turn, +1 Card and it returns to your hand"),
                         );
                     }
                 }

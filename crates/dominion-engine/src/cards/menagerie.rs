@@ -422,7 +422,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::VillageGreen, REACT)
                             .on(card)
-                            .optional("reveal it to play it"),
+                            .reaction("reveal it to play it"),
                     );
                 }
             }
@@ -943,7 +943,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     Trigger::new(p, g.card(c), REACT)
                         .on(c)
                         .data(card.0 as i32)
-                        .optional(if g.card(c) == Card::Sleigh {
+                        .reaction(if g.card(c) == Card::Sleigh {
                             format!(
                                 "discard it to put {} into your hand or onto your deck",
                                 g.card(card)

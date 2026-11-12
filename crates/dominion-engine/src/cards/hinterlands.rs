@@ -374,7 +374,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, kind, REACT_PLAY)
                             .on(card)
-                            .optional("play it"),
+                            .reaction("play it"),
                     );
                 }
                 if kind == Card::Duchy
@@ -393,7 +393,7 @@ impl SetRules for Rules {
                                 out.push(
                                     Trigger::new(q, Card::FoolsGold, FOOLS_GOLD_TRASH)
                                         .on(c)
-                                        .optional(
+                                        .reaction(
                                             "trash it from your hand to gain a Gold onto your deck",
                                         ),
                                 );
@@ -411,7 +411,7 @@ impl SetRules for Rules {
                             out.push(
                                 Trigger::new(player, Card::Trader, TRADER_EXCHANGE)
                                     .on(c)
-                                    .optional(format!(
+                                    .reaction(format!(
                                         "reveal it to exchange {} for a Silver",
                                         g.card(card)
                                     )),
@@ -451,7 +451,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::Trail, REACT_PLAY)
                             .on(card)
-                            .optional("play it"),
+                            .reaction("play it"),
                     );
                 }
                 _ => {}
@@ -465,14 +465,14 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Tunnel, TUNNEL_GOLD)
                                 .on(card)
-                                .optional("reveal it to gain a Gold"),
+                                .reaction("reveal it to gain a Gold"),
                         );
                     }
                     k @ (Card::Trail | Card::Weaver) => {
                         out.push(
                             Trigger::new(player, k, REACT_PLAY)
                                 .on(card)
-                                .optional("play it"),
+                                .reaction("play it"),
                         );
                     }
                     _ => {}
@@ -489,7 +489,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::GuardDog, GUARD_DOG_PLAY)
                                 .on(c)
-                                .optional("play it from your hand"),
+                                .reaction("play it from your hand"),
                         );
                     }
                 }

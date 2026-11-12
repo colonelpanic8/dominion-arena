@@ -204,9 +204,10 @@ them.
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
   card is: the stop-moving rule) when producing a trigger. A declined ability stays
-  declined, except that a Reaction (an optional ability on a Reaction card) another
-  player uses gives the players who declined theirs another chance, until everyone has
-  declined. Things that happen together
+  declined, except that a Reaction (a Reaction card's own ability: its producer says so
+  with `Trigger::reaction`, never inferred from a card's types, since an ability about a
+  gained Tunnel is no Reaction) another player uses gives the players who declined theirs
+  another chance, until everyone has declined. Things that happen together
   share one window (`Window::open_all`): cards trashed together (`Frame::trash`) or
   discarded together (`Frame::discard`) are all moved first, then their player orders
   the abilities, and a card that has moved meanwhile (a Trail shuffled away by the first

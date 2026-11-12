@@ -407,7 +407,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::Shield, REACT)
                                 .on(c)
-                                .optional("reveal it to be unaffected")
+                                .reaction("reveal it to be unaffected")
                                 .protects(),
                         );
                     }
@@ -904,7 +904,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     out.push(
                         Trigger::new(p, g.card(c), REACT)
                             .on(c)
-                            .optional("play it from your hand"),
+                            .reaction("play it from your hand"),
                     );
                 }
             }

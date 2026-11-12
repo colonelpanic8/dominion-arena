@@ -157,7 +157,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Clerk, CLERK_START)
                                 .on(c)
-                                .optional("play it from your hand"),
+                                .reaction("play it from your hand"),
                         );
                     }
                 }
@@ -184,7 +184,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::Watchtower, WATCHTOWER_REACT)
                             .on(w)
-                            .optional(format!(
+                            .reaction(format!(
                                 "reveal it to trash {} or put it onto your deck",
                                 g.card(card)
                             )),
