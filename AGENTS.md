@@ -396,9 +396,13 @@ them.
   nobody else follows which copy is on top; seeing that top may show the same copy
   revealed earlier. Privately ordering a selection from a searched discard pile mixes
   it with every card the selection could have included, before following the moves.
+  Cards put in a private order out of a public zone (Mandarin's Treasures from play) are
+  followed out of it and mixed once they have all left it.
   A shuffle records its mix before its individual zone moves, whose random order
   nobody can follow.
-  Mixing splits the mixed cards from groups containing untouched cards. Cards with
+  Mixing (a shuffle, a private order, cards leaving a held set unseen) splits the mixed
+  cards from groups containing untouched cards, unless they are all of one group (cards
+  the viewer already could not tell apart). Cards with
   only one possible identity are removed from their family's candidate pool.
   A family wholly in one zone is known there as its whole multiset, even when its
   groups still distinguish parts that could be followed later.
