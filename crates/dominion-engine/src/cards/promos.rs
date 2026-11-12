@@ -329,7 +329,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 4;
-            f.ask_cards(buyable, 0, 1, Purpose::Gain)
+            f.ask_cards(buyable, 0, 1, Purpose::Gain).question("buy")
         }
         4 => match input.card() {
             Some(c) => {

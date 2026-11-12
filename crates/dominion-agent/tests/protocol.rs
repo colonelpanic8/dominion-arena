@@ -576,8 +576,8 @@ fn the_black_market_deck_is_a_face_down_pile_of_known_cards() {
     assert!(line.contains("Black Market (face down) x60"), "{line}");
 }
 
-/// The text names seats P1, P2, ... (as engine-made labels do), so each player's header
-/// says which seat they are.
+/// The text names seats P1, P2, ... in its sections, so each player's header says which
+/// seat they are.
 #[test]
 fn text_introduces_the_seat_numbers_it_uses() {
     let t = table(&[Card::Militia], 11, &["Ada", "Bo"]);
@@ -1335,4 +1335,21 @@ fn an_ability_that_plays_the_gained_card_hints_at_the_way_question() {
         t.answer(seat, &answer).unwrap();
     }
     panic!("Innovation is never asked about");
+}
+
+#[test]
+fn black_markets_purchase_is_a_buy_and_shows_each_cards_cost() {
+    let mut t = table(&[Card::BlackMarket], 4, &[]);
+    let buying = |_: PlayerId, d: &AgentDecision| {
+        d.source.as_deref() == Some("Black Market") && d.prompt.contains("to buy")
+    };
+    assert_eq!(play_to(&mut t, "Black Market", buying), Some(PlayerId(0)));
+    let d = t.view(PlayerId(0)).decision.unwrap();
+    assert_eq!(d.prompt, "Black Market: choose up to 1 card to buy");
+    assert!(!d.options.is_empty());
+    for o in &d.options {
+        let cost = o.cost.as_ref().expect("a cost");
+        let card = o.card.as_deref().unwrap();
+        assert_eq!(o.label, format!("{card} (${})", cost.coins));
+    }
 }

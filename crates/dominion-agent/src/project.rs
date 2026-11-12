@@ -700,6 +700,7 @@ pub(crate) fn decision(
     };
     let zones: BTreeSet<Zone> = cards.iter().filter_map(|&c| v.zone(c)).collect();
     let placed = zones.len() > 1;
+    let gains = matches!(d.kind, DecisionKind::Cards { .. }) && d.purpose == Purpose::Gain;
     let question = d.question.as_deref().map(|q| named(q, names));
     let source = d.source.map(|c| c.name().to_string());
     let about: Vec<&str> = d
@@ -722,8 +723,17 @@ pub(crate) fn decision(
         let mut o = option(i, action, name.clone());
         o.card = v.card(c).map(|c| c.name().to_string());
         o.zone = v.zone(c).map(zone_name);
+        let mut about = vec![];
+        // What a card to gain or buy costs now.
+        if let Some(cost) = v.cost_of(c).filter(|_| gains) {
+            about.push(cost.to_string());
+            o.cost = Some(self::cost(cost));
+        }
         if let Some(z) = v.zone(c).filter(|_| placed) {
-            o.label = format!("{name} ({})", option_place(game, z, d.player, names));
+            about.push(option_place(game, z, d.player, names));
+        }
+        if !about.is_empty() {
+            o.label = format!("{name} ({})", about.join(", "));
         }
         o
     };
