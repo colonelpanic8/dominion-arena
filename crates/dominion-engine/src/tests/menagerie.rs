@@ -2878,6 +2878,17 @@ fn way_of_the_mouses_card_cannot_move_itself() {
     assert_eq!(g.zone(mouse), holder);
 }
 
+/// "In games using this" holds while Shaman is only the card Way of the Mouse set aside
+/// (wiki, In games using this): the Way silences the rest of what is below its line.
+#[test]
+fn a_shaman_set_aside_by_way_of_the_mouse_is_used_by_the_game() {
+    let mut g = way_game(Card::WayOfTheMouse, &[Card::Smithy]);
+    set_mouse(&mut g, Card::Shaman);
+    replace(&mut g, Zone::Trash, &[Card::Silver]);
+    g.start();
+    assert_eq!(gained(&g, P0), [Card::Silver]);
+}
+
 /// A game whose Way of the Mouse card is `mouse`, with P0 about to play a Village.
 fn mouse_game(mouse: Card) -> Game {
     let mut g = setup_with(GameConfig {
