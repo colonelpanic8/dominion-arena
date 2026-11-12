@@ -404,7 +404,9 @@ them.
   is over; a different card's question remains open. The engine's questions and labels
   call players by seat ("P2 attacks you"); `project::named` puts the players' names in,
   for every question, label and announced choice. Decisions whose answer may play an
-  Action in a game with Ways end their prompt with `WAY_HINT`.
+  Action in a game with Ways end their prompt with `WAY_HINT` (a choice's options are
+  tried on a copy of the game: one plays a card if its player starts playing one before
+  being asked anything else, which is also the card a pre-answer applies to).
 
 ## Writing a set
 

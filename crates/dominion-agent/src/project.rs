@@ -580,7 +580,7 @@ pub const WAY_HINT: &str = "(to pre-answer the Way question, add way: \"none\" o
 
 /// Whether answering `d` may play an Action card, in a game with Ways: a Way question
 /// may follow.
-fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
+fn may_ask_way(game: &Game, v: &View<'_>, d: &Decision) -> bool {
     if !v.landscapes().iter().any(|l| l.kind() == Kind::Way) {
         return false;
     }
@@ -592,19 +592,22 @@ fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
         DecisionKind::Cards { candidates, .. } if d.purpose == Purpose::Play => {
             candidates.iter().any(|&c| action(c))
         }
-        // Reactions and Reserves that play themselves or replay a card.
-        DecisionKind::Choose { .. } if d.purpose == Purpose::Trigger => {
-            v.pending_triggers().iter().any(|t| {
-                t.source.is_some_and(|c| {
-                    matches!(
-                        v.zone(c),
-                        Some(Zone::Hand(p) | Zone::Mat(p, Mat::Tavern)) if p == d.player
-                    ) && action(c)
-                })
-            })
-        }
+        // Abilities that play a card (a Reaction playing itself, Innovation), "play it?":
+        // tried on a copy of the game. A Way question's pre-answer is for its replays.
+        DecisionKind::Choose { options, .. } if d.purpose != Purpose::Way => options
+            .iter()
+            .any(|&o| starts_playing_an_action(game, d.player, Response::Options(vec![o]))),
         _ => d.purpose == Purpose::Play,
     }
+}
+
+/// Whether `response` starts `p` playing an Action card before they are asked anything
+/// else: what `p` learns on answering anyway.
+fn starts_playing_an_action(game: &Game, p: PlayerId, response: Response) -> bool {
+    let mut g = game.clone();
+    let since = g.log().len();
+    g.respond(response).is_ok()
+        && (g.plays_in_progress()).any(|(q, c, at)| q == p && at >= since && g.is(c, Types::ACTION))
 }
 
 /// `text` written by the engine, which calls players by seat ("P2 attacks you", "P2's
@@ -895,7 +898,7 @@ pub(crate) fn decision(
         }
     };
     let (options, targets): (Vec<AgentOption>, Vec<Target>) = items.into_iter().unzip();
-    let prompt = if may_ask_way(&v, d) {
+    let prompt = if may_ask_way(game, &v, d) {
         format!("{prompt} {WAY_HINT}")
     } else {
         prompt

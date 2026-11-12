@@ -1,6 +1,6 @@
 use dominion_agent::{
-    AgentDecision, AgentOption, Answer, AnswerError, Answered, JSON_SCHEMA, Table, WayChoice,
-    glossary_for, text,
+    AgentDecision, AgentOption, Answer, AnswerError, Answered, JSON_SCHEMA, Table, WAY_HINT,
+    WayChoice, glossary_for, text,
 };
 use dominion_engine::{Card, GameConfig, Kind, PlayerId, Set};
 use jsonschema::Validator;
@@ -1211,6 +1211,8 @@ fn way_pre_answer_waits_while_another_seat_reacts_to_the_attack() {
             assert_eq!(answered.ways_answered, 0);
             let reveal = t.view(PlayerId(1)).decision.unwrap();
             assert_eq!(reveal.purpose, "trigger", "{}", reveal.prompt);
+            // Revealing Moat plays nothing.
+            assert!(!reveal.prompt.contains(WAY_HINT), "{}", reveal.prompt);
             // It survives a save, and another seat's answer with a Way doesn't drop it.
             let mut t: Table = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
             let moat = pick(&reveal, |o| o.card.as_deref() == Some("Moat")).unwrap();
@@ -1285,4 +1287,52 @@ fn cards_offered_from_different_places_say_where_they_are() {
         t.answer(seat, &answer).unwrap();
     }
     panic!("P1 never may play a Shadow card from the deck and a card from the hand");
+}
+
+#[test]
+fn an_ability_that_plays_the_gained_card_hints_at_the_way_question() {
+    let config = GameConfig {
+        landscapes: vec![Card::Innovation, Card::WayOfTheOx],
+        ..table(&[], 3, &[]).game().config().clone()
+    };
+    let mut t = Table::new("t", config, vec![]).unwrap();
+    let mut innovation = false;
+    for _ in 0..3000 {
+        let seat = t.deciding().expect("the game goes on");
+        let d = t.view(seat).decision.unwrap();
+        if d.purpose == "trigger" && pick(&d, |o| o.card.as_deref() == Some("Innovation")).is_some()
+        {
+            assert!(d.prompt.ends_with(WAY_HINT), "{}", d.prompt);
+            let play = pick(&d, |o| o.card.as_deref() == Some("Innovation")).unwrap();
+            let answered = t.answer_with(seat, &play, Some(WayChoice::None)).unwrap();
+            assert_eq!(answered.ways_answered, 1);
+            return;
+        }
+        let end = pick(&d, |o| o.action == "end-phase");
+        let answer = if d.kind != "turn" {
+            first(&d)
+        } else if seat.0 != 0 || d.phase.as_deref() == Some("action") {
+            end.unwrap()
+        } else {
+            pick(&d, |o| o.action == "play")
+                .or_else(|| {
+                    pick(&d, |o| {
+                        !innovation && o.label.starts_with("Buy Project Innovation")
+                    })
+                    .inspect(|_| innovation = true)
+                })
+                .or_else(|| {
+                    let want = if innovation {
+                        "Buy Village"
+                    } else {
+                        "Buy Silver"
+                    };
+                    pick(&d, |o| o.label.starts_with(want))
+                })
+                .or(end)
+                .unwrap()
+        };
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("Innovation is never asked about");
 }
