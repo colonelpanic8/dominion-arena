@@ -1131,6 +1131,41 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             Some(*card),
             format!("{} names {card}", name(*player)),
         ),
+        Event::Chosen {
+            player,
+            source,
+            choices,
+        } => (
+            Some(*player),
+            *source,
+            format!(
+                "{} chooses {}{}",
+                name(*player),
+                choices.join("; "),
+                source.map_or(String::new(), |c| format!(" ({c})"))
+            ),
+        ),
+        Event::CardCounter {
+            player,
+            card,
+            pile,
+            delta,
+        } => (
+            *player,
+            Some(*card),
+            format!(
+                "{}{} token{} {} {}{}",
+                player.map_or(String::new(), |p| format!("{}: ", name(p))),
+                delta.unsigned_abs(),
+                if delta.unsigned_abs() == 1 { "" } else { "s" },
+                if *delta > 0 { "put on" } else { "removed from" },
+                card,
+                pile.map_or(String::new(), |p| format!(
+                    " on the {} pile",
+                    game.pile(p).card
+                ))
+            ),
+        ),
         Event::Bought { player, card } | Event::BoughtLandscape { player, card } => (
             Some(*player),
             Some(*card),

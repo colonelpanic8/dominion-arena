@@ -2948,3 +2948,31 @@ fn a_liaison_joining_mid_game_brings_an_ally_and_its_favors() {
     assert_eq!(g.landscapes().len(), 1);
     assert_eq!(favors(&g, P0), 5);
 }
+
+#[test]
+fn family_of_inventors_logs_the_pile_receiving_a_token() {
+    let world = |pile: Card| {
+        let mut g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            landscapes: vec![Card::FamilyOfInventors],
+            ..GameConfig::new(2, vec![Card::Underling, Card::Smithy], 7)
+        });
+        g.players[0].favors = 2;
+        hand(&mut g, P0, &[Card::Copper]);
+        g.start();
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+        choose_pile(&mut g, pile);
+        let printed = pile.cost().unwrap();
+        assert_eq!(g.cost(pile).coins + 1, printed.coins);
+        assert!(g.log().contains(&Event::CardCounter {
+            player: None,
+            card: Card::FamilyOfInventors,
+            pile: g.supply_pile(pile),
+            delta: 1
+        }));
+        g
+    };
+    let (a, b) = (world(Card::Smithy), world(Card::Silver));
+    assert_ne!(a.log(), b.log());
+}

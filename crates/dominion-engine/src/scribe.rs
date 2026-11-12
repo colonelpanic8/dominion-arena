@@ -49,6 +49,10 @@ struct Tally {
     piles: Vec<[i32; 4]>,
     trade_route_mat: u32,
     suns: u32,
+    #[serde(default)]
+    plot: Vec<u32>,
+    #[serde(default)]
+    inventors: BTreeMap<PileId, u32>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -115,6 +119,8 @@ impl Game {
                 .collect(),
             trade_route_mat: self.trade_route_mat,
             suns: self.prophecy.map_or(0, |(_, n)| n),
+            plot: self.ext.renaissance.plot.clone(),
+            inventors: self.ext.allies.inventors.iter().copied().collect(),
         }
     }
 
@@ -225,6 +231,43 @@ impl Game {
     pub(crate) fn end_resolving(&mut self) {
         self.sync_log(None);
         self.scribe.resolving.pop();
+    }
+
+    pub(crate) fn log_choice(&mut self, decision: &crate::Decision, response: &crate::Response) {
+        use crate::{DecisionKind, Response};
+        if !decision.public_choice {
+            return;
+        }
+        let choices = match (&decision.kind, response) {
+            (
+                DecisionKind::Choose {
+                    options, labels, ..
+                },
+                Response::Options(chosen),
+            ) => {
+                if decision.about.iter().any(|&c| !self.is_public(c)) {
+                    return;
+                }
+                options
+                    .iter()
+                    .zip(labels)
+                    .filter(|(o, _)| chosen.contains(o))
+                    .map(|(_, label)| label.clone())
+                    .collect()
+            }
+            (DecisionKind::Number { .. }, Response::Number(n)) => {
+                vec![match &decision.question {
+                    Some(question) => format!("{n} ({question})"),
+                    None => n.to_string(),
+                }]
+            }
+            _ => return,
+        };
+        self.emit(Event::Chosen {
+            player: decision.player,
+            source: decision.source,
+            choices,
+        });
     }
 
     /// Logs +Actions, +Buys and +$ given outside a card's own play.
@@ -415,6 +458,35 @@ fn counter_changes(old: &Tally, new: &Tally, out: &mut Vec<Event>) {
                     delta,
                 });
             }
+        }
+    }
+    for (i, &now) in new.plot.iter().enumerate() {
+        let was = old.plot.get(i).copied().unwrap_or(0);
+        if now != was {
+            out.push(Event::CardCounter {
+                player: Some(PlayerId(i as u8)),
+                card: Card::SinisterPlot,
+                pile: None,
+                delta: now as i32 - was as i32,
+            });
+        }
+    }
+    let piles: std::collections::BTreeSet<_> = old
+        .inventors
+        .keys()
+        .chain(new.inventors.keys())
+        .copied()
+        .collect();
+    for pile in piles {
+        let delta = new.inventors.get(&pile).copied().unwrap_or(0) as i32
+            - old.inventors.get(&pile).copied().unwrap_or(0) as i32;
+        if delta != 0 {
+            out.push(Event::CardCounter {
+                player: None,
+                card: Card::FamilyOfInventors,
+                pile: Some(pile),
+                delta,
+            });
         }
     }
     for (counter, now, was) in [

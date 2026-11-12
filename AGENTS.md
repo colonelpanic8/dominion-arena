@@ -375,7 +375,10 @@ them.
   Boon rather than a card's own play are logged as `Bonus`. So never emit a move or
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one
-  `Exchanged` line.
+  `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
+  decisions mark their labels public with `public_choice`, and labels referring to private
+  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors
+  are tallied as `CardCounter`.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The

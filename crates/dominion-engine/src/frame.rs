@@ -109,6 +109,13 @@ impl Flow {
         self
     }
 
+    pub(crate) fn public_choice(mut self) -> Flow {
+        if let Flow::Ask(d) = &mut self {
+            d.public_choice = true;
+        }
+        self
+    }
+
     /// Says in words what the decision asked asks (see [`Decision::question`]).
     pub(crate) fn question(mut self, text: impl Into<String>) -> Flow {
         if let Flow::Ask(d) = &mut self {
@@ -761,6 +768,7 @@ fn resume_shuffle(
                 *pc = 2;
                 let n = bottom.len();
                 return Flow::Ask(Decision {
+                    public_choice: false,
                     player: p,
                     kind: DecisionKind::Cards {
                         candidates: bottom.iter().rev().copied().collect(),
@@ -851,6 +859,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     None if sources.len() > 1 => {
                         *pc = 2;
                         return Flow::Ask(Decision {
+                            public_choice: true,
                             player: p,
                             kind: DecisionKind::Choose {
                                 labels: sources
@@ -944,6 +953,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
 
 fn ask_moves(player: PlayerId, phase: Phase, moves: Vec<Move>) -> Flow {
     Flow::Ask(Decision {
+        public_choice: false,
         player,
         kind: DecisionKind::Turn { phase, moves },
         purpose: Purpose::Turn,
@@ -1439,6 +1449,7 @@ fn resume_overpay(
     let (coins, potions) = g.funds(p);
     let ask = |max: u32| {
         Flow::Ask(Decision {
+            public_choice: false,
             player: p,
             kind: DecisionKind::Number {
                 min: 0,
@@ -1599,6 +1610,7 @@ impl PlayFrame {
                     labels.push(w.to_string());
                 }
                 Flow::Ask(Decision {
+                    public_choice: false,
                     player: p,
                     kind: DecisionKind::Choose {
                         options,

@@ -357,6 +357,7 @@ impl Window {
         self.asked = asked;
         self.offered = mine;
         Flow::Ask(Decision {
+            public_choice: false,
             player: owner,
             kind: DecisionKind::Choose {
                 options,

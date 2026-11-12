@@ -35,6 +35,19 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
+    /// Public option labels chosen, or a public number with what it means.
+    Chosen {
+        player: PlayerId,
+        source: Option<Card>,
+        choices: Vec<String>,
+    },
+    /// Tokens on a card or landscape, or placed by one on a pile.
+    CardCounter {
+        player: Option<PlayerId>,
+        card: Card,
+        pile: Option<PileId>,
+        delta: i32,
+    },
     Bought {
         player: PlayerId,
         card: Card,

@@ -1256,13 +1256,15 @@ impl Game {
         if let Response::Name(card) = response {
             self.emit(Event::Named { player, card });
         }
-        self.mix_ordered_answer(&decision);
+        self.record_answer(&decision, &response);
         self.pending = None;
         self.run(Input::Response(response));
         Ok(())
     }
 
-    fn mix_ordered_answer(&mut self, decision: &Decision) {
+    fn record_answer(&mut self, decision: &Decision, response: &Response) {
+        self.log_choice(decision, response);
+
         if let DecisionKind::Cards {
             candidates,
             ordered: true,
@@ -1298,7 +1300,7 @@ impl Game {
                     }
                     self.stack.push(frame);
                     if let Some(response) = decision.forced(self) {
-                        self.mix_ordered_answer(&decision);
+                        self.record_answer(&decision, &response);
                         input = Input::Response(response);
                     } else {
                         self.sync_log(None);

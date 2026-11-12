@@ -455,6 +455,7 @@ pub(crate) fn ask_ordered(
 ) -> Flow {
     let n = n.min(candidates.len());
     Flow::Ask(Decision {
+        public_choice: false,
         player,
         kind: DecisionKind::Cards {
             candidates,

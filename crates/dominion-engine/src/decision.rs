@@ -11,6 +11,9 @@ pub struct Decision {
     pub player: PlayerId,
     pub kind: DecisionKind,
     pub purpose: Purpose,
+    /// Its option labels (or number and question) may be announced in the public log.
+    #[serde(default)]
+    pub public_choice: bool,
     /// The card whose effect is asking, if any.
     pub source: Option<Card>,
     /// Cards the question is about that the deciding player may see though they aren't
