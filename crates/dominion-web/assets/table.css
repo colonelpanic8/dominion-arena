@@ -161,6 +161,30 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-tokens .dt-badge-n { font-size: 12cqw; }
 .dt-disc img { border-radius: 50%; box-shadow: 0 0 0 2px var(--pc); }
 .dt-b-trait { background: rgba(0, 0, 0, 0.7); border-radius: 3px; padding: 0 0.3em; font-size: calc(1.3 * var(--vh)); height: auto; }
+.dt-tokens .dt-b-trait { font-size: 8cqw; line-height: 1.15; }
+.dt-tokens:has(.dt-b-trait) { bottom: 3%; top: auto; flex-direction: column; align-items: center; gap: 1cqw; }
+
+/* The Boons and Hexes decks beside their discard piles. */
+.dt-deckback {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(0.6 * var(--vh));
+  border: max(1px, calc(0.25 * var(--vh))) solid #000;
+  border-radius: calc(0.6 * var(--vh));
+  box-shadow: 0 0 0 1px #9a8a62 inset;
+  background: linear-gradient(160deg, #314a7d, #16223d);
+  color: #f2e6c8;
+  font-family: var(--title, serif);
+  text-shadow: 0 0 3px #000;
+}
+.dt-deck-hexes { background: linear-gradient(160deg, #5b3470, #24122e); }
+.dt-deckback:hover { border-color: #eee; }
+.dt-deckback-label { font-size: calc(1.8 * var(--vh)); }
+.dt-deckback-n { font-family: var(--count, sans-serif); font-size: calc(2.2 * var(--vh)); }
 .dt-cube img { height: calc(2.6 * var(--vh)); }
 .dt-tokens .dt-cube img { height: 18cqw; }
 
