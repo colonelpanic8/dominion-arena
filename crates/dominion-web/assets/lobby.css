@@ -54,7 +54,6 @@
 .set-chip img { width: 100%; height: 3.6em; object-fit: cover; display: block; }
 .set-chip span { padding: .3em .4em; font-family: var(--title); font-size: .85em; text-align: center; line-height: 1.15; }
 .set-chip:not(:has(img)) { justify-content: center; }
-.set-chip:not(:has(img)) span { font-size: 1em; }
 
 /* Trays */
 .kingdom-builder { margin-bottom: 1em; }
