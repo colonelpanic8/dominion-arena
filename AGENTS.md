@@ -379,7 +379,8 @@ them.
   `Trace::Moved`); identity changes record `Trace::Changed`. Untraced games pay nothing.
   Only its owner follows a card that leaves cards they hold out of sight: a hand,
   cards taken off their deck to look at, cards set aside face down together (move them one
-  after the other), the cards of a deck or discard pile they looked through, until shuffled with
+  after the other; a Stash or Shadow card among them is known by its back and leaves the
+  set whole), the cards of a deck or discard pile they looked through, until shuffled with
   other cards. `g.show` such a card first when everyone
   knows which it is; other cards of a deck or discard pile are followed by everyone.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision

@@ -873,6 +873,61 @@ fn only_its_owner_follows_a_card_taken_from_under_a_crypt() {
     );
 }
 
+/// A Stash set aside face down between two Treasures has its own back, and does not tell
+/// which of the others comes back first.
+#[test]
+fn a_stash_under_a_crypt_does_not_tell_which_treasure_is_taken() {
+    let mut g = setup(&[Card::Crypt, Card::Stash]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Stash, Card::Copper, Card::Crypt],
+    );
+    deck(&mut g, P0, &[Card::Estate; 10]);
+    let (mut g, mut k) = start(g);
+    for card in [Card::Gold, Card::Stash, Card::Copper] {
+        play(&mut g, card);
+    }
+    end_phase(&mut g);
+    play(&mut g, Card::Crypt);
+    let under = candidates(&g);
+    assert_eq!(kinds(&g, &under), [Card::Gold, Card::Stash, Card::Copper]);
+    choose(&mut g, &under);
+    k.update(&mut g);
+    while g.pending().unwrap().source != Some(Card::Crypt) {
+        end_phase(&mut g);
+        k.update(&mut g);
+    }
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, under[0], under[2]);
+    assert_eq!(ka.known(&ga, P1), kb.known(&gb, P1));
+}
+
+/// The same with Archive, for cards everyone saw go onto the deck around a Stash, or over
+/// it.
+#[test]
+fn a_stash_set_aside_with_cards_from_the_deck_does_not_tell_which_one_is_taken() {
+    for top in [
+        [Card::Gold, Card::Stash, Card::Copper],
+        [Card::Gold, Card::Copper, Card::Stash],
+    ] {
+        let mut g = setup(&[Card::Archive, Card::Stash]);
+        hand(&mut g, P0, &[Card::Archive]);
+        deck(&mut g, P0, &[]);
+        let (mut g, mut k) = start(g);
+        for &card in top.iter().rev() {
+            let id = g.create(card, Zone::Deck(P0));
+            g.show(id);
+        }
+        k.update(&mut g);
+        play(&mut g, Card::Archive);
+        k.update(&mut g);
+        let aside = candidates(&g);
+        let of = |card: Card| *aside.iter().find(|&&c| g.card(c) == card).unwrap();
+        let [(ga, ka), (gb, kb)] = worlds(&g, &k, of(Card::Gold), of(Card::Copper));
+        assert_eq!(ka.known(&ga, P1), kb.known(&gb, P1), "{top:?}");
+    }
+}
+
 /// Archive: P0 knows the Duchy on top of P1's deck goes under the Archive, but not which
 /// of the three cards P1 takes.
 #[test]

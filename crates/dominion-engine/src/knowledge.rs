@@ -758,7 +758,10 @@ impl Knowledge {
         self.held[card.index()] = 0;
         // Set aside face down: with the cards set aside along with it.
         if matches!(to, Zone::SetAside(_)) && !face_up {
-            if !marked(is) {
+            if marked(is) {
+                // Its back is known, not which of the cards around it is which.
+                self.joining = joining;
+            } else {
                 self.hold(card, to, joining);
             }
         }
