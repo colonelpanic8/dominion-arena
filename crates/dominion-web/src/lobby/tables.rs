@@ -35,8 +35,8 @@ const STATUSES: [Status; 3] = [Status::New, Status::Running, Status::PostGame];
 struct Line {
     host: String,
     id: Option<String>,
-    seats: usize,
-    held: usize,
+    /// Per seat: this browser plays it.
+    held: Vec<bool>,
     status: Status,
     playable: bool,
 }
@@ -78,8 +78,7 @@ pub fn TablesTab() -> Element {
                 .and_then(|n| n.into_iter().next())
                 .unwrap_or_default(),
             id: None,
-            seats: t.rules.seats.len(),
-            held: t.rules.seats.iter().filter(|s| s.plays_here()).count(),
+            held: t.rules.seats.iter().map(|s| s.plays_here()).collect(),
             status: Status::New,
             playable: true,
         });
@@ -89,25 +88,26 @@ pub fn TablesTab() -> Element {
         _ => None,
     };
     for g in games().and_then(|g| g.ok()).unwrap_or_default() {
-        let mine = held.get(&g.game_id).map(|s| s.len()).unwrap_or(0);
+        let mine = held.get(&g.game_id).cloned().unwrap_or_default();
         lines.push(Line {
             host: g.names.first().cloned().unwrap_or_default(),
             id: Some(g.game_id.clone()),
-            seats: g.names.len(),
-            held: mine,
+            held: (0..g.names.len())
+                .map(|i| mine.iter().any(|s| usize::from(s.seat) == i))
+                .collect(),
             status: if g.running {
                 Status::Running
             } else {
                 Status::PostGame
             },
-            playable: mine > 0,
+            playable: !mine.is_empty(),
         });
     }
     let prefix = host().to_lowercase();
     let p = players();
     let st = statuses();
     lines.retain(|l| {
-        let size = match l.seats {
+        let size = match l.held.len() {
             2 => p[0],
             3 => p[1],
             _ => p[2],
@@ -116,8 +116,8 @@ pub fn TablesTab() -> Element {
         l.host.to_lowercase().starts_with(&prefix) && size && status
     });
     match sort() {
-        1 => lines.sort_by(|a, b| a.seats.cmp(&b.seats).then(a.host.cmp(&b.host))),
-        2 => lines.sort_by(|a, b| b.seats.cmp(&a.seats).then(a.host.cmp(&b.host))),
+        1 => lines.sort_by(|a, b| a.held.len().cmp(&b.held.len()).then(a.host.cmp(&b.host))),
+        2 => lines.sort_by(|a, b| b.held.len().cmp(&a.held.len()).then(a.host.cmp(&b.host))),
         _ => lines.sort_by_key(|l| l.host.to_lowercase()),
     }
     let sort_class = ["lb-sorter", "lb-sorter sort-up", "lb-sorter sort-down"][sort() as usize];
@@ -166,10 +166,10 @@ pub fn TablesTab() -> Element {
                                     title: l.id.clone().map(|i| format!("Game {i}")).unwrap_or_default(),
                                     div { class: "lb-table-host", "{l.host}" }
                                     div { class: "lb-table-players",
-                                        for s in 0..l.seats {
+                                        for (s, mine) in l.held.iter().copied().enumerate() {
                                             div {
                                                 key: "{s}",
-                                                class: if s < l.held { "lb-seat-icon" } else { "lb-seat-icon other" },
+                                                class: if mine { "lb-seat-icon" } else { "lb-seat-icon other" },
                                             }
                                         }
                                     }
