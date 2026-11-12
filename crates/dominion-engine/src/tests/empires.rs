@@ -1816,6 +1816,29 @@ fn colonnade_pays_for_an_action_bought_with_a_copy_in_play() {
     assert_eq!(vp(&g, P0), 2);
 }
 
+/// "If gaining an Action allows you to immediately play it (e.g. you gained a Trail, or you
+/// use Innovation), that will let you take 2 VP from this" (wiki).
+#[test]
+fn colonnade_pays_for_an_action_innovation_plays_as_it_is_gained() {
+    let mut g = setup_landscapes(&[Card::Village], &[Card::Colonnade, Card::Innovation]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Silver, Card::Copper]);
+    g.start();
+    to_buy(&mut g);
+    play_all(&mut g, Card::Silver);
+    play_all(&mut g, Card::Copper);
+    buy(&mut g, Card::Village);
+    trigger(&mut g, Card::Innovation);
+    assert!(g.log().iter().any(|e| matches!(
+        e,
+        Event::Played {
+            card: Card::Village,
+            ..
+        }
+    )));
+    assert_eq!(vp(&g, P0), 2);
+}
+
 #[test]
 fn defiled_shrine_collects_from_action_piles_and_a_curse_gained_in_the_buy_phase_takes_them() {
     let mut g = setup_landscapes(&[Card::Village], &[Card::DefiledShrine]);

@@ -759,14 +759,13 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     if has(Card::Battlefield) && victory && tokens(Card::Battlefield) {
         out.push(Trigger::new(player, Card::Battlefield, TAKE));
     }
-    if has(Card::Colonnade) && action && buy_phase && tokens(Card::Colonnade) {
-        let copy = g
-            .in_play(player)
-            .iter()
-            .any(|&c| c != card && g.card(c) == kind);
-        if copy {
-            out.push(Trigger::new(player, Card::Colonnade, TAKE));
-        }
+    if has(Card::Colonnade)
+        && action
+        && buy_phase
+        && tokens(Card::Colonnade)
+        && g.in_play(player).iter().any(|&c| g.card(c) == kind)
+    {
+        out.push(Trigger::new(player, Card::Colonnade, TAKE));
     }
     if has(Card::Labyrinth) && index == Some(1) && tokens(Card::Labyrinth) {
         out.push(Trigger::new(player, Card::Labyrinth, TAKE));
