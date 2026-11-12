@@ -774,9 +774,9 @@ fn emissary_gives_an_action_and_two_favors_only_when_it_shuffled() {
 }
 
 /// Wiki, Reshuffle: the -1 Card token counts as a card when deciding whether to shuffle
-/// before drawing, so +3 Cards with it and 2 cards in the deck shuffles first.
+/// before drawing, so +3 Cards with it and 2 cards in the deck has all it needs.
 #[test]
-fn emissary_with_the_minus_card_token_and_two_cards_left_shuffles() {
+fn emissary_with_the_minus_card_token_and_two_cards_left_does_not_shuffle() {
     let mut g = game(&[Card::Emissary]);
     g.players[0].minus_card = true;
     hand(&mut g, P0, &[Card::Emissary]);
@@ -785,8 +785,9 @@ fn emissary_with_the_minus_card_token_and_two_cards_left_shuffles() {
     g.start();
     play(&mut g, Card::Emissary);
     assert_eq!(g.hand(P0), left);
-    assert_eq!(g.turn().actions, 1);
-    assert_eq!(favors(&g, P0), 3);
+    assert_eq!(g.player(P0).discard.len(), 4);
+    assert_eq!(g.turn().actions, 0);
+    assert_eq!(favors(&g, P0), 1);
 }
 
 #[test]

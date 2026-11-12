@@ -1387,6 +1387,26 @@ fn moat_blocks_relic() {
 
 /// "Draw until you have N cards in hand" removes the -1 Card token instead of its first
 /// draw, then goes on until the hand has N cards.
+/// Wiki, Adventures tokens: "If you have no cards in your deck and you are instructed to
+/// draw one card, you remove this and you don't shuffle." The token is the first of the
+/// cards a draw takes, so a deck one card short has enough.
+#[test]
+fn the_minus_card_token_is_one_of_the_cards_a_draw_needs() {
+    for (card, in_deck) in [(Card::Village, 0), (Card::Smithy, 2), (Card::Smithy, 1)] {
+        let mut g = setup(&[card]);
+        g.players[0].minus_card = true;
+        hand(&mut g, P0, &[card]);
+        deck(&mut g, P0, &vec![Card::Gold; in_deck]);
+        discard(&mut g, P0, &[Card::Silver; 4]);
+        g.start();
+        play(&mut g, card);
+        assert!(!g.player(P0).minus_card);
+        let shuffled = g.player(P0).discard.is_empty();
+        assert_eq!(shuffled, in_deck == 1, "{card} with {in_deck} in the deck");
+        assert_eq!(g.hand(P0).len(), if shuffled { 2 } else { in_deck });
+    }
+}
+
 #[test]
 fn the_minus_card_token_does_not_shorten_a_draw_up_to_a_hand_size() {
     type Answer = fn(&mut Game);

@@ -437,20 +437,19 @@ impl Frame {
                 };
                 if !*started {
                     *started = true;
-                    let mut token = 0;
                     if g.players[p.index()].minus_card && wants(g, *count, 0) {
                         g.players[p.index()].minus_card = false;
                         // The token replaces one draw of a fixed number; a draw up to a
                         // hand size still goes on to that size.
                         *count = count.saturating_sub(1);
-                        token = 1;
                     }
                     // Short of cards, the discard pile is shuffled under the deck first,
-                    // and then they are all drawn; the token counts as a card for that.
-                    // A draw up to a hand size takes one card at a time.
+                    // and then they are all drawn; the token is one of them, so the
+                    // deck needs one card fewer. A draw up to a hand size takes one card
+                    // at a time.
                     let needed = match to {
                         Some(_) => 0,
-                        None => token + *count,
+                        None => *count,
                     };
                     let pl = &g.players[p.index()];
                     if pl.deck.len() < needed && !pl.discard.is_empty() {

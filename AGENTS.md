@@ -279,7 +279,8 @@ them.
   the deck, is the shuffled ones still in it; "when you shuffle" placements such as Stash,
   Star Chart and Fated resolve there, under any cards left on the deck). A draw, look or
   reveal that needs more cards than the deck holds shuffles first and then takes them all
-  (for a draw the -1 Card token counts as a card); one draw shuffles at most once.
+  (for a draw the -1 Card token is one of them: the deck needs one card fewer); one draw
+  shuffles at most once.
   `Frame::draw_to` ("draw until you have N cards in hand") takes one card at a time
   instead: it shuffles only once the deck has run out and another card is needed, and
   again if that shuffle left cards in the discard pile (Order of Masons, Avoid).
