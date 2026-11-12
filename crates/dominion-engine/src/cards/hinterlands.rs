@@ -1019,14 +1019,19 @@ fn witchs_hut(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             for &c in &chosen {
                 g.reveal(f.player, c);
             }
-            f.s.n = (chosen.len() == 2 && chosen.iter().all(|&c| g.is(c, Types::ACTION))) as i32;
+            f.s.cards = chosen.clone();
             f.pc = 2;
             Flow::Call(Frame::discard(f.player, chosen))
         }
-        _ => {
-            if f.s.n == 0 {
+        2 => {
+            let cards = &f.s.cards;
+            if cards.len() != 2 || !cards.iter().all(|&c| g.is(c, Types::ACTION)) {
                 return Flow::done();
             }
+            f.pc = 3;
+            Flow::Continue
+        }
+        _ => {
             let targets = f.targets.clone();
             each_gains(g, f, &targets, Card::Curse).unwrap_or_else(Flow::done)
         }

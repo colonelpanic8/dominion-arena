@@ -2297,13 +2297,14 @@ fn maroon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            f.s.n = g.types(c).names().count() as i32;
+            f.s.pick = Some(c);
             f.pc = 2;
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         2 => {
+            let types = g.types(f.s.pick.expect("set in step 1"));
             f.pc = 3;
-            Flow::Call(Frame::draw(f.player, 2 * f.s.n as usize))
+            Flow::Call(Frame::draw(f.player, 2 * types.names().count()))
         }
         _ => Flow::done(),
     }

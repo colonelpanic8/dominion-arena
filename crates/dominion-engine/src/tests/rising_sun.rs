@@ -1372,6 +1372,50 @@ fn enlightenment_applies_to_a_treasure_played_at_the_start_of_a_turn() {
     );
 }
 
+/// P0 plays `card` and trashes a Silver with it while Enlightenment has one Sun token left.
+/// Sewers then trashes a Squire, which gains a Kitsune; Innovation plays it, and its +1 Sun
+/// puts Enlightenment into effect before `card` goes on to read what it trashed.
+fn enlightened_during_the_trash(card: Card) -> Game {
+    let mut g = game(
+        &[card, Card::Squire, Card::Kitsune],
+        &[Card::Enlightenment, Card::Sewers, Card::Innovation],
+        1,
+    );
+    g.players[0]
+        .projects
+        .extend([Card::Sewers, Card::Innovation]);
+    hand(&mut g, P0, &[card, Card::Silver, Card::Squire]);
+    deck(&mut g, P0, &[Card::Estate; 12]);
+    g.start();
+    play(&mut g, card);
+    choose_kinds(&mut g, &[Card::Silver]);
+    // Sewers (the Squire and the Kitsune pile are the only choices), then Innovation.
+    for _ in 0..2 {
+        assert_eq!(purpose(&g), Purpose::Trigger);
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    // Kitsune: +$2 and +2 Actions.
+    assert_eq!(g.pending().unwrap().source, Some(Card::Kitsune));
+    respond(&mut g, Response::Options(vec![Opt::Mode(0), Opt::Mode(1)]));
+    assert!(g.prophecy_active(Card::Enlightenment));
+    assert!(kinds(&g, g.trash()).contains(&Card::Silver));
+    g
+}
+
+/// "The key thing is to follow card instructions in order" (Menagerie rulebook): a card
+/// that trashes another reads its types once it is trashed. By then the Silver is an
+/// Action as well as a Treasure.
+#[test]
+fn types_of_a_trashed_card_are_read_after_the_trash() {
+    let g = enlightened_during_the_trash(Card::Transmute);
+    let gained = kinds(&g, &g.player(P0).discard);
+    assert!(gained.contains(&Card::Transmute), "{gained:?}");
+    assert!(gained.contains(&Card::Duchy), "{gained:?}");
+    // Maroon: +2 Cards per type.
+    let g = enlightened_during_the_trash(Card::Maroon);
+    assert_eq!(g.hand(P0).len(), 4);
+}
+
 #[test]
 fn flourishing_trade_lowers_costs_and_lets_actions_be_used_as_buys() {
     let mut g = with_prophecy(&[Card::Smithy, Card::Daimyo], Card::FlourishingTrade);

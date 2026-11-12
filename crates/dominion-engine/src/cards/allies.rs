@@ -2617,13 +2617,12 @@ fn student(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_cards(hand, 1, 1, Purpose::Trash)
         }
         3 => {
-            let chosen = input.cards();
-            f.s.n = chosen.iter().any(|&c| g.is(c, Types::TREASURE)) as i32;
+            f.s.cards = input.cards();
             f.pc = 4;
-            Flow::Call(Frame::trash(p, chosen))
+            Flow::Call(Frame::trash(p, f.s.cards.clone()))
         }
         _ => {
-            if f.s.n != 0 {
+            if f.s.cards.iter().any(|&c| g.is(c, Types::TREASURE)) {
                 g.players[p.index()].favors += 1;
                 let this = f.this();
                 if g.zone(this) == Zone::InPlay(p) {

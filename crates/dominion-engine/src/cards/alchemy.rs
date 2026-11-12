@@ -331,14 +331,19 @@ fn transmute(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            let types = g.types(c);
+            f.s.pick = Some(c);
+            f.pc = 2;
+            Flow::Call(Frame::trash(f.player, vec![c]))
+        }
+        2 => {
+            let types = g.types(f.s.pick.expect("set in step 1"));
             for (i, (t, _)) in TRANSMUTE.iter().enumerate() {
                 if types.intersects(*t) {
                     f.s.n |= 1 << i;
                 }
             }
-            f.pc = 2;
-            Flow::Call(Frame::trash(f.player, vec![c]))
+            f.pc = 3;
+            Flow::Continue
         }
         _ => {
             while f.s.i < TRANSMUTE.len() {

@@ -432,6 +432,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   aside).
 - `Frame::reveal` / `g.reveal` only where the text says "reveal" (Patron reacts to it);
   "discard / trash the top card" takes it with `Frame::look`.
+- Follow the text in order: "trash a card; if it's an Action ..." reads the card's types
+  once `Frame::trash` (or the discard, gain, ...) has returned, not when it is chosen.
+  A Prophecy coming into effect in between can change them (Sacrifice, Transmute).
 - Setup: `build_kingdom_pile` for unusual Kingdom piles, `modify_starting_deck` for
   Heirlooms/Shelters-like changes, and two phases (`setup::complete`). `ensure` adds
   what the cards in the game need (extra piles, Boons/Hexes, set-aside cards, an Ally
