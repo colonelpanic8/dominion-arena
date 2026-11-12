@@ -243,7 +243,10 @@ fn bad_answers_are_rejected_with_reasons() {
     };
     assert_eq!(
         msg,
-        format!("there is no option {n}: the options are numbered 0 to {}", n - 1)
+        format!(
+            "there is no option {n}: the options are numbered 0 to {}",
+            n - 1
+        )
     );
     let AnswerError::Invalid(msg) = err(&mut table, 0, Answer::indices(&d.id, vec![0, 0])) else {
         panic!("repeated index accepted");
@@ -688,4 +691,36 @@ fn the_final_view_knows_the_last_clean_ups_discard_top() {
     let known = t.knowledge().known(g, PlayerId(0));
     let discard = known.zone(dominion_engine::Zone::Discard(last));
     assert!(discard.known.contains_key(&g.card(top)), "{discard:?}");
+}
+
+#[test]
+fn a_card_returned_to_its_pile_is_logged_as_returned() {
+    let mut t = table(&[Card::Experiment], 0, &[]);
+    let seat_1_turn = |seat: PlayerId, d: &AgentDecision| seat.0 == 1 && d.kind == "turn";
+    for _ in 0..30 {
+        assert_eq!(
+            play_to(&mut t, "Experiment", seat_1_turn),
+            Some(PlayerId(1))
+        );
+        let view = t.view(PlayerId(1));
+        let returned: Vec<&str> = view
+            .since_last_decision
+            .iter()
+            .filter(|e| e.text.contains("Experiment") && e.text.contains("pile"))
+            .map(|e| e.text.as_str())
+            .collect();
+        if !returned.is_empty() {
+            assert!(
+                returned.contains(&"P1 returns Experiment from play to the Experiment pile"),
+                "{returned:?}"
+            );
+            return;
+        }
+        while t.deciding() == Some(PlayerId(1)) {
+            let d = t.view(PlayerId(1)).decision.unwrap();
+            let end = pick(&d, |o| o.action == "end-phase").unwrap_or_else(|| first(&d));
+            t.answer(PlayerId(1), &end).unwrap();
+        }
+    }
+    panic!("Experiment was never played");
 }
