@@ -16,6 +16,33 @@ fn count(cards: &[(Card, u32)]) -> CardCount {
     cards.iter().copied().collect()
 }
 
+#[test]
+fn discarding_identical_revealed_cards_with_envoy_gives_the_same_log() {
+    let mut g = setup(&[Card::Envoy]);
+    hand(&mut g, P0, &[Card::Envoy]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Silver,
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Envoy);
+    k.update(&mut g);
+    let golds: Vec<_> = candidates(&g)
+        .into_iter()
+        .filter(|&c| g.card(c) == Card::Gold)
+        .collect();
+    let [(a, ka), (b, kb)] = worlds(&g, &k, golds[0], golds[1]);
+    assert_eq!(a.log(), b.log());
+    assert_eq!(ka.known(&a, P0), kb.known(&b, P0));
+}
+
 fn uncertain_over(known: &KnownCards, zones: &[Zone]) -> Option<CardCount> {
     known
         .uncertain
@@ -1572,15 +1599,8 @@ fn twins_agree(
             if observation(&a.0, p, log_from) != observation(&b.0, p, log_from) {
                 // The log says no more than the table and the moves they watched (which
                 // of two public cards of one name moved is no news).
-                let log = |g: &Game| -> Vec<Event> {
-                    let mut log = g.log()[log_from.min(g.log().len())..].to_vec();
-                    for e in &mut log {
-                        if let Event::Moved { cards, .. } = e {
-                            cards.sort();
-                        }
-                    }
-                    log
-                };
+                let log =
+                    |g: &Game| -> Vec<Event> { g.log()[log_from.min(g.log().len())..].to_vec() };
                 if observation(&a.0, p, usize::MAX) == observation(&b.0, p, usize::MAX)
                     && log(&a.0) != log(&b.0)
                 {

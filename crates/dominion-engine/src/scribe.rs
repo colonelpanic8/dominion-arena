@@ -458,6 +458,11 @@ impl Game {
                 under: m.under,
             });
         }
+        for line in &mut lines {
+            if let Event::Moved { cards, .. } = line {
+                cards.sort();
+            }
+        }
         lines
     }
 }
