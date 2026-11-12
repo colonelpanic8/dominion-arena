@@ -2476,6 +2476,42 @@ fn order_of_masons_leaves_cards_out_of_the_shuffle_and_shuffles_only_once() {
     assert_eq!(favors(&g, P0), 0);
 }
 
+/// Order of Masons' page: "some cards access cards from your deck one at a time (e.g.
+/// Watchtower and Journeyman). If there aren't enough cards after shuffling for the first
+/// time, you will shuffle a second time."
+#[test]
+fn a_draw_up_to_a_hand_size_shuffles_again_when_the_first_shuffle_left_cards_out() {
+    let mut g = game_with(&[Card::Underling, Card::Watchtower], Card::OrderOfMasons);
+    set_favors(&mut g, P0, 1);
+    hand(&mut g, P0, &[Card::Watchtower]);
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(
+        &mut g,
+        P0,
+        &[Card::Gold, Card::Gold, Card::Estate, Card::Estate],
+    );
+    g.start();
+    play(&mut g, Card::Watchtower);
+    // It doesn't shuffle before the deck has run out.
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper]);
+    accept(&mut g, Card::OrderOfMasons);
+    choose_kinds(&mut g, &[Card::Estate, Card::Estate]);
+    assert_eq!(
+        hand_kinds(&g, P0),
+        [
+            Card::Copper,
+            Card::Gold,
+            Card::Gold,
+            Card::Estate,
+            Card::Estate
+        ]
+    );
+    let drew = |count| Event::Drew { player: P0, count };
+    let shuffled = Event::Shuffled { player: P0 };
+    let order = [drew(1), shuffled.clone(), drew(2), shuffled, drew(2)];
+    assert!(logged_in_order(&g, &order));
+}
+
 #[test]
 fn peaceful_cult_trashes_a_card_per_favor_spent() {
     let mut g = game_with(&[Card::Underling], Card::PeacefulCult);

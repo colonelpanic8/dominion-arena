@@ -143,7 +143,8 @@ pub(crate) enum Frame {
         to: Option<usize>,
         drawn: Vec<CardId>,
         started: bool,
-        /// Whether it shuffled: once, before drawing, if the deck was short.
+        /// Whether it shuffled: once, before drawing, if the deck was short; a draw up to
+        /// a hand size each time the deck ran out.
         shuffled: bool,
     },
     /// Shuffles a discard pile into (under) its deck, or a whole deck: the only way cards
@@ -239,7 +240,8 @@ impl Frame {
         }
     }
 
-    /// Draw until `player` has `size` cards in hand, or has no more cards to draw.
+    /// Draw until `player` has `size` cards in hand, or has no more cards to draw, one
+    /// card at a time: it shuffles when the deck has run out and another card is needed.
     pub(crate) fn draw_to(player: PlayerId, size: usize) -> Frame {
         Frame::Draw {
             player,
@@ -430,29 +432,39 @@ impl Frame {
                     }
                     // Short of cards, the discard pile is shuffled under the deck first,
                     // and then they are all drawn; the token counts as a card for that.
-                    let needed = token
-                        + match to {
-                            Some(size) => size.saturating_sub(g.hand(p).len()),
-                            None => *count,
-                        };
+                    // A draw up to a hand size takes one card at a time.
+                    let needed = match to {
+                        Some(_) => 0,
+                        None => token + *count,
+                    };
                     let pl = &g.players[p.index()];
                     if pl.deck.len() < needed && !pl.discard.is_empty() {
                         *shuffled = true;
                         return Flow::Call(Frame::shuffle(p));
                     }
                 }
+                let had = drawn.len();
+                let mut shuffle = false;
                 while wants(g, *count, drawn.len()) {
-                    let Some(&top) = g.players[p.index()].deck.last() else {
+                    let pl = &g.players[p.index()];
+                    let Some(&top) = pl.deck.last() else {
+                        // One card at a time: the deck has run out and another card is
+                        // needed, even if an earlier shuffle left cards out.
+                        shuffle = to.is_some() && !pl.discard.is_empty();
                         break;
                     };
                     g.move_card(top, Zone::Hand(p), Pos::Top);
                     drawn.push(top);
                 }
-                if !drawn.is_empty() {
+                if drawn.len() > had {
                     g.emit(Event::Drew {
                         player: p,
-                        count: drawn.len(),
+                        count: drawn.len() - had,
                     });
+                }
+                if shuffle {
+                    *shuffled = true;
+                    return Flow::Call(Frame::shuffle(p));
                 }
                 Flow::Done(Value::Cards(std::mem::take(drawn)))
             }

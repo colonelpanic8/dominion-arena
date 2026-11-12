@@ -193,6 +193,9 @@ them.
   Star Chart and Fated resolve there, under any cards left on the deck). A draw, look or
   reveal that needs more cards than the deck holds shuffles first and then takes them all
   (for a draw the -1 Card token counts as a card); one draw shuffles at most once.
+  `Frame::draw_to` ("draw until you have N cards in hand") takes one card at a time
+  instead: it shuffles only once the deck has run out and another card is needed, and
+  again if that shuffle left cards in the discard pile (Order of Masons, Avoid).
 - **Looking and revealing** (`Frame::look` / `Frame::reveal`, the only way to take cards
   from the top of a deck to look at or reveal): the cards go to `Zone::Looking` of the
   deck's owner, off the deck, held (`Game::holds`) for the frame that called it, face up
