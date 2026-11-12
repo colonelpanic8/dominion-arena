@@ -568,6 +568,11 @@ pub fn GameOptions() -> Element {
                 div { class: "lb-row-rule" }
                 Switch { on: r.timed, fixed: !host, onclick: move |_| ctx.edit(|r| r.timed = !r.timed) }
             }
+            div { class: "lb-row", "data-option": "undo", title: "Players may take back their own answers, which shows them what would have happened: for a table of friends",
+                div { class: "lb-row-label", "Undo allowed" }
+                div { class: "lb-row-rule" }
+                Switch { on: r.undo, fixed: !host, onclick: move |_| ctx.edit(|r| r.undo = !r.undo) }
+            }
         }
     }
 }

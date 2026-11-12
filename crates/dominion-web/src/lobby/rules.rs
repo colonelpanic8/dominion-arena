@@ -219,6 +219,9 @@ pub struct TableRules {
     pub watchable: bool,
     /// A player who has left, or takes too long, forfeits.
     pub timed: bool,
+    /// Players may take back their own answers.
+    #[serde(default)]
+    pub undo: bool,
 }
 
 impl TableRules {
@@ -255,6 +258,7 @@ impl TableRules {
             rated: spec.rated,
             watchable: spec.watchable,
             timed: spec.timed,
+            undo: spec.undo,
         }
     }
 
@@ -294,6 +298,7 @@ impl TableRules {
             rated: self.rated,
             watchable: self.watchable,
             timed: self.timed,
+            undo: self.undo,
         })
     }
 
