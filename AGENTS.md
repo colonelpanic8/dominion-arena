@@ -391,8 +391,12 @@ them.
   set whole), the cards of a deck or discard pile they looked through, until shuffled with
   other cards. `g.show` such a card first when everyone
   knows which it is; other cards of a deck or discard pile are followed by everyone.
-  Privately ordering a selection from a searched discard pile mixes it with every card
-  the selection could have included, before following the moves.
+  A hand discarded whole unseen keeps its known identities in the discard pile, but
+  nobody else follows which copy is on top; seeing that top may show the same copy
+  revealed earlier. Privately ordering a selection from a searched discard pile mixes
+  it with every card the selection could have included, before following the moves.
+  A shuffle records its mix before its individual zone moves, whose random order
+  nobody can follow.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which

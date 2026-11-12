@@ -44,6 +44,62 @@ fn discarding_identical_revealed_cards_with_envoy_gives_the_same_log() {
 }
 
 #[test]
+fn revealing_identical_hand_cards_preserves_the_same_knowledge_after_cleanup() {
+    let mut g = setup(&[Card::Encampment]);
+    hand(&mut g, P0, &[Card::Encampment, Card::Plunder, Card::Copper]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Silver,
+            Card::Plunder,
+            Card::Gold,
+            Card::Estate,
+            Card::Copper,
+            Card::Duchy,
+            Card::Silver,
+            Card::Copper,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    let gold = g.create(Card::Gold, Zone::Hand(P0));
+    g.show(gold);
+    k.update(&mut g);
+    play(&mut g, Card::Encampment);
+    k.update(&mut g);
+    let copies: Vec<_> = candidates(&g)
+        .into_iter()
+        .filter(|&c| g.card(c) == Card::Plunder)
+        .collect();
+
+    let world = |copy| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        choose(&mut g, &[copy]);
+        k.update(&mut g);
+        next_turn(&mut g);
+        k.update(&mut g);
+        (g, k)
+    };
+    let ((a, ka), (b, kb)) = (world(copies[0]), world(copies[1]));
+    assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
+    assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+    assert_eq!(
+        ka.known(&a, P1)
+            .zone(Zone::Discard(P0))
+            .known
+            .get(&Card::Plunder),
+        Some(&1)
+    );
+    assert_eq!(
+        ka.known(&a, P1)
+            .zone(Zone::Discard(P0))
+            .known
+            .get(&Card::Gold),
+        Some(&1)
+    );
+}
+
+#[test]
 fn privately_ordering_discards_does_not_reveal_which_cards_were_selected() {
     let mut g = setup(&[Card::Herald]);
     hand(&mut g, P0, &[Card::Gold; 2]);
@@ -71,6 +127,64 @@ fn privately_ordering_discards_does_not_reveal_which_cards_were_selected() {
     let ((a, ka), (b, kb)) = (world(&choices[..2]), world(&choices[2..4]));
     assert_eq!(observation(&a, P1, 0), observation(&b, P1, 0));
     assert_eq!(ka.known(&a, P1), kb.known(&b, P1));
+}
+
+#[test]
+fn discarding_a_revealed_hand_keeps_every_known_copy() {
+    let mut g = setup(&[Card::Village]);
+    hand(&mut g, P0, &[Card::Gold, Card::Copper, Card::Gold]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Gold,
+            Card::Estate,
+            Card::Copper,
+            Card::Silver,
+            Card::Duchy,
+            Card::Silver,
+        ],
+    );
+    let (mut g, mut k) = start(g);
+    g.emit(Event::RevealedHand {
+        player: P0,
+        cards: vec![Card::Gold, Card::Copper, Card::Gold],
+    });
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::Hand(P0)).known,
+        count(&[(Card::Gold, 2), (Card::Copper, 1)])
+    );
+    next_turn(&mut g);
+    k.update(&mut g);
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::Discard(P0)).known,
+        count(&[(Card::Gold, 2), (Card::Copper, 1)])
+    );
+}
+
+#[test]
+fn shuffling_searched_discards_with_a_discarded_hand_forgets_their_positions() {
+    let mut g = setup(&[Card::Village]);
+    let cards = hand(&mut g, P0, &[Card::Estate, Card::Copper, Card::Copper]);
+    deck(&mut g, P0, &[Card::Silver]);
+    discard(&mut g, P0, &[Card::Gold, Card::Duchy, Card::Copper]);
+    let (mut g, mut k) = start(g);
+    g.reveal(P0, cards[0]);
+    g.look_through_discard(P0);
+    k.update(&mut g);
+    let mut expected = None;
+    for seed in 0..10 {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        g.rng = ChaCha8Rng::seed_from_u64(seed);
+        next_turn(&mut g);
+        k.update(&mut g);
+        let seen = (observation(&g, P1, 0), k.known(&g, P1));
+        match &expected {
+            None => expected = Some(seen),
+            Some(expected) => assert_eq!(&seen, expected, "shuffle {seed}"),
+        }
+    }
 }
 
 fn uncertain_over(known: &KnownCards, zones: &[Zone]) -> Option<CardCount> {
