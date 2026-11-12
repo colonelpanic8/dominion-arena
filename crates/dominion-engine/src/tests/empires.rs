@@ -2393,3 +2393,20 @@ fn annex_kept_card_order_does_not_change_the_public_log() {
     let names_a_kept_card = |e: &Event| matches!(e, Event::Moved { from: Some(Zone::Discard(_)), cards, .. } if !cards.is_empty());
     assert!(!a.log().iter().any(names_a_kept_card), "{:?}", a.log());
 }
+
+#[test]
+fn annex_does_not_say_whether_it_kept_a_card_revealed_in_the_discard_pile() {
+    let world = |keep: Card| {
+        let mut g = setup_landscapes(&[Card::Cellar, Card::Tunnel], &[Card::Annex]);
+        hand(&mut g, P0, &[Card::Cellar, Card::Tunnel, Card::Copper]);
+        deck(&mut g, P0, &[Card::Estate; 6]);
+        g.start();
+        super::hinterlands::tunnel_under_a_gold(&mut g);
+        buy_event(&mut g, Card::Annex);
+        choose_kinds(&mut g, &[keep]);
+        g
+    };
+    let (kept, shuffled) = (world(Card::Tunnel), world(Card::Copper));
+    assert_eq!(public_table(&kept, P1), public_table(&shuffled, P1));
+    assert_eq!(kept.log(), shuffled.log());
+}

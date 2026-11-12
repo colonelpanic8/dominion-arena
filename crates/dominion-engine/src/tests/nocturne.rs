@@ -1886,6 +1886,28 @@ fn bad_omens_puts_the_deck_away_but_two_coppers() {
     assert!(logged_in_order(&g, &order));
 }
 
+/// With fewer than two Coppers Bad Omens reveals the discard pile; a card later taken from
+/// it unrevealed is not named.
+#[test]
+fn cards_bad_omens_revealed_are_not_named_when_taken_from_the_discard_pile() {
+    let world = |take: Card| {
+        let mut g = hexed(
+            Card::BadOmens,
+            &[Card::MountainVillage, Card::Estate],
+            &[Card::Duchy, Card::Gold, Card::Silver],
+        );
+        assert_eq!(g.player(P1).discard.len(), 3);
+        next_turn(&mut g);
+        play(&mut g, Card::MountainVillage);
+        assert_ne!(g.player(P1).discard.last().map(|&c| g.card(c)), Some(take));
+        choose_kinds(&mut g, &[take]);
+        g
+    };
+    let (gold, silver) = (world(Card::Gold), world(Card::Silver));
+    assert_eq!(public_table(&gold, P0), public_table(&silver, P0));
+    assert_eq!(gold.log(), silver.log());
+}
+
 #[test]
 fn delusion_stops_buying_actions_for_a_turn() {
     let mut g = hexed(

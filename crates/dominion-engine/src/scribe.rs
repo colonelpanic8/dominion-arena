@@ -172,6 +172,9 @@ impl Game {
     }
 
     pub(crate) fn note_discard_search(&mut self, player: PlayerId) {
+        // What was shown of the pile's cards no longer tells which one is taken.
+        let pile = &self.players[player.index()].discard;
+        self.scribe.shown.retain(|c| !pile.contains(c));
         let search = (player, self.stack.len());
         if !self.scribe.searched_discards.contains(&search) {
             self.scribe.searched_discards.push(search);

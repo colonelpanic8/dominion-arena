@@ -473,3 +473,32 @@ fn harbinger_search_does_not_reveal_the_discard_taken() {
     );
     assert_eq!(curse.log(), gold.log());
 }
+
+/// A card revealed where it lay in the discard pile is no exception.
+#[test]
+fn harbinger_search_does_not_name_a_card_revealed_in_the_discard_pile() {
+    let world = |take: Card| {
+        let mut g = setup(&[Card::Cellar, Card::Tunnel, Card::Harbinger]);
+        hand(
+            &mut g,
+            P0,
+            &[Card::Cellar, Card::Tunnel, Card::Copper, Card::Harbinger],
+        );
+        deck(&mut g, P0, &[Card::Estate; 6]);
+        g.start();
+        super::hinterlands::tunnel_under_a_gold(&mut g);
+        play(&mut g, Card::Harbinger);
+        choose_kinds(&mut g, &[take]);
+        g
+    };
+    let (tunnel, copper) = (world(Card::Tunnel), world(Card::Copper));
+    assert_eq!(public_table(&tunnel, P1), public_table(&copper, P1));
+    assert_eq!(
+        tunnel.log().last(),
+        Some(&Event::TopDecked {
+            player: P0,
+            card: None
+        })
+    );
+    assert_eq!(tunnel.log(), copper.log());
+}

@@ -384,7 +384,8 @@ them.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which
-  it was: shown with `g.show`, or leaving or entering a public zone; Clean-up's discards
+  it was: shown with `g.show` since it last moved, and not before its owner looked through
+  the discard pile it lies in, or leaving or entering a public zone; Clean-up's discards
   stay silent, `g.move_unlogged`); counters and tokens (Coffers, Villagers, Favors,
   Debt, VP tokens, Adventures tokens, -1 Card / -$1 / Journey, pile tokens, Sun tokens,
   States returned) become `Counter` / `TokenMoved` / `Marker` / `Returned`. A triggered
