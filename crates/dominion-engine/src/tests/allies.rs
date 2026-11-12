@@ -1470,6 +1470,33 @@ fn acolyte_abilities_are_optional() {
     assert_eq!(in_play_kinds(&g, P0), [Card::Acolyte]);
 }
 
+/// A game whose Ferryman set aside `pile`, outside the Supply.
+fn with_ferrymans_pile(pile: Card) -> Game {
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::PlateauShepherds],
+        ..GameConfig::new(2, vec![Card::Ferryman], 7)
+    };
+    config.setup_choices.insert(Card::Ferryman, vec![pile]);
+    setup_with(config)
+}
+
+/// Acolyte "can't gain cards from their pile if it isn't in the Supply ... they try to
+/// gain a card with a specific type" (wiki, Ferryman).
+#[test]
+fn acolyte_gains_no_augur_from_ferrymans_pile() {
+    let mut g = with_ferrymans_pile(Card::Augurs);
+    hand(&mut g, P0, &[Card::Acolyte, Card::Estate]);
+    g.start();
+    play(&mut g, Card::Acolyte);
+    choose_kinds(&mut g, &[Card::Estate]);
+    yes(&mut g);
+    assert_eq!(discard_kinds(&g, P0), [Card::Gold]);
+    assert!(kinds(&g, g.trash()).contains(&Card::Acolyte));
+    assert_eq!(g.pile(g.pile_of(Card::Augurs).unwrap()).cards.len(), 16);
+}
+
 #[test]
 fn sorceress_puts_the_top_card_into_hand_and_curses_on_a_right_guess() {
     let mut g = game(&[Card::Augurs]);
@@ -1898,6 +1925,31 @@ fn old_map_discards_draws_and_may_rotate() {
     assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Silver]);
     yes(&mut g);
     assert_eq!(top(&g, Card::Odysseys), Some(Card::Voyage));
+}
+
+/// "If the chosen pile is e.g. Odysseys, Old Map can rotate its own pile. But if the
+/// chosen pile is Clashes, Battle Plan can't rotate it" (wiki, Ferryman).
+#[test]
+fn old_map_rotates_ferrymans_odysseys_but_battle_plan_not_its_clashes() {
+    let mut g = with_ferrymans_pile(Card::Odysseys);
+    hand(&mut g, P0, &[Card::OldMap, Card::Estate]);
+    deck(&mut g, P0, &[Card::Copper, Card::Silver]);
+    g.start();
+    play(&mut g, Card::OldMap);
+    choose_kinds(&mut g, &[Card::Estate]);
+    yes(&mut g);
+    assert_eq!(top(&g, Card::Odysseys), Some(Card::Voyage));
+
+    let mut g = with_ferrymans_pile(Card::Clashes);
+    hand(&mut g, P0, &[Card::BattlePlan]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::BattlePlan);
+    assert!(matches!(
+        g.pending().unwrap().kind,
+        DecisionKind::Turn { .. }
+    ));
+    assert_eq!(top(&g, Card::Clashes), Some(Card::BattlePlan));
 }
 
 #[test]

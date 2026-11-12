@@ -555,11 +555,11 @@ fn supply_pile_topped_by(g: &Game, card: Card) -> Option<PileId> {
 }
 
 /// " (top: Sorceress)": the card on top of the pile named `card`, for a label.
-fn top_named(g: &Game, card: Card) -> String {
-    g.pile_of(card)
-        .and_then(|p| g.pile_top(p))
-        .map(|c| format!(" (top: {})", g.card(c)))
-        .unwrap_or_default()
+/// The Augurs Supply pile, if an Augur is on top: "gain an Augur" gains by type, so only
+/// from the Supply (wiki, Ferryman).
+fn augur_pile(g: &Game) -> Option<PileId> {
+    g.supply_pile(Card::Augurs)
+        .filter(|&p| g.pile_top(p).is_some_and(|t| g.is(t, Types::AUGUR)))
 }
 
 fn top_of(g: &Game, card: Card) -> Option<PileId> {
@@ -2279,7 +2279,10 @@ fn acolyte(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 format!(
                     "Trash {} to gain an Augur{}",
                     g.card(f.this()),
-                    top_named(g, Card::Augurs)
+                    augur_pile(g)
+                        .and_then(|p| g.pile_top(p))
+                        .map(|c| format!(" (top: {})", g.card(c)))
+                        .unwrap_or_default()
                 ),
             )
         }
@@ -2293,7 +2296,7 @@ fn acolyte(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         5 => {
             f.pc = 6;
-            match top_of(g, Card::Augurs) {
+            match augur_pile(g) {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),
                 None => Flow::done(),
             }

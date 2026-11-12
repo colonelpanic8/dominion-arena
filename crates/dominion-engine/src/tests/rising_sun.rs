@@ -1173,7 +1173,7 @@ fn divine_wind_replaces_the_kingdom_piles_with_ten_new_ones() {
 }
 
 /// A game one Sun away from Divine Wind, with setup choices (by the card that makes them).
-fn before_divine_wind(kingdom: &[Card], landscapes: &[Card], choices: &[(Card, Card)]) -> Game {
+fn before_divine_wind(kingdom: &[Card], landscapes: &[Card], choices: &[(Card, &[Card])]) -> Game {
     let mut config = GameConfig {
         colonies: Some(false),
         shelters: Some(false),
@@ -1182,7 +1182,7 @@ fn before_divine_wind(kingdom: &[Card], landscapes: &[Card], choices: &[(Card, C
     };
     config.landscapes.push(Card::DivineWind);
     for &(by, choice) in choices {
-        config.setup_choices.insert(by, vec![choice]);
+        config.setup_choices.insert(by, choice.to_vec());
     }
     let mut g = setup_with(config);
     g.prophecy = Some((Card::DivineWind, 1));
@@ -1209,7 +1209,7 @@ fn the_bane_is_still_the_bane_after_divine_wind() {
     let mut g = before_divine_wind(
         &[Card::YoungWitch, Card::TeaHouse],
         &[],
-        &[(Card::YoungWitch, Card::Aristocrat)],
+        &[(Card::YoungWitch, &[Card::Aristocrat])],
     );
     hand(
         &mut g,
@@ -1234,7 +1234,7 @@ fn obelisk_still_scores_its_pile_after_divine_wind() {
     let mut g = before_divine_wind(
         &[Card::TeaHouse, Card::Smithy],
         &[Card::Obelisk],
-        &[(Card::Obelisk, Card::Smithy)],
+        &[(Card::Obelisk, &[Card::Smithy])],
     );
     hand(&mut g, P0, &[Card::TeaHouse, Card::Smithy]);
     deck(&mut g, P0, &coppers(5));
@@ -1245,6 +1245,82 @@ fn obelisk_still_scores_its_pile_after_divine_wind() {
     assert_eq!(g.score(P0), 2);
 }
 
+/// A Black Market deck of cards that do nothing unless played.
+const BLACK_MARKET_DECK: (Card, &[Card]) = (
+    Card::BlackMarket,
+    &[Card::Smithy, Card::Village, Card::Festival],
+);
+
+/// "The removed piles are gone ... cards can't be returned to those piles" (Divine Wind,
+/// official FAQ), and "the Black Market deck is not considered a 'pile'" (wiki, Black
+/// Market): Way of the Horse can't return a Black Market to it.
+#[test]
+fn a_black_market_does_not_return_to_the_black_market_deck_after_divine_wind() {
+    let mut g = before_divine_wind(
+        &[Card::BlackMarket, Card::TeaHouse],
+        &[Card::WayOfTheHorse],
+        &[BLACK_MARKET_DECK],
+    );
+    hand(&mut g, P0, &[Card::TeaHouse, Card::BlackMarket]);
+    deck(&mut g, P0, &coppers(10));
+    g.start();
+    let deck_pile = g.ext.promos.black_market.unwrap();
+    let before = g.pile(deck_pile).cards.len();
+    play(&mut g, Card::TeaHouse);
+    no(&mut g);
+    assert_eq!(g.supply_pile(Card::BlackMarket), None);
+    let bm = find(&g, P0, Card::BlackMarket);
+    play(&mut g, Card::BlackMarket);
+    respond(&mut g, Response::option(Opt::Card(Card::WayOfTheHorse)));
+    assert_eq!(g.pile(deck_pile).cards.len(), before);
+    assert_eq!(g.zone(bm), Zone::InPlay(P0));
+}
+
+#[test]
+fn a_black_market_bane_is_still_the_bane_after_divine_wind() {
+    let mut g = before_divine_wind(
+        &[Card::YoungWitch, Card::TeaHouse],
+        &[],
+        &[(Card::YoungWitch, &[Card::BlackMarket]), BLACK_MARKET_DECK],
+    );
+    hand(
+        &mut g,
+        P0,
+        &[Card::TeaHouse, Card::YoungWitch, Card::Copper, Card::Copper],
+    );
+    deck(&mut g, P0, &coppers(10));
+    hand(&mut g, P1, &[Card::BlackMarket, Card::Copper]);
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::BlackMarket), None);
+    play(&mut g, Card::YoungWitch);
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(purpose(&g), Purpose::Reveal);
+    yes(&mut g);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+}
+
+#[test]
+fn obelisk_and_traits_still_mark_black_markets_after_divine_wind() {
+    let mut g = before_divine_wind(
+        &[Card::TeaHouse, Card::BlackMarket],
+        &[Card::Obelisk, Card::Cheap],
+        &[
+            (Card::Obelisk, &[Card::BlackMarket]),
+            (Card::Cheap, &[Card::BlackMarket]),
+            BLACK_MARKET_DECK,
+        ],
+    );
+    hand(&mut g, P0, &[Card::TeaHouse, Card::BlackMarket]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    let bm = find(&g, P0, Card::BlackMarket);
+    assert_eq!((g.score(P0), g.cost_of(bm)), (2, Cost::coins(2)));
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::BlackMarket), None);
+    assert_eq!((g.score(P0), g.cost_of(bm)), (2, Cost::coins(2)));
+}
+
 /// "The removed piles are gone", though "Traits still affect their removed piles" (Divine
 /// Wind, official FAQ): there is no Fawning card left to gain.
 #[test]
@@ -1252,7 +1328,7 @@ fn fawning_gains_nothing_from_a_pile_divine_wind_removed() {
     let mut g = before_divine_wind(
         &[Card::TeaHouse, Card::Smithy],
         &[Card::Fawning],
-        &[(Card::Fawning, Card::Smithy)],
+        &[(Card::Fawning, &[Card::Smithy])],
     );
     hand(&mut g, P0, &[Card::TeaHouse]);
     deck(&mut g, P0, &coppers(10));
@@ -1274,7 +1350,7 @@ fn friendly_gains_nothing_from_a_pile_divine_wind_removed() {
     let mut g = before_divine_wind(
         &[Card::TeaHouse, Card::Smithy],
         &[Card::Friendly],
-        &[(Card::Friendly, Card::Smithy)],
+        &[(Card::Friendly, &[Card::Smithy])],
     );
     hand(&mut g, P0, &[Card::TeaHouse, Card::Smithy]);
     deck(&mut g, P0, &coppers(10));
@@ -1319,6 +1395,109 @@ fn divine_wind_takes_the_tokens_off_the_piles_it_removes() {
     assert_eq!(left, (0, 0, 0, false));
     assert_eq!(g.player(P0).tokens[&Token::PlusCard], None);
     assert!(g.ext.allies.inventors.is_empty());
+}
+
+/// The log is complete by itself: it says which piles Divine Wind removes, before the
+/// tokens that leave them, and which piles it deals.
+#[test]
+fn the_log_says_which_piles_divine_wind_removes_and_deals() {
+    let mut g = before_divine_wind(&[Card::TeaHouse, Card::Smithy], &[], &[]);
+    let smithy = g.supply_pile(Card::Smithy).unwrap();
+    g.players[0].tokens.insert(Token::PlusCard, Some(smithy));
+    g.piles[smithy.index()].tokens.push((P0, Token::PlusCard));
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    let n = g.log().len();
+    play(&mut g, Card::TeaHouse);
+    let log = &g.log()[n..];
+    let at = |e: &Event| log.iter().position(|l| l == e);
+    let token = log.iter().position(|e| {
+        matches!(
+            e,
+            Event::TokenMoved {
+                token: Token::PlusCard,
+                pile: None,
+                ..
+            }
+        )
+    });
+    assert!(at(&Event::PileRemoved { pile: smithy }) < token);
+    let dealt: Vec<usize> = (0..g.piles().len())
+        .filter(|&i| g.piles()[i].is_kingdom())
+        .collect();
+    assert_eq!(dealt.len(), 10);
+    for i in dealt {
+        let pile = &g.piles()[i];
+        let e = Event::PileAdded {
+            pile: PileId(i as u8),
+            count: pile.cards.len(),
+            supply: true,
+        };
+        assert!(at(&e) > token, "{}: {log:#?}", pile.card);
+    }
+}
+
+/// Seaway gains a Poet that Innovation plays, and its Sun is the last: the Poet pile is
+/// gone before Seaway moves its +1 Buy token, which stays off the piles.
+#[test]
+fn seaway_puts_no_token_on_a_pile_divine_wind_removed_meanwhile() {
+    let mut g = before_divine_wind(
+        &[Card::Poet, Card::TeaHouse],
+        &[Card::Seaway, Card::Innovation],
+        &[],
+    );
+    g.players[0].projects.push(Card::Innovation);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    to_buy(&mut g);
+    g.turn.coins = 5;
+    reask(&mut g);
+    // The Poet pile is the only one Seaway can gain from.
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Seaway)));
+    // Innovation sets the Poet aside to play it.
+    loop {
+        match g.pending().map(|d| &d.kind) {
+            Some(DecisionKind::Turn { .. }) | None => break,
+            _ if purpose(&g) == Purpose::Trigger => resolve_triggers(&mut g),
+            _ => yes(&mut g),
+        }
+    }
+    let poets = g.pile_of(Card::Poet);
+    assert_eq!(poets, None);
+    assert_eq!(
+        g.player(P0).tokens.get(&Token::PlusBuy).copied().flatten(),
+        None
+    );
+    assert!(g.piles().iter().all(|p| p.tokens.is_empty()));
+}
+
+/// A Snake Witch with no pile still lets its player reveal their hand, but says it can't
+/// return.
+#[test]
+fn snake_witch_with_no_pile_says_so() {
+    let mut g = before_divine_wind(&[Card::SnakeWitch, Card::TeaHouse], &[], &[]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::TeaHouse, Card::SnakeWitch, Card::Estate],
+    );
+    deck(&mut g, P0, &[Card::Gold, Card::Silver, Card::Duchy]);
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.pile_of(Card::SnakeWitch), None);
+    play(&mut g, Card::SnakeWitch);
+    let d = g.pending().unwrap();
+    assert_eq!(d.purpose, Purpose::Reveal);
+    let DecisionKind::Choose { labels, .. } = &d.kind else {
+        panic!("{d:?}");
+    };
+    assert_eq!(
+        labels[0],
+        "Reveal your hand (Snake Witch has no pile to return to)"
+    );
+    yes(&mut g);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
 }
 
 #[test]

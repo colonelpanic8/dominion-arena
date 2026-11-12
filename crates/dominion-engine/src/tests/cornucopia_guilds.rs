@@ -316,6 +316,60 @@ fn ferryman_gains_a_card_from_its_pile() {
     assert_eq!(g.pile(pile).cards.len(), 9);
 }
 
+/// A 2-player game in which `by` set aside or added `pile` in setup.
+fn with_setup_choice(kingdom: &[Card], by: Card, pile: Card) -> Game {
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, kingdom.to_vec(), 7)
+    };
+    config.setup_choices.insert(by, vec![pile]);
+    setup_with(config)
+}
+
+/// "It is the cost listed on the pile's randomizer card that determines whether it is
+/// eligible to be set aside for Ferryman" (wiki, Ferryman); a split pile whose top card
+/// costs $2 or $3 can be the Bane (wiki, Young Witch). The Augurs randomizer costs $3.
+#[test]
+fn ferryman_and_young_witch_take_a_split_pile_by_its_randomizers_cost() {
+    let g = with_setup_choice(&[Card::Ferryman], Card::Ferryman, Card::Augurs);
+    let pile = g.ext.cornucopia_guilds.ferryman.expect("Ferryman's pile");
+    assert_eq!(
+        (g.pile(pile).card, g.pile(pile).in_supply),
+        (Card::Augurs, false)
+    );
+    let g = with_setup_choice(&[Card::YoungWitch], Card::YoungWitch, Card::Augurs);
+    assert!(g.ext.cornucopia_guilds.bane.is_some());
+    assert_eq!(g.ext.cornucopia_guilds.bane, g.supply_pile(Card::Augurs));
+}
+
+/// "Cards like Rats can gain copies of themselves from their own pile, because it
+/// explicitly says 'gain a Rats'" (wiki, Ferryman): a card gained by name comes from its
+/// pile, in the Supply or not (wiki, Gain).
+#[test]
+fn cards_gaining_themselves_by_name_gain_from_ferrymans_pile() {
+    let mut g = with_setup_choice(&[Card::Ferryman], Card::Ferryman, Card::Magpie);
+    hand(&mut g, P0, &[Card::Magpie]);
+    deck(&mut g, P0, &[Card::Copper, Card::Estate, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Magpie);
+    assert_eq!(g.count_owned(P0, Card::Magpie), 2);
+    // Gaining a Ferryman gains a Port or Experiment, which gains another.
+    for card in [Card::Port, Card::Experiment] {
+        let mut g = with_setup_choice(&[Card::Ferryman], Card::Ferryman, card);
+        hand(&mut g, P0, &[Card::Copper; 5]);
+        g.start();
+        for _ in 0..5 {
+            play(&mut g, Card::Copper);
+        }
+        buy(&mut g, Card::Ferryman);
+        while purpose(&g) == Purpose::Trigger {
+            respond(&mut g, Response::option(Opt::Trigger(0)));
+        }
+        assert_eq!(g.count_owned(P0, card), 2, "{card}");
+    }
+}
+
 #[test]
 fn footpad_draws_on_gains_in_action_phases_only() {
     let mut g = setup(&[Card::Footpad, Card::Workshop]);
@@ -983,6 +1037,73 @@ fn young_witch_bane_in_hand_blocks_the_curse() {
     assert_eq!((d.player, d.purpose), (P1, Purpose::Reveal));
     yes(&mut g);
     assert_eq!(g.count_owned(P1, Card::Curse), 0);
+}
+
+/// "If Young Witch is in the Black Market deck, you do put out a Bane" (wiki, Young Witch),
+/// and Divine Wind's new piles get their setup (official FAQ): a Young Witch dealt mid-game
+/// gets one too, even when the sets of the first kingdom have no $2 or $3 card left.
+#[test]
+fn a_young_witch_from_outside_the_kingdom_gets_a_bane() {
+    let mut g = setup(&[
+        Card::TeaHouse,
+        Card::Poet,
+        Card::Kitsune,
+        Card::Ninja,
+        Card::Aristocrat,
+        Card::Craftsman,
+        Card::Fishmonger,
+        Card::Riverboat,
+        Card::RootCellar,
+        Card::SnakeWitch,
+    ]);
+    g.start();
+    add_kingdom_piles(&mut g, &[Card::YoungWitch]);
+    let bane = g.ext.cornucopia_guilds.bane.expect("a Bane pile");
+    assert!(g.pile(bane).is_kingdom());
+
+    let kingdom = vec![
+        Card::BlackMarket,
+        Card::Church,
+        Card::Anvil,
+        Card::Watchtower,
+        Card::Bank,
+        Card::Bishop,
+        Card::City,
+        Card::Expand,
+        Card::Forge,
+        Card::Mint,
+    ];
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, kingdom, 7)
+    };
+    let deck = vec![Card::YoungWitch, Card::Smithy];
+    config.setup_choices.insert(Card::BlackMarket, deck);
+    let g = setup_with(config);
+    let bane = g.ext.cornucopia_guilds.bane.expect("a Bane pile");
+    assert!(g.pile(bane).is_kingdom());
+}
+
+/// "You may select a Kingdom card pile to use as the Bane in whatever way you want ... as
+/// long as its cost is $2 or $3" (wiki, Young Witch): once the sets in the game have none
+/// left, it comes from another set.
+#[test]
+fn a_bane_comes_from_another_set_when_the_sets_in_the_game_have_none_left() {
+    let ours = |c: Card| matches!(c.set(), Set::Base | Set::CornucopiaGuilds);
+    let used: Vec<Card> = Card::kingdom_cards()
+        .filter(|&c| ours(c) && !c.def().removed)
+        .filter(|c| {
+            c.cost()
+                .is_some_and(|k| k == Cost::coins(2) || k == Cost::coins(3))
+        })
+        .collect();
+    let mut g = setup(&[Card::Smithy]);
+    add_kingdom_piles(&mut g, &used);
+    g.start();
+    add_kingdom_piles(&mut g, &[Card::YoungWitch]);
+    let bane = g.ext.cornucopia_guilds.bane.expect("a Bane pile");
+    assert!(!ours(g.pile(bane).card), "{}", g.pile(bane).card);
 }
 
 #[test]

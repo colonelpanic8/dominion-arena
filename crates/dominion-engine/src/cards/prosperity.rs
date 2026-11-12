@@ -290,12 +290,11 @@ impl SetRules for Rules {
         if !s.joined(Card::TradeRoute) {
             return;
         }
-        for i in 0..g.piles.len() {
-            let pile = &g.piles[i];
-            let victory = pile.in_supply
-                && !pile.cards.is_empty()
-                && pile.cards.iter().all(|&c| g.is(c, Types::VICTORY));
-            g.piles[i].trade_route = victory;
+        // A Victory pile by the card it is named after, empty or not.
+        for pile in &mut g.piles {
+            if pile.in_supply && pile.card.is(Types::VICTORY) {
+                pile.trade_route = true;
+            }
         }
     }
 }

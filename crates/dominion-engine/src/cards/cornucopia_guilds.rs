@@ -11,6 +11,7 @@ use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Phase, PileId, PlayerId, Set, Types};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct State {
@@ -404,7 +405,9 @@ impl SetRules for Rules {
 }
 
 /// The unused Kingdom card costing $`lo` to $`hi` that `by` adds (Young Witch's Bane,
-/// Ferryman's pile): any when configured, at random one from the sets in use.
+/// Ferryman's pile), from any set (wiki, Young Witch: "in whatever way you want"): any when
+/// configured; at random one from the sets of the Kingdom cards in the game (Divine Wind's
+/// and the Black Market deck's included), or from any set when those have none left.
 fn choose_unused_costing(g: &mut Game, s: &mut Setup, by: Card, lo: u8, hi: u8) -> Option<Card> {
     let candidates = Card::kingdom_cards()
         .filter(|&c| {
@@ -413,9 +416,14 @@ fn choose_unused_costing(g: &mut Game, s: &mut Setup, by: Card, lo: u8, hi: u8) 
                     .is_some_and(|k| k.potions == 0 && k.debt == 0 && (lo..=hi).contains(&k.coins))
         })
         .collect();
-    let sets: Vec<Set> = g.config.kingdom.iter().map(|c| c.set()).collect();
-    s.choose_or_random(g, by, candidates, 1..=1, |c| sets.contains(&c.set()))
-        .pop()
+    let home = |c: Card| c.def().pile.unwrap_or(c);
+    let sets: BTreeSet<Set> = g
+        .cards
+        .iter()
+        .filter(|&&c| home(c).def().kingdom)
+        .map(|c| c.set())
+        .collect();
+    s.choose_preferring(g, by, candidates, |c| sets.contains(&c.set()))
 }
 
 // ---- Helpers shared with other sets ----
@@ -470,13 +478,14 @@ pub(crate) fn ask_ordered(
     })
 }
 
-/// Gains a `card` from the Supply (if there is one) and finishes.
+/// Gains a `card`, by name: from its pile, in the Supply or not (if there is one), and
+/// finishes.
 pub(crate) fn gain_one(g: &mut Game, f: &mut CardFrame, card: Card, to: Dest) -> Flow {
     if f.pc != 0 {
         return Flow::done();
     }
     f.pc = 1;
-    match g.supply_pile(card) {
+    match g.pile_of(card) {
         Some(pile) => Flow::Call(Frame::gain(f.player, pile, to)),
         None => Flow::done(),
     }

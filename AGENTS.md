@@ -124,7 +124,9 @@ the dividing line), and as applicable `cost` (`coins`, `potions`, `debt`, `varia
 `overpay`), `plus` (leading vanilla bonuses: `cards`, `actions`, `buys`, `coins`,
 `villagers`, `coffers`, `favors`), `coins` (a Treasure's value), `potions`, `vp`,
 `kingdom`, `unimplemented`, `basic`, `removed`, and `pile` (the randomizer or top card
-of its mixed or split pile). `build.rs` turns it into `Card` (one variant per entry, named by
+of its mixed or split pile). A Kingdom randomizer's `cost` is the one printed on it: what
+its pile costs for a setup choice (a Bane, Ferryman's pile). A randomizer is no card
+(`Kind::Randomizer`), so nothing gains, buys or names one, and its cards cost their own. `build.rs` turns it into `Card` (one variant per entry, named by
 CamelCasing the name), `Types` and the `CardDef` table. Arcana is unreleased: its entries are names and types only, none are Kingdom cards yet, and it has no behavior; re-import it once its cards are public.
 Possession is deliberately unimplemented: its entry is marked `unimplemented`, which
 makes it no Kingdom card to the engine, and setup rejects it (`SetupError::Unimplemented`).
@@ -386,7 +388,10 @@ them.
   `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
   decisions mark their labels public with `public_choice`, and labels referring to private
   `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors
-  are tallied as `CardCounter`.
+  are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
+  logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
+  what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
+  `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
@@ -415,6 +420,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   player's, not only the turn's), at other times the cards given to
   `Frame::discard_from_play` (Highwayman). Effects that only use that window as a
   moment of Clean-up check `g.cleaning_up(player)`.
+- A card gained by name ("gain a Rats", "gain another Port") comes from its pile in or
+  out of the Supply (Ferryman's): `g.pile_of(card)`. One gained by type or cost ("gain
+  an Augur", "a card costing up to $4") comes only from the Supply.
 - `+$` goes through `g.add_coins(p, n)` (the -$1 token), +Actions and +Buys through
   `g.add_actions(p, n)` and `g.add_buys(p, n)`: all three do nothing for a player whose
   turn it isn't, so never add to `g.turn` directly. Decisions are asked with the
@@ -457,9 +465,10 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   through `Setup::choose`, which applies `GameConfig::setup_choices`: pass it every
   card the rules allow (a configured choice can be any of them; a random one is never
   an unused removed card), and narrow only the random pick with `choose_or_random`.
-  `Pile::removed` marks a pile out of the game (or a setup holder): name lookups skip it.
-  What marks a pile keeps applying to its cards (the Bane, Obelisk, Traits): ask
-  `g.origin_pile(card)`. "In games using this" asks `setup::in_game`, not for a pile.
+  `Pile::removed` marks a pile out of the game: name lookups skip it. `Pile::holder` marks
+  cards set aside in setup that are no pile by the rules (the Black Market deck,
+  Riverboat's and the Mouse's cards): no lookup by name ever finds it. What marks a pile
+  keeps applying to its cards (the Bane, Obelisk, Traits): ask `g.origin_pile(card)`. "In games using this" asks `setup::in_game`, not for a pile.
 - A pile's types are those of the card it is named after (`Pile::card`: its randomizer
   or top card), whatever is in it now: that decides an "Action Supply pile".
 - "In an Action phase" asks `g.in_action_phase()`: the start of a turn is part of it

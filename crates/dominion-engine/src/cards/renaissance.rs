@@ -621,7 +621,7 @@ fn gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         },
         Card::Experiment => match f.pc {
             0 => {
-                let Some(pile) = g.supply_pile(Card::Experiment) else {
+                let Some(pile) = g.pile_of(Card::Experiment) else {
                     return Flow::done();
                 };
                 let Some(top) = g.pile_top(pile) else {

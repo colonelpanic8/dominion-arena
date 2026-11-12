@@ -1,8 +1,9 @@
 //! Game configuration and setup.
 
 use crate::cards::{self, Ext};
+use crate::event::Event;
 use crate::game::{CardDeck, Pile, Player, Turn, Zone};
-use crate::{Card, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::{Card, CardId, Game, Kind, Note, PileId, PlayerId, Set, Types};
 use rand::SeedableRng;
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand_chacha::ChaCha8Rng;
@@ -421,18 +422,22 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
     Ok(g)
 }
 
-/// Where the cards and landscapes in the game ended at some point, so that setup can
-/// tell what joined since.
+/// Where the cards, piles, landscapes and Artifacts in the game ended at some point, so
+/// that setup can tell what joined since.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Mark {
     cards: usize,
+    piles: usize,
     landscapes: usize,
+    artifacts: usize,
 }
 
 pub(crate) fn mark(g: &Game) -> Mark {
     Mark {
         cards: g.cards.len(),
+        piles: g.piles.len(),
         landscapes: g.landscapes.len(),
+        artifacts: g.artifacts.len(),
     }
 }
 
@@ -472,6 +477,28 @@ impl Setup {
     ) -> Vec<Card> {
         let pool = candidates.iter().copied().filter(|&c| random(c)).collect();
         self.pick(g, by, &candidates, pool, n)
+    }
+
+    /// Like [`Setup::choose`], with a random choice made among the candidates `prefer`
+    /// accepts, or among all of them when none of those is free.
+    pub(crate) fn choose_preferring(
+        &mut self,
+        g: &mut Game,
+        by: Card,
+        candidates: Vec<Card>,
+        prefer: impl Fn(Card) -> bool,
+    ) -> Option<Card> {
+        let preferred: Vec<Card> = candidates
+            .iter()
+            .copied()
+            .filter(|&c| prefer(c) && !never_at_random(g, c))
+            .collect();
+        let pool = if preferred.is_empty() {
+            candidates.clone()
+        } else {
+            preferred
+        };
+        self.pick(g, by, &candidates, pool, 1..=1).pop()
     }
 
     /// Rejects the configured choice `choice` of `by`, which breaks a rule between choices.
@@ -522,17 +549,24 @@ impl Setup {
                 }
             }
         }
-        // A random choice adds no card removed in a second edition (as no random kingdom
-        // has one), and a card configured for another choice isn't free for it.
-        let excluded = |c: &Card| {
-            g.home_pile(*c).is_none()
-                && (c.def().removed || g.config.setup_choices.values().flatten().any(|r| r == c))
-        };
-        pool.retain(|c| !excluded(c));
+        pool.retain(|&c| !never_at_random(g, c));
         g.shuffle(&mut pool);
         pool.truncate(*n.end());
         pool
     }
+}
+
+/// Whether a random choice may not add `card`: it adds no card removed in a second edition
+/// (as no random kingdom has one), and a card configured for another choice isn't free for
+/// it.
+fn never_at_random(g: &Game, card: Card) -> bool {
+    g.home_pile(card).is_none()
+        && (card.def().removed
+            || g.config
+                .setup_choices
+                .values()
+                .flatten()
+                .any(|&r| r == card))
 }
 
 /// Completes setup for whatever joined the game since `since` (everything, at the start):
@@ -549,6 +583,7 @@ pub(crate) fn complete(g: &mut Game, since: Mark) -> Setup {
             g.prophecy.is_some(),
         )
     };
+    let notes = cards::notes(g);
     let mut s = Setup::default();
     for pass in 0.. {
         assert!(pass < 32, "setup does not settle");
@@ -566,8 +601,56 @@ pub(crate) fn complete(g: &mut Game, since: Mark) -> Setup {
     joined.sort();
     joined.dedup();
     s.joined = joined;
+    let logging = g.logging();
+    if logging {
+        log_joined(g, since, &notes);
+    }
     cards::setup(g, &mut s);
+    if logging {
+        g.sync_log(None);
+    }
     s
+}
+
+/// Logs what joined the game during play, before what its setup gives: the new piles,
+/// landscapes and Artifacts, cards setup put elsewhere, and the public state it made.
+fn log_joined(g: &mut Game, since: Mark, notes: &[Note]) {
+    for i in since.piles..g.piles.len() {
+        let pile = &g.piles[i];
+        // A holder no one sees as a pile (Riverboat's card) is told by its note.
+        if !pile.removed {
+            let (count, supply) = (pile.cards.len(), pile.in_supply);
+            g.emit(Event::PileAdded {
+                pile: PileId(i as u8),
+                count,
+                supply,
+            });
+        }
+    }
+    let added: Vec<Card> = g.landscapes[since.landscapes..]
+        .iter()
+        .copied()
+        .chain(g.artifacts[since.artifacts..].iter().map(|&(c, _)| c))
+        .collect();
+    for card in added {
+        g.emit(Event::Added { card, to: None });
+    }
+    for i in since.cards..g.cards.len() {
+        let id = CardId(i as u32);
+        match g.zone(id) {
+            Zone::Pile(p) if p.index() >= since.piles => {}
+            zone if g.is_public(id) => g.emit(Event::Added {
+                card: g.cards[i],
+                to: Some(zone),
+            }),
+            _ => {}
+        }
+    }
+    for note in cards::notes(g) {
+        if !notes.contains(&note) {
+            g.emit(Event::Noted { note });
+        }
+    }
 }
 
 /// Whether a card matching `pred` is in the game, anywhere, or a landscape matches it.

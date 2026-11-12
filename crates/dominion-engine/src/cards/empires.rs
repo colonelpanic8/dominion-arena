@@ -643,7 +643,7 @@ impl SetRules for Rules {
         let action_piles: Vec<PileId> = supply
             .iter()
             .copied()
-            .filter(|&id| g.pile_top(id).is_some_and(|top| g.is(top, Types::ACTION)))
+            .filter(|&id| g.pile(id).card.is(Types::ACTION))
             .collect();
         let joined: Vec<Card> = g
             .landscapes
@@ -667,8 +667,7 @@ impl SetRules for Rules {
                 Card::DefiledShrine => {
                     g.ext.empires.landmark_vp.push((l, 0));
                     for &pile in &action_piles {
-                        let gathering = g.pile_top(pile).is_some_and(|t| g.is(t, Types::GATHERING));
-                        if !gathering {
+                        if !g.pile(pile).card.is(Types::GATHERING) {
                             g.piles[pile.index()].vp_tokens += 2;
                         }
                     }

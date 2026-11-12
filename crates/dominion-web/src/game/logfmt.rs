@@ -808,7 +808,7 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
                 push_list(&mut spans, &[(card.clone(), 1)], false);
                 text(&mut spans, ".");
             }
-            None => {
+            Some(Entry::Setup) | None => {
                 let rest = rest_of(e, names);
                 match e
                     .card

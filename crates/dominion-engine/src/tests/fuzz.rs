@@ -1921,7 +1921,7 @@ fn check_invariants(g: &Game, flags: &mut Flags) {
                 || format!("{pile:?}; {}", ctx(g)),
             );
         }
-        let holds_any = pile.removed || Some(PileId(i as u8)) == g.ext.promos.black_market;
+        let holds_any = pile.removed || pile.holder;
         if let Some(&c) = pile
             .cards
             .iter()

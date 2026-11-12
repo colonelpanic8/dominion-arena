@@ -350,7 +350,7 @@ fn transmute(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 let (_, card) = TRANSMUTE[f.s.i];
                 let wanted = f.s.n & (1 << f.s.i) != 0;
                 f.s.i += 1;
-                if wanted && let Some(pile) = g.supply_pile(card) {
+                if wanted && let Some(pile) = g.pile_of(card) {
                     return Flow::Call(Frame::gain(f.player, pile, Dest::Discard));
                 }
             }

@@ -612,6 +612,7 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
     };
     let mut holder = Pile::new(card, false);
     holder.removed = true;
+    holder.holder = true;
     let pile = g.add_pile(holder);
     let id = g.create(card, Zone::Pile(pile));
     g.ext.rising_sun.riverboat = Some(id);
@@ -652,10 +653,13 @@ fn remove_sun(g: &mut Game, p: PlayerId) -> Flow {
 /// on the removed piles leave them: Adventures tokens go back to their players.
 fn divine_wind(g: &mut Game) {
     for i in 0..g.piles.len() {
-        let pile = &mut g.piles[i];
-        if !pile.is_kingdom() {
+        if !g.piles[i].is_kingdom() {
             continue;
         }
+        g.emit(Event::PileRemoved {
+            pile: PileId(i as u8),
+        });
+        let pile = &mut g.piles[i];
         pile.in_supply = false;
         pile.removed = true;
         (
@@ -1165,7 +1169,15 @@ fn snake_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Reveal, format!("Reveal your hand and return {} to its pile, so each other player gains a Curse", g.card(f.this())))
+            let this = g.card(f.this());
+            let question = if g.home_pile(g.printed(f.this())).is_some() {
+                format!(
+                    "Reveal your hand and return {this} to its pile, so each other player gains a Curse"
+                )
+            } else {
+                format!("Reveal your hand ({this} has no pile to return to)")
+            };
+            f.ask_yes_no(Purpose::Reveal, question)
         }
         1 => {
             if !input.is_yes() {

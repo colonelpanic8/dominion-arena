@@ -363,8 +363,11 @@ impl SetRules for Rules {
                     Flow::Call(Frame::gain(f.player, pile, Dest::Discard))
                 }
                 _ => {
+                    // Divine Wind may have removed the pile while the gain resolved.
                     let pile = f.s.pile.expect("set in step 1");
-                    place_token(g, f.player, Token::PlusBuy, pile);
+                    if !g.pile(pile).removed {
+                        place_token(g, f.player, Token::PlusBuy, pile);
+                    }
                     Flow::done()
                 }
             },
@@ -1173,7 +1176,7 @@ fn on_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         },
         Card::Port => match f.pc {
             0 => {
-                let Some(top) = g.supply_pile(Card::Port).and_then(|pile| g.pile_top(pile)) else {
+                let Some(top) = g.pile_of(Card::Port).and_then(|pile| g.pile_top(pile)) else {
                     return Some(Flow::done());
                 };
                 g.ext.adventures.extra_ports.push(top);
@@ -1476,7 +1479,7 @@ fn magpie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             if g.is(c, Types::ACTION | Types::VICTORY)
-                && let Some(pile) = g.supply_pile(Card::Magpie)
+                && let Some(pile) = g.pile_of(Card::Magpie)
             {
                 return Flow::Call(Frame::gain(p, pile, Dest::Discard));
             }

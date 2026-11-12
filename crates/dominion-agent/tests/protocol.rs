@@ -430,12 +430,13 @@ fn the_kingdom_is_the_kingdom_piles_in_the_game() {
     assert_eq!(view.game.kingdom, flagged);
 }
 
-#[test]
-fn divine_wind_replaces_the_kingdom() {
-    let config = GameConfig {
+/// A table of ten base cards, Divine Wind and `landscapes`, whose seat 0 buys and plays
+/// Poets until the last Sun is gone; seat 1 does nothing.
+fn after_divine_wind(landscapes: &[Card], choices: &[(Card, Card)]) -> Table {
+    let mut config = GameConfig {
         colonies: Some(false),
         shelters: Some(false),
-        landscapes: vec![Card::DivineWind],
+        landscapes: [&[Card::DivineWind], landscapes].concat(),
         ..GameConfig::new(
             2,
             vec![
@@ -453,13 +454,15 @@ fn divine_wind_replaces_the_kingdom() {
             3,
         )
     };
+    for &(by, choice) in choices {
+        config.setup_choices.insert(by, vec![choice]);
+    }
     let mut t = Table::new("t", config, vec![]).unwrap();
     let suns = |t: &Table| {
         let view = t.view(PlayerId(1));
         let wind = view.landscapes.iter().find(|l| l.card == "Divine Wind");
         wind.and_then(|l| l.suns).expect("Divine Wind's Sun tokens")
     };
-    // Seat 0 buys and plays Poets until the last Sun is gone; seat 1 does nothing.
     while suns(&t) > 0 {
         let seat = t.deciding().expect("the game goes on");
         let d = t.view(seat).decision.unwrap();
@@ -476,6 +479,12 @@ fn divine_wind_replaces_the_kingdom() {
         };
         t.answer(seat, &answer).unwrap();
     }
+    t
+}
+
+#[test]
+fn divine_wind_replaces_the_kingdom_and_the_log_says_so() {
+    let t = after_divine_wind(&[], &[]);
     let view = t.view(PlayerId(1));
     let flagged: Vec<&str> = view
         .supply
@@ -486,6 +495,33 @@ fn divine_wind_replaces_the_kingdom() {
     assert_eq!(flagged.len(), 10);
     assert!(!flagged.contains(&"Poet"));
     assert_eq!(view.game.kingdom, flagged);
+    let log: Vec<String> = t
+        .view_from(PlayerId(1), 0)
+        .since_last_decision
+        .into_iter()
+        .map(|e| e.text)
+        .collect();
+    assert!(log.contains(&"The Poet pile is removed from the game".to_string()));
+    for pile in view.supply.iter().filter(|p| p.kingdom) {
+        let joined = format!("The {} pile joins the Supply (", pile.card);
+        assert!(log.iter().any(|l| l.starts_with(&joined)), "{log:#?}");
+    }
+}
+
+/// "If Divine Wind goes into effect, the pile with the Trait is removed from the supply,
+/// but cards from that removed pile still have the Trait" (wiki, Trait): a note says so.
+#[test]
+fn a_trait_on_a_pile_divine_wind_removed_is_still_noted() {
+    let t = after_divine_wind(&[Card::Cheap], &[(Card::Cheap, Card::Smithy)]);
+    let view = t.view(PlayerId(1));
+    assert!(!view.supply.iter().any(|p| p.card == "Smithy"));
+    assert!(
+        view.notes
+            .iter()
+            .any(|n| n.source == "Cheap" && n.pile.as_deref() == Some("Smithy")),
+        "{:#?}",
+        view.notes
+    );
 }
 
 #[test]

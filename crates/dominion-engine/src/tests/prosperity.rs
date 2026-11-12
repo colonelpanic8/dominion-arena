@@ -1168,6 +1168,27 @@ fn gaining_a_victory_card_from_the_trash_moves_its_piles_trade_route_token() {
     assert!(!g.pile(g.supply_pile(Card::Duchy).unwrap()).trade_route);
 }
 
+/// "Put a Coin token on each Victory card pile being used" (official FAQ): a pile is a
+/// Victory pile by the card it is named after, so an empty one gets a token when Trade
+/// Route joins during play (Divine Wind).
+#[test]
+fn trade_route_joining_during_play_puts_a_token_on_an_empty_victory_pile() {
+    let mut g = setup(&[Card::Smithy]);
+    let duchies = g.supply_pile(Card::Duchy).unwrap();
+    for id in g.pile(duchies).cards.clone() {
+        g.move_card(id, Zone::Trash, crate::game::Pos::Top);
+    }
+    g.start();
+    add_kingdom_piles(&mut g, &[Card::TradeRoute]);
+    let tokens: Vec<Card> = g
+        .piles()
+        .iter()
+        .filter(|p| p.trade_route)
+        .map(|p| p.card)
+        .collect();
+    assert_eq!(tokens, [Card::Estate, Card::Duchy, Card::Province]);
+}
+
 #[test]
 fn trade_route_gives_a_coin_per_token_on_the_mat() {
     let mut g = setup(&[Card::TradeRoute]);
