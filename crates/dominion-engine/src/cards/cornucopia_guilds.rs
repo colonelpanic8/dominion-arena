@@ -470,13 +470,14 @@ pub(crate) fn ask_ordered(
     })
 }
 
-/// Gains a `card` from the Supply (if there is one) and finishes.
+/// Gains a `card`, by name: from its pile, in the Supply or not (if there is one), and
+/// finishes.
 pub(crate) fn gain_one(g: &mut Game, f: &mut CardFrame, card: Card, to: Dest) -> Flow {
     if f.pc != 0 {
         return Flow::done();
     }
     f.pc = 1;
-    match g.supply_pile(card) {
+    match g.pile_of(card) {
         Some(pile) => Flow::Call(Frame::gain(f.player, pile, to)),
         None => Flow::done(),
     }

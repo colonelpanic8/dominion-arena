@@ -378,7 +378,7 @@ impl SetRules for Rules {
                     );
                 }
                 if kind == Card::Duchy
-                    && g.supply_pile(Card::Duchess)
+                    && g.pile_of(Card::Duchess)
                         .is_some_and(|p| !g.pile(p).cards.is_empty())
                 {
                     out.push(

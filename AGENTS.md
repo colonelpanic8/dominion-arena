@@ -410,6 +410,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
   player's, not only the turn's), at other times the cards given to
   `Frame::discard_from_play` (Highwayman). Effects that only use that window as a
   moment of Clean-up check `g.cleaning_up(player)`.
+- A card gained by name ("gain a Rats", "gain another Port") comes from its pile in or
+  out of the Supply (Ferryman's): `g.pile_of(card)`. One gained by type or cost ("gain
+  an Augur", "a card costing up to $4") comes only from the Supply.
 - `+$` goes through `g.add_coins(p, n)` (the -$1 token), +Actions and +Buys through
   `g.add_actions(p, n)` and `g.add_buys(p, n)`: all three do nothing for a player whose
   turn it isn't, so never add to `g.turn` directly. Decisions are asked with the

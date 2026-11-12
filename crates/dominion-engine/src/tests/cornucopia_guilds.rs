@@ -343,6 +343,33 @@ fn ferryman_and_young_witch_take_a_split_pile_by_its_randomizers_cost() {
     assert_eq!(g.ext.cornucopia_guilds.bane, g.supply_pile(Card::Augurs));
 }
 
+/// "Cards like Rats can gain copies of themselves from their own pile, because it
+/// explicitly says 'gain a Rats'" (wiki, Ferryman): a card gained by name comes from its
+/// pile, in the Supply or not (wiki, Gain).
+#[test]
+fn cards_gaining_themselves_by_name_gain_from_ferrymans_pile() {
+    let mut g = with_setup_choice(&[Card::Ferryman], Card::Ferryman, Card::Magpie);
+    hand(&mut g, P0, &[Card::Magpie]);
+    deck(&mut g, P0, &[Card::Copper, Card::Estate, Card::Copper]);
+    g.start();
+    play(&mut g, Card::Magpie);
+    assert_eq!(g.count_owned(P0, Card::Magpie), 2);
+    // Gaining a Ferryman gains a Port or Experiment, which gains another.
+    for card in [Card::Port, Card::Experiment] {
+        let mut g = with_setup_choice(&[Card::Ferryman], Card::Ferryman, card);
+        hand(&mut g, P0, &[Card::Copper; 5]);
+        g.start();
+        for _ in 0..5 {
+            play(&mut g, Card::Copper);
+        }
+        buy(&mut g, Card::Ferryman);
+        while purpose(&g) == Purpose::Trigger {
+            respond(&mut g, Response::option(Opt::Trigger(0)));
+        }
+        assert_eq!(g.count_owned(P0, card), 2, "{card}");
+    }
+}
+
 #[test]
 fn footpad_draws_on_gains_in_action_phases_only() {
     let mut g = setup(&[Card::Footpad, Card::Workshop]);
