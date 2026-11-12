@@ -155,12 +155,7 @@ impl SetRules for Rules {
                 plus_buys(g, f.player, 2);
                 Flow::done()
             }
-            (Card::Panic, Hook::Ability(PANIC_RETURN)) => {
-                for c in panic_returns(g, f.player) {
-                    g.return_to_pile(c);
-                }
-                Flow::done()
-            }
+            (Card::Panic, Hook::Ability(PANIC_RETURN)) => panic_return(g, f, input),
             (Card::Progress, Hook::Ability(PROGRESS)) => {
                 if let Some(Occasion::Gain { card, .. }) = f.occ {
                     g.top_deck(card, f.player);
@@ -707,6 +702,36 @@ fn panic_returns(g: &Game, p: PlayerId) -> Vec<CardId> {
         .into_iter()
         .filter(|&c| g.is(c, Types::TREASURE) && g.home_pile(g.printed(c)).is_some())
         .collect()
+}
+
+/// Panic: returns the Treasures leaving play to their piles. Differently named ones going
+/// to one pile (Loots) return one at a time in the order their player picks: the last is
+/// on top.
+fn panic_return(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
+    let p = f.player;
+    if let Some(c) = input.card()
+        && g.zone(c) == Zone::InPlay(p)
+    {
+        g.return_to_pile(c);
+    }
+    let left = panic_returns(g, p);
+    let pile = |c: CardId| g.home_pile(g.printed(c));
+    let ordered: Vec<CardId> = left
+        .iter()
+        .copied()
+        .filter(|&c| {
+            left.iter()
+                .any(|&o| pile(o) == pile(c) && g.card(o) != g.card(c))
+        })
+        .collect();
+    if ordered.is_empty() {
+        for c in left {
+            g.return_to_pile(c);
+        }
+        return Flow::done();
+    }
+    f.ask_cards(ordered, 1, 1, Purpose::Return)
+        .question("return to its pile next (the last returned is on top)")
 }
 
 // ---- Lasting effects ----

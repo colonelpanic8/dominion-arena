@@ -2635,6 +2635,34 @@ fn reckless_cards_follow_their_instructions_twice_and_return_to_their_pile() {
     assert_eq!(g.count_owned(P0, Card::Smithy), 0);
 }
 
+/// Differently named cards of a split pile return to it in the order their player chooses,
+/// which decides its top card (as Tireless: "If a split pile is Tireless, you can put the
+/// cards onto your deck in any order").
+#[test]
+fn reckless_cards_of_a_split_pile_return_in_a_chosen_order() {
+    let mut g = setup(&[Card::Patrician]);
+    set_trait(&mut g, Card::Reckless, Card::Patrician);
+    let ids = hand(&mut g, P0, &[Card::Patrician, Card::Emporium]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Patrician);
+    play(&mut g, Card::Emporium);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(trigger_cards(&g), [Card::Reckless, Card::Reckless]);
+    let DecisionKind::Choose { labels, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending())
+    };
+    let emporium = labels
+        .iter()
+        .position(|l| l.contains("Emporium"))
+        .expect("the options say which card each returns");
+    respond(&mut g, Response::option(Opt::Trigger(emporium as u16)));
+    resolve_triggers(&mut g);
+    let pile = g.pile_of(Card::Patrician).unwrap();
+    assert_eq!(g.pile_top(pile), Some(ids[0]));
+}
+
 #[test]
 fn one_moat_reveal_covers_both_runs_of_a_reckless_attack() {
     let mut g = setup(&[Card::Militia, Card::Moat]);

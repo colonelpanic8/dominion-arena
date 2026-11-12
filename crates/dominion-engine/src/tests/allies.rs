@@ -891,6 +891,38 @@ fn highwayman_stops_the_first_treasure_each_other_player_plays_each_turn() {
     assert_eq!(g.turn().coins, 1);
 }
 
+/// "Unlike Enchantress, this can affect a Treasure that another player plays during your
+/// turn": a Buried Treasure gained to Barbarian and played does nothing, and P1's first
+/// Treasure of their own turn is stopped too.
+#[test]
+fn highwayman_stops_a_treasure_another_player_plays_on_its_owners_turn() {
+    let mut g = game(&[Card::Highwayman, Card::Barbarian, Card::BuriedTreasure]);
+    hand(&mut g, P0, &[Card::Highwayman, Card::Barbarian]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    let mut p1 = vec![Card::Gold];
+    p1.extend([Card::Copper; 5]);
+    deck(&mut g, P1, &p1);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Highwayman);
+    play(&mut g, Card::Barbarian);
+    assert_eq!(g.pending().unwrap().player, P1);
+    choose_pile(&mut g, Card::BuriedTreasure);
+    assert!(g.log().contains(&Event::Played {
+        player: P1,
+        card: Card::BuriedTreasure,
+    }));
+    assert!(!g.lasting().iter().any(|l| l.card == Card::BuriedTreasure));
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P1);
+    assert_eq!((g.turn().coins, g.turn().buys), (0, 1));
+    assert!(kinds(&g, &g.player(P1).discard).contains(&Card::BuriedTreasure));
+    to_buy(&mut g);
+    play(&mut g, Card::Copper);
+    assert_eq!(g.turn().coins, 0);
+}
+
 /// With Charlatan in the game a Curse is a Treasure, so one played first is the first
 /// Treasure.
 #[test]

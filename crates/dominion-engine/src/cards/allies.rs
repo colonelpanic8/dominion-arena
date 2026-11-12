@@ -305,8 +305,7 @@ impl SetRules for Rules {
                 _ => {}
             },
             Occasion::Play { player, card } => {
-                if player == g.turn.player
-                    && g.is(card, Types::TREASURE)
+                if g.is(card, Types::TREASURE)
                     && highwayman_attacks(g, player)
                     && g.turn.played_of(player, Types::TREASURE) == 1
                 {
