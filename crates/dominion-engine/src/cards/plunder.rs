@@ -21,7 +21,7 @@ use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
-use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Trace, Types};
+use crate::{Card, CardId, Cost, Game, Kind, Note, PileId, PlayerId, Set, Trace, Types};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -117,6 +117,18 @@ fn holds(card: Card) -> bool {
 }
 
 impl SetRules for Rules {
+    fn notes(g: &Game, out: &mut Vec<Note>) {
+        // A Trait on a pile Divine Wind removed still marks its cards, though agents see
+        // only the piles in the game.
+        for (i, pile) in g.piles().iter().enumerate() {
+            if pile.removed && !pile.holder {
+                for &t in &pile.traits {
+                    out.push(Note::new(t).pile(PileId(i as u8)));
+                }
+            }
+        }
+    }
+
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(START)) if has_start(c) => start(g, f, input),

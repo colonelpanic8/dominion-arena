@@ -508,6 +508,22 @@ fn divine_wind_replaces_the_kingdom_and_the_log_says_so() {
     }
 }
 
+/// "If Divine Wind goes into effect, the pile with the Trait is removed from the supply,
+/// but cards from that removed pile still have the Trait" (wiki, Trait): a note says so.
+#[test]
+fn a_trait_on_a_pile_divine_wind_removed_is_still_noted() {
+    let t = after_divine_wind(&[Card::Cheap], &[(Card::Cheap, Card::Smithy)]);
+    let view = t.view(PlayerId(1));
+    assert!(!view.supply.iter().any(|p| p.card == "Smithy"));
+    assert!(
+        view.notes
+            .iter()
+            .any(|n| n.source == "Cheap" && n.pile.as_deref() == Some("Smithy")),
+        "{:#?}",
+        view.notes
+    );
+}
+
 #[test]
 fn the_black_market_deck_is_a_face_down_pile_of_known_cards() {
     let t = table(&[Card::BlackMarket], 4, &[]);

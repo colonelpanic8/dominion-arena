@@ -532,7 +532,8 @@ impl<'a> CardDeckView<'a> {
 /// [`View`] shows directly: Young Witch's Bane pile, Ferryman's and Obelisk's piles, the
 /// Black Market deck, Way of the Mouse's and Riverboat's cards, Druid's Boons, the
 /// card each player set aside with Inheritance, cards Exiled with Invest, VP on
-/// Landmarks, Family of Inventors' Favors on piles, Sinister Plot's tokens.
+/// Landmarks, Family of Inventors' Favors on piles, Sinister Plot's tokens, Traits on piles
+/// Divine Wind removed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     pub source: Card,
