@@ -387,6 +387,23 @@ fn black_cat_played_out_of_turn_is_answered_by_moat() {
     assert_eq!(gained(&g, P0), [Card::Estate]);
 }
 
+/// On another player's turn, Way of the Chameleon turns Black Cat's +2 Cards into +$2,
+/// which does nothing; the others still gain Curses.
+#[test]
+fn black_cat_with_way_of_the_chameleon_off_turn_gives_nothing_but_still_curses() {
+    let mut g = way_game(Card::WayOfTheChameleon, &[Card::BlackCat]);
+    hand(&mut g, P0, &[Card::Copper, Card::Copper]);
+    hand(&mut g, P1, &[Card::BlackCat]);
+    g.start();
+    play_treasures(&mut g);
+    buy(&mut g, Card::Estate);
+    trigger(&mut g, Card::BlackCat);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert!(g.hand(P1).is_empty());
+    assert_eq!(g.turn().coins, 0);
+    assert_eq!(gained(&g, P0), [Card::Estate, Card::Curse]);
+}
+
 #[test]
 fn bounty_hunter_gives_three_only_for_a_card_with_no_copy_in_exile() {
     let mut g = setup(&[Card::BountyHunter]);
@@ -2319,6 +2336,68 @@ fn a_duration_played_after_way_of_the_horse_returned_it_does_nothing_later() {
     next_turn(&mut g);
     assert_eq!(g.turn().player, P0);
     assert_eq!((g.hand(P0).len(), g.turn().buys), (5, 1));
+}
+
+#[test]
+fn way_of_the_horse_returns_a_card_to_its_empty_pile() {
+    let mut g = way_game(Card::WayOfTheHorse, &[Card::Smithy]);
+    let pile = g.pile_of(Card::Smithy).unwrap();
+    for c in g.pile(pile).cards.clone() {
+        g.move_card(c, Zone::Trash, crate::game::Pos::Top);
+    }
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheHorse);
+    assert_eq!(pile_len(&g, Card::Smithy), 1);
+    assert_eq!((g.turn().actions, g.hand(P0).len()), (1, 2));
+}
+
+#[test]
+fn way_of_the_horse_draws_what_there_is() {
+    let mut g = way_game(Card::WayOfTheHorse, &[Card::Smithy]);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[Card::Gold]);
+    g.start();
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheHorse);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
+    assert_eq!(g.turn().actions, 1);
+    assert_eq!(pile_len(&g, Card::Smithy), 11);
+}
+
+/// King's Court plays a Caravan as itself, then with Way of the Horse, which returns it to
+/// its pile, then with Way of the Chameleon: the last play still happens, and nothing is
+/// left for the next turn.
+#[test]
+fn kings_court_uses_a_way_on_each_play_separately() {
+    let mut g = setup_with_landscapes(
+        &[Card::KingsCourt, Card::Caravan],
+        &[Card::WayOfTheHorse, Card::WayOfTheChameleon],
+    );
+    hand(&mut g, P0, &[Card::KingsCourt, Card::Caravan]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::KingsCourt);
+    own(&mut g);
+    choose_kinds(&mut g, &[Card::Caravan]);
+    own(&mut g);
+    assert_eq!(g.hand(P0).len(), 1);
+    way(&mut g, Card::WayOfTheHorse);
+    assert_eq!(g.hand(P0).len(), 3);
+    assert_eq!(pile_len(&g, Card::Caravan), 11);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!(g.hand(P0).len(), 3);
+    assert_eq!((g.turn().actions, g.turn().coins), (3, 1));
+    assert_eq!(in_play_kinds(&g, P0), [Card::KingsCourt]);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.hand(P0).len(), 5);
+    assert!(g.lasting().is_empty());
 }
 
 #[test]
