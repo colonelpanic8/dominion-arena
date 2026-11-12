@@ -81,6 +81,7 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | Route | Body | Returns |
 | --- | --- | --- |
 | `GET /api/cards` | | every card-shaped object as printed |
+| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationMs, webSounds, webVolume}` |
 | `GET /api/games` | | the games, as `list_games` gives them |
 | `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
@@ -90,8 +91,8 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 
 `/assets/` serves the asset cache (`assets_dir`), then the web client's own bundled files
 (`web_dir/assets`), and every other path the built web client (`web_dir`, falling back to
-its `index.html`). These routes accept the same Host
-headers as `/mcp`.
+its `index.html`); without a cache, `/assets/manifest.json` is 204 No Content. These
+routes accept the same Host headers as `/mcp`.
 
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 
@@ -104,6 +105,10 @@ state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_
 keep_finished_days = 7         # serve: delete finished games this old at startup
 assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
+web_animations = true          # serve: the web client shows cards moving
+web_animation_ms = 250         # serve: how long one card takes to move, in milliseconds
+web_sounds = true              # serve: the web client plays dominion.games' sounds (from the asset cache)
+web_volume = 0.5               # serve: their volume, 0.0 to 1.0
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
@@ -129,20 +134,30 @@ personal use and are never part of this repository or its package.
 
 `crates/dominion-web` is a browser client (Dioxus, compiled to wasm) for the same
 server: a lobby to create games and take seats, and a game page that shows a seat's view
-and answers its decisions. The lobby's kingdom builder picks the sets, then either leaves
-the kingdom to the server (ten piles dealt at random from those sets) or fills a tray of
-ten slots by clicking cards, with Randomize filling the unlocked slots. A chosen kingdom
-is played exactly as given, also with fewer or more than ten piles; its landscapes are
-the ones in the tray, plus an Ally or Prophecy the kingdom needs.
-The game page is a table laid out like dominion.games' (the
-Supply, the play area, your hand, opponents, the log): the cards and piles you may choose
-glow and are clicked where they lie, other choices appear in a tray or as buttons, hovering
-or right-clicking a card shows it large, Enter confirms, Escape clears, E ends a phase and
-T plays your Treasures. A Plain toggle shows the same game as text and buttons. It keeps the seat tokens it holds in the browser's
-localStorage; a seat link `/game/<id>#token=<token>` opens a seat in another browser.
-Cards are drawn like dominion.games' own from the asset cache (`dominion assets sync`),
-which the client only references by URL; without a cache they are drawn in CSS. `/gallery`
-shows every card at each size.
+and answers its decisions.
+
+The lobby's kingdom builder picks the sets, then either leaves the kingdom to the server
+(ten piles dealt at random from those sets) or fills a tray of ten slots by clicking
+cards, with Randomize filling the unlocked slots. A chosen kingdom is played exactly as
+given, also with fewer or more than ten piles; its landscapes are the ones in the tray,
+plus an Ally or Prophecy the kingdom needs.
+
+The game page is a table laid out like dominion.games': opponents along the top, the
+Supply with the play area under it, your hand, and the log on the right. The cards and
+piles you may choose glow and are clicked where they lie; other choices appear in a tray
+or as buttons. Hovering over a card or right-clicking it shows it large; Enter confirms,
+Escape clears, E ends a phase and T plays your Treasures. Cards are seen moving between
+zones, as inferred from the log and the change in the view (`web_animations`,
+`web_animation_ms`; none with `prefers-reduced-motion`), and dominion.games' sounds mark
+your turn, your shuffles and the end of the game (`web_sounds`, `web_volume`, and a
+mute toggle on the page for the session). A Plain toggle shows the same game as text
+and buttons.
+
+The client keeps the seat tokens it holds in the browser's localStorage; a seat link
+`/game/<id>#token=<token>` opens a seat in another browser. Cards are drawn like
+dominion.games' own from the asset cache (`dominion assets sync`), which the client only
+references by URL; without a cache they are drawn in CSS and the table is silent.
+`/gallery` shows every card at each size.
 
 ```sh
 just web-build                  # release build into target/web-client

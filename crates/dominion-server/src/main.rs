@@ -161,6 +161,7 @@ async fn serve(config: Config) -> Result<(), String> {
         session_idle: config.session_idle(),
         assets_dir: config.assets_dir(),
         web_dir,
+        web: config.web(),
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await

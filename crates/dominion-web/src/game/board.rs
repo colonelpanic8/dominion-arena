@@ -526,6 +526,54 @@ fn kingdom_rows(mut piles: Vec<PileEntry>) -> Vec<Vec<PileEntry>> {
     rows
 }
 
+/// Puts a note where it belongs: on the pile it names (the Bane, Obelisk's pile), or a
+/// card it names on the pile or landscape it comes from (Druid's Boons, Way of the
+/// Mouse's card). Every note is also listed with the other effects.
+fn note_badge(
+    n: &dominion_protocol::NoteView,
+    basic: &mut [PileEntry],
+    kingdom: &mut [PileEntry],
+    non_supply: &mut [PileEntry],
+    landscapes: &mut [LandscapeEntry],
+) {
+    if n.player.is_some() || n.pile.as_ref() == Some(&n.source) {
+        return;
+    }
+    let (on, kind, card) = match (&n.pile, &n.card) {
+        (Some(pile), None) => (
+            pile.as_str(),
+            if n.source == "Young Witch" {
+                "bane"
+            } else {
+                "note"
+            },
+            n.source.clone(),
+        ),
+        (None, Some(card)) => (n.source.as_str(), "note", card.clone()),
+        _ => return,
+    };
+    let b = Badge {
+        kind: kind.into(),
+        text: match &n.pile {
+            Some(_) => format!("{} ({})", n.source, n.count),
+            None => format!("{}: {card}", n.source),
+        },
+        count: (n.count != 0).then_some(n.count),
+        player: None,
+        card: Some(card),
+    };
+    if let Some(p) = basic
+        .iter_mut()
+        .chain(kingdom.iter_mut())
+        .chain(non_supply.iter_mut())
+        .find(|p| p.name == on)
+    {
+        p.badges.push(b);
+    } else if let Some(l) = landscapes.iter_mut().find(|l| l.card == on) {
+        l.badges.push(b);
+    }
+}
+
 fn until_text(l: &dominion_protocol::LastingView, names: &Names<'_>) -> String {
     match (l.until.as_str(), l.until_player) {
         ("end-of-turn", _) => "this turn".into(),
@@ -573,7 +621,7 @@ pub fn board(view: &AgentView, deciding: Option<u8>, cards: &CardDb) -> Board {
     basic.sort_by_key(|e| BASIC_ORDER.iter().position(|&n| n == e.name));
     basic.extend(others);
 
-    let landscapes = view
+    let landscapes: Vec<LandscapeEntry> = view
         .landscapes
         .iter()
         .map(|l| {
@@ -624,18 +672,29 @@ pub fn board(view: &AgentView, deciding: Option<u8>, cards: &CardDb) -> Board {
         count: d.count,
         discard: d.discard.clone(),
     };
+    let mut non_supply: Vec<PileEntry> = view
+        .non_supply
+        .iter()
+        .enumerate()
+        .map(|(i, p)| pile_entry(PileAt::NonSupply(i), p, &names))
+        .collect();
+    let mut landscapes: Vec<LandscapeEntry> = landscapes;
+    for n in &view.notes {
+        note_badge(
+            n,
+            &mut basic,
+            &mut kingdom,
+            &mut non_supply,
+            &mut landscapes,
+        );
+    }
     Board {
         status,
         supply: Supply {
             basic,
             kingdom: kingdom_rows(kingdom),
         },
-        non_supply: view
-            .non_supply
-            .iter()
-            .enumerate()
-            .map(|(i, p)| pile_entry(PileAt::NonSupply(i), p, &names))
-            .collect(),
+        non_supply,
         landscapes,
         you,
         opponents,

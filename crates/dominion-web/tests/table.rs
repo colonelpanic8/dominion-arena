@@ -254,7 +254,17 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
             + usize::from(t.debt != 0)
             + t.players.len()
             + p.traits.len();
-        assert_eq!(e.badges.len(), tokens);
+        let notes = view
+            .notes
+            .iter()
+            .filter(|n| n.player.is_none() && n.pile.as_ref() != Some(&n.source))
+            .filter(|n| match (&n.pile, &n.card) {
+                (Some(pile), None) => *pile == e.name,
+                (None, Some(_)) => n.source == e.name,
+                _ => false,
+            })
+            .count();
+        assert_eq!(e.badges.len(), tokens + notes);
     }
     let lands: Vec<&str> = b.landscapes.iter().map(|l| l.card.as_str()).collect();
     let want: Vec<&str> = view.landscapes.iter().map(|l| l.card.as_str()).collect();

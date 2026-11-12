@@ -30,6 +30,8 @@ pub struct Options {
     pub assets_dir: Option<PathBuf>,
     /// The built web client, served at `/`.
     pub web_dir: Option<PathBuf>,
+    /// What `GET /api/settings` tells the web client.
+    pub web: dominion_protocol::api::WebSettings,
 }
 
 impl Default for Options {
@@ -39,6 +41,7 @@ impl Default for Options {
             session_idle: config::Config::default().session_idle(),
             assets_dir: None,
             web_dir: None,
+            web: Default::default(),
         }
     }
 }

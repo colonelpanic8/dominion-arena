@@ -1,6 +1,7 @@
 //! The players: opponents along the top, the play area of whoever's turn it is, and
 //! your deck, hand, discard pile and mats at the bottom.
 
+use super::layout::{self, Row};
 use super::model::split_play;
 use super::pieces::{HoverName, TableCard, seat_class};
 use super::supply::Badges;
@@ -11,8 +12,6 @@ use crate::game::state::Selection;
 use dioxus::prelude::*;
 use dominion_protocol::LogEntry;
 use std::rc::Rc;
-
-const UNKNOWN: &str = "unknown";
 
 fn zone_popup(title: String, z: &Zone, note: Option<String>) -> Popup {
     Popup {
@@ -55,7 +54,11 @@ fn ZoneStrips(
     .collect();
     rsx! {
         for (key, label, z) in groups.iter() {
-            div { key: "{key}", class: "dt-zone", "data-zone": "{key}",
+            div {
+                key: "{key}",
+                class: "dt-zone",
+                "data-zone": "{key}",
+                "data-anchor": if key == "inPlay" { format!("inplay:{}", p.seat) } else { format!("zone:{}:{key}", p.seat) },
                 div { class: "dt-zone-label", "{label} " span { class: "dt-zone-n", "{z.count}" } }
                 div { class: "dt-zone-cards",
                     for s in z.known.iter() {
@@ -94,19 +97,134 @@ fn ZoneStrips(
 }
 
 #[component]
-pub fn Opponents(opponents: Vec<PlayerEntry>, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+pub fn Opponents(opponents: Vec<PlayerEntry>) -> Element {
     rsx! {
-        div { class: "dt-opps",
+        div { class: "dt-opps", style: "--n:{opponents.len().max(1)};",
             for o in opponents.iter() {
-                Opponent { key: "{o.seat}", player: o.clone(), ui: ui.clone(), sel: sel.clone() }
+                Opponent { key: "{o.seat}", player: o.clone() }
+            }
+        }
+    }
+}
+
+/// A player's piles as small cards: the hand as a fan of backs, the deck, the discard.
+#[component]
+fn SmallPile(
+    anchor: String,
+    label: String,
+    count: u32,
+    #[props(default)] top: Option<String>,
+    #[props(default)] fan: bool,
+    popup: Popup,
+) -> Element {
+    let ctx = use_table();
+    let backs = if fan { count.clamp(1, 5) } else { 1 };
+    rsx! {
+        div {
+            class: "dt-spile dt-click",
+            class: if fan { "dt-fan" },
+            class: if count == 0 { "dt-spile-empty" },
+            "data-anchor": "{anchor}",
+            title: "{label}: {count}",
+            onclick: move |e| { e.stop_propagation(); ctx.open(popup.clone()); },
+            div { class: "dt-spile-cards", style: "--fan:{backs};",
+                if count > 0 {
+                    match top.clone() {
+                        Some(card) => rsx! {
+                            div { class: "dt-spile-card", "data-name": "{card}",
+                                crate::card::CardView { name: card.clone(), size: CardSize::Full }
+                            }
+                        },
+                        None => rsx! {
+                            for i in 0..backs {
+                                div { key: "{i}", class: "dt-spile-card", style: "--i:{i};",
+                                    crate::card::CardBack { size: CardSize::Full }
+                                }
+                            }
+                        },
+                    }
+                }
+                span { class: "dt-spile-n", "{count}" }
+            }
+            div { class: "dt-spile-label", "{label}" }
+        }
+    }
+}
+
+/// A discard pile's top card when the seat can tell it: one kind of card, all known.
+fn discard_top(z: &Zone) -> Option<String> {
+    match (z.known.as_slice(), z.unknown) {
+        ([only], 0) => Some(only.card.clone()),
+        _ => None,
+    }
+}
+
+/// Mats, set-aside cards, cards kept in play and the landscapes a player holds, as
+/// chips that open them.
+#[component]
+fn ZoneChips(player: PlayerEntry, show_in_play: bool) -> Element {
+    let ctx = use_table();
+    let p = &player;
+    let mut groups: Vec<(String, String, Zone)> = vec![];
+    if show_in_play && p.in_play.count > 0 {
+        groups.push(("inPlay".into(), "In play".into(), p.in_play.clone()));
+    }
+    for z in &p.zones {
+        if z.zone.count > 0 {
+            groups.push((z.key.clone(), z.label.clone(), z.zone.clone()));
+        }
+    }
+    let held: Vec<String> = p
+        .projects
+        .iter()
+        .chain(&p.states)
+        .chain(&p.boons)
+        .chain(&p.artifacts)
+        .cloned()
+        .collect();
+    rsx! {
+        div { class: "dt-ochips",
+            for (key, label, z) in groups.into_iter() {
+                {
+                    let anchor = if key == "inPlay" { format!("inplay:{}", p.seat) } else { format!("zone:{}:{key}", p.seat) };
+                    let popup = zone_popup(format!("{}: {label}", p.name), &z, None);
+                    let names: Vec<String> = z.known.iter().map(|s| s.card.clone()).collect();
+                    rsx! {
+                        button {
+                            key: "{key}",
+                            class: "dt-ochip",
+                            "data-anchor": "{anchor}",
+                            "data-zone": "{key}",
+                            title: "{label}",
+                            onclick: move |e| { e.stop_propagation(); ctx.open(popup.clone()); },
+                            span { class: "dt-ochip-k", "{label}" }
+                            span { class: "dt-ochip-n", "{z.count}" }
+                            for n in names.iter() {
+                                span { key: "{n}", class: "dt-ochip-card", "data-name": "{n}",
+                                    HoverName { name: n.clone() }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for c in held.iter() {
+                span { key: "h{c}", class: "dt-ochip dt-ochip-held", HoverName { name: c.clone() } }
+            }
+            for u in p.uncertain.iter() {
+                span { class: "dt-uncertain", title: "Cards known only to be among these zones", "{u.text}" }
+            }
+            if !p.counters.is_empty() {
+                for (k, v) in p.counters.iter() {
+                    span { key: "c{k}", class: "dt-ochip dt-ochip-held", "{k} {v}" }
+                }
             }
         }
     }
 }
 
 #[component]
-fn Opponent(player: PlayerEntry, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
-    let ctx = use_table();
+fn Opponent(player: PlayerEntry) -> Element {
     let p = &player;
     let discard = zone_popup(format!("{}'s discard pile", p.name), &p.discard, None);
     let deck = zone_popup(
@@ -121,47 +239,44 @@ fn Opponent(player: PlayerEntry, ui: Option<Rc<Ui>>, sel: Selection) -> Element 
             class: if p.is_turn { "dt-turn" },
             class: if p.deciding { "dt-decides" },
             "data-seat": "{p.seat}",
+            "data-anchor": "player:{p.seat}",
             div { class: "dt-opp-head",
                 span { class: "dt-pname", "{p.name}" }
                 if let Some(vp) = p.vp {
                     span { class: "dt-vp", title: "Victory points", "{vp}" }
                 }
-                if p.is_turn {
-                    span { class: "dt-flag", "their turn" }
-                }
                 if p.deciding {
                     span { class: "dt-flag dt-flag-decides", "deciding" }
+                } else if p.is_turn {
+                    span { class: "dt-flag", "their turn" }
                 }
                 Badges { badges: p.badges.clone() }
             }
-            div { class: "dt-opp-row",
-                button {
-                    class: "dt-count-chip",
-                    title: "Hand",
-                    onclick: move |e| { e.stop_propagation(); ctx.open(hand.clone()); },
-                    span { class: "dt-chip-back" }
-                    "Hand {p.hand.count}"
-                }
-                button {
-                    class: "dt-count-chip",
-                    title: "Deck",
-                    onclick: move |e| { e.stop_propagation(); ctx.open(deck.clone()); },
-                    "Deck {p.deck.count}"
-                }
-                button {
-                    class: "dt-count-chip",
-                    title: "Discard pile",
-                    onclick: move |e| { e.stop_propagation(); ctx.open(discard.clone()); },
-                    "Discard {p.discard.count}"
-                }
-                for u in p.uncertain.iter() {
-                    span { class: "dt-uncertain", title: "Cards known only to be among these zones", "{u.text}" }
-                }
-            }
-            div { class: "dt-opp-zones",
-                ZoneStrips { player: p.clone(), show_in_play: !p.is_turn, ui: ui.clone(), sel: sel.clone(), you: false }
+            div { class: "dt-opp-body",
+                SmallPile { anchor: format!("hand:{}", p.seat), label: "Hand", count: p.hand.count, fan: true, popup: hand }
+                SmallPile { anchor: format!("deck:{}", p.seat), label: "Deck", count: p.deck.count, popup: deck }
+                SmallPile { anchor: format!("discard:{}", p.seat), label: "Discard", count: p.discard.count, top: discard_top(&p.discard), popup: discard }
+                ZoneChips { player: p.clone(), show_in_play: !p.is_turn }
             }
         }
+    }
+}
+
+/// One card of a row: a stack, or the seat's unknown cards as a back.
+#[derive(Clone, Debug, PartialEq)]
+struct Slot {
+    card: String,
+    count: u32,
+    back: bool,
+    earlier: bool,
+    mark: crate::game::table::Mark,
+}
+
+/// The style placing one slot of a row laid out by [`Row`].
+fn slot_style(row: &Row, last: bool) -> String {
+    match row.step {
+        Some(step) if !last => format!("width:{:.1}px;margin-right:{:.1}px;", row.w, step - row.w),
+        _ => format!("width:{:.1}px;", row.w),
     }
 }
 
@@ -171,6 +286,11 @@ pub fn PlayArea(
     log: Vec<LogEntry>,
     ui: Option<Rc<Ui>>,
     sel: Selection,
+    /// The play area's box, and the widest its cards may be.
+    w: f64,
+    h: f64,
+    gap: f64,
+    max_w: f64,
 ) -> Element {
     let pa = &board.play_area;
     let Some(who) = pa.player.clone() else {
@@ -186,58 +306,88 @@ pub fn PlayArea(
         marked.push(card.to_string());
         mark_at(&ui, &sel, Spot::InPlay(card.to_string()))
     };
-    let now_marks: Vec<_> = now.iter().map(|s| mark_for(&s.card)).collect();
-    let earlier_marks: Vec<_> = earlier.iter().map(|s| mark_for(&s.card)).collect();
-    let empty = now.is_empty() && earlier.is_empty() && pa.cards.unknown == 0;
+    let mut slots: Vec<Slot> = vec![];
+    for (stacks, early) in [(&earlier, true), (&now, false)] {
+        for s in stacks {
+            slots.push(Slot {
+                card: s.card.clone(),
+                count: s.count,
+                back: false,
+                earlier: early,
+                mark: mark_for(&s.card),
+            });
+        }
+    }
+    if pa.cards.unknown > 0 {
+        slots.push(Slot {
+            card: String::new(),
+            count: pa.cards.unknown,
+            back: true,
+            earlier: false,
+            mark: Default::default(),
+        });
+    }
+    let split = !earlier.is_empty() && slots.iter().any(|s| !s.earlier);
+    let pad = 2.0 * gap;
+    let avail_w = (w - 2.0 * pad - if split { 4.0 * gap } else { 0.0 }).max(10.0);
+    let avail_h = (h - 2.0 * pad - 1.2 * gap).max(10.0);
+    let row = layout::play(slots.len(), avail_w, avail_h, gap, max_w);
+    let per = slots.len().div_ceil(row.rows.max(1)).max(1);
+    let size = if row.mini {
+        CardSize::Mini
+    } else {
+        CardSize::Full
+    };
+    let rows: Vec<Vec<Slot>> = slots.chunks(per).map(<[Slot]>::to_vec).collect();
+    let empty = slots.is_empty();
     rsx! {
         div {
             class: "dt-play {seat_class(who.seat)}",
-            class: if !earlier.is_empty() { "dt-has-earlier" },
+            class: if empty { "dt-play-is-empty" },
             "data-player": "{who.seat}",
-            div { class: "dt-play-label", "{who.name}'s play area" }
-            if !earlier.is_empty() {
-                div { class: "dt-earlier",
-                    div { class: "dt-earlier-label", "From earlier turns" }
-                    div { class: "dt-row",
-                        for (s, m) in earlier.iter().zip(earlier_marks) {
-                            div { key: "e{s.card}", class: "dt-slot",
+            "data-anchor": "inplay:{who.seat}",
+            div { class: "dt-play-label",
+                if yours { "Your cards in play" } else { "{who.name}'s cards in play" }
+            }
+            div { class: "dt-play-rows",
+                for (ri, r) in rows.iter().enumerate() {
+                    div { key: "{ri}", class: "dt-row dt-play-row",
+                        for (i, s) in r.iter().enumerate() {
+                            div {
+                                key: "{s.earlier}{s.card}",
+                                class: "dt-slot",
+                                class: if s.earlier { "dt-earlier" },
+                                class: if split && s.earlier && r.get(i + 1).is_some_and(|n| !n.earlier) { "dt-split" },
+                                style: slot_style(&row, i + 1 == r.len()),
                                 TableCard {
                                     name: s.card.clone(),
-                                    size: CardSize::Full,
-                                    count: (s.count > 1).then_some(s.count),
-                                    mark: m,
+                                    size,
+                                    back: s.back,
+                                    count: (s.count > 1 || s.back).then_some(s.count),
+                                    mark: s.mark.clone(),
+                                    label: (s.earlier && !row.mini).then(|| "earlier turn".to_string()),
                                 }
                             }
                         }
                     }
                 }
             }
-            div { class: "dt-row dt-play-row",
-                for (s, m) in now.iter().zip(now_marks) {
-                    div { key: "n{s.card}", class: "dt-slot",
-                        TableCard {
-                            name: s.card.clone(),
-                            size: CardSize::Full,
-                            count: (s.count > 1).then_some(s.count),
-                            mark: m,
-                        }
-                    }
-                }
-                if pa.cards.unknown > 0 {
-                    div { key: "{UNKNOWN}", class: "dt-slot",
-                        TableCard { name: "", size: CardSize::Full, back: true, count: Some(pa.cards.unknown) }
-                    }
-                }
-                if empty {
-                    div { class: "dt-play-empty", "No cards in play" }
-                }
+            if empty {
+                div { class: "dt-play-empty", "No cards in play" }
             }
         }
     }
 }
 
 #[component]
-pub fn YourArea(board: Rc<Board>, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+pub fn YourArea(
+    board: Rc<Board>,
+    ui: Option<Rc<Ui>>,
+    sel: Selection,
+    hand_w: f64,
+    hand_h: f64,
+    gap: f64,
+) -> Element {
     let Some(you) = board.you.clone() else {
         return rsx! { div { class: "dt-you dt-spectating", "Spectating" } };
     };
@@ -251,17 +401,77 @@ pub fn YourArea(board: Rc<Board>, ui: Option<Rc<Ui>>, sel: Selection) -> Element
         }),
     );
     let discard = zone_popup("Your discard pile".into(), &you.discard, None);
-    let discard_top = match (you.discard.known.as_slice(), you.discard.unknown) {
-        ([only], 0) => Some(only.card.clone()),
-        _ => None,
-    };
-    let your_turn = board.play_area.player.as_ref().map(|w| w.seat) == Some(you.seat);
-    let hand_marks: Vec<_> = you
+    let top = discard_top(&you.discard);
+    let mut slots: Vec<Slot> = you
         .hand
         .known
         .iter()
-        .map(|s| mark_at(&ui, &sel, Spot::Hand(s.card.clone())))
+        .map(|s| Slot {
+            card: s.card.clone(),
+            count: s.count,
+            back: false,
+            earlier: false,
+            mark: mark_at(&ui, &sel, Spot::Hand(s.card.clone())),
+        })
         .collect();
+    if you.hand.unknown > 0 {
+        slots.push(Slot {
+            card: String::new(),
+            count: you.hand.unknown,
+            back: true,
+            earlier: false,
+            mark: Default::default(),
+        });
+    }
+    let row = layout::hand(slots.len(), hand_w.max(10.0), hand_h.max(10.0), gap);
+    let ctx = use_table();
+    rsx! {
+        div { class: "dt-you {seat_class(you.seat)}", "data-seat": "{you.seat}",
+            div { class: "dt-pilebox", "data-pile": "deck", "data-anchor": "deck:{you.seat}",
+                if you.deck.count > 0 {
+                    TableCard { name: "", size: CardSize::Full, back: true, count: Some(you.deck.count), opens: deck }
+                } else {
+                    div { class: "dt-empty-slot", onclick: move |e| { e.stop_propagation(); ctx.open(deck.clone()); }, "0" }
+                }
+                div { class: "dt-pile-label", "Deck" }
+            }
+            div { class: "dt-hand", "data-anchor": "hand:{you.seat}",
+                if you.hand.count == 0 {
+                    div { class: "dt-hand-empty", "Your hand is empty" }
+                }
+                for (i, s) in slots.iter().enumerate() {
+                    div { key: "{s.back}{s.card}", class: "dt-slot", style: slot_style(&row, i + 1 == slots.len()),
+                        TableCard {
+                            name: s.card.clone(),
+                            size: CardSize::Full,
+                            back: s.back,
+                            count: (s.count > 1 || s.back).then_some(s.count),
+                            mark: s.mark.clone(),
+                        }
+                    }
+                }
+            }
+            div { class: "dt-pilebox", "data-pile": "discard", "data-anchor": "discard:{you.seat}",
+                if you.discard.count == 0 {
+                    div { class: "dt-empty-slot", "0" }
+                } else if let Some(top) = top {
+                    TableCard { name: top, size: CardSize::Full, count: Some(you.discard.count), opens: discard }
+                } else {
+                    TableCard { name: "", size: CardSize::Full, back: true, count: Some(you.discard.count), opens: discard }
+                }
+                div { class: "dt-pile-label", "Discard" }
+            }
+        }
+    }
+}
+
+/// Your name, VP, tokens, mats and the like, in the side column.
+#[component]
+pub fn YouPanel(board: Rc<Board>, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+    let Some(you) = board.you.clone() else {
+        return rsx! {};
+    };
+    let your_turn = board.play_area.player.as_ref().map(|w| w.seat) == Some(you.seat);
     let owned = zone_popup(
         "Everything you own".into(),
         &you.owned,
@@ -276,66 +486,26 @@ pub fn YourArea(board: Rc<Board>, ui: Option<Rc<Ui>>, sel: Selection) -> Element
     );
     let ctx = use_table();
     rsx! {
-        div { class: "dt-you {seat_class(you.seat)}", "data-seat": "{you.seat}",
-            div { class: "dt-pilebox", "data-pile": "deck",
-                if you.deck.count > 0 {
-                    TableCard { name: "", size: CardSize::Full, back: true, count: Some(you.deck.count), opens: deck }
-                } else {
-                    div { class: "dt-empty-slot", onclick: move |e| { e.stop_propagation(); ctx.open(deck.clone()); }, "0" }
+        div { class: "dt-yzones {seat_class(you.seat)}", "data-anchor": "player:{you.seat}",
+            div { class: "dt-you-head",
+                span { class: "dt-pname", "{you.name}" }
+                if let Some(vp) = you.vp {
+                    span { class: "dt-vp", title: "Victory points", "{vp}" }
                 }
-                div { class: "dt-pile-label", "Deck" }
-            }
-            div { class: "dt-hand",
-                if you.hand.count == 0 {
-                    div { class: "dt-hand-empty", "Your hand is empty" }
-                }
-                for (s, m) in you.hand.known.iter().zip(hand_marks) {
-                    div { key: "{s.card}", class: "dt-slot",
-                        TableCard {
-                            name: s.card.clone(),
-                            size: CardSize::Full,
-                            count: (s.count > 1).then_some(s.count),
-                            mark: m,
-                        }
-                    }
-                }
-                if you.hand.unknown > 0 {
-                    div { key: "{UNKNOWN}", class: "dt-slot",
-                        TableCard { name: "", size: CardSize::Full, back: true, count: Some(you.hand.unknown) }
-                    }
-                }
-            }
-            div { class: "dt-pilebox", "data-pile": "discard",
-                if you.discard.count == 0 {
-                    div { class: "dt-empty-slot", "0" }
-                } else if let Some(top) = discard_top {
-                    TableCard { name: top, size: CardSize::Full, count: Some(you.discard.count), opens: discard }
-                } else {
-                    TableCard { name: "", size: CardSize::Full, back: true, count: Some(you.discard.count), opens: discard }
-                }
-                div { class: "dt-pile-label", "Discard" }
-            }
-            div { class: "dt-yzones",
-                div { class: "dt-you-head",
-                    span { class: "dt-pname", "{you.name}" }
-                    if let Some(vp) = you.vp {
-                        span { class: "dt-vp", title: "Victory points", "{vp}" }
-                    }
-                    button {
-                        class: "dt-count-chip",
-                        title: "Every card you own",
-                        onclick: move |e| { e.stop_propagation(); ctx.open(owned.clone()); },
-                        "Owned {you.owned.count}"
-                    }
+                button {
+                    class: "dt-count-chip",
+                    title: "Every card you own",
+                    onclick: move |e| { e.stop_propagation(); ctx.open(owned.clone()); },
+                    "Owned {you.owned.count}"
                 }
                 Badges { badges: you.badges.clone() }
-                ZoneStrips { player: you.clone(), show_in_play: !your_turn, ui: ui.clone(), sel: sel.clone(), you: true }
-                for u in you.uncertain.iter() {
-                    div { class: "dt-uncertain", "{u.text}: "
-                        for s in u.candidates.iter() {
-                            HoverName { key: "{s.card}", name: s.card.clone(), label: format!("{} {}", s.count, s.card) }
-                            " "
-                        }
+            }
+            ZoneStrips { player: you.clone(), show_in_play: !your_turn, ui: ui.clone(), sel: sel.clone(), you: true }
+            for u in you.uncertain.iter() {
+                div { class: "dt-uncertain", "{u.text}: "
+                    for s in u.candidates.iter() {
+                        HoverName { key: "{s.card}", name: s.card.clone(), label: format!("{} {}", s.count, s.card) }
+                        " "
                     }
                 }
             }

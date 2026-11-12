@@ -96,12 +96,16 @@ fn badge_short(kind: &str) -> &str {
 pub fn BadgeView(badge: Badge) -> Element {
     let assets = use_assets();
     let b = &badge;
-    if b.kind == "trait"
+    if matches!(b.kind.as_str(), "trait" | "note" | "bane")
         && let Some(card) = b.card.clone()
     {
+        let label = (b.kind == "bane").then(|| "Bane".to_string());
         return rsx! {
-            span { class: "dt-badge dt-b-trait", title: "{b.text}",
-                HoverName { name: card }
+            span { class: "dt-badge dt-b-trait dt-b-{b.kind}", title: "{b.text}",
+                HoverName { name: card, label }
+                if let Some(n) = b.count {
+                    " {n}"
+                }
             }
         };
     }
@@ -184,6 +188,9 @@ pub fn TableCard(
     #[props(default)] label: Option<String>,
     #[props(default)] opens: Option<Popup>,
     #[props(default)] class: String,
+    /// Names the zone or pile it stands for, for cards seen moving to and from it.
+    #[props(default)]
+    anchor: Option<String>,
 ) -> Element {
     let ctx = use_table();
     let Mark {
@@ -255,6 +262,7 @@ pub fn TableCard(
             class: if clickable { "dt-click" },
             class: if wide { "dt-wide" },
             "data-name": "{name}",
+            "data-anchor": anchor,
             "data-target": if target.is_some() { "{target_attr}" },
             "data-options": if target.is_some() { "{options}" },
             onclick: move |e| {
@@ -278,7 +286,7 @@ pub fn TableCard(
                 }
             },
             if back {
-                CardBack { size: if size == CardSize::Micro { CardSize::Mini } else { size } }
+                CardBack { size }
             } else {
                 CardView { name: name.clone(), size, cost }
             }

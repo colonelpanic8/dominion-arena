@@ -66,12 +66,20 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     mod.rs                `TableGame`, `TableCtx` (selection, hover preview, popups, keys,
                           the Play Treasures run), `Mark`: how a card takes part in a decision
     model.rs              each target's `Spot` on the table; play area this turn / earlier (pure)
+    motion.rs             cards seen moving: DOM snapshot before a view change, ghost cards
+                          and slides after it (`moves`), the pool ghosts are cloned from
+    sound.rs              the turn chime, shuffle and end-of-game sounds; the mute toggle
+    layout.rs             pixel sizes of the Supply band, play area and hand from measured boxes
+                          (pure; the table measures `.dt-middle` and `.dt-hand`)
     pieces.rs             `TableCard` (glow, picks, counts, badges), badges, `HoverName`, preview
     supply.rs players.rs prompt.rs side.rs   Supply and strip; opponents, play area, your
                           cards; status/prompt bar and tray; log, "more" panel, game over
-  assets/table.css        table styles, sized from --u and container units of the middle row
+  assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
   src/game/logfmt.rs      the log as display lines: turn headers, depth, card spans
+  src/game/moves.rs       which cards moved where between two boards, from the log and the
+                          boards (pure); ghosts summarising them
   tests/table.rs          those models and the table's spots property-tested over random games
+  tests/moves.rs          move inference over random games, and hand-checked steps
   src/lobby.rs            game list, new game (the kingdom builder), join by token
   src/kingdom.rs          the builder's model: piles by set, tray, randomizer, NewGame (pure)
   assets/lobby.css        lobby styles

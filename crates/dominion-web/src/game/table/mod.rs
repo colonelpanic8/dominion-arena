@@ -4,11 +4,14 @@
 //! model and answers through the [`interaction`](super::interaction) model: every
 //! target of the open decision has one [`Spot`] where it glows and is clicked.
 
+pub mod layout;
 pub mod model;
+mod motion;
 mod pieces;
 mod players;
 mod prompt;
 mod side;
+mod sound;
 mod supply;
 
 use super::board::{Board, Stack, board};
@@ -21,6 +24,7 @@ use crate::platform;
 use dioxus::prelude::*;
 use dominion_protocol::{AgentDecision, Answer};
 pub use model::Spot;
+pub use motion::before_change;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -108,6 +112,9 @@ pub struct TableCtx {
     pub sel: Signal<Sel>,
     pub hover: Signal<Option<Hover>>,
     hover_seq: Signal<u64>,
+    /// After a click, no preview until the pointer moves: things slide under a still
+    /// pointer and would pop one up.
+    hover_quiet: Signal<bool>,
     pub popup: Signal<Option<Popup>>,
     run: Signal<Option<Run>>,
     cards: Signal<Rc<crate::cards::CardDb>>,
@@ -270,6 +277,9 @@ impl TableCtx {
     }
 
     pub fn hover_enter(&self, name: &str, x: f64, y: f64) {
+        if *self.hover_quiet.peek() {
+            return;
+        }
         let mut seq = self.hover_seq;
         let n = *seq.peek() + 1;
         seq.set(n);
@@ -301,6 +311,22 @@ impl TableCtx {
             y,
             shown: true,
         }));
+    }
+
+    /// A click: the preview goes, and stays away until the pointer moves.
+    pub fn clicked(&self) {
+        let mut q = self.hover_quiet;
+        if !*q.peek() {
+            q.set(true);
+        }
+        self.hover_leave();
+    }
+
+    pub fn pointer_moved(&self) {
+        let mut q = self.hover_quiet;
+        if *q.peek() {
+            q.set(false);
+        }
     }
 
     pub fn hover_leave(&self) {
@@ -338,6 +364,58 @@ impl TableCtx {
         }
     }
 }
+
+/// The measured boxes the layout is computed for: the middle row, the hand and the
+/// gap between things, in CSS pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Boxes {
+    pub middle: (f64, f64),
+    pub hand: (f64, f64),
+    pub gap: f64,
+}
+
+impl Boxes {
+    /// A guess from the window's size, until the first measurement.
+    fn guess() -> Boxes {
+        let (vw, vh) = platform::viewport();
+        let u = (vh / 100.0).min(vw * 0.005625);
+        let side = (vw * 0.19).clamp(230.0, 520.0);
+        let w = vw - side - u;
+        Boxes {
+            middle: (w, vh * 0.5),
+            hand: (w * 0.75, 24.0 * u),
+            gap: 0.5 * u,
+        }
+    }
+}
+
+const MEASURE_JS: &str = r#"
+if (window.__dtMeasure) { clearInterval(window.__dtMeasure.timer); window.removeEventListener('resize', window.__dtMeasure.fn); }
+(() => {
+  let last = '';
+  const fn = () => {
+    const m = document.querySelector('.dt-middle');
+    if (!m) return;
+    const h = document.querySelector('.dt-hand');
+    const cs = getComputedStyle(m);
+    const px = k => parseFloat(cs[k]) || 0;
+    const content = (el) => {
+      if (!el) return [0, 0];
+      const b = el.getBoundingClientRect(), c = getComputedStyle(el), p = k => parseFloat(c[k]) || 0;
+      return [b.width - p('paddingLeft') - p('paddingRight'), b.height - p('paddingTop') - p('paddingBottom')];
+    };
+    const g = px('rowGap') || 4;
+    const v = [...content(m), ...content(h), g].map(x => Math.round(x * 10) / 10);
+    const key = v.join(',');
+    if (key === last) return;
+    last = key;
+    try { dioxus.send(v); } catch (_) {}
+  };
+  window.__dtMeasure = { fn, timer: setInterval(fn, 250) };
+  window.addEventListener('resize', fn);
+  fn();
+})();
+"#;
 
 const KEYS_JS: &str = r#"
 if (window.__dtKeys) document.removeEventListener('keydown', window.__dtKeys);
@@ -426,6 +504,7 @@ pub fn TableGame(controls: Element) -> Element {
         sel: Signal::new(Sel::default()),
         hover: Signal::new(None),
         hover_seq: Signal::new(0),
+        hover_quiet: Signal::new(false),
         popup: Signal::new(None),
         run: Signal::new(None),
         cards,
@@ -455,6 +534,51 @@ pub fn TableGame(controls: Element) -> Element {
             Some(_) => {}
             None => run.set(None),
         }
+    });
+
+    let flight = motion::use_motion(board_memo, game);
+    use_effect(move || {
+        board_memo.read();
+        let shown = ctx.hover.peek().as_ref().map(|h| h.name.clone());
+        if let Some(name) = shown
+            && !platform::js_bool(&format!(
+                "!!document.querySelector('[data-name=\"' + CSS.escape({}) + '\"]:hover, .dt-name:hover')",
+                serde_json::Value::String(name)
+            ))
+        {
+            ctx.hover_leave();
+        }
+    });
+    let muted = use_signal(sound::session_muted);
+    sound::use_sound(board_memo, game, muted);
+    let mut boxes = use_signal(Boxes::guess);
+    use_future(move || async move {
+        let mut eval = document::eval(MEASURE_JS);
+        while let Ok(v) = eval.recv::<Vec<f64>>().await {
+            if let [mw, mh, hw, hh, g] = v[..] {
+                let b = Boxes {
+                    middle: (mw, mh),
+                    hand: (hw, hh),
+                    gap: g,
+                };
+                if *boxes.peek() != b {
+                    boxes.set(b);
+                }
+            }
+        }
+    });
+    let shape = use_memo(move || {
+        let b = board_memo.read();
+        b.as_ref().map(|b| supply::shape(b)).unwrap_or_default()
+    });
+    let middle = use_memo(move || {
+        let bx = boxes();
+        Rc::new(layout::middle(
+            &shape.read(),
+            bx.middle.0,
+            bx.middle.1,
+            bx.gap,
+        ))
     });
 
     use_future(move || async move {
@@ -493,6 +617,26 @@ pub fn TableGame(controls: Element) -> Element {
     };
     let sel = ctx.selection();
     let ui_now = ui.read().clone();
+    let source_owner = ui_now.as_ref().and_then(|u| {
+        let src = u.decision.source.as_ref()?;
+        let who = b
+            .play_area
+            .player
+            .as_ref()
+            .filter(|_| !b.status.your_turn)?;
+        b.play_area
+            .cards
+            .known
+            .iter()
+            .any(|s| &s.card == src)
+            .then(|| who.name.clone())
+    });
+    let lay = middle();
+    let bx = boxes();
+    let mid_style = format!(
+        "--sh:{:.1}px;--k:{:.1}px;--b:{:.1}px;--ww:{:.1}px;--nw:{:.1}px;",
+        lay.supply_h, lay.k, lay.b, lay.wide_w, lay.ns_w
+    );
     let can_treasures = ui_now
         .as_ref()
         .is_some_and(|u| !u.inter.treasures.is_empty());
@@ -511,11 +655,22 @@ pub fn TableGame(controls: Element) -> Element {
                     ctx.close();
                 }
             },
+            onmousedown: move |_| ctx.clicked(),
+            onmousemove: move |_| ctx.pointer_moved(),
             div { class: "dt-main",
-                players::Opponents { opponents: b.opponents.clone(), ui: ui_now.clone(), sel: sel.clone() }
-                div { class: "dt-middle",
-                    supply::SupplyArea { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
-                    players::PlayArea { board: b.clone(), log: log.clone(), ui: ui_now.clone(), sel: sel.clone() }
+                players::Opponents { opponents: b.opponents.clone() }
+                div { class: "dt-middle", style: "{mid_style}",
+                    supply::SupplyArea { board: b.clone(), lay: lay.clone(), ui: ui_now.clone(), sel: sel.clone() }
+                    players::PlayArea {
+                        board: b.clone(),
+                        log: log.clone(),
+                        ui: ui_now.clone(),
+                        sel: sel.clone(),
+                        w: bx.middle.0,
+                        h: lay.play_h,
+                        gap: bx.gap,
+                        max_w: lay.k * 1.15,
+                    }
                     prompt::Tray { ui: ui_now.clone(), sel: sel.clone() }
                     if let Some(p) = ctx.popup.read().clone() {
                         PopupView { popup: p }
@@ -528,11 +683,22 @@ pub fn TableGame(controls: Element) -> Element {
                     error,
                     busy: answering,
                     can_treasures,
+                    source_owner,
                 }
-                players::YourArea { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
+                players::YourArea {
+                    board: b.clone(),
+                    ui: ui_now.clone(),
+                    sel: sel.clone(),
+                    hand_w: bx.hand.0,
+                    hand_h: bx.hand.1,
+                    gap: bx.gap,
+                }
             }
             aside { class: "dt-side",
-                div { class: "dt-controls", {controls} }
+                div { class: "dt-controls", {controls}
+                    sound::MuteToggle { muted }
+                }
+                players::YouPanel { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
                 side::More { board: b.clone() }
                 side::Log { entries: log, names }
             }
@@ -540,6 +706,7 @@ pub fn TableGame(controls: Element) -> Element {
                 side::GameOver { board: b.clone() }
             }
             pieces::HoverLayer {}
+            motion::GhostPool { flight: flight() }
         }
     }
 }

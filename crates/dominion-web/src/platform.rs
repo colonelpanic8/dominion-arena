@@ -96,6 +96,20 @@ mod imp {
         (half() << 32) | half()
     }
 
+    /// Runs a script right away, before anything else happens on the page (Dioxus's
+    /// `eval` may wait for the next render).
+    pub fn run_js(code: &str) {
+        let _ = js_sys::eval(code);
+    }
+
+    /// Evaluates a script to a boolean (false if it fails).
+    pub fn js_bool(code: &str) -> bool {
+        js_sys::eval(code)
+            .ok()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
     /// The window's inner size in CSS pixels.
     pub fn viewport() -> (f64, f64) {
         let Some(w) = window() else {
@@ -158,6 +172,12 @@ mod imp {
 
     pub fn viewport() -> (f64, f64) {
         (1280.0, 800.0)
+    }
+
+    pub fn run_js(_code: &str) {}
+
+    pub fn js_bool(_code: &str) -> bool {
+        false
     }
 
     pub fn encode(s: &str) -> String {

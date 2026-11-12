@@ -71,6 +71,30 @@ pub struct SeatInfo {
     pub name: String,
 }
 
+/// `GET /api/settings`: how the web client behaves, from the server's config file.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSettings {
+    /// Cards are seen moving between zones.
+    pub web_animations: bool,
+    /// How long one card takes to move, in milliseconds.
+    pub web_animation_ms: u32,
+    pub web_sounds: bool,
+    /// 0.0 to 1.0.
+    pub web_volume: f32,
+}
+
+impl Default for WebSettings {
+    fn default() -> WebSettings {
+        WebSettings {
+            web_animations: true,
+            web_animation_ms: 250,
+            web_sounds: true,
+            web_volume: 0.5,
+        }
+    }
+}
+
 /// A seat's view and the game's change counter, which only ever changes.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

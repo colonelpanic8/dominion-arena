@@ -1,6 +1,7 @@
 //! Settings: a flat TOML file (`$XDG_CONFIG_HOME/dominion/config.toml`), which command
 //! line flags override.
 
+use dominion_protocol::api::WebSettings;
 use serde::Deserialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -13,7 +14,7 @@ pub const DEFAULT_RECONNECT_SECONDS: u32 = 30;
 /// The environment variable naming the web client to serve when `web_dir` is unset.
 pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Address `dominion serve` listens on (default 127.0.0.1).
@@ -46,6 +47,14 @@ pub struct Config {
     /// The built web client `dominion serve` serves at `/` (default `$DOMINION_WEB_DIR`,
     /// which a packaged build sets to its own client; otherwise none).
     pub web_dir: Option<PathBuf>,
+    /// The web client shows cards moving (default true).
+    pub web_animations: Option<bool>,
+    /// How long the web client takes to move one card, in milliseconds (default 250).
+    pub web_animation_ms: Option<u32>,
+    /// The web client plays sounds (default true).
+    pub web_sounds: Option<bool>,
+    /// The web client's sound volume, 0.0 to 1.0 (default 0.5).
+    pub web_volume: Option<f32>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -113,6 +122,23 @@ impl Config {
         }
     }
 
+    /// What `GET /api/settings` serves.
+    pub fn web(&self) -> WebSettings {
+        let d = WebSettings::default();
+        WebSettings {
+            web_animations: self.web_animations.unwrap_or(d.web_animations),
+            web_animation_ms: self
+                .web_animation_ms
+                .unwrap_or(d.web_animation_ms)
+                .min(5000),
+            web_sounds: self.web_sounds.unwrap_or(d.web_sounds),
+            web_volume: self
+                .web_volume
+                .filter(|v| v.is_finite())
+                .map_or(d.web_volume, |v| v.clamp(0.0, 1.0)),
+        }
+    }
+
     pub fn listen(&self) -> IpAddr {
         self.listen.unwrap_or(IpAddr::from([127, 0, 0, 1]))
     }
@@ -168,6 +194,26 @@ mod tests {
         assert_eq!(on.state_dir(), Some(PathBuf::from("/x")));
         let sessions: Config = toml::from_str("session_idle_minutes = 0").unwrap();
         assert_eq!(sessions.session_idle(), None);
+    }
+
+    #[test]
+    fn web_settings_default_and_stay_in_range() {
+        let web = |toml: &str| toml::from_str::<Config>(toml).unwrap().web();
+        assert_eq!(web(""), WebSettings::default());
+        let set = web(
+            "web_animations = false\nweb_animation_ms = 400\nweb_sounds = false\nweb_volume = 0.2",
+        );
+        assert_eq!(
+            set,
+            WebSettings {
+                web_animations: false,
+                web_animation_ms: 400,
+                web_sounds: false,
+                web_volume: 0.2
+            }
+        );
+        assert_eq!(web("web_volume = 3.0").web_volume, 1.0);
+        assert!(toml::from_str::<Config>("web_volume = \"loud\"").is_err());
     }
 
     #[test]

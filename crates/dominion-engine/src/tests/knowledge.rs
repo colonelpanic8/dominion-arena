@@ -130,6 +130,25 @@ fn a_card_put_on_a_deck_from_hand_stays_hidden() {
 }
 
 #[test]
+fn a_card_picked_from_the_discard_pile_is_known_on_the_deck() {
+    let mut g = setup(&[Card::Harbinger]);
+    hand(&mut g, P0, &[Card::Harbinger]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    discard(&mut g, P0, &[Card::Estate, Card::Gold, Card::Silver]);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Harbinger);
+    k.update(&mut g);
+    choose_kinds(&mut g, &[Card::Gold]);
+    k.update(&mut g);
+    let deck = k.known(&g, P0).zone(Zone::Deck(P0));
+    assert_eq!((deck.known.get(&Card::Gold), deck.unknown), (Some(&1), 0));
+    assert_eq!(
+        k.known(&g, P1).zone(Zone::Deck(P0)).known.get(&Card::Gold),
+        None
+    );
+}
+
+#[test]
 fn a_card_leaving_a_hidden_hand_could_be_any_of_its_cards() {
     let mut g = setup(&[Card::Bureaucrat, Card::Haven]);
     hand(&mut g, P0, &[Card::Bureaucrat]);
