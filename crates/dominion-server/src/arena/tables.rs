@@ -348,6 +348,10 @@ impl Arena {
             .collect();
         for user in removed {
             state.seated.remove(&user);
+            if let Some(gone) = self.db.user_ref(&user) {
+                let line = format!("{} was removed from the table.", gone.name);
+                state.say(&format!("table-{id}"), "", ChatKind::System, &line);
+            }
         }
         let table = state.hosted(id, &ident.user)?;
         if table.seats.len() != seats.len() {
@@ -358,6 +362,7 @@ impl Arena {
         let info = self.table_info(&state, id);
         drop(state);
         self.bump();
+        self.chat.send_modify(|v| *v += 1);
         info
     }
 

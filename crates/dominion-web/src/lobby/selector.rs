@@ -4,12 +4,12 @@
 //! studies it. Randomize (ours) deals the random slots now, to show the kingdom the game
 //! will start with.
 
-use super::my_table::{SetTile, edit};
+use super::my_table::SetTile;
 use super::rules::{
     DEPRECATED, EXPANSIONS, expansion_icon, expansions, search, selectable, set_cards,
 };
-use super::store::{self, MyTable};
-use super::{flash, show_tooltip, use_banned, use_toast, use_tooltip};
+use super::store;
+use super::{flash, show_tooltip, use_banned, use_lobby, use_toast, use_tooltip};
 use crate::api;
 use crate::app::use_cards;
 use crate::assets::use_assets;
@@ -18,22 +18,18 @@ use dioxus::prelude::*;
 use dominion_protocol::api::CardInfo;
 
 #[component]
-pub fn CardSelector(
-    table: Signal<Option<MyTable>>,
-    selector: Signal<bool>,
-    study: Signal<Option<String>>,
-) -> Element {
+pub fn CardSelector(selector: Signal<bool>, study: Signal<Option<String>>) -> Element {
     let cards = use_cards();
+    let ctx = use_lobby();
     let assets = use_assets();
     let tip = use_tooltip();
     let toast = use_toast();
     let banned = use_banned();
     let mut active = use_signal(|| Some("Base".to_string()));
     let mut query = use_signal(String::new);
-    let Some(t) = table.read().clone() else {
+    let Some(rules) = ctx.rules.read().clone() else {
         return rsx! {};
     };
-    let rules = t.rules;
     let mut sets = expansions(&cards);
     if cards.all().iter().any(|c| c.removed && selectable(c)) {
         sets.push(DEPRECATED.to_string());
@@ -77,7 +73,7 @@ pub fn CardSelector(
         }
         let db = db.clone();
         let mut unknown = vec![];
-        edit(table, |r| unknown = r.apply_text(&db, &text));
+        ctx.edit(|r| unknown = r.apply_text(&db, &text));
         if !unknown.is_empty() {
             flash(
                 toast,
@@ -90,15 +86,18 @@ pub fn CardSelector(
     let replay = move |_| {
         if let Some(text) = store::last_kingdom() {
             let db = db2.clone();
-            edit(table, |r| {
+            ctx.edit(|r| {
                 r.kingdom.clear();
                 r.landscapes.clear();
                 r.apply_text(&db, &text);
             });
         }
     };
+    let all = expansions(&cards);
     let randomize = move |_| {
-        let Some(req) = table.peek().as_ref().map(|t| t.rules.deal_request(&banned)) else {
+        let players = ctx.table().map_or(2, |t| t.seats.len());
+        let Some(req) = (ctx.rules.peek().as_ref()).map(|r| r.deal_request(&all, players, &banned))
+        else {
             return;
         };
         spawn(async move {
@@ -107,7 +106,7 @@ pub fn CardSelector(
                 Err(e) => return flash(toast, e),
             };
             match api::deal(&req).await {
-                Ok(dealt) => edit(table, |r| r.take_deal(&dealt)),
+                Ok(dealt) => ctx.edit(|r| r.take_deal(&dealt)),
                 Err(e) => flash(toast, e.message),
             }
         });
@@ -189,7 +188,7 @@ pub fn CardSelector(
                                         let set = set.clone();
                                         move |_| {
                                             let set = set.clone();
-                                            edit(table, move |r| { r.add_from_set(&set); });
+                                            ctx.edit(move |r| { r.add_from_set(&set); });
                                             query.set(String::new());
                                         }
                                     },
@@ -220,7 +219,7 @@ pub fn CardSelector(
                                     onclick: move |_| {
                                         let db = db.clone();
                                         let n = n1.clone();
-                                        edit(table, move |r| { r.add(&db, &n); });
+                                        ctx.edit(move |r| { r.add(&db, &n); });
                                         query.set(String::new());
                                     },
                                     oncontextmenu: move |e| {

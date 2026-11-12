@@ -23,6 +23,12 @@ pub enum Route {
     Tables {},
     #[route("/cardlists")]
     Cardlists {},
+    #[route("/leaderboard")]
+    Leaderboard {},
+    #[route("/account")]
+    Account {},
+    #[route("/user/:name")]
+    User { name: String },
     #[route("/game/:id")]
     Game { id: String },
     #[route("/gallery")]
@@ -35,7 +41,8 @@ pub enum Route {
 #[derive(Clone, Copy)]
 pub struct Cards(pub Signal<Rc<CardDb>>);
 
-/// The server's settings for the web client, the defaults until they have loaded.
+/// The server's settings for the web client, the defaults until they have loaded. The
+/// Banned cards list among them is the signed-in account's.
 #[derive(Clone, Copy)]
 pub struct Settings(pub Signal<WebSettings>);
 
@@ -59,18 +66,22 @@ pub fn App() -> Element {
         }
     });
     let mut settings = use_context_provider(|| Settings(Signal::new(WebSettings::default())));
-    use_future(move || async move {
-        for _ in 0..5 {
-            match api::settings().await {
-                Ok(s) => {
-                    settings.0.set(s);
-                    break;
+    let account = crate::account::use_provide_account();
+    let who = use_memo(move || account.name());
+    use_resource(move || {
+        let _ = who();
+        async move {
+            for _ in 0..5 {
+                match api::settings().await {
+                    Ok(s) => {
+                        settings.0.set(s);
+                        break;
+                    }
+                    Err(_) => platform::sleep(3000).await,
                 }
-                Err(_) => platform::sleep(3000).await,
             }
         }
     });
-    crate::account::use_provide_account();
     crate::lobby::use_provide_lobby();
     let assets = crate::assets::use_provide_assets();
     let asset_css = assets.read().css();
@@ -95,6 +106,7 @@ fn Shell() -> Element {
             }
         }
         main { class: "content", Outlet::<Route> {} }
+        crate::lobby::LobbyWatcher {}
     }
 }
 
@@ -116,6 +128,21 @@ fn Tables() -> Element {
 #[component]
 fn Cardlists() -> Element {
     rsx! { crate::lobby::CardlistsTab {} }
+}
+
+#[component]
+fn Leaderboard() -> Element {
+    rsx! { crate::lobby::LeaderboardTab {} }
+}
+
+#[component]
+fn Account() -> Element {
+    rsx! { crate::lobby::AccountTab {} }
+}
+
+#[component]
+fn User(name: String) -> Element {
+    rsx! { crate::lobby::UserPage { name } }
 }
 
 #[component]
