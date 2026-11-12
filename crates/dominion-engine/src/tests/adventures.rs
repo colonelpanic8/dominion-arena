@@ -209,6 +209,14 @@ fn raze_may_choose_a_choice_that_trashes_nothing() {
     choose(&mut g, &[]);
     assert_eq!(hand_kinds(&g, P0), [Card::Gold, Card::Copper]);
     assert_eq!(purpose(&g), Purpose::Turn);
+    // A Raze played from the Supply was never in play: it need not trash from the hand.
+    let mut g = game(&[Card::BandOfMisfits, Card::Raze], &[]);
+    hand(&mut g, P0, &[Card::BandOfMisfits, Card::Gold]);
+    g.start();
+    play(&mut g, Card::BandOfMisfits);
+    choose(&mut g, &[]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Gold]);
+    assert_eq!(g.pile(g.pile_of(Card::Raze).unwrap()).cards.len(), 10);
     // With an empty hand, a Raze in play need not trash itself.
     let mut g = game(&[Card::Raze], &[]);
     hand(&mut g, P0, &[Card::Raze]);
@@ -1828,11 +1836,26 @@ fn bonus_tokens_apply_to_every_play_of_a_card_from_their_pile() {
     assert_eq!(g.hand(P0).len(), 2 * 4);
 }
 
-/// "When you play a card from that pile, you first get that bonus": before anything
-/// else answers the play (wiki, Adventures tokens: the card is drawn before Urchin is
-/// trashed).
+/// A pile token's bonus comes before what the card does, but its player orders it with
+/// the other abilities that answer the play (wiki, When-play; Kiln: "you can get +1 Card
+/// before or after gaining a copy"; Urchin: "You can order Urchin's ability with other
+/// 'when you play this, first' abilities (e.g. Pathfinding and Kiln)").
 #[test]
-fn a_pile_tokens_bonus_comes_before_other_abilities_that_answer_the_play() {
+fn a_pile_tokens_bonus_is_ordered_with_the_other_abilities_that_answer_the_play() {
+    let mut g = game(&[Card::Kiln, Card::Festival], &[Card::Pathfinding]);
+    let festival = g.supply_pile(Card::Festival).unwrap();
+    place(&mut g, P0, Token::PlusCard, festival);
+    hand(&mut g, P0, &[Card::Kiln, Card::Festival]);
+    deck(&mut g, P0, &[]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Kiln);
+    play(&mut g, Card::Festival);
+    // Kiln's copy gained first is the card the token draws.
+    crate::tests::intrigue::trigger(&mut g, Card::Kiln);
+    yes(&mut g);
+    assert_eq!(hand_kinds(&g, P0), [Card::Festival]);
+
     let mut g = game(&[Card::Urchin, Card::Marauder], &[Card::Pathfinding]);
     hand(&mut g, P0, &[Card::Urchin, Card::Marauder]);
     deck(&mut g, P0, &[Card::Copper, Card::Gold]);
@@ -1842,8 +1865,7 @@ fn a_pile_tokens_bonus_comes_before_other_abilities_that_answer_the_play() {
     place(&mut g, P0, Token::PlusCard, marauder);
     play(&mut g, Card::Urchin);
     play(&mut g, Card::Marauder);
-    assert_eq!(purpose(&g), Purpose::Trigger);
-    assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Gold]);
+    assert_eq!(trigger_cards(&g), [Card::Urchin, Card::Pathfinding]);
 }
 
 #[test]
