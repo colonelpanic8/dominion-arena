@@ -3248,6 +3248,24 @@ fn enlightenment_still_replaces_a_treasure_played_with_way_of_the_chameleon() {
     );
 }
 
+/// Fortune: "Double your $": not "+$", which is all the Way exchanges (as it leaves
+/// "draw until" alone). The -$1 token does apply to it (wiki, Fortune).
+#[test]
+fn way_of_the_chameleon_does_not_change_fortunes_doubling() {
+    let mut g = enlightened(Card::WayOfTheChameleon);
+    hand(&mut g, P0, &[Card::Gold, Card::Fortune]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    own(&mut g);
+    g.players[0].minus_coin = true;
+    play(&mut g, Card::Fortune);
+    way(&mut g, Card::WayOfTheChameleon);
+    assert_eq!((g.turn().coins, g.turn().buys), (3 + 3 - 1, 2));
+    assert!(g.hand(P0).is_empty());
+}
+
 #[test]
 fn a_way_replaces_the_coin_a_curse_makes_with_charlatan() {
     for (way_used, coins, cards) in [(Card::WayOfTheOx, 0, 0), (Card::WayOfTheChameleon, 0, 1)] {
