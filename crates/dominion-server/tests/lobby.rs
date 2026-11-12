@@ -184,6 +184,9 @@ async fn another_sites_page_cannot_act_for_a_session() {
     assert_eq!(foreign.status(), StatusCode::FORBIDDEN);
     let own = from(&server.base).await.unwrap();
     assert_eq!(own.status(), StatusCode::CREATED);
+    // A development server on this machine, proxying here.
+    let dev = from("http://localhost:8080").await.unwrap();
+    assert_eq!(dev.status(), StatusCode::CREATED);
     let big = server
         .post(
             "/api/chat/lobby",

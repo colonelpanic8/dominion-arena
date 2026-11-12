@@ -205,9 +205,20 @@ async fn same_origin(State(api): State<Api>, req: Request, next: Next) -> Respon
         .and_then(|o| o.to_str().ok());
     if let (false, Some(origin)) = (safe, origin) {
         let origin = origin.to_ascii_lowercase();
+        let from = origin.split_once("://").map(|(_, authority)| authority);
         let host = host_of(&req).map(|h| h.as_str().to_ascii_lowercase());
-        let own = origin.split_once("://").map(|(_, authority)| authority) == host.as_deref()
-            || api.origin.as_deref().is_some_and(|o| *o == origin);
+        // A page of this machine's own asking this machine: a development server
+        // proxying to this one.
+        let local = |authority: Option<&str>| {
+            let name = authority.and_then(|a| Authority::try_from(a).ok());
+            name.is_some_and(|a| {
+                let host = a.host().trim_matches(['[', ']']);
+                host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+            })
+        };
+        let own = from == host.as_deref()
+            || api.origin.as_deref().is_some_and(|o| *o == origin)
+            || (local(from) && local(host.as_deref()));
         if !own {
             return Error::new(
                 StatusCode::FORBIDDEN,

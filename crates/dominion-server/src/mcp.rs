@@ -248,7 +248,8 @@ impl Session {
             table.game.clone()
         });
         let game = matched.or(seated)?;
-        lobby.games.into_iter().find(|g| g.game_id == game)
+        let mut games = lobby.games.into_iter();
+        games.find(|g| g.game_id == game && g.running)
     }
 
     /// Waits for a game to start for `ident`, then binds the session to their seat.
@@ -540,8 +541,8 @@ impl Session {
             rated: p.rated.unwrap_or(defaults.rated),
         };
         let searching = (self.arena.queue_status(&ident))
-            .is_some_and(|q| !asked || q.request == request || q.state == QueueState::Matched);
-        if !searching {
+            .is_some_and(|q| q.state == QueueState::Searching && (!asked || q.request == request));
+        if !searching && self.started(&ident).is_none() {
             let (arena, who) = (self.arena.clone(), ident.clone());
             let search = tokio::task::spawn_blocking(move || arena.search(&who, &request));
             match search.await {

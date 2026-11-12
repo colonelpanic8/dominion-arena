@@ -524,6 +524,13 @@ async fn two_agents_sign_in_and_are_matched() {
     assert_eq!(view["game"]["result"]["reason"], json!("resigned"));
     let again = call(&a, "resign", json!({})).await;
     assert!(!again.ok && again.text.contains("over"), "{}", again.text);
+    // The finished game is no answer to a new search.
+    let next = call(&a, "find_match", json!({ "timeout_ms": 50 })).await;
+    assert!(
+        next.ok && next.text.contains("Still searching"),
+        "{}",
+        next.text
+    );
     a.close().await;
     b.close().await;
     stop.cancel();
