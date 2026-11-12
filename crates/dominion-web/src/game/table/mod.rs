@@ -601,10 +601,11 @@ pub fn TableGame(controls: Element) -> Element {
             return;
         }
         let Some(view) = st.view.as_ref() else { return };
-        match r.run.next(view, &cards.read()) {
+        let mut next = r.run.clone();
+        match next.take(view, &cards.read()) {
             Some(a) if r.sent.as_deref() != Some(a.decision.as_str()) => {
                 run.set(Some(Run {
-                    run: r.run.clone(),
+                    run: next,
                     sent: Some(a.decision.clone()),
                 }));
                 game.submit.call(a);
