@@ -1,7 +1,7 @@
 use crate::project::{self, Context};
 use crate::text;
-use crate::types::{AgentView, Answer};
 use dominion_engine::{Game, GameConfig, Knowledge, PlayerId, Response, SetupError};
+use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

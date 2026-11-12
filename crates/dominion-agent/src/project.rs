@@ -1,11 +1,11 @@
 //! Projection of an engine game, as one seat knows it, onto agent-view@2, and of answers
 //! back onto engine responses.
 
-use crate::types::{self, *};
 use dominion_engine::{
     Card, CardId, Decision, DecisionKind, EndReason, Event, Game, Kind, KnownCards, Mat, Move, Opt,
     Phase, PileId, PlayerId, Purpose, Response, Token, Until, View, Zone,
 };
+use dominion_protocol::view::{self as types, *};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Kebab-case of a CamelCase name.

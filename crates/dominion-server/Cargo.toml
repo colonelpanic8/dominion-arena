@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 dominion-agent = { path = "../dominion-agent" }
 dominion-engine = { path = "../dominion-engine" }
+dominion-protocol = { path = "../dominion-protocol", features = ["schemars"] }
 rmcp = { version = "3.9.0", features = ["server", "client", "macros", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
 axum = "0.8.9"
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "sync", "time", "signal", "io-std"] }

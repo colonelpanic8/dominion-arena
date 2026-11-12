@@ -410,6 +410,7 @@ name = "dominion-agent"
 version = "0.1.0"
 dependencies = [
  "dominion-engine",
+ "dominion-protocol",
  "jsonschema",
  "rand 0.9.5",
  "rand_chacha",
@@ -431,6 +432,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dominion-protocol"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+]
+
+[[package]]
 name = "dominion-server"
 version = "0.1.0"
 dependencies = [
@@ -438,6 +447,7 @@ dependencies = [
  "clap",
  "dominion-agent",
  "dominion-engine",
+ "dominion-protocol",
  "futures-util",
  "rand 0.9.5",
  "rmcp",

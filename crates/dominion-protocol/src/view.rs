@@ -1,5 +1,5 @@
-//! Serde types for `dominion/agent-view@2`. Field names and shapes follow
-//! `protocol/agent-view.schema.json`.
+//! Serde types for `dominion/agent-view@2`. Field names and shapes follow its JSON Schema,
+//! vendored in dominion-agent at `protocol/agent-view.schema.json`.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

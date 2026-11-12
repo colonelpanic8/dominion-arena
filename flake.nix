@@ -18,12 +18,16 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
-      toolchain = fenix.packages.${system}.stable.withComponents [
-        "cargo"
-        "clippy"
-        "rust-src"
-        "rustc"
-        "rustfmt"
+      fenixPkgs = fenix.packages.${system};
+      toolchain = fenixPkgs.combine [
+        (fenixPkgs.stable.withComponents [
+          "cargo"
+          "clippy"
+          "rust-src"
+          "rustc"
+          "rustfmt"
+        ])
+        fenixPkgs.targets.wasm32-unknown-unknown.stable.rust-std
       ];
       rustPlatform = pkgs.makeRustPlatform {
         cargo = toolchain;

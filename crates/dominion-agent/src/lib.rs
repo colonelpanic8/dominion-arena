@@ -9,10 +9,9 @@
 mod project;
 mod table;
 pub mod text;
-mod types;
 
+pub use dominion_protocol::view::*;
 pub use table::{AnswerError, Table};
-pub use types::*;
 
 use dominion_engine::Card;
 

@@ -1,7 +1,7 @@
 //! The compact text rendering of an agent view, derived only from the view's JSON shape.
 
 use crate::project::cost_text;
-use crate::types::*;
+use dominion_protocol::view::*;
 use std::fmt::Write;
 
 fn cards(count: &CardCount) -> String {
