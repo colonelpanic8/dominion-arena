@@ -536,13 +536,17 @@ fn once(f: &mut CardFrame, step: impl FnOnce(&mut Game, &mut CardFrame) -> Flow,
     Flow::done()
 }
 
-/// Schedules this play's Duration effect, stamped (Search also records how many times
-/// Supply piles have emptied).
+/// Schedules this play's Duration effect, stamped (Search instead records how many times
+/// Supply piles have emptied: two that wait for the same emptying have the same effect).
 fn duration(g: &mut Game, f: &mut CardFrame) {
-    let mut data = stamped(g);
-    if f.card == Card::Search {
-        data.n = supply_piles_emptied(g);
-    }
+    let data = if f.card == Card::Search {
+        Scratch {
+            n: supply_piles_emptied(g),
+            ..Scratch::default()
+        }
+    } else {
+        stamped(g)
+    };
     f.add_duration(g, data);
 }
 
@@ -749,8 +753,12 @@ fn each_target_gains(g: &Game, f: &mut CardFrame, card: Card) -> bool {
 
 // ---- Trigger producers ----
 
-/// Search: "the next time a Supply pile empties" (one emptied since it was played).
+/// Search: "the next time a Supply pile empties" (one emptied since it was played), in
+/// the window of what emptied it.
 fn search_triggers(g: &Game, out: &mut Vec<Trigger>) {
+    if !g.answers_emptying() {
+        return;
+    }
     let now = supply_piles_emptied(g);
     for l in g.lasting() {
         if l.card != Card::Search || l.until != Until::Removed {

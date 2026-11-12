@@ -194,6 +194,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         plays: vec![],
         leaving: vec![],
         last_shuffle: vec![],
+        emptied_depth: 0,
         ext: Ext::default(),
         stack: vec![],
         pending: None,

@@ -456,6 +456,10 @@ pub struct Game {
     /// The cards of the latest shuffle (see [`Game::shuffled`]).
     #[serde(default)]
     pub(crate) last_shuffle: Vec<CardId>,
+    /// How deep the effect stack was when a Supply pile last emptied (see
+    /// [`Game::answers_emptying`]).
+    #[serde(default)]
+    pub(crate) emptied_depth: usize,
     pub(crate) ext: Ext,
     pub(crate) stack: Vec<Frame>,
     pub(crate) pending: Option<Decision>,
@@ -748,6 +752,13 @@ impl Game {
         (st.card == id && st.player == p).then_some(st.zone())
     }
 
+    /// Whether a window opening now answers the latest emptying of a Supply pile: it is the
+    /// window of the gain or trash that emptied it, or one further out, not one opened by
+    /// an effect resolving in that window.
+    pub(crate) fn answers_emptying(&self) -> bool {
+        self.stack.len() <= self.emptied_depth + 1
+    }
+
     /// Whether `id`, whose gain is in progress, is still where it was gained to: the
     /// stop-moving rule lets an on-gain ability move the card only then.
     pub(crate) fn still_where_gained(&self, id: CardId) -> bool {
@@ -921,6 +932,7 @@ impl Game {
             plays: vec![],
             leaving: vec![],
             last_shuffle: vec![],
+            emptied_depth: 0,
             ext: self.ext.clone(),
             stack: vec![],
             pending: None,
@@ -1056,6 +1068,7 @@ impl Game {
             let pile = &mut self.piles[pile.index()];
             if pile.cards.is_empty() && pile.in_supply {
                 pile.emptied += 1;
+                self.emptied_depth = self.stack.len();
             }
         }
         if matches!(from, Zone::InPlay(_)) && !matches!(to, Zone::InPlay(_)) {

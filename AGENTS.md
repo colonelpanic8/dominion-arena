@@ -103,7 +103,9 @@ them.
   for a Reaction that plays itself from the hand). `Turn::hand_plays` counts the turn's
   plays from the hand.
 - **Gaining** (`Frame::gain`, `Frame::gain_card`): `WouldGain` window (replacement
-  effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (recording the
+  effects edit `g.gains.last_mut()`: `to`, `player`, `cancelled`), move (the card it
+  began with if it is still where it was, else from a pile the top card if it has the
+  same name, or any card of a randomizer pile ("gain a Loot"), else nothing; recording the
   card's cost then in `GainState::cost` and the phase in `GainState::phase`: a gain
   "in your Buy phase" is tested with `g.gain_phase(id)`, because Cavalry and Villa change
   `turn.phase` while their gain's window is open), `Gain` window. An effect that goes on

@@ -383,6 +383,7 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 bought: true,
                 buy: Some(f.s.i),
                 card: None,
+                at: None,
                 pc: 0,
             })
         }
