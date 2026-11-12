@@ -327,9 +327,9 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
             for (i, (s, back)) in slots.iter().enumerate() {
                 {
                     let mark = if *back { Default::default() } else { mark_at(&ui, &sel, Spot::Hand(s.card.clone())) };
-                    let all = s.count > 1
-                        && mark.target.is_some()
-                        && (click_answers && mark.tone == "play" || !click_answers && mark.options > 1);
+                    let all = mark.target.is_some()
+                        && !mark.tone.is_empty()
+                        && (click_answers && mark.tone == "play" || !click_answers && s.count > 1 && mark.options > 1);
                     rsx! {
                         TableCard {
                             key: "{back}{s.card}",

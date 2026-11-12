@@ -15,6 +15,21 @@ use crate::game::wording;
 use dioxus::prelude::*;
 use std::rc::Rc;
 
+/// The cards whose choices dominion.games offers "Select All" for.
+const SELECT_ALL: [&str; 11] = [
+    "Cellar",
+    "Vault",
+    "Inn",
+    "Storeroom",
+    "Artificer",
+    "Opulent Castle",
+    "Shepherd",
+    "Crypt",
+    "Silos",
+    "Hostelry",
+    "Marchland",
+];
+
 /// Number decisions with more values than this get a slider instead of a button each.
 const MAX_NUMBER_BUTTONS: usize = 6;
 
@@ -55,24 +70,8 @@ pub fn StatusBar(
         rsx! { "The game has ended." }
     } else if let Some(u) = ui.clone() {
         let text = wording::prompt(&u.decision, &cards);
-        let owner = u.decision.source.as_ref().and(
-            board
-                .play_area
-                .player
-                .as_ref()
-                .filter(|_| !s.your_turn && u.decision.purpose != "turn"),
-        );
         rsx! {
             span { "data-prompt": "{u.decision.purpose}", "{text}" }
-            if let (Some(src), Some(w)) = (u.decision.source.clone(), owner) {
-                span { class: "dt-ticker-src",
-                    " ("
-                    span { class: "dt-pc {seat_class(w.seat)}", "{w.name}" }
-                    "'s "
-                    CardName { name: src }
-                    ")"
-                }
-            }
         }
     } else {
         match &s.deciding {
@@ -181,12 +180,12 @@ pub fn Buttons(
         return rsx! {};
     };
     let d = &u.decision;
-    let buttons: Vec<usize> = (0..u.spots.len())
+    let main: Vec<usize> = (0..u.spots.len())
         .filter(|&i| u.spots[i] == Spot::Button && u.inter.targets[i].action != "end-phase")
         .collect();
-    let (side, main): (Vec<usize>, Vec<usize>) = buttons.into_iter().partition(|&i| {
-        u.inter.targets[i].action == "trigger" && u.inter.targets[i].card.is_some()
-    });
+    let side: Vec<usize> = (0..u.spots.len())
+        .filter(|&i| u.spots[i] == Spot::Ability)
+        .collect();
     let numbers = main.len() > MAX_NUMBER_BUTTONS
         && main.iter().all(|&i| u.inter.targets[i].action == "number");
     let picks = sel.picks().len();
@@ -194,9 +193,15 @@ pub fn Buttons(
     if !numbers {
         for &i in &main {
             let t = &u.inter.targets[i];
+            let resolving =
+                matches!(d.purpose.as_str(), "trigger" | "reaction") && t.action == "no";
             row.push(Btn {
-                label: t.label.clone(),
-                icon: None,
+                label: if resolving {
+                    "Continue".into()
+                } else {
+                    t.label.clone()
+                },
+                icon: resolving.then_some("continue"),
                 count: None,
                 disabled: busy,
                 on: !sel.positions(&t.options).is_empty(),
@@ -224,7 +229,9 @@ pub fn Buttons(
             .filter(|t| t.card.is_some())
             .map(|t| t.options.len())
             .sum();
-        if d.min == Some(0)
+        let select_all_card = d.source.as_deref().is_some_and(|c| SELECT_ALL.contains(&c));
+        if select_all_card
+            && d.min == Some(0)
             && max > 1
             && max >= all_options
             && card_targets > 1
@@ -288,6 +295,15 @@ pub fn Buttons(
         rows.last_mut().expect("a row").push(i);
     }
     let mut placed: Vec<(usize, Rect)> = vec![];
+    // With abilities to choose from, every button joins their column at the right.
+    if !side.is_empty() {
+        rows.clear();
+        for i in 0..row.len() {
+            let w = width(&row[i]);
+            let y = g.side_top + (side.len() + i) as f64 * (bh + g.vh);
+            placed.push((i, Rect::new(g.side_right - w, y, w, bh)));
+        }
+    }
     for (ri, r) in rows.iter().enumerate() {
         let total: f64 =
             r.iter().map(|&i| width(&row[i])).sum::<f64>() + gap * r.len().saturating_sub(1) as f64;
@@ -547,16 +563,12 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
     };
     let picks = sel.picks().to_vec();
     let id = u.decision.id.clone();
-    let title = u.decision.source.clone().unwrap_or_default();
     rsx! {
         div {
             class: "dt-window dt-tray",
             style: "{win.style()}",
             "data-tray": "1",
             onclick: move |e| e.stop_propagation(),
-            if !title.is_empty() {
-                div { class: "dt-window-title", "{title}" }
-            }
             button {
                 class: "dt-x",
                 title: "Hide (to see the table under it)",
@@ -569,7 +581,9 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                     let t = &u.inter.targets[i];
                     let mark = u.mark_target(&sel, i);
                     let label = match (&t.card, &t.zone) {
-                        (Some(c), Some(z)) if &t.label == c => Some(zone_text(z).to_string()),
+                        (Some(c), Some(z)) if &t.label == c && !matches!(z.as_str(), "deck" | "hand") => {
+                            Some(zone_text(z).to_string())
+                        }
                         (Some(c), _) if &t.label == c => None,
                         _ => Some(t.label.clone()),
                     };

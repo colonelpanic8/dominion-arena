@@ -68,7 +68,7 @@ body:has(.dt-root) .topbar { display: none; }
   --bc: #000;
   --bh: #000;
 }
-.dt-c.dt-at { position: absolute; }
+.dt-c.dt-at { position: absolute; isolation: isolate; }
 .dt-face, .dt-split-back { position: relative; }
 .dt-face > .dc-card, .dt-split-back > .dc-card { box-shadow: 0 0 0 max(1px, 1.33cqw) var(--bc); border-radius: 4.5% / 2.85%; }
 .dt-mini .dt-face > .dc-card, .dt-mini .dt-split-back > .dc-card { border-radius: 5% / 5.3%; }
@@ -93,7 +93,7 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-cross { position: absolute; inset: 0; z-index: 23; display: flex; align-items: center; justify-content: center; pointer-events: none; }
 .dt-cross img { width: min(100%, 65cqw * 1.578); max-height: 78%; object-fit: contain; }
 .dt-cross-text { font-size: 60cqw; color: #ffa500; text-shadow: 0 0 4px #000; }
-.dt-picked-copy { position: absolute; inset: 0; transform: translate(-10%, -25%) rotate(-10deg); z-index: 3; cursor: pointer; }
+.dt-picked-copy { position: absolute; inset: 0; transform: translate(-10%, -25%) rotate(-10deg); z-index: -1; cursor: pointer; }
 .dt-picked-copy > .dc-card { height: 100%; box-shadow: 0 0 0 max(1px, 1.33cqw) var(--bc); border-radius: 4.5% / 2.85%; }
 .dt-split-back { position: absolute; inset: 0; transform: translate(6.2%, 6.2%); z-index: -1; }
 .dt-split-back > .dc-card { height: 100%; }
@@ -288,7 +288,8 @@ body:has(.dt-root) .topbar { display: none; }
   border-radius: calc(0.5 * var(--vh));
   font-family: var(--ui);
   font-weight: 700;
-  font-size: calc(3.3 * var(--vh));
+  font-size: calc(2.9 * var(--vh));
+  white-space: nowrap;
   color: #111;
   -webkit-text-stroke: 1px #eee;
   cursor: pointer;
@@ -483,3 +484,4 @@ body:has(.dt-root) .topbar { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .dt-ghost { display: none; }
 }
+.dt-ability-art .dc-name, .dt-ability-art .dt-ov { display: none; }

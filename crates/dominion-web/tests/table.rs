@@ -69,6 +69,7 @@ fn check_placement(view: &AgentView, d: &AgentDecision, inter: &Interaction) {
             }
             Place::Tray => assert!(t.card.is_some() || t.zone.is_some(), "{t:?}"),
             Place::Button => assert!(t.card.is_none() && t.options.len() == 1, "{t:?}"),
+            Place::Ability => assert!(t.card.is_some() && t.action == "trigger", "{t:?}"),
         }
     }
     let all: BTreeSet<u32> = d.options.iter().map(|o| o.index).collect();
@@ -127,7 +128,7 @@ fn check_spots(b: &Board, inter: &Interaction) {
     assert_eq!(spots.len(), inter.targets.len());
     let mut seen = BTreeSet::new();
     for (t, s) in inter.targets.iter().zip(&spots) {
-        if !matches!(s, Spot::Tray | Spot::Button) {
+        if !matches!(s, Spot::Tray | Spot::Button | Spot::Ability) {
             assert!(seen.insert(format!("{s:?}")), "{s:?} twice: {inter:?}");
         }
         let card = t.card.clone().unwrap_or_default();
@@ -137,7 +138,8 @@ fn check_spots(b: &Board, inter: &Interaction) {
             Spot::Pile(at) => assert_eq!(Some(*at), t.pile),
             Spot::Landscape(c) => assert!(t.place == Place::Landscape && *c == card),
             Spot::Button => assert_eq!(t.place, Place::Button),
-            Spot::Tray => assert_ne!(t.place, Place::Button),
+            Spot::Ability => assert_eq!(t.place, Place::Ability),
+            Spot::Tray => assert!(!matches!(t.place, Place::Button | Place::Ability)),
         }
     }
 }
@@ -353,7 +355,7 @@ impl Stats {
         let places: BTreeSet<Place> = inter.targets.iter().map(|t| t.place).collect();
         if places
             .iter()
-            .all(|p| matches!(p, Place::Tray | Place::Button))
+            .all(|p| matches!(p, Place::Tray | Place::Button | Place::Ability))
         {
             *self.off_board.entry(d.kind.clone()).or_default() += 1;
         }
@@ -370,6 +372,7 @@ impl Stats {
             Place::Landscape,
             Place::Tray,
             Place::Button,
+            Place::Ability,
         ];
         let mut s = String::from("| kind | decisions |");
         for p in places {

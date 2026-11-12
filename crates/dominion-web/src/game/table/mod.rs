@@ -58,12 +58,21 @@ pub struct Mark {
 impl Ui {
     pub fn mark_target(&self, sel: &Selection, t: usize) -> Mark {
         let target = &self.inter.targets[t];
+        let picked = sel.positions(&target.options);
+        // Once the picks are complete, only the picked cards keep their colour.
+        let full = !self.click_answers
+            && sel.picks().len() >= self.inter.max as usize
+            && picked.is_empty();
         Mark {
             target: Some(t),
             options: target.options.len(),
-            picked: sel.positions(&target.options),
+            picked,
             ordered: self.inter.ordered,
-            tone: tone(&self.decision, target),
+            tone: if full {
+                ""
+            } else {
+                tone(&self.decision, target)
+            },
         }
     }
 
@@ -524,7 +533,7 @@ pub fn TableGame(controls: Element) -> Element {
         let by_spot = spots
             .iter()
             .enumerate()
-            .filter(|(_, s)| !matches!(s, Spot::Tray | Spot::Button))
+            .filter(|(_, s)| !matches!(s, Spot::Tray | Spot::Button | Spot::Ability))
             .map(|(i, s)| (s.clone(), i))
             .collect();
         let confirm_single = settings.read().web_confirm_single;

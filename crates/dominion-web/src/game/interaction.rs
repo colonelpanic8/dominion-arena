@@ -45,8 +45,10 @@ pub enum Place {
     Landscape,
     /// A card (or card back) in the choice tray above the hand.
     Tray,
-    /// A labelled button in the prompt bar.
+    /// A labelled button in the row above the status bar.
     Button,
+    /// A triggered ability of a card, as a button in the column at the right.
+    Ability,
 }
 
 impl Interaction {
@@ -152,6 +154,8 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
                 || (matches!(o.action.as_str(), "select" | "trigger") && naming(card) == 1))
         {
             place = Place::Landscape;
+        } else if o.action == "trigger" && o.card.is_some() {
+            place = Place::Ability;
         } else if o.card.is_some() {
             place = Place::Tray;
             join = true;

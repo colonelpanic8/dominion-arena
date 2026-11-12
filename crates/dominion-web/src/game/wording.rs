@@ -99,7 +99,22 @@ pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
         }
         (_, "reaction") => "You may react".into(),
         (_, "trigger") => {
-            if may {
+            let triggers: Vec<&str> = d
+                .options
+                .iter()
+                .filter(|o| o.action == "trigger")
+                .filter_map(|o| o.card.as_deref())
+                .collect();
+            let optional = may || d.options.iter().any(|o| o.action == "no");
+            let reacting = !triggers.is_empty()
+                && triggers.iter().all(|c| {
+                    cards
+                        .get(c)
+                        .is_some_and(|c| c.types.iter().any(|t| t == "Reaction"))
+                });
+            if reacting && optional {
+                "You may react".into()
+            } else if optional {
                 "You may resolve an effect".into()
             } else {
                 "Resolve an effect".into()
@@ -216,8 +231,8 @@ pub fn decline(d: &AgentDecision) -> &'static str {
             "King's Court" => "Don't King",
             _ => "Don't Play",
         },
-        "trash" => "Don't Trash",
-        "discard" => "Don't Discard",
+        "trash" => "Confirm Trashing",
+        "discard" => "Confirm Discarding",
         "top-deck" => "Don't Topdeck",
         "gain" => "Don't Gain",
         "reveal" => "Don't Reveal",
