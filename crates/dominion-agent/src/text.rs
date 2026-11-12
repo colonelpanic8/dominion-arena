@@ -397,7 +397,8 @@ pub fn render(v: &AgentView) -> String {
                     .iter()
                     .map(|n| {
                         if n.source == "Voyage" {
-                            return format!("{} more cards from their hand", n.count);
+                            let n = dominion_engine::amount(n.count, "more card", "more cards");
+                            return format!("{n} from their hand");
                         }
                         let mut item: Vec<String> = n.card.iter().cloned().collect();
                         if n.count != 0 {
