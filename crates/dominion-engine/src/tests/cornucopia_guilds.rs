@@ -1039,6 +1039,73 @@ fn young_witch_bane_in_hand_blocks_the_curse() {
     assert_eq!(g.count_owned(P1, Card::Curse), 0);
 }
 
+/// "If Young Witch is in the Black Market deck, you do put out a Bane" (wiki, Young Witch),
+/// and Divine Wind's new piles get their setup (official FAQ): a Young Witch dealt mid-game
+/// gets one too, even when the sets of the first kingdom have no $2 or $3 card left.
+#[test]
+fn a_young_witch_from_outside_the_kingdom_gets_a_bane() {
+    let mut g = setup(&[
+        Card::TeaHouse,
+        Card::Poet,
+        Card::Kitsune,
+        Card::Ninja,
+        Card::Aristocrat,
+        Card::Craftsman,
+        Card::Fishmonger,
+        Card::Riverboat,
+        Card::RootCellar,
+        Card::SnakeWitch,
+    ]);
+    g.start();
+    add_kingdom_piles(&mut g, &[Card::YoungWitch]);
+    let bane = g.ext.cornucopia_guilds.bane.expect("a Bane pile");
+    assert!(g.pile(bane).is_kingdom());
+
+    let kingdom = vec![
+        Card::BlackMarket,
+        Card::Church,
+        Card::Anvil,
+        Card::Watchtower,
+        Card::Bank,
+        Card::Bishop,
+        Card::City,
+        Card::Expand,
+        Card::Forge,
+        Card::Mint,
+    ];
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, kingdom, 7)
+    };
+    let deck = vec![Card::YoungWitch, Card::Smithy];
+    config.setup_choices.insert(Card::BlackMarket, deck);
+    let g = setup_with(config);
+    let bane = g.ext.cornucopia_guilds.bane.expect("a Bane pile");
+    assert!(g.pile(bane).is_kingdom());
+}
+
+/// "You may select a Kingdom card pile to use as the Bane in whatever way you want ... as
+/// long as its cost is $2 or $3" (wiki, Young Witch): once the sets in the game have none
+/// left, it comes from another set.
+#[test]
+fn a_bane_comes_from_another_set_when_the_sets_in_the_game_have_none_left() {
+    let ours = |c: Card| matches!(c.set(), Set::Base | Set::CornucopiaGuilds);
+    let used: Vec<Card> = Card::kingdom_cards()
+        .filter(|&c| ours(c) && !c.def().removed)
+        .filter(|c| {
+            c.cost()
+                .is_some_and(|k| k == Cost::coins(2) || k == Cost::coins(3))
+        })
+        .collect();
+    let mut g = setup(&[Card::Smithy]);
+    add_kingdom_piles(&mut g, &used);
+    g.start();
+    add_kingdom_piles(&mut g, &[Card::YoungWitch]);
+    let bane = g.ext.cornucopia_guilds.bane.expect("a Bane pile");
+    assert!(!ours(g.pile(bane).card), "{}", g.pile(bane).card);
+}
+
 #[test]
 fn young_witch_curses_without_a_bane() {
     let mut g = setup(&[Card::YoungWitch]);

@@ -474,6 +474,28 @@ impl Setup {
         self.pick(g, by, &candidates, pool, n)
     }
 
+    /// Like [`Setup::choose`], with a random choice made among the candidates `prefer`
+    /// accepts, or among all of them when none of those is free.
+    pub(crate) fn choose_preferring(
+        &mut self,
+        g: &mut Game,
+        by: Card,
+        candidates: Vec<Card>,
+        prefer: impl Fn(Card) -> bool,
+    ) -> Option<Card> {
+        let preferred: Vec<Card> = candidates
+            .iter()
+            .copied()
+            .filter(|&c| prefer(c) && !never_at_random(g, c))
+            .collect();
+        let pool = if preferred.is_empty() {
+            candidates.clone()
+        } else {
+            preferred
+        };
+        self.pick(g, by, &candidates, pool, 1..=1).pop()
+    }
+
     /// Rejects the configured choice `choice` of `by`, which breaks a rule between choices.
     pub(crate) fn reject(&mut self, by: Card, choice: Card) {
         self.error
@@ -522,17 +544,24 @@ impl Setup {
                 }
             }
         }
-        // A random choice adds no card removed in a second edition (as no random kingdom
-        // has one), and a card configured for another choice isn't free for it.
-        let excluded = |c: &Card| {
-            g.home_pile(*c).is_none()
-                && (c.def().removed || g.config.setup_choices.values().flatten().any(|r| r == c))
-        };
-        pool.retain(|c| !excluded(c));
+        pool.retain(|&c| !never_at_random(g, c));
         g.shuffle(&mut pool);
         pool.truncate(*n.end());
         pool
     }
+}
+
+/// Whether a random choice may not add `card`: it adds no card removed in a second edition
+/// (as no random kingdom has one), and a card configured for another choice isn't free for
+/// it.
+fn never_at_random(g: &Game, card: Card) -> bool {
+    g.home_pile(card).is_none()
+        && (card.def().removed
+            || g.config
+                .setup_choices
+                .values()
+                .flatten()
+                .any(|&r| r == card))
 }
 
 /// Completes setup for whatever joined the game since `since` (everything, at the start):
