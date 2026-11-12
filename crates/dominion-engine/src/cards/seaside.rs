@@ -655,19 +655,20 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
     if g.third_in_a_row(p) {
         return Flow::done();
     }
-    g.extra_turns.push_back(ExtraTurn {
-        player: p,
-        source: Card::Outpost,
-        limit: ExtraLimit::ThirdInARow,
-    });
-    g.add_lasting(
+    let lasting = g.add_lasting(
         Card::Outpost,
         p,
         f.this,
         f.keeps(g),
-        Until::StartOfTurn(p),
+        Until::ExtraTurn,
         Scratch::default(),
     );
+    g.extra_turns.push_back(ExtraTurn {
+        player: p,
+        source: Card::Outpost,
+        limit: ExtraLimit::ThirdInARow,
+        lasting: Some(lasting),
+    });
     Flow::done()
 }
 

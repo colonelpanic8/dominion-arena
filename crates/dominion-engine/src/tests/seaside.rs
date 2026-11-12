@@ -1094,6 +1094,9 @@ fn outpost_turn_is_the_next_turn_for_durations() {
     assert!(g.in_play(P0).is_empty());
 }
 
+/// "Throne Room stays in play with Outpost even though you won't get a second extra turn.
+/// ... If Outpost fails ... you discard it during Clean-up of the next turn, whoever's
+/// turn it is." (wiki, Outpost)
 #[test]
 fn throne_room_outpost_gives_one_extra_turn() {
     let mut g = setup(&[Card::Outpost, Card::ThroneRoom]);
@@ -1106,8 +1109,64 @@ fn throne_room_outpost_gives_one_extra_turn() {
     assert_eq!(g.hand(P0).len(), 3);
     assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Outpost]);
     next_turn(&mut g);
-    assert_eq!(g.turn().player, P1);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+    assert_eq!(in_play_kinds(&g, P0), [Card::ThroneRoom, Card::Outpost]);
+    next_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
+}
+
+/// "If you play Outpost and Voyage ... you choose to take the Voyage turn next. ... In
+/// Clean-up of the Voyage turn, you discard Voyage but not Outpost and draw 5 cards. In
+/// between turns again, Outpost now fails ... The next player takes their turn and during
+/// their Clean-up, you discard Outpost." (wiki, Outpost)
+#[test]
+fn outpost_stays_in_play_until_its_own_turn_fails() {
+    let mut g = setup(&[Card::Outpost, Card::Odysseys, Card::Village]);
+    hand(&mut g, P0, &[Card::Village, Card::Outpost, Card::Voyage]);
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::Outpost);
+    play(&mut g, Card::Voyage);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    respond(&mut g, Response::option(Opt::Card(Card::Voyage)));
+    assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Voyage)));
+    assert_eq!(in_play_kinds(&g, P0), [Card::Outpost, Card::Voyage]);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+    assert_eq!(g.hand(P0).len(), 5);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
+}
+
+/// "You can take 2 Outpost turns in a row if the preceding turn wasn't yours" (wiki,
+/// Outpost): a Throne Room played on another player's turn keeps itself and the Outpost
+/// in play until the second.
+#[test]
+fn throne_room_outpost_played_on_another_players_turn_stays_for_both_outpost_turns() {
+    let mut g = setup(&[
+        Card::Outpost,
+        Card::ThroneRoom,
+        Card::Ambassador,
+        Card::Gondola,
+    ]);
+    hand(&mut g, P0, &[Card::Ambassador, Card::Gondola]);
+    hand(&mut g, P1, &[Card::ThroneRoom, Card::Outpost]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    play_on_another_players_turn(&mut g);
+    choose_kinds(&mut g, &[Card::ThroneRoom]);
+    choose_kinds(&mut g, &[Card::Outpost]);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Outpost)));
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Outpost)));
+    assert_eq!(in_play_kinds(&g, P1), [Card::ThroneRoom, Card::Outpost]);
+    next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+    assert!(g.in_play(P1).is_empty());
 }
 
 #[test]
@@ -1135,6 +1194,7 @@ fn outpost_on_a_turn_right_after_an_extra_turn_of_its_player_is_a_third_turn_in_
         player: P1,
         source: Card::Mission,
         limit: ExtraLimit::ThirdInARow,
+        lasting: None,
     });
     next_turn(&mut g);
     assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Mission)));

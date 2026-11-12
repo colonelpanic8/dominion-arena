@@ -2429,7 +2429,9 @@ fn island_folk_and_voyage_in_one_turn_give_one_extra_turn_of_the_players_choice(
         assert_eq!(can_play(&g, Card::Village), taken == Card::IslandFolk);
         next_turn(&mut g);
         assert_eq!(g.turn().player, P1);
-        assert!(g.in_play(P0).is_empty());
+        // Voyage's turn, if it failed, was the one it stayed in play for.
+        let voyage = g.in_play(P0).iter().any(|&c| g.card(c) == Card::Voyage);
+        assert_eq!(voyage, taken == Card::IslandFolk);
     }
 }
 

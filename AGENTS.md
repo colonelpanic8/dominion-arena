@@ -85,8 +85,10 @@ them.
   extra turns don't count for the tiebreaker. Between turns the player who just took a turn takes
   their extra turns first, then the others in turn order; one with different extra turns
   pending chooses which to take (`Purpose::Either`, `Opt::Card(source)`), and an extra
-  turn that can't follow the last turn is lost. Once the game has ended, extra turns
-  happen only before a turn of Fleet's round. `Player::skip_turns` skips the next turns
+  turn that can't follow the last turn is lost. A card kept in play for an extra turn
+  (Outpost, Voyage) is kept by an `Until::ExtraTurn` lasting named in its
+  `ExtraTurn::lasting`, which ends when that turn starts, is skipped or is lost. Once
+  the game has ended, extra turns happen only before a turn of Fleet's round. `Player::skip_turns` skips the next turns
   a player would take (Lich), Fleet's included; skipped regular turns count for the
   tiebreaker.
 - **Playing a card** (`Frame::play`, the only way): move it into play, `Play` window

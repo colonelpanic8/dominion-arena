@@ -273,6 +273,7 @@ impl SetRules for Rules {
                     player: p,
                     source: Card::SeizeTheDay,
                     limit: ExtraLimit::None,
+                    lasting: None,
                 });
                 Flow::done()
             }

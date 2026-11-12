@@ -307,6 +307,7 @@ impl SetRules for Rules {
                     player: f.player,
                     source: Card::Mission,
                     limit: ExtraLimit::ThirdInARow,
+                    lasting: None,
                 });
                 Flow::done()
             }

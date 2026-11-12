@@ -127,6 +127,8 @@ fn of_missions_and_journeys_turns_the_player_takes_one_and_the_other_fails() {
     }
 }
 
+/// "If Outpost fails, or its turn is skipped by Lich, you discard it during Clean-up of the
+/// next turn, whoever's turn it is." (wiki, Outpost)
 #[test]
 fn an_outpost_whose_turn_fails_is_discarded_in_the_next_clean_up() {
     let mut g = first_turn(&[Card::Outpost], &[Card::Outpost], &[Card::Mission]);
@@ -137,6 +139,8 @@ fn an_outpost_whose_turn_fails_is_discarded_in_the_next_clean_up() {
     assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
     end_turn(&mut g);
     assert_eq!(turn(&g), (P1, None));
+    assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
+    end_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
 }
 

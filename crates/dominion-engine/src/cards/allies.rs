@@ -1212,6 +1212,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 player: p,
                 source: Card::IslandFolk,
                 limit: ExtraLimit::ThirdInARow,
+                lasting: None,
             });
             Flow::done()
         }
@@ -2501,19 +2502,20 @@ fn voyage(g: &mut Game, f: &mut CardFrame) {
     if g.third_in_a_row(p) {
         return;
     }
-    g.extra_turns.push_back(ExtraTurn {
-        player: p,
-        source: Card::Voyage,
-        limit: ExtraLimit::ThirdInARow,
-    });
-    g.add_lasting(
+    let lasting = g.add_lasting(
         Card::Voyage,
         p,
         f.this,
         f.keeps(g),
-        Until::StartOfTurn(p),
+        Until::ExtraTurn,
         Scratch::default(),
     );
+    g.extra_turns.push_back(ExtraTurn {
+        player: p,
+        source: Card::Voyage,
+        limit: ExtraLimit::ThirdInARow,
+        lasting: Some(lasting),
+    });
 }
 
 fn sunken_treasure(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

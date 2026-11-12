@@ -350,6 +350,9 @@ pub enum Until {
     StartOfTurn(PlayerId),
     /// Only when an effect removes it (Durations remove themselves when they resolve).
     Removed,
+    /// When the extra turn it keeps cards in play for (Outpost, Voyage: the
+    /// [`ExtraTurn::lasting`] naming it) starts, or doesn't happen.
+    ExtraTurn,
 }
 
 /// An effect that outlives the play that created it: a Duration's future part, "this turn"
@@ -391,6 +394,9 @@ pub struct ExtraTurn {
     pub player: PlayerId,
     pub source: Card,
     pub limit: ExtraLimit,
+    /// The lasting effect that keeps its card in play for it (Outpost, Voyage).
+    #[serde(default)]
+    pub lasting: Option<u32>,
 }
 
 /// When an extra turn doesn't happen (each card's own "but not ..." clause).

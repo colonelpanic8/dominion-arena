@@ -3160,6 +3160,15 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
                     );
                 }
             }
+            Until::ExtraTurn => {
+                let pending = g.extra_turns().iter().any(|e| e.lasting == Some(l.id));
+                if !pending && !l.ending {
+                    flags.bug(
+                        format!("extra-turn-effect-outlives-its-turn:{}", l.card),
+                        || format!("{l:?}; {}", ctx(g)),
+                    );
+                }
+            }
             Until::Removed => {
                 if let Some(c) = l.source
                     && g.printed(c) == l.card
