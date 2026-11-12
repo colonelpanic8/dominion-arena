@@ -956,6 +956,12 @@ fn secret_chamber_reacts_by_drawing_and_putting_back() {
     deck(&mut g, P1, &[Card::Gold, Card::Silver]);
     g.start();
     play(&mut g, Card::Militia);
+    // In its own words, not Diplomat's ("then discard 3").
+    let labels = trigger_labels(&g);
+    assert!(
+        labels[0].contains("put 2 cards from your hand onto your deck"),
+        "{labels:?}"
+    );
     trigger(&mut g, Card::SecretChamber);
     assert_eq!(g.hand(P1).len(), 6);
     choose_kinds(&mut g, &[Card::Estate]);

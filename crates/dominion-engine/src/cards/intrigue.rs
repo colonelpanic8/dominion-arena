@@ -85,15 +85,20 @@ impl SetRules for Rules {
             let tag = g.ext.intrigue.reveals;
             let big_hand = g.hand(target).len() >= 5;
             for &c in g.hand(target) {
-                let ability = match g.card(c) {
-                    Card::Diplomat if big_hand => DIPLOMAT_REACT,
-                    Card::SecretChamber => SECRET_CHAMBER_REACT,
+                let (ability, does) = match g.card(c) {
+                    Card::Diplomat if big_hand => {
+                        (DIPLOMAT_REACT, "reveal it to draw 2 cards, then discard 3")
+                    }
+                    Card::SecretChamber => (
+                        SECRET_CHAMBER_REACT,
+                        "reveal it to draw 2 cards, then put 2 cards from your hand onto your deck",
+                    ),
                     _ => continue,
                 };
                 out.push(
                     Trigger::new(target, g.card(c), ability)
                         .on(c)
-                        .optional(if ability == DIPLOMAT_REACT { "reveal it to draw 2 cards, then discard 3" } else { "reveal it to draw 2 cards, then put 2 cards from your hand onto your deck" })
+                        .reaction(does)
                         .data(tag),
                 );
             }

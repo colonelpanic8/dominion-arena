@@ -155,7 +155,8 @@ them.
   phase, offered only where they could matter: `push_token_moves`); Black Market asks for
   both between revealing its cards and selling one. Extra turns queue
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
-  in a row: check `g.third_in_a_row(p)` before queuing one; Seize the Day: never), and
+  in a row, decided between turns: queue it anyway, and a card kept in play for it stays
+  until the Clean-up after it fails; Seize the Day: never), and
   extra turns don't count for the tiebreaker. Between turns the player who just took a turn takes
   their extra turns first, then the others in turn order; one with different extra turns
   pending chooses which to take (`Purpose::Either`, `Opt::Card(source)`), and an extra
@@ -204,9 +205,10 @@ them.
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
   card is: the stop-moving rule) when producing a trigger. A declined ability stays
-  declined, except that a Reaction (an optional ability on a Reaction card) another
-  player uses gives the players who declined theirs another chance, until everyone has
-  declined. Things that happen together
+  declined, except that a Reaction (a Reaction card's own ability: its producer says so
+  with `Trigger::reaction`, never inferred from a card's types, since an ability about a
+  gained Tunnel is no Reaction) another player uses gives the players who declined theirs
+  another chance, until everyone has declined. Things that happen together
   share one window (`Window::open_all`): cards trashed together (`Frame::trash`) or
   discarded together (`Frame::discard`) are all moved first, then their player orders
   the abilities, and a card that has moved meanwhile (a Trail shuffled away by the first
@@ -219,7 +221,7 @@ them.
   player can't tell apart and whose effect is the same (two Moats, two Tunnels
   discarded together) as one option, drops
   `Trigger::protects` ones (all they do is make the attacked player unaffected) once the
-  player is unaffected, and resolves
+  player is unaffected, and resolves mandatory `protects` ones (Lighthouse) and
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's
   +1 Buy) first without asking. A trigger runs as the card's
   `Hook::Ability(n)` with `f.occ`, `f.lasting`, `f.data` set. Finishing an `Attack`
@@ -227,7 +229,9 @@ them.
   `Value::Flags`, one per occasion). Players choose among
   triggers by card name: give one `Trigger::labelled` when the name doesn't say what it
   is (the Exile rule on a gained card, which card a Way's ability is on), and say what an
-  optional one does (`Trigger::optional("reveal it to be unaffected")`). The window's
+  optional one does (`Trigger::optional("reveal it to be unaffected")`). Two options
+  with different effects under one name say what tells them apart (where the card is,
+  the lasting effect's cards, its count). The window's
   decision has no `source`; its `question` names the moment ("P2 attacks you with
   Militia").
 - **Lasting effects** (`Lasting`): anything that outlives a play. Durations call

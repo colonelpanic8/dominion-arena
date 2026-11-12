@@ -2727,6 +2727,33 @@ fn reckless_cards_of_a_split_pile_return_in_a_chosen_order() {
     assert_eq!(g.pile_top(pile), Some(ids[0]));
 }
 
+/// The same when another player discards from play in that Clean-up too: their card's
+/// occasion shares the window.
+#[test]
+fn reckless_split_pile_order_is_asked_when_another_player_discards_from_play_too() {
+    let mut g = setup(&[Card::Patrician, Card::Village]);
+    set_trait(&mut g, Card::Reckless, Card::Patrician);
+    let ids = hand(&mut g, P0, &[Card::Patrician, Card::Emporium]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::Village]);
+    g.start();
+    play(&mut g, Card::Patrician);
+    play(&mut g, Card::Emporium);
+    play_out_of_turn(&mut g, P1, Card::Village);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(trigger_cards(&g), [Card::Reckless, Card::Reckless]);
+    assert_eq!(g.pending().unwrap().player, P0);
+    let DecisionKind::Choose { labels, .. } = &g.pending().unwrap().kind else {
+        panic!("{:?}", g.pending())
+    };
+    let emporium = labels.iter().position(|l| l.contains("Emporium")).unwrap();
+    respond(&mut g, Response::option(Opt::Trigger(emporium as u16)));
+    resolve_triggers(&mut g);
+    let pile = g.pile_of(Card::Patrician).unwrap();
+    assert_eq!(g.pile_top(pile), Some(ids[0]));
+}
+
 #[test]
 fn one_moat_reveal_covers_both_runs_of_a_reckless_attack() {
     let mut g = setup(&[Card::Militia, Card::Moat]);

@@ -90,7 +90,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::Moat, MOAT_REACT)
                                 .on(c)
-                                .optional("reveal it to be unaffected")
+                                .reaction("reveal it to be unaffected")
                                 .protects(),
                         );
                     }

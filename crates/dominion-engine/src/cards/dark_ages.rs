@@ -137,7 +137,7 @@ impl SetRules for Rules {
                             out.push(
                                 Trigger::new(owner, Card::MarketSquare, MARKET_SQUARE_REACT)
                                     .on(c)
-                                    .optional("discard it from your hand to gain a Gold"),
+                                    .reaction("discard it from your hand to gain a Gold"),
                             );
                         }
                     }
@@ -153,7 +153,7 @@ impl SetRules for Rules {
                             out.push(
                                 Trigger::new(player, Card::Hovel, HOVEL_REACT)
                                     .on(c)
-                                    .optional("trash it from your hand"),
+                                    .reaction("trash it from your hand"),
                             );
                         }
                     }
@@ -165,7 +165,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::Beggar, BEGGAR_REACT)
                                 .on(c)
-                                .optional("discard it to gain 2 Silvers, one onto your deck"),
+                                .reaction("discard it to gain 2 Silvers, one onto your deck"),
                         );
                     }
                 }

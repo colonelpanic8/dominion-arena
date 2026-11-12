@@ -625,6 +625,44 @@ fn royal_galley_is_discarded_when_the_card_it_played_left_play() {
     assert!(g.lasting().is_empty());
 }
 
+/// Two Royal Galleys replaying different cards are two abilities to order, and say which
+/// card each replays.
+#[test]
+fn royal_galleys_replaying_different_cards_say_which() {
+    let mut g = game(&[
+        Card::RoyalGalley,
+        Card::Village,
+        Card::Smithy,
+        Card::Militia,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Village,
+            Card::RoyalGalley,
+            Card::RoyalGalley,
+            Card::Smithy,
+            Card::Militia,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper; 30]);
+    hand(&mut g, P1, &[Card::Copper; 3]);
+    g.start();
+    play(&mut g, Card::Village);
+    play(&mut g, Card::RoyalGalley);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    play(&mut g, Card::RoyalGalley);
+    choose_kinds(&mut g, &[Card::Militia]);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.pending().unwrap().player, P0);
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        ["Royal Galley (Smithy)", "Royal Galley (Militia)"]
+    );
+}
+
 #[test]
 fn town_chooses_cards_and_actions_or_a_buy_and_coins() {
     let mut g = game(&[Card::Town]);
@@ -1699,6 +1737,34 @@ fn garrison_draws_a_card_per_gain_next_turn() {
     assert!(g.in_play(P0).is_empty());
 }
 
+/// Two Garrisons with different numbers of tokens draw different numbers of cards: the
+/// options say how many each has.
+#[test]
+fn garrisons_with_different_tokens_say_how_many() {
+    let mut g = game(&[Card::Forts, Card::Village, Card::Workshop]);
+    let cards = [
+        Card::Village,
+        Card::Village,
+        Card::Garrison,
+        Card::Workshop,
+        Card::Garrison,
+    ];
+    hand(&mut g, P0, &cards);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    for card in &cards[..4] {
+        play(&mut g, *card);
+    }
+    choose_pile(&mut g, Card::Silver);
+    play(&mut g, Card::Garrison);
+    buy(&mut g, Card::Silver);
+    next_turn(&mut g);
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        ["Garrison (2)", "Garrison (1)"]
+    );
+}
+
 #[test]
 fn garrison_with_no_gains_is_discarded_that_turn() {
     let mut g = game(&[Card::Forts]);
@@ -1888,7 +1954,12 @@ fn voyage_on_an_extra_turn_gives_no_third_turn() {
     next_turn(&mut g);
     play(&mut g, Card::Voyage);
     next_turn(&mut g);
-    assert_eq!(g.turn().player, P1);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, None));
+    // "If a Voyage turn fails to occur ..., you discard the Voyage during the next
+    // Clean-up that happens" (wiki, Voyage): it fails between turns.
+    assert_eq!(in_play_kinds(&g, P0), [Card::Voyage]);
+    next_turn(&mut g);
+    assert!(g.in_play(P0).is_empty());
 }
 
 #[test]

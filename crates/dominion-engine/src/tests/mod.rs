@@ -1049,6 +1049,59 @@ fn a_reaction_does_not_bring_back_other_declined_abilities() {
     assert_ne!(d.purpose, Purpose::Trigger, "{d:?}");
 }
 
+/// An ability about a Reaction card (Changeling's exchange of a gained Tunnel) is no
+/// Reaction: declined, it doesn't come back when another player reacts ...
+#[test]
+fn a_declined_ability_about_a_gained_reaction_card_is_not_offered_again() {
+    let mut g = setup(&[Card::Changeling, Card::Tunnel, Card::BlackCat]);
+    hand(&mut g, P0, &[Card::Copper, Card::Copper, Card::Copper]);
+    hand(&mut g, P1, &[Card::BlackCat]);
+    deck(&mut g, P1, &[Card::Copper, Card::Copper, Card::Copper]);
+    g.start();
+    for _ in 0..3 {
+        play(&mut g, Card::Copper);
+    }
+    buy(&mut g, Card::Tunnel);
+    assert_eq!(trigger_cards(&g), [Card::Changeling]);
+    no(&mut g);
+    assert_eq!(trigger_cards(&g), [Card::BlackCat]);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.count_owned(P0, Card::Curse), 1);
+    let d = g.pending().unwrap();
+    assert_ne!((d.player, d.purpose), (P0, Purpose::Trigger), "{d:?}");
+}
+
+/// ... and used, it gives no one another chance to react: "once all players have
+/// declined to use a Reaction, no one may use Reactions anymore".
+#[test]
+fn an_ability_about_a_gained_reaction_card_gives_no_second_chance_to_react() {
+    let mut g = setup(&[
+        Card::Changeling,
+        Card::Tunnel,
+        Card::Ambassador,
+        Card::Falconer,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Ambassador, Card::Tunnel, Card::Falconer],
+    );
+    g.start();
+    play(&mut g, Card::Ambassador);
+    choose_kinds(&mut g, &[Card::Tunnel]);
+    choose(&mut g, &[]);
+    // P1 gains a Tunnel: P0, whose turn it is, may play Falconer first.
+    assert_eq!(g.pending().unwrap().player, P0);
+    assert_eq!(trigger_cards(&g), [Card::Falconer]);
+    no(&mut g);
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(trigger_cards(&g), [Card::Changeling]);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.count_owned(P1, Card::Changeling), 1);
+    let d = g.pending().unwrap();
+    assert_ne!((d.player, d.purpose), (P0, Purpose::Trigger), "{d:?}");
+}
+
 #[test]
 fn the_game_ends_when_provinces_run_out() {
     let mut g = setup(&[Card::Smithy]);

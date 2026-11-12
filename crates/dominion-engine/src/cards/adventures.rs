@@ -447,7 +447,7 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(target, Card::CaravanGuard, REACT)
                                 .on(c)
-                                .optional("play it from your hand first"),
+                                .reaction("play it from your hand first"),
                         );
                     }
                 }

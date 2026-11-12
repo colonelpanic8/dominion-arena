@@ -2564,9 +2564,6 @@ fn old_map(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 fn voyage(g: &mut Game, f: &mut CardFrame) {
     let p = f.player;
-    if g.third_in_a_row(p) {
-        return;
-    }
     let lasting = g.add_lasting(
         Card::Voyage,
         p,

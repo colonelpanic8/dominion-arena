@@ -352,7 +352,7 @@ impl SetRules for Rules {
                     out.push(
                         Trigger::new(player, Card::FaithfulHound, HOUND_SET_ASIDE)
                             .on(card)
-                            .optional("set it aside, to put it into your hand at end of turn"),
+                            .reaction("set it aside, to put it into your hand at end of turn"),
                     );
                 }
             }

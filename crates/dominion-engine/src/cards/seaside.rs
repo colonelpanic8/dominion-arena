@@ -225,7 +225,7 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     out.push(
                         Trigger::new(p, Card::Pirate, PIRATE_PLAY)
                             .on(c)
-                            .optional("play it from your hand"),
+                            .reaction("play it from your hand"),
                     );
                 }
             }
@@ -663,9 +663,6 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
             Until::Removed,
             Scratch::default(),
         );
-    }
-    if g.third_in_a_row(p) {
-        return Flow::done();
     }
     let lasting = g.add_lasting(
         Card::Outpost,
