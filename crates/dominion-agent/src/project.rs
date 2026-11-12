@@ -1,5 +1,5 @@
-//! Projection of an engine game, as one seat knows it, onto agent-view@2, and of answers
-//! back onto engine responses.
+//! Projection of an engine game, as one seat or someone watching knows it, onto
+//! agent-view@2, and of answers back onto engine responses.
 
 use dominion_engine::{
     Card, CardId, Decision, DecisionKind, EndReason, Event, Game, Kind, KnownCards, Mat, Move,
@@ -128,11 +128,26 @@ impl Context<'_> {
 }
 
 pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -> AgentView {
-    let v = game.view(seat);
+    view_of(game, known, Some(seat), cx)
+}
+
+/// The view of someone watching without a seat. `known` is what they know
+/// (`Knowledge::watched`): every player is an opponent, and nothing is asked.
+pub fn watch_view(game: &Game, known: &KnownCards, cx: &Context<'_>) -> AgentView {
+    view_of(game, known, None, cx)
+}
+
+fn view_of(game: &Game, known: &KnownCards, seat: Option<PlayerId>, cx: &Context<'_>) -> AgentView {
+    let v = match seat {
+        Some(seat) => game.view(seat),
+        None => game.watch(),
+    };
     let n = game.num_players();
     let player = |p: PlayerId| player_view(&v, known, p, cx);
-    let opponents = (1..n)
-        .map(|i| player(PlayerId(((seat.index() + i) % n) as u8)))
+    // In turn order after the seat; from the first player for someone watching.
+    let opponents = (seat.map_or(0, |s| s.index() + 1)..)
+        .take(n - seat.is_some() as usize)
+        .map(|i| player(PlayerId((i % n) as u8)))
         .collect();
     let notes = v.notes();
     let pile_card = |pile: Option<PileId>| pile.map(|p| v.pile(p).card().name().to_string());
@@ -284,10 +299,10 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
     AgentView {
         schema: SCHEMA.into(),
         game: game_info(game, cx),
-        seat: Some(seat.0),
-        spectating: false,
-        turn: turn_view(game, seat, cx),
-        you: Some(player(seat)),
+        seat: seat.map(|s| s.0),
+        spectating: seat.is_none(),
+        turn: turn_view(game, &v, cx),
+        you: seat.map(player),
         opponents,
         supply,
         non_supply,
@@ -334,7 +349,8 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
 fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
     let result = game.outcome().map(|o| {
         let n = o.scores.len();
-        let key = |p: usize| (std::cmp::Reverse(o.scores[p]), o.turns[p]);
+        let resigned = |p: usize| o.resigned.contains(&PlayerId(p as u8));
+        let key = |p: usize| (resigned(p), std::cmp::Reverse(o.scores[p]), o.turns[p]);
         GameResult {
             reason: Some(
                 match o.reason {
@@ -342,6 +358,7 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
                     EndReason::ColoniesGone => "colonies-gone",
                     EndReason::PilesEmpty => "piles-empty",
                     EndReason::TurnLimit => "turn-limit",
+                    EndReason::Resigned => "resigned",
                 }
                 .into(),
             ),
@@ -352,7 +369,7 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
                     vp: o.scores[p],
                     rank: 1 + (0..n).filter(|&q| key(q) < key(p)).count() as u32,
                     turns: o.turns[p],
-                    resigned: false,
+                    resigned: resigned(p),
                 })
                 .collect(),
         }
@@ -371,17 +388,16 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
     }
 }
 
-fn turn_view(game: &Game, seat: PlayerId, cx: &Context<'_>) -> TurnView {
+fn turn_view(game: &Game, v: &View<'_>, cx: &Context<'_>) -> TurnView {
     if game.outcome().is_some() {
         return TurnView::default();
     }
-    let t = game.turn();
-    let v = game.view(seat);
+    let t = v.turn();
     TurnView {
         number: Some(v.player(t.player).turns_taken()),
         player: Some(t.player.0),
         active_player: Some(cx.name(t.player)),
-        your_turn: t.player == seat,
+        your_turn: v.me() == Some(t.player),
         phase: Some(phase_name(t.phase)),
         extra: t.extra.map(|c| c.name().to_string()),
         actions: Some(t.actions),

@@ -70,6 +70,7 @@ pub fn App() -> Element {
             }
         }
     });
+    crate::account::use_provide_account();
     crate::lobby::use_provide_lobby();
     let assets = crate::assets::use_provide_assets();
     let asset_css = assets.read().css();

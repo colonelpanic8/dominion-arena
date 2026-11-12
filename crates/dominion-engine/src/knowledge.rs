@@ -24,6 +24,9 @@
 //!
 //! [`Knowledge`] consumes a traced game's [`Trace`]; build it before the game's first
 //! [`Game::take_trace`] and call [`Knowledge::update`] after every response.
+//!
+//! [`Knowledge::with_watcher`] also keeps what someone watching without a seat knows: a
+//! viewer who is no player, so they follow exactly what is public.
 
 use crate::game::{Mat, Pile, Zone};
 use crate::{Card, CardId, Game, PlayerId, Trace, Types};
@@ -41,6 +44,9 @@ pub struct Knowledge {
     #[serde(with = "zone_map")]
     members: HashMap<Zone, Vec<CardId>>,
     minds: Vec<Mind>,
+    /// What someone watching knows, if kept.
+    #[serde(default)]
+    watcher: Option<Mind>,
     /// Where the last `Created` card went, and that card, to group cards created together.
     created_in: Option<(Container, CardId)>,
     /// Per card, the set it is held in out of the other players' sight (0: none): the
@@ -203,6 +209,17 @@ fn remove(count: &mut CardCount, card: Card) -> bool {
 }
 
 impl Mind {
+    fn views(&self) -> impl Iterator<Item = GroupView<'_>> {
+        self.groups
+            .iter()
+            .filter(|g| !g.cards.is_empty())
+            .map(|g| GroupView {
+                cards: &g.cards,
+                ids: g.ids.as_ref(),
+                extra: g.extra,
+            })
+    }
+
     fn ensure(&mut self, card: CardId) {
         if self.group_of.len() <= card.index() {
             self.group_of.resize(card.index() + 1, usize::MAX);
@@ -520,13 +537,23 @@ fn public(game: &Game, zone: Zone) -> bool {
     }
 }
 
+/// A viewer: a player, or `None` for someone watching, who is no player.
+type Viewer = Option<PlayerId>;
+
 /// Whether the owner's view of `zone` lets `v` follow cards in and out of it.
-fn private_to(zone: Zone, v: PlayerId) -> bool {
+fn private_to(zone: Zone, v: Viewer) -> bool {
     match zone {
         Zone::Hand(p) | Zone::SetAside(p) | Zone::Looking(p) | Zone::Mat(p, Mat::NativeVillage) => {
-            v == p
+            v == Some(p)
         }
         _ => false,
+    }
+}
+
+fn view_of(game: &Game, v: Viewer) -> crate::View<'_> {
+    match v {
+        Some(p) => game.view(p),
+        None => game.watch(),
     }
 }
 
@@ -537,6 +564,7 @@ impl Knowledge {
             is: vec![],
             members: HashMap::new(),
             minds: vec![Mind::default(); players],
+            watcher: None,
             created_in: None,
             held: vec![],
             sets: 0,
@@ -546,7 +574,35 @@ impl Knowledge {
         }
     }
 
-    /// Consumes the game's trace so far, then records what each player sees now.
+    /// Also keeps what someone watching without a seat knows.
+    pub fn with_watcher(players: usize) -> Knowledge {
+        Knowledge {
+            watcher: Some(Mind::default()),
+            ..Knowledge::new(players)
+        }
+    }
+
+    /// Whether it keeps what someone watching knows.
+    pub fn watches(&self) -> bool {
+        self.watcher.is_some()
+    }
+
+    /// Every viewer's mind: the players', then the watcher's.
+    fn minds_mut(&mut self) -> impl Iterator<Item = (Viewer, &mut Mind)> {
+        let players = self.minds.iter_mut().enumerate();
+        players
+            .map(|(v, mind)| (Some(PlayerId(v as u8)), mind))
+            .chain(self.watcher.iter_mut().map(|mind| (None, mind)))
+    }
+
+    fn mind(&self, v: Viewer) -> Option<&Mind> {
+        match v {
+            Some(p) => self.minds.get(p.index()),
+            None => self.watcher.as_ref(),
+        }
+    }
+
+    /// Consumes the game's trace so far, then records what each viewer sees now.
     pub fn update(&mut self, game: &mut Game) {
         for entry in game.take_trace() {
             self.apply(game, entry);
@@ -556,7 +612,7 @@ impl Knowledge {
     }
 
     fn settle(&mut self) {
-        self.minds.iter_mut().for_each(Mind::settle);
+        self.minds_mut().for_each(|(_, mind)| mind.settle());
     }
 
     fn apply(&mut self, game: &Game, entry: Trace) {
@@ -585,25 +641,25 @@ impl Knowledge {
                 if cards.iter().any(|c| set(c) != set(&cards[0])) {
                     cards.iter().for_each(|c| self.held[c.index()] = 0);
                 }
-                let mixed = cards
+                let mixed: Vec<CardId> = cards
                     .iter()
                     .copied()
-                    .filter(|c| !marked(self.is[c.index()]));
-                for mind in &mut self.minds {
-                    mind.merge(mixed.clone());
-                    mixed.clone().for_each(|c| {
-                        mind.recent.remove(&c);
-                    });
+                    .filter(|c| !marked(self.is[c.index()]))
+                    .collect();
+                for (_, mind) in self.minds_mut() {
+                    mind.merge(mixed.iter().copied());
+                    for c in &mixed {
+                        mind.recent.remove(c);
+                    }
                 }
             }
             Trace::Shown { card, to } => {
                 let is = self.is[card.index()];
                 let zone = self.zone[card.index()];
                 let held = self.held_with(card);
-                for (v, mind) in self.minds.iter_mut().enumerate() {
-                    let v = PlayerId(v as u8);
-                    if to.is_none_or(|p| p == v) {
-                        let hidden = zone.owner().is_some_and(|p| p != v);
+                for (v, mind) in self.minds_mut() {
+                    if to.is_none_or(|p| Some(p) == v) {
+                        let hidden = zone.owner().is_some_and(|p| Some(p) != v);
                         let held = held.as_deref().filter(|_| hidden);
                         mind.see(
                             card,
@@ -642,7 +698,7 @@ impl Knowledge {
             Trace::Changed { card, from, to } => {
                 self.settle();
                 self.is[card.index()] = to;
-                for mind in &mut self.minds {
+                for (_, mind) in self.minds_mut() {
                     let group = &mut mind.groups[mind.group_of[card.index()]];
                     if let Some(ids) = &mut group.ids {
                         remove(ids, from);
@@ -678,7 +734,7 @@ impl Knowledge {
             None => Container::Zone(zone),
         };
         if marked(is) {
-            for mind in &mut self.minds {
+            for (_, mind) in self.minds_mut() {
                 mind.new_group(vec![card], Some(CardCount::from([(is, 1)])));
             }
             return;
@@ -689,7 +745,7 @@ impl Knowledge {
             Zone::Pile(pile) => !secret(game, game.pile(pile)),
             _ => true,
         };
-        for mind in &mut self.minds {
+        for (_, mind) in self.minds_mut() {
             match joins {
                 Some((_, last)) => mind.add_to(mind.group_of[last.index()], card, is),
                 None => mind.new_group(vec![card], known.then(|| CardCount::from([(is, 1)]))),
@@ -766,9 +822,8 @@ impl Knowledge {
             }
         }
         let shown = public(game, from) || public(game, to) || marked(is);
-        for (v, mind) in self.minds.iter_mut().enumerate() {
-            let v = PlayerId(v as u8);
-            let hidden = from.owner().is_some_and(|p| p != v);
+        for (v, mind) in self.minds_mut() {
+            let hidden = from.owner().is_some_and(|p| Some(p) != v);
             let followed = mind.recent.remove(&card);
             let held = held.as_deref().filter(|_| hidden && !followed);
             if shown || private_to(from, v) || private_to(to, v) {
@@ -779,12 +834,13 @@ impl Knowledge {
         }
     }
 
-    /// Every card a player sees now (their hand, public cards, cards offered to them)
+    /// Every card a viewer sees now (their hand, public cards, cards offered to them)
     /// becomes known to them.
     fn observe(&mut self, game: &Game) {
-        for (v, mind) in self.minds.iter_mut().enumerate() {
-            let view = game.view(PlayerId(v as u8));
-            for (i, &is) in self.is.iter().enumerate() {
+        let ids = std::mem::take(&mut self.is);
+        for (v, mind) in self.minds_mut() {
+            let view = view_of(game, v);
+            for (i, &is) in ids.iter().enumerate() {
                 let id = CardId(i as u32);
                 if view.card(id).is_some() {
                     mind.identify(id, is);
@@ -792,26 +848,36 @@ impl Knowledge {
             }
             mind.recent.clear();
         }
+        self.is = ids;
     }
 
     /// `viewer`'s groups, singletons included.
     pub fn groups(&self, viewer: PlayerId) -> impl Iterator<Item = GroupView<'_>> {
-        self.minds[viewer.index()]
-            .groups
-            .iter()
-            .filter(|g| !g.cards.is_empty())
-            .map(|g| GroupView {
-                cards: &g.cards,
-                ids: g.ids.as_ref(),
-                extra: g.extra,
-            })
+        self.minds[viewer.index()].views()
+    }
+
+    /// The groups of someone watching, if their knowledge is kept.
+    pub fn watched_groups(&self) -> Option<impl Iterator<Item = GroupView<'_>>> {
+        self.watcher.as_ref().map(Mind::views)
     }
 
     /// What `viewer` knows about every zone of `game`, which must be the game this
     /// knowledge has been updated with. Cards the viewer sees count as what they
     /// currently are (Band of Misfits in play); others as printed.
     pub fn known(&self, game: &Game, viewer: PlayerId) -> KnownCards {
-        let view = game.view(viewer);
+        self.known_to(game, Some(viewer))
+            .expect("the viewer is a player of the game")
+    }
+
+    /// [`Knowledge::known`] for someone watching, if their knowledge is kept: what every
+    /// player may know.
+    pub fn watched(&self, game: &Game) -> Option<KnownCards> {
+        self.known_to(game, None)
+    }
+
+    fn known_to(&self, game: &Game, viewer: Viewer) -> Option<KnownCards> {
+        let mind = self.mind(viewer)?;
+        let view = view_of(game, viewer);
         let mut out = KnownCards {
             owned: vec![(CardCount::new(), 0); game.num_players()],
             ..KnownCards::default()
@@ -848,7 +914,6 @@ impl Knowledge {
                 }
             }
         };
-        let mind = &self.minds[viewer.index()];
         for family in mind.families.iter().filter(|f| !f.groups.is_empty()) {
             let mut cards = family
                 .groups
@@ -924,6 +989,6 @@ impl Knowledge {
         }
         out.uncertain
             .sort_by(|a, b| (&a.zones, &a.candidates).cmp(&(&b.zones, &b.candidates)));
-        out
+        Some(out)
     }
 }

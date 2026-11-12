@@ -461,3 +461,169 @@ fn card_text_shows_costs_as_views_do() {
     assert_eq!(head("Golem"), "Golem | Action | $4P | Alchemy");
     assert_eq!(head("Engineer"), "Engineer | Action | 4D | Empires");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn two_agents_sign_in_and_are_matched() {
+    let (url, stop) = start().await;
+    let a = Client::connect(&url).await.unwrap();
+    let b = Client::connect(&url).await.unwrap();
+    let unsigned = call(&a, "find_match", json!({})).await;
+    assert!(
+        !unsigned.ok && unsigned.text.contains("sign_in"),
+        "{}",
+        unsigned.text
+    );
+    let ada = call(&a, "sign_in", json!({ "name": "Ada" })).await;
+    assert!(ada.ok, "{}", ada.text);
+    assert_eq!(ada.json.unwrap()["user"]["kind"], json!("guest"));
+    assert!(call(&b, "sign_in", json!({ "name": "Bo" })).await.ok);
+    let taken = call(&b, "sign_in", json!({ "name": "ada" })).await;
+    assert!(!taken.ok && taken.text.contains("taken"), "{}", taken.text);
+    let bad_key = call(&b, "sign_in", json!({ "api_key": "dk_nope" })).await;
+    assert!(!bad_key.ok, "{}", bad_key.text);
+
+    let alone = call(&a, "find_match", json!({ "timeout_ms": 50 })).await;
+    assert!(
+        alone.ok && alone.text.contains("Still searching"),
+        "{}",
+        alone.text
+    );
+    // Only people will do: Bo, an agent, is not one.
+    let picky = call(
+        &b,
+        "find_match",
+        json!({ "opponents": "humans", "timeout_ms": 50 }),
+    )
+    .await;
+    assert!(picky.text.contains("Still searching"), "{}", picky.text);
+    let found = call(
+        &b,
+        "find_match",
+        json!({ "opponents": "any", "timeout_ms": 5000 }),
+    )
+    .await;
+    assert!(
+        found.ok && found.text.contains("you are Bo"),
+        "{}",
+        found.text
+    );
+    let seat = found.json.unwrap()["seat"].as_u64().unwrap();
+    let mine = call(&a, "find_match", json!({ "timeout_ms": 5000 })).await;
+    assert!(
+        mine.ok && mine.text.contains("you are Ada"),
+        "{}",
+        mine.text
+    );
+    assert_eq!(mine.json.unwrap()["seat"], json!(1 - seat));
+
+    // The sessions are joined to their seats: no token needed.
+    let gone = call(&a, "resign", json!({})).await;
+    assert!(gone.ok, "{}", gone.text);
+    let view = call(&b, "view", json!({})).await.json.unwrap();
+    assert_eq!(view["game"]["running"], json!(false));
+    assert_eq!(view["game"]["result"]["reason"], json!("resigned"));
+    let again = call(&a, "resign", json!({})).await;
+    assert!(!again.ok && again.text.contains("over"), "{}", again.text);
+    // The finished game is no answer to a new search.
+    let next = call(&a, "find_match", json!({ "timeout_ms": 50 })).await;
+    assert!(
+        next.ok && next.text.contains("Still searching"),
+        "{}",
+        next.text
+    );
+    a.close().await;
+    b.close().await;
+    stop.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_agent_sits_down_at_a_table_and_plays_when_it_starts() {
+    let (url, stop) = start().await;
+    let host = Client::connect(&url).await.unwrap();
+    let agent = Client::connect(&url).await.unwrap();
+    assert!(call(&host, "sign_in", json!({ "name": "Host" })).await.ok);
+    assert!(call(&agent, "sign_in", json!({ "name": "Agent" })).await.ok);
+    assert_eq!(
+        call(&host, "list_tables", json!({})).await.text,
+        "No tables."
+    );
+    // Two agents at one table: the first to sit waits for the second.
+    let base = url.trim_end_matches("/mcp");
+    let http = reqwest::Client::new();
+    let made = http
+        .post(format!("{base}/api/auth/guest"))
+        .body(r#"{"name": "Web"}"#)
+        .send()
+        .await
+        .unwrap();
+    let cookie = made.headers()["set-cookie"].to_str().unwrap().to_string();
+    let session = cookie
+        .split(';')
+        .next()
+        .unwrap()
+        .split_once('=')
+        .unwrap()
+        .1
+        .to_string();
+    let table: Value = http
+        .post(format!("{base}/api/tables"))
+        .bearer_auth(&session)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let id = table["id"].as_str().unwrap().to_string();
+    let listed = call(&agent, "list_tables", json!({})).await;
+    assert!(
+        listed.text.contains("host Web") && listed.text.contains("open"),
+        "{}",
+        listed.text
+    );
+    let seated = call(
+        &agent,
+        "join_table",
+        json!({ "table_id": id, "timeout_ms": 50 }),
+    )
+    .await;
+    assert!(
+        seated.ok && seated.text.contains("Seated and ready"),
+        "{}",
+        seated.text
+    );
+    let ready = http
+        .post(format!("{base}/api/tables/{id}/ready"))
+        .bearer_auth(&session)
+        .body(r#"{"ready": true}"#)
+        .send()
+        .await
+        .unwrap();
+    assert!(ready.status().is_success());
+    let started = call(&agent, "wait_for_game", json!({ "timeout_ms": 5000 })).await;
+    assert!(
+        started.ok && started.text.contains("you are Agent"),
+        "{}",
+        started.text
+    );
+    assert!(call(&agent, "view", json!({})).await.ok);
+    host.close().await;
+    agent.close().await;
+    stop.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_address_makes_only_so_many_guests_over_mcp() {
+    let server = start_on("127.0.0.1:0", Options::default()).await;
+    let client = Client::connect(&server.url).await.unwrap();
+    let mut made = 0;
+    for _ in 0..25 {
+        made += usize::from(call(&client, "sign_in", json!({})).await.ok);
+    }
+    assert_eq!(made, 20);
+    let refused = call(&client, "sign_in", json!({})).await;
+    assert!(refused.text.contains("too many"), "{}", refused.text);
+    client.close().await;
+    server.stop.cancel();
+    let _ = server.done.await;
+}
