@@ -298,7 +298,12 @@ impl Game {
                 },
                 Response::Options(chosen),
             ) => {
-                if decision.about.iter().any(|&c| !self.is_public(c)) {
+                // Not a choice about a card only its player looks at, which its labels name.
+                let names_private = |label: &String| {
+                    (decision.about.iter())
+                        .any(|&c| !self.is_public(c) && label.contains(self.card(c).name()))
+                };
+                if labels.iter().any(names_private) {
                     return;
                 }
                 options

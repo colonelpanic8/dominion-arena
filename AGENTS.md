@@ -401,8 +401,8 @@ them.
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one
   `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
-  decisions mark their labels public with `public_choice`, and labels referring to private
-  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors,
+  decisions mark their labels public with `public_choice`, and a choice whose labels name
+  a private `about` card is never announced. Set counters on Sinister Plot and Family of Inventors,
   and the tokens on a lasting effect's card (Garrison), are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,

@@ -3500,6 +3500,32 @@ fn orb_looks_through_the_discard_pile_before_asking_which_option() {
     assert!(g.trace().unwrap().contains(&looked));
 }
 
+/// Neither label names a card of the discard pile looked through, so the choice is
+/// announced whatever is in it.
+#[test]
+fn orb_announces_its_choice_with_cards_in_the_discard_pile() {
+    let chosen = |pile: &[Card]| {
+        let mut g = setup(&[Card::Village]);
+        hand(&mut g, P0, &[Card::Orb]);
+        deck(&mut g, P0, &[Card::Copper; 5]);
+        discard(&mut g, P0, pile);
+        g.start();
+        play(&mut g, Card::Orb);
+        respond(&mut g, Response::option(Opt::Mode(1)));
+        (g.log().iter())
+            .filter(|e| matches!(e, Event::Chosen { .. }))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let said = [Event::Chosen {
+        player: P0,
+        source: Some(Card::Orb),
+        choices: vec!["+1 Buy and +$3".into()],
+    }];
+    assert_eq!(chosen(&[]), said);
+    assert_eq!(chosen(&[Card::Estate]), said);
+}
+
 #[test]
 fn a_hasty_card_gained_with_quartermaster_is_not_on_the_quartermaster() {
     let mut g = setup(&[Card::Quartermaster, Card::Village]);
