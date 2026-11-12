@@ -234,7 +234,7 @@ body:has(.dt-root) .topbar { display: none; }
   z-index: 50;
   overflow: hidden;
 }
-.dt-bar-active { background-image: var(--dt-tab-active, var(--dt-tab, none)); }
+.dt-bar-active { background-image: var(--dt-tab-active, var(--dt-tab, linear-gradient(90deg, rgba(70, 45, 10, 0.9), rgba(10, 30, 50, 0.6)))); }
 .dt-bar-top { display: flex; align-items: center; justify-content: space-between; height: 50%; gap: 0.3em; }
 .dt-pname { font-size: calc(2.5 * var(--vh)); font-weight: 700; text-shadow: 2px 2px 0 #000, -1px -1px 0 #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dt-vp {
@@ -253,6 +253,13 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-bar-cube img { height: calc(2.6 * var(--vh)); }
 .dt-bar-held { font-size: calc(1.4 * var(--vh)); white-space: nowrap; }
 .dt-bar-you { padding-top: calc(0.4 * var(--vh)); }
+/* The account on a bar: whether it is connected, its rating, guest or bot. */
+.dt-conn { flex: none; width: calc(1.1 * var(--vh)); height: calc(1.1 * var(--vh)); border-radius: 50%; box-sizing: border-box; border: calc(0.2 * var(--vh)) solid #999; }
+.dt-conn-on { background: #4ed04e; border-color: #1d6b1d; }
+.dt-bar-top .dt-pname { flex: 1; }
+.dt-bar-away .dt-pname { opacity: 0.55; }
+.dt-bar-who { margin-left: auto; flex: none; font-family: var(--count); font-size: calc(1.5 * var(--vh)); color: #ddd; text-shadow: 1px 1px 0 #000; white-space: nowrap; }
+.dt-bar-away .dt-bar-who { color: #ffb0a0; }
 
 /* Peeking piles and the play row. */
 .dt-opp-hand { position: absolute; cursor: pointer; z-index: 990; }
@@ -310,6 +317,9 @@ body:has(.dt-root) .topbar { display: none; }
 }
 .dt-ticker .dt-name, .dt-ticker .dt-pc { font-family: var(--title); }
 .dt-error { color: #ff7f7f; }
+.dt-forfeit { color: #ffb347; margin-left: 0.8em; }
+.dt-watch-mark + .dt-forfeit, .dt-ticker > .dt-forfeit:first-child { margin-left: 0; }
+.dt-watch-mark { color: #f5d36a; }
 .dt-end {
   position: absolute;
   box-sizing: border-box;
@@ -445,15 +455,30 @@ body:has(.dt-root) .topbar { display: none; }
   background: rgba(0, 0, 0, 0.8);
   border-left: calc(0.2 * var(--vh)) solid #aaa;
   border-top: calc(0.2 * var(--vh)) solid #aaa;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   z-index: 6000;
   font-size: calc(1.6 * var(--vh));
 }
 .dt-below-log-loading { right: 0; top: 0; width: 23vw; height: 100vh; }
-.dt-controls { display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; justify-content: flex-end; margin-bottom: 0.5em; }
+.dt-controls { display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; justify-content: flex-end; margin-bottom: 0.5em; flex: none; }
+.dt-controls .seat-bar { margin-bottom: 0; }
+.dt-more { flex: 0 1 auto; max-height: 40%; overflow-y: auto; margin-bottom: 0.5em; }
 .dt-more-head { background: none; border: 0; color: #ddd; cursor: pointer; font: inherit; padding: 0; }
 .dt-more-list { margin: 0.3em 0 0; padding-left: 1.2em; color: #ccc; }
 .dt-more-list li { margin: 0.2em 0; }
+
+/* The chat under the log, its input on the window's bottom edge. */
+.dt-root .game-chat { flex: 1; min-height: 0; border-top: calc(0.2 * var(--vh)) solid #555; padding-top: calc(0.5 * var(--vh)); }
+.dt-root .game-chat-lines { max-height: none; min-height: 0; font-size: calc(1.8 * var(--vh)); line-height: 1.2; color: #e8e8e8; }
+.dt-root .chat-watcher, .dt-root .chat-system { color: #aaa; }
+.dt-root .game-chat-error { color: #ff7f7f; }
+.dt-root .game-chat-input { flex: none; box-sizing: border-box; font: inherit; font-size: calc(1.8 * var(--vh)); padding: calc(0.4 * var(--vh)) calc(0.6 * var(--vh)); background: rgba(0, 0, 0, 0.6); color: #fff; border: calc(0.15 * var(--vh)) solid #888; border-radius: calc(0.4 * var(--vh)); user-select: text; }
+.dt-root .resign-ask { font-family: var(--ui); border-width: calc(0.2 * var(--vh)); border-radius: calc(1 * var(--vh)); padding: calc(2 * var(--vh)) calc(3 * var(--vh)); }
+.dt-root .resign-ask p { font-size: calc(3.2 * var(--vh)); margin: 0 0 calc(1.5 * var(--vh)); }
+.dt-root .resign-buttons button { background: #000; color: #fff; border: calc(0.25 * var(--vh)) solid #fff; border-radius: 0; font-family: var(--ui); font-weight: 700; font-size: calc(2.6 * var(--vh)); padding: 0 0.5em; cursor: pointer; }
+.dt-root .resign-buttons button:hover { background: #333; }
 
 /* The study view. */
 .dt-study { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 25000; }

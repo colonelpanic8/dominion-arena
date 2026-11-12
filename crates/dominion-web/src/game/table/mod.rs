@@ -26,6 +26,7 @@ use dioxus::prelude::*;
 use dominion_protocol::{AgentDecision, Answer};
 pub use model::Spot;
 pub use motion::before_change;
+pub use pieces::seat_class;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -503,18 +504,19 @@ pub fn set_table_mode(on: bool) {
 /// The opponent whose hand, deck and discard pile peek in from the top: the one whose
 /// turn it is, else the one chosen, else the next in turn order.
 fn active_opponent(b: &Board, chosen: Option<u8>) -> Option<u8> {
+    let others = b.others();
     if let Some(p) = &b.status.player
-        && b.opponents.iter().any(|o| o.seat == p.seat)
+        && others.iter().any(|o| o.seat == p.seat)
     {
         return Some(p.seat);
     }
     chosen
-        .filter(|c| b.opponents.iter().any(|o| o.seat == *c))
-        .or_else(|| b.opponents.first().map(|o| o.seat))
+        .filter(|c| others.iter().any(|o| o.seat == *c))
+        .or_else(|| others.first().map(|o| o.seat))
 }
 
-/// The layout's inputs for a board.
-/// `deciding`: the shown seat has a decision open.
+/// The layout's inputs for a board. `deciding`: the shown seat has a decision open.
+/// Someone watching sees the kingdom drop on the turns of all but the first player.
 fn shape(
     b: &Board,
     settings: &dominion_protocol::api::WebSettings,
@@ -522,7 +524,7 @@ fn shape(
 ) -> layout::Shape {
     let (victory, treasures) = supply::basic_columns(b);
     layout::Shape {
-        opponents: b.opponents.len(),
+        opponents: b.others().len(),
         victory: victory.len(),
         treasures: treasures.len(),
         kingdom: b.supply.kingdom.iter().map(Vec::len).sum(),
@@ -530,9 +532,10 @@ fn shape(
         non_supply: b.non_supply.len(),
         lowered: settings.web_move_kingdom
             && b.status.running
-            && b.you.is_some()
+            && b.front().is_some()
             && b.status.player.is_some()
             && !b.status.your_turn
+            && !b.front_turn()
             && !deciding
             && !at_start(b),
     }
@@ -547,7 +550,9 @@ pub fn TableGame(controls: Element) -> Element {
     let board_memo: Memo<Option<Rc<Board>>> = use_memo(move || {
         let st = game.state.read();
         let v = st.view.as_ref()?;
-        Some(Rc::new(board(v, st.deciding, &st.table, &cards.read())))
+        Some(Rc::new(
+            board(v, st.deciding, &st.table, &cards.read()).with_meta(&st.meta),
+        ))
     });
     let ui = use_memo(move || {
         let st = game.state.read();
@@ -701,6 +706,7 @@ pub fn TableGame(controls: Element) -> Element {
             class: "dt-root",
             class: if b.status.your_turn { "dt-your-turn" },
             class: if ui_now.is_some() { "dt-deciding" },
+            class: if b.watching { "dt-watching" },
             style: "--vh:{g.vh:.3}px;--vw:{g.vw:.3}px;",
             "data-busy": if answering { "1" },
             "data-decision": ui_now.as_ref().map(|u| u.decision.id.clone()).unwrap_or_default(),
@@ -771,10 +777,12 @@ pub fn TableGame(controls: Element) -> Element {
                     sound::MuteToggle { muted }
                 }
                 side::More { board: b.clone() }
+                super::chat::Chat {}
             }
             if b.result.is_some() {
                 side::GameOver { board: b.clone() }
             }
+            super::menu::ResignDialog {}
             pieces::StudyLayer {}
             motion::GhostPool { flight: flight() }
         }

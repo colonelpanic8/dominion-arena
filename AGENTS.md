@@ -76,13 +76,24 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     measure.rs            text widths: canvas in the browser, an estimate natively
   assets/cards.css        card styles (cqw units; images through --dc-* variables)
   src/gallery.rs          /gallery: every card through the renderer, with filters
-  src/game/state.rs       the game page's model (view, version, log), selection -> Answer
-  src/game/mod.rs         GamePage: seat choice, keeping state current, `GameCtx` context,
-                          the notice when the game waits on a seat nobody has joined
+  src/game/state.rs       the game page's model (view, version, log, `meta`, chat),
+                          selection -> Answer
+  src/game/mod.rs         GamePage: the seat shown (one held here, else the account's from
+                          `/api/me/games`, else none: watching), keeping state current (the
+                          feed for the game and its chat), `GameCtx` context
+                          (answer, resign, say), `use_forfeit`, the notice when the game
+                          waits on a seat nobody has joined
+  src/game/meta.rs        what `SeatView.meta` makes the page say: the account on a bar,
+                          the deciding seat's time, how the game ended (pure)
+  src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page
+  src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
   src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
   src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
                           "Play Treasures" (`TreasureRun`)
-  src/game/board.rs       a view arranged for drawing: piles, players, stacks, status
+  src/game/board.rs       a view arranged for drawing: piles, players, stacks, status.
+                          `you` is the seat's own player and nobody for someone watching:
+                          draw `front()` (then the first player) and `others()`;
+                          `with_meta` adds the accounts and how the game ended
   src/game/table/         the graphical table, dominion.games' layout and behaviour; the game
                           page's default view (Plain is a toggle)
     mod.rs                `TableGame`, `TableCtx` (selection, study view, windows, keys,
@@ -100,7 +111,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           badges, `CardName`, the study view
     supply.rs players.rs prompt.rs side.rs   Supply and tabs; player bars, peeking opponent
                           piles, play row, your hand and piles; status bar, buttons, decision
-                          window; log, "more" panel, game end and score screen
+                          window; log, "more" panel, game end and score screen. Someone
+                          watching sees the first player's area with the hand as backs
   src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
   assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
   src/game/entry.rs       log entries parsed back from their text in every form the agent
@@ -109,9 +121,11 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           articles and plurals, merged runs, turn headers, depth
   src/game/moves.rs       which cards moved where between two boards, from the log and the
                           boards (pure); ghosts summarising them
-  tests/table.rs          those models and the table's spots property-tested over random games;
-                          every log entry of random games read by a rule in entry.rs
-  tests/moves.rs          move inference over random games, and hand-checked steps
+  tests/table.rs          those models and the table's spots property-tested over random games,
+                          a watcher's view (`Table::watch_view`) among the seats'; every
+                          log entry of random games read by a rule in entry.rs
+  tests/moves.rs          move inference over random games (each seat's boards and a
+                          watcher's), and hand-checked steps
   src/lobby/              the lobby, dominion.games' layout and behaviour
     mod.rs                the frame and tabs, `TableState` (the table this browser sits at),
                           toast, tooltips, fieldsets, rows, switches

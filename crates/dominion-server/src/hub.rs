@@ -137,6 +137,8 @@ struct Hosted {
     /// Per seat: calls waiting on the game for it (event streams, `wait_for_decision`).
     streams: Vec<AtomicU32>,
     watchers: AtomicU32,
+    /// Who was connected and how many watched when its followers were last told.
+    told: Mutex<(Vec<bool>, u32)>,
     /// When the open decision opened.
     since: AtomicU64,
     /// When the game last changed.
@@ -158,6 +160,7 @@ impl Hosted {
             seen: (0..seats).map(|_| AtomicU64::new(now)).collect(),
             streams: (0..seats).map(|_| AtomicU32::new(0)).collect(),
             watchers: AtomicU32::new(0),
+            told: Mutex::new((vec![true; seats], 0)),
             since: AtomicU64::new(now),
             changed: AtomicU64::new(changed),
             tokens,
@@ -906,6 +909,7 @@ impl Hub {
             forfeit_at,
             watchers: game.watchers.load(Ordering::Relaxed),
             ended: meta.ended.clone(),
+            now,
         };
         (shown, meta.owners.clone())
     }
@@ -1107,6 +1111,27 @@ impl Hub {
         };
         self.ended(ended);
         Ok(())
+    }
+
+    /// Wakes the followers of every running game in which a seat has come or gone, or
+    /// the number watching has changed: neither changes the game, so nothing else says.
+    pub fn notice_presence(&self) {
+        let games: Vec<Arc<Hosted>> = lock(&self.index).games.values().cloned().collect();
+        let now = now_ms();
+        for game in games {
+            if lock(&game.table).is_over() {
+                continue;
+            }
+            let connected: Vec<bool> = (0..game.tokens.len())
+                .map(|s| game.connected(s, now))
+                .collect();
+            let seen = (connected, game.watchers.load(Ordering::Relaxed));
+            let mut told = lock(&game.told);
+            if *told != seen {
+                *told = seen;
+                game.version.send_modify(|v| *v += 1);
+            }
+        }
     }
 
     /// The deciding seats of timed games whose time is up.

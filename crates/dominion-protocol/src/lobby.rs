@@ -439,6 +439,10 @@ pub struct GameMeta {
     /// Why the game ended early, when it did: `resigned` or `abandoned`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
+    /// The server's clock when this was read, in milliseconds since the Unix epoch: what
+    /// `forfeit_at` is to be compared with.
+    #[serde(default)]
+    pub now: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

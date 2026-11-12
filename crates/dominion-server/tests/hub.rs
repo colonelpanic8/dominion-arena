@@ -148,3 +148,21 @@ fn seat_names_are_single_lines_that_tell_seats_apart() {
     let renamed = Hub::default().create(&named(&["P2", "P1"])).unwrap();
     assert_eq!(renamed.seats[0].name, "P2");
 }
+
+#[test]
+fn followers_are_told_when_someone_starts_or_stops_watching() {
+    let hub = Hub::default();
+    let game = hub.create(&two_players()).unwrap();
+    let feed = hub.subscribe(&game.game_id).unwrap();
+    let version = || *feed.version.borrow();
+    let start = version();
+    hub.notice_presence();
+    assert_eq!(version(), start, "nothing has changed");
+    let watching = hub.watching(&game.game_id).unwrap();
+    hub.notice_presence();
+    hub.notice_presence();
+    assert_eq!(version(), start + 1);
+    drop(watching);
+    hub.notice_presence();
+    assert_eq!(version(), start + 2);
+}

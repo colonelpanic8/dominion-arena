@@ -39,18 +39,23 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
         .collect();
     let cubes = p.projects.clone();
     let cube = assets.file_url(&cube_icon(seat));
-    // The name shrinks to fit beside the VP shield.
+    let account = p.account.clone();
+    let away = account.as_ref().is_some_and(|a| !a.connected);
+    // The name shrinks to fit beside the VP shield (and the connection mark).
     let vh = at.h / if you { 6.0 } else { 5.5 };
     let chars = p.name.chars().count().max(1) as f64;
-    let name_px = (2.5 * vh).min((at.w - 5.5 * vh) / (0.55 * chars));
+    let beside = if p.account.is_some() { 7.5 } else { 5.5 };
+    let name_px = (2.5 * vh).min((at.w - beside * vh) / (0.55 * chars));
     rsx! {
         div {
             class: "dt-bar {seat_class(seat)}",
             class: if you { "dt-bar-you" },
             class: if active { "dt-bar-active" },
             class: if p.is_turn { "dt-turn" },
+            class: if away { "dt-bar-away" },
             style: "{at.style()}",
             "data-seat": "{seat}",
+            "data-connected": account.as_ref().map(|a| a.connected.to_string()),
             "data-anchor": "player:{seat}",
             onclick: move |e| {
                 e.stop_propagation();
@@ -59,6 +64,12 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 }
             },
             div { class: "dt-bar-top",
+                if let Some(a) = &account {
+                    span {
+                        class: if a.connected { "dt-conn dt-conn-on" } else { "dt-conn" },
+                        title: "{a.title()}",
+                    }
+                }
                 span { class: "dt-pname", style: "font-size:{name_px:.1}px;", "{p.name}" }
                 if let Some(vp) = p.vp {
                     span { class: "dt-vp", title: "Victory points", "{vp}" }
@@ -76,6 +87,12 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 }
                 for (k, v) in p.counters.iter() {
                     span { key: "c{k}", class: "dt-bar-held", "{k} {v}" }
+                }
+                if let Some(a) = &account {
+                    span { class: "dt-bar-who", title: "{a.title()}",
+                        if away { "away " }
+                        "{a.tag()}"
+                    }
                 }
             }
         }
@@ -130,9 +147,9 @@ fn PlayerTabs(player: PlayerEntry, g: Rc<Geometry>, you: bool, show_in_play: boo
 pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Element {
     let ctx = use_table();
     let b = &board;
-    let them = active.and_then(|s| b.opponents.iter().find(|o| o.seat == s).cloned());
+    let them = active.and_then(|s| b.others().iter().find(|o| o.seat == s).cloned());
     rsx! {
-        for (o, r) in b.opponents.iter().zip(g.opponent_bars.iter()) {
+        for (o, r) in b.others().iter().zip(g.opponent_bars.iter()) {
             PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active }
         }
         if let Some(o) = them {
@@ -210,7 +227,7 @@ pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
         return rsx! {};
     };
     let yours = board.you.as_ref().is_some_and(|y| y.seat == who.seat);
-    let theirs = !yours;
+    let theirs = board.front().is_none_or(|f| f.seat != who.seat);
     let mut slots: Vec<Stack> = pa.order.clone();
     let shown: u32 = slots.iter().map(|s| s.count).sum();
     if pa.cards.count > shown {
@@ -262,27 +279,61 @@ pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     }
 }
 
+/// The most backs drawn for a watched hand.
+const WATCHED_HAND_BACKS: u32 = 12;
+
+/// The area of the seat's own player: their bar, deck and discard pile, hand and tabs.
+/// Someone watching sees the first player there.
 #[component]
 pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
-    let Some(you) = board.you.clone() else {
+    let Some(you) = board.front().cloned() else {
         return rsx! {};
     };
-    let deck = zone_popup(
-        "Your deck".into(),
-        &you.deck,
-        Some(if you.deck_order_known {
-            "You know its order.".into()
-        } else {
-            "What you know is in it, in no order.".into()
-        }),
-    );
-    let discard = zone_popup("Your discard pile".into(), &you.discard, None);
-    let mut slots: Vec<(Stack, bool)> = you.hand.known.iter().map(|s| (s.clone(), false)).collect();
-    if you.hand.unknown > 0 {
+    let watching = board.watching;
+    let (deck, discard) = if watching {
+        (
+            zone_popup(format!("{}'s deck", you.name), &you.deck, None),
+            zone_popup(format!("{}'s discard pile", you.name), &you.discard, None),
+        )
+    } else {
+        (
+            zone_popup(
+                "Your deck".into(),
+                &you.deck,
+                Some(if you.deck_order_known {
+                    "You know its order.".into()
+                } else {
+                    "What you know is in it, in no order.".into()
+                }),
+            ),
+            zone_popup("Your discard pile".into(), &you.discard, None),
+        )
+    };
+    // Someone watching sees a hand as its player's opponents do: backs, one a card, the
+    // last with their number; what is known of it opens from them.
+    let hand = watching.then(|| zone_popup(format!("{}'s hand", you.name), &you.hand, None));
+    let mut slots: Vec<(Stack, bool)> = if watching {
+        vec![]
+    } else {
+        you.hand.known.iter().map(|s| (s.clone(), false)).collect()
+    };
+    let faces = slots.len();
+    let backs = if watching {
+        you.hand.count.min(WATCHED_HAND_BACKS)
+    } else {
+        you.hand.unknown.min(1)
+    };
+    for i in 0..backs {
+        let last = i + 1 == backs;
+        let count = match (watching, last) {
+            (true, true) => you.hand.count,
+            (false, _) => you.hand.unknown,
+            _ => 1,
+        };
         slots.push((
             Stack {
                 card: String::new(),
-                count: you.hand.unknown,
+                count,
             },
             true,
         ));
@@ -291,6 +342,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     let hand_box = Rect::new(g.hand_x, g.hand_y, g.hand_right - g.hand_x, g.hand_h);
     let your_turn = board.play_area.player.as_ref().map(|w| w.seat) == Some(you.seat);
     let click_answers = ui.as_ref().is_some_and(|u| u.click_answers);
+    let ctx = use_table();
     rsx! {
         PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false }
         if you.discard.count > 0 {
@@ -322,17 +374,25 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
         }
         div {
             class: "dt-hand {seat_class(you.seat)}",
+            class: if watching { "dt-click" },
             style: "{hand_box.style()}",
             "data-anchor": "hand:{you.seat}",
+            onclick: move |e| {
+                if let Some(p) = hand.clone() {
+                    e.stop_propagation();
+                    ctx.open(p);
+                }
+            },
             for (i, (s, back)) in slots.iter().enumerate() {
                 {
                     let mark = if *back { Default::default() } else { mark_at(&ui, &sel, Spot::Hand(s.card.clone())) };
                     let all = mark.target.is_some()
                         && !mark.tone.is_empty()
                         && (click_answers && mark.tone == "play" || !click_answers && s.count > 1 && mark.options > 1);
+                    let key = if *back { format!("back{}", i - faces) } else { format!("false{}", s.card) };
                     rsx! {
                         TableCard {
-                            key: "{back}{s.card}",
+                            key: "{key}",
                             name: s.card.clone(),
                             size: CardSize::Full,
                             back: *back,

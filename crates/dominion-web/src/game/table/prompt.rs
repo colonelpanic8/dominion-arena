@@ -49,14 +49,12 @@ pub fn StatusBar(
 ) -> Element {
     let ctx = use_table();
     let cards = use_cards();
+    let forfeit = crate::game::use_forfeit();
     let s = &board.status;
-    let turn_player = s.player.as_ref().and_then(|w| {
-        board
-            .you
-            .iter()
-            .chain(&board.opponents)
-            .find(|p| p.seat == w.seat)
-    });
+    let turn_player = s
+        .player
+        .as_ref()
+        .and_then(|w| board.players().find(|p| p.seat == w.seat));
     let token = |kind: &str| -> u32 {
         turn_player
             .and_then(|p| p.badges.iter().find(|b| b.kind == kind))
@@ -79,15 +77,25 @@ pub fn StatusBar(
             span { "data-prompt": "{u.decision.purpose}", "{text}" }
         }
     } else {
-        match &s.deciding {
+        // A player who has left is counted down in place of "Waiting for".
+        let left = forfeit.as_ref().is_some_and(|(f, _)| f.left);
+        let waiting = match &s.deciding {
+            Some(_) if left => rsx! {},
             Some(w) => rsx! {
                 "Waiting for "
                 span { class: "dt-pc {seat_class(w.seat)}", "{w.name}" }
                 "."
             },
             None => rsx! { "Waiting…" },
+        };
+        rsx! {
+            if board.watching {
+                span { class: "dt-watch-mark", "data-watching": "1", "Watching. " }
+            }
+            {waiting}
         }
     };
+    let forfeit = forfeit.filter(|_| s.running && !starting);
     // The phase's end, inside the bar's right end.
     let end = ui.as_ref().and_then(|u| {
         u.spots
@@ -131,6 +139,14 @@ pub fn StatusBar(
             }
             div { class: "dt-ticker",
                 {ticker}
+                if let Some((f, text)) = forfeit {
+                    span {
+                        class: "dt-forfeit",
+                        "data-forfeit": "{f.seat}",
+                        "data-seconds": "{f.seconds}",
+                        " {text}"
+                    }
+                }
                 if let Some(e) = error {
                     span { class: "dt-error", "data-error": "1", " {e}" }
                 }
