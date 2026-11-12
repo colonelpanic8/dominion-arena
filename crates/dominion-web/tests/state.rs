@@ -282,6 +282,7 @@ impl Client {
             view,
             version,
             deciding: table.deciding().map(|p| p.0),
+            table: table.extras(self.seat),
         })
     }
 }
@@ -332,6 +333,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
                 view: table.view_from(seat, 0),
                 version,
                 deciding: Some(seat.0),
+                table: table.extras(seat),
             });
         }
         table.answer(seat, &answer).unwrap();
@@ -341,6 +343,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
             view: table.view(seat),
             version,
             deciding: table.deciding().map(|p| p.0),
+            table: table.extras(seat),
         });
         if applied == Applied::Refetch {
             assert_eq!(cl.fetch(&table, version), Applied::Done);

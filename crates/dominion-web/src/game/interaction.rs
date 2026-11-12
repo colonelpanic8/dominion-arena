@@ -208,12 +208,14 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
     }
 }
 
-/// "Play Treasures": a run of answers, each playing one Treasure, for as long as the
-/// seat that started it is asked for a move in the same Buy phase with Treasures left.
+/// "Autoplay Treasures" (or the "All" chip on a hand stack): a run of answers, each
+/// playing one Treasure (or one copy of the card), for as long as the seat that started
+/// it is asked for a move in the same phase with one left.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreasureRun {
     seat: u8,
     phase: String,
+    card: Option<String>,
 }
 
 impl TreasureRun {
@@ -222,13 +224,24 @@ impl TreasureRun {
         let run = TreasureRun {
             seat: view.seat?,
             phase: view.decision.as_ref()?.phase.clone()?,
+            card: None,
+        };
+        run.next(view, cards).is_some().then_some(run)
+    }
+
+    /// A run playing every copy of `card` in the hand.
+    pub fn start_card(view: &AgentView, cards: &CardDb, card: &str) -> Option<TreasureRun> {
+        let run = TreasureRun {
+            seat: view.seat?,
+            phase: view.decision.as_ref()?.phase.clone()?,
+            card: Some(card.to_string()),
         };
         run.next(view, cards).is_some().then_some(run)
     }
 
     /// The answer to send next, or none when the run is over: the view is another
-    /// seat's, its decision isn't a move in the run's phase (a Treasure asked something,
-    /// or the phase ended), or no Treasure is left to play.
+    /// seat's, its decision isn't a move in the run's phase (a card asked something,
+    /// or the phase ended), or nothing is left to play.
     pub fn next(&self, view: &AgentView, cards: &CardDb) -> Option<Answer> {
         let d = view.decision.as_ref()?;
         if view.seat != Some(self.seat)
@@ -237,7 +250,52 @@ impl TreasureRun {
         {
             return None;
         }
-        let index = *interaction(view, d, cards).treasures.first()?;
+        let index = match &self.card {
+            None => *interaction(view, d, cards).treasures.first()?,
+            Some(card) => {
+                d.options
+                    .iter()
+                    .find(|o| {
+                        o.action == "play"
+                            && o.zone.as_deref() == Some("hand")
+                            && o.card.as_deref() == Some(card)
+                    })?
+                    .index
+            }
+        };
         Some(Answer::indices(d.id.clone(), vec![index]))
     }
+}
+
+/// What clicking a target does, as dominion.games colours a card's border for it: `play`,
+/// `buy`, `trash`, `discard`, `name`, `reveal`, `pass`, `react` or `exile`.
+pub fn tone(d: &AgentDecision, t: &Target) -> &'static str {
+    match t.action.as_str() {
+        "play" => return "play",
+        "buy" | "buy-landscape" => return "buy",
+        _ => {}
+    }
+    match d.purpose.as_str() {
+        "trash" => "trash",
+        "exile" => "exile",
+        "reveal" => "reveal",
+        "reaction" => "react",
+        "pass" => "pass",
+        "name" => "name",
+        "play" | "gain" | "turn" => "play",
+        _ => "discard",
+    }
+}
+
+/// The image marking a picked card, by its [`tone`].
+pub fn cross(tone: &str) -> Option<&'static str> {
+    Some(match tone {
+        "play" => "green-cross",
+        "trash" => "red-cross",
+        "discard" | "name" => "yellow-cross",
+        "reveal" => "blue-cross",
+        "pass" => "light-blue-cross",
+        "exile" => "dark-red-cross",
+        _ => return None,
+    })
 }

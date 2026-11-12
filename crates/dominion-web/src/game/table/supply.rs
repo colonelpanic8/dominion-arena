@@ -1,9 +1,11 @@
-//! The Supply: basic piles in columns, the Kingdom in rows, and a strip of non-Supply
-//! piles, landscapes, Boons and Hexes, Artifacts and the trash.
+//! The Supply as dominion.games lays it out: the basic piles in two columns at the left
+//! edge (Victory cards and Curses, Treasures), the kingdom in a grid filled from the
+//! bottom row up by cost, landscapes in a column beside it, non-Supply piles as strips,
+//! and the trash as a tab on the top edge.
 
-use super::layout::{Middle, SupplyShape, WideItem};
+use super::layout::{Geometry, Rect};
 use super::pieces::{BadgeView, TableCard};
-use super::{Popup, Spot, Ui, mark_at};
+use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
 use crate::card::CardSize;
 use crate::game::board::{Board, CardDeck, Holding, LandscapeEntry, PileEntry};
@@ -15,29 +17,38 @@ fn is_treasure(p: &PileEntry) -> bool {
     p.types.iter().any(|t| t == "Treasure")
 }
 
-/// The basic piles in columns: Treasures, then the rest, at most `rows` to a column.
-fn basic_columns(basic: &[PileEntry], rows: usize) -> Vec<Vec<PileEntry>> {
-    let (treasures, rest): (Vec<_>, Vec<_>) = basic.iter().cloned().partition(is_treasure);
-    let mut cols = vec![];
-    for group in [treasures, rest] {
-        for chunk in group.chunks(rows.max(1)) {
-            cols.push(chunk.to_vec());
-        }
-    }
-    cols
+/// The basic piles: Victory cards, Curses and the rest top to bottom, most expensive
+/// first; and the Treasures likewise.
+pub fn basic_columns(b: &Board) -> (Vec<PileEntry>, Vec<PileEntry>) {
+    let (mut treasures, mut rest): (Vec<_>, Vec<_>) =
+        b.supply.basic.iter().cloned().partition(is_treasure);
+    let key = |p: &PileEntry| {
+        let c = crate::game::board::cost_key(p.cost.as_ref());
+        (std::cmp::Reverse(c), p.name.clone())
+    };
+    let curse_last = |p: &PileEntry| p.types.iter().any(|t| t == "Curse");
+    treasures.sort_by_key(key);
+    rest.sort_by_key(|p| (curse_last(p), key(p)));
+    (rest, treasures)
 }
 
-/// What sits in the columns beside the Kingdom, in order.
+/// What sits beside the kingdom, in order: landscapes by cost and name, then Artifacts,
+/// Boons and Hexes.
 #[derive(Clone, Debug, PartialEq)]
-enum Wide {
+pub enum Wide {
     Landscape(LandscapeEntry),
     Artifact(Holding),
     Deck(&'static str, CardDeck),
-    Trash,
 }
 
-fn wides(b: &Board) -> Vec<Wide> {
-    let mut out: Vec<Wide> = b.landscapes.iter().cloned().map(Wide::Landscape).collect();
+pub fn wides(b: &Board) -> Vec<Wide> {
+    let mut ls = b.landscapes.clone();
+    ls.sort_by(|a, b| {
+        crate::game::board::cost_key(a.cost.as_ref())
+            .cmp(&crate::game::board::cost_key(b.cost.as_ref()))
+            .then_with(|| a.card.cmp(&b.card))
+    });
+    let mut out: Vec<Wide> = ls.into_iter().map(Wide::Landscape).collect();
     out.extend(b.artifacts.iter().cloned().map(Wide::Artifact));
     if let Some(d) = b.boons.clone() {
         out.push(Wide::Deck("Boons", d));
@@ -45,126 +56,130 @@ fn wides(b: &Board) -> Vec<Wide> {
     if let Some(d) = b.hexes.clone() {
         out.push(Wide::Deck("Hexes", d));
     }
-    out.push(Wide::Trash);
     out
 }
 
-/// The Supply band's contents, as far as its layout goes.
-pub fn shape(b: &Board) -> SupplyShape {
-    let treasures = b.supply.basic.iter().filter(|p| is_treasure(p)).count();
-    SupplyShape {
-        treasures,
-        others: b.supply.basic.len() - treasures,
-        kingdom_rows: b.supply.kingdom.len().max(1),
-        kingdom_cols: b
-            .supply
-            .kingdom
-            .iter()
-            .map(Vec::len)
-            .max()
-            .unwrap_or(1)
-            .max(5),
-        wide: wides(b)
-            .iter()
-            .map(|w| match w {
-                Wide::Deck(..) => WideItem::Deck,
-                Wide::Trash => WideItem::Trash,
-                _ => WideItem::Landscape,
-            })
-            .collect(),
-        non_supply: b.non_supply.len(),
-    }
+/// The kingdom piles, cheapest first.
+fn kingdom(b: &Board) -> Vec<PileEntry> {
+    let mut piles: Vec<PileEntry> = b.supply.kingdom.iter().flatten().cloned().collect();
+    piles.sort_by(|a, b| {
+        crate::game::board::cost_key(a.cost.as_ref())
+            .cmp(&crate::game::board::cost_key(b.cost.as_ref()))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    piles
 }
 
 #[component]
 pub fn SupplyArea(
     board: Rc<Board>,
-    lay: Rc<Middle>,
+    g: Rc<Geometry>,
     ui: Option<Rc<Ui>>,
     sel: Selection,
 ) -> Element {
-    let cols = basic_columns(&board.supply.basic, lay.basic_rows);
+    let (victory, treasures) = basic_columns(&board);
+    let kingdom = kingdom(&board);
     let wide = wides(&board);
-    let ns_cols: Vec<Vec<PileEntry>> = board
-        .non_supply
-        .chunks(lay.ns_rows.max(1))
-        .map(<[PileEntry]>::to_vec)
+    let mut non_supply = board.non_supply.clone();
+    non_supply.sort_by(|a, b| {
+        crate::game::board::cost_key(b.cost.as_ref())
+            .cmp(&crate::game::board::cost_key(a.cost.as_ref()))
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    let basic: Vec<(PileEntry, Rect)> = victory
+        .into_iter()
+        .zip(g.victory.iter().copied())
+        .chain(treasures.into_iter().zip(g.treasures.iter().copied()))
         .collect();
-    let ns_size = if lay.ns_micro {
-        CardSize::Micro
-    } else {
-        CardSize::Mini
-    };
     rsx! {
         div { class: "dt-supply",
-            div { class: "dt-basic",
-                for (i, col) in cols.iter().enumerate() {
-                    div { key: "{i}", class: "dt-bcol",
-                        for p in col.iter() {
-                            Pile { key: "{p.name}", pile: p.clone(), ui: ui.clone(), sel: sel.clone() }
-                        }
-                    }
+            for (p, r) in basic.iter() {
+                Pile { key: "b{p.name}", pile: p.clone(), at: *r, ui: ui.clone(), sel: sel.clone() }
+            }
+            for (p, r) in kingdom.iter().zip(g.kingdom.iter()) {
+                Pile { key: "k{p.name}", pile: p.clone(), at: *r, ui: ui.clone(), sel: sel.clone() }
+            }
+            for (w, r) in wide.iter().zip(g.landscapes.iter()) {
+                match w.clone() {
+                    Wide::Landscape(l) => rsx! { Landscape { key: "l{l.card}", entry: l, at: *r, ui: ui.clone(), sel: sel.clone() } },
+                    Wide::Artifact(a) => rsx! { Artifact { key: "a{a.card}", holding: a, at: *r } },
+                    Wide::Deck(label, d) => rsx! { Deck { key: "{label}", label, deck: d, at: *r } },
                 }
             }
-            div { class: "dt-kingdom",
-                for (i, row) in board.supply.kingdom.iter().enumerate() {
-                    div { key: "{i}", class: "dt-krow",
-                        for p in row.iter() {
-                            Pile { key: "{p.name}", pile: p.clone(), ui: ui.clone(), sel: sel.clone() }
-                        }
-                    }
-                }
+            for (p, r) in non_supply.iter().zip(g.non_supply.iter()) {
+                Pile { key: "n{p.name}", pile: p.clone(), at: *r, ui: ui.clone(), sel: sel.clone(), size: CardSize::Micro }
             }
-            for (i, col) in lay.wide_cols.iter().enumerate() {
-                div { key: "w{i}", class: "dt-wcol",
-                    for &j in col.iter() {
-                        match wide[j].clone() {
-                            Wide::Landscape(l) => rsx! { Landscape { key: "l{l.card}", entry: l, ui: ui.clone(), sel: sel.clone() } },
-                            Wide::Artifact(a) => rsx! { Artifact { key: "a{a.card}", holding: a } },
-                            Wide::Deck(label, d) => rsx! { Deck { key: "{label}", label, deck: d } },
-                            Wide::Trash => rsx! { Trash { key: "{j}", board: board.clone() } },
-                        }
-                    }
-                }
+            TrashTab { board: board.clone(), g: g.clone() }
+        }
+    }
+}
+
+/// A tab on the table's edge naming a mat or the trash, with its count: hovering opens
+/// its window, clicking keeps it open.
+#[component]
+pub fn Tab(
+    label: String,
+    count: u32,
+    at: Rect,
+    popup: Popup,
+    #[props(default)] art: Option<String>,
+    #[props(default)] anchor: Option<String>,
+    #[props(default)] z: i32,
+) -> Element {
+    let ctx = use_table();
+    let p_hover = popup.clone();
+    let p_click = popup.clone();
+    let open = ctx
+        .popup
+        .read()
+        .as_ref()
+        .is_some_and(|(q, _)| q.title == popup.title);
+    rsx! {
+        div {
+            class: "dt-tab",
+            class: if open { "dt-tab-open" },
+            style: "{at.style()}z-index:{10000 - z};",
+            "data-anchor": anchor,
+            "data-tab": "{label}",
+            onmouseenter: move |_| ctx.peek_open(p_hover.clone()),
+            onmouseleave: move |_| ctx.peek_close(),
+            onclick: move |e| {
+                e.stop_propagation();
+                ctx.open(p_click.clone());
+            },
+            if let Some(a) = art {
+                div { class: "dt-tab-art", style: "background-image:var(--dt-{a});" }
             }
-            for (i, col) in ns_cols.iter().enumerate() {
-                div { key: "n{i}", class: "dt-nscol", class: if lay.ns_micro { "dt-nscol-micro" },
-                    for p in col.iter() {
-                        Pile { key: "ns{p.name}", pile: p.clone(), ui: ui.clone(), sel: sel.clone(), size: ns_size }
-                    }
-                }
-            }
+            span { class: "dt-tab-label", "{label}" }
+            span { class: "dt-tab-n", "{count}" }
         }
     }
 }
 
 #[component]
-fn Trash(board: Rc<Board>) -> Element {
-    let ctx = super::use_table();
+fn TrashTab(board: Rc<Board>, g: Rc<Geometry>) -> Element {
     let b = &board;
-    let trash = Popup {
-        title: format!("Trash ({})", b.trash.count),
+    let popup = Popup {
+        title: "Trash".into(),
         stacks: b.trash.known.clone(),
         unknown: b.trash.unknown,
         note: None,
     };
-    let top = b.trash.known.last().map(|s| s.card.clone());
+    let w = 11.0 * g.vw;
+    let at = Rect::new(
+        (100.0 - super::layout::RIGHT_COLUMN) * g.vw - w,
+        0.0,
+        w,
+        4.0 * g.vh,
+    );
     rsx! {
-        div {
-            class: "dt-trash dt-click",
-            class: if b.trash.count == 0 { "dt-trash-empty" },
-            "data-pile": "trash",
-            "data-anchor": "trash",
-            title: "Open the trash",
-            onclick: move |e| {
-                e.stop_propagation();
-                ctx.open(trash.clone());
-            },
-            span { class: "dt-trash-label", "Trash" }
-            span { class: "dt-trash-n", "{b.trash.count}" }
-            if let Some(t) = top {
-                span { class: "dt-trash-top", "data-name": "{t}" }
-            }
+        Tab {
+            label: "Trash",
+            count: b.trash.count,
+            at,
+            popup,
+            art: "trash-mat".to_string(),
+            anchor: "trash".to_string(),
         }
     }
 }
@@ -180,6 +195,7 @@ pub fn pile_anchor(at: crate::game::board::PileAt) -> String {
 #[component]
 fn Pile(
     pile: PileEntry,
+    at: Rect,
     ui: Option<Rc<Ui>>,
     sel: Selection,
     #[props(default = CardSize::Mini)] size: CardSize,
@@ -191,6 +207,14 @@ fn Pile(
     });
     let mark = mark_at(&ui, &sel, Spot::Pile(pile.at));
     let changed = cost.is_some();
+    // A pile of different cards (split or mixed) shows a back peeking out under it.
+    let split = !pile.hidden
+        && size == CardSize::Mini
+        && cards
+            .get(&pile.name)
+            .is_some_and(|c| c.kind == "randomizer" || c.pile.is_some())
+        && pile.count > 1;
+    let plus = mark.target.is_some() && size != CardSize::Full;
     rsx! {
         TableCard {
             name: pile.card.clone(),
@@ -199,13 +223,16 @@ fn Pile(
             count: Some(pile.count),
             anchor: pile_anchor(pile.at),
             mark,
-            dim: pile.empty,
+            empty: pile.empty,
             back: pile.hidden,
             badges: pile.badges.clone(),
+            at,
+            plus,
+            split,
             class: format!(
                 "dt-pile{}{}{}",
                 if pile.kingdom { " dt-kpile" } else { "" },
-                if !pile.kingdom && matches!(pile.at, crate::game::board::PileAt::NonSupply(_)) { " dt-nspile" } else { "" },
+                if size == CardSize::Micro { " dt-nspile" } else { "" },
                 if changed { " dt-cost-changed" } else { "" },
             ),
         }
@@ -213,30 +240,33 @@ fn Pile(
 }
 
 #[component]
-fn Landscape(entry: LandscapeEntry, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
     let cards = use_cards();
     let printed = cards.get(&entry.card).and_then(|c| c.cost);
     let cost = entry.cost.clone().filter(|c| {
         printed.is_none_or(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
     });
     let mark = mark_at(&ui, &sel, Spot::Landscape(entry.card.clone()));
+    let plus = mark.target.is_some();
     rsx! {
         TableCard {
             name: entry.card.clone(),
             size: CardSize::Mini,
             cost,
             mark,
+            plus,
             badges: entry.badges.clone(),
             cubes: entry.owners.iter().map(|w| (w.seat, w.name.clone())).collect::<Vec<_>>(),
             class: "dt-landscape dt-kind-{entry.kind}",
+            at,
         }
     }
 }
 
 /// The Boons or Hexes deck, face down with how many are left, beside its discard pile.
 #[component]
-fn Deck(label: String, deck: CardDeck) -> Element {
-    let ctx = super::use_table();
+fn Deck(label: String, deck: CardDeck, at: Rect) -> Element {
+    let ctx = use_table();
     let top = deck.discard.last().cloned();
     let mut stacks: Vec<crate::game::board::Stack> = vec![];
     for c in &deck.discard {
@@ -256,48 +286,43 @@ fn Deck(label: String, deck: CardDeck) -> Element {
     };
     let open = popup.clone();
     let lower = label.to_lowercase();
+    let half = Rect::new(at.x, at.y, at.w / 2.0 - 2.0, at.h);
+    let right = Rect::new(at.x + at.w / 2.0 + 2.0, at.y, at.w / 2.0 - 2.0, at.h);
     rsx! {
-        div { class: "dt-deckbox", "data-deck": "{label}",
-            div {
-                class: "dt-deckback dt-deck-{lower} dt-click",
-                title: "{label}: {deck.count} left to draw",
-                onclick: move |e| { e.stop_propagation(); ctx.open(open.clone()); },
-                span { class: "dt-deckback-label", "{label}" }
-                span { class: "dt-deckback-n", "{deck.count}" }
-            }
-            match top {
-                Some(card) => rsx! {
-                    TableCard {
-                        name: card,
-                        size: CardSize::Mini,
-                        count: Some(deck.discard.len() as u32),
-                        opens: popup,
-                        class: "dt-landscape dt-deck-discard",
-                    }
-                },
-                None => rsx! {
-                    div { class: "dt-deck-discard dt-deck-none", title: "No {label} discarded" }
-                },
-            }
+        div {
+            class: "dt-deckback dt-deck-{lower} dt-click",
+            style: "{half.style()}",
+            "data-deck": "{label}",
+            title: "{label}: {deck.count} left to draw",
+            onclick: move |e| { e.stop_propagation(); ctx.open(open.clone()); },
+            span { class: "dt-deckback-label", "{label}" }
+            span { class: "dt-deckback-n", "{deck.count}" }
+        }
+        match top {
+            Some(card) => rsx! {
+                TableCard {
+                    name: card,
+                    size: CardSize::Mini,
+                    count: Some(deck.discard.len() as u32),
+                    opens: popup,
+                    class: "dt-landscape dt-deck-discard",
+                    at: right,
+                }
+            },
+            None => rsx! {},
         }
     }
 }
 
 #[component]
-fn Artifact(holding: Holding) -> Element {
+fn Artifact(holding: Holding, at: Rect) -> Element {
     let cubes: Vec<(u8, String)> = holding
         .holder
         .iter()
         .map(|w| (w.seat, w.name.clone()))
         .collect();
-    let title = match &holding.holder {
-        Some(w) => format!("{} holds it", w.name),
-        None => "Unclaimed".into(),
-    };
     rsx! {
-        div { class: "dt-artifact", title: "{title}",
-            TableCard { name: holding.card.clone(), size: CardSize::Mini, class: "dt-landscape", cubes }
-        }
+        TableCard { name: holding.card.clone(), size: CardSize::Mini, class: "dt-landscape", cubes, at }
     }
 }
 

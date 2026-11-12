@@ -1,6 +1,7 @@
-//! The table's building blocks: a card that can be a target, badges, hoverable names
-//! and the large preview.
+//! The table's building blocks: a card or pile that can be a target, badges, card names
+//! that open the study view, and the study view itself.
 
+use super::layout::Rect;
 use super::{Mark, Popup, use_table};
 use crate::app::use_cards;
 use crate::assets::use_assets;
@@ -16,35 +17,41 @@ pub fn seat_class(seat: u8) -> String {
     format!("dt-p{}", seat % 6)
 }
 
-const CUBES: [&str; 6] = ["red", "blue", "green", "yellow", "purple", "orange"];
+const CUBES: [&str; 6] = ["red", "blue", "green", "yellow", "orange", "purple"];
 
 pub fn cube_icon(seat: u8) -> String {
     format!("images/cubes/cube_{}.png", CUBES[usize::from(seat % 6)])
 }
 
-/// The class colouring a card's name by its types, as the log and prompts do.
+/// The class colouring a card's name by its types, as the log does: the first of
+/// Victory, Event, Duration, Reserve, Treasure, Reaction, Curse, Hex, Boon, State,
+/// Project, Artifact, Landmark, Way, Trait and Prophecy it is, else white.
 pub fn type_class(cards: &CardDb, name: &str) -> &'static str {
     let Some(c) = cards.get(name) else {
         return "dt-t-none";
     };
-    if crate::card::is_landscape(c) {
-        return "dt-t-landscape";
-    }
     let is = |t: &str| c.types.iter().any(|x| x == t);
     [
-        ("Curse", "dt-t-curse"),
-        ("Ruins", "dt-t-ruins"),
-        ("Shelter", "dt-t-shelter"),
-        ("Reaction", "dt-t-reaction"),
-        ("Duration", "dt-t-duration"),
-        ("Night", "dt-t-night"),
-        ("Treasure", "dt-t-treasure"),
         ("Victory", "dt-t-victory"),
-        ("Action", "dt-t-action"),
+        ("Event", "dt-t-event"),
+        ("Duration", "dt-t-duration"),
+        ("Reserve", "dt-t-reserve"),
+        ("Treasure", "dt-t-treasure"),
+        ("Reaction", "dt-t-reaction"),
+        ("Curse", "dt-t-curse"),
+        ("Hex", "dt-t-hex"),
+        ("Boon", "dt-t-boon"),
+        ("State", "dt-t-state"),
+        ("Project", "dt-t-project"),
+        ("Artifact", "dt-t-artifact"),
+        ("Landmark", "dt-t-landmark"),
+        ("Way", "dt-t-way"),
+        ("Trait", "dt-t-trait"),
+        ("Prophecy", "dt-t-prophecy"),
     ]
     .into_iter()
     .find(|(t, _)| is(t))
-    .map_or("dt-t-none", |(_, class)| class)
+    .map_or("dt-t-action", |(_, class)| class)
 }
 
 /// The cached image drawing a badge, by its kind.
@@ -102,7 +109,7 @@ pub fn BadgeView(badge: Badge) -> Element {
         let label = (b.kind == "bane").then(|| "Bane".to_string());
         return rsx! {
             span { class: "dt-badge dt-b-trait dt-b-{b.kind}", title: "{b.text}",
-                HoverName { name: card, label }
+                CardName { name: card, label }
                 if let Some(n) = b.count {
                     " {n}"
                 }
@@ -147,9 +154,9 @@ pub fn Cube(seat: u8, name: String) -> Element {
     }
 }
 
-/// A card name that shows the card after a moment's hover or on right-click.
+/// A card name in text, coloured by type; clicking or right-clicking it studies the card.
 #[component]
-pub fn HoverName(name: String, #[props(default)] label: Option<String>) -> Element {
+pub fn CardName(name: String, #[props(default)] label: Option<String>) -> Element {
     let ctx = use_table();
     let cards = use_cards();
     let class = type_class(&cards, &name);
@@ -159,29 +166,34 @@ pub fn HoverName(name: String, #[props(default)] label: Option<String>) -> Eleme
     rsx! {
         span {
             class: "dt-name {class}",
-            onmouseenter: move |e| ctx.hover_enter(&n1, e.client_coordinates().x, e.client_coordinates().y),
-            onmouseleave: move |_| ctx.hover_leave(),
+            onclick: move |e| {
+                e.stop_propagation();
+                ctx.study(&n1);
+            },
             oncontextmenu: move |e| {
                 e.prevent_default();
-                ctx.hover_now(&n2, e.client_coordinates().x, e.client_coordinates().y);
+                e.stop_propagation();
+                ctx.study(&n2);
             },
             "{shown}"
         }
     }
 }
 
-/// One card on the table: a stack of identical cards, a pile or a choice. A `target`
-/// glows and is clicked to answer (see [`Mark`]).
+/// One card on the table: a stack of identical cards, a pile or a choice. A `target` is
+/// clicked to answer (see [`Mark`]); its border takes the colour of what that does.
 #[component]
 pub fn TableCard(
     name: String,
     size: CardSize,
     #[props(default)] cost: Option<Cost>,
-    /// Shown as a count badge when more than one (or always, for piles).
+    /// The count badge, when given.
     #[props(default)]
     count: Option<u32>,
     #[props(default)] mark: Mark,
-    #[props(default)] dim: bool,
+    /// An empty pile: washed out and crossed.
+    #[props(default)]
+    empty: bool,
     #[props(default)] back: bool,
     #[props(default)] badges: Vec<Badge>,
     #[props(default)] cubes: Vec<(u8, String)>,
@@ -191,28 +203,34 @@ pub fn TableCard(
     /// Names the zone or pile it stands for, for cards seen moving to and from it.
     #[props(default)]
     anchor: Option<String>,
+    /// Where it is on the table, and how high it sits.
+    #[props(default)]
+    at: Option<Rect>,
+    #[props(default)] z: i32,
+    /// A buyable or gainable pile: the plus sign.
+    #[props(default)]
+    plus: bool,
+    /// A pile holding different cards: a back peeking out from under it.
+    #[props(default)]
+    split: bool,
+    /// Upside down, as an opponent's cards across the table.
+    #[props(default)]
+    inverted: bool,
+    /// The "All" chip: playing or picking every copy.
+    #[props(default)]
+    all: bool,
 ) -> Element {
     let ctx = use_table();
+    let assets = use_assets();
     let Mark {
         target,
         options,
         picked,
         ordered,
+        tone,
     } = mark;
-    let n_enter = name.clone();
     let n_menu = name.clone();
     let clickable = target.is_some() || opens.is_some();
-    let picked_text = if picked.is_empty() {
-        String::new()
-    } else if ordered {
-        picked
-            .iter()
-            .map(|p| (p + 1).to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    } else {
-        picked.len().to_string()
-    };
     let size_class = match size {
         CardSize::Full => "dt-full",
         CardSize::Mini => "dt-mini",
@@ -224,73 +242,158 @@ pub fn TableCard(
             .get(&name)
             .is_some_and(crate::card::is_landscape);
     let open = opens.clone();
-    let overlay = rsx! {
-        if let Some(n) = count {
-            span { class: "dt-count", "{n}" }
-        }
-        if !picked.is_empty() {
-            span {
-                class: "dt-pick",
-                title: "Unselect",
-                "data-unpick": "{target_attr}",
-                onclick: move |e| {
-                    e.stop_propagation();
-                    if let Some(t) = target {
-                        ctx.unpick(t);
-                    }
-                },
-                "{picked_text}"
+    let cross_url = super::super::interaction::cross(tone)
+        .and_then(|c| assets.file_url(&format!("images/elements/{c}.png")));
+    let counter_url = assets.file_url("images/elements/card-counter.png");
+    let plus_url = assets.file_url("images/elements/plus-sign.png");
+    let red_cross = assets.file_url("images/elements/red-cross.png");
+    let n_picked = picked.len() as u32;
+    // Picked copies of a stack split off from it, tilted, unless the whole stack is.
+    let stack_n = count.unwrap_or(1);
+    let split_off = n_picked > 0 && !ordered && stack_n > n_picked && size == CardSize::Full;
+    let shown_count = if split_off {
+        count.map(|c| c - n_picked)
+    } else {
+        count
+    };
+    let whole_picked = n_picked > 0 && !split_off;
+    let style = at.map(|r| r.style()).unwrap_or_default();
+    let z_style = if z != 0 {
+        format!("z-index:{z};")
+    } else {
+        String::new()
+    };
+    let face = |picked_copy: bool| {
+        rsx! {
+            if back {
+                CardBack { size }
+            } else {
+                CardView { name: name.clone(), size, cost: cost.clone(), shifted: count.is_some() && size == CardSize::Mini }
             }
-        }
-        if !badges.is_empty() || !cubes.is_empty() {
-            span { class: "dt-tokens",
-                for (i, b) in badges.iter().enumerate() {
-                    BadgeView { key: "{i}", badge: b.clone() }
+            if empty {
+                div { class: "dt-empty-x",
+                    if let Some(src) = red_cross.clone() {
+                        img { src, alt: "", draggable: "false" }
+                    }
                 }
-                for (seat, who) in cubes.iter() {
-                    Cube { key: "c{seat}", seat: *seat, name: who.clone() }
+            }
+            if picked_copy {
+                div { class: "dt-cross",
+                    if let Some(src) = cross_url.clone() {
+                        img { src, alt: "picked", draggable: "false" }
+                    } else {
+                        span { class: "dt-cross-text", "✕" }
+                    }
                 }
             }
         }
     };
+    let order_text = ordered.then(|| {
+        picked
+            .iter()
+            .map(|p| (p + 1).to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    });
     rsx! {
         div {
-            class: "dt-c {size_class} {class}",
+            class: "dt-c {size_class} dt-tone-{tone} {class}",
             class: if target.is_some() { "dt-target" },
-            class: if !picked.is_empty() { "dt-picked" },
-            class: if dim { "dt-dim" },
+            class: if whole_picked { "dt-picked" },
+            class: if empty { "dt-empty" },
             class: if clickable { "dt-click" },
             class: if wide { "dt-wide" },
+            class: if inverted { "dt-inverted" },
+            class: if at.is_some() { "dt-at" },
+            style: "{style}{z_style}",
             "data-name": "{name}",
             "data-anchor": anchor,
             "data-target": if target.is_some() { "{target_attr}" },
             "data-options": if target.is_some() { "{options}" },
             onclick: move |e| {
                 if let Some(t) = target {
+                    e.stop_propagation();
                     ctx.act(t);
                 } else if let Some(p) = open.clone() {
                     e.stop_propagation();
                     ctx.open(p);
                 }
             },
-            onmouseenter: move |e| {
-                if !back {
-                    ctx.hover_enter(&n_enter, e.client_coordinates().x, e.client_coordinates().y);
-                }
-            },
-            onmouseleave: move |_| ctx.hover_leave(),
             oncontextmenu: move |e| {
                 e.prevent_default();
+                e.stop_propagation();
                 if !back {
-                    ctx.hover_now(&n_menu, e.client_coordinates().x, e.client_coordinates().y);
+                    ctx.study(&n_menu);
                 }
             },
-            if back {
-                CardBack { size }
-            } else {
-                CardView { name: name.clone(), size, cost }
+            if split {
+                div { class: "dt-split-back", CardBack { size } }
             }
-            div { class: "dt-ov", {overlay} }
+            div { class: "dt-face", {face(whole_picked)} }
+            if split_off {
+                div {
+                    class: "dt-picked-copy",
+                    "data-unpick": "{target_attr}",
+                    onclick: move |e| {
+                        e.stop_propagation();
+                        if let Some(t) = target {
+                            ctx.unpick(t);
+                        }
+                    },
+                    {face(true)}
+                    if n_picked > 1 {
+                        span { class: "dt-count",
+                            if let Some(src) = counter_url.clone() { img { src: src, alt: "", draggable: "false" } }
+                            span { "{n_picked}" }
+                        }
+                    }
+                }
+            }
+            div { class: "dt-ov",
+                if let Some(n) = shown_count {
+                    span { class: "dt-count",
+                        if let Some(src) = counter_url.clone() {
+                            img { src, alt: "", draggable: "false" }
+                        }
+                        span { "{n}" }
+                    }
+                }
+                if let Some(t) = order_text.filter(|t| !t.is_empty()) {
+                    span { class: "dt-order-n", "{t}" }
+                }
+                if plus {
+                    span { class: "dt-plus",
+                        if let Some(src) = plus_url.clone() {
+                            img { src, alt: "+", draggable: "false" }
+                        } else {
+                            "+"
+                        }
+                    }
+                }
+                if all {
+                    span {
+                        class: "dt-all",
+                        "data-all": "{target_attr}",
+                        onclick: move |e| {
+                            e.stop_propagation();
+                            if let Some(t) = target {
+                                ctx.act_all(t);
+                            }
+                        },
+                        "All"
+                    }
+                }
+                if !badges.is_empty() || !cubes.is_empty() {
+                    span { class: "dt-tokens",
+                        for (i, b) in badges.iter().enumerate() {
+                            BadgeView { key: "{i}", badge: b.clone() }
+                        }
+                        for (seat, who) in cubes.iter() {
+                            Cube { key: "c{seat}", seat: *seat, name: who.clone() }
+                        }
+                    }
+                }
+            }
             if let Some(l) = label {
                 div { class: "dt-label", "{l}" }
             }
@@ -298,36 +401,66 @@ pub fn TableCard(
     }
 }
 
-/// The full card shown after a hover, beside the pointer and never under it.
+/// The study view: the card large in the middle of the screen over a dim backdrop, and
+/// beside it the other cards of its pile. The next click closes it.
 #[component]
-pub fn HoverLayer() -> Element {
+pub fn StudyLayer() -> Element {
     let ctx = use_table();
-    let h = ctx.hover.read().clone();
-    let Some(h) = h.filter(|h| h.shown) else {
+    let cards = use_cards();
+    let Some(name) = ctx.studied.read().clone() else {
         return rsx! {};
     };
-    let cards = use_cards();
-    let landscape = cards.get(&h.name).is_some_and(crate::card::is_landscape);
+    let landscape = cards.get(&name).is_some_and(crate::card::is_landscape);
     let (vw, vh) = platform::viewport();
-    let width = if landscape {
-        (vh * 0.42 / 0.634).min(vw * 0.45)
+    let (h, ratio) = if landscape {
+        (0.43 * vh, super::layout::WIDE)
     } else {
-        (vh * 0.62 / 1.578).min(vw * 0.3)
+        (0.675 * vh, super::layout::FULL)
     };
-    let height = width * if landscape { 0.634 } else { 1.578 };
-    let gap = 24.0;
-    let left = if h.x > vw / 2.0 {
-        h.x - gap - width
+    let w = h / ratio;
+    let x = vw * 0.5 - w / 2.0;
+    let y = vh * 0.5 - h / 2.0;
+    // The pile's other cards, for split and mixed piles.
+    let pile_of = cards.get(&name).and_then(|c| c.pile.clone());
+    let mut members: Vec<String> = match &pile_of {
+        Some(p) => cards
+            .all()
+            .iter()
+            .filter(|c| c.pile.as_deref() == Some(p.as_str()) && c.name != name)
+            .map(|c| c.name.clone())
+            .collect(),
+        None => vec![],
+    };
+    members.truncate(12);
+    let mh = 0.25 * vh;
+    let mw = mh / super::layout::FULL;
+    let room = (x - 0.04 * vh).max(mw);
+    let step = if members.len() > 1 {
+        ((room - mw) / (members.len() - 1) as f64).min(mw + 0.02 * vh)
     } else {
-        h.x + gap
+        0.0
     };
-    let left = left.clamp(4.0, (vw - width - 4.0).max(4.0));
-    let top = (h.y - height / 2.0).clamp(4.0, (vh - height - 4.0).max(4.0));
     rsx! {
         div {
-            class: "dt-preview",
-            style: "left:{left:.0}px;top:{top:.0}px;width:{width:.0}px;",
-            CardView { name: h.name.clone(), size: CardSize::Full }
+            class: "dt-study",
+            "data-study": "{name}",
+            onmousedown: move |e| {
+                e.stop_propagation();
+                ctx.unstudy();
+            },
+            for (i, m) in members.iter().enumerate() {
+                div {
+                    key: "{m}",
+                    class: "dt-study-member",
+                    style: "left:{0.02 * vh + i as f64 * step:.0}px;top:{vh * 0.5 - mh / 2.0:.0}px;width:{mw:.0}px;",
+                    CardView { name: m.clone(), size: CardSize::Full }
+                }
+            }
+            div {
+                class: "dt-study-card",
+                style: "left:{x:.0}px;top:{y:.0}px;width:{w:.0}px;",
+                CardView { name: name.clone(), size: CardSize::Full }
+            }
         }
     }
 }

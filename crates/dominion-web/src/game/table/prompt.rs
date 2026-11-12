@@ -1,235 +1,448 @@
-//! The status and prompt bar, and the choice tray for options the table shows nowhere
-//! else: cards in decks, discard piles, set aside, named cards.
+//! The status bar (the turn player's Actions, Buys and coins over the prompt, the phase's
+//! end button at its right end), the row of buttons above it, the column of ability
+//! buttons at the right, and the window holding choices the table shows nowhere else:
+//! revealed or looked-at cards, cards in decks and discard piles, named cards.
 
-use super::pieces::{HoverName, TableCard, seat_class};
+use super::layout::{Geometry, Rect};
+use super::pieces::{CardName, TableCard, seat_class};
 use super::{Spot, Ui, use_table};
 use crate::app::use_cards;
+use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::Status;
+use crate::game::board::Board;
 use crate::game::state::Selection;
+use crate::game::wording;
 use dioxus::prelude::*;
 use std::rc::Rc;
 
-/// Number decisions with more values than this get a picker instead of a button each.
-const MAX_NUMBER_BUTTONS: usize = 8;
+/// Number decisions with more values than this get a slider instead of a button each.
+const MAX_NUMBER_BUTTONS: usize = 6;
 
-fn picks_text(ui: &Ui, sel: &Selection) -> String {
-    let (min, max) = (ui.inter.min, ui.inter.max);
-    let n = sel.picks().len();
-    if min == max {
-        format!("{n} of {min} chosen")
-    } else {
-        format!("{n} of {min}–{max} chosen")
-    }
-}
-
-/// The prompt with its source card's name hoverable: leading the prompt where it
-/// already names it, else in front of it.
-/// `owner` is whose card asks, when it's another player's (an Attack being answered).
-fn prompt_line(d: &dominion_protocol::AgentDecision, owner: Option<String>) -> Element {
-    let Some(src) = d.source.clone() else {
-        return rsx! { "{d.prompt}" };
-    };
-    let owner = owner.map(|o| format!("{o}'s ")).unwrap_or_default();
-    let rest = d
-        .prompt
-        .strip_prefix(src.as_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| format!(": {}", d.prompt));
-    rsx! {
-        "{owner}"
-        HoverName { name: src }
-        "{rest}"
-    }
-}
-
-fn phase_name(p: &str) -> String {
-    let mut c = p.chars();
-    match c.next() {
-        Some(f) => f.to_uppercase().chain(c).collect(),
-        None => String::new(),
-    }
+fn plural(n: u32, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 #[component]
-fn StatusLine(status: Status) -> Element {
-    let s = &status;
+pub fn StatusBar(
+    board: Rc<Board>,
+    g: Rc<Geometry>,
+    ui: Option<Rc<Ui>>,
+    error: Option<String>,
+) -> Element {
+    let ctx = use_table();
+    let cards = use_cards();
+    let s = &board.status;
+    let turn_player = s.player.as_ref().and_then(|w| {
+        board
+            .you
+            .iter()
+            .chain(&board.opponents)
+            .find(|p| p.seat == w.seat)
+    });
+    let token = |kind: &str| -> u32 {
+        turn_player
+            .and_then(|p| p.badges.iter().find(|b| b.kind == kind))
+            .and_then(|b| b.count)
+            .map_or(0, |n| n.max(0) as u32)
+    };
+    let actions = s.actions.unwrap_or(0);
+    let buys = s.buys.unwrap_or(0);
+    let coins = s.coins.unwrap_or(0);
+    let potions = s.potions.unwrap_or(0);
+    let debt = s.debt.unwrap_or(0);
+    let (coffers, villagers, favors) = (token("coffers"), token("villagers"), token("favors"));
+    let ticker: Element = if !s.running {
+        rsx! { "The game has ended." }
+    } else if let Some(u) = ui.clone() {
+        let text = wording::prompt(&u.decision, &cards);
+        let owner = u.decision.source.as_ref().and(
+            board
+                .play_area
+                .player
+                .as_ref()
+                .filter(|_| !s.your_turn && u.decision.purpose != "turn"),
+        );
+        rsx! {
+            span { "data-prompt": "{u.decision.purpose}", "{text}" }
+            if let (Some(src), Some(w)) = (u.decision.source.clone(), owner) {
+                span { class: "dt-ticker-src",
+                    " ("
+                    span { class: "dt-pc {seat_class(w.seat)}", "{w.name}" }
+                    "'s "
+                    CardName { name: src }
+                    ")"
+                }
+            }
+        }
+    } else {
+        match &s.deciding {
+            Some(w) => rsx! {
+                "Waiting for "
+                span { class: "dt-pc {seat_class(w.seat)}", "{w.name}" }
+                "."
+            },
+            None => rsx! { "Waiting…" },
+        }
+    };
+    // The phase's end, inside the bar's right end.
+    let end = ui.as_ref().and_then(|u| {
+        u.spots
+            .iter()
+            .enumerate()
+            .find(|(i, sp)| **sp == Spot::Button && u.inter.targets[*i].action == "end-phase")
+            .map(|(i, _)| i)
+    });
+    let (end_label, end_look) = wording::end_phase(s.phase.as_deref());
+    let local = Rect::new(
+        g.end_button.x - g.status.x,
+        g.end_button.y - g.status.y,
+        g.end_button.w,
+        g.end_button.h,
+    );
     rsx! {
-        div { class: "dt-status",
-            if let Some(n) = s.turn {
-                span { class: "dt-turnno", "Turn {n}" }
+        div { class: "dt-status", style: "{g.status.style()}",
+            div { class: "dt-counters",
+                span { class: "dt-counter dt-actions", class: if actions == 0 { "dt-zero" }, "{plural(actions, \"Action\", \"Actions\")}" }
+                if villagers > 0 {
+                    span { class: "dt-counter dt-icon dt-villagers", title: "Villagers", "{villagers}" }
+                }
+                span { class: "dt-sep" }
+                span { class: "dt-counter dt-buys", class: if buys == 0 { "dt-zero" }, "{plural(buys, \"Buy\", \"Buys\")}" }
+                span { class: "dt-sep" }
+                span { class: "dt-counter dt-coin", title: "Coins", "{coins}" }
+                if potions > 0 {
+                    span { class: "dt-counter dt-icon dt-potion", title: "Potions", if potions > 1 { "{potions}" } }
+                }
+                if debt > 0 {
+                    span { class: "dt-counter dt-icon dt-debt", title: "Debt", "{debt}" }
+                }
+                if coffers > 0 {
+                    span { class: "dt-counter dt-icon dt-coffers", title: "Coffers", "{coffers}" }
+                }
+                if favors > 0 {
+                    span { class: "dt-sep" }
+                    span { class: "dt-counter dt-icon dt-favors", title: "Favors", "{favors}" }
+                }
+                span { class: "dt-sep" }
             }
-            if let Some(w) = &s.player {
-                span { class: "dt-who {seat_class(w.seat)}",
-                    if s.your_turn { "Your turn" } else { "{w.name}'s turn" }
+            div { class: "dt-ticker",
+                {ticker}
+                if let Some(e) = error {
+                    span { class: "dt-error", "data-error": "1", " {e}" }
                 }
             }
-            if let Some(x) = &s.extra {
-                span { class: "dt-extra", "extra turn: " HoverName { name: x.clone() } }
-            }
-            if let Some(c) = &s.controller {
-                if s.player.as_ref().map(|p| p.seat) != Some(c.seat) {
-                    span { class: "dt-extra", "played by " span { class: seat_class(c.seat), "{c.name}" } }
+            if let Some(i) = end {
+                button {
+                    class: "dt-end dt-end-{end_look}",
+                    style: "{local.style()}",
+                    "data-target": "{i}",
+                    "data-options": "1",
+                    onclick: move |e| { e.stop_propagation(); ctx.act(i); },
+                    "{end_label}"
                 }
-            }
-            if let Some(p) = &s.phase {
-                span { class: "dt-phase", "data-phase": "{p}", "{phase_name(p)}" }
-            }
-            if let Some(n) = s.actions {
-                span { class: "dt-stat", title: "Actions", span { class: "dt-stat-k", "Actions" } "{n}" }
-            }
-            if let Some(n) = s.buys {
-                span { class: "dt-stat", title: "Buys", span { class: "dt-stat-k", "Buys" } "{n}" }
-            }
-            if let Some(n) = s.coins {
-                span { class: "dt-stat dt-coins", title: "Coins", span { class: "dt-coin", "{n}" } }
-            }
-            if let Some(n) = s.potions.filter(|&n| n > 0) {
-                span { class: "dt-stat", title: "Potions", span { class: "dt-potion" } "{n}" }
-            }
-            if let Some(n) = s.debt.filter(|&n| n > 0) {
-                span { class: "dt-stat", title: "Debt", span { class: "dt-debt", "{n}" } }
             }
         }
     }
 }
 
+/// One button of the row: black, white Trajan letters, an icon at its right end.
+#[derive(Clone, Debug, PartialEq)]
+struct Btn {
+    label: String,
+    icon: Option<&'static str>,
+    count: Option<String>,
+    disabled: bool,
+    on: bool,
+    what: Act,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Act {
+    Target(usize),
+    Treasures,
+    SelectAll,
+    Confirm,
+    Decline,
+}
+
 #[component]
-pub fn Bar(
-    status: Status,
+pub fn Buttons(
+    g: Rc<Geometry>,
     ui: Option<Rc<Ui>>,
     sel: Selection,
-    error: Option<String>,
     busy: bool,
     can_treasures: bool,
-    /// Whose card the decision is from, when it's another player's.
-    #[props(default)]
-    source_owner: Option<String>,
 ) -> Element {
     let ctx = use_table();
-    let waiting = if !status.running {
-        Some("The game is over.".to_string())
-    } else if ui.is_none() {
-        Some(match &status.deciding {
-            Some(w) => format!("Waiting for {}…", w.name),
-            None => "Waiting…".into(),
-        })
-    } else {
-        None
+    let assets = use_assets();
+    let cards = use_cards();
+    let mut number = use_signal(|| 0usize);
+    let Some(u) = ui else {
+        return rsx! {};
     };
-    let buttons: Vec<usize> = ui
-        .as_ref()
-        .map(|u| {
-            (0..u.spots.len())
-                .filter(|&i| u.spots[i] == Spot::Button)
-                .collect()
-        })
-        .unwrap_or_default();
-    let numbers = ui.as_ref().is_some_and(|u| {
-        buttons.len() > MAX_NUMBER_BUTTONS
-            && buttons
-                .iter()
-                .all(|&i| u.inter.targets[i].action == "number")
+    let d = &u.decision;
+    let buttons: Vec<usize> = (0..u.spots.len())
+        .filter(|&i| u.spots[i] == Spot::Button && u.inter.targets[i].action != "end-phase")
+        .collect();
+    let (side, main): (Vec<usize>, Vec<usize>) = buttons.into_iter().partition(|&i| {
+        u.inter.targets[i].action == "trigger" && u.inter.targets[i].card.is_some()
     });
-    let mut number = use_signal(|| None::<usize>);
+    let numbers = main.len() > MAX_NUMBER_BUTTONS
+        && main.iter().all(|&i| u.inter.targets[i].action == "number");
+    let picks = sel.picks().len();
+    let mut row: Vec<Btn> = vec![];
+    if !numbers {
+        for &i in &main {
+            let t = &u.inter.targets[i];
+            row.push(Btn {
+                label: t.label.clone(),
+                icon: None,
+                count: None,
+                disabled: busy,
+                on: !sel.positions(&t.options).is_empty(),
+                what: Act::Target(i),
+            });
+        }
+    }
+    if can_treasures {
+        row.push(Btn {
+            label: "Autoplay Treasures".into(),
+            icon: Some("treasures"),
+            count: None,
+            disabled: busy,
+            on: false,
+            what: Act::Treasures,
+        });
+    }
+    let card_targets = u.inter.targets.iter().filter(|t| t.card.is_some()).count();
+    if !u.click_answers {
+        let max = d.max.unwrap_or(1) as usize;
+        let all_options: usize = u
+            .inter
+            .targets
+            .iter()
+            .filter(|t| t.card.is_some())
+            .map(|t| t.options.len())
+            .sum();
+        if d.min == Some(0)
+            && max > 1
+            && max >= all_options
+            && card_targets > 1
+            && !d.ordered
+            && picks < all_options
+        {
+            row.push(Btn {
+                label: "Select All".into(),
+                icon: None,
+                count: None,
+                disabled: busy,
+                on: false,
+                what: Act::SelectAll,
+            });
+        }
+        let icon = match d.purpose.as_str() {
+            "discard" => Some("discard-icon"),
+            "trash" => Some("trash-icon"),
+            "top-deck" => Some("topdeck-icon"),
+            _ => None,
+        };
+        row.push(Btn {
+            label: wording::done(d).into(),
+            icon,
+            count: wording::done_count(d, picks),
+            disabled: busy || !sel.is_legal(d),
+            on: false,
+            what: Act::Confirm,
+        });
+    } else if d.min == Some(0) && picks == 0 && d.kind != "turn" {
+        row.push(Btn {
+            label: wording::decline(d).into(),
+            icon: Some(if matches!(d.purpose.as_str(), "reaction" | "trigger") {
+                "continue"
+            } else {
+                "refuse"
+            }),
+            count: None,
+            disabled: busy,
+            on: false,
+            what: Act::Decline,
+        });
+    }
+    let (bw, bh) = g.button;
+    let width = |b: &Btn| if b.icon.is_some() { bw * 4.0 / 3.0 } else { bw };
+    let gap = 2.0 * g.vh;
+    // Rows centred on the button line, wrapping upwards past 56vw.
+    let mut rows: Vec<Vec<usize>> = vec![vec![]];
+    let mut used = 0.0;
+    for (i, b) in row.iter().enumerate() {
+        let w = width(b);
+        if !rows.last().is_some_and(|r| r.is_empty()) && used + gap + w > 56.0 * g.vw {
+            rows.push(vec![]);
+            used = 0.0;
+        }
+        used += if rows.last().is_some_and(|r| r.is_empty()) {
+            w
+        } else {
+            gap + w
+        };
+        rows.last_mut().expect("a row").push(i);
+    }
+    let mut placed: Vec<(usize, Rect)> = vec![];
+    for (ri, r) in rows.iter().enumerate() {
+        let total: f64 =
+            r.iter().map(|&i| width(&row[i])).sum::<f64>() + gap * r.len().saturating_sub(1) as f64;
+        let mut x = g.buttons_cx - total / 2.0;
+        let y = g.buttons_bottom - bh - ri as f64 * (bh + g.vh);
+        for &i in r {
+            let w = width(&row[i]);
+            placed.push((i, Rect::new(x, y, w, bh)));
+            x += w + gap;
+        }
+    }
+    let undo = (!u.click_answers && picks > 0)
+        .then(|| Rect::new(69.0 * g.vw, 60.5 * g.vh, 14.0 * g.vh, 5.0 * g.vh));
+    let refuse = assets.file_url("images/buttons/refuse.png");
+    let slider = numbers.then(|| {
+        let w = 35.0 * g.vh;
+        Rect::new(g.buttons_cx - w / 2.0, g.buttons_bottom - bh, w, bh)
+    });
+    let side_w = 21.0 * g.vh;
     rsx! {
-        div { class: "dt-bar",
-            class: if ui.is_some() { "dt-bar-active" },
-            StatusLine { status: status.clone() }
-            div { class: "dt-prompt",
-                if let Some(w) = waiting {
-                    span { class: "dt-waiting", "{w}" }
-                }
-                if let Some(u) = ui.clone() {
-                    span { class: "dt-prompt-text", "data-prompt": "{u.decision.purpose}",
-                        {prompt_line(&u.decision, source_owner.clone())}
-                    }
-                    if !u.click_answers {
-                        span { class: "dt-picks", "{picks_text(&u, &sel)}" }
-                    }
-                    div { class: "dt-buttons",
-                        if numbers {
-                            select {
-                                class: "dt-number",
-                                "data-target-group": "number",
-                                "data-options": "{buttons.len()}",
-                                onchange: move |e| number.set(e.value().parse().ok()),
-                                option { value: "", "Choose…" }
-                                for &i in buttons.iter() {
-                                    option { key: "{i}", value: "{i}", "{u.inter.targets[i].label}" }
+        for (i, r) in placed.iter() {
+            {
+                let b = row[*i].clone();
+                let what = b.what.clone();
+                let icon_url = b.icon.and_then(|k| {
+                    let path = match k {
+                        "treasures" => "images/buttons/autoplay-treasures.png",
+                        "refuse" => "images/buttons/refuse.png",
+                        "continue" => "images/buttons/continue.png",
+                        "discard-icon" => "images/buttons/discard.png",
+                        "trash-icon" => "images/buttons/trash.png",
+                        "topdeck-icon" => "images/buttons/topdeck.png",
+                        _ => return None,
+                    };
+                    assets.file_url(path)
+                });
+                let (target, options) = match &b.what {
+                    Act::Target(t) => (Some(t.to_string()), Some("1".to_string())),
+                    _ => (None, None),
+                };
+                let action = match &b.what {
+                    Act::Treasures => Some("play-treasures"),
+                    Act::SelectAll => Some("select-all"),
+                    Act::Confirm => Some("confirm"),
+                    Act::Decline => Some("decline"),
+                    Act::Target(_) => None,
+                };
+                rsx! {
+                    button {
+                        key: "{i}{b.label}",
+                        class: "dt-btn",
+                        class: if b.on { "dt-on" },
+                        class: if b.icon.is_some() { "dt-btn-icon" },
+                        style: "{r.style()}",
+                        disabled: b.disabled,
+                        "data-target": target,
+                        "data-options": options,
+                        "data-action": action,
+                        onclick: move |e| {
+                            e.stop_propagation();
+                            match &what {
+                                Act::Target(t) => ctx.act(*t),
+                                Act::Treasures => ctx.play_treasures(),
+                                Act::SelectAll => ctx.select_all(),
+                                Act::Confirm => ctx.confirm(),
+                                Act::Decline => ctx.decline(),
+                            }
+                        },
+                        span { class: "dt-btn-label", "{b.label}" }
+                        if let Some(src) = icon_url {
+                            span { class: "dt-btn-img",
+                                img { src, alt: "", draggable: "false" }
+                                if let Some(c) = b.count.clone() {
+                                    span { class: "dt-btn-count", "{c}" }
                                 }
                             }
-                            button {
-                                class: "dt-btn dt-btn-gold",
-                                disabled: busy || number().is_none(),
-                                onclick: move |e| {
-                                    e.stop_propagation();
-                                    if let Some(i) = number() {
-                                        ctx.act(i);
-                                    }
-                                },
-                                "OK"
-                            }
-                        } else {
-                            for &i in buttons.iter() {
-                                {
-                                    let t = &u.inter.targets[i];
-                                    let picked = sel.positions(&t.options);
-                                    let key = if t.action == "end-phase" { Some("E") } else { None };
-                                    rsx! {
-                                        button {
-                                            key: "{i}",
-                                            class: "dt-btn dt-act-{t.action}",
-                                            class: if !picked.is_empty() { "dt-on" },
-                                            disabled: busy,
-                                            "data-target": "{i}",
-                                            "data-options": "1",
-                                            onclick: move |e| { e.stop_propagation(); ctx.act(i); },
-                                            if u.inter.ordered && !picked.is_empty() {
-                                                span { class: "dt-order-n", "{picked[0] + 1}" }
-                                            }
-                                            "{t.label}"
-                                            if let Some(k) = key {
-                                                kbd { "{k}" }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if can_treasures {
-                            button {
-                                class: "dt-btn dt-btn-gold dt-treasures",
-                                disabled: busy,
-                                "data-action": "play-treasures",
-                                onclick: move |e| { e.stop_propagation(); ctx.play_treasures(); },
-                                "Play Treasures"
-                                kbd { "T" }
-                            }
-                        }
-                        if !u.click_answers {
-                            button {
-                                class: "dt-btn dt-btn-gold dt-confirm",
-                                disabled: busy || !sel.is_legal(&u.decision),
-                                "data-action": "confirm",
-                                onclick: move |e| { e.stop_propagation(); ctx.confirm(); },
-                                "Confirm"
-                                kbd { "Enter" }
-                            }
-                            if !sel.picks().is_empty() {
-                                button {
-                                    class: "dt-btn dt-btn-stone",
-                                    "data-action": "clear",
-                                    onclick: move |e| { e.stop_propagation(); ctx.clear(); },
-                                    "Clear"
-                                    kbd { "Esc" }
-                                }
-                            }
+                        } else if let Some(c) = b.count.clone() {
+                            span { class: "dt-btn-count", "{c}" }
                         }
                     }
                 }
-                if let Some(e) = error {
-                    span { class: "dt-error", "data-error": "1", "{e}" }
+            }
+        }
+        if let Some(r) = slider {
+            {
+                let values: Vec<usize> = main.clone();
+                let n = values.len();
+                let pick = number().min(n.saturating_sub(1));
+                let chosen = values.get(pick).copied();
+                let label = chosen.map(|i| u.inter.targets[i].label.clone()).unwrap_or_default();
+                rsx! {
+                    div { class: "dt-slider", style: "{r.style()}",
+                        "data-target-group": "number",
+                        "data-options": "{n}",
+                        input {
+                            r#type: "range",
+                            min: "0",
+                            max: "{n.saturating_sub(1)}",
+                            value: "{pick}",
+                            oninput: move |e| number.set(e.value().parse().unwrap_or(0)),
+                        }
+                        button {
+                            class: "dt-btn dt-slider-go",
+                            disabled: busy || chosen.is_none(),
+                            "data-target": chosen.map(|i| i.to_string()),
+                            onclick: move |e| {
+                                e.stop_propagation();
+                                if let Some(i) = chosen {
+                                    ctx.act(i);
+                                }
+                            },
+                            "{label}"
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(r) = undo {
+            button {
+                class: "dt-btn dt-undo",
+                style: "{r.style()}",
+                "data-action": "clear",
+                onclick: move |e| { e.stop_propagation(); ctx.clear(); },
+                span { class: "dt-btn-label", "Undo" }
+                if let Some(src) = refuse.clone() {
+                    span { class: "dt-btn-img", img { src, alt: "", draggable: "false" } }
+                }
+            }
+        }
+        for (k, &i) in side.iter().enumerate() {
+            {
+                let t = &u.inter.targets[i];
+                let card = t.card.clone().unwrap_or_default();
+                let r = Rect::new(g.side_right - side_w, g.side_top + k as f64 * (bh + g.vh), side_w, bh);
+                let n = t.options.len();
+                let art = cards.get(&card).is_some();
+                rsx! {
+                    button {
+                        key: "s{i}",
+                        class: "dt-btn dt-ability",
+                        style: "{r.style()}",
+                        "data-target": "{i}",
+                        "data-options": "{n}",
+                        title: "{t.label}",
+                        onclick: move |e| { e.stop_propagation(); ctx.act(i); },
+                        if art {
+                            div { class: "dt-ability-art",
+                                TableCard { name: card.clone(), size: CardSize::Mini }
+                            }
+                        }
+                        span { class: "dt-btn-label", "{card}" }
+                        if n > 1 {
+                            span { class: "dt-btn-count", "{n}" }
+                        }
+                    }
                 }
             }
         }
@@ -258,13 +471,14 @@ fn zone_text(zone: &str) -> &str {
     }
 }
 
+/// The window of choices the table shows nowhere else, as dominion.games opens one over
+/// the table for revealed or looked-at cards. Its ✕ hides it until the next decision.
 #[component]
-pub fn Tray(ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
     let ctx = use_table();
     let cards = use_cards();
-    let mut collapsed = use_signal(|| false);
+    let mut hidden = use_signal(|| None::<String>);
     let mut query = use_signal(String::new);
-    let mut dragging = use_signal(|| None::<usize>);
     let Some(u) = ui else {
         return rsx! {};
     };
@@ -275,65 +489,104 @@ pub fn Tray(ui: Option<Rc<Ui>>, sel: Selection) -> Element {
     if tray.is_empty() && !u.inter.name_any && !show_order {
         return rsx! {};
     }
-    if collapsed() {
+    if hidden().as_deref() == Some(u.decision.id.as_str()) {
+        let (bw, bh) = g.button;
+        let r = Rect::new(
+            g.buttons_cx - bw / 2.0,
+            g.buttons_bottom - 2.0 * bh - g.vh,
+            bw,
+            bh,
+        );
         return rsx! {
             button {
                 class: "dt-btn dt-tray-show",
+                style: "{r.style()}",
                 "data-action": "show-tray",
-                onclick: move |e| { e.stop_propagation(); collapsed.set(false); },
-                "Show choices ({tray.len()})"
+                onclick: move |e| { e.stop_propagation(); hidden.set(None); },
+                span { class: "dt-btn-label", "Show choices" }
             }
         };
     }
+    let wide: Vec<bool> = tray
+        .iter()
+        .map(|&i| {
+            u.inter.targets[i]
+                .card
+                .as_deref()
+                .and_then(|c| cards.get(c))
+                .is_some_and(crate::card::is_landscape)
+        })
+        .collect();
+    let units: f64 = wide
+        .iter()
+        .map(|&w| if w { 2.0 } else { 1.0 })
+        .sum::<f64>()
+        .max(1.0);
+    let mut win = g.window(units, u.piles_clickable());
+    let extra = if u.inter.name_any || show_order {
+        9.0 * g.vh
+    } else {
+        0.0
+    };
+    if extra > 0.0 {
+        win.h += extra;
+        win.y = (win.y - extra).max(0.0);
+    }
+    let cards_box = Rect::new(win.x, win.y, win.w, win.h - extra);
+    let row = g.window_row(&cards_box, tray.len(), &wide);
     let q = query().trim().to_lowercase();
     let results: Vec<String> = if u.inter.name_any && q.len() >= 2 {
         cards
             .nameable()
             .into_iter()
             .filter(|n| n.to_lowercase().contains(&q))
-            .take(12)
+            .take(8)
             .collect()
     } else {
         vec![]
     };
     let picks = sel.picks().to_vec();
+    let id = u.decision.id.clone();
+    let title = u.decision.source.clone().unwrap_or_default();
     rsx! {
-        div { class: "dt-tray", "data-tray": "1", onclick: move |e| e.stop_propagation(),
-            div { class: "dt-tray-head",
-                span { "{u.decision.prompt}" }
-                button {
-                    class: "dt-x",
-                    title: "Hide (to see the table under it)",
-                    "data-action": "hide-tray",
-                    onclick: move |_| collapsed.set(true),
-                    "–"
-                }
+        div {
+            class: "dt-window dt-tray",
+            style: "{win.style()}",
+            "data-tray": "1",
+            onclick: move |e| e.stop_propagation(),
+            if !title.is_empty() {
+                div { class: "dt-window-title", "{title}" }
             }
-            if !tray.is_empty() {
-                div { class: "dt-tray-cards",
-                    for &i in tray.iter() {
-                        {
-                            let t = &u.inter.targets[i];
-                            let mark = u.mark_target(&sel, i);
-                            let label = match (&t.card, &t.zone) {
-                                (Some(c), Some(z)) if &t.label == c => Some(zone_text(z).to_string()),
-                                (Some(c), _) if &t.label == c => None,
-                                _ => Some(t.label.clone()),
-                            };
-                            let count = (t.options.len() > 1).then_some(t.options.len() as u32);
-                            let landscape = t.card.as_deref().and_then(|c| cards.get(c)).is_some_and(crate::card::is_landscape);
-                            rsx! {
-                                div { key: "{i}", class: "dt-tslot", class: if landscape { "dt-tslot-wide" },
-                                    TableCard {
-                                        name: t.card.clone().unwrap_or_default(),
-                                        size: CardSize::Full,
-                                        back: t.card.is_none(),
-                                        count,
-                                        mark,
-                                        label,
-                                    }
-                                }
-                            }
+            button {
+                class: "dt-x",
+                title: "Hide (to see the table under it)",
+                "data-action": "hide-tray",
+                onclick: move |_| hidden.set(Some(id.clone())),
+                "✕"
+            }
+            for (k, &i) in tray.iter().enumerate() {
+                {
+                    let t = &u.inter.targets[i];
+                    let mark = u.mark_target(&sel, i);
+                    let label = match (&t.card, &t.zone) {
+                        (Some(c), Some(z)) if &t.label == c => Some(zone_text(z).to_string()),
+                        (Some(c), _) if &t.label == c => None,
+                        _ => Some(t.label.clone()),
+                    };
+                    let count = (t.options.len() > 1).then_some(t.options.len() as u32);
+                    let w = if wide[k] { row.w * 2.0 } else { row.w };
+                    let h = if wide[k] { w * super::layout::WIDE } else { row.h };
+                    rsx! {
+                        TableCard {
+                            key: "{i}",
+                            name: t.card.clone().unwrap_or_default(),
+                            size: CardSize::Full,
+                            back: t.card.is_none(),
+                            count,
+                            mark,
+                            label,
+                            at: Rect::new(row.xs[k] - win.x, row.y - win.y + (row.h - h) / 2.0, w, h),
+                            class: "dt-tslot",
                         }
                     }
                 }
@@ -345,17 +598,7 @@ pub fn Tray(ui: Option<Rc<Ui>>, sel: Selection) -> Element {
                         div {
                             key: "{p}",
                             class: "dt-order-chip",
-                            draggable: "true",
                             "data-pos": "{pos}",
-                            ondragstart: move |_| dragging.set(Some(pos)),
-                            ondragover: move |e| e.prevent_default(),
-                            ondrop: move |e| {
-                                e.prevent_default();
-                                if let Some(from) = dragging() {
-                                    ctx.reorder(from, pos);
-                                }
-                                dragging.set(None);
-                            },
                             button {
                                 class: "dt-arrow",
                                 disabled: pos == 0,
@@ -363,7 +606,7 @@ pub fn Tray(ui: Option<Rc<Ui>>, sel: Selection) -> Element {
                                 onclick: move |_| ctx.reorder(pos, pos - 1),
                                 "◀"
                             }
-                            span { "{pos + 1}. " HoverName { name: option_text(&u, p) } }
+                            span { "{pos + 1}. " CardName { name: option_text(&u, p) } }
                             button {
                                 class: "dt-arrow",
                                 disabled: pos + 1 == picks.len(),
@@ -379,7 +622,7 @@ pub fn Tray(ui: Option<Rc<Ui>>, sel: Selection) -> Element {
                 div { class: "dt-name-any", "data-target-group": "name",
                     input {
                         class: "dt-search",
-                        placeholder: "Name any card…",
+                        placeholder: "Name a card…",
                         value: "{query}",
                         oninput: move |e| query.set(e.value()),
                         onkeydown: move |e| {
@@ -399,7 +642,7 @@ pub fn Tray(ui: Option<Rc<Ui>>, sel: Selection) -> Element {
                                         class: "dt-result",
                                         "data-name-result": "{n}",
                                         onclick: move |_| ctx.name(&name),
-                                        TableCard { name: n.clone(), size: CardSize::Mini, class: "dt-target" }
+                                        TableCard { name: n.clone(), size: CardSize::Micro, class: "dt-target dt-tone-name" }
                                     }
                                 }
                             }

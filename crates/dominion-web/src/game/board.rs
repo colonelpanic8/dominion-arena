@@ -3,6 +3,7 @@
 //! ready to show, so that nothing a view holds is lost on the table.
 
 use crate::cards::CardDb;
+use dominion_protocol::api::TableExtras;
 use dominion_protocol::{
     AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, ZoneView,
 };
@@ -176,6 +177,10 @@ pub struct PlayerEntry {
     pub deck: Zone,
     pub deck_order_known: bool,
     pub discard: Zone,
+    /// The face-up card on top of the discard pile.
+    pub discard_top: Option<String>,
+    /// Cards in play in the order they came into play, runs of one card stacked.
+    pub play_order: Vec<Stack>,
     /// Mats and set-aside cards.
     pub zones: Vec<NamedZone>,
     pub badges: Vec<Badge>,
@@ -194,6 +199,8 @@ pub struct PlayerEntry {
 pub struct PlayArea {
     pub player: Option<Who>,
     pub cards: Zone,
+    /// The cards in the order they came into play, runs of one card stacked.
+    pub order: Vec<Stack>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -253,26 +260,58 @@ pub fn cost_key(c: Option<&Cost>) -> (u32, u32, u32) {
     c.map_or((0, 0, 0), |c| (c.coins, c.potions, c.debt))
 }
 
-/// Actions first, then Treasures, then Victory cards and Curses, then the rest.
-fn category(cards: &CardDb, card: &str) -> u8 {
-    let Some(c) = cards.get(card) else { return 3 };
+/// The `+N Things` a card's text gives, read from its first lines.
+fn plus(text: &str, thing: &str) -> u32 {
+    text.lines()
+        .take_while(|l| l.trim_start().starts_with('+'))
+        .find_map(|l| {
+            let l = l.trim_start().trim_start_matches('+');
+            let (n, rest) = l.split_once(' ')?;
+            rest.starts_with(thing).then(|| n.parse().ok()).flatten()
+        })
+        .unwrap_or(0)
+}
+
+/// Where a card goes in a hand, as dominion.games sorts it: cards that play others,
+/// villages, draw, cantrips, other Actions, plain Treasures, other Treasures, Night
+/// cards, Victory cards, then Curses and the rest.
+pub fn sort_group(cards: &CardDb, card: &str) -> u8 {
+    let Some(c) = cards.get(card) else { return 9 };
     let is = |t: &str| c.types.iter().any(|x| x == t);
+    let text = c.text.split("\n---").next().unwrap_or("");
     if is("Action") {
-        0
+        let lower = text.to_lowercase();
+        if lower.contains("play")
+            && ["twice", "three times", "again"]
+                .iter()
+                .any(|w| lower.contains(w))
+        {
+            0
+        } else if plus(text, "Action") >= 2 {
+            1
+        } else if plus(text, "Card") >= 2 {
+            2
+        } else if plus(text, "Action") == 1 {
+            3
+        } else {
+            4
+        }
     } else if is("Treasure") {
-        1
-    } else if is("Victory") || is("Curse") {
-        2
+        if c.basic { 5 } else { 6 }
+    } else if is("Night") {
+        7
+    } else if is("Victory") {
+        8
     } else {
-        3
+        9
     }
 }
 
-/// The order cards are stacked in: by category, then printed cost, then name.
+/// The order cards are stacked in: by [`sort_group`], then printed cost, then name.
 pub fn card_order(cards: &CardDb, a: &str, b: &str) -> Ordering {
     let key = |n: &str| {
         let cost = cards.get(n).and_then(|c| c.cost).unwrap_or_default();
-        (category(cards, n), cost.coins, cost.potions, cost.debt)
+        (sort_group(cards, n), cost.coins, cost.potions, cost.debt)
     };
     key(a).cmp(&key(b)).then_with(|| a.cmp(b))
 }
@@ -458,12 +497,40 @@ fn counters(c: &std::collections::BTreeMap<String, i64>) -> Vec<(String, i64)> {
     c.iter().map(|(k, &v)| (k.clone(), v)).collect()
 }
 
+/// Runs of one card in a row, stacked.
+pub fn runs(names: &[String]) -> Vec<Stack> {
+    let mut out: Vec<Stack> = vec![];
+    for n in names {
+        match out.last_mut() {
+            Some(s) if &s.card == n => s.count += 1,
+            _ => out.push(Stack {
+                card: n.clone(),
+                count: 1,
+            }),
+        }
+    }
+    out
+}
+
 fn player_entry(
     p: &PlayerView,
     view: &AgentView,
     deciding: Option<u8>,
+    extras: &TableExtras,
     cards: &CardDb,
 ) -> PlayerEntry {
+    let extra = extras.players.iter().find(|t| t.seat == p.index);
+    let in_play = zone(&p.in_play, cards);
+    let play_order = match extra {
+        Some(t) if t.in_play.len() as u32 == p.in_play.count => runs(&t.in_play),
+        _ => in_play.known.clone(),
+    };
+    let discard_top = extra.and_then(|t| t.discard_top.clone()).or_else(|| {
+        match (p.discard.known.len(), p.discard.unknown) {
+            (1, 0) => p.discard.known.keys().next().cloned(),
+            _ => None,
+        }
+    });
     PlayerEntry {
         seat: p.index,
         name: p.name.clone(),
@@ -472,7 +539,9 @@ fn player_entry(
         is_turn: view.turn.player == Some(p.index),
         deciding: deciding == Some(p.index),
         hand: zone(&p.hand, cards),
-        in_play: zone(&p.in_play, cards),
+        in_play,
+        play_order,
+        discard_top,
         deck: deck(&p.deck, cards),
         deck_order_known: p.deck.order_known,
         discard: zone(&p.discard, cards),
@@ -584,7 +653,12 @@ fn until_text(l: &dominion_protocol::LastingView, names: &Names<'_>) -> String {
     }
 }
 
-pub fn board(view: &AgentView, deciding: Option<u8>, cards: &CardDb) -> Board {
+pub fn board(
+    view: &AgentView,
+    deciding: Option<u8>,
+    extras: &TableExtras,
+    cards: &CardDb,
+) -> Board {
     let names = Names(view);
     let t = &view.turn;
     let running = view.game.running;
@@ -649,23 +723,22 @@ pub fn board(view: &AgentView, deciding: Option<u8>, cards: &CardDb) -> Board {
     let you = view
         .you
         .as_ref()
-        .map(|p| player_entry(p, view, deciding, cards));
+        .map(|p| player_entry(p, view, deciding, extras, cards));
     let opponents: Vec<PlayerEntry> = view
         .opponents
         .iter()
-        .map(|p| player_entry(p, view, deciding, cards))
+        .map(|p| player_entry(p, view, deciding, extras, cards))
         .collect();
     let play_area = {
         let player = t.player;
-        let cards = you
+        let them = you
             .iter()
             .chain(&opponents)
-            .find(|p| Some(p.seat) == player)
-            .map(|p| p.in_play.clone())
-            .unwrap_or_default();
+            .find(|p| Some(p.seat) == player);
         PlayArea {
             player: player.map(|p| names.who(p)),
-            cards,
+            cards: them.map(|p| p.in_play.clone()).unwrap_or_default(),
+            order: them.map(|p| p.play_order.clone()).unwrap_or_default(),
         }
     };
     let card_deck = |d: &dominion_protocol::CardDeckView| CardDeck {

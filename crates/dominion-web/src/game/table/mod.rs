@@ -1,8 +1,9 @@
-//! The graphical table, laid out like dominion.games' game screen: opponents along the
-//! top, the Supply and the play area in the middle, the status and prompt bar, your
-//! cards at the bottom and the log on the right. It draws the [`board`](super::board)
-//! model and answers through the [`interaction`](super::interaction) model: every
-//! target of the open decision has one [`Spot`] where it glows and is clicked.
+//! The graphical table, laid out and behaving like dominion.games' game screen: player
+//! bars and basic piles on the left, the kingdom with the play row under it, the status
+//! bar and buttons, your hand at the bottom and the log on the right, every zone a box
+//! measured from the window ([`layout`]). It draws the [`board`](super::board) model and
+//! answers through the [`interaction`](super::interaction) model: every target of the
+//! open decision has one [`Spot`] where it is clicked.
 
 pub mod layout;
 pub mod model;
@@ -15,10 +16,10 @@ mod sound;
 mod supply;
 
 use super::board::{Board, Stack, board};
-use super::interaction::{Interaction, TreasureRun, interaction};
+use super::interaction::{Interaction, TreasureRun, interaction, tone};
 use super::state::{Selection, answers_on_click};
 use super::use_game;
-use crate::app::Cards;
+use crate::app::{Cards, Settings};
 use crate::assets::use_assets;
 use crate::platform;
 use dioxus::prelude::*;
@@ -50,16 +51,19 @@ pub struct Mark {
     /// The positions in the answer of the target's options picked so far.
     pub picked: Vec<usize>,
     pub ordered: bool,
+    /// What a click does, for the border's colour: see [`tone`].
+    pub tone: &'static str,
 }
 
 impl Ui {
     pub fn mark_target(&self, sel: &Selection, t: usize) -> Mark {
-        let options = &self.inter.targets[t].options;
+        let target = &self.inter.targets[t];
         Mark {
             target: Some(t),
-            options: options.len(),
-            picked: sel.positions(options),
+            options: target.options.len(),
+            picked: sel.positions(&target.options),
             ordered: self.inter.ordered,
+            tone: tone(&self.decision, target),
         }
     }
 
@@ -68,6 +72,11 @@ impl Ui {
             .get(spot)
             .map(|&t| self.mark_target(sel, t))
             .unwrap_or_default()
+    }
+
+    /// Whether any pile is to be clicked: windows then open low, over the hand.
+    pub fn piles_clickable(&self) -> bool {
+        self.spots.iter().any(|s| matches!(s, Spot::Pile(_)))
     }
 }
 
@@ -83,15 +92,7 @@ pub struct Sel {
     pub sel: Selection,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Hover {
-    pub name: String,
-    pub x: f64,
-    pub y: f64,
-    pub shown: bool,
-}
-
-/// What an opened pile shows.
+/// What an opened pile or mat shows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Popup {
     pub title: String,
@@ -110,12 +111,12 @@ struct Run {
 pub struct TableCtx {
     pub ui: Memo<Option<Rc<Ui>>>,
     pub sel: Signal<Sel>,
-    pub hover: Signal<Option<Hover>>,
-    hover_seq: Signal<u64>,
-    /// After a click, no preview until the pointer moves: things slide under a still
-    /// pointer and would pop one up.
-    hover_quiet: Signal<bool>,
-    pub popup: Signal<Option<Popup>>,
+    /// The card shown in the study view.
+    pub studied: Signal<Option<String>>,
+    /// The window a tab or pile opened, and whether a click keeps it open.
+    pub popup: Signal<Option<(Popup, bool)>>,
+    /// The opponent whose hand, deck and discard peek in from the top, when chosen.
+    pub chosen_opponent: Signal<Option<u8>>,
     run: Signal<Option<Run>>,
     cards: Signal<Rc<crate::cards::CardDb>>,
     game: super::GameCtx,
@@ -124,8 +125,6 @@ pub struct TableCtx {
 pub fn use_table() -> TableCtx {
     use_context::<TableCtx>()
 }
-
-const HOVER_DELAY_MS: u32 = 400;
 
 impl TableCtx {
     /// The selection for the open decision.
@@ -156,6 +155,14 @@ impl TableCtx {
         }
     }
 
+    fn set_sel(&self, id: &str, sel: Selection) {
+        let mut s = self.sel;
+        s.set(Sel {
+            id: id.to_string(),
+            sel,
+        });
+    }
+
     /// A click on target `t`.
     pub fn act(&self, t: usize) {
         let Some(ui) = self.ui.peek().clone() else {
@@ -178,11 +185,45 @@ impl TableCtx {
         if !sel.click(d, &target.options) {
             sel.unclick(&target.options);
         }
-        let mut s = self.sel;
-        s.set(Sel {
-            id: d.id.clone(),
-            sel,
-        });
+        self.set_sel(&d.id, sel);
+    }
+
+    /// The "All" chip on target `t`: plays every copy, one after another, or picks (or
+    /// unpicks) every copy.
+    pub fn act_all(&self, t: usize) {
+        let Some(ui) = self.ui.peek().clone() else {
+            return;
+        };
+        if self.busy() {
+            return;
+        }
+        let Some(target) = ui.inter.targets.get(t) else {
+            return;
+        };
+        let d = &ui.decision;
+        if ui.click_answers {
+            let card = target.card.clone();
+            let view = self.game.state.peek().view.clone();
+            let cards = self.cards.peek().clone();
+            if let (Some(card), Some(view)) = (card, view)
+                && let Some(run) = TreasureRun::start_card(&view, &cards, &card)
+            {
+                let mut r = self.run;
+                r.set(Some(Run { run, sent: None }));
+            } else {
+                self.act(t);
+            }
+            return;
+        }
+        let mut sel = self.edit_sel(&d.id);
+        if sel.positions(&target.options).len() == target.options.len() {
+            for _ in 0..target.options.len() {
+                sel.unclick(&target.options);
+            }
+        } else {
+            while sel.click(d, &target.options) {}
+        }
+        self.set_sel(&d.id, sel);
     }
 
     /// Takes back the last pick of target `t`.
@@ -195,11 +236,7 @@ impl TableCtx {
         };
         let mut sel = self.edit_sel(&ui.decision.id);
         sel.unclick(&target.options);
-        let mut s = self.sel;
-        s.set(Sel {
-            id: ui.decision.id.clone(),
-            sel,
-        });
+        self.set_sel(&ui.decision.id, sel);
     }
 
     pub fn reorder(&self, from: usize, to: usize) {
@@ -208,16 +245,27 @@ impl TableCtx {
         };
         let mut sel = self.edit_sel(&ui.decision.id);
         sel.reorder(from, to);
-        let mut s = self.sel;
-        s.set(Sel {
-            id: ui.decision.id.clone(),
-            sel,
-        });
+        self.set_sel(&ui.decision.id, sel);
     }
 
     pub fn clear(&self) {
         let mut s = self.sel;
         s.set(Sel::default());
+    }
+
+    /// Picks every option a target in `places` stands for ("Select All").
+    pub fn select_all(&self) {
+        let Some(ui) = self.ui.peek().clone() else {
+            return;
+        };
+        let d = &ui.decision;
+        let mut sel = self.edit_sel(&d.id);
+        for t in &ui.inter.targets {
+            if t.card.is_some() {
+                while sel.click(d, &t.options) {}
+            }
+        }
+        self.set_sel(&d.id, sel);
     }
 
     pub fn confirm(&self) {
@@ -228,6 +276,19 @@ impl TableCtx {
             return;
         }
         if let Some(a) = self.edit_sel(&ui.decision.id).answer(&ui.decision) {
+            self.submit(a);
+        }
+    }
+
+    /// Answers with nothing picked: "Don't …", "Continue".
+    pub fn decline(&self) {
+        let Some(ui) = self.ui.peek().clone() else {
+            return;
+        };
+        if self.busy() {
+            return;
+        }
+        if let Some(a) = Selection::default().answer(&ui.decision) {
             self.submit(a);
         }
     }
@@ -245,7 +306,7 @@ impl TableCtx {
         }
     }
 
-    /// Starts "Play Treasures".
+    /// "Autoplay Treasures".
     pub fn play_treasures(&self) {
         if self.busy() {
             return;
@@ -276,78 +337,51 @@ impl TableCtx {
         }
     }
 
-    pub fn hover_enter(&self, name: &str, x: f64, y: f64) {
-        if *self.hover_quiet.peek() {
-            return;
-        }
-        let mut seq = self.hover_seq;
-        let n = *seq.peek() + 1;
-        seq.set(n);
-        let mut hover = self.hover;
-        hover.set(Some(Hover {
-            name: name.to_string(),
-            x,
-            y,
-            shown: false,
-        }));
-        spawn(async move {
-            platform::sleep(HOVER_DELAY_MS).await;
-            if *seq.peek() == n
-                && let Some(h) = hover.write().as_mut()
-            {
-                h.shown = true;
-            }
-        });
+    pub fn study(&self, name: &str) {
+        let mut s = self.studied;
+        s.set(Some(name.to_string()));
     }
 
-    pub fn hover_now(&self, name: &str, x: f64, y: f64) {
-        let mut seq = self.hover_seq;
-        let n = *seq.peek() + 1;
-        seq.set(n);
-        let mut hover = self.hover;
-        hover.set(Some(Hover {
-            name: name.to_string(),
-            x,
-            y,
-            shown: true,
-        }));
-    }
-
-    /// A click: the preview goes, and stays away until the pointer moves.
-    pub fn clicked(&self) {
-        let mut q = self.hover_quiet;
-        if !*q.peek() {
-            q.set(true);
-        }
-        self.hover_leave();
-    }
-
-    pub fn pointer_moved(&self) {
-        let mut q = self.hover_quiet;
-        if *q.peek() {
-            q.set(false);
+    pub fn unstudy(&self) {
+        let mut s = self.studied;
+        if s.peek().is_some() {
+            s.set(None);
         }
     }
 
-    pub fn hover_leave(&self) {
-        let mut seq = self.hover_seq;
-        let n = *seq.peek() + 1;
-        seq.set(n);
-        let mut hover = self.hover;
-        if hover.peek().is_some() {
-            hover.set(None);
-        }
-    }
-
+    /// Opens a window; a click on what is already open closes it.
     pub fn open(&self, p: Popup) {
         let mut popup = self.popup;
-        let same = popup.peek().as_ref() == Some(&p);
-        popup.set(if same { None } else { Some(p) });
+        let same = popup
+            .peek()
+            .as_ref()
+            .is_some_and(|(q, locked)| *q == p && *locked);
+        popup.set(if same { None } else { Some((p, true)) });
+    }
+
+    /// Shows a window while the pointer is over its tab, unless one is kept open.
+    pub fn peek_open(&self, p: Popup) {
+        let mut popup = self.popup;
+        if popup.peek().as_ref().is_none_or(|(_, locked)| !locked) {
+            popup.set(Some((p, false)));
+        }
+    }
+
+    pub fn peek_close(&self) {
+        let mut popup = self.popup;
+        if popup.peek().as_ref().is_some_and(|(_, locked)| !locked) {
+            popup.set(None);
+        }
     }
 
     pub fn close(&self) {
         let mut popup = self.popup;
         popup.set(None);
+    }
+
+    pub fn choose_opponent(&self, seat: u8) {
+        let mut c = self.chosen_opponent;
+        c.set(Some(seat));
     }
 
     fn key(&self, key: &str) {
@@ -356,7 +390,7 @@ impl TableCtx {
             "Escape" => {
                 self.clear();
                 self.close();
-                self.hover_leave();
+                self.unstudy();
             }
             "e" | "E" => self.press("end-phase"),
             "t" | "T" => self.play_treasures(),
@@ -365,56 +399,11 @@ impl TableCtx {
     }
 }
 
-/// The measured boxes the layout is computed for: the middle row, the hand and the
-/// gap between things, in CSS pixels.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Boxes {
-    pub middle: (f64, f64),
-    pub hand: (f64, f64),
-    pub gap: f64,
-}
-
-impl Boxes {
-    /// A guess from the window's size, until the first measurement.
-    fn guess() -> Boxes {
-        let (vw, vh) = platform::viewport();
-        let u = (vh / 100.0).min(vw * 0.005625);
-        let side = (vw * 0.19).clamp(230.0, 520.0);
-        let w = vw - side - u;
-        Boxes {
-            middle: (w, vh * 0.5),
-            hand: (w * 0.75, 24.0 * u),
-            gap: 0.5 * u,
-        }
-    }
-}
-
-const MEASURE_JS: &str = r#"
-if (window.__dtMeasure) { clearInterval(window.__dtMeasure.timer); window.removeEventListener('resize', window.__dtMeasure.fn); }
-(() => {
-  let last = '';
-  const fn = () => {
-    const m = document.querySelector('.dt-middle');
-    if (!m) return;
-    const h = document.querySelector('.dt-hand');
-    const cs = getComputedStyle(m);
-    const px = k => parseFloat(cs[k]) || 0;
-    const content = (el) => {
-      if (!el) return [0, 0];
-      const b = el.getBoundingClientRect(), c = getComputedStyle(el), p = k => parseFloat(c[k]) || 0;
-      return [b.width - p('paddingLeft') - p('paddingRight'), b.height - p('paddingTop') - p('paddingBottom')];
-    };
-    const g = px('rowGap') || 4;
-    const v = [...content(m), ...content(h), g].map(x => Math.round(x * 10) / 10);
-    const key = v.join(',');
-    if (key === last) return;
-    last = key;
-    try { dioxus.send(v); } catch (_) {}
-  };
-  window.__dtMeasure = { fn, timer: setInterval(fn, 250) };
-  window.addEventListener('resize', fn);
-  fn();
-})();
+const VIEWPORT_JS: &str = r#"
+if (window.__dtViewport) window.removeEventListener('resize', window.__dtViewport);
+window.__dtViewport = () => { try { dioxus.send([window.innerWidth, window.innerHeight]); } catch (_) {} };
+window.addEventListener('resize', window.__dtViewport);
+window.__dtViewport();
 "#;
 
 const KEYS_JS: &str = r#"
@@ -433,20 +422,35 @@ document.addEventListener('keydown', window.__dtKeys);
 "#;
 
 /// The images the table uses besides cards, as CSS variables when the cache has them.
-fn table_css(assets: &crate::assets::AssetDb) -> String {
+fn table_css(assets: &crate::assets::AssetDb, background: &str) -> String {
     let mut css = String::from(".dt-root{");
+    let bg = format!("images/large/{background}.webp");
     for (name, path) in [
-        ("btn", "images/materials/copper_button.jpg"),
+        ("bg", bg.as_str()),
+        ("btn-copper", "images/materials/copper_button.jpg"),
         ("btn-gold", "images/materials/gold_button.jpg"),
         ("btn-stone", "images/materials/stone_button.png"),
-        ("canvas", "images/materials/canvas_small.jpg"),
-        ("divider", "images/materials/gold_divider.png"),
+        ("tab", "images/elements/tab-bg.png"),
+        ("tab-active", "images/elements/active-tab-bg.png"),
         ("trash-mat", "images/mats/trash_mat.png"),
+        ("tavern-mat", "images/mats/tavern_mat.png"),
+        ("exile-mat", "images/mats/exile_mat.png"),
         ("counter", "images/elements/card-counter.png"),
-        ("pick", "images/elements/premove-counter.png"),
+        ("coin", "images/elements/coin.png"),
+        ("potion", "images/elements/potion-square.png"),
+        ("debt", "images/elements/debt_130.png"),
+        ("coffers", "images/elements/coffers.png"),
+        ("villagers", "images/elements/villagers.png"),
+        ("favors", "images/elements/favors.png"),
+        ("vp", "images/elements/victory_150.png"),
         ("treasures", "images/buttons/autoplay-treasures.png"),
+        ("refuse", "images/buttons/refuse.png"),
+        ("continue", "images/buttons/continue.png"),
+        ("discard-icon", "images/buttons/discard.png"),
+        ("trash-icon", "images/buttons/trash.png"),
+        ("topdeck-icon", "images/buttons/topdeck.png"),
     ] {
-        if assets.has(path) {
+        if !path.ends_with("/.webp") && assets.has(path) {
             css.push_str(&format!("--dt-{name}:url('{}');", crate::assets::url(path)));
         }
     }
@@ -467,15 +471,47 @@ pub fn set_table_mode(on: bool) {
     platform::session_set(view_mode_key(), if on { "table" } else { "plain" });
 }
 
-/// The game page's table. `controls` (seat switching, the view toggle) go above the log.
+/// The opponent whose hand, deck and discard pile peek in from the top: the one whose
+/// turn it is, else the one chosen, else the next in turn order.
+fn active_opponent(b: &Board, chosen: Option<u8>) -> Option<u8> {
+    if let Some(p) = &b.status.player
+        && b.opponents.iter().any(|o| o.seat == p.seat)
+    {
+        return Some(p.seat);
+    }
+    chosen
+        .filter(|c| b.opponents.iter().any(|o| o.seat == *c))
+        .or_else(|| b.opponents.first().map(|o| o.seat))
+}
+
+/// The layout's inputs for a board.
+fn shape(b: &Board, settings: &dominion_protocol::api::WebSettings) -> layout::Shape {
+    let (victory, treasures) = supply::basic_columns(b);
+    layout::Shape {
+        opponents: b.opponents.len(),
+        victory: victory.len(),
+        treasures: treasures.len(),
+        kingdom: b.supply.kingdom.iter().map(Vec::len).sum(),
+        landscapes: supply::wides(b).len(),
+        non_supply: b.non_supply.len(),
+        lowered: settings.web_move_kingdom
+            && b.status.running
+            && b.you.is_some()
+            && b.status.player.is_some()
+            && !b.status.your_turn,
+    }
+}
+
+/// The game page's table. `controls` (seat switching, the view toggle) go under the log.
 #[component]
 pub fn TableGame(controls: Element) -> Element {
     let game = use_game();
     let cards = use_context::<Cards>().0;
+    let settings = use_context::<Settings>().0;
     let board_memo: Memo<Option<Rc<Board>>> = use_memo(move || {
         let st = game.state.read();
         let v = st.view.as_ref()?;
-        Some(Rc::new(board(v, st.deciding, &cards.read())))
+        Some(Rc::new(board(v, st.deciding, &st.table, &cards.read())))
     });
     let ui = use_memo(move || {
         let st = game.state.read();
@@ -491,8 +527,15 @@ pub fn TableGame(controls: Element) -> Element {
             .filter(|(_, s)| !matches!(s, Spot::Tray | Spot::Button))
             .map(|(i, s)| (s.clone(), i))
             .collect();
+        let confirm_single = settings.read().web_confirm_single;
         Some(Rc::new(Ui {
-            click_answers: answers_on_click(d),
+            click_answers: (answers_on_click(d)
+                || (d.min == Some(0) && d.max == Some(1) && d.groups.len() <= 1))
+                && !(confirm_single
+                    && matches!(
+                        d.purpose.as_str(),
+                        "discard" | "trash" | "exile" | "top-deck"
+                    )),
             decision: d.clone(),
             inter,
             spots,
@@ -502,10 +545,9 @@ pub fn TableGame(controls: Element) -> Element {
     let ctx = use_context_provider(|| TableCtx {
         ui,
         sel: Signal::new(Sel::default()),
-        hover: Signal::new(None),
-        hover_seq: Signal::new(0),
-        hover_quiet: Signal::new(false),
+        studied: Signal::new(None),
         popup: Signal::new(None),
+        chosen_opponent: Signal::new(None),
         run: Signal::new(None),
         cards,
         game,
@@ -537,48 +579,28 @@ pub fn TableGame(controls: Element) -> Element {
     });
 
     let flight = motion::use_motion(board_memo, game);
-    use_effect(move || {
-        board_memo.read();
-        let shown = ctx.hover.peek().as_ref().map(|h| h.name.clone());
-        if let Some(name) = shown
-            && !platform::js_bool(&format!(
-                "!!document.querySelector('[data-name=\"' + CSS.escape({}) + '\"]:hover, .dt-name:hover')",
-                serde_json::Value::String(name)
-            ))
-        {
-            ctx.hover_leave();
-        }
-    });
     let muted = use_signal(sound::session_muted);
     sound::use_sound(board_memo, game, muted);
-    let mut boxes = use_signal(Boxes::guess);
+    let mut viewport = use_signal(platform::viewport);
     use_future(move || async move {
-        let mut eval = document::eval(MEASURE_JS);
+        let mut eval = document::eval(VIEWPORT_JS);
         while let Ok(v) = eval.recv::<Vec<f64>>().await {
-            if let [mw, mh, hw, hh, g] = v[..] {
-                let b = Boxes {
-                    middle: (mw, mh),
-                    hand: (hw, hh),
-                    gap: g,
-                };
-                if *boxes.peek() != b {
-                    boxes.set(b);
+            if let [w, h] = v[..] {
+                let now = (w, h);
+                if *viewport.peek() != now {
+                    viewport.set(now);
                 }
             }
         }
     });
-    let shape = use_memo(move || {
+    let geometry = use_memo(move || {
+        let (w, h) = viewport();
         let b = board_memo.read();
-        b.as_ref().map(|b| supply::shape(b)).unwrap_or_default()
-    });
-    let middle = use_memo(move || {
-        let bx = boxes();
-        Rc::new(layout::middle(
-            &shape.read(),
-            bx.middle.0,
-            bx.middle.1,
-            bx.gap,
-        ))
+        let s = b
+            .as_ref()
+            .map(|b| shape(b, &settings.read()))
+            .unwrap_or_default();
+        Rc::new(layout::geometry(w, h, &s))
     });
 
     use_future(move || async move {
@@ -589,7 +611,7 @@ pub fn TableGame(controls: Element) -> Element {
     });
 
     let assets = use_assets();
-    let extra_css = table_css(&assets);
+    let extra_css = table_css(&assets, &settings.read().web_background);
     let st = game.state.read();
     let error = st.error.clone();
     let answering = st.answering || run.read().is_some();
@@ -600,43 +622,24 @@ pub fn TableGame(controls: Element) -> Element {
         .map(super::logfmt::names)
         .unwrap_or_default();
     let seat = st.view.as_ref().and_then(|v| v.seat);
+    let game_id = st.view.as_ref().and_then(|v| v.game.id.clone());
     drop(st);
     let b = board_memo.read().clone();
     let Some(b) = b else {
         return rsx! {
             document::Style { "{CSS}" }
             div { class: "dt-root dt-loading",
-                div { class: "dt-main",
-                    p { class: "muted",
-                        if let Some(e) = error { "{e}" } else { "Loading the game…" }
-                    }
+                p { class: "dt-loading-text",
+                    if let Some(e) = error { "{e}" } else { "Loading the game…" }
                 }
-                aside { class: "dt-side", {controls} }
+                div { class: "dt-below-log dt-below-log-loading", {controls} }
             }
         };
     };
     let sel = ctx.selection();
     let ui_now = ui.read().clone();
-    let source_owner = ui_now.as_ref().and_then(|u| {
-        let src = u.decision.source.as_ref()?;
-        let who = b
-            .play_area
-            .player
-            .as_ref()
-            .filter(|_| !b.status.your_turn)?;
-        b.play_area
-            .cards
-            .known
-            .iter()
-            .any(|s| &s.card == src)
-            .then(|| who.name.clone())
-    });
-    let lay = middle();
-    let bx = boxes();
-    let mid_style = format!(
-        "--sh:{:.1}px;--k:{:.1}px;--b:{:.1}px;--ww:{:.1}px;--nw:{:.1}px;",
-        lay.supply_h, lay.k, lay.b, lay.wide_w, lay.ns_w
-    );
+    let g = geometry();
+    let active = active_opponent(&b, *ctx.chosen_opponent.read());
     let can_treasures = ui_now
         .as_ref()
         .is_some_and(|u| !u.inter.treasures.is_empty());
@@ -647,106 +650,92 @@ pub fn TableGame(controls: Element) -> Element {
             class: "dt-root",
             class: if b.status.your_turn { "dt-your-turn" },
             class: if ui_now.is_some() { "dt-deciding" },
+            style: "--vh:{g.vh:.3}px;--vw:{g.vw:.3}px;",
             "data-busy": if answering { "1" },
             "data-decision": ui_now.as_ref().map(|u| u.decision.id.clone()).unwrap_or_default(),
             "data-seat": seat.map(|s| s.to_string()).unwrap_or_default(),
             onclick: move |_| {
-                if ctx.popup.peek().is_some() {
+                let locked = ctx.popup.peek().as_ref().is_some_and(|(_, l)| *l);
+                if locked {
                     ctx.close();
                 }
             },
-            onmousedown: move |_| ctx.clicked(),
-            onmousemove: move |_| ctx.pointer_moved(),
-            div { class: "dt-main",
-                players::Opponents { opponents: b.opponents.clone() }
-                div { class: "dt-middle", style: "{mid_style}",
-                    supply::SupplyArea { board: b.clone(), lay: lay.clone(), ui: ui_now.clone(), sel: sel.clone() }
-                    players::PlayArea {
-                        board: b.clone(),
-                        log: log.clone(),
-                        ui: ui_now.clone(),
-                        sel: sel.clone(),
-                        w: bx.middle.0,
-                        h: lay.play_h,
-                        gap: bx.gap,
-                        max_w: lay.k * 1.15,
-                    }
-                    prompt::Tray { ui: ui_now.clone(), sel: sel.clone() }
-                    if let Some(p) = ctx.popup.read().clone() {
-                        PopupView { popup: p }
-                    }
-                }
-                prompt::Bar {
-                    status: b.status.clone(),
-                    ui: ui_now.clone(),
-                    sel: sel.clone(),
-                    error,
-                    busy: answering,
-                    can_treasures,
-                    source_owner,
-                }
-                players::YourArea {
-                    board: b.clone(),
-                    ui: ui_now.clone(),
-                    sel: sel.clone(),
-                    hand_w: bx.hand.0,
-                    hand_h: bx.hand.1,
-                    gap: bx.gap,
-                }
+            div { class: "dt-bg" }
+            supply::SupplyArea { board: b.clone(), g: g.clone(), ui: ui_now.clone(), sel: sel.clone() }
+            players::Opponents { board: b.clone(), g: g.clone(), active }
+            players::PlayArea { board: b.clone(), g: g.clone(), ui: ui_now.clone(), sel: sel.clone() }
+            players::YourArea { board: b.clone(), g: g.clone(), ui: ui_now.clone(), sel: sel.clone() }
+            prompt::StatusBar {
+                board: b.clone(),
+                g: g.clone(),
+                ui: ui_now.clone(),
+                error,
             }
-            aside { class: "dt-side",
+            prompt::Buttons {
+                g: g.clone(),
+                ui: ui_now.clone(),
+                sel: sel.clone(),
+                busy: answering,
+                can_treasures,
+            }
+            prompt::DecisionWindow { g: g.clone(), ui: ui_now.clone(), sel: sel.clone() }
+            if let Some((p, _)) = ctx.popup.read().clone() {
+                PopupView { popup: p, g: g.clone() }
+            }
+            side::Log { entries: log, names, g: g.clone(), game_id, board: b.clone() }
+            div { class: "dt-below-log", style: "{g.below_log.style()}",
                 div { class: "dt-controls", {controls}
                     sound::MuteToggle { muted }
                 }
-                players::YouPanel { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
                 side::More { board: b.clone() }
-                side::Log { entries: log, names }
             }
             if b.result.is_some() {
                 side::GameOver { board: b.clone() }
             }
-            pieces::HoverLayer {}
+            pieces::StudyLayer {}
             motion::GhostPool { flight: flight() }
         }
     }
 }
 
+/// A window listing a pile's or mat's cards, as dominion.games opens them from tabs.
 #[component]
-fn PopupView(popup: Popup) -> Element {
+fn PopupView(popup: Popup, g: Rc<layout::Geometry>) -> Element {
     let ctx = use_table();
     let p = &popup;
+    let n = p.stacks.len() + usize::from(p.unknown > 0);
+    let win = g.window(n.max(1) as f64, false);
+    let row = g.window_row(&win, n, &vec![false; n]);
     rsx! {
         div {
-            class: "dt-popup",
+            class: "dt-window dt-popup",
+            style: "{win.style()}",
             onclick: move |e| e.stop_propagation(),
-            div { class: "dt-popup-head",
-                span { "{p.title}" }
-                button { class: "dt-x", "data-close": "popup", onclick: move |_| ctx.close(), "×" }
+            div { class: "dt-window-title", "{p.title}" }
+            button { class: "dt-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+            if let Some(note) = &p.note {
+                p { class: "dt-note", "{note}" }
             }
-            if let Some(n) = &p.note {
-                p { class: "dt-note", "{n}" }
+            for (i, s) in p.stacks.iter().enumerate() {
+                pieces::TableCard {
+                    key: "{s.card}",
+                    name: s.card.clone(),
+                    size: crate::card::CardSize::Full,
+                    count: (s.count > 1).then_some(s.count),
+                    at: layout::Rect::new(row.xs[i] - win.x, row.y - win.y, row.w, row.h),
+                }
             }
-            div { class: "dt-popup-cards",
-                for s in p.stacks.iter() {
-                    pieces::TableCard {
-                        key: "{s.card}",
-                        name: s.card.clone(),
-                        size: crate::card::CardSize::Full,
-                        count: (s.count > 1).then_some(s.count),
-                    }
+            if p.unknown > 0 {
+                pieces::TableCard {
+                    name: "",
+                    size: crate::card::CardSize::Full,
+                    back: true,
+                    count: Some(p.unknown),
+                    at: layout::Rect::new(row.xs[n - 1] - win.x, row.y - win.y, row.w, row.h),
                 }
-                if p.unknown > 0 {
-                    pieces::TableCard {
-                        name: "",
-                        size: crate::card::CardSize::Full,
-                        back: true,
-                        count: Some(p.unknown),
-                        label: "unknown",
-                    }
-                }
-                if p.stacks.is_empty() && p.unknown == 0 {
-                    p { class: "muted", "Empty." }
-                }
+            }
+            if p.stacks.is_empty() && p.unknown == 0 {
+                p { class: "dt-window-empty", "Empty." }
             }
         }
     }

@@ -1,6 +1,7 @@
-//! dominion.games' sounds from the asset cache: a chime when it becomes this seat's turn
-//! or decision after waiting on someone else, the shuffle when this seat shuffles, and
-//! the win or lose sound when the game ends. Nothing plays (and no audio element is
+//! dominion.games' sounds from the asset cache, when it plays them: "your turn" when a
+//! decision comes back to this seat after others decided and no click came in the last
+//! second, a ping when the game ends and then the win or lose sound on the score
+//! screen. Card actions and shuffles are silent. Nothing plays (and no audio element is
 //! made) when `web_sounds` is off, the page is muted, or the cache has no sounds;
 //! browsers allow sound only after the user has interacted with the page, so until then
 //! nothing is tried.
@@ -15,6 +16,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 const SOUND_JS: &str = r#"
+if (!window.__dtDown) {
+  window.__dtDown = 0;
+  document.addEventListener('mousedown', () => { window.__dtDown = Date.now(); }, true);
+}
 window.__dtSound = window.__dtSound || {
   cache: {},
   play(url, volume) {
@@ -44,31 +49,27 @@ pub fn available(assets: &AssetDb, settings: &dominion_protocol::api::WebSetting
     settings.web_sounds && sound_url(assets, "your-turn").is_some()
 }
 
-/// What happened between two boards that makes a sound.
-fn sound_for(
-    old: &Board,
-    new: &Board,
-    log: &[dominion_protocol::LogEntry],
-) -> Option<&'static str> {
+/// What happened between two boards that makes a sound, and the sound for the score
+/// screen when the game ended.
+fn sound_for(old: &Board, new: &Board) -> Option<(&'static str, Option<&'static str>)> {
     let seat = new.you.as_ref().map(|y| y.seat)?;
     if old.result.is_none()
         && let Some(r) = &new.result
     {
-        let won = r.iter().any(|p| p.index == seat && p.rank == 1);
-        return Some(if won { "win" } else { "game-over" });
+        let me = r.iter().find(|p| p.index == seat)?;
+        let after = if me.rank == 1 && !me.resigned {
+            "win"
+        } else {
+            "game-over"
+        };
+        return Some(("ping", Some(after)));
     }
-    if new.status.you_decide && !old.status.you_decide {
-        return Some("your-turn");
-    }
-    log.iter()
-        .any(|e| e.kind == "shuffled" && e.player == Some(seat))
-        .then_some("shuffle")
+    (new.status.you_decide && !old.status.you_decide).then_some(("your-turn", None))
 }
 
 #[derive(Default)]
 struct Last {
     board: Option<Rc<Board>>,
-    log_len: usize,
     seat: Option<u8>,
 }
 
@@ -87,18 +88,28 @@ pub fn use_sound(board: Memo<Option<Rc<Board>>>, game: GameCtx, muted: Signal<bo
             && l.seat == seat
             && !*muted.peek()
             && available(&a, &s)
-            && let Some(name) = sound_for(old, new, &st.log[l.log_len.min(st.log.len())..])
+            && let Some((name, after)) = sound_for(old, new)
             && let Some(url) = sound_url(&a, name)
         {
             platform::run_js(SOUND_JS);
+            let volume = s.web_volume.clamp(0.0, 1.0);
+            let quiet = if name == "your-turn" {
+                "Date.now() - window.__dtDown < 1000"
+            } else {
+                "false"
+            };
             platform::run_js(&format!(
-                "window.__dtSound.play({}, {})",
+                "if (!({quiet})) window.__dtSound.play({}, {volume})",
                 serde_json::Value::String(url),
-                s.web_volume.clamp(0.0, 1.0)
             ));
+            if let Some(url) = after.and_then(|n| sound_url(&a, n)) {
+                platform::run_js(&format!(
+                    "window.__dtResultSound = () => window.__dtSound.play({}, {volume})",
+                    serde_json::Value::String(url),
+                ));
+            }
         }
         l.board = b;
-        l.log_len = st.log.len();
         l.seat = seat;
     });
 }
