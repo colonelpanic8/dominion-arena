@@ -127,12 +127,17 @@ them.
   `Trigger`s that apply right now; the window resolves them (turn player first, then
   in turn order, each player ordering their own; optional ones can be declined) and
   re-asks after each resolution, so check every condition (including where the
-  card is: the stop-moving rule) when producing a trigger. An effect that stacks ("this
+  card is: the stop-moving rule) when producing a trigger. Things that happen together
+  share one window (`Window::open_all`): cards trashed together (`Frame::trash`) or
+  discarded together (`Frame::discard`) are all moved first, then their player orders
+  the abilities, and a card that has moved meanwhile (a Trail shuffled away by the first
+  Trail's draw) has lost its own. An effect that stacks ("this
   turn, when you gain ...") produces one trigger per lasting effect or card in play,
   never one trigger carrying a count: the window tracks what has resolved per trigger,
   and more can come into effect while it is open. It doesn't ask for an order
   when a player's mandatory triggers all have the same effect, offers triggers the
-  player can't tell apart and whose effect is the same (two Moats) as one option, drops
+  player can't tell apart and whose effect is the same (two Moats, two Tunnels
+  discarded together) as one option, drops
   `Trigger::protects` ones (all they do is make the attacked player unaffected) once the
   player is unaffected, and resolves
   `Trigger::quiet` ones (bookkeeping, or bonuses nothing can interact with, like Fair's

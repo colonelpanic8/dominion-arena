@@ -200,8 +200,9 @@ impl Trigger {
 }
 
 /// Resolves every trigger for one occasion, or for several that happen together (cards
-/// trashed at once), whose triggers the players then order together. Finishes with
-/// `Value::Bool(true)` if any resolved trigger finished with `Value::Bool(true)`.
+/// trashed or discarded at once), whose triggers the players then order together.
+/// Finishes with `Value::Bool(true)` if any resolved trigger finished with
+/// `Value::Bool(true)`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Window {
     occs: Vec<Occasion>,
@@ -293,14 +294,15 @@ impl Window {
         if !mine[0].1.optional && mine.iter().all(|(_, t)| same_effect(g, t, &mine[0].1)) {
             return self.run(g, mine[0].clone());
         }
-        let several = self.occs.len() > 1;
-        // Interchangeable triggers (two Moats) are one option.
+        // Interchangeable triggers (two Moats, two Tunnels discarded together) are one
+        // option.
         let mut asked: Vec<(usize, Trigger)> = vec![];
         for t in &mine {
-            if !asked.iter().any(|u| interchangeable(g, t, u)) {
+            if !asked.iter().any(|u| self.interchangeable(g, t, u)) {
                 asked.push(t.clone());
             }
         }
+        let several = asked.iter().any(|(i, _)| *i != asked[0].0);
         let mut options: Vec<Opt> = (0..asked.len()).map(|i| Opt::Trigger(i as u16)).collect();
         let mut labels: Vec<String> = asked
             .iter()
@@ -334,7 +336,7 @@ impl Window {
         let question = if several {
             format!("Several things happened: {ask}")
         } else {
-            format!("{}: {ask}", moment(g, &self.occs[0], owner))
+            format!("{}: {ask}", moment(g, &self.occs[asked[0].0], owner))
         };
         self.asked = asked;
         self.offered = mine;
@@ -351,6 +353,14 @@ impl Window {
             about: vec![],
             question: Some(question),
         })
+    }
+
+    /// Whether the owner can't tell `a` and `b` apart and resolving either makes no
+    /// difference.
+    fn interchangeable(&self, g: &Game, a: &(usize, Trigger), b: &(usize, Trigger)) -> bool {
+        alike(g, &self.occs[a.0], &self.occs[b.0])
+            && same_effect(g, &a.1, &b.1)
+            && label(g, &a.1) == label(g, &b.1)
     }
 
     /// The pending triggers the decision being asked is about.
@@ -422,10 +432,17 @@ fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
         && lasting(a) == lasting(b)
 }
 
-/// Whether the owner can't tell `a` and `b` apart and resolving either makes no
-/// difference.
-fn interchangeable(g: &Game, a: &(usize, Trigger), b: &(usize, Trigger)) -> bool {
-    a.0 == b.0 && same_effect(g, &a.1, &b.1) && label(g, &a.1) == label(g, &b.1)
+/// Whether `a` and `b` are one occasion, or happened together to cards no one can tell
+/// apart (two Tunnels discarded together).
+fn alike(g: &Game, a: &Occasion, b: &Occasion) -> bool {
+    let look = |c: CardId| (g.printed(c), g.card(c), g.zone(c));
+    match (a, b) {
+        (Occasion::Discard { player: p, card: c }, Occasion::Discard { player: q, card: d })
+        | (Occasion::Trash { player: p, card: c }, Occasion::Trash { player: q, card: d }) => {
+            p == q && look(*c) == look(*d)
+        }
+        _ => a == b,
+    }
 }
 
 /// How the owner is offered `t`: its card (or label), what an optional one does, the card

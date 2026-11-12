@@ -570,25 +570,28 @@ impl Frame {
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
-                // Cards discarded together are all discarded before any reacts.
-                if *i == 0 {
-                    for &c in cards.iter() {
-                        g.show(c);
-                        g.move_card(c, Zone::Discard(*player), Pos::Top);
-                        g.emit(Event::Discarded {
-                            player: *player,
-                            card: g.card(c),
-                        });
-                    }
-                }
-                let Some(&c) = cards.get(*i) else {
+                // Cards discarded together are all discarded before any "when discarded"
+                // ability, and their abilities share one window.
+                if *i > 0 {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
-                };
-                *i += 1;
-                Flow::Call(Frame::window(Occasion::Discard {
-                    player: *player,
-                    card: c,
-                }))
+                }
+                *i = 1;
+                for &c in cards.iter() {
+                    g.show(c);
+                    g.move_card(c, Zone::Discard(*player), Pos::Top);
+                    g.emit(Event::Discarded {
+                        player: *player,
+                        card: g.card(c),
+                    });
+                }
+                let occs = cards
+                    .iter()
+                    .map(|&card| Occasion::Discard {
+                        player: *player,
+                        card,
+                    })
+                    .collect();
+                Flow::Call(Window::open_all(occs))
             }
             Frame::DiscardFromPlay { player, cards, pc } => match pc {
                 0 => {
