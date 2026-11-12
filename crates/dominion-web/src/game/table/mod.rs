@@ -191,7 +191,9 @@ impl TableCtx {
             return;
         }
         let mut sel = self.edit_sel(&d.id);
-        if !sel.click(d, &target.options) {
+        // A click picks one more copy; on a stack whose copies are all picked it takes
+        // one back. With the picks full it does nothing.
+        if !sel.click(d, &target.options) && sel.count(&target.options) == target.options.len() {
             sel.unclick(&target.options);
         }
         self.set_sel(&d.id, sel);

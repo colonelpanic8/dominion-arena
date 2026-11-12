@@ -249,15 +249,19 @@ pub fn TableCard(
     let plus_url = assets.file_url("images/elements/plus-sign.png");
     let red_cross = assets.file_url("images/elements/red-cross.png");
     let n_picked = picked.len() as u32;
-    // Picked copies of a stack split off from it, tilted, unless the whole stack is.
+    // A stack's picked copies split off it, tilted. The copy and the crosses stay mounted
+    // and are only shown or hidden, so picking never reloads their images.
     let stack_n = count.unwrap_or(1);
-    let split_off = n_picked > 0 && !ordered && stack_n > n_picked && size == CardSize::Full;
-    let shown_count = if split_off {
-        count.map(|c| c - n_picked)
+    let splits = target.is_some() && !ordered && stack_n > 1 && size == CardSize::Full;
+    let split_off = splits && n_picked > 0;
+    let spent = splits && n_picked as usize >= options.max(1);
+    let shown_count = if splits {
+        Some(stack_n.saturating_sub(n_picked))
     } else {
         count
     };
-    let whole_picked = n_picked > 0 && !split_off;
+    let whole_picked = n_picked > 0 && !splits;
+    let crossable = target.is_some();
     let style = at.map(|r| r.style()).unwrap_or_default();
     let z_style = if z != 0 {
         format!("z-index:{z};")
@@ -278,8 +282,8 @@ pub fn TableCard(
                     }
                 }
             }
-            if picked_copy {
-                div { class: "dt-cross",
+            if crossable {
+                div { class: if picked_copy { "dt-cross dt-on" } else { "dt-cross" },
                     if let Some(src) = cross_url.clone() {
                         img { src, alt: "picked", draggable: "false" }
                     } else {
@@ -302,6 +306,7 @@ pub fn TableCard(
             class: if target.is_some() { "dt-target" },
             class: if whole_picked { "dt-picked" },
             class: if empty { "dt-empty" },
+            class: if spent { "dt-spent" },
             class: if clickable { "dt-click" },
             class: if wide { "dt-wide" },
             class: if inverted { "dt-inverted" },
@@ -331,9 +336,9 @@ pub fn TableCard(
                 div { class: "dt-split-back", CardBack { size } }
             }
             div { class: "dt-face", {face(whole_picked)} }
-            if split_off {
+            if splits {
                 div {
-                    class: "dt-picked-copy",
+                    class: if split_off { "dt-picked-copy dt-on" } else { "dt-picked-copy" },
                     "data-unpick": "{target_attr}",
                     onclick: move |e| {
                         e.stop_propagation();
@@ -342,17 +347,15 @@ pub fn TableCard(
                         }
                     },
                     {face(true)}
-                    if n_picked > 1 {
-                        span { class: "dt-count",
-                            if let Some(src) = counter_url.clone() { img { src: src, alt: "", draggable: "false" } }
-                            span { "{n_picked}" }
-                        }
+                    span { class: "dt-count",
+                        if let Some(src) = counter_url.clone() { img { src: src, alt: "", draggable: "false" } }
+                        span { "{n_picked}" }
                     }
                 }
             }
             div { class: "dt-ov",
                 if let Some(n) = shown_count {
-                    span { class: "dt-count",
+                    span { class: if n == 0 { "dt-count dt-gone" } else { "dt-count" },
                         if let Some(src) = counter_url.clone() {
                             img { src, alt: "", draggable: "false" }
                         }
