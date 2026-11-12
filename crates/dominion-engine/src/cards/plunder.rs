@@ -632,9 +632,9 @@ fn next_gain_of(g: &Game, l: &Lasting, card: CardId, types: Types) -> bool {
 }
 
 /// Whether the play of `card` in progress is the next one by its player, of a card whose
-/// types `wanted` accepts, since lasting `l` was set up: it began after that, and not
-/// while an earlier such play was still being resolved (Throne Room, not the card it
-/// plays).
+/// types as played `wanted` accepts, since lasting `l` was set up: it began after that,
+/// and not while an earlier such play was still being resolved (Throne Room, not the
+/// card it plays).
 pub(super) fn next_play(
     g: &Game,
     l: &Lasting,
@@ -644,12 +644,18 @@ pub(super) fn next_play(
     let Some(i) = g.plays.iter().rposition(|s| s.card == card) else {
         return false;
     };
+    let played = |s: &crate::game::PlayState| {
+        g.turn()
+            .played_types
+            .get(s.index)
+            .is_some_and(|&t| wanted(t))
+    };
     let st = &g.plays[i];
     l.data.i <= st.since
-        && wanted(g.types(card))
+        && played(st)
         && !g.plays[..i]
             .iter()
-            .any(|s| s.player == st.player && l.data.i <= s.since && wanted(g.types(s.card)))
+            .any(|s| s.player == st.player && l.data.i <= s.since && played(s))
 }
 
 /// The play of `card` in progress (up to its AfterPlay window), if any.
