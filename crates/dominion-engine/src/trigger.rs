@@ -10,7 +10,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose, Response};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{Scratch, Zone};
+use crate::game::{Mat, Scratch, Zone};
 use crate::{Card, CardId, Cost, Game, PlayerId};
 use serde::{Deserialize, Serialize};
 
@@ -328,10 +328,14 @@ impl Window {
         }
         let several = asked.iter().any(|(i, _)| *i != asked[0].0);
         let mut options: Vec<Opt> = (0..asked.len()).map(|i| Opt::Trigger(i as u16)).collect();
+        let plain: Vec<String> = asked.iter().map(|(_, t)| label(g, t, false)).collect();
         let mut labels: Vec<String> = asked
             .iter()
-            .map(|(i, t)| {
-                let mut label = label(g, t);
+            .zip(&plain)
+            .map(|((i, t), plain_label)| {
+                // Two that differ under one name say what tells them apart.
+                let alone = plain.iter().filter(|&l| l == plain_label).count() == 1;
+                let mut label = label(g, t, !alone);
                 if several {
                     label = format!("{label} [{}]", moment(g, &self.occs[*i], owner));
                 }
@@ -385,7 +389,7 @@ impl Window {
     fn interchangeable(&self, g: &Game, a: &(usize, Trigger), b: &(usize, Trigger)) -> bool {
         alike(g, &self.occs[a.0], &self.occs[b.0])
             && same_effect(g, &a.1, &b.1)
-            && label(g, &a.1) == label(g, &b.1)
+            && label(g, &a.1, false) == label(g, &b.1, false)
     }
 
     /// The pending triggers the decision being asked is about.
@@ -501,23 +505,54 @@ fn alike(g: &Game, a: &Occasion, b: &Occasion) -> bool {
 
 /// How the owner is offered `t`: its card (or label), what an optional one does, the card
 /// it is on when that is another card (a Trait's), and the cards its lasting effect has
-/// set aside that the owner can see, which tell two of one Duration apart.
-fn label(g: &Game, t: &Trigger) -> String {
+/// set aside that the owner can see, which tell two of one Duration apart. With `detail`,
+/// also what else tells it apart from the same ability with another effect: where its
+/// card is if not in play, its lasting effect's other cards, and its count (a Garrison's
+/// tokens).
+fn label(g: &Game, t: &Trigger, detail: bool) -> String {
     let name = t.label.clone().unwrap_or_else(|| {
         let view = g.view(t.owner);
+        let lasting = t
+            .lasting
+            .and_then(|id| g.lasting().iter().find(|l| l.id == id));
+        let cards = || {
+            lasting
+                .into_iter()
+                .flat_map(|l| l.data.cards.iter().chain(&l.data.pick))
+        };
         let on = t.source.and_then(|c| view.card(c)).filter(|&c| c != t.card);
-        let held: Vec<&str> = on
+        let mut held: Vec<String> = on
             .into_iter()
             .chain(
-                t.lasting
-                    .and_then(|id| g.lasting().iter().find(|l| l.id == id))
-                    .into_iter()
-                    .flat_map(|l| l.data.cards.iter().chain(&l.data.pick))
+                cards()
                     .filter(|&&c| matches!(g.zone(c), Zone::SetAside(_)))
                     .filter_map(|&c| view.card(c)),
             )
-            .map(|c| c.name())
+            .map(|c| c.name().to_string())
             .collect();
+        if detail {
+            let away = |c: CardId| away(g.zone(c), t.owner);
+            if let Some(c) = t.source.filter(|&c| view.card(c).is_some()) {
+                held.extend(away(c));
+            }
+            for &c in cards().filter(|&&c| !matches!(g.zone(c), Zone::SetAside(_))) {
+                let Some(card) = view.card(c).filter(|_| Some(c) != t.source) else {
+                    continue;
+                };
+                held.push(match (card == t.card, away(c)) {
+                    (true, Some(z)) => z,
+                    (true, None) => continue,
+                    (false, z) => [card.name().to_string()]
+                        .into_iter()
+                        .chain(z)
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                });
+            }
+            if let Some(l) = lasting.filter(|l| l.data.n != 0) {
+                held.push(format!("{}", l.data.n));
+            }
+        }
         if held.is_empty() {
             t.card.to_string()
         } else {
@@ -528,6 +563,30 @@ fn label(g: &Game, t: &Trigger) -> String {
         Some(does) => format!("{name}: {does} (optional)"),
         None => name,
     }
+}
+
+/// Where a card in `zone` is, as `me` is told, unless it is in `me`'s play area.
+fn away(zone: Zone, me: PlayerId) -> Option<String> {
+    let whose = |p: PlayerId| cards::whose(me, p);
+    Some(match zone {
+        Zone::InPlay(p) if p == me => return None,
+        Zone::InPlay(p) => format!("in {} play area", whose(p)),
+        Zone::Deck(p) => format!("in {} deck", whose(p)),
+        Zone::Hand(p) => format!("in {} hand", whose(p)),
+        Zone::Discard(p) => format!("in {} discard pile", whose(p)),
+        Zone::SetAside(_) | Zone::Looking(_) => "set aside".into(),
+        Zone::Mat(p, mat) => {
+            let mat = match mat {
+                Mat::Tavern => "Tavern",
+                Mat::Island => "Island",
+                Mat::NativeVillage => "Native Village",
+                Mat::Exile => "Exile",
+            };
+            format!("on {} {mat} mat", whose(p))
+        }
+        Zone::Pile(_) => "in the Supply".into(),
+        Zone::Trash => "in the trash".into(),
+    })
 }
 
 /// When `occ` happens, as `me` is told: "P1 plays Militia", "Start of your turn".

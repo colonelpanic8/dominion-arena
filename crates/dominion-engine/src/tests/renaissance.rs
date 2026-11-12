@@ -407,6 +407,40 @@ fn separately_played_cargo_ships_are_one_option() {
     assert_eq!(in_play_kinds(&g, P0), [Card::CargoShip]);
 }
 
+/// "You may use Improve to trash it during Clean-up and gain a different card. If you do,
+/// you may then still use Cargo Ship's ability ... the card stays set-aside for the rest
+/// of the game" (wiki, Cargo Ship). Beside a Cargo Ship still in play, the options say
+/// which is which.
+#[test]
+fn a_trashed_cargo_ship_is_told_apart_from_one_in_play() {
+    let mut g = setup(&[Card::CargoShip, Card::Improve, Card::Village, Card::Smithy]);
+    let cards = [
+        Card::Village,
+        Card::Village,
+        Card::CargoShip,
+        Card::CargoShip,
+        Card::Improve,
+    ];
+    hand(&mut g, P0, &cards);
+    deck(&mut g, P0, &[Card::Copper; 12]);
+    g.start();
+    for card in cards {
+        play(&mut g, card);
+    }
+    end_phases(&mut g);
+    trigger(&mut g, Card::Improve);
+    choose_kinds(&mut g, &[Card::CargoShip]);
+    // Smithy is the only card costing exactly $4.
+    assert_eq!(
+        super::intrigue::trigger_labels(&g),
+        [
+            "Cargo Ship (in the trash): set Smithy aside on Cargo Ship (optional)",
+            "Cargo Ship: set Smithy aside on Cargo Ship (optional)",
+            "Decline all"
+        ]
+    );
+}
+
 #[test]
 fn cargo_ship_that_sets_nothing_aside_is_discarded() {
     let mut g = setup(&[Card::CargoShip, Card::Smithy]);
