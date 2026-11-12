@@ -507,7 +507,13 @@ fn label(g: &Game, t: &Trigger) -> String {
 /// When `occ` happens, as `me` is told: "P1 plays Militia", "Start of your turn".
 fn moment(g: &Game, occ: &Occasion, me: PlayerId) -> String {
     let view = g.view(me);
-    let name = |c: CardId| view.card(c).map_or("a card", |c| c.name());
+    let name = |c: CardId| match occ {
+        Occasion::Gain { .. }
+        | Occasion::Trash { .. }
+        | Occasion::Discard { .. }
+        | Occasion::LeaveSupply { .. } => g.card(c).name(),
+        _ => view.card(c).map_or("a card", |c| c.name()),
+    };
     let who = |p: PlayerId, you: &str, they: &str| {
         if p == me {
             format!("You {you}")

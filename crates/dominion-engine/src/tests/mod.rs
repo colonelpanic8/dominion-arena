@@ -1194,3 +1194,101 @@ fn public_table(g: &Game, v: PlayerId) -> String {
     }
     out
 }
+
+#[test]
+fn gain_prompts_name_the_card_after_it_is_covered() {
+    let mut g = setup(&[Card::Hoard, Card::RoyalSeal]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Hoard, Card::RoyalSeal, Card::Gold, Card::Gold],
+    );
+    g.start();
+    for card in [Card::Hoard, Card::RoyalSeal, Card::Gold, Card::Gold] {
+        play(&mut g, card);
+    }
+    buy(&mut g, Card::Province);
+    assert_eq!(purpose(&g), Purpose::Trigger);
+    assert!(
+        trigger_question(&g).starts_with("You gain Province"),
+        "{}",
+        trigger_question(&g)
+    );
+    let hoard = trigger_cards(&g)
+        .iter()
+        .position(|&c| c == Card::Hoard)
+        .unwrap();
+    respond(&mut g, Response::option(Opt::Trigger(hoard as u16)));
+    // Royal Seal for the Gold.
+    assert!(
+        trigger_question(&g).starts_with("You gain Gold"),
+        "{}",
+        trigger_question(&g)
+    );
+    respond(&mut g, Response::option(Opt::No));
+    // Royal Seal for the Province, now under the Gold.
+    assert_eq!(trigger_cards(&g), [Card::RoyalSeal]);
+    assert!(
+        trigger_question(&g).starts_with("You gain Province"),
+        "{}",
+        trigger_question(&g)
+    );
+}
+
+#[test]
+fn gain_reaction_prompts_name_cards_gained_to_another_hand() {
+    let mut g = setup(&[Card::BlackCat, Card::Artisan]);
+    hand(&mut g, P0, &[Card::Artisan, Card::Copper]);
+    hand(&mut g, P1, &[Card::BlackCat]);
+    g.start();
+    play(&mut g, Card::Artisan);
+    choose_pile(&mut g, Card::Duchy);
+    assert!(logged_in_order(
+        &g,
+        &[Event::Gained {
+            player: P0,
+            card: Card::Duchy,
+            to: Dest::Hand
+        }]
+    ));
+    assert_eq!(g.pending().unwrap().player, P1);
+    assert_eq!(
+        trigger_question(&g),
+        "P1 gains Duchy: you may use this ability"
+    );
+}
+
+#[test]
+fn discard_trigger_labels_name_every_card_discarded_together() {
+    let mut g = setup(&[Card::Trail, Card::Tunnel, Card::Militia]);
+    hand(&mut g, P0, &[Card::Militia]);
+    hand(
+        &mut g,
+        P1,
+        &[
+            Card::Tunnel,
+            Card::Trail,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    deck(&mut g, P1, &[Card::Silver; 3]);
+    g.start();
+    play(&mut g, Card::Militia);
+    choose_kinds(&mut g, &[Card::Tunnel, Card::Trail]);
+    let labels = trigger_labels(&g);
+    assert!(labels[0].ends_with("[You discard Tunnel]"), "{labels:?}");
+    assert!(labels[1].ends_with("[You discard Trail]"), "{labels:?}");
+}
+
+fn trigger_question(g: &Game) -> String {
+    g.pending().unwrap().question.clone().unwrap_or_default()
+}
+
+fn trigger_labels(g: &Game) -> Vec<String> {
+    match &g.pending().unwrap().kind {
+        DecisionKind::Choose { labels, .. } => labels.clone(),
+        k => panic!("expected a Choose decision, got {k:?}"),
+    }
+}
