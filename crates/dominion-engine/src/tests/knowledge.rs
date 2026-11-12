@@ -729,6 +729,76 @@ fn star_chart_shows_the_shuffled_cards_and_shuffles_the_others_again() {
     assert_eq!(groups, [rest_sorted]);
 }
 
+/// What `viewer` knows of `p`'s hand, deck and discard pile, the groups spread over them
+/// in a fixed order.
+fn known_of(g: &Game, k: &Knowledge, viewer: PlayerId, p: PlayerId) -> Vec<String> {
+    let known = k.known(g, viewer);
+    let zones = [Zone::Hand(p), Zone::Deck(p), Zone::Discard(p)];
+    let mut uncertain: Vec<String> = known.uncertain.iter().map(|u| format!("{u:?}")).collect();
+    uncertain.sort();
+    zones
+        .map(|z| format!("{:?}", known.zone(z)))
+        .into_iter()
+        .chain(uncertain)
+        .collect()
+}
+
+/// A shuffle of the whole deck (Annex; Inn and Famine shuffle the same way) mixes the
+/// cards Star Chart looked through on an earlier shuffle with the others: drawing some of
+/// them tells the others nothing.
+#[test]
+fn a_shuffle_of_the_whole_deck_mixes_cards_looked_through_before() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Annex, Card::StarChart],
+        ..GameConfig::new(2, vec![Card::Smithy], 7)
+    });
+    g.players[0].projects.push(Card::StarChart);
+    hand(&mut g, P0, &[Card::Smithy]);
+    deck(&mut g, P0, &[]);
+    let mut pile = vec![Card::Gold; 4];
+    pile.extend([Card::Silver; 3]);
+    pile.extend([Card::Estate; 3]);
+    let pile = discard(&mut g, P0, &pile);
+    let (mut g, mut k) = start(g);
+    play(&mut g, Card::Smithy);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    choose(&mut g, &[pile[0]]);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    next_turn(&mut g);
+    k.update(&mut g);
+    let pl = g.player(P0);
+    assert_eq!((pl.hand.len(), pl.deck.len(), pl.discard.len()), (5, 2, 4));
+    // Annex shuffles the 4 cards of the discard pile into the 2 of the deck, Star Chart
+    // declined; Clean-up draws 5 of the 6.
+    let world = |seed: u64| {
+        let (mut g, mut k) = (g.clone(), k.clone());
+        g.rng = ChaCha8Rng::seed_from_u64(seed);
+        respond(&mut g, Response::Move(Move::BuyLandscape(Card::Annex)));
+        choose(&mut g, &[]);
+        respond(&mut g, Response::option(Opt::No));
+        next_turn(&mut g);
+        k.update(&mut g);
+        (g, k)
+    };
+    let (first, first_k) = world(0);
+    let mut hands = std::collections::BTreeSet::new();
+    for seed in 0..12 {
+        let (g, k) = world(seed);
+        hands.insert(hand_kinds(&g, P0));
+        assert_eq!(g.log(), first.log());
+        assert_eq!(
+            known_of(&g, &k, P1, P0),
+            known_of(&first, &first_k, P1, P0),
+            "seed {seed}"
+        );
+    }
+    assert!(hands.len() > 1, "the shuffles all came out the same");
+}
+
 /// Bad Omens leaves two Coppers as the deck, as everyone knows.
 #[test]
 fn everyone_knows_the_coppers_bad_omens_leaves_on_the_deck() {
