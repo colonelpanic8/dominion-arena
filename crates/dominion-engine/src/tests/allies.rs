@@ -1365,8 +1365,7 @@ fn elder_lets_the_card_it_plays_choose_an_extra_option() {
     modes(&mut g, &[0, 1]);
     assert_eq!(g.turn().actions, 2);
     assert_eq!((g.turn().buys, g.turn().coins), (2, 4));
-    assert!(g.lasting().is_empty());
-    // A Town played normally later gets one choice only.
+    // A Town played normally later this turn gets one choice only.
     play(&mut g, Card::Town);
     assert_eq!(
         g.respond(Response::Options(vec![Opt::Mode(0), Opt::Mode(1)])),

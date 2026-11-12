@@ -12,7 +12,8 @@
 //! named [`Card::Loot`].
 
 use super::{
-    CardFrame, Hook, SetRules, Step, duration_trigger, looking, mode_mask, put_back, turn_durations,
+    CardFrame, Hook, SetRules, Step, duration_trigger, looking, mode_mask, put_back, take_mode,
+    turn_durations,
 };
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -1240,31 +1241,41 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             )
         }
         2 => {
-            if input.opt() == Some(Opt::Mode(1)) {
+            f.s.m = mode_mask(input);
+            f.pc = 3;
+            Flow::Continue
+        }
+        3 => match take_mode(f) {
+            Some(0) => {
+                let piles = g.piles_costing_up_to(Cost::coins(4));
+                if piles.is_empty() {
+                    return Flow::Continue;
+                }
+                f.pc = 4;
+                f.ask_pile(piles, false, Purpose::Gain)
+            }
+            Some(_) => {
                 let cards = held(g);
                 if cards.is_empty() {
-                    return Flow::done();
+                    return Flow::Continue;
                 }
-                f.pc = 5;
-                return f
-                    .ask_cards(cards, 1, 1, Purpose::Move)
-                    .question("put into your hand");
+                f.pc = 6;
+                f.ask_cards(cards, 1, 1, Purpose::Move)
+                    .question("put into your hand")
             }
-            let piles = g.piles_costing_up_to(Cost::coins(4));
-            if piles.is_empty() {
-                return Flow::done();
-            }
-            f.pc = 3;
-            f.ask_pile(piles, false, Purpose::Gain)
-        }
-        3 => {
-            f.pc = 4;
+            None => Flow::done(),
+        },
+        4 => {
+            f.pc = 5;
             match input.pile() {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::SetAside)),
-                None => Flow::done(),
+                None => {
+                    f.pc = 3;
+                    Flow::Continue
+                }
             }
         }
-        4 => {
+        5 => {
             if let Some(c) = input.card()
                 && g.gained(p, c).is_some()
                 && g.zone(c) == Zone::SetAside(p)
@@ -1272,7 +1283,8 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             {
                 l.data.cards.push(c);
             }
-            Flow::done()
+            f.pc = 3;
+            Flow::Continue
         }
         _ => {
             if let Some(c) = input.card()
@@ -1283,7 +1295,8 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     l.data.cards.retain(|&x| x != c);
                 }
             }
-            Flow::done()
+            f.pc = 3;
+            Flow::Continue
         }
     }
 }

@@ -376,19 +376,31 @@ impl SetRules for Rules {
     }
 
     fn modify_decision(g: &Game, f: &CardFrame, d: &mut Decision) {
-        if d.purpose != Purpose::Mode || f.hook != Hook::Main || d.player != f.player {
+        if d.purpose != Purpose::Mode || d.player != f.player {
             return;
         }
         let Some(this) = f.this else {
             return;
         };
-        // Only Elder's own play of it, not a replay (Royal Carriage, Scepter) during it.
-        let play = g.plays.iter().rev().find(|st| st.card == this).map(|st| st.index);
-        let elder = g.lasting().iter().any(|l| {
-            l.card == Card::Elder
-                && l.until == Until::Removed
-                && l.data.pick == Some(this)
-                && Some(l.data.i) == play
+        // Which play of the card the ability is part of: Elder's own play, not a replay
+        // (Royal Carriage, Scepter) during it or later.
+        let play = match f.hook {
+            Hook::Main => g
+                .plays
+                .iter()
+                .rev()
+                .find(|st| st.card == this)
+                .map(|st| (st.index, u32::MAX)),
+            _ => f
+                .lasting
+                .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+                .filter(|l| l.source == Some(this))
+                .and_then(|l| Some((l.play?, l.id))),
+        };
+        let elder = play.is_some_and(|(i, made)| {
+            g.lasting().iter().any(|l| {
+                l.card == Card::Elder && l.data.pick == Some(this) && l.data.i == i && l.id < made
+            })
         });
         if let DecisionKind::Choose { options, max, .. } = &mut d.kind
             && elder
@@ -2225,14 +2237,11 @@ fn elder(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 i: g.turn.played_ids.len(),
                 ..Scratch::default()
             };
-            f.s.n = g.add_lasting(Card::Elder, p, f.this, vec![], Until::Removed, data) as i32;
+            g.add_lasting(Card::Elder, p, f.this, vec![], Until::EndOfTurn, data);
             f.pc = 2;
             Flow::Call(Frame::play(p, c, true, vec![]))
         }
-        _ => {
-            g.remove_lasting(f.s.n as u32);
-            Flow::done()
-        }
+        _ => Flow::done(),
     }
 }
 
