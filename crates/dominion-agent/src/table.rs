@@ -1,7 +1,7 @@
 use crate::project::{self, Context};
 use crate::text;
 use dominion_engine::{
-    Card, DecisionKind, Game, GameConfig, Kind, Knowledge, Opt, PlayerId, Purpose, Response,
+    Card, DecisionKind, Game, GameConfig, Kind, Knowledge, Move, Opt, PlayerId, Purpose, Response,
     SetupError,
 };
 use dominion_protocol::api::{PlayerTable, TableExtras};
@@ -221,8 +221,8 @@ impl Table {
         self.answer_with(seat, answer, None).map(|_| ())
     }
 
-    /// Answers the open decision for `seat`, then, with `way`, answers each Way question
-    /// that `seat` is asked next with it, until a decision that isn't one. A Way that
+    /// Answers the open decision for `seat`, then, with `way`, answers the played card's
+    /// next Way question and its consecutive replays' questions. A Way that
     /// isn't in the game rejects the answer; one in the game but not offered for a play
     /// leaves that question open.
     pub fn answer_with(
@@ -248,7 +248,14 @@ impl Table {
             }));
         }
         let log_len = self.game.log().len();
+        let choosing_way = self.game.way_card();
+        let direct = match response {
+            Response::Move(Move::Play(card)) => Some(Some(card)),
+            Response::Move(_) => Some(None),
+            _ => None,
+        };
         self.respond(response)?;
+        let played = direct.unwrap_or_else(|| choosing_way.or_else(|| self.game.way_card()));
         self.log_from[seat.index()] = log_len;
         let mut answered = Answered::default();
         let Some(way) = way else {
@@ -257,6 +264,7 @@ impl Table {
         while let Some(d) = self.game.pending()
             && d.player == seat
             && d.purpose == Purpose::Way
+            && self.game.way_card() == played
         {
             let DecisionKind::Choose { options, .. } = &d.kind else {
                 break;

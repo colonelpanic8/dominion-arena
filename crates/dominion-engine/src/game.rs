@@ -668,6 +668,13 @@ impl Game {
         self.pending.as_ref()
     }
 
+    /// The physical card whose pending Way question is being answered.
+    pub fn way_card(&self) -> Option<CardId> {
+        self.pending()
+            .filter(|d| d.purpose == crate::Purpose::Way)?;
+        self.plays.last().map(|play| play.card)
+    }
+
     pub fn outcome(&self) -> Option<&Outcome> {
         self.outcome.as_ref()
     }

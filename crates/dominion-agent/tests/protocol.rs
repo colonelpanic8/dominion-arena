@@ -884,7 +884,7 @@ fn a_way_answered_in_advance_answers_each_replay() {
 }
 
 #[test]
-fn a_way_not_offered_for_a_play_leaves_its_question_open() {
+fn way_pre_answer_leaves_the_mouses_different_card_open() {
     // Way of the Mouse plays the set-aside Village, which can't use Way of the Mouse.
     let mut t = way_table(&[Card::WayOfTheMouse, Card::WayOfTheOx], 1);
     let d = wait_for_hand(&mut t, |d| plays(d, "Laboratory").is_some());
@@ -895,15 +895,10 @@ fn a_way_not_offered_for_a_play_leaves_its_question_open() {
         answered,
         Answered {
             ways_answered: 1,
-            way_not_offered: Some(Card::WayOfTheMouse)
+            way_not_offered: None
         }
     );
-    assert!(
-        answered
-            .note()
-            .unwrap()
-            .contains("Way of the Mouse is not offered")
-    );
+    assert_eq!(answered.note(), None);
     let open = t.view(PlayerId(0)).decision.unwrap();
     assert!(is_way_question(&open), "{open:?}");
     assert_eq!(open.source.as_deref(), Some("Village"));
@@ -1040,4 +1035,95 @@ fn a_card_put_into_the_middle_of_a_deck_says_how_deep() {
         lines.contains(&"P1 puts a card from their hand into their deck, under 2 cards"),
         "{lines:?}"
     );
+}
+
+/// Seat 0's deck, top first, by card name.
+fn deck_names(t: &Table) -> Vec<String> {
+    let game: Value = serde_json::to_value(t.game()).unwrap();
+    let cards = game["cards"].as_array().unwrap();
+    let deck = game["players"][0]["deck"].as_array().unwrap();
+    deck.iter()
+        .rev()
+        .map(|id| {
+            let card: Card =
+                serde_json::from_value(cards[id.as_u64().unwrap() as usize].clone()).unwrap();
+            card.name().to_string()
+        })
+        .collect()
+}
+
+#[test]
+fn way_pre_answer_stops_at_a_different_physical_herald() {
+    for seed in 0..40 {
+        let config = GameConfig {
+            landscapes: vec![Card::WayOfTheOx],
+            colonies: Some(false),
+            shelters: Some(false),
+            ..GameConfig::new(
+                2,
+                vec![
+                    Card::Herald,
+                    Card::Cellar,
+                    Card::Market,
+                    Card::Mine,
+                    Card::Moat,
+                    Card::Remodel,
+                    Card::Smithy,
+                    Card::Workshop,
+                    Card::Festival,
+                    Card::Laboratory,
+                ],
+                seed,
+            )
+        };
+        let mut t = Table::new("t", config, vec![]).unwrap();
+        for _ in 0..3000 {
+            let Some(seat) = t.deciding() else { break };
+            let d = t.view(seat).decision.unwrap();
+            let end = pick(&d, |o| o.action == "end-phase");
+            let answer = if d.kind != "turn" {
+                first(&d)
+            } else if seat.0 != 0 {
+                end.unwrap()
+            } else if d.phase.as_deref() == Some("action") {
+                let herald = pick(&d, |o| {
+                    o.action == "play" && o.card.as_deref() == Some("Herald")
+                });
+                let deck = deck_names(&t);
+                // +1 Card draws the top card; the next one is revealed.
+                match herald {
+                    Some(play) if deck.get(1).map(String::as_str) == Some("Herald") => {
+                        let answered = t
+                            .answer_with(PlayerId(0), &play, Some(WayChoice::None))
+                            .unwrap();
+                        let view = t.view(PlayerId(0));
+                        let open = view.decision.unwrap();
+                        assert!(
+                            view.since_last_decision
+                                .iter()
+                                .any(|e| e.text.ends_with("reveals Herald")),
+                            "{:?}",
+                            view.since_last_decision
+                        );
+                        assert_eq!(
+                            (answered.ways_answered, open.source.as_deref()),
+                            (1, Some("Herald")),
+                            "the revealed Herald's Way question was answered too: {}",
+                            open.prompt
+                        );
+                        assert!(open.prompt.contains("use a Way instead"), "{}", open.prompt);
+                        return;
+                    }
+                    _ => end.unwrap(),
+                }
+            } else {
+                pick(&d, |o| o.action == "play")
+                    .or_else(|| pick(&d, |o| o.label.starts_with("Buy Herald")))
+                    .or_else(|| end.clone())
+                    .unwrap()
+            };
+            t.answer(seat, &answer).unwrap();
+        }
+    }
+    panic!("no game got a Herald in hand with another second from the top of the deck");
 }

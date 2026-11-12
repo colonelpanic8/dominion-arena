@@ -347,7 +347,7 @@ async fn answer_takes_the_way_question_in_advance() {
     assert_eq!(view["decision"]["kind"], "turn");
     assert!(!played.text.contains("not offered"));
 
-    // Way of the Mouse plays its set-aside card, which can't use Way of the Mouse.
+    // The different card played by Way of the Mouse gets its own Way question.
     let d = until_laboratory(&client, &tokens).await;
     let lab = option(&d, |o| o["card"] == "Laboratory").unwrap();
     let mouse = json!({
@@ -355,13 +355,7 @@ async fn answer_takes_the_way_question_in_advance() {
     });
     let reply = call(&client, "answer", mouse).await;
     assert!(reply.ok, "{}", reply.text);
-    assert!(
-        reply
-            .text
-            .starts_with("Way of the Mouse is not offered for this play"),
-        "{}",
-        reply.text
-    );
+    assert!(!reply.text.contains("not offered"), "{}", reply.text);
     let open = &reply.json.unwrap()["decision"];
     assert!(
         open["prompt"]

@@ -384,7 +384,8 @@ them.
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
   tests validate every view, decision and answer against the vendored copy.
   `Table::answer_with` (the MCP `answer` tool's `way`) also answers the `Purpose::Way`
-  questions that follow an answer for its seat; decisions whose answer may play an
+  questions of the physical card an answer plays and that card's consecutive replays;
+  a different card's question remains open. Decisions whose answer may play an
   Action in a game with Ways end their prompt with `WAY_HINT`.
 
 ## Writing a set
