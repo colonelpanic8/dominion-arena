@@ -1438,6 +1438,68 @@ fn the_log_says_which_piles_divine_wind_removes_and_deals() {
     }
 }
 
+/// Seaway gains a Poet that Innovation plays, and its Sun is the last: the Poet pile is
+/// gone before Seaway moves its +1 Buy token, which stays off the piles.
+#[test]
+fn seaway_puts_no_token_on_a_pile_divine_wind_removed_meanwhile() {
+    let mut g = before_divine_wind(
+        &[Card::Poet, Card::TeaHouse],
+        &[Card::Seaway, Card::Innovation],
+        &[],
+    );
+    g.players[0].projects.push(Card::Innovation);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    to_buy(&mut g);
+    g.turn.coins = 5;
+    reask(&mut g);
+    // The Poet pile is the only one Seaway can gain from.
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Seaway)));
+    // Innovation sets the Poet aside to play it.
+    loop {
+        match g.pending().map(|d| &d.kind) {
+            Some(DecisionKind::Turn { .. }) | None => break,
+            _ if purpose(&g) == Purpose::Trigger => resolve_triggers(&mut g),
+            _ => yes(&mut g),
+        }
+    }
+    let poets = g.pile_of(Card::Poet);
+    assert_eq!(poets, None);
+    assert_eq!(
+        g.player(P0).tokens.get(&Token::PlusBuy).copied().flatten(),
+        None
+    );
+    assert!(g.piles().iter().all(|p| p.tokens.is_empty()));
+}
+
+/// A Snake Witch with no pile still lets its player reveal their hand, but says it can't
+/// return.
+#[test]
+fn snake_witch_with_no_pile_says_so() {
+    let mut g = before_divine_wind(&[Card::SnakeWitch, Card::TeaHouse], &[], &[]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::TeaHouse, Card::SnakeWitch, Card::Estate],
+    );
+    deck(&mut g, P0, &[Card::Gold, Card::Silver, Card::Duchy]);
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.pile_of(Card::SnakeWitch), None);
+    play(&mut g, Card::SnakeWitch);
+    let d = g.pending().unwrap();
+    assert_eq!(d.purpose, Purpose::Reveal);
+    let DecisionKind::Choose { labels, .. } = &d.kind else {
+        panic!("{d:?}");
+    };
+    assert_eq!(
+        labels[0],
+        "Reveal your hand (Snake Witch has no pile to return to)"
+    );
+    yes(&mut g);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+}
+
 #[test]
 fn in_games_using_this_abilities_go_on_after_divine_wind() {
     let mut g = before_divine_wind(&[Card::Shaman, Card::Footpad, Card::TeaHouse], &[], &[]);

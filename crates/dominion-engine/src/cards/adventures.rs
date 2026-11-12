@@ -363,8 +363,11 @@ impl SetRules for Rules {
                     Flow::Call(Frame::gain(f.player, pile, Dest::Discard))
                 }
                 _ => {
+                    // Divine Wind may have removed the pile while the gain resolved.
                     let pile = f.s.pile.expect("set in step 1");
-                    place_token(g, f.player, Token::PlusBuy, pile);
+                    if !g.pile(pile).removed {
+                        place_token(g, f.player, Token::PlusBuy, pile);
+                    }
                     Flow::done()
                 }
             },

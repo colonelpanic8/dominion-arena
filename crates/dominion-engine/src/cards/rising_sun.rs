@@ -1169,7 +1169,15 @@ fn snake_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Reveal, format!("Reveal your hand and return {} to its pile, so each other player gains a Curse", g.card(f.this())))
+            let this = g.card(f.this());
+            let question = if g.home_pile(g.printed(f.this())).is_some() {
+                format!(
+                    "Reveal your hand and return {this} to its pile, so each other player gains a Curse"
+                )
+            } else {
+                format!("Reveal your hand ({this} has no pile to return to)")
+            };
+            f.ask_yes_no(Purpose::Reveal, question)
         }
         1 => {
             if !input.is_yes() {
