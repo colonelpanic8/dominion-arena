@@ -1747,6 +1747,42 @@ fn march_looks_through_the_discard_pile_and_plays_an_action_from_it() {
     assert_eq!(in_play_kinds(&g, P0), [Card::Gold, Card::Village]);
 }
 
+/// The look through the discard pile is over once March plays a card from it: a Silver
+/// the Workshop gains there is named when Royal Seal puts it onto the deck, as a bought
+/// one is.
+#[test]
+fn march_names_a_card_moved_from_the_discard_pile_while_the_card_it_played_resolves() {
+    let put_on_the_deck = |march: bool| {
+        let mut g = setup_with_landscapes(&[Card::Workshop, Card::RoyalSeal], &[Card::March]);
+        hand(&mut g, P0, &[Card::RoyalSeal, Card::Copper, Card::Copper]);
+        deck(&mut g, P0, &[Card::Estate; 5]);
+        discard(&mut g, P0, &[Card::Workshop]);
+        g.start();
+        play(&mut g, Card::RoyalSeal);
+        play(&mut g, Card::Copper);
+        play(&mut g, Card::Copper);
+        if march {
+            buy_event(&mut g, Card::March);
+            choose_kinds(&mut g, &[Card::Workshop]);
+            choose_pile(&mut g, Card::Silver);
+        } else {
+            buy(&mut g, Card::Silver);
+        }
+        assert_eq!(trigger_cards(&g), [Card::RoyalSeal]);
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+        (g.log().iter())
+            .filter(|e| matches!(e, Event::TopDecked { .. }))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let named = [Event::TopDecked {
+        player: P0,
+        card: Some(Card::Silver),
+    }];
+    assert_eq!(put_on_the_deck(false), named);
+    assert_eq!(put_on_the_deck(true), named);
+}
+
 #[test]
 fn populate_gains_one_card_from_each_action_supply_pile_in_a_chosen_order() {
     let mut g = setup_with_landscapes(

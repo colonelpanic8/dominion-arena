@@ -181,6 +181,7 @@ impl Game {
         }
     }
 
+    /// Ends the searches of the frame running, and of those above it.
     pub(crate) fn end_discard_searches(&mut self) {
         self.scribe
             .searched_discards
