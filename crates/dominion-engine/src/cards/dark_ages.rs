@@ -1468,19 +1468,17 @@ fn wandering_minstrel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             let (actions, rest): (Vec<CardId>, Vec<CardId>) =
                 input.cards().into_iter().partition(|&c| g.is(c, Types::ACTION));
-            f.s.cards = actions;
+            f.s.cards = rest;
             f.pc = 2;
-            Flow::Call(Frame::discard(p, rest))
-        }
-        2 => {
-            let actions = looking(g, p, &std::mem::take(&mut f.s.cards));
-            f.pc = 3;
             f.ask_order(actions, Purpose::TopDeck)
         }
-        _ => {
+        2 => {
             put_back(g, p, &input.cards());
-            Flow::done()
+            let rest = looking(g, p, &std::mem::take(&mut f.s.cards));
+            f.pc = 3;
+            Flow::Call(Frame::discard(p, rest))
         }
+        _ => Flow::done(),
     }
 }
 

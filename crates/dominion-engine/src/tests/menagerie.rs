@@ -1758,6 +1758,38 @@ fn pursue_keeps_the_named_cards_on_the_deck_and_discards_the_rest() {
     assert_eq!(g.turn().buys, 1);
 }
 
+/// "Put the matches back and discard the rest": the matches are back on the deck before the
+/// Tunnel is discarded, so the Gold Watchtower puts onto the deck lands on top of them.
+#[test]
+fn pursue_puts_the_matches_back_before_discarding_the_rest() {
+    let mut g = setup_with_landscapes(&[Card::Tunnel, Card::Watchtower], &[Card::Pursue]);
+    hand(&mut g, P0, &[Card::Silver, Card::Watchtower]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Copper,
+            Card::Tunnel,
+            Card::Copper,
+            Card::Estate,
+            Card::Gold,
+        ],
+    );
+    g.start();
+    play_treasures(&mut g);
+    buy_event(&mut g, Card::Pursue);
+    respond(&mut g, Response::Name(Card::Copper));
+    // Reveal Tunnel for a Gold, and Watchtower to put the Gold onto the deck.
+    super::intrigue::trigger(&mut g, Card::Tunnel);
+    super::intrigue::trigger(&mut g, Card::Watchtower);
+    respond(&mut g, Response::option(Opt::Mode(1)));
+    assert_eq!(
+        deck_kinds(&g, P0),
+        [Card::Gold, Card::Copper, Card::Copper, Card::Gold]
+    );
+    assert_eq!(discard_kinds(&g, P0), [Card::Tunnel, Card::Estate]);
+}
+
 #[test]
 fn reap_sets_a_gold_aside_and_plays_it_next_turn() {
     let mut g = setup_with_landscapes(&[Card::Village], &[Card::Reap]);

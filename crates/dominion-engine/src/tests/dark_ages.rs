@@ -1756,3 +1756,45 @@ fn random_dark_ages_games_keep_invariants() {
         assert!(!g.outcome().unwrap().winners.is_empty());
     }
 }
+
+/// "Put the Action cards back in any order and discard the rest": the Actions are back on
+/// the deck before the Tunnel is discarded, so a Gold its reaction gains onto the deck
+/// (Watchtower) lands on top of them. Official FAQ: "Put the revealed Action cards on top
+/// of your deck in any order, and discard the other cards."
+#[test]
+fn wandering_minstrel_puts_the_actions_back_before_discarding_the_rest() {
+    let mut g = setup(&[Card::WanderingMinstrel, Card::Tunnel, Card::Watchtower]);
+    hand(&mut g, P0, &[Card::WanderingMinstrel, Card::Watchtower]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::Estate,
+            Card::Village,
+            Card::Tunnel,
+            Card::Smithy,
+            Card::Copper,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::WanderingMinstrel);
+    // Whatever order the engine asks in: Village over Smithy, reveal Tunnel for a Gold,
+    // reveal Watchtower to put the Gold onto the deck.
+    while let Some(d) = g.pending() {
+        match &d.kind {
+            DecisionKind::Turn { .. } => break,
+            DecisionKind::Cards { .. } => choose_kinds(&mut g, &[Card::Village, Card::Smithy]),
+            DecisionKind::Choose { options, .. } if d.purpose == Purpose::Trigger => {
+                let first = options[0];
+                respond(&mut g, Response::option(first));
+            }
+            DecisionKind::Choose { .. } => respond(&mut g, Response::option(Opt::Mode(1))),
+            k => panic!("unexpected decision {k:?}"),
+        }
+    }
+    assert_eq!(discard_kinds(&g, P0), [Card::Tunnel]);
+    assert_eq!(
+        deck_kinds(&g, P0),
+        [Card::Gold, Card::Village, Card::Smithy, Card::Copper]
+    );
+}

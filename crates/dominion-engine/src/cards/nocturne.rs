@@ -1554,11 +1554,6 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             };
             if g.is(c, Types::ACTION) {
-                g.set_aside_revealed(c, p);
-                g.emit(Event::SetAside {
-                    player: p,
-                    card: g.card(c),
-                });
                 f.s.pick = Some(c);
                 f.pc = 2;
             } else {
@@ -1572,7 +1567,13 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(p, std::mem::take(&mut f.s.cards)))
         }
         _ => {
-            if let Some(c) = f.s.pick {
+            // The others are discarded before the Action is set aside.
+            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) {
+                g.set_aside_revealed(c, p);
+                g.emit(Event::SetAside {
+                    player: p,
+                    card: g.card(c),
+                });
                 let data = Scratch {
                     pick: Some(c),
                     ..Scratch::default()
