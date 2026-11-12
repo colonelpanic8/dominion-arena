@@ -1683,6 +1683,37 @@ fn garrison_with_no_gains_is_discarded_that_turn() {
     assert!(g.lasting().is_empty());
 }
 
+/// "This turn, when you gain a card, add a token here" is each Garrison's own: one that
+/// starts watching while a gain is resolved (Innovation plays it as it is gained) gets a
+/// token for that gain, whatever other Garrisons are watching.
+#[test]
+fn garrison_played_as_it_is_gained_gets_a_token_beside_another_garrison() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Innovation, Card::PlateauShepherds],
+        ..GameConfig::new(2, vec![Card::Forts], 7)
+    });
+    let forts = g.pile_of(Card::Forts).unwrap();
+    replace(&mut g, Zone::Pile(forts), &[Card::Garrison; 4]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Garrison, Card::Gold, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Garrison);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Forts);
+    super::intrigue::trigger(&mut g, Card::Innovation);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Garrison, Card::Garrison]);
+    next_turn(&mut g);
+    while purpose(&g) == Purpose::Trigger {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(g.hand(P0).len(), 7);
+}
+
 #[test]
 fn throne_roomed_garrison_gets_two_tokens_per_gain() {
     let mut g = game(&[Card::Forts, Card::ThroneRoom]);

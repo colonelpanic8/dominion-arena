@@ -111,7 +111,9 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::Garrison, Hook::Ability(GARRISON_TOKEN)) => {
-                garrison_token(g, f.player);
+                if let Some(w) = f.lasting {
+                    garrison_token(g, w);
+                }
                 Flow::done()
             }
             (Card::CoastalHaven, Hook::Ability(COASTAL_HAVEN_RETURN)) => {
@@ -697,28 +699,23 @@ fn warlord_attacks(g: &Game, p: PlayerId) -> bool {
     attack_on(g, Card::Warlord, p)
 }
 
-/// Adds a token to each Garrison `p` played that watches this turn's gains.
-fn garrison_token(g: &mut Game, p: PlayerId) {
-    let watchers: Vec<crate::Lasting> = g
-        .lasting()
-        .iter()
-        .filter(|l| l.card == Card::Garrison && l.until == Until::EndOfTurn && l.owner == p)
-        .cloned()
-        .collect();
-    for w in watchers {
-        let tokens = (w.data.n > 0)
-            .then(|| (w.data.n - 1) as u32)
-            .filter(|&t| g.lasting().iter().any(|l| l.id == t));
-        match tokens {
-            Some(t) => g.lasting_mut(t).expect("checked").data.n += 1,
-            None => {
-                let held = Scratch {
-                    n: 1,
-                    ..Scratch::default()
-                };
-                let t = g.continue_lasting(&w, w.data.cards.clone(), Until::Removed, held);
-                g.lasting_mut(w.id).expect("watcher").data.n = t as i32 + 1;
-            }
+/// Adds a token to the Garrison whose lasting `watcher` watches this turn's gains.
+fn garrison_token(g: &mut Game, watcher: u32) {
+    let Some(w) = g.lasting().iter().find(|l| l.id == watcher).cloned() else {
+        return;
+    };
+    let tokens = (w.data.n > 0)
+        .then(|| (w.data.n - 1) as u32)
+        .filter(|&t| g.lasting().iter().any(|l| l.id == t));
+    match tokens {
+        Some(t) => g.lasting_mut(t).expect("checked").data.n += 1,
+        None => {
+            let held = Scratch {
+                n: 1,
+                ..Scratch::default()
+            };
+            let t = g.continue_lasting(&w, w.data.cards.clone(), Until::Removed, held);
+            g.lasting_mut(w.id).expect("watcher").data.n = t as i32 + 1;
         }
     }
 }
@@ -750,8 +747,8 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
             out.push(Trigger::new(player, Card::Skirmisher, REACT).via_lasting(l.id));
         }
     }
-    if this_turn(Card::Garrison).next().is_some() {
-        out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN).quiet());
+    for l in this_turn(Card::Garrison) {
+        out.push(Trigger::new(player, Card::Garrison, GARRISON_TOKEN).via_lasting(l.id).quiet());
     }
     if let Some(l) = this_turn(Card::Bauble).next()
         && g.still_where_gained(card)
