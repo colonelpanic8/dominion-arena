@@ -301,7 +301,17 @@ impl SetRules for Rules {
                 Flow::done()
             }
             (Card::WayOfTheChameleon, _) => chameleon(g, f),
-            (Card::WayOfTheFrog | Card::WayOfTheSeal | Card::WayOfTheSquirrel, _) => {
+            (Card::WayOfTheFrog, _) => {
+                // The effect follows one play of the card: which of the turn's it is.
+                let plays = g.turn.played_ids.iter().filter(|&&c| Some(c) == f.this);
+                let data = Scratch {
+                    i: plays.count(),
+                    ..Scratch::default()
+                };
+                g.add_lasting(f.card, f.player, f.this, vec![], Until::EndOfTurn, data);
+                Flow::done()
+            }
+            (Card::WayOfTheSeal | Card::WayOfTheSquirrel, _) => {
                 g.add_lasting(
                     f.card,
                     f.player,
@@ -416,6 +426,7 @@ impl SetRules for Rules {
                     let Some(c) = l.source else { continue };
                     if l.card == Card::WayOfTheFrog
                         && l.owner == player
+                        && stayed_in_play(g, c, l.data.i)
                         && g.leaving_play(player).contains(&c)
                     {
                         // Differently named cards go onto the deck in a chosen order.
@@ -677,6 +688,21 @@ fn lists_hand(g: &Game, p: PlayerId, flow: &Flow) -> bool {
         _ => return false,
     };
     cards.iter().any(|&c| g.zone(c) == Zone::Hand(p))
+}
+
+/// Whether `card` hasn't left play since the `nth` time it was played this turn (from 1;
+/// 0 is any play): one that left and came back has moved, and what that play set up can't
+/// move it.
+fn stayed_in_play(g: &Game, card: CardId, nth: usize) -> bool {
+    let Some(skip) = nth.checked_sub(1) else {
+        return true;
+    };
+    let t = &g.turn;
+    let plays = t.played_ids.iter().zip(&t.stayed_in_play);
+    plays
+        .filter(|(c, _)| **c == card)
+        .nth(skip)
+        .is_some_and(|(_, stayed)| *stayed)
 }
 
 /// Returns the played card to its pile if it is in play (Horse, Way of the Horse).

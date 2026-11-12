@@ -2586,6 +2586,30 @@ fn way_of_the_frog_puts_the_card_onto_the_deck_when_discarded_from_play() {
     assert!(hand_kinds(&g, P0).contains(&Card::Smithy));
 }
 
+/// The Way follows the play it was used for: a card that left play and came back has
+/// moved, so the effect can't put it onto the deck (the stop-moving rule).
+#[test]
+fn way_of_the_frog_cannot_move_a_card_that_left_play_and_came_back() {
+    let kingdom = [Card::Village, Card::Smithy, Card::Festival];
+    let mut g = way_game(Card::WayOfTheFrog, &kingdom);
+    hand(&mut g, P0, &kingdom);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Festival);
+    own(&mut g);
+    play(&mut g, Card::Smithy);
+    way(&mut g, Card::WayOfTheFrog);
+    leave_play(&mut g, P0, Card::Smithy);
+    let smithy = *g.trash().last().unwrap();
+    g.move_card(smithy, Zone::Hand(P0), crate::game::Pos::Top);
+    play(&mut g, Card::Village);
+    own(&mut g);
+    play(&mut g, Card::Smithy);
+    own(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.zone(smithy), Zone::Discard(P0));
+}
+
 #[test]
 fn cards_played_with_way_of_the_frog_go_onto_the_deck_in_a_chosen_order() {
     let mut g = way_game(Card::WayOfTheFrog, &[Card::Village, Card::Smithy]);
