@@ -282,28 +282,42 @@ server: a lobby to set up games and take seats, and a game page that shows a sea
 and answers its decisions.
 
 The lobby is laid out and behaves like dominion.games': a tab column on the left
-(Automatch, New Table / My Table, Tables, Cardlists) over its painting. **My Table** holds
-a table's rules until Ready starts a game: the ten Kingdom slots (cards you require, a
-random card from one set, or left to chance) with the kingdom written out under them,
-the landscape slots (each set to the kinds it may be dealt, or emptied), the expansions
-random cards come from, Colonies and Shelters (Random, Yes, No), whether the Banned
-cards list applies, a random seed and a turn limit, and the players. "Select Kingdom
-Cards" opens dominion.games' card selector: the expansions, a search (Enter adds a typed
-list, `smithy, witch, Colonies` as the table writes it), Replay Last Kingdom, and
-Randomize, which deals the random slots at once so the kingdom can be changed before
-Ready. Ready has the server deal the rest (`POST /api/deal`) and creates the game. Where
-dominion.games seats bots, a seat here is for an agent (it joins over MCP with its
-token), for another browser (an empty slot: the seat link), or for this browser too (hot
-seat); the seats played elsewhere get their token, link and `join_game` line beside the
-players. While the table's game runs, My Table shows that game's kingdom and players,
-locked, with Play to return to it and whether each seat played elsewhere has joined;
-its rules can be changed once the game ends (or Leave Table to set up another).
-**Automatch**'s Bot Game starts a game at once with 1 to 3 agent seats and goes to it.
-When a game waits on a seat nobody has joined, the table and the game page say so, with
-the line to give that seat's agent.
-**Tables** lists this server's games; **Cardlists** edits the Banned cards list, kept with
-your account (a guest's when nobody is signed in). After a game the score page has the table's Ready (another game with
-the same rules), Edit Table and Leave Table, as dominion.games has.
+(Automatch, New Table / My Table, Tables, Cardlists, Leaderboard, Account) over its
+painting, with who is signed in at its foot. Nobody has to sign in to look around: what
+needs an account (sitting down, searching, speaking, a Banned list) signs a guest in
+where the server takes guests, and otherwise asks for a login (**Account**: log in,
+register, keep a guest account by giving it a password, change the password, and make
+bots, whose API key is shown once with the line to give an agent).
+
+**My Table** is the server's table you sit at. Its host sets the rules: the ten Kingdom
+slots (cards you require, a random card from one set, or left to chance) with the
+kingdom written out under them, the landscape slots (each set to the kinds it may be
+dealt, or emptied), the expansions random cards come from, Colonies and Shelters
+(Random, Yes, No), whether the players' Banned cards lists apply, a turn limit, and
+whether the game is rated, may be watched and is timed. "Select Kingdom Cards" opens
+dominion.games' card selector: the expansions, a search (Enter adds a typed list,
+`smithy, witch, Colonies` as the table writes it), Replay Last Kingdom, and Randomize,
+which deals the random slots at once (`POST /api/deal`) so the kingdom can be changed
+before Ready. Changes reach the server once the editing pauses, and what it refuses is
+said under the rules. Everyone else at the table sees the rules without being able to
+change them. The players are listed with their rating, whether they are here and
+whether they are ready; the host adds and removes slots, removes a player, and fills a
+slot with a token seat: one played at this screen too (hot seat), or one whose token is
+handed out when the game starts (an agent without an account, another browser), with
+its link and `join_game` line beside the players. The table has a chat. Ready says you
+are; the game starts when everyone is and no slot is empty, and everyone is taken to
+it. While it runs, My Table shows its kingdom and players, locked, with Play to return
+to it; when the game waits on a token seat nobody has joined, the table and the game
+page say so, with the line to give that seat's agent. The last rules you hosted are remembered in the browser for your next table.
+**Automatch** searches for a game (player counts; anyone, people or agents; rated or
+not) and goes to it when one is found; Bot Game is the same search for agents only. It
+also has the lobby's chat, Create Table, and joining a seat by its token. **Tables**
+lists the lobby's tables (Join where a slot is empty) and the games played without one
+(Play where this browser holds a seat, Watch where watching is allowed); **Cardlists**
+edits your account's Banned cards list; **Leaderboard** ranks the rated players, each
+name leading to that player's page (`/user/<name>`: rating, tallies, latest games).
+After a game the score page has the table's Ready (another game at the same table),
+Edit Table and Leave Table, as dominion.games has.
 
 The game page is a table laid out and behaving like dominion.games': player bars and
 the basic piles on the left, the kingdom sorted by cost with the turn player's play row

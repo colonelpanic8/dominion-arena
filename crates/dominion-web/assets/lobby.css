@@ -401,6 +401,7 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-automatch-box .lb-multi { margin: 0 .6vh; min-width: 2vh; }
 .lb-search { display: flex; align-items: center; justify-content: center; gap: 1vw; min-height: 8vh; margin-top: 1vh; }
 .lb-searching { font: 700 2.4vh var(--ui); color: #f5bc34; margin: 0; }
+.lb-search-what { display: block; color: #ccc; font: 400 1.6vh var(--ui); }
 .lb-search-button { height: 4.2vh; padding: 1vh 2vh; font-size: 2.5vh; }
 .lb-online { text-align: center; }
 .lb-signin { margin-top: 2vh; margin-bottom: 1.5vh; }
@@ -939,7 +940,7 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-record-player.won { font-weight: 700; color: #f5bc34; }
 
 /* Cardlists. */
-.lb-cardlists { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; }
+.lb-cardlists-page { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; }
 .lb-cardlist-owner { align-self: center; max-width: 60%; }
 .lb-cardlist-buttons { display: flex; justify-content: center; width: 70%; border-bottom: 3px solid #f5bc34; padding: 1vh 0 2vh; margin-bottom: 2vh; }
 .lb-cardlist-button { font-size: 3.5vh; padding: 1vh 2vh; }

@@ -83,7 +83,7 @@ pub fn CardlistsTab() -> Element {
     listed.sort_by(|a, b| super::rules::card_order(&cards, a, b));
     rsx! {
         LobbyFrame { tab: Tab::Cardlists,
-            div { class: "lb-cardlists",
+            div { class: "lb-cardlists-page",
                 div { class: "lb-cardlist-buttons",
                     button { class: "lb-oval lb-cardlist-button active", "Banned cards" }
                     p { class: "lb-note lb-cardlist-owner", "{owner}" }

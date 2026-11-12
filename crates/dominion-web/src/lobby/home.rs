@@ -45,6 +45,17 @@ pub fn elapsed(since: u64, now: u64) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+/// What a search is for, in a few words: "2/3 players, agents only".
+pub fn search_text(request: &MatchRequest) -> String {
+    let counts: Vec<String> = request.players.iter().map(|n| n.to_string()).collect();
+    let who = match request.opponents {
+        Opponents::Any => "",
+        Opponents::Humans => ", people only",
+        Opponents::Agents => ", agents only",
+    };
+    format!("{} players{who}", counts.join("/"))
+}
+
 /// What to search for (player counts, opponents, rated), the search while it runs, and
 /// Bot Game: the same search, for agents only.
 #[component]
@@ -140,6 +151,7 @@ fn Automatch() -> Element {
                     Some(q) if q.state == QueueState::Searching => rsx! {
                         p { class: "lb-searching", role: "status", "data-searching": "1",
                             "Searching for a game... {elapsed(q.since, now())}"
+                            span { class: "lb-search-what", "{search_text(&q.request)}" }
                         }
                         button { class: "lb-button lb-copper lb-search-button", "data-action": "cancel-search", onclick: cancel, "Cancel" }
                     },

@@ -127,21 +127,36 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   tests/moves.rs          move inference over random games (each seat's boards and a
                           watcher's), and hand-checked steps
   src/lobby/              the lobby, dominion.games' layout and behaviour
-    mod.rs                the frame and tabs, `TableState` (the table this browser sits at),
-                          toast, tooltips, fieldsets, rows, switches
-    rules.rs              a table's rules (Kingdom Options, seats), kingdom text, the
-                          selector's search, `DealRequest` and `NewGame` from them (pure)
-    store.rs              the table, your name and the last kingdom in localStorage
-    my_table.rs           My Table: Kingdom Options, Game Options, Players, seat links,
-                          Ready (`start`) and Leave Table; shared with the score page.
-                          `use_table_game` follows the table's game on the server: while
-                          it runs the table shows that game, locked
+    mod.rs                `LobbyCtx`, app-wide: `GET /api/lobby` kept current over its feed,
+                          the rules of the table you sit at (the host's working copy, sent
+                          to the server once the editing pauses; the server's for everyone
+                          else), seat tokens held or handed out; `LobbyWatcher` goes to a
+                          game your table or search started; the frame and tabs, who is
+                          signed in, toast, tooltips, fieldsets, rows, switches
+    rules.rs              a table's rules (`TableRules`) to and from the server's
+                          `TableSpec`, kingdom text, the selector's search, the seats as the
+                          host changes them, what a table waits for (pure)
+    store.rs              conveniences in localStorage: the last rules hosted, the last
+                          kingdom, the token seats played at this screen, the last search
+    my_table.rs           My Table, the server's table: Kingdom Options and Game Options
+                          (the host edits, the others read), Players (accounts, token
+                          seats, open seats), the table's chat, Ready and Leave Table;
+                          while its game runs, that game locked, with the seat links of the
+                          tokens handed out. Shared with the score page
     seat_link.rs          a seat handed out: its agent line, link, token, copy buttons
     selector.rs           "Select Cards", the card selector
-    home.rs tables.rs cardlists.rs   Automatch (Bot Game, Create Table, Join a Seat),
-                          Tables, Cardlists (the account's Banned list)
+    account.rs            `SignIn` (log in, register, play as guest) and the Account tab:
+                          keeping a guest account, the password, bots and their keys
+    chat.rs               a chat channel (the lobby's, a table's)
+    home.rs               Automatch: the search, Bot Game (a search for agents), Create
+                          Table, Join a Seat, the lobby's chat
+    tables.rs             Tables: `listing` (pure) of the lobby's tables and the games
+                          without one, with Join / Open / Play / Watch
+    leaderboard.rs        the Leaderboard tab and a player's page (`/user/:name`)
+    cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
-  tests/lobby.rs          table rules against the engine's cards
+  tests/lobby.rs          table rules and specs against the engine's cards, seats, the
+                          Tables listing
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 
