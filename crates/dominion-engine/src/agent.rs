@@ -2,7 +2,9 @@
 
 use crate::decision::{Decision, DecisionKind, Move, Purpose, Response, ResponseError};
 use crate::frame::Frame;
-use crate::game::{EndReason, ExtraTurn, Lasting, Mat, Outcome, Pile, Player, Token, Turn, Zone};
+use crate::game::{
+    EndReason, ExtraTurn, Lasting, Mat, Outcome, Pile, Player, Token, Turn, Until, Zone,
+};
 use crate::trigger::Trigger;
 use crate::{Card, CardId, Cost, Event, Game, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -262,6 +264,19 @@ impl<'a> View<'a> {
                 l
             })
             .collect()
+    }
+
+    /// When lasting effect `l` ends, in its players' terms: a Duration's effect ends at the
+    /// start of its owner's next turn, when its ability resolves (`Until::StartOfTurn`);
+    /// `Until::Removed` is an effect that waits for something to happen.
+    pub fn lasting_ends(&self, l: &Lasting) -> Until {
+        let real = self.game.lasting().iter().find(|x| x.id == l.id);
+        crate::cards::lasting_ends(self.game, real.unwrap_or(l))
+    }
+
+    /// The tokens on the card whose effect `l` is (Garrison's), if it keeps any.
+    pub fn lasting_tokens(&self, l: &Lasting) -> Option<u32> {
+        crate::cards::lasting_tokens(l)
     }
 
     /// Public state cards and landscapes keep outside the zones and tokens above.

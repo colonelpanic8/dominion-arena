@@ -532,6 +532,10 @@ impl SetRules for Rules {
         }
     }
 
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        matches!(l.card, Card::Champion | Card::Hireling).then_some(Until::Removed)
+    }
+
     fn plain_effect(l: &mut Lasting, p: PlayerId) {
         if matches!(l.card, Card::HauntedWoods | Card::SwampHag) && l.owner != p {
             (l.data.i, l.data.n) = (0, 0);

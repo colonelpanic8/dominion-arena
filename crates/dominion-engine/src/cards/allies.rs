@@ -16,7 +16,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{ExtraLimit, ExtraTurn, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, ExtraTurn, Lasting, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -99,6 +99,14 @@ const DURATIONS: [Card; 8] = [
 ];
 
 impl SetRules for Rules {
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (l.card == Card::CoastalHaven).then_some(Until::EndOfTurn)
+    }
+
+    fn lasting_tokens(l: &Lasting) -> Option<u32> {
+        (l.card == Card::Garrison && l.until == Until::Removed).then_some(l.data.n as u32)
+    }
+
     fn notes(g: &Game, out: &mut Vec<Note>) {
         for &(pile, n) in &g.ext.allies.inventors {
             out.push(

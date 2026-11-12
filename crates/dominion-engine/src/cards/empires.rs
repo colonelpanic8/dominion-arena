@@ -13,7 +13,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::game::{Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Set, Types};
@@ -92,6 +92,10 @@ impl Game {
 }
 
 impl SetRules for Rules {
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (l.card == Card::Archive).then_some(Until::Removed)
+    }
+
     fn notes(g: &Game, out: &mut Vec<Note>) {
         let s = &g.ext.empires;
         for &(card, vp) in &s.landmark_vp {

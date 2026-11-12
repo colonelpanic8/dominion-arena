@@ -6,7 +6,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, OVERPAY, Value};
-use crate::game::{Pos, Scratch, Until, Zone};
+use crate::game::{Lasting, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Phase, PileId, PlayerId, Set, Types};
@@ -61,6 +61,10 @@ const OVERPAY_CARDS: [Card; 6] = [
 ];
 
 impl SetRules for Rules {
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (l.card == Card::Joust).then_some(Until::EndOfTurn)
+    }
+
     fn notes(g: &Game, out: &mut Vec<Note>) {
         let s = &g.ext.cornucopia_guilds;
         if let Some(pile) = s.bane {

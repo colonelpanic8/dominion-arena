@@ -445,6 +445,10 @@ impl SetRules for Rules {
         }
     }
 
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (permanent(l.card) || waits(l.card)).then_some(Until::Removed)
+    }
+
     fn plain_effect(l: &mut Lasting, p: PlayerId) {
         if l.card.set() != Set::Plunder {
             return;

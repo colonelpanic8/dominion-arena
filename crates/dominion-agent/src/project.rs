@@ -236,8 +236,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
             cards.extend(l.data.pick);
             cards.sort();
             cards.dedup();
-            let (until, until_player) = match l.until {
-                _ if l.ending => ("end-of-turn", None),
+            let (until, until_player) = match v.lasting_ends(&l) {
                 Until::EndOfTurn => ("end-of-turn", None),
                 Until::StartOfTurn(p) => ("start-of-turn", Some(p.0)),
                 // The start of its owner's extra turn.
@@ -254,7 +253,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
                     .filter_map(|c| v.card(c))
                     .map(|c| c.name().to_string())
                     .collect(),
-                count: (l.data.n != 0).then_some(l.data.n),
+                count: v.lasting_tokens(&l).map(|n| n as i32),
             }
         })
         .collect();

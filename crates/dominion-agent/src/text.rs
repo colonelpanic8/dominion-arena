@@ -359,7 +359,7 @@ pub fn render(v: &AgentView) -> String {
             let until = match (l.until.as_str(), l.until_player) {
                 ("start-of-turn", Some(p)) => format!("until P{}'s next turn", p + 1),
                 ("end-of-turn", _) => "this turn".into(),
-                _ => "until removed".into(),
+                _ => "for as long as its card says".into(),
             };
             let mut s = format!("  {} (P{}) {until}", l.card, l.owner + 1);
             if !l.cards.is_empty() {

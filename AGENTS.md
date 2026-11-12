@@ -252,7 +252,12 @@ them.
   turn" `Until::StartOfTurn(owner)`; a Duration whose "until then" part comes with an "at
   the start of your next turn" one keeps its lasting and asks `g.before_next_turn(l)`, as
   the effect ends the instant that turn starts. Sets read `g.lasting()` for cost changes, triggers,
-  immunity and so on. A lasting that keeps its `source` in play is that Duration's
+  immunity and so on. Players are told when an effect ends: an `Until::Removed` one at
+  the start of its owner's next turn (a Duration's), unless its set's
+  `SetRules::lasting_ends` says otherwise (the end of the turn, or `Until::Removed` for
+  one that waits for something: Champion, Search); the fuzz test holds effects to it. The
+  number shown with an effect is only tokens on its card (`SetRules::lasting_tokens`,
+  Garrison's), never its data. A lasting that keeps its `source` in play is that Duration's
   effect: when the card leaves play (`Game::move_card` notices), or was not in play when
   the lasting was made, the lasting is `ending`: it goes on working this turn and is
   removed at its end, whatever its `until`, with the extra turn it was for (Outpost);
@@ -391,8 +396,8 @@ them.
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one
   `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
   decisions mark their labels public with `public_choice`, and labels referring to private
-  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors
-  are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
+  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors,
+  and the tokens on a lasting effect's card (Garrison), are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
   `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.

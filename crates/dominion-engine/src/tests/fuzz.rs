@@ -3067,7 +3067,7 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
             if card != Card::Taskmaster
                 && g.lasting()
                     .iter()
-                    .any(|l| l.id == id && l.until == Until::EndOfTurn)
+                    .any(|l| l.id == id && cards::lasting_ends(g, l) == Until::EndOfTurn)
             {
                 flags.bug(format!("this-turn-effect-outlives-its-turn:{card}"), || {
                     ctx(g)
@@ -3176,15 +3176,14 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
         m.frozen_actions = None;
     }
     for l in g.lasting() {
-        match l.until {
+        // When the players are told it ends.
+        match cards::lasting_ends(g, l) {
             Until::EndOfTurn => {
+                // A Duration that left play ends with the turn.
+                m.until_start.remove(&l.id);
                 if !m.end_of_turn.iter().any(|&(id, _)| id == l.id) {
                     m.end_of_turn.push((l.id, l.card));
                 }
-            }
-            // A Duration that left play ends with the turn.
-            Until::StartOfTurn(_) if l.ending => {
-                m.until_start.remove(&l.id);
             }
             Until::StartOfTurn(p) => {
                 let turns = g.player(p).turns_taken;
@@ -3197,7 +3196,8 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
                 };
                 let &mut (_, first, _) = m.until_start.entry(l.id).or_insert((p, made, l.card));
                 let starting = t.player == p && t.phase == Phase::Start;
-                if turns > first && !starting {
+                // Taskmaster repeating at the start of a turn reuses its lasting effect.
+                if turns > first && !starting && l.card != Card::Taskmaster {
                     flags.bug(
                         format!("until-next-turn-effect-outlives-it:{}", l.card),
                         || format!("{l:?}; {}", ctx(g)),
@@ -3213,38 +3213,39 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
                     );
                 }
             }
-            Until::Removed => {
-                if let Some(c) = l.source
-                    && g.printed(c) == l.card
-                    && l.card.is(Types::DURATION)
-                    && matches!(g.zone(c), Zone::Discard(_) | Zone::Deck(_) | Zone::Hand(_))
+            Until::Removed => {}
+        }
+        if l.until == Until::Removed {
+            if let Some(c) = l.source
+                && g.printed(c) == l.card
+                && l.card.is(Types::DURATION)
+                && matches!(g.zone(c), Zone::Discard(_) | Zone::Deck(_) | Zone::Hand(_))
+            {
+                flags.audit(
+                    format!("duration-cleaned-up-with-its-effect-pending:{}", l.card),
+                    || format!("{l:?}, card in {:?}; {}", g.zone(c), ctx(g)),
+                );
+            }
+            for &c in &l.keeps {
+                let age = g.player(l.owner).turns_taken - l.turn;
+                if age >= 1
+                    && matches!(g.zone(c), Zone::InPlay(_))
+                    && !g.printed(c).is(Types::DURATION)
                 {
                     flags.audit(
-                        format!("duration-cleaned-up-with-its-effect-pending:{}", l.card),
-                        || format!("{l:?}, card in {:?}; {}", g.zone(c), ctx(g)),
+                        format!("non-duration-kept-in-play:{} by {}", g.printed(c), l.card),
+                        || format!("{l:?}; {}", ctx(g)),
                     );
                 }
-                for &c in &l.keeps {
-                    let age = g.player(l.owner).turns_taken - l.turn;
-                    if age >= 1
-                        && matches!(g.zone(c), Zone::InPlay(_))
-                        && !g.printed(c).is(Types::DURATION)
-                    {
-                        flags.audit(
-                            format!("non-duration-kept-in-play:{} by {}", g.printed(c), l.card),
-                            || format!("{l:?}; {}", ctx(g)),
-                        );
-                    }
-                }
-                // A Duration's effect that has not resolved two of its owner's turns
-                // later: fine for the open-ended ones, so only a list to review.
-                let age = g.player(l.owner).turns_taken - l.turn;
-                let past_start = t.player == l.owner && t.phase != Phase::Start;
-                if age >= 3 || (age == 2 && past_start) {
-                    flags.audit(format!("long-lived-effect:{}", l.card), || {
-                        format!("{l:?}; {}", ctx(g))
-                    });
-                }
+            }
+            // A Duration's effect that has not resolved two of its owner's turns
+            // later: fine for the open-ended ones, so only a list to review.
+            let age = g.player(l.owner).turns_taken - l.turn;
+            let past_start = t.player == l.owner && t.phase != Phase::Start;
+            if age >= 3 || (age == 2 && past_start) {
+                flags.audit(format!("long-lived-effect:{}", l.card), || {
+                    format!("{l:?}; {}", ctx(g))
+                });
             }
         }
     }

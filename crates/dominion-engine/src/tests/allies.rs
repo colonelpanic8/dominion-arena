@@ -1758,8 +1758,31 @@ fn garrison_draws_a_card_per_gain_next_turn() {
     buy(&mut g, Card::Copper);
     assert_eq!(g.turn().player, P1);
     assert_eq!(in_play_kinds(&g, P0), [Card::Garrison]);
+    // Its tokens are seen and logged; the watcher's data is no count.
+    let v = g.view(P1);
+    let shown: Vec<_> = v
+        .lasting()
+        .iter()
+        .map(|l| (v.lasting_ends(l), v.lasting_tokens(l)))
+        .collect();
+    assert_eq!(shown, [(Until::StartOfTurn(P0), Some(1))]);
+    let tokens = |delta| Event::CardCounter {
+        player: Some(P0),
+        card: Card::Garrison,
+        pile: None,
+        delta,
+    };
+    assert!(g.log().contains(&tokens(1)));
     next_turn(&mut g);
     assert_eq!(g.hand(P0).len(), 6);
+    let removed = g.log().iter().position(|e| *e == tokens(-1)).unwrap();
+    assert_eq!(
+        g.log()[removed + 1],
+        Event::Drew {
+            player: P0,
+            count: 1
+        }
+    );
     next_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
 }

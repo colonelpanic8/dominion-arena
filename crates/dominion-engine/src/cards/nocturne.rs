@@ -16,7 +16,7 @@ use crate::Note;
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::game::{Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -113,6 +113,14 @@ fn kept_boon(card: Card) -> bool {
 }
 
 impl SetRules for Rules {
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        match l.card {
+            Card::Crypt => Some(Until::Removed),
+            Card::FaithfulHound => Some(Until::EndOfTurn),
+            _ => None,
+        }
+    }
+
     fn notes(g: &Game, out: &mut Vec<Note>) {
         for &boon in &g.ext.nocturne.druid {
             out.push(Note::new(Card::Druid).card(boon));
