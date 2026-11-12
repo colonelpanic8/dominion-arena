@@ -3353,6 +3353,28 @@ fn a_hasty_card_gained_with_quartermaster_is_not_on_the_quartermaster() {
 }
 
 #[test]
+fn a_farmhands_gained_with_quartermaster_is_on_it_while_its_card_waits() {
+    let mut g = setup(&[Card::Quartermaster, Card::Farmhands]);
+    hand(&mut g, P0, &[Card::Quartermaster]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    g.start();
+    play(&mut g, Card::Quartermaster);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Farmhands);
+    // Farmhands sets a Copper aside to play next turn.
+    resolve_triggers(&mut g);
+    assert_eq!(aside_kinds(&g, P0), [Card::Farmhands, Card::Copper]);
+    let farmhands = g.player(P0).set_aside[0];
+    next_turn(&mut g);
+    next_turn(&mut g);
+    resolve_triggers(&mut g);
+    mode(&mut g, 1);
+    assert_eq!(g.zone(farmhands), Zone::Hand(P0));
+}
+
+#[test]
 fn a_second_avoid_picks_from_the_shuffled_cards_only() {
     let mut g = setup_l(&[Card::Village], &[Card::Avoid]);
     hand(&mut g, P0, &[]);

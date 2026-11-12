@@ -1197,11 +1197,11 @@ fn cabin_boy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 /// Whether an effect other than a Quartermaster holds set-aside card `c`: one that set it
 /// aside again as it was gained (Hasty, Rapid Expansion, ...), so it is no longer on the
-/// Quartermaster.
+/// Quartermaster. A lasting the card made itself (Farmhands setting another card aside)
+/// does not hold it.
 fn held_elsewhere(g: &Game, c: CardId) -> bool {
     g.lasting().iter().any(|l| {
-        l.card != Card::Quartermaster
-            && (l.source == Some(c) || l.data.pick == Some(c) || l.data.cards.contains(&c))
+        l.card != Card::Quartermaster && (l.data.pick == Some(c) || l.data.cards.contains(&c))
     })
 }
 
@@ -1447,14 +1447,11 @@ fn gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Hasty => {
             if where_gained(g, card) {
                 g.set_aside(card, player);
-                g.add_lasting(
-                    Card::Hasty,
-                    player,
-                    Some(card),
-                    vec![],
-                    Until::Removed,
-                    Scratch::default(),
-                );
+                let data = Scratch {
+                    pick: Some(card),
+                    ..Scratch::default()
+                };
+                g.add_lasting(Card::Hasty, player, Some(card), vec![], Until::Removed, data);
             }
             Flow::done()
         }
