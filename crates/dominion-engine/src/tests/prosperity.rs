@@ -1154,6 +1154,30 @@ fn trade_route_tokens_move_to_the_mat_when_victory_piles_are_gained_from() {
     assert!(g.view(P1).notes().contains(&mat));
     let estates = g.supply_pile(Card::Estate).unwrap();
     assert!(!g.pile(estates).trade_route);
+    // Logged after the gain that moved it.
+    let gained = Event::Gained {
+        player: P0,
+        card: Card::Estate,
+        to: Dest::Discard,
+    };
+    let at = g.log().iter().position(|e| *e == gained).unwrap();
+    assert!(matches!(
+        g.log()[at + 1..at + 3],
+        [
+            Event::Counter {
+                pile: Some(_),
+                counter: Counter::TradeRoute,
+                delta: -1,
+                ..
+            },
+            Event::Counter {
+                pile: None,
+                counter: Counter::TradeRoute,
+                delta: 1,
+                ..
+            }
+        ]
+    ));
 }
 
 #[test]

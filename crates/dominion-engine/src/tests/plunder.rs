@@ -582,6 +582,34 @@ fn shaman_may_trash_and_everyone_gains_from_the_trash_at_the_start_of_each_turn(
     // P1's turn starts: they must gain the Estate from the trash.
     assert_eq!(gain_count(&g, P1, Card::Estate), 1);
     assert!(g.trash().iter().all(|&c| g.card(c) != Card::Estate));
+    // The ability is the game's, not a Shaman of P1's.
+    assert!(g.log().contains(&Event::ResolvedFor {
+        player: P1,
+        card: Card::Shaman
+    }));
+    assert!(!g.log().iter().any(|e| matches!(
+        e,
+        Event::Resolved {
+            card: Card::Shaman,
+            ..
+        }
+    )));
+}
+
+/// With nothing in the trash it could gain, Shaman's ability isn't there to be ordered
+/// against a Duration's.
+#[test]
+fn shaman_with_nothing_to_gain_is_no_start_of_turn_ability() {
+    let mut g = setup(&[Card::Shaman, Card::FishingVillage]);
+    hand(&mut g, P0, &[Card::FishingVillage]);
+    g.trash.clear();
+    g.start();
+    play(&mut g, Card::FishingVillage);
+    next_turn(&mut g);
+    next_turn(&mut g);
+    assert_eq!(g.turn().player, P0);
+    assert_ne!(purpose(&g), Purpose::Trigger);
+    assert_eq!(g.turn().actions, 2);
 }
 
 #[test]

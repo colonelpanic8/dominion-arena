@@ -236,8 +236,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
             cards.extend(l.data.pick);
             cards.sort();
             cards.dedup();
-            let (until, until_player) = match l.until {
-                _ if l.ending => ("end-of-turn", None),
+            let (until, until_player) = match v.lasting_ends(&l) {
                 Until::EndOfTurn => ("end-of-turn", None),
                 Until::StartOfTurn(p) => ("start-of-turn", Some(p.0)),
                 // The start of its owner's extra turn.
@@ -254,7 +253,7 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
                     .filter_map(|c| v.card(c))
                     .map(|c| c.name().to_string())
                     .collect(),
-                count: (l.data.n != 0).then_some(l.data.n),
+                count: v.lasting_tokens(&l).map(|n| n as i32),
             }
         })
         .collect();
@@ -419,7 +418,7 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
             zones: u.zones.iter().map(|&(z, _)| zone_name(z)).collect(),
             count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
             candidates: count(&u.candidates),
-            outside: 0,
+            outside: u.outside as u32,
         })
         .collect();
     let mut counters = BTreeMap::new();
@@ -1161,7 +1160,7 @@ fn put_text(
         to_text = format!("the bottom of {to_text}");
     }
     let back = match (from, to) {
-        (Some(Zone::Deck(p) | Zone::Looking(p)), Zone::Deck(q)) => p == q,
+        (Some(Zone::Looking(p)), Zone::Deck(q)) => p == q,
         _ => false,
     };
     if back {
@@ -1284,6 +1283,22 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             Some(*player),
             None,
             format!("{} starts turn {turn}", name(*player)),
+        ),
+        Event::TurnSkipped { player, extra } => (
+            Some(*player),
+            *extra,
+            match extra {
+                Some(c) => format!("{} skips the extra turn from {c}", name(*player)),
+                None => format!("{} skips a turn", name(*player)),
+            },
+        ),
+        Event::ExtraTurnLost { player, source } => (
+            Some(*player),
+            Some(*source),
+            format!(
+                "{} loses the extra turn from {source} (it would be a third turn in a row)",
+                name(*player)
+            ),
         ),
         Event::Played { player, card } => (
             Some(*player),
@@ -1518,6 +1533,11 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             Some(*player),
             Some(*card),
             format!("{}'s {card} resolves", name(*player)),
+        ),
+        Event::ResolvedFor { player, card } => (
+            Some(*player),
+            Some(*card),
+            format!("{card} resolves for {}", name(*player)),
         ),
         Event::Bonus {
             player,

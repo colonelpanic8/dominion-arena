@@ -1430,6 +1430,30 @@ fn star_chart_puts_the_chosen_card_on_top_of_the_shuffle() {
     let hand = hand_kinds(&g, P0);
     assert_eq!(hand[0], Card::Copper);
     assert_eq!(hand[1], Card::Gold);
+    // Everyone sees a card picked and put under the Copper, not which.
+    let at = g
+        .log()
+        .iter()
+        .position(|e| matches!(e, Event::Shuffled { player: P0 }))
+        .unwrap();
+    assert_eq!(
+        g.log()[at + 1..at + 3],
+        [
+            Event::Resolved {
+                player: P0,
+                card: Card::StarChart
+            },
+            Event::Moved {
+                player: P0,
+                from: Some(Zone::Deck(P0)),
+                to: Zone::Deck(P0),
+                cards: vec![],
+                count: 1,
+                bottom: false,
+                under: 1,
+            }
+        ]
+    );
 }
 
 #[test]

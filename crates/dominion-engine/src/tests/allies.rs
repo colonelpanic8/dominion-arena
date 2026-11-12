@@ -1758,8 +1758,31 @@ fn garrison_draws_a_card_per_gain_next_turn() {
     buy(&mut g, Card::Copper);
     assert_eq!(g.turn().player, P1);
     assert_eq!(in_play_kinds(&g, P0), [Card::Garrison]);
+    // Its tokens are seen and logged; the watcher's data is no count.
+    let v = g.view(P1);
+    let shown: Vec<_> = v
+        .lasting()
+        .iter()
+        .map(|l| (v.lasting_ends(l), v.lasting_tokens(l)))
+        .collect();
+    assert_eq!(shown, [(Until::StartOfTurn(P0), Some(1))]);
+    let tokens = |delta| Event::CardCounter {
+        player: Some(P0),
+        card: Card::Garrison,
+        pile: None,
+        delta,
+    };
+    assert!(g.log().contains(&tokens(1)));
     next_turn(&mut g);
     assert_eq!(g.hand(P0).len(), 6);
+    let removed = g.log().iter().position(|e| *e == tokens(-1)).unwrap();
+    assert_eq!(
+        g.log()[removed + 1],
+        Event::Drew {
+            player: P0,
+            count: 1
+        }
+    );
     next_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
 }
@@ -1973,14 +1996,22 @@ fn voyage_takes_an_extra_turn_with_three_plays_from_hand() {
     next_turn(&mut g);
     assert_eq!(g.turn().player, P0);
     assert_eq!(g.turn().extra, Some(Card::Voyage));
+    let left = |g: &Game| {
+        let notes = g.view(P1).notes();
+        let n = notes.iter().find(|n| n.source == Card::Voyage);
+        n.map(|n| (n.player, n.count))
+    };
+    assert_eq!(left(&g), Some((Some(P0), 3)));
     play(&mut g, Card::Village);
     play(&mut g, Card::Village);
     play(&mut g, Card::Village);
+    assert_eq!(left(&g), Some((Some(P0), 0)));
     assert!(!can_play(&g, Card::Village));
     to_buy(&mut g);
     assert!(!can_play(&g, Card::Copper));
     next_turn(&mut g);
     assert_eq!(g.turn().player, P1);
+    assert_eq!(left(&g), None);
     // Voyage was discarded in the Voyage turn's Clean-up.
     assert!(g.in_play(P0).is_empty());
 }

@@ -100,6 +100,19 @@ pub(crate) trait SetRules {
     /// are the same effect to the trigger window.
     fn plain_effect(l: &mut Lasting, p: PlayerId) {}
 
+    /// When `l`, an `Until::Removed` effect of this set's card, ends in its players'
+    /// terms, if not at the start of its owner's next turn (a Duration's): at the end of
+    /// this turn, or `Until::Removed` for one that waits for something to happen.
+    fn lasting_ends(g: &Game, l: &Lasting) -> Option<Until> {
+        None
+    }
+
+    /// The tokens on the card whose effect `l` (of this set's card) is, if it keeps any
+    /// (Garrison's): the players see them, and the log tallies them.
+    fn lasting_tokens(l: &Lasting) -> Option<u32> {
+        None
+    }
+
     /// Whether `p` may play `id` from their hand now.
     fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {
         true
@@ -265,6 +278,26 @@ macro_rules! sets {
 
         pub(crate) fn plain_effect(l: &mut Lasting, p: PlayerId) {
             $(<$module::Rules as SetRules>::plain_effect(l, p);)*
+        }
+
+        /// When `l` ends, in its players' terms (see [`SetRules::lasting_ends`]).
+        pub(crate) fn lasting_ends(g: &Game, l: &Lasting) -> Until {
+            if l.ending {
+                return Until::EndOfTurn;
+            }
+            if l.until != Until::Removed {
+                return l.until;
+            }
+            match l.card.set() {
+                $(Set::$set => <$module::Rules as SetRules>::lasting_ends(g, l),)*
+            }
+            .unwrap_or(Until::StartOfTurn(l.owner))
+        }
+
+        pub(crate) fn lasting_tokens(l: &Lasting) -> Option<u32> {
+            match l.card.set() {
+                $(Set::$set => <$module::Rules as SetRules>::lasting_tokens(l),)*
+            }
         }
 
         pub(crate) fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {

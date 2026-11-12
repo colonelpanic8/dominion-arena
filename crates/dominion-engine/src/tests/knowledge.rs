@@ -569,6 +569,83 @@ fn the_new_top_of_a_discard_pile_looked_through_says_nothing_of_the_card_taken()
     );
 }
 
+/// Mountain Village takes one card from a discard pile whose cards the others knew, some
+/// only as cards of the deck's and hand's group: they know the pile holds all of those
+/// cards but the one that went into the hand, and what they knew of the deck and hand
+/// doesn't take in the pile's cards.
+#[test]
+fn a_card_taken_from_a_discard_pile_leaves_what_is_known_of_the_rest() {
+    let mut g = setup(&[Card::MountainVillage]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::MountainVillage, Card::Copper, Card::Copper],
+    );
+    deck(&mut g, P0, &[Card::Copper, Card::Estate, Card::Estate]);
+    // The Estate on top is seen; the Copper under it is one of the starting cards.
+    let estate = discard(&mut g, P0, &[Card::Copper, Card::Estate])[1];
+    let (mut g, mut k) = start(g);
+    let gold = g.create(Card::Gold, Zone::Discard(P0));
+    g.create(Card::Silver, Zone::Discard(P0));
+    k.update(&mut g);
+    let starting = count(&[
+        (Card::Copper, 4),
+        (Card::Estate, 2),
+        (Card::MountainVillage, 1),
+    ]);
+    let all = [Zone::Hand(P0), Zone::Deck(P0), Zone::Discard(P0)];
+    assert_eq!(
+        uncertain_over(&k.known(&g, P1), &all),
+        Some(starting.clone())
+    );
+    play(&mut g, Card::MountainVillage);
+    k.update(&mut g);
+    let [(ga, ka), (gb, kb)] = worlds(&g, &k, gold, estate);
+    let theirs = ka.known(&ga, P1);
+    assert_eq!(theirs, kb.known(&gb, P1));
+    // The Silver now on top is seen. The pile's other cards, one of them now in the hand,
+    // are the Gold, the Estate and one of the starting cards.
+    assert_eq!(
+        theirs.zone(Zone::Discard(P0)).known,
+        count(&[(Card::Silver, 1)])
+    );
+    let taken = theirs
+        .uncertain
+        .iter()
+        .find(|u| u.zones == [(Zone::Hand(P0), 1), (Zone::Discard(P0), 2)])
+        .expect("the pile's cards");
+    assert_eq!(
+        (&taken.candidates, taken.outside),
+        (
+            &count(&[(Card::Copper, 4), (Card::Estate, 3), (Card::Gold, 1)]),
+            5
+        )
+    );
+    // The deck and the rest of the hand hold the starting cards but one, as before.
+    let rest = theirs
+        .uncertain
+        .iter()
+        .find(|u| u.zones == [(Zone::Deck(P0), 3), (Zone::Hand(P0), 2)])
+        .expect("the starting cards");
+    assert_eq!(
+        (&rest.candidates, rest.outside),
+        (&count(&[(Card::Copper, 4), (Card::Estate, 2)]), 1)
+    );
+    assert_eq!(
+        theirs.owned[0],
+        (
+            count(&[
+                (Card::Copper, 4),
+                (Card::Estate, 3),
+                (Card::Gold, 1),
+                (Card::Silver, 1),
+                (Card::MountainVillage, 1)
+            ]),
+            0
+        )
+    );
+}
+
 /// Avoid: its player knows which of the cards being shuffled they kept out.
 #[test]
 fn a_player_knows_the_cards_avoid_kept_out_of_the_shuffle() {
@@ -941,6 +1018,14 @@ fn truth(g: &Game, viewer: PlayerId, cards: &[CardId]) -> CardCount {
     out
 }
 
+/// Whether `actual` is all of `ids` but `extra` of them.
+pub(super) fn some_of(ids: &CardCount, extra: u32, actual: &CardCount) -> bool {
+    let within = actual
+        .iter()
+        .all(|(c, &n)| ids.get(c).is_some_and(|&m| m >= n));
+    within && ids.values().sum::<u32>() == actual.values().sum::<u32>() + extra
+}
+
 fn check_knowledge(g: &Game, k: &Knowledge, step: usize) {
     for v in 0..g.num_players() {
         let v = PlayerId(v as u8);
@@ -950,7 +1035,12 @@ fn check_knowledge(g: &Game, k: &Knowledge, step: usize) {
                     *m.entry(g.printed(c)).or_default() += 1;
                     m
                 });
-                assert_eq!(ids, &actual, "{v}'s group {:?}", group.cards);
+                assert!(
+                    some_of(ids, group.extra, &actual),
+                    "{v}'s group {:?} is {actual:?}, known as {ids:?} less {}",
+                    group.cards,
+                    group.extra
+                );
             }
             if group.cards.len() > 1 {
                 for &c in group.cards {

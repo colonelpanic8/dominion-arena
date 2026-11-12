@@ -13,7 +13,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{Phase, Pos, Scratch, Until, Zone};
+use crate::game::{Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{Setup, add_mixed_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Set, Types};
@@ -92,6 +92,10 @@ impl Game {
 }
 
 impl SetRules for Rules {
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (l.card == Card::Archive).then_some(Until::Removed)
+    }
+
     fn notes(g: &Game, out: &mut Vec<Note>) {
         let s = &g.ext.empires;
         for &(card, vp) in &s.landmark_vp {
@@ -1907,23 +1911,21 @@ fn annex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .question("keep in your discard pile (the rest are shuffled into your deck)")
         }
         1 => {
-            f.s.cards = input.cards();
-            for &c in &f.s.cards {
-                g.move_card(c, Zone::SetAside(p), Pos::Top);
-            }
-            let deck: Vec<CardId> = g.player(p).deck.clone();
-            for c in deck {
-                g.move_card(c, Zone::Discard(p), Pos::Top);
+            let kept = input.cards();
+            let rest: Vec<CardId> = g
+                .player(p)
+                .discard
+                .iter()
+                .copied()
+                .filter(|c| !kept.contains(c))
+                .collect();
+            for c in rest {
+                g.move_card(c, Zone::Deck(p), Pos::Top);
             }
             f.pc = 2;
-            Flow::Call(Frame::shuffle(p))
+            Flow::Call(Frame::shuffle_deck(p))
         }
         2 => {
-            for c in std::mem::take(&mut f.s.cards) {
-                if g.zone(c) == Zone::SetAside(p) {
-                    g.move_card(c, Zone::Discard(p), Pos::Top);
-                }
-            }
             f.pc = 3;
             match g.supply_pile(Card::Duchy) {
                 Some(pile) => Flow::Call(Frame::gain(p, pile, Dest::Discard)),

@@ -215,6 +215,15 @@ fn depths(entries: &[LogEntry]) -> Vec<u8> {
         let player = entries[start].player;
         let mut cleanup = end;
         if finished {
+            // Turns skipped or lost between turns come after the Clean-up.
+            while cleanup > start + 1
+                && matches!(
+                    entries[cleanup - 1].kind.as_str(),
+                    "turn-skipped" | "extra-turn-lost"
+                )
+            {
+                cleanup -= 1;
+            }
             while cleanup > start + 1 {
                 let e = &entries[cleanup - 1];
                 if e.player != player || !matches!(e.kind.as_str(), "drew" | "shuffled") {
@@ -562,6 +571,17 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
                     spans.push(Span::FullPlayer(p, seat_name(names, p)));
                 }
             }
+            Some(Entry::TurnSkipped(None)) => text(&mut spans, "skips a turn."),
+            Some(Entry::TurnSkipped(Some(card))) => {
+                text(&mut spans, "skips the extra turn from ");
+                spans.push(Span::Card(card.clone()));
+                text(&mut spans, ".");
+            }
+            Some(Entry::ExtraTurnLost(card)) => {
+                text(&mut spans, "doesn't take the extra turn from ");
+                spans.push(Span::Card(card.clone()));
+                text(&mut spans, " (a third turn in a row).");
+            }
             Some(Entry::Played(card)) if is_treasure(cards, card) => {
                 let mut played = vec![card.clone()];
                 while let Some(Entry::Played(c)) = next(i + used)
@@ -751,6 +771,13 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
                 text(&mut spans, "'s ");
                 spans.push(Span::Card(card.clone()));
                 text(&mut spans, " resolves.");
+            }
+            Some(Entry::ResolvedFor(card)) => {
+                spans.clear();
+                spans.push(Span::Card(card.clone()));
+                text(&mut spans, " resolves for ");
+                spans.push(Span::Player(p));
+                text(&mut spans, ".");
             }
             Some(Entry::Bonus {
                 actions,

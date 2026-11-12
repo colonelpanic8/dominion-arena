@@ -7,7 +7,7 @@ use crate::Note;
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, PAY_OTHERWISE, Value};
-use crate::game::{Pos, Scratch, Until, Zone};
+use crate::game::{Lasting, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -35,6 +35,10 @@ const SUMMON_PLAY: u8 = 0;
 const WALLED_VILLAGE_TOPDECK: u8 = 0;
 
 impl SetRules for Rules {
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (l.card == Card::Prince).then_some(Until::Removed)
+    }
+
     fn notes(g: &Game, out: &mut Vec<Note>) {
         // Which cards are in the Black Market deck is public, not their order.
         if let Some(pile) = g.ext.promos.black_market {

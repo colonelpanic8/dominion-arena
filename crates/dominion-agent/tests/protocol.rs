@@ -739,6 +739,32 @@ fn the_log_says_which_ability_changed_which_tokens() {
     );
 }
 
+/// A Duration's effect lasts until its owner's next turn, which is when its start-of-turn
+/// ability removes it.
+#[test]
+fn a_durations_effect_says_it_lasts_until_its_owners_next_turn() {
+    let mut t = table(&[Card::Lighthouse], 3, &["Ada", "Bo"]);
+    let waiting = |seat: PlayerId, _: &AgentDecision| seat.0 == 1;
+    loop {
+        let seat = play_to(&mut t, "Lighthouse", waiting).expect("the game goes on");
+        let v = t.view(seat);
+        if let Some(l) = v.lasting.iter().find(|l| l.card == "Lighthouse") {
+            assert_eq!(
+                (l.until.as_str(), l.until_player, l.count),
+                ("start-of-turn", Some(0), None)
+            );
+            let text = text::render(&v);
+            assert!(
+                text.contains("Lighthouse (P1) until P1's next turn"),
+                "{text}"
+            );
+            break;
+        }
+        let end = pick(&v.decision.unwrap(), |o| o.action == "end-phase").unwrap();
+        t.answer(seat, &end).unwrap();
+    }
+}
+
 #[test]
 fn the_final_view_knows_the_last_clean_ups_discard_top() {
     let config = GameConfig {

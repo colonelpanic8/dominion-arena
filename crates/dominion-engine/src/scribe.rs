@@ -61,6 +61,9 @@ struct Tally {
     plot: Vec<u32>,
     #[serde(default)]
     inventors: BTreeMap<PileId, u32>,
+    /// Tokens on the cards of lasting effects (Garrison's), by the effect's id.
+    #[serde(default)]
+    lasting_tokens: BTreeMap<u32, (PlayerId, Card, u32)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -129,6 +132,14 @@ impl Game {
             suns: self.prophecy.map_or(0, |(_, n)| n),
             plot: self.ext.renaissance.plot.clone(),
             inventors: self.ext.allies.inventors.iter().copied().collect(),
+            lasting_tokens: self
+                .lasting
+                .iter()
+                .filter_map(|l| {
+                    let n = crate::cards::lasting_tokens(l).filter(|&n| n > 0)?;
+                    Some((l.id, (l.owner, l.card, n)))
+                })
+                .collect(),
         }
     }
 
@@ -527,6 +538,27 @@ fn counter_changes(old: &Tally, new: &Tally, out: &mut Vec<Event>) {
                 player: None,
                 card: Card::FamilyOfInventors,
                 pile: Some(pile),
+                delta,
+            });
+        }
+    }
+    let ids: std::collections::BTreeSet<_> = old
+        .lasting_tokens
+        .keys()
+        .chain(new.lasting_tokens.keys())
+        .copied()
+        .collect();
+    for id in ids {
+        let (was, now) = (old.lasting_tokens.get(&id), new.lasting_tokens.get(&id));
+        let Some(&(player, card, _)) = now.or(was) else {
+            continue;
+        };
+        let delta = now.map_or(0, |t| t.2 as i32) - was.map_or(0, |t| t.2 as i32);
+        if delta != 0 {
+            out.push(Event::CardCounter {
+                player: Some(player),
+                card,
+                pile: None,
                 delta,
             });
         }

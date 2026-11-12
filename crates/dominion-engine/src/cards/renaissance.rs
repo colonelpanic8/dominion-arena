@@ -914,13 +914,15 @@ fn star_chart(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             let count = g.shuffled(p).len();
-            let deck = &mut g.players[p.index()].deck;
+            let deck = &g.players[p.index()].deck;
+            let above = deck.len() - count;
             let picked = input.card();
             if let Some(c) = picked
-                && let Some(i) = deck[..count].iter().position(|&x| x == c)
+                && deck[..count].contains(&c)
             {
-                deck.remove(i);
-                deck.insert(count - 1, c);
+                // Under the cards left on the deck; everyone sees a card picked and put
+                // there.
+                g.move_card(c, Zone::Deck(p), Pos::Under(above));
             }
             g.reshuffle_unplaced(p, &Vec::from_iter(picked));
             Flow::done()

@@ -13,7 +13,7 @@ use crate::Note;
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{Pile, Pos, Scratch, Until, Zone};
+use crate::game::{Lasting, Pile, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Types};
@@ -55,6 +55,10 @@ const RAPID_EXPANSION_SET_ASIDE: u8 = 1;
 const SICKNESS: u8 = 0;
 
 impl SetRules for Rules {
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (l.card == Card::Samurai).then_some(Until::Removed)
+    }
+
     fn notes(g: &Game, out: &mut Vec<Note>) {
         if let Some(c) = g.ext.rising_sun.riverboat {
             out.push(Note::new(Card::Riverboat).card(g.card(c)));

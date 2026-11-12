@@ -99,6 +99,10 @@ pub enum CounterAt {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Entry {
     TurnStart(u32),
+    /// Skipped a turn: the extra turn from that card, if it was one.
+    TurnSkipped(Option<String>),
+    /// The extra turn from that card doesn't happen (a third turn in a row).
+    ExtraTurnLost(String),
     Played(String),
     UsedWay {
         way: String,
@@ -154,6 +158,8 @@ pub enum Entry {
     },
     Returned(String),
     Resolved(String),
+    /// An ability every player has in games using the card resolved for the player.
+    ResolvedFor(String),
     Bonus {
         actions: u32,
         buys: u32,
@@ -543,11 +549,24 @@ pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
             .strip_suffix(" resolves")?;
         return the_card(e, card).map(Entry::Resolved);
     }
+    if e.kind == "resolved-for" {
+        let card = e
+            .text
+            .strip_suffix(format!(" resolves for {name}").as_str())?;
+        return the_card(e, card).map(Entry::ResolvedFor);
+    }
     let s = e.text.strip_prefix(name.as_str())?.strip_prefix(' ')?;
     let after = |prefix: &str| s.strip_prefix(prefix);
     let card_after = |prefix: &str| after(prefix).and_then(|c| the_card(e, c));
     Some(match e.kind.as_str() {
         "turn-start" => Entry::TurnStart(after("starts turn ").and_then(number)?),
+        "turn-skipped" if s == "skips a turn" && e.card.is_none() => Entry::TurnSkipped(None),
+        "turn-skipped" => Entry::TurnSkipped(Some(card_after("skips the extra turn from ")?)),
+        "extra-turn-lost" => Entry::ExtraTurnLost(
+            after("loses the extra turn from ")?
+                .strip_suffix(" (it would be a third turn in a row)")
+                .and_then(|c| the_card(e, c))?,
+        ),
         "played" => Entry::Played(card_after("plays ")?),
         "used-way" => {
             let (way, card) = after("uses ")?.split_once(" for ")?;
@@ -775,6 +794,35 @@ mod tests {
                 &names()
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn turns_that_dont_happen_and_game_wide_abilities_are_read() {
+        let p = |kind, card, text| parse(&entry(kind, Some(0), card, text), &names());
+        assert_eq!(
+            p("turn-skipped", None, "Ann skips a turn"),
+            Some(Entry::TurnSkipped(None))
+        );
+        assert_eq!(
+            p(
+                "turn-skipped",
+                Some("Voyage"),
+                "Ann skips the extra turn from Voyage"
+            ),
+            Some(Entry::TurnSkipped(Some("Voyage".into())))
+        );
+        assert_eq!(
+            p(
+                "extra-turn-lost",
+                Some("Outpost"),
+                "Ann loses the extra turn from Outpost (it would be a third turn in a row)"
+            ),
+            Some(Entry::ExtraTurnLost("Outpost".into()))
+        );
+        assert_eq!(
+            p("resolved-for", Some("Shaman"), "Shaman resolves for Ann"),
+            Some(Entry::ResolvedFor("Shaman".into()))
         );
     }
 

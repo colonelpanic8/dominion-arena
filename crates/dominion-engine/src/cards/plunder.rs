@@ -377,8 +377,8 @@ impl SetRules for Rules {
                 }
             }
             Occasion::StartTurn { player } => {
-                if setup::in_game(g, |c| c == Card::Shaman) {
-                    out.push(Trigger::new(player, Card::Shaman, SHAMAN_GAIN));
+                if setup::in_game(g, |c| c == Card::Shaman) && !shaman_cards(g).is_empty() {
+                    out.push(Trigger::new(player, Card::Shaman, SHAMAN_GAIN).game_wide());
                 }
                 if !traited_in_hand(g, player, Card::Shy).is_empty() {
                     out.push(
@@ -443,6 +443,10 @@ impl SetRules for Rules {
             }
             _ => {}
         }
+    }
+
+    fn lasting_ends(_g: &Game, l: &Lasting) -> Option<Until> {
+        (permanent(l.card) || waits(l.card)).then_some(Until::Removed)
     }
 
     fn plain_effect(l: &mut Lasting, p: PlayerId) {
@@ -1779,15 +1783,19 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+/// The cards in the trash Shaman's ability can gain.
+fn shaman_cards(g: &Game) -> Vec<CardId> {
+    g.trash()
+        .iter()
+        .copied()
+        .filter(|&c| g.cost_of(c).at_most(Cost::coins(6)))
+        .collect()
+}
+
 fn shaman_gain(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            let cards: Vec<CardId> = g
-                .trash()
-                .iter()
-                .copied()
-                .filter(|&c| g.cost_of(c).at_most(Cost::coins(6)))
-                .collect();
+            let cards = shaman_cards(g);
             if cards.is_empty() {
                 return Flow::done();
             }

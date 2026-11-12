@@ -252,7 +252,12 @@ them.
   turn" `Until::StartOfTurn(owner)`; a Duration whose "until then" part comes with an "at
   the start of your next turn" one keeps its lasting and asks `g.before_next_turn(l)`, as
   the effect ends the instant that turn starts. Sets read `g.lasting()` for cost changes, triggers,
-  immunity and so on. A lasting that keeps its `source` in play is that Duration's
+  immunity and so on. Players are told when an effect ends: an `Until::Removed` one at
+  the start of its owner's next turn (a Duration's), unless its set's
+  `SetRules::lasting_ends` says otherwise (the end of the turn, or `Until::Removed` for
+  one that waits for something: Champion, Search); the fuzz test holds effects to it. The
+  number shown with an effect is only tokens on its card (`SetRules::lasting_tokens`,
+  Garrison's), never its data. A lasting that keeps its `source` in play is that Duration's
   effect: when the card leaves play (`Game::move_card` notices), or was not in play when
   the lasting was made, the lasting is `ending`: it goes on working this turn and is
   removed at its end, whatever its `until`, with the extra turn it was for (Outpost);
@@ -364,7 +369,8 @@ them.
   cards), cards shown to everyone or one player, turns, identity swaps. `Knowledge`
   consumes it and keeps, per player, groups of cards they can't tell apart with each
   group's known identities (a Stash or a Shadow card, with its own back, is always
-  known). Anything that reveals a specific card must record it: `g.reveal(p, id)`
+  known; a group split off when some of its cards left a set held out of sight is some
+  of its family's identities). Anything that reveals a specific card must record it: `g.reveal(p, id)`
   instead of emitting `Event::Revealed` by hand, `g.show` / `g.show_to` for other
   reveals and looks, `g.look_through_discard(p)` before a player picks from their
   discard pile, `g.look_through_shuffled(p)` (and `g.look_over_shuffled(p)` for the cards
@@ -385,14 +391,16 @@ them.
   ability's `Resolved` header (unless the trigger is `labelled`) names its lasting
   effect's owner and is logged before the first thing it does, or as it ends if all it
   did was change what the play in progress does (Enchantress, Highwayman); one that did
-  nothing has no line. `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
+  nothing has no line. An "In games using this" ability every player has
+  (`Trigger::game_wide`: Shaman, Footpad) is headed `ResolvedFor` instead, as no card
+  of the player's. `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
   Boon rather than a card's own play are logged as `Bonus`. So never emit a move or
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one
   `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
   decisions mark their labels public with `public_choice`, and labels referring to private
-  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors
-  are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
+  `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors,
+  and the tokens on a lasting effect's card (Garrison), are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
   `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.

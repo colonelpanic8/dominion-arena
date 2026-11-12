@@ -20,6 +20,18 @@ pub enum Event {
         player: PlayerId,
         turn: u32,
     },
+    /// `player` skipped the turn they would have taken next (Lich): the extra turn from
+    /// `extra`, if it was one.
+    TurnSkipped {
+        player: PlayerId,
+        extra: Option<Card>,
+    },
+    /// `player`'s extra turn from `source` doesn't happen: it would be a third turn in a
+    /// row.
+    ExtraTurnLost {
+        player: PlayerId,
+        source: Card,
+    },
     Played {
         player: PlayerId,
         card: Card,
@@ -169,6 +181,12 @@ pub enum Event {
     /// An ability of `card` of `player`'s began to resolve (a Duration's, a Reaction's, a
     /// landscape's, ...): logged before the first thing it does.
     Resolved {
+        player: PlayerId,
+        card: Card,
+    },
+    /// An ability every player has in games using `card` (Shaman's "In games using
+    /// this") began to resolve for `player`: logged like [`Event::Resolved`].
+    ResolvedFor {
         player: PlayerId,
         card: Card,
     },
