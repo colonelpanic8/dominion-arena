@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS game_players (
 ) WITHOUT ROWID;
 ";
 
+/// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
+const SCHEMA_VERSION: i32 = 1;
+
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
                     rated_at, rated_games, games, wins, banned_cards";
 
@@ -187,7 +190,10 @@ impl Db {
             None => Connection::open_in_memory()?,
         };
         conn.pragma_update(None, "foreign_keys", true)?;
+        // Someone looking into the file with another program holds it only briefly.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db {
             conn: Mutex::new(conn),
             refs: Mutex::default(),
@@ -212,7 +218,9 @@ impl Db {
 
     /// Account `id` as others see it.
     pub fn user_ref(&self, id: &str) -> Option<UserRef> {
-        if let Some(known) = lock(&self.refs).get(id) {
+        // Held while reading, so that a change made meanwhile clears what is put here.
+        let mut refs = lock(&self.refs);
+        if let Some(known) = refs.get(id) {
             return known.clone();
         }
         let conn = lock(&self.conn);
@@ -226,7 +234,6 @@ impl Db {
             }
         });
         drop(conn);
-        let mut refs = lock(&self.refs);
         if refs.len() >= 10_000 {
             refs.clear();
         }
