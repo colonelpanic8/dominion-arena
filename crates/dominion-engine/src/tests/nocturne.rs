@@ -1414,6 +1414,23 @@ fn swindled_into(boon: Card) -> Game {
     g
 }
 
+/// The -$1 token goes the next time its player gets $, whoever's turn it is.
+#[test]
+fn a_boons_coins_on_another_players_turn_remove_the_minus_coin_token() {
+    let mut g = setup(&[Card::BlessedVillage, Card::Swindler]);
+    hand(&mut g, P0, &[Card::Swindler]);
+    deck(&mut g, P0, &[Card::Copper; 10]);
+    hand(&mut g, P1, &[Card::Copper; 5]);
+    deck(&mut g, P1, &[Card::Smithy, Card::Copper]);
+    g.players[1].minus_coin = true;
+    stack_boons(&mut g, &[Card::TheFieldsGift]);
+    g.start();
+    play(&mut g, Card::Swindler);
+    mode(&mut g, 0);
+    assert!(!g.player(P1).minus_coin);
+    assert_eq!(g.turn().coins, 2);
+}
+
 #[test]
 fn a_boon_kept_on_another_players_turn_stays_until_that_turns_cleanup() {
     let mut g = swindled_into(Card::TheFieldsGift);
