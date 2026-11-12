@@ -36,11 +36,14 @@ fn take_turn(g: &mut Game, p: PlayerId, source: Card) {
     let d = g.pending().expect("a decision is pending");
     assert_eq!((d.player, d.purpose), (p, Purpose::Either), "{d:?}");
     respond(g, Response::option(Opt::Card(source)));
-    assert!(g.log().contains(&Event::Chosen {
-        player: p,
-        source: None,
-        choices: vec![format!("Take the extra turn from {source}")],
-    }));
+    let chosen = g.log().iter().rev().find_map(|e| match e {
+        Event::Chosen {
+            player, choices, ..
+        } if *player == p => Some(choices.clone()),
+        _ => None,
+    });
+    let take = format!("Take the extra turn from {source}");
+    assert!(chosen.is_some_and(|c| c.len() == 1 && c[0].starts_with(&take)));
 }
 
 /// What the next turn is: its player and the extra turn's source.
@@ -104,6 +107,20 @@ fn seize_the_days_turn_can_follow_missions_but_not_the_other_way_round() {
         [Card::Mission, Card::SeizeTheDay],
     ] {
         let mut g = first_turn(&[], &[], &events);
+        let d = g.pending().unwrap();
+        assert_eq!(
+            d.question.as_deref(),
+            Some("Between turns: which extra turn do you take next?")
+        );
+        let mut labels = trigger_labels(&g);
+        labels.sort();
+        assert_eq!(
+            labels,
+            [
+                "Take the extra turn from Mission",
+                "Take the extra turn from Seize the Day (the extra turn from Mission is then lost: no third turn in a row)"
+            ]
+        );
         take_turn(&mut g, P0, Card::Mission);
         assert_eq!(turn(&g), (P0, Some(Card::Mission)));
         end_turn(&mut g);
