@@ -3,6 +3,7 @@
 
 use super::intrigue::{GainRule, trash_and_gain};
 use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask};
+use crate::Note;
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, From as GainFrom, Input, PAY_OTHERWISE, Value};
@@ -10,7 +11,6 @@ use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -95,7 +95,9 @@ impl SetRules for Rules {
                 for l in g.lasting() {
                     if l.card == Card::Prince
                         && l.owner == player
-                        && l.data.pick.is_some_and(|c| g.zone(c) == Zone::SetAside(player))
+                        && l.data
+                            .pick
+                            .is_some_and(|c| g.zone(c) == Zone::SetAside(player))
                     {
                         out.push(duration_trigger(l, PRINCE_PLAY));
                     }
@@ -300,13 +302,12 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .ask_number(0, debt.min(coins) as i32, Purpose::Other)
                     .question("pay off how much Debt first?");
             }
-            let buyable: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::Pile(bm) && affordable(g, p, c))
-                .collect();
+            let buyable: Vec<CardId> =
+                f.s.cards
+                    .iter()
+                    .copied()
+                    .filter(|&c| g.zone(c) == Zone::Pile(bm) && affordable(g, p, c))
+                    .collect();
             if buyable.is_empty() {
                 f.pc = 5;
                 return Flow::Continue;
@@ -392,13 +393,12 @@ fn black_market(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         5 => {
-            let rest: Vec<CardId> = f
-                .s
-                .cards
-                .iter()
-                .copied()
-                .filter(|&c| g.zone(c) == Zone::Pile(bm))
-                .collect();
+            let rest: Vec<CardId> =
+                f.s.cards
+                    .iter()
+                    .copied()
+                    .filter(|&c| g.zone(c) == Zone::Pile(bm))
+                    .collect();
             f.pc = 6;
             f.ask_order(rest, Purpose::Move)
                 .question("put on the bottom of the Black Market deck")
@@ -735,9 +735,8 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn summon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
-            let piles = g.supply_piles_where(|t, c| {
-                t.contains(Types::ACTION) && c.at_most(Cost::coins(4))
-            });
+            let piles =
+                g.supply_piles_where(|t, c| t.contains(Types::ACTION) && c.at_most(Cost::coins(4)));
             if piles.is_empty() {
                 return Flow::done();
             }
@@ -753,7 +752,7 @@ fn summon(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
-                && g.gained_to(f.player, c) == Some(g.zone(c))
+                && g.gained(f.player, c).is_some()
             {
                 g.set_aside(c, f.player);
                 g.add_lasting(

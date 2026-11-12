@@ -231,8 +231,10 @@ pub struct Turn {
     pub hand_plays: u32,
     /// The physical cards of `played`, in the same order.
     pub played_ids: Vec<CardId>,
-    /// For each of `played_ids`: whether it was in play when played and hasn't left since.
-    pub stayed_in_play: Vec<bool>,
+    /// For each of `played_ids`: when it was played, if it was in play then (see
+    /// [`Game::stayed_in_play`]).
+    #[serde(default)]
+    pub(crate) played_at: Vec<Mark>,
     /// The types each of `played` had as it was played.
     #[serde(default)]
     pub played_types: Vec<Types>,
@@ -273,7 +275,7 @@ impl Turn {
             played_by: vec![],
             hand_plays: 0,
             played_ids: vec![],
-            stayed_in_play: vec![],
+            played_at: vec![],
             played_types: vec![],
             gained: vec![],
             gained_types: vec![],
@@ -326,6 +328,20 @@ fn count_of(history: &[Types], types: Types) -> usize {
     history.iter().filter(|t| t.intersects(types)).count()
 }
 
+/// A moment in the game, by its card movements: an effect that has put cards where it
+/// expects to find them later takes one ([`Game::now`]) and asks then whether each
+/// [`Game::stayed`]. The default is no moment: nothing has stayed since.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Mark(u32);
+
+/// A card in the place an effect put it or found it ([`Game::placed`]), for the effect to
+/// ask later whether it is [`Game::still`] there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Placed {
+    pub card: CardId,
+    at: Mark,
+}
+
 /// Free-form state an effect carries between steps.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scratch {
@@ -338,6 +354,9 @@ pub struct Scratch {
     pub card: Option<Card>,
     pub player: Option<PlayerId>,
     pub pile: Option<PileId>,
+    /// Cards the effect goes on to move if they stay where they are.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) placed: Vec<Placed>,
 }
 
 /// When a [`Lasting`] effect ends on its own.
@@ -468,8 +487,8 @@ pub struct Game {
     /// The gain that finished last.
     #[serde(default)]
     pub(crate) last_gain: Option<GainState>,
-    /// Cards whose Trash windows are pending or resolving, with the zone each was trashed from.
-    pub(crate) trashing: Vec<(CardId, Zone)>,
+    /// Cards whose Trash windows are pending or resolving.
+    pub(crate) trashing: Vec<TrashState>,
     pub(crate) plays: Vec<PlayState>,
     /// The cards being discarded from play other than in Clean-up, innermost last (see
     /// [`Game::leaving_play`]).
@@ -484,6 +503,16 @@ pub struct Game {
     /// Cards taken off decks to be looked at or revealed, innermost last.
     #[serde(default)]
     pub(crate) holds: Vec<Hold>,
+    /// For each card, when it last moved (see [`Game::stayed`]); 0 for one that never has.
+    #[serde(default)]
+    pub(crate) moved: Vec<u32>,
+    /// The latest of `moved`.
+    #[serde(default)]
+    pub(crate) clock: u32,
+    /// The cards the trash, discard or play that finished last put where it did, and when
+    /// (see [`Game::put`]).
+    #[serde(default)]
+    pub(crate) last_put: (Vec<CardId>, Mark),
     /// How deep the effect stack was when a Supply pile last emptied (see
     /// [`Game::answers_emptying`]).
     #[serde(default)]
@@ -513,6 +542,20 @@ pub(crate) struct Hold {
     pub player: PlayerId,
     pub cards: Vec<CardId>,
     pub depth: usize,
+    /// When they were taken.
+    #[serde(default)]
+    pub at: Mark,
+}
+
+/// A trash whose "when trashed" abilities are pending or resolving.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct TrashState {
+    pub card: CardId,
+    /// Where it was trashed from.
+    pub from: Zone,
+    /// When it was trashed.
+    #[serde(default)]
+    pub at: Mark,
 }
 
 /// A gain in progress. "Would gain" triggers may change it.
@@ -536,6 +579,9 @@ pub struct GainState {
     /// The turn's phase at the moment it was gained (set as it moves).
     #[serde(default)]
     pub phase: Phase,
+    /// When it was gained (set as it moves).
+    #[serde(default)]
+    pub(crate) at: Mark,
     /// Once gained by the turn's player: its position in [`Turn::gained`] ("the next card
     /// you gain", "your second gain this turn").
     pub turn_index: Option<usize>,
@@ -664,14 +710,66 @@ impl Game {
         self.zones[id.index()]
     }
 
-    /// Whether `id` is still where it was put (gained to, put onto a deck) for an effect
-    /// that expects it there: in `zone` and, on a deck, not covered by another card.
-    pub(crate) fn still_where_put(&self, id: CardId, zone: Zone) -> bool {
-        self.zone(id) == zone
-            && match zone {
-                Zone::Deck(p) => self.players[p.index()].deck.last() == Some(&id),
-                _ => true,
-            }
+    /// The present moment, for [`Game::stayed`].
+    pub(crate) fn now(&self) -> Mark {
+        Mark(self.clock + 1)
+    }
+
+    /// Whether `id` has stayed where it was at `since`: the stop-moving rule lets an
+    /// effect move a card it expects somewhere only then. A card that was moved (even
+    /// back to the same place, or only taken off its deck to be looked at), shuffled, or
+    /// covered up on top of its deck has not.
+    pub(crate) fn stayed(&self, id: CardId, since: Mark) -> bool {
+        self.moved.get(id.index()).copied().unwrap_or(0) < since.0
+    }
+
+    /// The physical cards of the turn's plays that were in play as they were played and
+    /// have stayed there since, one per such play: a card that left play and came back
+    /// has moved, and what an earlier play of it set up can't move or replay it.
+    pub(crate) fn stayed_in_play(&self) -> impl Iterator<Item = CardId> + '_ {
+        let t = &self.turn;
+        let plays = t.played_ids.iter().zip(&t.played_at);
+        plays
+            .filter(|&(&c, &at)| self.stayed(c, at))
+            .map(|(&c, _)| c)
+    }
+
+    /// `id` where it is now.
+    pub(crate) fn placed(&self, id: CardId) -> Placed {
+        Placed {
+            card: id,
+            at: self.now(),
+        }
+    }
+
+    /// Whether the card is still where it was when `placed` was taken.
+    pub(crate) fn still(&self, placed: Placed) -> bool {
+        self.stayed(placed.card, placed.at)
+    }
+
+    /// `id` where the trash, discard or play that just finished put it (into the trash,
+    /// the discard pile, play), if it has stayed there: for effects that go on to move a
+    /// card they trashed, discarded or played.
+    pub(crate) fn put(&self, id: CardId) -> Option<Placed> {
+        let (cards, at) = &self.last_put;
+        (cards.contains(&id) && self.stayed(id, *at)).then_some(Placed { card: id, at: *at })
+    }
+
+    /// Records that `id` moved.
+    fn touch(&mut self, id: CardId) {
+        self.clock += 1;
+        if self.moved.len() < self.cards.len() {
+            self.moved.resize(self.cards.len(), 0);
+        }
+        self.moved[id.index()] = self.clock;
+    }
+
+    /// Records that `cards` were shuffled: whatever expected one of them where it was has
+    /// lost it, even one that ends up where it began.
+    pub(crate) fn touch_shuffled(&mut self, cards: &[CardId]) {
+        for &c in cards {
+            self.touch(c);
+        }
     }
 
     /// Total number of physical cards in the game.
@@ -823,11 +921,21 @@ impl Game {
             .map(|st| st.cost)
     }
 
-    /// Where `p` gained `id` to, if that is the gain that just finished: for effects that go
-    /// on to do something with the card they had `p` gain.
+    /// Where `p` gained `id` to, if that is the gain that just finished.
     pub(crate) fn gained_to(&self, p: PlayerId, id: CardId) -> Option<Zone> {
         let st = self.last_gain.as_ref()?;
         (st.card == id && st.player == p).then_some(st.zone())
+    }
+
+    /// `id` where `p` gained it to in the gain that just finished, if it has stayed there:
+    /// for effects that go on to move the card they had `p` gain. It is expected where it
+    /// was gained to, which need not be the discard pile.
+    pub(crate) fn gained(&self, p: PlayerId, id: CardId) -> Option<Placed> {
+        let st = self.last_gain.as_ref()?;
+        (st.card == id && st.player == p && self.stayed(id, st.at)).then_some(Placed {
+            card: id,
+            at: st.at,
+        })
     }
 
     /// Whether a window opening now answers the latest emptying of a Supply pile: it is the
@@ -837,14 +945,14 @@ impl Game {
         self.stack.len() <= self.emptied_depth + 1
     }
 
-    /// Whether `id`, whose gain is in progress, is still where it was gained to: the
+    /// Whether `id`, whose gain is in progress, has stayed where it was gained to: the
     /// stop-moving rule lets an on-gain ability move the card only then.
     pub(crate) fn still_where_gained(&self, id: CardId) -> bool {
         self.gains
             .iter()
             .rev()
             .find(|st| st.card == id)
-            .is_some_and(|st| self.still_where_put(id, st.zone()))
+            .is_some_and(|st| self.stayed(id, st.at))
     }
 
     /// The phase `id` was gained in, while its gain is in progress ("when you gain a card in
@@ -901,8 +1009,43 @@ impl Game {
         self.trashing
             .iter()
             .rev()
-            .find(|(c, _)| *c == id)
-            .map(|(_, z)| *z)
+            .find(|st| st.card == id)
+            .map(|st| st.from)
+    }
+
+    /// Whether `id`, whose "when trashed" abilities are resolving, has stayed in the
+    /// trash: only then can one of them move it.
+    pub(crate) fn still_where_trashed(&self, id: CardId) -> bool {
+        self.trashing
+            .iter()
+            .rev()
+            .find(|st| st.card == id)
+            .is_some_and(|st| self.stayed(id, st.at))
+    }
+
+    /// Whether `id`, whose "when discarded" abilities are resolving, has stayed in the
+    /// discard pile: only then can one of them move it.
+    pub(crate) fn still_where_discarded(&self, id: CardId) -> bool {
+        self.stack
+            .iter()
+            .rev()
+            .find_map(|f| match f {
+                Frame::Discard { cards, at, .. } if cards.contains(&id) => Some(*at),
+                _ => None,
+            })
+            .is_some_and(|at| self.stayed(id, at))
+    }
+
+    /// Whether `id` is one of the cards a look or reveal took off `p`'s deck and has
+    /// stayed off it since ([`Zone::Looking`]).
+    pub(crate) fn held(&self, p: PlayerId, id: CardId) -> bool {
+        self.zone(id) == Zone::Looking(p)
+            && self
+                .holds
+                .iter()
+                .rev()
+                .find(|h| h.player == p && h.cards.contains(&id))
+                .is_some_and(|h| self.stayed(id, h.at))
     }
 
     pub fn pile_top(&self, id: PileId) -> Option<CardId> {
@@ -1051,6 +1194,9 @@ impl Game {
             last_shuffle: vec![],
             shuffle_placed: vec![],
             holds: vec![],
+            moved: vec![],
+            clock: 0,
+            last_put: Default::default(),
             emptied_depth: 0,
             ext: self.ext.clone(),
             coins_as_cards: None,
@@ -1151,7 +1297,7 @@ impl Game {
         while let Some(i) = self.holds.iter().rposition(|h| h.depth > self.stack.len()) {
             let h = self.holds.remove(i);
             for &c in h.cards.iter().rev() {
-                if self.zones[c.index()] == Zone::Looking(h.player) {
+                if self.zones[c.index()] == Zone::Looking(h.player) && self.stayed(c, h.at) {
                     self.move_card(c, Zone::Deck(h.player), Pos::Top);
                 }
             }
@@ -1194,6 +1340,9 @@ impl Game {
     }
 
     pub(crate) fn move_card(&mut self, id: CardId, to: Zone, pos: Pos) {
+        if self.already_at(id, to, pos) {
+            return;
+        }
         self.note_move(id, to, pos);
         let from = self.zones[id.index()];
         let src = self.zone_vec(from);
@@ -1218,15 +1367,6 @@ impl Game {
         }
         if matches!(from, Zone::InPlay(_)) && !matches!(to, Zone::InPlay(_)) {
             self.masks.remove(&id);
-            let t = &mut self.turn;
-            for (stayed, _) in t
-                .stayed_in_play
-                .iter_mut()
-                .zip(&t.played_ids)
-                .filter(|(_, c)| **c == id)
-            {
-                *stayed = false;
-            }
             self.left_play(id);
         }
         if let Zone::SetAside(p) | Zone::Looking(p) = from {
@@ -1234,11 +1374,33 @@ impl Game {
         }
         self.zones[id.index()] = to;
         let dst = self.zone_vec(to);
+        let top = dst.last().copied();
         match pos {
             Pos::Top => dst.push(id),
             Pos::Bottom => dst.insert(0, id),
             Pos::Under(n) => dst.insert(dst.len().saturating_sub(n), id),
         }
+        let covers = dst.last() == Some(&id);
+        self.touch(id);
+        // The card that was on top of a deck is covered up: what expected it there can't
+        // move it any more. (A card covered up in a discard pile can still be moved.)
+        if let (Zone::Deck(_), true, Some(under)) = (to, covers, top) {
+            self.touch(under);
+        }
+    }
+
+    /// Whether putting `id` there moves nothing: a card put into the hand it is in, or
+    /// onto the deck it is on top of, has not moved for what expects it where it is
+    /// (Watchtower putting a Nomad Camp onto the deck it was gained to).
+    fn already_at(&self, id: CardId, to: Zone, pos: Pos) -> bool {
+        self.zones[id.index()] == to
+            && match to {
+                Zone::Hand(_) => true,
+                Zone::Deck(p) => {
+                    pos == Pos::Top && self.players[p.index()].deck.last() == Some(&id)
+                }
+                _ => false,
+            }
     }
 
     pub(crate) fn emit(&mut self, event: Event) {

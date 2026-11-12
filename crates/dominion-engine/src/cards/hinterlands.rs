@@ -252,7 +252,14 @@ impl SetRules for Rules {
                     m: (actions_gained(g) - resolving.min(actions_gained(g))) as i32,
                     ..Scratch::default()
                 };
-                g.add_lasting(Card::Cauldron, f.player, f.this, vec![], Until::EndOfTurn, data);
+                g.add_lasting(
+                    Card::Cauldron,
+                    f.player,
+                    f.this,
+                    vec![],
+                    Until::EndOfTurn,
+                    data,
+                );
                 Flow::done()
             }
             (Card::Crossroads, _) => match f.pc {
@@ -364,14 +371,20 @@ impl SetRules for Rules {
                     }
                 }
                 if kind == Card::Trail && not_cleanup && still_gained(g, card) {
-                    out.push(Trigger::new(player, kind, REACT_PLAY).on(card).optional("play it"));
+                    out.push(
+                        Trigger::new(player, kind, REACT_PLAY)
+                            .on(card)
+                            .optional("play it"),
+                    );
                 }
                 if kind == Card::Duchy
-                    && g
-                        .supply_pile(Card::Duchess)
+                    && g.supply_pile(Card::Duchess)
                         .is_some_and(|p| !g.pile(p).cards.is_empty())
                 {
-                    out.push(Trigger::new(player, Card::Duchess, DUCHESS_GAIN).optional("gain a Duchess"));
+                    out.push(
+                        Trigger::new(player, Card::Duchess, DUCHESS_GAIN)
+                            .optional("gain a Duchess"),
+                    );
                 }
                 if kind == Card::Province {
                     for q in g.others(player) {
@@ -380,7 +393,9 @@ impl SetRules for Rules {
                                 out.push(
                                     Trigger::new(q, Card::FoolsGold, FOOLS_GOLD_TRASH)
                                         .on(c)
-                                        .optional("trash it from your hand to gain a Gold onto your deck"),
+                                        .optional(
+                                            "trash it from your hand to gain a Gold onto your deck",
+                                        ),
                                 );
                             }
                         }
@@ -388,8 +403,7 @@ impl SetRules for Rules {
                 }
                 let exchangeable = still_gained(g, card)
                     && g.home_pile(g.printed(card)).is_some()
-                    && g
-                        .supply_pile(Card::Silver)
+                    && g.supply_pile(Card::Silver)
                         .is_some_and(|p| !g.pile(p).cards.is_empty());
                 if exchangeable {
                     for &c in g.hand(player) {
@@ -397,16 +411,18 @@ impl SetRules for Rules {
                             out.push(
                                 Trigger::new(player, Card::Trader, TRADER_EXCHANGE)
                                     .on(c)
-                                    .optional(format!("reveal it to exchange {} for a Silver", g.card(card))),
+                                    .optional(format!(
+                                        "reveal it to exchange {} for a Silver",
+                                        g.card(card)
+                                    )),
                             );
                         }
                     }
                 }
                 // Fires once the third Action is gained, even if resolving its other
                 // when-gain abilities gained more Actions first.
-                let third_action = player == g.turn.player
-                    && g.is(card, Types::ACTION)
-                    && actions_gained(g) >= 3;
+                let third_action =
+                    player == g.turn.player && g.is(card, Types::ACTION) && actions_gained(g) >= 3;
                 for l in g.lasting() {
                     if l.owner != player {
                         continue;
@@ -431,21 +447,33 @@ impl SetRules for Rules {
             }
             Occasion::Trash { player, card } => match g.card(card) {
                 Card::Nomads => out.push(Trigger::new(player, Card::Nomads, GAINED).on(card)),
-                Card::Trail if not_cleanup && g.zone(card) == Zone::Trash => {
-                    out.push(Trigger::new(player, Card::Trail, REACT_PLAY).on(card).optional("play it"));
+                Card::Trail if not_cleanup && g.still_where_trashed(card) => {
+                    out.push(
+                        Trigger::new(player, Card::Trail, REACT_PLAY)
+                            .on(card)
+                            .optional("play it"),
+                    );
                 }
                 _ => {}
             },
             Occasion::Discard { player, card } => {
-                if !not_cleanup || g.zone(card) != Zone::Discard(player) {
+                if !not_cleanup || !g.still_where_discarded(card) {
                     return;
                 }
                 match g.card(card) {
                     Card::Tunnel => {
-                        out.push(Trigger::new(player, Card::Tunnel, TUNNEL_GOLD).on(card).optional("reveal it to gain a Gold"));
+                        out.push(
+                            Trigger::new(player, Card::Tunnel, TUNNEL_GOLD)
+                                .on(card)
+                                .optional("reveal it to gain a Gold"),
+                        );
                     }
                     k @ (Card::Trail | Card::Weaver) => {
-                        out.push(Trigger::new(player, k, REACT_PLAY).on(card).optional("play it"));
+                        out.push(
+                            Trigger::new(player, k, REACT_PLAY)
+                                .on(card)
+                                .optional("play it"),
+                        );
                     }
                     _ => {}
                 }
@@ -475,7 +503,9 @@ impl SetRules for Rules {
                         out.push(
                             Trigger::new(player, Card::Scheme, SCHEME_TOPDECK)
                                 .via_lasting(l.id)
-                                .optional("put an Action card you discard from play onto your deck"),
+                                .optional(
+                                    "put an Action card you discard from play onto your deck",
+                                ),
                         );
                     }
                 }
@@ -512,7 +542,9 @@ impl SetRules for Rules {
 /// `name`, and none of its player's earlier plays this turn was.
 fn first_play_of(g: &Game, f: &CardFrame, name: Card) -> bool {
     f.this.is_some_and(|c| {
-        g.card(c) == name && g.plays_before(f.player, c).all(|(played, _)| played != name)
+        g.card(c) == name
+            && g.plays_before(f.player, c)
+                .all(|(played, _)| played != name)
     })
 }
 
@@ -748,7 +780,12 @@ fn jack_of_all_trades(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 3;
-            f.ask_yes_or(Purpose::Discard, format!("Discard {}", g.card(f.s.pick.expect("set above"))), "Put it back").about(f.s.pick.into_iter().collect())
+            f.ask_yes_or(
+                Purpose::Discard,
+                format!("Discard {}", g.card(f.s.pick.expect("set above"))),
+                "Put it back",
+            )
+            .about(f.s.pick.into_iter().collect())
         }
         3 => {
             f.pc = 4;
@@ -936,9 +973,7 @@ fn weaver(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         4 => Flow::done(),
         _ => {
             f.pc -= 10;
-            let flow = gain_where(g, f, input, Dest::Discard, |_, c| {
-                c.at_most(Cost::coins(4))
-            });
+            let flow = gain_where(g, f, input, Dest::Discard, |_, c| c.at_most(Cost::coins(4)));
             f.pc += 10;
             flow
         }
@@ -1016,8 +1051,13 @@ fn duchess(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 2;
-            f.ask_yes_or_for(q, Purpose::Discard, format!("Discard {}", g.card(f.s.pick.expect("set above"))), "Put it back")
-                .about(f.s.pick.into_iter().collect())
+            f.ask_yes_or_for(
+                q,
+                Purpose::Discard,
+                format!("Discard {}", g.card(f.s.pick.expect("set above"))),
+                "Put it back",
+            )
+            .about(f.s.pick.into_iter().collect())
         }
         _ => {
             f.s.i += 1;
@@ -1047,9 +1087,7 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             1 => {
                 let revealed = input.take().map(Input::cards).unwrap_or_default();
-                let m = f.s.m as usize;
-                f.s.cards.truncate(m);
-                f.s.cards.extend(&revealed);
+                f.s.cards = revealed.clone();
                 f.s.n = revealed.iter().any(|&c| g.is(c, Types::TREASURE)) as i32;
                 f.s.pick = None;
                 let loot: Vec<CardId> = revealed
@@ -1071,11 +1109,9 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             3 => {
                 let t = f.targets[f.s.i];
-                let m = f.s.m as usize;
-                let revealed = f.s.cards.split_off(m);
+                let revealed = std::mem::take(&mut f.s.cards);
                 if let Some(c) = f.s.pick.take() {
-                    f.s.cards.push(c);
-                    f.s.m += 1;
+                    f.s.placed.extend(g.put(c));
                 }
                 let rest = looking(g, t, &revealed);
                 f.pc = 4;
@@ -1094,12 +1130,12 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 0;
             }
             _ => {
-                let Some(&c) = f.s.cards.get(f.s.i) else {
+                let Some(&trashed) = f.s.placed.get(f.s.i) else {
                     return Flow::done();
                 };
                 f.s.i += 1;
-                if g.zone(c) == Zone::Trash {
-                    return Flow::Call(Frame::gain_card(f.player, c, Dest::Discard));
+                if g.still(trashed) {
+                    return Flow::Call(Frame::gain_card(f.player, trashed.card, Dest::Discard));
                 }
             }
         }
@@ -1130,7 +1166,11 @@ fn oracle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 2;
-            f.ask_yes_or(Purpose::Discard, format!("Discard {} {}", whose(f.player, q), names(g, &f.s.cards)), "Put them back")
+            f.ask_yes_or(
+                Purpose::Discard,
+                format!("Discard {} {}", whose(f.player, q), names(g, &f.s.cards)),
+                "Put them back",
+            )
         }
         2 => {
             let cards = std::mem::take(&mut f.s.cards);

@@ -735,6 +735,44 @@ fn a_gained_card_covered_on_the_deck_cannot_be_exchanged_for_a_changeling() {
     assert_eq!(g.count_owned(P1, Card::NomadCamp), 1);
 }
 
+/// Blessed Village's page: "When you are looking at cards from the top of your deck (with
+/// e.g. The Sun's Gift), that counts as moving them. So if you gain this onto your deck
+/// and then receive The Sun's Gift, that will cause Gatekeeper to lose track (even if you
+/// leave Blessed Village on top of your deck)." Changeling is the same kind of effect.
+#[test]
+fn a_gained_card_looked_at_and_put_back_on_the_deck_cannot_be_exchanged_for_a_changeling() {
+    let mut g = setup_with(GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        landscapes: vec![Card::Demand],
+        ..GameConfig::new(2, vec![Card::BlessedVillage, Card::Changeling], 7)
+    });
+    stack_boons(&mut g, &[Card::TheSunsGift]);
+    hand(&mut g, P0, &[Card::Gold, Card::Silver]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Silver);
+    respond(&mut g, Response::Move(Move::BuyLandscape(Card::Demand)));
+    // The Horse could be exchanged for a Changeling too.
+    no(&mut g);
+    choose_pile(&mut g, Card::BlessedVillage);
+    assert_eq!(deck_kinds(&g, P0)[..2], [Card::BlessedVillage, Card::Horse]);
+    // Blessed Village's Boon first, received now: The Sun's Gift looks at the top 4 cards,
+    // discards none and puts them back as they were.
+    super::intrigue::trigger(&mut g, Card::BlessedVillage);
+    mode(&mut g, 0);
+    assert_eq!(kinds(&g, &candidates(&g))[0], Card::BlessedVillage);
+    choose(&mut g, &[]);
+    let back = candidates(&g);
+    choose(&mut g, &back);
+    // No exchange is offered: the turn is over, and Clean-up drew the Blessed Village.
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(hand_kinds(&g, P0)[..2], [Card::BlessedVillage, Card::Horse]);
+    assert_eq!(pile_size(&g, Card::Changeling), 10);
+}
+
 #[test]
 fn devils_workshop_depends_on_the_cards_gained_this_turn() {
     let mut g = setup(&[Card::DevilsWorkshop]);

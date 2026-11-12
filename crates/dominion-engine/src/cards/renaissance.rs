@@ -12,6 +12,7 @@ use super::{
     CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
     take_mode,
 };
+use crate::Note;
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
@@ -19,7 +20,6 @@ use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Opt, PlayerId, Set, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -186,7 +186,10 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::Exploration, EFFECT).quiet());
                 }
                 if has(g, player, Card::Pageant) && g.turn.coins >= 1 {
-                    out.push(Trigger::new(player, Card::Pageant, EFFECT).optional("pay $1 for +1 Coffers"));
+                    out.push(
+                        Trigger::new(player, Card::Pageant, EFFECT)
+                            .optional("pay $1 for +1 Coffers"),
+                    );
                 }
             }
             Occasion::StartCleanup { .. } => {
@@ -211,7 +214,11 @@ impl SetRules for Rules {
                 if holds(g, player, Card::Horn) && !used(g, Card::Horn, player) {
                     for c in g.leaving_play(player) {
                         if g.card(c) == Card::BorderGuard {
-                            out.push(Trigger::new(player, Card::Horn, EFFECT).on(c).optional("put Border Guard onto your deck"));
+                            out.push(
+                                Trigger::new(player, Card::Horn, EFFECT)
+                                    .on(c)
+                                    .optional("put Border Guard onto your deck"),
+                            );
                         }
                     }
                 }
@@ -230,7 +237,10 @@ impl SetRules for Rules {
             Occasion::Shuffled { player, .. }
                 if has(g, player, Card::StarChart) && g.shuffled(player).len() >= 2 =>
             {
-                out.push(Trigger::new(player, Card::StarChart, EFFECT).optional("pick one of the shuffled cards to go on top"));
+                out.push(
+                    Trigger::new(player, Card::StarChart, EFFECT)
+                        .optional("pick one of the shuffled cards to go on top"),
+                );
             }
             _ => {}
         }
@@ -266,7 +276,8 @@ impl SetRules for Rules {
     fn ensure(g: &mut Game, _s: &mut Setup) {
         g.ext.renaissance.plot.resize(g.num_players(), 0);
         for (artifact, card) in ARTIFACTS {
-            if setup::in_game(g, |c| c == card) && !g.artifacts.iter().any(|(a, _)| *a == artifact) {
+            if setup::in_game(g, |c| c == card) && !g.artifacts.iter().any(|(a, _)| *a == artifact)
+            {
                 g.artifacts.push((artifact, None));
             }
         }
@@ -348,7 +359,10 @@ fn first_action_play(g: &Game, p: PlayerId, card: CardId) -> bool {
         .iter()
         .filter(|e| matches!(e, Event::Played { player, .. } if *player == p))
         .count();
-    let first = g.turn.plays_by(p).position(|(_, t)| t.contains(Types::ACTION));
+    let first = g
+        .turn
+        .plays_by(p)
+        .position(|(_, t)| t.contains(Types::ACTION));
     first == Some(earlier)
 }
 
@@ -426,9 +440,11 @@ fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
                 out.push(t.optional("discard a Victory card for +2 Cards"))
             }
             Card::Fair => out.push(t.quiet()),
-            Card::Barracks | Card::Cathedral | Card::CityGate | Card::SinisterPlot | Card::Piazza => {
-                out.push(t)
-            }
+            Card::Barracks
+            | Card::Cathedral
+            | Card::CityGate
+            | Card::SinisterPlot
+            | Card::Piazza => out.push(t),
             _ => {}
         }
     }
@@ -437,7 +453,9 @@ fn start_of_turn(g: &Game, p: PlayerId, out: &mut Vec<Trigger>) {
 fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger>) {
     let gained = Trigger::new(gainer, g.card(card), GAINED).on(card);
     match g.card(card) {
-        Card::Ducat if !coppers_in_hand(g, gainer).is_empty() => out.push(gained.optional("trash a Copper from your hand")),
+        Card::Ducat if !coppers_in_hand(g, gainer).is_empty() => {
+            out.push(gained.optional("trash a Copper from your hand"))
+        }
         Card::Experiment if !g.ext.renaissance.experiments.contains(&card) => out.push(gained),
         Card::Lackeys | Card::Spices | Card::SilkMerchant | Card::FlagBearer => out.push(gained),
         _ => {}
@@ -463,7 +481,10 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         && !used(g, Card::Innovation, gainer)
         && g.is(card, Types::ACTION)
     {
-        out.push(Trigger::new(gainer, Card::Innovation, EFFECT).optional(format!("play {}", g.card(card))));
+        out.push(
+            Trigger::new(gainer, Card::Innovation, EFFECT)
+                .optional(format!("play {}", g.card(card))),
+        );
     }
     if !where_gained(g, card) {
         return;
@@ -473,7 +494,13 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             .via_lasting(l.id)
             .optional(format!("set {} aside on Cargo Ship", g.card(card)));
         // Which Cargo Ship stays in play: one played by a Throne Room keeps that too.
-        let by: Vec<String> = l.data.cards.iter().skip(1).map(|&c| g.card(c).to_string()).collect();
+        let by: Vec<String> = l
+            .data
+            .cards
+            .iter()
+            .skip(1)
+            .map(|&c| g.card(c).to_string())
+            .collect();
         if !by.is_empty() {
             t = t.labelled(format!("Cargo Ship played by {}", by.join(", ")));
         }
@@ -492,7 +519,9 @@ fn trash_triggers(g: &Game, trasher: PlayerId, card: CardId, out: &mut Vec<Trigg
         && !g.ext.renaissance.sewers.contains(&card)
         && !g.hand(trasher).is_empty()
     {
-        out.push(Trigger::new(trasher, Card::Sewers, EFFECT).optional("trash a card from your hand"));
+        out.push(
+            Trigger::new(trasher, Card::Sewers, EFFECT).optional("trash a card from your hand"),
+        );
     }
 }
 
@@ -798,7 +827,7 @@ fn piazza(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
-            if !g.is(c, Types::ACTION) || g.zone(c) != Zone::Looking(p) {
+            if !g.is(c, Types::ACTION) || !g.held(p, c) {
                 return Flow::done();
             }
             f.pc = 2;
@@ -1122,8 +1151,7 @@ fn scepter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             let mut candidates: Vec<CardId> = vec![];
-            let played = g.turn.played_ids.iter().zip(&g.turn.stayed_in_play);
-            for (&c, _) in played.filter(|(_, stayed)| **stayed) {
+            for c in g.stayed_in_play() {
                 let ok = g.zone(c) == Zone::InPlay(p)
                     && g.is(c, Types::ACTION)
                     && !g.is(c, Types::COMMAND)
@@ -1188,7 +1216,7 @@ fn seer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             for c in input.cards() {
                 let cost = g.cost_of(c);
                 let cheap = (2..=4).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0;
-                if g.zone(c) != Zone::Looking(p) {
+                if !g.held(p, c) {
                     continue;
                 }
                 if cheap {

@@ -10,7 +10,8 @@ use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Move, Opt, Purpose, Response};
 use crate::event::{Dest, Event};
 use crate::game::{
-    EndReason, ExtraLimit, ExtraTurn, GainState, Phase, PlayState, Pos, Turn, Until, Zone,
+    EndReason, ExtraLimit, ExtraTurn, GainState, Mark, Phase, PlayState, Pos, TrashState, Turn,
+    Until, Zone,
 };
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
@@ -195,12 +196,18 @@ pub(crate) enum Frame {
         player: PlayerId,
         cards: Vec<CardId>,
         i: usize,
+        /// When the cards were trashed.
+        #[serde(default)]
+        at: Mark,
     },
     Discard {
         player: PlayerId,
         cards: Vec<CardId>,
         cleanup: bool,
         i: usize,
+        /// When the cards were discarded.
+        #[serde(default)]
+        at: Mark,
     },
     /// Discards cards from play other than in Clean-up: "when you discard this from
     /// play", then an ordinary discard of those still there.
@@ -335,6 +342,7 @@ impl Frame {
             player,
             cards,
             i: 0,
+            at: Mark::default(),
         }
     }
 
@@ -344,6 +352,7 @@ impl Frame {
             cards,
             cleanup: false,
             i: 0,
+            at: Mark::default(),
         }
     }
 
@@ -396,6 +405,7 @@ impl Frame {
             targets: vec![],
             remaining: vec![],
             again: 0,
+            at: Mark::default(),
             pc: 0,
         })
     }
@@ -518,6 +528,7 @@ impl Frame {
                         player: p,
                         cards: cards.clone(),
                         depth: g.stack.len(),
+                        at: g.now(),
                     });
                 }
                 Flow::Done(Value::Cards(cards))
@@ -540,23 +551,34 @@ impl Frame {
                 index,
                 pc,
             } => resume_buy(g, *player, (*pile, *landscape), card, index, pc, input),
-            Frame::Trash { player, cards, i } => {
+            Frame::Trash {
+                player,
+                cards,
+                i,
+                at,
+            } => {
                 // Cards trashed together are all trashed before any "when trashed" ability,
                 // and their abilities share one window.
                 if *i > 0 {
                     for c in cards.iter() {
-                        if let Some(pos) = g.trashing.iter().rposition(|(x, _)| x == c) {
+                        if let Some(pos) = g.trashing.iter().rposition(|st| st.card == *c) {
                             g.trashing.remove(pos);
                         }
                     }
+                    g.last_put = (cards.clone(), *at);
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
                 *i = 1;
+                let first = g.trashing.len();
                 for &c in cards.iter() {
                     let from = g.zone(c);
                     g.show(c);
                     g.move_card(c, Zone::Trash, Pos::Top);
-                    g.trashing.push((c, from));
+                    g.trashing.push(TrashState {
+                        card: c,
+                        from,
+                        at: Mark::default(),
+                    });
                     let card = g.card(c);
                     if *player == g.turn.player {
                         g.turn.trashed.push(card);
@@ -565,6 +587,10 @@ impl Frame {
                         player: *player,
                         card,
                     });
+                }
+                *at = g.now();
+                for st in &mut g.trashing[first..] {
+                    st.at = *at;
                 }
                 let occs = cards
                     .iter()
@@ -580,16 +606,19 @@ impl Frame {
                 cards,
                 cleanup,
                 i,
+                at,
             } => {
                 if *cleanup {
                     for &c in cards.iter() {
                         g.move_unlogged(c, Zone::Discard(*player));
                     }
+                    g.last_put = (vec![], Mark::default());
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
                 // Cards discarded together are all discarded before any "when discarded"
                 // ability, and their abilities share one window.
                 if *i > 0 {
+                    g.last_put = (cards.clone(), *at);
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
                 *i = 1;
@@ -601,6 +630,7 @@ impl Frame {
                         card: g.card(c),
                     });
                 }
+                *at = g.now();
                 let occs = cards
                     .iter()
                     .map(|&card| Occasion::Discard {
@@ -717,6 +747,7 @@ fn resume_shuffle(
                     top: false,
                 });
             }
+            g.touch_shuffled(&under);
             let mixed = under.clone();
             g.mixed(mixed);
             *count = under.len();
@@ -1132,6 +1163,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 cards,
                 cleanup: true,
                 i: 0,
+                at: Mark::default(),
             })
         }
         8 => {
@@ -1191,6 +1223,7 @@ fn resume_gain(
                 since: g.log.len(),
                 cost: g.cost_of(id),
                 phase: g.turn.phase,
+                at: Mark::default(),
                 turn_index: None,
                 buy_index: None,
             });
@@ -1228,6 +1261,7 @@ fn resume_gain(
             }
             g.show(st.card);
             g.move_card(st.card, zone, Pos::Top);
+            g.gains.last_mut().expect("gain in progress").at = g.now();
             if let Zone::SetAside(p) = zone {
                 g.players[p.index()].face_up.push(st.card);
             }
@@ -1479,6 +1513,9 @@ pub(crate) struct PlayFrame {
     remaining: Vec<PlayerId>,
     /// How many more times to follow the card's own instructions.
     again: u32,
+    /// When this play put the card into play, if it did.
+    #[serde(default)]
+    at: Mark,
     pc: u8,
 }
 
@@ -1489,6 +1526,7 @@ impl PlayFrame {
             0 => {
                 if self.move_to_play && g.zone(id) == Zone::Hand(p) {
                     if !cards::can_play(g, p, id) {
+                        g.last_put = (vec![], Mark::default());
                         return Flow::done();
                     }
                     if p == g.turn.player {
@@ -1498,6 +1536,7 @@ impl PlayFrame {
                 let enters = self.move_to_play && g.zone(id) != Zone::InPlay(p);
                 if enters {
                     g.move_card(id, Zone::InPlay(p), Pos::Top);
+                    self.at = g.now();
                 }
                 let card = g.card(id);
                 let since = g.log.len();
@@ -1507,7 +1546,10 @@ impl PlayFrame {
                 g.turn.played_by.push(p);
                 g.turn.played_types.push(g.types(id));
                 g.turn.played_ids.push(id);
-                g.turn.stayed_in_play.push(g.zone(id) == Zone::InPlay(p));
+                let in_play = g.zone(id) == Zone::InPlay(p);
+                g.turn
+                    .played_at
+                    .push(if in_play { g.now() } else { Mark::default() });
                 let behavior = cards::behavior(g, id).unwrap_or(card);
                 g.plays.push(PlayState {
                     player: p,
@@ -1693,6 +1735,7 @@ impl PlayFrame {
             }
             _ => {
                 g.plays.pop();
+                g.last_put = (vec![id], self.at);
                 Flow::done()
             }
         }

@@ -1569,6 +1569,34 @@ fn rapid_expansion_sets_aside_gained_actions_and_treasures_to_play_next_turn() {
     assert_eq!(g.hand(P0).len(), 8);
 }
 
+/// Blockade's page: "Rapid Expansion will set the gained card aside again after it is set
+/// aside by Blockade, and so it's no longer set aside by Blockade and Blockade's other
+/// abilities won't trigger."
+#[test]
+fn rapid_expansion_takes_the_card_a_blockade_gained() {
+    let mut g = with_prophecy(&[Card::Blockade, Card::Smithy], Card::RapidExpansion);
+    hand(&mut g, P0, &[Card::Blockade]);
+    deck(&mut g, P0, &coppers(20));
+    hand(&mut g, P1, &[Card::Gold, Card::Gold]);
+    deck(&mut g, P1, &coppers(20));
+    g.start();
+    play(&mut g, Card::Blockade);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Smithy]);
+    next_turn(&mut g);
+    // The Blockade was discarded, and a Smithy gained by P1 comes with no Curse.
+    assert_eq!(in_play_kinds(&g, P0), []);
+    to_buy(&mut g);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Smithy);
+    assert_eq!(g.count_owned(P1, Card::Curse), 0);
+    // P1's turn is over: Rapid Expansion has played the Smithy.
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(in_play_kinds(&g, P0), [Card::Smithy]);
+    assert_eq!(g.hand(P0).len(), 8);
+}
+
 #[test]
 fn sickness_asks_for_a_curse_onto_the_deck_or_three_discards() {
     let mut g = with_prophecy(&[Card::Smithy], Card::Sickness);

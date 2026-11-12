@@ -22,6 +22,7 @@ use super::{
     CardFrame, Hook, SetRules, Step, due_durations, duration_trigger, left_supply, looking,
     put_back,
 };
+use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
@@ -29,7 +30,6 @@ use crate::game::{ExtraLimit, ExtraTurn, GainState, Mat, Phase, Scratch, Until, 
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -401,7 +401,11 @@ impl SetRules for Rules {
                         && next_play(g, l, card, |_| true)
                 });
                 if let Some(l) = kiln {
-                    out.push(Trigger::new(player, Card::Kiln, KILN_COPY).via_lasting(l.id).on(card));
+                    out.push(
+                        Trigger::new(player, Card::Kiln, KILN_COPY)
+                            .via_lasting(l.id)
+                            .on(card),
+                    );
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
@@ -412,10 +416,14 @@ impl SetRules for Rules {
             }
             Occasion::Discard { player, card } => {
                 if g.card(card) == Card::VillageGreen
-                    && g.zone(card) == Zone::Discard(player)
+                    && g.still_where_discarded(card)
                     && g.turn.phase != Phase::Cleanup
                 {
-                    out.push(Trigger::new(player, Card::VillageGreen, REACT).on(card).optional("reveal it to play it"));
+                    out.push(
+                        Trigger::new(player, Card::VillageGreen, REACT)
+                            .on(card)
+                            .optional("reveal it to play it"),
+                    );
                 }
             }
             Occasion::DiscardFromPlay { player } => {
@@ -527,7 +535,11 @@ impl SetRules for Rules {
             // The cards are drawn here, before the step's flow: a step that gives +$
             // ends there if it would go on with the hand.
             if cfg!(test) {
-                assert!(!lists_hand(g, p, flow), "{}: +$ and the hand in one step", f.card);
+                assert!(
+                    !lists_hand(g, p, flow),
+                    "{}: +$ and the hand in one step",
+                    f.card
+                );
             }
             let rest = std::mem::replace(flow, Flow::Call(Frame::draw(p, coins as usize)));
             f.hold(rest);
@@ -651,7 +663,10 @@ fn says_plus_cards(card: Card) -> bool {
     let mut count = 0;
     let bytes = text.as_bytes();
     for (i, _) in text.match_indices('+') {
-        let digits = bytes[i + 1..].iter().take_while(|b| b.is_ascii_digit()).count();
+        let digits = bytes[i + 1..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
         // Governor's is "+1 (+3) Cards".
         let rest = text[i + 1 + digits..].trim_start_matches(')');
         if digits > 0 && rest.starts_with(" Card") {
@@ -706,11 +721,11 @@ fn stayed_in_play(g: &Game, card: CardId, nth: usize) -> bool {
         return true;
     };
     let t = &g.turn;
-    let plays = t.played_ids.iter().zip(&t.stayed_in_play);
+    let plays = t.played_ids.iter().zip(&t.played_at);
     plays
         .filter(|(c, _)| **c == card)
         .nth(skip)
-        .is_some_and(|(_, stayed)| *stayed)
+        .is_some_and(|(_, &at)| g.stayed(card, at))
 }
 
 /// Returns the played card to its pile if it is in play (Horse, Way of the Horse).
@@ -775,12 +790,7 @@ fn gain_from(f: &mut CardFrame, input: Input, piles: Vec<PileId>, pc: u8, to: De
 }
 
 /// "You may play one of `cards`" (without using an Action); plays it from where it is.
-fn play_one_of(
-    f: &mut CardFrame,
-    input: Input,
-    cards: Vec<CardId>,
-    optional: bool,
-) -> Flow {
+fn play_one_of(f: &mut CardFrame, input: Input, cards: Vec<CardId>, optional: bool) -> Flow {
     match f.pc {
         0 => {
             if cards.is_empty() {
@@ -800,11 +810,16 @@ fn play_one_of(
     }
 }
 
-/// A reaction that plays this card from `zone` if it is still there.
+/// A reaction that plays this card from `zone` (its player's hand, or the discard pile it
+/// was just discarded to) if it is still there.
 fn play_from(g: &mut Game, f: &mut CardFrame, zone: Zone) -> Flow {
     let this = f.this();
     let allowed = !matches!(zone, Zone::Hand(_)) || super::can_play(g, f.player, this);
-    if f.pc == 0 && g.zone(this) == zone && allowed {
+    let there = match zone {
+        Zone::Discard(_) => g.still_where_discarded(this),
+        _ => g.zone(this) == zone,
+    };
+    if f.pc == 0 && there && allowed {
         f.pc = 1;
         if let Zone::Discard(p) = zone {
             g.reveal(p, this);
@@ -831,7 +846,11 @@ fn invest_draws(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger>
             && owner != player
             && g.card(c) == g.card(card)
         {
-            out.push(Trigger::new(owner, Card::Invest, INVEST_DRAW).on(c).data(card.0 as i32));
+            out.push(
+                Trigger::new(owner, Card::Invest, INVEST_DRAW)
+                    .on(c)
+                    .data(card.0 as i32),
+            );
         }
     }
 }
@@ -855,12 +874,15 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
 
     // Gatekeeper: only if the gainer had no Exiled copy when they gained it.
     let action_or_treasure = g.is(card, Types::ACTION | Types::TREASURE);
-    let had_copies = gain_of(g, card)
-        .is_some_and(|gain| st.exile_discarded.contains(&(card, gain.since)));
+    let had_copies =
+        gain_of(g, card).is_some_and(|gain| st.exile_discarded.contains(&(card, gain.since)));
     if action_or_treasure && in_place && copies.is_empty() && !had_copies {
         for l in g.lasting() {
             let active = l.until == Until::Removed && g.before_next_turn(l);
-            if l.card == Card::Gatekeeper && active && l.owner != gainer && in_mask(l.data.n, gainer)
+            if l.card == Card::Gatekeeper
+                && active
+                && l.owner != gainer
+                && in_mask(l.data.n, gainer)
             {
                 out.push(
                     Trigger::new(gainer, Card::Gatekeeper, GATEKEEPER_EXILE)
@@ -878,7 +900,11 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         match l.card {
             Card::Livery => {
                 if g.gain_cost(card).is_some_and(|c| c.coins >= 4) {
-                    out.push(Trigger::new(gainer, Card::Livery, LIVERY_HORSE).via_lasting(l.id).on(card));
+                    out.push(
+                        Trigger::new(gainer, Card::Livery, LIVERY_HORSE)
+                            .via_lasting(l.id)
+                            .on(card),
+                    );
                 }
             }
             Card::WayOfTheSeal if in_place => {
@@ -917,7 +943,14 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
                     Trigger::new(p, g.card(c), REACT)
                         .on(c)
                         .data(card.0 as i32)
-                        .optional(if g.card(c) == Card::Sleigh { format!("discard it to put {} into your hand or onto your deck", g.card(card)) } else { "play it from your hand".into() }),
+                        .optional(if g.card(c) == Card::Sleigh {
+                            format!(
+                                "discard it to put {} into your hand or onto your deck",
+                                g.card(card)
+                            )
+                        } else {
+                            "play it from your hand".into()
+                        }),
                 );
             }
         }
@@ -967,7 +1000,10 @@ fn sleigh_react(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             let c = g.card(card);
-            f.ask_either(&[format!("Put {c} into your hand"), format!("Put {c} onto your deck")])
+            f.ask_either(&[
+                format!("Put {c} into your hand"),
+                format!("Put {c} onto your deck"),
+            ])
         }
         _ => {
             if still_where_gained(g, card) {
@@ -1072,7 +1108,10 @@ fn animal_fair_pay(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 f.pc = 1;
                 return f.ask_yes_or(
                     Purpose::Trash,
-                    format!("Trash an Action card from your hand instead of paying for {}", g.card(f.this())),
+                    format!(
+                        "Trash an Action card from your hand instead of paying for {}",
+                        g.card(f.this())
+                    ),
                     "Pay its cost",
                 );
             }
@@ -1262,16 +1301,15 @@ fn cardinal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             1 => {
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();
-                let eligible: Vec<CardId> = f
-                    .s
-                    .cards
-                    .iter()
-                    .copied()
-                    .filter(|&c| {
-                        let cost = g.cost_of(c);
-                        (3..=6).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0
-                    })
-                    .collect();
+                let eligible: Vec<CardId> =
+                    f.s.cards
+                        .iter()
+                        .copied()
+                        .filter(|&c| {
+                            let cost = g.cost_of(c);
+                            (3..=6).contains(&cost.coins) && cost.potions == 0 && cost.debt == 0
+                        })
+                        .collect();
                 if eligible.is_empty() {
                     f.pc = 3;
                     continue;
@@ -1281,7 +1319,7 @@ fn cardinal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             2 => {
                 for c in input.take().map(Input::cards).unwrap_or_default() {
-                    if g.zone(c) == Zone::Looking(target) {
+                    if g.held(target, c) {
                         exile(g, target, c);
                     }
                 }
@@ -1776,7 +1814,7 @@ fn gamble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
-            if g.zone(c) != Zone::Discard(p) || !g.is(c, Types::ACTION | Types::TREASURE) {
+            if g.put(c).is_none() || !g.is(c, Types::ACTION | Types::TREASURE) {
                 return Flow::done();
             }
             f.pc = 3;
@@ -1785,7 +1823,7 @@ fn gamble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 if input.is_yes() => {
             let c = f.s.pick.expect("set in step 1");
             f.pc = 4;
-            if g.zone(c) != Zone::Discard(p) {
+            if g.put(c).is_none() {
                 return Flow::done();
             }
             Flow::Call(Frame::play(p, c, true, vec![]))
@@ -1899,6 +1937,7 @@ fn reap(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
+                && g.gained(p, c).is_some()
                 && g.zone(c) == Zone::SetAside(p)
             {
                 let data = Scratch {
@@ -1971,7 +2010,13 @@ fn butterfly(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Return, format!("Return {} to its pile to gain a card costing exactly $1 more", g.card(this)))
+            f.ask_yes_no(
+                Purpose::Return,
+                format!(
+                    "Return {} to its pile to gain a card costing exactly $1 more",
+                    g.card(this)
+                ),
+            )
         }
         1 => {
             if !input.is_yes() || g.zone(this) != Zone::InPlay(f.player) {

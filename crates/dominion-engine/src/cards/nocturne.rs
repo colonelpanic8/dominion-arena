@@ -11,9 +11,8 @@
 //! lasting of that State when returned at the start of the Buy phase. Night-Durations
 //! follow the Seaside pattern ([`START`]).
 
-use super::{
-    Bonus, CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, put_back,
-};
+use super::{Bonus, CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, put_back};
+use crate::Note;
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -21,7 +20,6 @@ use crate::game::{Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -148,7 +146,9 @@ impl SetRules for Rules {
             },
             (Card::Cemetery, Hook::Ability(GAINED)) => trash_from_hand(g, f, input, 0, 4),
             (Card::CursedVillage, Hook::Ability(GAINED)) => receive_hex(g, f, 0, DONE),
-            (Card::Skulk, Hook::Ability(GAINED)) => gain_named(g, f, 0, Card::Gold, Dest::Discard, DONE),
+            (Card::Skulk, Hook::Ability(GAINED)) => {
+                gain_named(g, f, 0, Card::Gold, Dest::Discard, DONE)
+            }
             (Card::Changeling, Hook::Ability(CHANGELING_EXCHANGE)) => {
                 let c = f.this();
                 if where_gained(g, c) {
@@ -165,13 +165,20 @@ impl SetRules for Rules {
             }
             (Card::FaithfulHound, Hook::Ability(HOUND_SET_ASIDE)) => {
                 let (c, p) = (f.this(), f.player);
-                if g.zone(c) == Zone::Discard(p) {
+                if g.still_where_discarded(c) {
                     g.set_aside(c, p);
                     let data = Scratch {
                         pick: Some(c),
                         ..Scratch::default()
                     };
-                    g.add_lasting(Card::FaithfulHound, p, Some(c), vec![], Until::Removed, data);
+                    g.add_lasting(
+                        Card::FaithfulHound,
+                        p,
+                        Some(c),
+                        vec![],
+                        Until::Removed,
+                        data,
+                    );
                 }
                 Flow::done()
             }
@@ -200,7 +207,14 @@ impl SetRules for Rules {
             (Card::Deluded | Card::Envious, Hook::Ability(STATE_TRIGGER)) => {
                 let p = f.player;
                 g.players[p.index()].states.retain(|&s| s != f.card);
-                g.add_lasting(f.card, p, None, vec![], Until::EndOfTurn, Scratch::default());
+                g.add_lasting(
+                    f.card,
+                    p,
+                    None,
+                    vec![],
+                    Until::EndOfTurn,
+                    Scratch::default(),
+                );
                 Flow::done()
             }
             (_, Hook::Ability(_)) => return None,
@@ -294,7 +308,8 @@ impl SetRules for Rules {
             Occasion::StartTurn { player } => {
                 if has_state(g, player, Card::LostInTheWoods) && !g.hand(player).is_empty() {
                     out.push(
-                        Trigger::new(player, Card::LostInTheWoods, STATE_TRIGGER).optional("discard a card to receive a Boon"),
+                        Trigger::new(player, Card::LostInTheWoods, STATE_TRIGGER)
+                            .optional("discard a card to receive a Boon"),
                     );
                 }
             }
@@ -331,7 +346,7 @@ impl SetRules for Rules {
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
             Occasion::Discard { player, card } => {
                 if g.card(card) == Card::FaithfulHound
-                    && g.zone(card) == Zone::Discard(player)
+                    && g.still_where_discarded(card)
                     && g.turn.phase != Phase::Cleanup
                 {
                     out.push(
@@ -358,10 +373,7 @@ impl SetRules for Rules {
             }
             Occasion::Trash { player, card } => {
                 if g.card(card) == Card::HauntedMirror {
-                    let owner = g
-                        .trashed_from(card)
-                        .and_then(Zone::owner)
-                        .unwrap_or(player);
+                    let owner = g.trashed_from(card).and_then(Zone::owner).unwrap_or(player);
                     if !g.cards_in_hand_where(owner, Types::ACTION).is_empty() {
                         out.push(
                             Trigger::new(owner, Card::HauntedMirror, MIRROR_TRASHED)
@@ -384,8 +396,7 @@ impl SetRules for Rules {
     }
 
     fn modify_bonus(g: &Game, p: PlayerId, id: CardId, bonus: &mut Bonus) {
-        if matches!(g.card(id), Card::Silver | Card::Gold) && returned_state(g, p, Card::Envious)
-        {
+        if matches!(g.card(id), Card::Silver | Card::Gold) && returned_state(g, p, Card::Envious) {
             bonus.coins = 1;
         }
     }
@@ -454,7 +465,11 @@ impl SetRules for Rules {
                 uses(g, &[Card::DevilsWorkshop, Card::Tormentor, Card::Exorcist]),
             ),
             (Card::Ghost, 6, uses(g, &[Card::Exorcist, Card::Cemetery])),
-            (Card::Wish, 12, uses(g, &[Card::Leprechaun, Card::SecretCave])),
+            (
+                Card::Wish,
+                12,
+                uses(g, &[Card::Leprechaun, Card::SecretCave]),
+            ),
             (Card::Bat, 10, uses(g, &[Card::Vampire])),
         ];
         for (card, size, needed) in extra {
@@ -559,7 +574,6 @@ fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
     g.add_buys(p, n);
 }
-
 
 fn emit_hand(g: &mut Game, p: PlayerId) {
     let cards = g.hand(p).iter().map(|&c| g.card(c)).collect();
@@ -945,13 +959,12 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             1 => {
                 f.s.cards = input.cards();
-                let actions: Vec<CardId> = f
-                    .s
-                    .cards
-                    .iter()
-                    .copied()
-                    .filter(|&c| g.is(c, Types::ACTION))
-                    .collect();
+                let actions: Vec<CardId> =
+                    f.s.cards
+                        .iter()
+                        .copied()
+                        .filter(|&c| g.is(c, Types::ACTION))
+                        .collect();
                 f.pc = 2;
                 Flow::Call(Frame::discard(p, actions))
             }
@@ -1267,7 +1280,7 @@ fn blessed_village_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow
             });
             f.s.card = Some(boon);
             f.pc = 1;
-f.ask_either(&[
+            f.ask_either(&[
                 format!("Receive {boon} now"),
                 format!("Receive {boon} at the start of your next turn"),
             ])
@@ -1565,7 +1578,7 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             // The others are discarded before the Action is set aside.
-            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) {
+            if let Some(c) = f.s.pick.filter(|&c| g.held(p, c)) {
                 g.set_aside_revealed(c, p);
                 g.emit(Event::SetAside {
                     player: p,
@@ -1743,9 +1756,7 @@ fn necromancer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 .iter()
                 .copied()
                 .filter(|&c| {
-                    g.is(c, Types::ACTION)
-                        && !g.is(c, Types::DURATION)
-                        && !face_down.contains(&c)
+                    g.is(c, Types::ACTION) && !g.is(c, Types::DURATION) && !face_down.contains(&c)
                 })
                 .collect();
             if candidates.is_empty() {
@@ -1787,7 +1798,10 @@ fn pixie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Trash, format!("Trash {} to receive {boon} twice", g.card(f.this())))
+            f.ask_yes_no(
+                Purpose::Trash,
+                format!("Trash {} to receive {boon} twice", g.card(f.this())),
+            )
         }
         1 => {
             if !input.is_yes() {
@@ -1934,7 +1948,10 @@ fn secret_cave(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Discard, "Discard 3 cards for +$3 at the start of your next turn")
+            f.ask_yes_no(
+                Purpose::Discard,
+                "Discard 3 cards for +$3 at the start of your next turn",
+            )
         }
         1 => {
             if !input.is_yes() {
@@ -2079,7 +2096,7 @@ fn will_o_wisp(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
-                && g.zone(c) == Zone::Looking(p)
+                && g.held(p, c)
                 && g.cost_of(c).at_most(Cost::coins(2))
             {
                 g.put_in_hand(c, p);
@@ -2177,11 +2194,16 @@ fn zombie_spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_or(Purpose::Discard, format!("Discard {}", g.card(c)), "Put it back").about(vec![c])
+            f.ask_yes_or(
+                Purpose::Discard,
+                format!("Discard {}", g.card(c)),
+                "Put it back",
+            )
+            .about(vec![c])
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
-            if input.is_yes() && g.zone(c) == Zone::Looking(p) {
+            if input.is_yes() && g.held(p, c) {
                 f.pc = 3;
                 return Flow::Call(Frame::discard(p, vec![c]));
             }

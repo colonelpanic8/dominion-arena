@@ -150,7 +150,9 @@ impl SetRules for Rules {
             Occasion::Play { player, card } => {
                 let silver_or_gold = |c: &Card| matches!(c, Card::Silver | Card::Gold);
                 let first = silver_or_gold(&g.card(card))
-                    && !g.plays_before(player, card).any(|(c, _)| silver_or_gold(&c));
+                    && !g
+                        .plays_before(player, card)
+                        .any(|(c, _)| silver_or_gold(&c));
                 if first
                     && until_then(g, Card::Corsair)
                         .any(|l| l.owner != player && in_mask(l.data.n, player))
@@ -203,9 +205,10 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
     }
     if gainer == g.turn.player {
         for l in active(g, Card::Blockade) {
-            let copy = l.data.pick.is_some_and(|c| {
-                g.zone(c) == Zone::SetAside(l.owner) && g.card(c) == g.card(card)
-            });
+            let copy = l
+                .data
+                .pick
+                .is_some_and(|c| g.zone(c) == Zone::SetAside(l.owner) && g.card(c) == g.card(card));
             if copy && l.owner != gainer && in_mask(l.data.n, gainer) {
                 out.push(Trigger::new(l.owner, Card::Blockade, BLOCKADE_CURSE).via_lasting(l.id));
             }
@@ -215,7 +218,11 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
         for p in g.players_from(g.turn.player) {
             for &c in g.hand(p) {
                 if g.card(c) == Card::Pirate && super::can_play(g, p, c) {
-                    out.push(Trigger::new(p, Card::Pirate, PIRATE_PLAY).on(c).optional("play it from your hand"));
+                    out.push(
+                        Trigger::new(p, Card::Pirate, PIRATE_PLAY)
+                            .on(c)
+                            .optional("play it from your hand"),
+                    );
                 }
             }
         }
@@ -473,6 +480,7 @@ fn blockade(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
+                && g.gained(f.player, c).is_some()
                 && g.zone(c) == Zone::SetAside(f.player)
             {
                 let data = Scratch {
@@ -878,7 +886,9 @@ fn ambassador(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                         .filter(|&x| g.card(x) == card)
                         .collect();
                     f.pc = 2;
-                    return f.ask_cards(copies, 0, 2, Purpose::Return).question("return to the Supply");
+                    return f
+                        .ask_cards(copies, 0, 2, Purpose::Return)
+                        .question("return to the Supply");
                 }
             }
             2 => {
@@ -1103,13 +1113,12 @@ fn pirate_ship(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             3 => {
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();
-                let treasures: Vec<_> = f
-                    .s
-                    .cards
-                    .iter()
-                    .copied()
-                    .filter(|&c| g.is(c, Types::TREASURE))
-                    .collect();
+                let treasures: Vec<_> =
+                    f.s.cards
+                        .iter()
+                        .copied()
+                        .filter(|&c| g.is(c, Types::TREASURE))
+                        .collect();
                 if treasures.is_empty() {
                     f.pc = 5;
                     continue;

@@ -9,6 +9,7 @@
 //! holder pile, so it has no pile of its own.
 
 use super::{CardFrame, Hook, SUN, SetRules, due_durations, duration_trigger, turn_durations};
+use crate::Note;
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -16,7 +17,6 @@ use crate::game::{Pile, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -84,7 +84,9 @@ impl SetRules for Rules {
                     f.end_lasting(g);
                     f.pc = 1;
                 }
-                gain_where(g, f, input, 1, Dest::Discard, |_, c| c.at_most(Cost::coins(4)))
+                gain_where(g, f, input, 1, Dest::Discard, |_, c| {
+                    c.at_most(Cost::coins(4))
+                })
             }
             (Card::Foresight, Hook::Ability(FORESIGHT_RETURN)) => {
                 if let Some(c) = f.end_lasting(g).and_then(|l| l.data.pick)
@@ -143,14 +145,11 @@ impl SetRules for Rules {
                 }
                 Flow::done()
             }
-            (Card::KindEmperor, Hook::Ability(KIND_EMPEROR_GAIN)) => gain_where(
-                g,
-                f,
-                input,
-                0,
-                Dest::Hand,
-                |t, _| t.intersects(Types::ACTION),
-            ),
+            (Card::KindEmperor, Hook::Ability(KIND_EMPEROR_GAIN)) => {
+                gain_where(g, f, input, 0, Dest::Hand, |t, _| {
+                    t.intersects(Types::ACTION)
+                })
+            }
             (Card::Panic, Hook::Ability(PANIC_BUYS)) => {
                 plus_buys(g, f.player, 2);
                 Flow::done()
@@ -356,7 +355,11 @@ impl SetRules for Rules {
             }
             Occasion::StartCleanup { player } => {
                 if active(Card::BidingTime) && !g.hand(player).is_empty() {
-                    out.push(Trigger::new(player, Card::BidingTime, BIDING_TIME_SET_ASIDE));
+                    out.push(Trigger::new(
+                        player,
+                        Card::BidingTime,
+                        BIDING_TIME_SET_ASIDE,
+                    ));
                 }
                 if g.turn.gained_in_buy_phase.is_empty() && player == turn {
                     for l in this_turn(g, Card::RiverShrine, player) {
@@ -419,7 +422,11 @@ impl SetRules for Rules {
                     out.push(Trigger::new(player, Card::GreatLeader, GREAT_LEADER).quiet());
                 }
                 if active(Card::ApproachingArmy) && g.is(card, Types::ATTACK) {
-                    out.push(Trigger::new(player, Card::ApproachingArmy, APPROACHING_ARMY));
+                    out.push(Trigger::new(
+                        player,
+                        Card::ApproachingArmy,
+                        APPROACHING_ARMY,
+                    ));
                 }
             }
             Occasion::Gain { player, card, .. } => gain_triggers(g, player, card, out),
@@ -440,8 +447,7 @@ impl SetRules for Rules {
     }
 
     fn can_buy(g: &Game, p: PlayerId, card: Card) -> bool {
-        card != Card::Continue
-            || g.ext.rising_sun.continued != Some((p, g.player(p).turns_taken))
+        card != Card::Continue || g.ext.rising_sun.continued != Some((p, g.player(p).turns_taken))
     }
 
     fn actions_are_buys(g: &Game) -> bool {
@@ -586,8 +592,16 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
         if random.iter().any(|&r| home(r) == home(c)) {
             continue;
         }
-        let cards: Vec<Card> = pool.iter().copied().filter(|&d| home(d) == home(c)).collect();
-        let i = if cards.len() > 1 { g.random_index(cards.len()) } else { 0 };
+        let cards: Vec<Card> = pool
+            .iter()
+            .copied()
+            .filter(|&d| home(d) == home(c))
+            .collect();
+        let i = if cards.len() > 1 {
+            g.random_index(cards.len())
+        } else {
+            0
+        };
         random.push(cards[i]);
     }
     let Some(card) = s
@@ -644,7 +658,12 @@ fn divine_wind(g: &mut Game) {
         }
         pile.in_supply = false;
         pile.removed = true;
-        (pile.vp_tokens, pile.debt_tokens, pile.embargo, pile.trade_route) = (0, 0, 0, false);
+        (
+            pile.vp_tokens,
+            pile.debt_tokens,
+            pile.embargo,
+            pile.trade_route,
+        ) = (0, 0, 0, false);
         for (p, token) in std::mem::take(&mut pile.tokens) {
             g.players[p.index()].tokens.insert(token, None);
         }
@@ -667,9 +686,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
     };
     let still_there = g.still_where_gained(card);
     match prophecy {
-        Card::Bureaucracy
-            if g.gain_cost(card).unwrap_or_else(|| g.cost_of(card)) != Cost::ZERO =>
-        {
+        Card::Bureaucracy if g.gain_cost(card).unwrap_or_else(|| g.cost_of(card)) != Cost::ZERO => {
             out.push(Trigger::new(player, Card::Bureaucracy, BUREAUCRACY));
         }
         Card::Growth if g.is(card, Types::TREASURE) => {
@@ -683,9 +700,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         Card::Progress if still_there && g.zone(card) != Zone::Deck(player) => {
             out.push(Trigger::new(player, Card::Progress, PROGRESS));
         }
-        Card::RapidExpansion
-            if still_there && g.is(card, Types::ACTION | Types::TREASURE) =>
-        {
+        Card::RapidExpansion if still_there && g.is(card, Types::ACTION | Types::TREASURE) => {
             out.push(Trigger::new(
                 player,
                 Card::RapidExpansion,
@@ -1198,7 +1213,9 @@ fn upgrade(g: &mut Game, f: &mut CardFrame, input: Input, extra: u8) -> Flow {
             Flow::Call(Frame::trash(f.player, vec![c]))
         }
         _ => {
-            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(extra);
+            let limit = g
+                .cost_of(f.s.pick.expect("set in step 1"))
+                .plus_coins(extra);
             gain_where(g, f, input, 2, Dest::Discard, |_, c| c.at_most(limit))
         }
     }
@@ -1242,7 +1259,9 @@ fn continue_event(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             g.ext.rising_sun.continued = Some((p, g.player(p).turns_taken));
             f.pc = 3;
             let piles = g.supply_piles_where(|t, c| {
-                t.intersects(Types::ACTION) && !t.intersects(Types::ATTACK) && c.at_most(Cost::coins(4))
+                t.intersects(Types::ACTION)
+                    && !t.intersects(Types::ATTACK)
+                    && c.at_most(Cost::coins(4))
             });
             if piles.is_empty() {
                 return Flow::Continue;
@@ -1258,7 +1277,7 @@ fn continue_event(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
         }
         2 => {
-            f.s.pick = input.card();
+            f.s.placed.extend(input.card().and_then(|c| g.gained(p, c)));
             f.pc = 3;
             Flow::Continue
         }
@@ -1269,12 +1288,10 @@ fn continue_event(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         4 => {
             f.pc = 5;
             // Wherever it was gained to (Nomad Camp: the deck), if it is still there.
-            if let Some(c) = f.s.pick
-                && g
-                    .gained_to(p, c)
-                    .is_some_and(|zone| g.still_where_put(c, zone))
+            if let Some(&gained) = f.s.placed.first()
+                && g.still(gained)
             {
-                return Flow::Call(Frame::play(p, c, true, vec![]));
+                return Flow::Call(Frame::play(p, gained.card, true, vec![]));
             }
             Flow::Continue
         }
@@ -1390,9 +1407,9 @@ fn kintsugi(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(p, vec![c]))
         }
         _ => {
-            let gained_gold = g.log().iter().any(|e| {
-                matches!(e, Event::Gained { player, card: Card::Gold, .. } if *player == p)
-            });
+            let gained_gold = g.log().iter().any(
+                |e| matches!(e, Event::Gained { player, card: Card::Gold, .. } if *player == p),
+            );
             if f.pc == 2 && !gained_gold {
                 return Flow::done();
             }
@@ -1422,7 +1439,12 @@ fn practice(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             f.pc = 3;
-            Flow::Call(Frame::play(f.player, f.s.pick.expect("set in step 1"), false, vec![]))
+            Flow::Call(Frame::play(
+                f.player,
+                f.s.pick.expect("set in step 1"),
+                false,
+                vec![],
+            ))
         }
         _ => Flow::done(),
     }

@@ -57,9 +57,7 @@ impl SetRules for Rules {
     fn run(g: &mut Game, f: &mut CardFrame, input: Input) -> Option<Flow> {
         Some(match (f.card, f.hook) {
             (c, Hook::Ability(TRASHED)) if has_trash_ability(c) => trashed(g, f, input),
-            (Card::MarketSquare, Hook::Ability(MARKET_SQUARE_REACT)) => {
-                market_square(g, f, input)
-            }
+            (Card::MarketSquare, Hook::Ability(MARKET_SQUARE_REACT)) => market_square(g, f, input),
             (Card::Hovel, Hook::Ability(HOVEL_REACT)) => {
                 let this = f.this();
                 if f.pc == 0 && g.zone(this) == Zone::Hand(f.player) {
@@ -152,7 +150,11 @@ impl SetRules for Rules {
                 if g.is(card, Types::VICTORY) {
                     for &c in g.hand(player) {
                         if g.card(c) == Card::Hovel {
-                            out.push(Trigger::new(player, Card::Hovel, HOVEL_REACT).on(c).optional("trash it from your hand"));
+                            out.push(
+                                Trigger::new(player, Card::Hovel, HOVEL_REACT)
+                                    .on(c)
+                                    .optional("trash it from your hand"),
+                            );
                         }
                     }
                 }
@@ -160,7 +162,11 @@ impl SetRules for Rules {
             Occasion::Attack { target, .. } => {
                 for &c in g.hand(target) {
                     if g.card(c) == Card::Beggar {
-                        out.push(Trigger::new(target, Card::Beggar, BEGGAR_REACT).on(c).optional("discard it to gain 2 Silvers, one onto your deck"));
+                        out.push(
+                            Trigger::new(target, Card::Beggar, BEGGAR_REACT)
+                                .on(c)
+                                .optional("discard it to gain 2 Silvers, one onto your deck"),
+                        );
                     }
                 }
             }
@@ -168,7 +174,11 @@ impl SetRules for Rules {
                 if g.is(card, Types::ATTACK) {
                     for &c in g.in_play(player) {
                         if c != card && g.card(c) == Card::Urchin {
-                            out.push(Trigger::new(player, Card::Urchin, URCHIN_REACT).on(c).optional("trash it to gain a Mercenary"));
+                            out.push(
+                                Trigger::new(player, Card::Urchin, URCHIN_REACT)
+                                    .on(c)
+                                    .optional("trash it to gain a Mercenary"),
+                            );
                         }
                     }
                 }
@@ -292,13 +302,9 @@ fn gain_pile(
                 f.pc = base + 2;
                 Flow::Call(Frame::gain(f.player, pile, dest))
             }
-            None => {
-                goto(f, next)
-            }
+            None => goto(f, next),
         },
-        _ => {
-            goto(f, next)
-        }
+        _ => goto(f, next),
     }
 }
 
@@ -316,7 +322,14 @@ fn gain_copies(g: &mut Game, f: &mut CardFrame, card: Card, n: i32, dest: Dest) 
 
 /// Each target discards down to `n` cards, in turn order. Runs at pcs `base` and
 /// `base + 1`, then continues at `next`.
-fn discard_down(g: &mut Game, f: &mut CardFrame, input: Input, n: usize, base: u8, next: u8) -> Flow {
+fn discard_down(
+    g: &mut Game,
+    f: &mut CardFrame,
+    input: Input,
+    n: usize,
+    base: u8,
+    next: u8,
+) -> Flow {
     if f.pc == base + 1 {
         let target = f.targets[f.s.i];
         f.s.i += 1;
@@ -415,7 +428,7 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::draw(p, 1))
         }
         Card::Fortress => {
-            if g.zone(this) == Zone::Trash {
+            if g.still_where_trashed(this) {
                 g.put_in_hand(this, p);
             }
             Flow::done()
@@ -606,8 +619,12 @@ fn catacombs(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.cards = input.cards();
             f.pc = 2;
-            f.ask_modes(&["Put them into your hand", "Discard them and +3 Cards"], 1, 1)
-                .about(f.s.cards.clone())
+            f.ask_modes(
+                &["Put them into your hand", "Discard them and +3 Cards"],
+                1,
+                1,
+            )
+            .about(f.s.cards.clone())
         }
         2 => {
             let m = mode_mask(input);
@@ -735,13 +752,16 @@ fn play_twice_and_trash(g: &mut Game, f: &mut CardFrame, input: Input, types: Ty
         2 => {
             f.pc = 3;
             let c = f.s.pick.expect("set in step 1");
+            f.s.placed.extend(g.put(c));
             Flow::Call(Frame::play(p, c, false, f.chain_for_child()))
         }
         3 => {
             f.pc = 4;
-            let c = f.s.pick.expect("set in step 1");
-            if g.zone(c) == Zone::InPlay(p) {
-                return Flow::Call(Frame::trash(p, vec![c]));
+            // In play since the first play put it there.
+            if let Some(&played) = f.s.placed.first()
+                && g.still(played)
+            {
+                return Flow::Call(Frame::trash(p, vec![played.card]));
             }
             Flow::Continue
         }
@@ -982,7 +1002,11 @@ fn ironmonger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             };
             f.s.pick = Some(c);
             f.pc = 2;
-            f.ask_yes_or(Purpose::Discard, format!("Discard {}", g.card(c)), "Put it back")
+            f.ask_yes_or(
+                Purpose::Discard,
+                format!("Discard {}", g.card(c)),
+                "Put it back",
+            )
         }
         2 => {
             f.pc = 3;
@@ -1043,7 +1067,10 @@ fn mercenary(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
-            f.ask_yes_no(Purpose::Trash, "Trash 2 cards from your hand for +2 Cards, +$2 and the attack")
+            f.ask_yes_no(
+                Purpose::Trash,
+                "Trash 2 cards from your hand for +2 Cards, +$2 and the attack",
+            )
         }
         1 => {
             if !input.is_yes() {
@@ -1090,7 +1117,7 @@ fn mystic(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             if let Some(c) = input.card()
                 && Some(g.card(c)) == f.s.card
-                && g.zone(c) == Zone::Looking(p)
+                && g.held(p, c)
             {
                 g.put_in_hand(c, p);
             }
@@ -1250,20 +1277,24 @@ fn rebuild(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             discard_held(g, f)
         }
         5 => {
-            let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) else {
+            let Some(c) = f.s.pick.filter(|&c| g.held(p, c)) else {
                 return Flow::done();
             };
             f.pc = 6;
             Flow::Call(Frame::trash(p, vec![c]))
         }
         6..=8 => {
-            let limit = g.cost_of(f.s.pick.expect("set when revealed")).plus_coins(3);
+            let limit = g
+                .cost_of(f.s.pick.expect("set when revealed"))
+                .plus_coins(3);
             gain_pile(
                 g,
                 f,
                 input,
                 &move |g| {
-                    g.supply_piles_where(|t, cost| t.contains(Types::VICTORY) && cost.at_most(limit))
+                    g.supply_piles_where(|t, cost| {
+                        t.contains(Types::VICTORY) && cost.at_most(limit)
+                    })
                 },
                 false,
                 Dest::Discard,
@@ -1280,7 +1311,7 @@ fn sage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 | 1 => reveal_until(g, f, input, &|g, c| g.cost_of(c).coins >= 3, 0, 2),
         2 => {
-            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) {
+            if let Some(c) = f.s.pick.filter(|&c| g.held(p, c)) {
                 g.put_in_hand(c, p);
             }
             f.pc = 3;
@@ -1449,7 +1480,10 @@ fn vagrant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
-                && g.is(c, Types::CURSE | Types::RUINS | Types::SHELTER | Types::VICTORY)
+                && g.is(
+                    c,
+                    Types::CURSE | Types::RUINS | Types::SHELTER | Types::VICTORY,
+                )
             {
                 g.put_in_hand(c, p);
             }
@@ -1466,8 +1500,10 @@ fn wandering_minstrel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::reveal(p, 3))
         }
         1 => {
-            let (actions, rest): (Vec<CardId>, Vec<CardId>) =
-                input.cards().into_iter().partition(|&c| g.is(c, Types::ACTION));
+            let (actions, rest): (Vec<CardId>, Vec<CardId>) = input
+                .cards()
+                .into_iter()
+                .partition(|&c| g.is(c, Types::ACTION));
             f.s.cards = rest;
             f.pc = 2;
             f.ask_order(actions, Purpose::TopDeck)

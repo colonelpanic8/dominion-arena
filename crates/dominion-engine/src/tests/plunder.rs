@@ -1999,6 +1999,22 @@ fn spell_scroll_gains_a_card_cheaper_than_its_cost_now_and_may_play_it() {
     assert!(trash_kinds(&g).contains(&Card::SpellScroll));
 }
 
+/// "Gained cards are expected to be where they were gained to, even if this isn't the
+/// discard pile" (the stop-moving rule): a Nomad Camp is played from the deck.
+#[test]
+fn spell_scroll_may_play_a_nomad_camp_it_gained_onto_the_deck() {
+    let mut g = setup(&[Card::SackOfLoot, Card::NomadCamp]);
+    hand(&mut g, P0, &[Card::SpellScroll]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::SpellScroll);
+    choose_pile(&mut g, Card::NomadCamp);
+    assert_eq!(purpose(&g), Purpose::Play);
+    yes(&mut g);
+    assert_eq!(in_play_kinds(&g, P0), [Card::NomadCamp]);
+    assert_eq!((g.turn().coins, g.turn().buys), (2, 2));
+}
+
 #[test]
 fn a_siren_gained_with_spell_scroll_trashes_itself_and_is_not_played() {
     let mut g = setup(&[Card::SackOfLoot, Card::Siren]);

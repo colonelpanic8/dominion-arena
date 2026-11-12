@@ -2,6 +2,7 @@
 //! cards with Tournament's Prizes.
 
 use super::{CardFrame, Hook, SetRules, looking, put_back};
+use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, OVERPAY, Value};
@@ -9,7 +10,6 @@ use crate::game::{Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Phase, PileId, PlayerId, Set, Types};
-use crate::Note;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -82,21 +82,18 @@ impl SetRules for Rules {
                 g.add_lasting(c, f.player, f.this, vec![], Until::EndOfTurn, data);
                 Flow::done()
             }
-            (c, Hook::Ability(OVERPAID)) if OVERPAY_CARDS.contains(&c) => {
-                overpaid(g, f, input)
-            }
+            (c, Hook::Ability(OVERPAID)) if OVERPAY_CARDS.contains(&c) => overpaid(g, f, input),
             (Card::Farmhands, Hook::Ability(FARMHANDS_SET_ASIDE)) => farmhands(g, f, input),
-            (Card::Farmhands, Hook::Ability(FARMHANDS_PLAY)) => {
-                play_set_aside(g, f)
-            }
-            (Card::Ferryman, Hook::Ability(FERRYMAN_GAIN)) => match g.ext.cornucopia_guilds.ferryman
-            {
-                Some(pile) if f.pc == 0 => {
-                    f.pc = 1;
-                    Flow::Call(Frame::gain(f.player, pile, Dest::Discard))
+            (Card::Farmhands, Hook::Ability(FARMHANDS_PLAY)) => play_set_aside(g, f),
+            (Card::Ferryman, Hook::Ability(FERRYMAN_GAIN)) => {
+                match g.ext.cornucopia_guilds.ferryman {
+                    Some(pile) if f.pc == 0 => {
+                        f.pc = 1;
+                        Flow::Call(Frame::gain(f.player, pile, Dest::Discard))
+                    }
+                    _ => Flow::done(),
                 }
-                _ => Flow::done(),
-            },
+            }
             (Card::Footpad, Hook::Ability(FOOTPAD_DRAW)) => {
                 if f.pc == 0 {
                     f.pc = 1;
@@ -256,14 +253,23 @@ impl SetRules for Rules {
                 for l in g.lasting() {
                     // The gain of the buy that was overpaid for (`data.i`: which buy),
                     // whichever copy it takes, and only by the player who overpaid.
-                    let buy = g.gains.iter().rev().find(|s| s.card == card).and_then(|s| s.buy);
+                    let buy = g
+                        .gains
+                        .iter()
+                        .rev()
+                        .find(|s| s.card == card)
+                        .and_then(|s| s.buy);
                     if bought
                         && l.card == g.card(card)
                         && buy == Some(l.data.i)
                         && l.owner == player
                         && OVERPAY_CARDS.contains(&l.card)
                     {
-                        out.push(Trigger::new(player, l.card, OVERPAID).on(card).via_lasting(l.id));
+                        out.push(
+                            Trigger::new(player, l.card, OVERPAID)
+                                .on(card)
+                                .via_lasting(l.id),
+                        );
                     }
                 }
                 match g.card(card) {
@@ -306,7 +312,9 @@ impl SetRules for Rules {
             Occasion::DiscardFromPlay { player } if g.cleaning_up(player) => {
                 for l in g.lasting() {
                     if l.card == Card::Joust {
-                        out.push(Trigger::new(l.owner, Card::Joust, JOUST_DISCARD).via_lasting(l.id));
+                        out.push(
+                            Trigger::new(l.owner, Card::Joust, JOUST_DISCARD).via_lasting(l.id),
+                        );
                     }
                 }
             }
@@ -401,9 +409,8 @@ fn choose_unused_costing(g: &mut Game, s: &mut Setup, by: Card, lo: u8, hi: u8) 
     let candidates = Card::kingdom_cards()
         .filter(|&c| {
             setup::unused(g, c)
-                && c.cost().is_some_and(|k| {
-                    k.potions == 0 && k.debt == 0 && (lo..=hi).contains(&k.coins)
-                })
+                && c.cost()
+                    .is_some_and(|k| k.potions == 0 && k.debt == 0 && (lo..=hi).contains(&k.coins))
         })
         .collect();
     let sets: Vec<Set> = g.config.kingdom.iter().map(|c| c.set()).collect();
@@ -423,9 +430,9 @@ pub(crate) fn distinct_names(g: &Game, ids: impl IntoIterator<Item = CardId>) ->
 
 /// A Supply pile a copy of `card` can be gained from (its top card is `card`).
 pub(crate) fn copy_pile(g: &Game, card: Card) -> Option<PileId> {
-    (0..g.piles.len()).map(|i| PileId(i as u8)).find(|&p| {
-        g.pile(p).in_supply && g.pile_top(p).is_some_and(|t| g.card(t) == card)
-    })
+    (0..g.piles.len())
+        .map(|i| PileId(i as u8))
+        .find(|&p| g.pile(p).in_supply && g.pile_top(p).is_some_and(|t| g.card(t) == card))
 }
 
 /// Whether a card being gained is still where it was gained to.
@@ -458,7 +465,7 @@ pub(crate) fn ask_ordered(
         purpose,
         source: Some(f.card),
         about: vec![],
-            question: None,
+        question: None,
     })
 }
 
@@ -696,7 +703,14 @@ fn farmhands(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     pick: Some(c),
                     ..Scratch::default()
                 };
-                g.add_lasting(Card::Farmhands, f.player, f.this, vec![], Until::Removed, data);
+                g.add_lasting(
+                    Card::Farmhands,
+                    f.player,
+                    f.this,
+                    vec![],
+                    Until::Removed,
+                    data,
+                );
             }
             Flow::done()
         }
@@ -750,7 +764,9 @@ fn butcher(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let coffers = g.player(f.player).coffers.min(255) as u8;
-            let limit = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(coffers);
+            let limit = g
+                .cost_of(f.s.pick.expect("set in step 1"))
+                .plus_coins(coffers);
             let piles = g.piles_costing_up_to(limit);
             if piles.is_empty() {
                 return Flow::done();
@@ -1232,7 +1248,12 @@ fn young_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.s.pick = Some(banes[0]);
             f.pc = 3;
-            f.ask_yes_or_for(t, Purpose::Reveal, format!("Reveal {} to not gain a Curse", g.card(banes[0])), "Gain a Curse")
+            f.ask_yes_or_for(
+                t,
+                Purpose::Reveal,
+                format!("Reveal {} to not gain a Curse", g.card(banes[0])),
+                "Gain a Curse",
+            )
         }
         3 => {
             let t = f.targets[f.s.i];
@@ -1260,13 +1281,7 @@ fn young_witch(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 
 /// Plays a non-Reward card of `types` from hand twice; pcs `at` to `at + 2`. `None` when
 /// done.
-fn play_twice(
-    g: &mut Game,
-    f: &mut CardFrame,
-    input: Input,
-    types: Types,
-    at: u8,
-) -> Option<Flow> {
+fn play_twice(g: &mut Game, f: &mut CardFrame, input: Input, types: Types, at: u8) -> Option<Flow> {
     if f.pc == at {
         let cands: Vec<CardId> = g
             .playable(f.player, types)
@@ -1417,8 +1432,10 @@ fn doctor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let named = f.s.card;
-            let (matches, rest): (Vec<_>, Vec<_>) =
-                input.cards().into_iter().partition(|&c| Some(g.card(c)) == named);
+            let (matches, rest): (Vec<_>, Vec<_>) = input
+                .cards()
+                .into_iter()
+                .partition(|&c| Some(g.card(c)) == named);
             f.s.cards = rest;
             f.pc = 3;
             Flow::Call(Frame::trash(f.player, matches))
@@ -1473,8 +1490,14 @@ fn doctor_overpay(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn farming_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     if f.pc <= 1 {
         let p = f.player;
-        match reveal_until(g, f, input, p, |g, c| g.is(c, Types::TREASURE | Types::ACTION), 0)
-        {
+        match reveal_until(
+            g,
+            f,
+            input,
+            p,
+            |g, c| g.is(c, Types::TREASURE | Types::ACTION),
+            0,
+        ) {
             Err(flow) => return flow,
             Ok(found) => {
                 if let Some(c) = found {
@@ -1493,7 +1516,14 @@ fn fortune_teller(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         return Flow::done();
     };
     if f.pc <= 1 {
-        match reveal_until(g, f, input, t, |g, c| g.is(c, Types::VICTORY | Types::CURSE), 0) {
+        match reveal_until(
+            g,
+            f,
+            input,
+            t,
+            |g, c| g.is(c, Types::VICTORY | Types::CURSE),
+            0,
+        ) {
             Err(flow) => return flow,
             Ok(found) => {
                 put_back(g, t, &Vec::from_iter(found));
@@ -1600,9 +1630,13 @@ fn tournament(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 if has {
                     f.pc = 1;
                     let yes = if q == f.player {
-                        "Reveal a Province, discard it and gain a Prize or a Duchy onto your deck".to_string()
+                        "Reveal a Province, discard it and gain a Prize or a Duchy onto your deck"
+                            .to_string()
                     } else {
-                        format!("Reveal a Province, so {} doesn't get +1 Card and +$1", f.player)
+                        format!(
+                            "Reveal a Province, so {} doesn't get +1 Card and +$1",
+                            f.player
+                        )
                     };
                     return f.ask_yes_no_for(q, Purpose::Reveal, yes);
                 }
