@@ -138,10 +138,12 @@ impl Game {
             Zone::SetAside(p) => self.players[p.index()].face_up.contains(&id),
             // Revealed ones are shown, until put back in an order no one else follows.
             Zone::Looking(_) => false,
-            // The top card, unless the pile is being gone through.
+            // The top card, unless the pile is being gone through: looked through, or
+            // with cards already taken from it (the next one was never on top).
             Zone::Discard(p) => {
                 self.players[p.index()].discard.last() == Some(&id)
                     && !self.scribe.searched_discards.iter().any(|&(q, _)| p == q)
+                    && !self.scribe.moves.iter().any(|m| m.from == Zone::Discard(p))
             }
             Zone::Hand(_) | Zone::Deck(_) => false,
         }
