@@ -706,11 +706,11 @@ fn stayed_in_play(g: &Game, card: CardId, nth: usize) -> bool {
         return true;
     };
     let t = &g.turn;
-    let plays = t.played_ids.iter().zip(&t.stayed_in_play);
+    let plays = t.played_ids.iter().zip(&t.played_at);
     plays
         .filter(|(c, _)| **c == card)
         .nth(skip)
-        .is_some_and(|(_, stayed)| *stayed)
+        .is_some_and(|(_, &at)| g.stayed(card, at))
 }
 
 /// Returns the played card to its pile if it is in play (Horse, Way of the Horse).
@@ -1281,7 +1281,7 @@ fn cardinal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             2 => {
                 for c in input.take().map(Input::cards).unwrap_or_default() {
-                    if g.zone(c) == Zone::Looking(target) {
+                    if g.held(target, c) {
                         exile(g, target, c);
                     }
                 }

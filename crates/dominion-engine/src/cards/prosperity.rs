@@ -1098,7 +1098,7 @@ fn venture(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         3 => {
             f.pc = 4;
             match f.s.pick {
-                Some(c) if g.zone(c) == Zone::Looking(f.player) => {
+                Some(c) if g.held(f.player, c) => {
                     Flow::Call(Frame::play(f.player, c, true, vec![]))
                 }
                 _ => Flow::done(),

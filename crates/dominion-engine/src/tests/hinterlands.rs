@@ -375,6 +375,76 @@ fn inn_shuffles_actions_from_the_discard_pile_when_gained() {
     assert!(drawn.contains(&Card::Inn) && drawn.contains(&Card::Village));
 }
 
+/// Inn's page: "If you gain an Inn onto your deck ..., shuffling your deck will cause
+/// other abilities (like Changeling and Gatekeeper) to lose track. This is true even if
+/// Inn is the only card in your deck". Watchtower can no longer trash it or put it onto
+/// the deck.
+#[test]
+fn an_inn_gained_onto_the_deck_and_shuffled_is_lost_to_watchtower() {
+    let mut g = setup(&[Card::Develop, Card::Inn, Card::Watchtower, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Develop, Card::Smithy, Card::Watchtower]);
+    deck(&mut g, P0, &[]);
+    discard(&mut g, P0, &[]);
+    g.start();
+    play(&mut g, Card::Develop);
+    choose_kinds(&mut g, &[Card::Smithy]);
+    choose_pile(&mut g, Card::Inn);
+    assert_eq!(deck_kinds(&g, P0), [Card::Inn]);
+    // Inn's shuffle first: Watchtower isn't offered any more, and Develop goes on to its
+    // second gain.
+    super::intrigue::trigger(&mut g, Card::Inn);
+    assert_eq!(purpose(&g), Purpose::Gain);
+    assert_eq!(deck_kinds(&g, P0), [Card::Inn]);
+    assert!(!kinds(&g, g.trash()).contains(&Card::Inn));
+}
+
+/// The same for Gatekeeper, with the Inn gained by Artificer as on Inn's page. An Inn
+/// that is not shuffled into the deck has not moved: "If you gain an Inn and you don't
+/// shuffle it into your deck, it can still get moved by other abilities".
+#[test]
+fn gatekeeper_exiles_a_gained_inn_only_if_its_shuffle_left_it_alone() {
+    let exile = |g: &Game| kinds(g, g.player(P0).mat(crate::game::Mat::Exile));
+    let mut g = setup(&[Card::Artificer, Card::Inn, Card::Gatekeeper]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Artificer,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+            Card::Copper,
+        ],
+    );
+    deck(&mut g, P0, &[Card::Copper]);
+    discard(&mut g, P0, &[]);
+    hand(&mut g, P1, &[Card::Gatekeeper]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Gatekeeper);
+    play(&mut g, Card::Artificer);
+    let coppers = g.hand(P0).to_vec();
+    choose(&mut g, &coppers);
+    choose_pile(&mut g, Card::Inn);
+    assert_eq!(deck_kinds(&g, P0), [Card::Inn]);
+    super::intrigue::trigger(&mut g, Card::Inn);
+    assert_eq!(deck_kinds(&g, P0), [Card::Inn]);
+    assert_eq!(exile(&g), []);
+
+    let mut g = setup(&[Card::Inn, Card::Gatekeeper]);
+    hand(&mut g, P0, &[Card::Gold, Card::Gold]);
+    deck(&mut g, P0, &[Card::Copper; 3]);
+    discard(&mut g, P0, &[]);
+    hand(&mut g, P1, &[Card::Gatekeeper]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Gatekeeper);
+    play(&mut g, Card::Gold);
+    play(&mut g, Card::Gold);
+    buy(&mut g, Card::Inn);
+    super::intrigue::trigger(&mut g, Card::Inn);
+    choose(&mut g, &[]);
+    assert_eq!(exile(&g), [Card::Inn]);
+}
+
 #[test]
 fn jack_of_all_trades_does_its_four_things() {
     let mut g = setup(&[Card::JackOfAllTrades]);

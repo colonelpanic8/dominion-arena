@@ -249,7 +249,7 @@ fn golem(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.s.i += 1;
-            if g.zone(c) != Zone::Looking(f.player) {
+            if !g.held(f.player, c) {
                 return Flow::Continue;
             }
             Flow::Call(Frame::play(f.player, c, true, vec![]))
@@ -265,7 +265,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             });
         }
         for c in std::mem::take(&mut f.s.cards) {
-            if g.zone(c) == Zone::Looking(f.player) {
+            if g.held(f.player, c) {
                 g.put_in_hand(c, f.player);
             }
         }

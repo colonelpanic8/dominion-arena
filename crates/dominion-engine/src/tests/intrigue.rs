@@ -9,6 +9,11 @@ pub(crate) fn modes(g: &mut Game, picks: &[u8]) {
 
 /// Resolves the pending trigger whose label names `card`.
 pub(crate) fn trigger(g: &mut Game, card: Card) {
+    trigger_labelled(g, card.name());
+}
+
+/// Resolves the pending trigger whose label starts with `label`.
+pub(crate) fn trigger_labelled(g: &mut Game, label: &str) {
     let d = g.pending().expect("a decision is pending");
     let DecisionKind::Choose {
         options, labels, ..
@@ -18,8 +23,8 @@ pub(crate) fn trigger(g: &mut Game, card: Card) {
     };
     let i = labels
         .iter()
-        .position(|l| l.starts_with(card.name()))
-        .unwrap_or_else(|| panic!("no {card} trigger in {labels:?}"));
+        .position(|l| l.starts_with(label))
+        .unwrap_or_else(|| panic!("no {label} trigger in {labels:?}"));
     respond(g, Response::option(options[i]));
 }
 

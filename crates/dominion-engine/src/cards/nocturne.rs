@@ -1565,7 +1565,7 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             // The others are discarded before the Action is set aside.
-            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) {
+            if let Some(c) = f.s.pick.filter(|&c| g.held(p, c)) {
                 g.set_aside_revealed(c, p);
                 g.emit(Event::SetAside {
                     player: p,
@@ -2079,7 +2079,7 @@ fn will_o_wisp(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             if let Some(c) = input.card()
-                && g.zone(c) == Zone::Looking(p)
+                && g.held(p, c)
                 && g.cost_of(c).at_most(Cost::coins(2))
             {
                 g.put_in_hand(c, p);
@@ -2181,7 +2181,7 @@ fn zombie_spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let c = f.s.pick.expect("set in step 1");
-            if input.is_yes() && g.zone(c) == Zone::Looking(p) {
+            if input.is_yes() && g.held(p, c) {
                 f.pc = 3;
                 return Flow::Call(Frame::discard(p, vec![c]));
             }

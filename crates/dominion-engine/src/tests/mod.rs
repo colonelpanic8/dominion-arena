@@ -813,6 +813,47 @@ fn inn_shuffling_the_deck_opens_the_shuffle_windows() {
     assert_eq!(hand_kinds(&g, P0)[0], Card::Village);
 }
 
+/// The stop-moving rule: "If a card isn't where the effect would expect it to be, or has
+/// moved away from there and then back, it can't move the card. ... Cards in discard
+/// piles can be moved even if covered up by other cards; cards on top of a deck can't be
+/// moved once covered up." A shuffled card has moved, wherever it ends up (Inn's page),
+/// and a card put where it already is has not (Gatekeeper's page).
+#[test]
+fn a_card_has_stayed_until_it_is_moved_shuffled_or_covered_on_its_deck() {
+    use crate::game::Pos;
+    let mut g = setup(&[]);
+    let [copper, estate] = hand(&mut g, P0, &[Card::Copper, Card::Estate])[..] else {
+        panic!()
+    };
+    let [gold, silver] = deck(&mut g, P0, &[Card::Gold, Card::Silver])[..] else {
+        panic!()
+    };
+    let curse = discard(&mut g, P0, &[Card::Curse])[0];
+    g.start();
+    let all = [copper, estate, gold, silver, curse];
+    let stayed = |g: &Game, since| all.map(|c| g.stayed(c, since));
+
+    let since = g.now();
+    // Away and back.
+    g.move_card(estate, Zone::Discard(P0), Pos::Top);
+    g.move_card(estate, Zone::Hand(P0), Pos::Top);
+    assert_eq!(stayed(&g, since), [true, false, true, true, true]);
+    // Put where they already are.
+    g.move_card(copper, Zone::Hand(P0), Pos::Top);
+    g.move_card(gold, Zone::Deck(P0), Pos::Top);
+    assert_eq!(stayed(&g, since), [true, false, true, true, true]);
+    // Covered up: on a deck that loses the card, in a discard pile it doesn't.
+    g.move_card(estate, Zone::Discard(P0), Pos::Top);
+    g.move_card(copper, Zone::Deck(P0), Pos::Top);
+    assert_eq!(stayed(&g, since), [false, false, false, true, true]);
+    // Shuffled.
+    g.stack.push(crate::frame::Frame::shuffle_deck(P0));
+    g.pending = None;
+    g.run(crate::frame::Input::Start);
+    assert_eq!(stayed(&g, since), [false, false, false, false, true]);
+    assert_eq!(stayed(&g, g.now()), [true; 5]);
+}
+
 /// Wiki, Star Chart: the card chosen goes on top of the shuffled cards, under the cards
 /// still on the deck, which are drawn first.
 #[test]

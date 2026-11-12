@@ -1090,7 +1090,7 @@ fn mystic(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             if let Some(c) = input.card()
                 && Some(g.card(c)) == f.s.card
-                && g.zone(c) == Zone::Looking(p)
+                && g.held(p, c)
             {
                 g.put_in_hand(c, p);
             }
@@ -1250,7 +1250,7 @@ fn rebuild(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             discard_held(g, f)
         }
         5 => {
-            let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) else {
+            let Some(c) = f.s.pick.filter(|&c| g.held(p, c)) else {
                 return Flow::done();
             };
             f.pc = 6;
@@ -1280,7 +1280,7 @@ fn sage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 | 1 => reveal_until(g, f, input, &|g, c| g.cost_of(c).coins >= 3, 0, 2),
         2 => {
-            if let Some(c) = f.s.pick.filter(|&c| g.zone(c) == Zone::Looking(p)) {
+            if let Some(c) = f.s.pick.filter(|&c| g.held(p, c)) {
                 g.put_in_hand(c, p);
             }
             f.pc = 3;
