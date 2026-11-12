@@ -108,6 +108,11 @@ impl SetRules for Rules {
     }
 
     fn notes(g: &Game, out: &mut Vec<Note>) {
+        let t = g.turn();
+        if t.extra == Some(Card::Voyage) && g.turn_player() == Some(t.player) {
+            let left = VOYAGE_HAND_PLAYS.saturating_sub(t.hand_plays);
+            out.push(Note::new(Card::Voyage).player(t.player).count(left as i32));
+        }
         for &(pile, n) in &g.ext.allies.inventors {
             out.push(
                 Note::new(Card::FamilyOfInventors)
@@ -424,7 +429,7 @@ impl SetRules for Rules {
 
     fn can_play(g: &Game, p: PlayerId, id: CardId) -> bool {
         let t = g.turn();
-        if t.extra == Some(Card::Voyage) && t.player == p && t.hand_plays >= 3 {
+        if t.extra == Some(Card::Voyage) && t.player == p && t.hand_plays >= VOYAGE_HAND_PLAYS {
             return false;
         }
         if g.is(id, Types::ACTION) && warlord_attacks(g, p) {
@@ -2573,6 +2578,9 @@ fn old_map(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => may_rotate(g, f, input, Card::Odysseys, 3, DONE),
     }
 }
+
+/// The cards a Voyage turn's player may play from their hand.
+const VOYAGE_HAND_PLAYS: u32 = 3;
 
 fn voyage(g: &mut Game, f: &mut CardFrame) {
     let p = f.player;

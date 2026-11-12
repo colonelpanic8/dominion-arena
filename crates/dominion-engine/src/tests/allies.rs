@@ -1996,14 +1996,22 @@ fn voyage_takes_an_extra_turn_with_three_plays_from_hand() {
     next_turn(&mut g);
     assert_eq!(g.turn().player, P0);
     assert_eq!(g.turn().extra, Some(Card::Voyage));
+    let left = |g: &Game| {
+        let notes = g.view(P1).notes();
+        let n = notes.iter().find(|n| n.source == Card::Voyage);
+        n.map(|n| (n.player, n.count))
+    };
+    assert_eq!(left(&g), Some((Some(P0), 3)));
     play(&mut g, Card::Village);
     play(&mut g, Card::Village);
     play(&mut g, Card::Village);
+    assert_eq!(left(&g), Some((Some(P0), 0)));
     assert!(!can_play(&g, Card::Village));
     to_buy(&mut g);
     assert!(!can_play(&g, Card::Copper));
     next_turn(&mut g);
     assert_eq!(g.turn().player, P1);
+    assert_eq!(left(&g), None);
     // Voyage was discarded in the Voyage turn's Clean-up.
     assert!(g.in_play(P0).is_empty());
 }

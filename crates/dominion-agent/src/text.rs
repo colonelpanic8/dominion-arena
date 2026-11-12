@@ -396,6 +396,9 @@ pub fn render(v: &AgentView) -> String {
                 let items: Vec<String> = group
                     .iter()
                     .map(|n| {
+                        if n.source == "Voyage" {
+                            return format!("{} more cards from their hand", n.count);
+                        }
                         let mut item: Vec<String> = n.card.iter().cloned().collect();
                         if n.count != 0 {
                             item.push(n.count.to_string());
