@@ -8,7 +8,9 @@
 //! lasting's `data.pick`; the players an Attack-Duration affects are a bit mask in
 //! `data.n`.
 
-use super::{CardFrame, Hook, SetRules, due_durations, duration_trigger, mode_mask};
+use super::{
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
+};
 use crate::decision::{DecisionKind, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -569,7 +571,7 @@ fn lookout(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(f.player, 3))
+            Flow::Call(Frame::look(f.player, 3))
         }
         1 => {
             f.s.cards = input.cards();
@@ -583,7 +585,7 @@ fn lookout(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::trash(f.player, chosen))
         }
         3 => {
-            f.s.cards.retain(|&c| g.zone(c) == Zone::Deck(f.player));
+            f.s.cards = looking(g, f.player, &f.s.cards);
             f.pc = 4;
             f.ask_cards(f.s.cards.clone(), 1, 1, Purpose::Discard)
         }
@@ -613,7 +615,7 @@ fn native_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.m = mode_mask(input);
             f.pc = 2;
             if f.s.m & 1 != 0 {
-                return Flow::Call(Frame::look_on_deck(p, 1));
+                return Flow::Call(Frame::look(p, 1));
             }
             Flow::Continue
         }
@@ -712,7 +714,7 @@ fn salvager(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn sea_chart(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     if f.pc == 0 {
         f.pc = 1;
-        return Flow::Call(Frame::reveal_on_deck(f.player, 1));
+        return Flow::Call(Frame::reveal(f.player, 1));
     }
     if let Some(c) = input.card() {
         let card = g.card(c);
@@ -1009,7 +1011,7 @@ fn navigator(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look_on_deck(p, 5))
+            Flow::Call(Frame::look(p, 5))
         }
         1 => {
             f.s.cards = input.cards();
@@ -1029,9 +1031,7 @@ fn navigator(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.ask_order(f.s.cards.clone(), Purpose::TopDeck)
         }
         3 => {
-            for &c in input.cards().iter().rev() {
-                g.move_card(c, Zone::Deck(p), Pos::Top);
-            }
+            put_back(g, p, &input.cards());
             Flow::done()
         }
         _ => Flow::done(),
@@ -1101,7 +1101,7 @@ fn pirate_ship(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 3;
-                return Flow::Call(Frame::reveal_on_deck(target, 2));
+                return Flow::Call(Frame::reveal(target, 2));
             }
             3 => {
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();
@@ -1129,10 +1129,7 @@ fn pirate_ship(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             5 => {
                 f.pc = 6;
                 let target = f.targets[f.s.i];
-                let rest: Vec<_> = std::mem::take(&mut f.s.cards)
-                    .into_iter()
-                    .filter(|&c| g.zone(c) == Zone::Deck(target))
-                    .collect();
+                let rest = looking(g, target, &std::mem::take(&mut f.s.cards));
                 return Flow::Call(Frame::discard(target, rest));
             }
             _ => {
@@ -1152,7 +1149,7 @@ fn sea_hag(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 1;
-                return Flow::Call(Frame::look_on_deck(target, 1));
+                return Flow::Call(Frame::look(target, 1));
             }
             1 => {
                 f.pc = 2;

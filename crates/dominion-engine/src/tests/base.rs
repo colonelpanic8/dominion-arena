@@ -208,10 +208,10 @@ fn sentry_trashes_and_reorders() {
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Estate, Card::Silver]);
 }
 
-/// Trashing an Overgrown Estate draws a card in the middle of Sentry, which goes on with
-/// the cards still on the deck only.
+/// Trashing an Overgrown Estate draws a card in the middle of Sentry: the cards Sentry
+/// looks at are off the deck, so it draws the next one down.
 #[test]
-fn sentry_leaves_alone_a_card_drawn_while_it_resolves() {
+fn a_draw_in_the_middle_of_sentry_takes_the_card_under_the_ones_it_looks_at() {
     let mut g = setup(&[Card::Sentry]);
     hand(&mut g, P0, &[Card::Sentry]);
     deck(
@@ -235,15 +235,16 @@ fn sentry_leaves_alone_a_card_drawn_while_it_resolves() {
         };
         choose(&mut g, &keep);
     }
-    assert_eq!(g.hand(P0).len(), 2);
-    assert_eq!(g.player(P0).deck.len(), 1);
+    assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Silver]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold]);
     assert!(g.player(P0).discard.is_empty());
 }
 
-/// P1's Silver is trashed: Market Square gains a Gold, which lets Sheepdog draw the
-/// Estate Bandit revealed. Bandit then discards only what is still on the deck.
+/// P1's Silver is trashed: Market Square gains a Gold, which lets Sheepdog draw 2. The
+/// cards Bandit revealed are off the deck, so those are the two under them; Bandit then
+/// discards the Estate.
 #[test]
-fn bandit_does_not_discard_a_revealed_card_drawn_meanwhile() {
+fn a_draw_in_the_middle_of_bandit_takes_the_cards_under_the_revealed_ones() {
     let mut g = setup(&[Card::Bandit, Card::MarketSquare, Card::Sheepdog]);
     hand(&mut g, P0, &[Card::Bandit]);
     hand(&mut g, P1, &[Card::MarketSquare, Card::Sheepdog]);
@@ -257,10 +258,10 @@ fn bandit_does_not_discard_a_revealed_card_drawn_meanwhile() {
     play(&mut g, Card::Bandit);
     super::intrigue::trigger(&mut g, Card::MarketSquare);
     super::intrigue::trigger(&mut g, Card::Sheepdog);
-    assert_eq!(hand_kinds(&g, P1), [Card::Estate, Card::Copper]);
+    assert_eq!(hand_kinds(&g, P1), [Card::Copper, Card::Copper]);
     assert_eq!(
         kinds(&g, &g.player(P1).discard),
-        [Card::MarketSquare, Card::Gold]
+        [Card::MarketSquare, Card::Gold, Card::Estate]
     );
 }
 

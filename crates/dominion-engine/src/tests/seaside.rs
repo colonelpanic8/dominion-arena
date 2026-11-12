@@ -517,6 +517,56 @@ fn lookout_trashes_one_discards_one_and_puts_one_back() {
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Silver]);
 }
 
+/// Wiki, Lookout: the three cards are not the top cards of the deck while Lookout
+/// resolves, so trashing an Overgrown Estate draws the next one down.
+#[test]
+fn a_card_lookout_trashes_draws_the_card_under_the_three() {
+    let mut g = setup(&[Card::Lookout]);
+    hand(&mut g, P0, &[Card::Lookout]);
+    deck(
+        &mut g,
+        P0,
+        &[
+            Card::OvergrownEstate,
+            Card::Copper,
+            Card::Estate,
+            Card::Silver,
+        ],
+    );
+    g.start();
+    play(&mut g, Card::Lookout);
+    choose_kinds(&mut g, &[Card::OvergrownEstate]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Silver]);
+    choose_kinds(&mut g, &[Card::Copper]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Estate]);
+}
+
+/// Wiki, Lookout: a card put on the deck while Lookout resolves (a Tunnel discarded gains
+/// a Gold, which Progress puts there) ends up under the card put back.
+#[test]
+fn the_card_lookout_puts_back_goes_over_one_put_on_the_deck_meanwhile() {
+    let mut config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        ..GameConfig::new(2, vec![Card::Lookout, Card::Tunnel], 0)
+    };
+    config.landscapes = vec![Card::Progress];
+    let mut g = setup_with(config);
+    g.prophecy = Some((Card::Progress, 0));
+    hand(&mut g, P0, &[Card::Lookout]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Copper, Card::Tunnel, Card::Estate, Card::Silver],
+    );
+    g.start();
+    play(&mut g, Card::Lookout);
+    choose_kinds(&mut g, &[Card::Copper]);
+    choose_kinds(&mut g, &[Card::Tunnel]);
+    super::intrigue::trigger(&mut g, Card::Tunnel);
+    assert_eq!(deck_kinds(&g, P0), [Card::Estate, Card::Gold, Card::Silver]);
+}
+
 #[test]
 fn lookout_with_one_card_must_trash_it() {
     let mut g = setup(&[Card::Lookout]);
