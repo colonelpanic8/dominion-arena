@@ -1887,3 +1887,19 @@ fn random_renaissance_games_keep_invariants() {
         check_zones(&g);
     }
 }
+
+#[test]
+fn mountain_village_search_does_not_reveal_the_discard_taken() {
+    let world = |pick: usize| {
+        let mut g = setup(&[Card::MountainVillage]);
+        hand(&mut g, P0, &[Card::MountainVillage]);
+        let pile = discard(&mut g, P0, &[Card::Gold, Card::Curse, Card::Curse]);
+        g.start();
+        play(&mut g, Card::MountainVillage);
+        choose(&mut g, &[pile[pick]]);
+        g
+    };
+    let (curse, gold) = (world(2), world(0));
+    assert_eq!(public_table(&curse, P1), public_table(&gold, P1));
+    assert_eq!(curse.log(), gold.log());
+}

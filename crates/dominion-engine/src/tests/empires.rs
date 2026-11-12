@@ -2334,3 +2334,30 @@ fn throne_room_on_archive_makes_two_sets_and_stays_in_play_with_it() {
     next_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
 }
+
+#[test]
+fn annex_kept_card_order_does_not_change_the_public_log() {
+    let world = |top_first: bool| {
+        let mut g = setup_with(GameConfig {
+            colonies: Some(false),
+            shelters: Some(false),
+            landscapes: vec![Card::Annex],
+            ..GameConfig::new(2, vec![Card::Village], 7)
+        });
+        hand(&mut g, P0, &[Card::Copper; 5]);
+        deck(&mut g, P0, &[Card::Copper; 5]);
+        let pile = discard(&mut g, P0, &[Card::Gold, Card::Estate, Card::Silver]);
+        g.start();
+        respond(&mut g, Response::Move(Move::BuyLandscape(Card::Annex)));
+        if top_first {
+            choose(&mut g, &[pile[2], pile[0]]);
+        } else {
+            choose(&mut g, &[pile[0], pile[2]]);
+        }
+        g
+    };
+    let (a, b) = (world(true), world(false));
+    assert_eq!(a.log(), b.log());
+    let names_a_kept_card = |e: &Event| matches!(e, Event::Moved { from: Some(Zone::Discard(_)), cards, .. } if !cards.is_empty());
+    assert!(!a.log().iter().any(names_a_kept_card), "{:?}", a.log());
+}

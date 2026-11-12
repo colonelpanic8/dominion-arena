@@ -1175,3 +1175,22 @@ fn cross_set_games_keep_invariants() {
         }
     }
 }
+
+fn public_table(g: &Game, v: PlayerId) -> String {
+    let mut out = String::new();
+    for p in 0..g.num_players() {
+        let p = PlayerId(p as u8);
+        let pl = g.player(p);
+        out += &format!(
+            "{p}: deck {} hand {} discard {} top {:?}\n",
+            pl.deck.len(),
+            pl.hand.len(),
+            pl.discard.len(),
+            pl.discard.last().map(|&c| g.card(c)),
+        );
+        if p == v {
+            out += &format!("{:?}\n", hand_kinds(g, p));
+        }
+    }
+    out
+}

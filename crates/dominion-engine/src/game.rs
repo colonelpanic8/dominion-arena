@@ -1280,6 +1280,7 @@ impl Game {
             match frame.resume(self, input) {
                 Flow::Done(value) => {
                     self.release_holds();
+                    self.end_discard_searches();
                     input = Input::Return(value);
                 }
                 Flow::Continue => {

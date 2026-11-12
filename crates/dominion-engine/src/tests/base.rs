@@ -449,3 +449,27 @@ fn remodel_reads_the_trashed_cards_cost_when_it_gains() {
     assert!(piles.contains(&Card::Gold), "{piles:?}");
     assert!(!piles.contains(&Card::Province), "{piles:?}");
 }
+
+#[test]
+fn harbinger_search_does_not_reveal_the_discard_taken() {
+    let world = |pick: usize| {
+        let mut g = setup(&[Card::Harbinger]);
+        hand(&mut g, P0, &[Card::Harbinger]);
+        deck(&mut g, P0, &[Card::Copper; 5]);
+        let pile = discard(&mut g, P0, &[Card::Gold, Card::Curse, Card::Curse]);
+        g.start();
+        play(&mut g, Card::Harbinger);
+        choose(&mut g, &[pile[pick]]);
+        g
+    };
+    let (curse, gold) = (world(2), world(0));
+    assert_eq!(public_table(&curse, P1), public_table(&gold, P1));
+    assert_eq!(
+        curse.log().last(),
+        Some(&Event::TopDecked {
+            player: P0,
+            card: None
+        })
+    );
+    assert_eq!(curse.log(), gold.log());
+}

@@ -18,6 +18,8 @@ pub(crate) struct Scribe {
     shown: Vec<CardId>,
     /// Abilities resolving, innermost last.
     resolving: Vec<Resolving>,
+    #[serde(default)]
+    searched_discards: Vec<(PlayerId, usize)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -131,10 +133,23 @@ impl Game {
             // The top card, unless the pile is being gone through.
             Zone::Discard(p) => {
                 self.players[p.index()].discard.last() == Some(&id)
-                    && !self.scribe.moves.iter().any(|m| m.from == Zone::Discard(p))
+                    && !self.scribe.searched_discards.iter().any(|&(q, _)| p == q)
             }
             Zone::Hand(_) | Zone::Deck(_) => false,
         }
+    }
+
+    pub(crate) fn note_discard_search(&mut self, player: PlayerId) {
+        let search = (player, self.stack.len());
+        if !self.scribe.searched_discards.contains(&search) {
+            self.scribe.searched_discards.push(search);
+        }
+    }
+
+    pub(crate) fn end_discard_searches(&mut self) {
+        self.scribe
+            .searched_discards
+            .retain(|&(_, depth)| depth < self.stack.len());
     }
 
     /// Records that `id` is moving from where it is to `to`, for the log.

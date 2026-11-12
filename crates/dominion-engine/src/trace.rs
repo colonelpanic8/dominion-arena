@@ -91,6 +91,7 @@ impl Game {
 
     /// Records that `p` looked through their discard pile.
     pub(crate) fn look_through_discard(&mut self, p: PlayerId) {
+        self.note_discard_search(p);
         if self.trace.is_some() {
             for card in self.players[p.index()].discard.clone() {
                 self.show_to(card, p);
