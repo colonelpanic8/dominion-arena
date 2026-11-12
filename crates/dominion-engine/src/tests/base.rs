@@ -203,6 +203,20 @@ fn merchant_boosts_the_first_silver_played_when_kiln_plays_a_copy_first() {
     assert_eq!(g.turn().coins, 4 + 2 + 2 + 1);
 }
 
+/// "This turn" is anyone's: played on another player's turn, Merchant's +$1 is $ got,
+/// though it is no one's to spend.
+#[test]
+fn merchant_on_another_players_turn_boosts_its_players_first_silver() {
+    let mut g = setup(&[Card::Merchant]);
+    hand(&mut g, P1, &[Card::Merchant, Card::Silver, Card::Silver]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Merchant);
+    play_out_of_turn(&mut g, P1, Card::Silver);
+    play_out_of_turn(&mut g, P1, Card::Silver);
+    assert_eq!(g.player(P1).coins_got, 2 + 1 + 2);
+    assert_eq!(g.turn().coins, 0);
+}
+
 #[test]
 fn library_sets_aside_actions_and_discards_them() {
     let mut g = setup(&[Card::Library, Card::Village]);

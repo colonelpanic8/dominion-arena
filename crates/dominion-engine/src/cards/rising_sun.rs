@@ -403,7 +403,7 @@ impl SetRules for Rules {
                 }
                 let name = g.card(card);
                 let first = g.plays_before(player, card).all(|(c, _)| c != name);
-                if active(Card::GoodHarvest) && player == turn && first {
+                if active(Card::GoodHarvest) && first {
                     out.push(Trigger::new(player, Card::GoodHarvest, GOOD_HARVEST).quiet());
                 }
             }

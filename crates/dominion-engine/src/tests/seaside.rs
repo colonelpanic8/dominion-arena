@@ -958,6 +958,38 @@ fn corsair_trashes_the_first_silver_or_gold_each_other_player_plays() {
     assert_eq!(in_play_kinds(&g, P0), [Card::Corsair]);
 }
 
+/// Corsair says "each turn", as Highwayman does: "this can affect a Treasure that another
+/// player plays during your turn" (wiki, Highwayman).
+#[test]
+fn corsair_trashes_a_silver_another_player_plays_on_its_players_turn() {
+    let mut g = setup(&[
+        Card::Corsair,
+        Card::Ambassador,
+        Card::Gondola,
+        Card::Storyteller,
+        Card::Festival,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[
+            Card::Festival,
+            Card::Corsair,
+            Card::Ambassador,
+            Card::Gondola,
+        ],
+    );
+    hand(&mut g, P1, &[Card::Storyteller, Card::Silver]);
+    g.start();
+    play(&mut g, Card::Festival);
+    play(&mut g, Card::Corsair);
+    play_on_another_players_turn(&mut g);
+    // P1's Storyteller plays the Silver.
+    choose_kinds(&mut g, &[Card::Silver]);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(kinds(&g, g.trash()).last(), Some(&Card::Silver));
+}
+
 #[test]
 fn two_corsairs_still_trash_only_one_treasure() {
     let mut g = setup(&[Card::Corsair, Card::Village]);
