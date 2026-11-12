@@ -657,6 +657,100 @@ fn fortress_returns_to_hand_when_trashed() {
 }
 
 #[test]
+fn procession_on_a_fortress_gets_it_back_and_still_gains() {
+    let mut g = setup(&[Card::Procession, Card::Fortress, Card::Mystic]);
+    hand(&mut g, P0, &[Card::Procession, Card::Fortress]);
+    deck(&mut g, P0, &[Card::Copper; 4]);
+    g.start();
+    play(&mut g, Card::Procession);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    assert_eq!(g.turn().actions, 4);
+    assert_eq!(
+        hand_kinds(&g, P0),
+        [Card::Copper, Card::Copper, Card::Fortress]
+    );
+    assert!(!trash_kinds(&g).contains(&Card::Fortress));
+    assert_eq!(g.count_owned(P0, Card::Mystic), 1);
+    play(&mut g, Card::Fortress);
+    assert_eq!(g.turn().actions, 5);
+}
+
+#[test]
+fn a_fortress_trashed_from_the_supply_goes_to_the_hand_without_being_gained() {
+    let mut g = setup(&[Card::Lurker, Card::Fortress]);
+    hand(&mut g, P0, &[Card::Lurker]);
+    g.start();
+    play(&mut g, Card::Lurker);
+    mode(&mut g, 0);
+    choose_pile(&mut g, Card::Fortress);
+    assert_eq!(hand_kinds(&g, P0), [Card::Fortress]);
+    assert_eq!(pile_len(&g, Card::Fortress), 9);
+    assert!(g.turn().gained.is_empty());
+}
+
+#[test]
+fn a_fortress_another_players_attack_trashes_goes_to_its_owners_hand() {
+    let mut g = setup(&[Card::Swindler, Card::Fortress, Card::Smithy]);
+    hand(&mut g, P0, &[Card::Swindler]);
+    hand(&mut g, P1, &[]);
+    deck(&mut g, P1, &[Card::Fortress, Card::Gold]);
+    g.start();
+    play(&mut g, Card::Swindler);
+    choose_pile(&mut g, Card::Smithy);
+    assert_eq!(hand_kinds(&g, P1), [Card::Fortress]);
+    assert_eq!(discard_kinds(&g, P1), [Card::Smithy]);
+    assert!(hand_kinds(&g, P0).is_empty());
+}
+
+#[test]
+fn trashing_a_fortress_counts_as_trashing_it() {
+    // Death Cart stays; Apprentice draws for its cost; Tomb gives its VP.
+    let mut g = setup(&[Card::DeathCart, Card::Fortress]);
+    hand(&mut g, P0, &[Card::DeathCart, Card::Fortress]);
+    g.start();
+    play(&mut g, Card::DeathCart);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    assert_eq!(g.turn().coins, 5);
+    assert_eq!(kinds(&g, g.in_play(P0)), [Card::DeathCart]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Fortress]);
+
+    let mut g = setup(&[Card::Apprentice, Card::Fortress]);
+    hand(&mut g, P0, &[Card::Apprentice, Card::Fortress]);
+    deck(&mut g, P0, &[Card::Estate; 8]);
+    g.start();
+    play(&mut g, Card::Apprentice);
+    assert_eq!(g.hand(P0).len(), 5);
+    assert!(hand_kinds(&g, P0).contains(&Card::Fortress));
+}
+
+#[test]
+fn a_fortress_trashed_from_the_deck_or_discard_pile_goes_to_the_hand() {
+    let mut g = setup(&[Card::Lookout, Card::Fortress]);
+    hand(&mut g, P0, &[Card::Lookout]);
+    deck(
+        &mut g,
+        P0,
+        &[Card::Fortress, Card::Estate, Card::Gold, Card::Silver],
+    );
+    g.start();
+    play(&mut g, Card::Lookout);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    choose_kinds(&mut g, &[Card::Estate]);
+    assert_eq!(hand_kinds(&g, P0), [Card::Fortress]);
+    assert_eq!(discard_kinds(&g, P0), [Card::Estate]);
+    assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Silver]);
+
+    let mut g = setup(&[Card::Hermit, Card::Fortress]);
+    hand(&mut g, P0, &[Card::Hermit]);
+    discard(&mut g, P0, &[Card::Fortress, Card::Silver]);
+    g.start();
+    play(&mut g, Card::Hermit);
+    choose_kinds(&mut g, &[Card::Fortress]);
+    assert!(hand_kinds(&g, P0).contains(&Card::Fortress));
+    assert_eq!(discard_kinds(&g, P0), [Card::Silver]);
+}
+
+#[test]
 fn ironmonger_gives_a_bonus_per_type_of_the_revealed_card() {
     let mut g = setup(&[Card::Ironmonger]);
     hand(&mut g, P0, &[Card::Ironmonger]);
