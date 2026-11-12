@@ -11,6 +11,9 @@ pub const DEFAULT_PORT: u16 = 7317;
 pub const DEFAULT_KEEP_FINISHED_DAYS: u32 = 7;
 pub const DEFAULT_SESSION_IDLE_MINUTES: u32 = 24 * 60;
 pub const DEFAULT_RECONNECT_SECONDS: u32 = 30;
+pub const DEFAULT_KEEP_IDLE_DAYS: u32 = 30;
+pub const DEFAULT_AWAY_MINUTES: u32 = 5;
+pub const DEFAULT_DECISION_MINUTES: u32 = 30;
 /// The environment variable naming the web client to serve when `web_dir` is unset.
 pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 
@@ -68,6 +71,28 @@ pub struct Config {
     /// Cards a table never deals at random while it respects the Banned list (the web
     /// client's Cardlists tab writes it).
     pub banned_cards: Option<Vec<String>>,
+    /// The URL people reach the server at, when it isn't `listen` and `port` (behind a
+    /// reverse proxy): its host is accepted in the Host header, and an `https` one makes
+    /// session cookies HTTPS-only.
+    pub public_url: Option<String>,
+    /// Take a client's address from the `X-Forwarded-For` header, for the limits on what
+    /// one address may do (default false: set it only behind a reverse proxy that sets
+    /// the header).
+    pub trust_proxy: Option<bool>,
+    /// Whether new accounts can be registered (default true).
+    pub registration: Option<bool>,
+    /// Whether people can play without an account, as guests (default true).
+    pub guests: Option<bool>,
+    /// The most games in progress at once (default 1000).
+    pub max_games: Option<usize>,
+    /// Days an unfinished game nobody plays is kept before it is deleted (default 30).
+    pub keep_idle_days: Option<u32>,
+    /// In a lobby game, minutes the player who must decide may be disconnected before
+    /// they forfeit (default 5; 0 never).
+    pub away_minutes: Option<u32>,
+    /// In a lobby game, minutes a player may take over one decision before they forfeit
+    /// (default 30; 0 never).
+    pub decision_minutes: Option<u32>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -135,26 +160,29 @@ impl Config {
         }
     }
 
-    /// Sets `key` in the settings file at `path` to `value`, keeping everything else in
-    /// it as it was, and returns the settings it then holds.
-    pub fn write_key(path: &Path, key: &str, value: toml_edit::Item) -> Result<Config, String> {
-        let text = match std::fs::read_to_string(path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(e) => return Err(format!("{}: {e}", path.display())),
-        };
-        let mut doc: toml_edit::DocumentMut = text
-            .parse()
-            .map_err(|e| format!("{}: {e}", path.display()))?;
-        doc[key] = value;
-        let text = doc.to_string();
-        let config: Config =
-            toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    /// What the settings say about accounts and the lobby.
+    pub fn arena(&self) -> crate::arena::Settings {
+        let minutes = |m: u32| Duration::from_secs(u64::from(m) * 60);
+        crate::arena::Settings {
+            registration: self.registration.unwrap_or(true),
+            guests: self.guests.unwrap_or(true),
+            banned_cards: self.banned_cards.clone().unwrap_or_default(),
+            timing: crate::hub::Timing {
+                away: minutes(self.away_minutes.unwrap_or(DEFAULT_AWAY_MINUTES)),
+                decision: minutes(self.decision_minutes.unwrap_or(DEFAULT_DECISION_MINUTES)),
+            },
+            max_games: self.max_games.unwrap_or(crate::hub::DEFAULT_MAX_GAMES),
+            keep_finished: self.keep_finished(),
+            keep_idle: minutes(self.keep_idle_days.unwrap_or(DEFAULT_KEEP_IDLE_DAYS) * 24 * 60),
         }
-        std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
-        Ok(config)
+    }
+
+    /// The host of `public_url`, as a Host header has it.
+    pub fn public_host(&self) -> Option<String> {
+        let url = self.public_url.as_deref()?;
+        let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+        let host = rest.split('/').next().unwrap_or(rest);
+        (!host.is_empty()).then(|| host.to_string())
     }
 
     /// What `GET /api/settings` serves.
@@ -178,6 +206,8 @@ impl Config {
                 .filter(|v| v.is_finite())
                 .map_or(d.web_volume, |v| v.clamp(0.0, 1.0)),
             banned_cards: self.banned_cards.clone().unwrap_or_default(),
+            registration: self.registration.unwrap_or(d.registration),
+            guests: self.guests.unwrap_or(d.guests),
         }
     }
 
@@ -258,6 +288,8 @@ mod tests {
                 web_sounds: false,
                 web_volume: 0.2,
                 banned_cards: vec!["Witch".into()],
+                registration: true,
+                guests: true,
             }
         );
         assert_eq!(

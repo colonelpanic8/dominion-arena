@@ -490,6 +490,7 @@ impl TableRules {
             turn_limit: parse_number::<u32>(&self.turn_limit, "The turn limit")?,
             colonies: self.colonies.value(),
             shelters: self.shelters.value(),
+            watchable: None,
         })
     }
 

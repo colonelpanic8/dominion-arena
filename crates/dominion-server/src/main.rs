@@ -110,7 +110,7 @@ struct PlayArgs {
     names: Vec<String>,
 }
 
-async fn serve(config: Config, config_file: Option<PathBuf>) -> Result<(), String> {
+async fn serve(config: Config) -> Result<(), String> {
     let addr = SocketAddr::new(config.listen(), config.port());
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -121,6 +121,7 @@ async fn serve(config: Config, config_file: Option<PathBuf>) -> Result<(), Strin
     if !config.listen().is_loopback() && !config.listen().is_unspecified() {
         hosts.push(config.listen().to_string());
     }
+    hosts.extend(config.public_host());
     let hub = match config.state_dir() {
         None if config.persist == Some(false) => Hub::default(),
         None => {
@@ -162,7 +163,9 @@ async fn serve(config: Config, config_file: Option<PathBuf>) -> Result<(), Strin
         assets_dir: config.assets_dir(),
         web_dir,
         web: config.web(),
-        config_file,
+        arena: config.arena(),
+        public_url: config.public_url.clone(),
+        trust_proxy: config.trust_proxy.unwrap_or(false),
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
@@ -220,7 +223,7 @@ async fn main() -> ExitCode {
             if ephemeral {
                 config.persist = Some(false);
             }
-            serve(config, cli.config.clone().or_else(Config::default_path)).await
+            serve(config).await
         }
         Command::Play(args) => {
             let url = args.server.clone().unwrap_or_else(|| config.server());

@@ -1,6 +1,7 @@
 //! Request and response bodies of `dominion serve`'s HTTP API under `/api`. Game
 //! creation and listing share the MCP tools' snake_case types; the rest are camelCase.
 
+use crate::lobby::{GameMeta, Source, UserRef};
 use crate::view::AgentView;
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +32,8 @@ pub struct NewGame {
     pub turn_limit: Option<u32>,
     pub colonies: Option<bool>,
     pub shelters: Option<bool>,
+    /// Let anyone signed in watch the game: public information only (default false).
+    pub watchable: Option<bool>,
 }
 
 /// `POST /api/deal`: a kingdom dealt by a table's rules without creating a game. Giving
@@ -113,6 +116,18 @@ pub struct GameSummary {
     /// Events, Landmarks, Projects, Ways, ... in the game.
     #[serde(default)]
     pub landscapes: Vec<String>,
+    /// `direct` (create_game), `table` or `automatch`.
+    #[serde(default)]
+    pub source: Source,
+    /// It counts for its players' ratings.
+    #[serde(default)]
+    pub rated: bool,
+    /// Signed-in people may watch it.
+    #[serde(default)]
+    pub watchable: bool,
+    /// Per seat: the account playing it, if one is.
+    #[serde(default)]
+    pub users: Vec<Option<UserRef>>,
 }
 
 /// `GET /api/seat`: the seat a token holds.
@@ -144,7 +159,12 @@ pub struct WebSettings {
     /// 0.0 to 1.0.
     pub web_volume: f32,
     /// dominion.games' Banned cards list: a table that respects it never deals them.
+    /// Your own when you are signed in and have set one, else the server's.
     pub banned_cards: Vec<String>,
+    /// New accounts can be registered.
+    pub registration: bool,
+    /// People can play without an account.
+    pub guests: bool,
 }
 
 /// dominion.games' animation speeds, slowest first.
@@ -171,6 +191,8 @@ impl Default for WebSettings {
             web_sounds: true,
             web_volume: 0.5,
             banned_cards: vec![],
+            registration: true,
+            guests: true,
         }
     }
 }
@@ -194,6 +216,9 @@ pub struct SeatView {
     /// The seat may take back its last answer (`POST /api/games/{id}/undo`).
     #[serde(default)]
     pub can_undo: bool,
+    /// Who plays, who is connected, and what kind of game it is.
+    #[serde(default)]
+    pub meta: GameMeta,
 }
 
 /// Public facts the graphical table draws beside the view.
@@ -219,6 +244,9 @@ pub struct PlayerTable {
 #[serde(rename_all = "camelCase")]
 pub struct Change {
     pub version: u64,
+    /// Changes whenever something is said in the game's chat (`game-<id>`).
+    #[serde(default)]
+    pub chat: u64,
 }
 
 /// Query of `GET /api/games/{id}/view`.

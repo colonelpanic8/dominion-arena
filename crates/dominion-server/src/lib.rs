@@ -1,12 +1,16 @@
 //! `dominion`: an MCP server hosting Dominion games over streamable HTTP, and a terminal
 //! client for it.
 
+pub mod arena;
 pub mod assets;
 pub mod client;
 pub mod config;
 pub mod http;
 pub mod hub;
+pub mod limits;
 pub mod mcp;
+pub mod rating;
+pub mod store;
 
 use dominion_agent::GlossaryEntry;
 use rmcp::transport::streamable_http_server::{
@@ -17,6 +21,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
+
+/// How often forfeits, departures and matches are looked for.
+const SWEEP: Duration = Duration::from_secs(5);
 
 /// How [`serve`] serves.
 #[derive(Clone, Debug)]
@@ -32,8 +39,12 @@ pub struct Options {
     pub web_dir: Option<PathBuf>,
     /// What `GET /api/settings` tells the web client.
     pub web: dominion_protocol::api::WebSettings,
-    /// The settings file the web client's edits are written to.
-    pub config_file: Option<PathBuf>,
+    /// Accounts and the lobby.
+    pub arena: arena::Settings,
+    /// The URL people reach the server at, when a proxy stands in front of it.
+    pub public_url: Option<String>,
+    /// A client's address is the last one in `X-Forwarded-For`.
+    pub trust_proxy: bool,
 }
 
 impl Default for Options {
@@ -44,7 +55,9 @@ impl Default for Options {
             assets_dir: None,
             web_dir: None,
             web: Default::default(),
-            config_file: None,
+            arena: Default::default(),
+            public_url: None,
+            trust_proxy: false,
         }
     }
 }
@@ -62,7 +75,21 @@ pub async fn serve(
         .map(String::from)
         .collect();
     hosts.extend(options.allowed_hosts.iter().cloned());
-    let site = http::router(hub.clone(), &options, hosts.clone(), stop.clone());
+    let arena = arena::Arena::open(hub, options.arena.clone())?;
+    let site = http::router(arena.clone(), &options, hosts.clone(), stop.clone());
+    let (sweeper, stopped) = (arena.clone(), stop.clone());
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(SWEEP);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                _ = stopped.cancelled() => return,
+                _ = tick.tick() => {}
+            }
+            let arena = sweeper.clone();
+            let _ = tokio::task::spawn_blocking(move || arena.sweep()).await;
+        }
+    });
     let config = StreamableHttpServerConfig::default()
         .with_allowed_hosts(hosts)
         .with_cancellation_token(stop.child_token());
@@ -71,14 +98,15 @@ pub async fn serve(
     // A call in progress doesn't keep its session alive, so no wait may outlast it.
     let max_wait = options.session_idle.map_or(mcp::MAX_WAIT, |idle| idle / 2);
     let service = StreamableHttpService::new(
-        move || Ok(mcp::Session::new(hub.clone(), max_wait)),
+        move || Ok(mcp::Session::new(arena.clone(), max_wait)),
         Arc::new(sessions),
         config,
     );
     let router = axum::Router::new()
         .nest_service("/mcp", service)
         .merge(site);
-    axum::serve(listener, router)
+    let service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
+    axum::serve(listener, service)
         .with_graceful_shutdown(async move { stop.cancelled_owned().await })
         .await
 }
