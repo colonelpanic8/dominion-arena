@@ -131,6 +131,9 @@ personal use and are never part of this repository or its package.
 server: a lobby to create games and take seats, and a game page that shows a seat's view
 and answers its decisions. It keeps the seat tokens it holds in the browser's
 localStorage; a seat link `/game/<id>#token=<token>` opens a seat in another browser.
+Cards are drawn like dominion.games' own from the asset cache (`dominion assets sync`),
+which the client only references by URL; without a cache they are drawn in CSS. `/gallery`
+shows every card at each size.
 
 ```sh
 just web-build                  # release build into target/web-client

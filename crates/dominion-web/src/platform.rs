@@ -73,6 +73,18 @@ mod imp {
     pub fn encode(s: &str) -> String {
         js_sys::encode_uri_component(s).into()
     }
+
+    /// The window's inner size in CSS pixels.
+    pub fn viewport() -> (f64, f64) {
+        let Some(w) = window() else {
+            return (1280.0, 800.0);
+        };
+        let size = |v: Result<wasm_bindgen::JsValue, _>| v.ok().and_then(|v| v.as_f64());
+        (
+            size(w.inner_width()).unwrap_or(1280.0),
+            size(w.inner_height()).unwrap_or(800.0),
+        )
+    }
 }
 
 #[cfg(not(all(feature = "web", target_arch = "wasm32")))]
@@ -105,6 +117,10 @@ mod imp {
     }
 
     pub fn copy(_text: &str) {}
+
+    pub fn viewport() -> (f64, f64) {
+        (1280.0, 800.0)
+    }
 
     pub fn encode(s: &str) -> String {
         s.chars()

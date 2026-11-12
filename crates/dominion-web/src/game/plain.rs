@@ -154,16 +154,17 @@ fn TurnLine(view: AgentView) -> Element {
     }
 }
 
-/// A card name with its text on hover.
+/// A card name showing the card on hover.
 #[component]
 pub fn CardName(name: String, count: Option<u32>) -> Element {
-    let cards = use_cards();
     let label = match count {
         Some(n) if n > 1 => format!("{n}× {name}"),
         _ => name.clone(),
     };
     rsx! {
-        span { class: "card-name", title: cards.tooltip(&name), "{label}" }
+        crate::card::CardHover { name: name.clone(),
+            span { class: "card-name", "{label}" }
+        }
     }
 }
 

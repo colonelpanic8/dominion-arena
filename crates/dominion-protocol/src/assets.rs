@@ -1,4 +1,4 @@
-//! `manifest.json` of the asset cache (`dominion/assets@1`). Depends on serde only.
+//! `manifest.json` of the asset cache (`dominion/assets@1`).
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

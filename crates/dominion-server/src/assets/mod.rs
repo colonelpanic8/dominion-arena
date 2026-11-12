@@ -3,7 +3,7 @@
 //! belong to their owners; they are only ever cached locally.
 
 mod fetch;
-pub mod manifest;
+pub use dominion_protocol::assets as manifest;
 mod rules;
 mod upstream;
 
