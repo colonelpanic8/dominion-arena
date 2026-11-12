@@ -401,7 +401,9 @@ them.
   questions of the physical card an answer plays and that card's consecutive replays,
   also after other seats are asked something first (Reactions to an Attack): the table
   keeps the pre-answer, saved with it, until its seat is asked anything else or the play
-  is over; a different card's question remains open. Decisions whose answer may play an
+  is over; a different card's question remains open. The engine's questions and labels
+  call players by seat ("P2 attacks you"); `project::named` puts the players' names in,
+  for every question, label and announced choice. Decisions whose answer may play an
   Action in a game with Ways end their prompt with `WAY_HINT`.
 
 ## Writing a set

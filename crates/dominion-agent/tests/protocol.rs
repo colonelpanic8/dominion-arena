@@ -648,8 +648,8 @@ fn a_reaction_says_what_it_answers_and_does_and_names_no_single_source() {
     let (decline, moats) = d.options.split_last().unwrap();
     assert!(!moats.is_empty());
     let prompt = match moats.len() {
-        1 => "P1 attacks you with Militia: you may use this ability",
-        _ => "P1 attacks you with Militia: choose an ability to use next, or decline all",
+        1 => "Ada attacks you with Militia: you may use this ability",
+        _ => "Ada attacks you with Militia: choose an ability to use next, or decline all",
     };
     assert_eq!(d.prompt, prompt);
     for o in moats {

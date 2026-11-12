@@ -607,6 +607,40 @@ fn may_ask_way(v: &View<'_>, d: &Decision) -> bool {
     }
 }
 
+/// `text` written by the engine, which calls players by seat ("P2 attacks you", "P2's
+/// Copper"), with the players' names.
+pub(crate) fn named(text: &str, names: &[String]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find('P') {
+        let (before, at) = rest.split_at(i);
+        out.push_str(before);
+        let digits = at[1..].len()
+            - at[1..]
+                .trim_start_matches(|c: char| c.is_ascii_digit())
+                .len();
+        let after = at[1 + digits..].chars().next();
+        let seat = at[1..1 + digits].parse::<usize>().ok();
+        let word = !out.ends_with(|c: char| c.is_alphanumeric())
+            && !after.is_some_and(|c| c.is_alphanumeric());
+        match seat
+            .filter(|_| word)
+            .and_then(|n| names.get(n.wrapping_sub(1)))
+        {
+            Some(name) => {
+                out.push_str(name);
+                rest = &at[1 + digits..];
+            }
+            None => {
+                out.push('P');
+                rest = &at[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Where a card offered to `me` is, in words: "in play", "in Ann's hand".
 fn option_place(game: &Game, zone: Zone, me: PlayerId, names: &[String]) -> String {
     let whose = |p: PlayerId| {
@@ -663,6 +697,7 @@ pub(crate) fn decision(
     };
     let zones: BTreeSet<Zone> = cards.iter().filter_map(|&c| v.zone(c)).collect();
     let placed = zones.len() > 1;
+    let question = d.question.as_deref().map(|q| named(q, names));
     let source = d.source.map(|c| c.name().to_string());
     let about: Vec<&str> = d
         .about
@@ -749,7 +784,7 @@ pub(crate) fn decision(
                 ""
             };
             let what = how_many(*min, *max, "card", "cards");
-            let ask = match (&d.question, verb(d.purpose)) {
+            let ask = match (&question, verb(d.purpose)) {
                 (Some(q), _) => format!("choose {what} to {q}"),
                 (None, Some(verb)) => format!("choose {what} to {verb}"),
                 (None, None) => format!("choose {what}"),
@@ -772,7 +807,7 @@ pub(crate) fn decision(
                 let i = items.len();
                 items.push((option(i, "decline", "None".into()), Target::Pile(None)));
             }
-            let prompt = match (&d.question, verb(d.purpose)) {
+            let prompt = match (&question, verb(d.purpose)) {
                 (Some(q), _) => format!("{prefix}{q}"),
                 (None, Some(verb)) => format!("{prefix}choose a pile to {verb} from"),
                 (None, None) => format!("{prefix}choose a pile"),
@@ -788,7 +823,7 @@ pub(crate) fn decision(
             let triggers = v.pending_triggers();
             for (j, &opt) in opts.iter().enumerate() {
                 let i = items.len();
-                let label = labels.get(j).cloned().unwrap_or_default();
+                let label = labels.get(j).map_or(String::new(), |l| named(l, names));
                 let mut o = match opt {
                     Opt::Yes => option(i, "yes", label),
                     Opt::No => option(i, "no", label),
@@ -820,7 +855,7 @@ pub(crate) fn decision(
                 }
                 items.push((o, Target::Opt(opt)));
             }
-            let prompt = match (&d.question, opts.as_slice()) {
+            let prompt = match (&question, opts.as_slice()) {
                 (Some(q), _) => format!("{prefix}{q}"),
                 (None, [Opt::Yes, Opt::No]) => {
                     format!("{prefix}{}?", lower_first(&items[0].0.label))
@@ -849,7 +884,7 @@ pub(crate) fn decision(
                 o.value = Some(n);
                 items.push((o, Target::Number(n)));
             }
-            let prompt = match (&d.question, d.purpose) {
+            let prompt = match (&question, d.purpose) {
                 (Some(q), _) => format!("{prefix}{q} ({min} to {max})"),
                 (None, Purpose::Overpay) => {
                     format!("{prefix}choose how much to overpay (${min} to ${max})")
@@ -1219,7 +1254,7 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             format!(
                 "{} chooses {}{}",
                 name(*player),
-                choices.join("; "),
+                named(&choices.join("; "), cx.names),
                 source.map_or(String::new(), |c| format!(" ({c})"))
             ),
         ),
@@ -1516,4 +1551,22 @@ fn log(game: &Game, cx: &Context<'_>) -> Vec<LogEntry> {
         .skip(cx.log_from)
         .map(|(i, e)| log_entry(i, e, game, cx))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::named;
+
+    #[test]
+    fn engine_text_names_players_by_name() {
+        let names = ["Ann".to_string(), "Ben".to_string()];
+        assert_eq!(named("P2 attacks you", &names), "Ben attacks you");
+        assert_eq!(
+            named("discard P1's Copper, P2's Estate?", &names),
+            "discard Ann's Copper, Ben's Estate?"
+        );
+        for text in ["Transmute ($0P, 8 left)", "P3 gains it", "P", "Pawn", "1P2"] {
+            assert_eq!(named(text, &names), text);
+        }
+    }
 }
