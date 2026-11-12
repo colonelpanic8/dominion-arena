@@ -454,7 +454,7 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
             pirate_ship: pv.pirate_ship(),
             minus_card: pv.minus_card(),
             minus_coin: pv.minus_coin(),
-            journey_face_up: pv.journey_face_up() && uses_journey,
+            journey_face_up: uses_journey.then(|| pv.journey_face_up()),
         },
         adventure_tokens: pv
             .tokens()

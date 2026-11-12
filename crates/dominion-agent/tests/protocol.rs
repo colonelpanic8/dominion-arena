@@ -576,3 +576,49 @@ fn a_reaction_says_what_it_answers_and_does_and_names_no_single_source() {
     }
     assert!(decline.label.starts_with("Decline"), "{}", decline.label);
 }
+
+#[test]
+fn the_result_lists_players_by_rank_and_says_why_the_game_ended() {
+    let t = table(&[Card::Militia], 11, &["Ada", "Bo"]);
+    let mut view = t.view(PlayerId(0));
+    view.game.result = Some(dominion_agent::GameResult {
+        reason: Some("provinces-gone".into()),
+        players: vec![
+            dominion_agent::ResultPlayer {
+                index: 0,
+                name: "Ada".into(),
+                vp: 10,
+                rank: 2,
+                turns: 14,
+                resigned: false,
+            },
+            dominion_agent::ResultPlayer {
+                index: 1,
+                name: "Bo".into(),
+                vp: 20,
+                rank: 1,
+                turns: 14,
+                resigned: false,
+            },
+        ],
+    });
+    let rendered = text::render(&view);
+    assert!(
+        rendered.contains(
+            "RESULT (the Provinces ran out): 1. Bo 20 VP (14 turns), 2. Ada 10 VP (14 turns)"
+        ),
+        "{rendered}"
+    );
+}
+
+#[test]
+fn the_journey_token_is_shown_face_up_or_down_in_games_using_it() {
+    let journey = |t: &Table| t.view(PlayerId(0)).you.unwrap().tokens.journey_face_up;
+    assert_eq!(journey(&table(&[Card::Militia], 1, &[])), None);
+    let t = table(&[Card::Ranger], 1, &[]);
+    assert_eq!(journey(&t), Some(true));
+    assert!(t.text(PlayerId(1)).contains("Journey token face up"));
+    let mut view = t.view(PlayerId(0));
+    view.you.as_mut().unwrap().tokens.journey_face_up = Some(false);
+    assert!(text::render(&view).contains("Journey token face down"));
+}

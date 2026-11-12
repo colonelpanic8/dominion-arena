@@ -1,5 +1,5 @@
 GAME snap (over)
-RESULT 1. Ada 3 VP (12 turns), 1. Bo 3 VP (12 turns)
+RESULT (the turn limit was reached): 1. Ada 3 VP (12 turns), 1. Bo 3 VP (12 turns)
 YOU P2: Bo (3 VP)
   hand 5 (3 Copper, Militia, Silver)
   deck 15 (4 Copper, 3 Estate, 3 Militia, 5 Silver)
