@@ -8,8 +8,8 @@
 //! Groups merge when the viewer loses track of which card is which: in a shuffle, when
 //! cards are put back in an order someone else chose, and when a card leaves a set of
 //! cards its owner holds out of the viewer's sight. Such a set is a hand, a Native Village
-//! mat, cards set aside face down together, or the cards of a deck or discard pile their
-//! owner last looked through. A card leaving it unseen could be any of the set, unless
+//! mat, the cards taken off a deck to be looked at, cards set aside face down together, or
+//! the cards of a deck or discard pile their owner last looked through. A card leaving it unseen could be any of the set, unless
 //! the whole set goes the same way; a card seen leaving it (or revealed from it) tells the
 //! viewer its name and no more, so it could be any card of the set that may have that
 //! name. Everything else can be followed: cards are taken from known places in a deck,
@@ -339,14 +339,18 @@ fn public(game: &Game, zone: Zone) -> bool {
         Zone::InPlay(_) | Zone::Trash => true,
         Zone::Mat(_, mat) => mat != Mat::NativeVillage,
         Zone::Pile(pile) => !game.pile(pile).hidden,
-        Zone::Deck(_) | Zone::Hand(_) | Zone::Discard(_) | Zone::SetAside(_) => false,
+        Zone::Deck(_) | Zone::Hand(_) | Zone::Discard(_) | Zone::SetAside(_) | Zone::Looking(_) => {
+            false
+        }
     }
 }
 
 /// Whether the owner's view of `zone` lets `v` follow cards in and out of it.
 fn private_to(zone: Zone, v: PlayerId) -> bool {
     match zone {
-        Zone::Hand(p) | Zone::SetAside(p) | Zone::Mat(p, Mat::NativeVillage) => v == p,
+        Zone::Hand(p) | Zone::SetAside(p) | Zone::Looking(p) | Zone::Mat(p, Mat::NativeVillage) => {
+            v == p
+        }
         _ => false,
     }
 }
@@ -502,7 +506,7 @@ impl Knowledge {
         }
         let zone = self.zone[card.index()];
         let set = match zone {
-            Zone::Hand(_) | Zone::Mat(_, Mat::NativeVillage) => None,
+            Zone::Hand(_) | Zone::Looking(_) | Zone::Mat(_, Mat::NativeVillage) => None,
             Zone::Deck(_) | Zone::Discard(_) | Zone::SetAside(_)
                 if self.held[card.index()] != 0 =>
             {

@@ -1184,7 +1184,7 @@ fn cardinal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         match f.pc {
             0 => {
                 f.pc = 1;
-                return Flow::Call(Frame::reveal(target, 2));
+                return Flow::Call(Frame::reveal_on_deck(target, 2));
             }
             1 => {
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();
@@ -1691,7 +1691,7 @@ fn gamble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             plus_buys(g, p, 1);
             f.pc = 1;
-            Flow::Call(Frame::look(p, 1))
+            Flow::Call(Frame::look_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1811,7 +1811,7 @@ fn pursue(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal(p, 4))
+            Flow::Call(Frame::reveal_on_deck(p, 4))
         }
         2 => {
             let named = f.s.card;

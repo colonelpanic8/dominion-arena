@@ -263,8 +263,12 @@ pub(crate) fn check_zones(g: &Game) {
         mark(&pl.discard, Zone::Discard(id));
         mark(&pl.in_play, Zone::InPlay(id));
         mark(&pl.set_aside, Zone::SetAside(id));
+        mark(&pl.looking, Zone::Looking(id));
         for c in &pl.face_up {
-            assert!(pl.set_aside.contains(c), "face-up {c:?} is not set aside");
+            assert!(
+                pl.set_aside.contains(c) || pl.looking.contains(c),
+                "face-up {c:?} is not set aside or looked at"
+            );
         }
         for (&mat, cards) in &pl.mats {
             mark(cards, Zone::Mat(id, mat));

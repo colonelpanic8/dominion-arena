@@ -1183,13 +1183,17 @@ fn public_zone(g: &Game, zone: Zone) -> bool {
         Zone::InPlay(_) | Zone::Trash => true,
         Zone::Mat(_, mat) => mat != Mat::NativeVillage,
         Zone::Pile(pile) => !g.pile(pile).hidden,
-        Zone::Deck(_) | Zone::Hand(_) | Zone::Discard(_) | Zone::SetAside(_) => false,
+        Zone::Deck(_) | Zone::Hand(_) | Zone::Discard(_) | Zone::SetAside(_) | Zone::Looking(_) => {
+            false
+        }
     }
 }
 
 fn private_zone(turn: (PlayerId, PlayerId), zone: Zone, v: PlayerId) -> bool {
     match zone {
-        Zone::Hand(p) | Zone::SetAside(p) | Zone::Mat(p, Mat::NativeVillage) => sees(turn, v, p),
+        Zone::Hand(p) | Zone::SetAside(p) | Zone::Looking(p) | Zone::Mat(p, Mat::NativeVillage) => {
+            sees(turn, v, p)
+        }
         _ => false,
     }
 }
@@ -1199,7 +1203,7 @@ fn base_visible(g: &Game, v: PlayerId, id: CardId) -> bool {
     let mine = |p: PlayerId| v == p;
     match g.zone(id) {
         Zone::Hand(p) => mine(p),
-        Zone::SetAside(p) => mine(p) || g.player(p).face_up.contains(&id),
+        Zone::SetAside(p) | Zone::Looking(p) => mine(p) || g.player(p).face_up.contains(&id),
         Zone::InPlay(_) | Zone::Trash => true,
         Zone::Discard(p) => g.player(p).discard.last() == Some(&id),
         Zone::Pile(pile) => !g.pile(pile).hidden && g.pile_top(pile) == Some(id),
@@ -1232,6 +1236,7 @@ fn zone_kind(zone: Zone) -> &'static str {
         Zone::Discard(_) => "discard",
         Zone::InPlay(_) => "play",
         Zone::SetAside(_) => "set-aside",
+        Zone::Looking(_) => "looking",
         Zone::Mat(_, Mat::NativeVillage) => "native-village",
         Zone::Mat(..) => "mat",
         Zone::Pile(_) => "pile",
@@ -1291,7 +1296,7 @@ impl Tracker {
                 }
                 let shown = public_zone(g, *from) || public_zone(g, *to);
                 let lost = match from {
-                    Zone::Hand(_) | Zone::Mat(_, Mat::NativeVillage) => true,
+                    Zone::Hand(_) | Zone::Looking(_) | Zone::Mat(_, Mat::NativeVillage) => true,
                     Zone::Deck(_) | Zone::Discard(_) => {
                         !matches!(entry, Trace::Moved { top: true, .. })
                     }
@@ -1413,14 +1418,22 @@ fn check_decision(g: &Game, d: &Decision, flags: &mut Flags) {
             let top_level = g.stack.len() == 2
                 && matches!(g.stack[0], Frame::Game { .. })
                 && matches!(g.stack[1], Frame::Turn { .. });
-            if !top_level || !g.gains.is_empty() || !g.plays.is_empty() || !g.trashing.is_empty() {
+            let looking = g.players.iter().any(|pl| !pl.looking.is_empty());
+            if !top_level
+                || !g.gains.is_empty()
+                || !g.plays.is_empty()
+                || !g.trashing.is_empty()
+                || !g.holds.is_empty()
+                || looking
+            {
                 flags.bug("leftover-effect-state-at-turn-decision", || {
                     format!(
-                        "stack {}, gains {:?}, plays {:?}, trashing {:?}; {}",
+                        "stack {}, gains {:?}, plays {:?}, trashing {:?}, holds {:?}; {}",
                         g.stack.len(),
                         g.gains,
                         g.plays,
                         g.trashing,
+                        g.holds,
                         ctx(g)
                     )
                 });
@@ -1931,6 +1944,21 @@ fn check_invariants(g: &Game, flags: &mut Flags) {
     }
 }
 
+/// Cards taken off a deck to be looked at are held by a frame still on the stack, which
+/// puts them back when it finishes.
+fn check_looking(g: &Game, flags: &mut Flags) {
+    for (p, pl) in g.players.iter().enumerate() {
+        for &c in &pl.looking {
+            let held = g.holds.iter().any(|h| h.cards.contains(&c));
+            if !held || g.holds.iter().any(|h| h.depth > g.stack.len()) {
+                flags.bug(format!("looking-card-not-held:{}", g.printed(c)), || {
+                    format!("P{}'s {c:?}; holds {:?}; {}", p + 1, g.holds, ctx(g))
+                });
+            }
+        }
+    }
+}
+
 /// Set-aside cards are held by something that will release them: a lasting effect or a
 /// set's state. One whose effect has ended (a Duration that left play stops, and what it
 /// set aside stays there) is only listed.
@@ -2019,6 +2047,9 @@ fn check_views(g: &Game, flags: &mut Flags) {
             if !pv.set_aside().iter().all(visible) {
                 flags.bug("view-set-aside", || ctx(g));
             }
+            if !pv.looking().iter().all(visible) {
+                flags.bug("view-looking", || ctx(g));
+            }
         }
         for (shown, real) in view.lasting().iter().zip(g.lasting()) {
             let ids = shown
@@ -2076,7 +2107,7 @@ fn view_parts(g: &Game, v: PlayerId) -> Vec<(&'static str, String)> {
             let mats = [Mat::Tavern, Mat::Island, Mat::NativeVillage, Mat::Exile]
                 .map(|m| (p.mat(m).map(<[CardId]>::to_vec), p.mat_size(m)));
             format!(
-                "{:?} {} {} {} {:?} {:?} {:?} {} {mats:?} {} {} {} {} {} {:?} {:?} {:?}",
+                "{:?} {} {} {} {:?} {:?} {:?} {} {:?} {} {mats:?} {} {} {} {} {} {:?} {:?} {:?}",
                 p.hand(),
                 p.hand_size(),
                 p.deck_size(),
@@ -2085,6 +2116,8 @@ fn view_parts(g: &Game, v: PlayerId) -> Vec<(&'static str, String)> {
                 p.in_play(),
                 p.set_aside(),
                 p.set_aside_size(),
+                p.looking(),
+                p.looking_size(),
                 p.vp_tokens(),
                 p.coffers(),
                 p.villagers(),
@@ -3039,6 +3072,7 @@ fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) 
     ) {
         check_set_aside(g, m, flags);
     }
+    check_looking(g, flags);
     check_turn_records(g, flags);
     if t.ignore_plus_actions {
         if let Some((turn, actions)) = m.frozen_actions

@@ -160,11 +160,15 @@ pub(crate) enum Frame {
         bottom: Vec<CardId>,
         pc: u8,
     },
+    /// Takes the top cards of a deck into [`Zone::Looking`] (see [`Frame::look`]).
     TopCards {
         player: PlayerId,
         count: usize,
         reveal: bool,
         shuffled: bool,
+        /// Leave them on the deck instead (sets not yet using [`Zone::Looking`]).
+        #[serde(default)]
+        on_deck: bool,
     },
     Gain {
         player: PlayerId,
@@ -255,23 +259,48 @@ impl Frame {
         }
     }
 
-    /// The top `count` cards of a deck (top first), revealed to everyone.
+    /// Reveals the top `count` cards of a deck to everyone, like [`Frame::look`].
     pub(crate) fn reveal(player: PlayerId, count: usize) -> Frame {
         Frame::TopCards {
             player,
             count,
             reveal: true,
             shuffled: false,
+            on_deck: false,
         }
     }
 
-    /// The top `count` cards of a deck (top first), seen only by their owner.
+    /// Takes the top `count` cards of a deck (top first, shuffling first if it has fewer)
+    /// for their owner to look at: they are in [`Zone::Looking`], off the deck, until the
+    /// frame that called this finishes; then those it didn't move go back on top of the
+    /// deck in their order, over anything put there meanwhile.
     pub(crate) fn look(player: PlayerId, count: usize) -> Frame {
         Frame::TopCards {
             player,
             count,
             reveal: false,
             shuffled: false,
+            on_deck: false,
+        }
+    }
+
+    pub(crate) fn reveal_on_deck(player: PlayerId, count: usize) -> Frame {
+        Frame::TopCards {
+            player,
+            count,
+            reveal: true,
+            shuffled: false,
+            on_deck: true,
+        }
+    }
+
+    pub(crate) fn look_on_deck(player: PlayerId, count: usize) -> Frame {
+        Frame::TopCards {
+            player,
+            count,
+            reveal: false,
+            shuffled: false,
+            on_deck: true,
         }
     }
 
@@ -469,6 +498,7 @@ impl Frame {
                 count,
                 reveal,
                 shuffled,
+                on_deck,
             } => {
                 let p = *player;
                 let pl = &g.players[p.index()];
@@ -484,11 +514,33 @@ impl Frame {
                     });
                 }
                 for &c in &cards {
+                    if *on_deck {
+                        if *reveal {
+                            g.reveal(p, c);
+                        } else {
+                            g.show_to(c, p);
+                        }
+                        continue;
+                    }
+                    // Revealed while still on the deck, so everyone sees which card it is.
                     if *reveal {
                         g.reveal(p, c);
+                    }
+                    // The look or reveal is its own log line.
+                    g.move_unlogged(c, Zone::Looking(p));
+                    if *reveal {
+                        g.note_shown(c);
+                        g.players[p.index()].face_up.push(c);
                     } else {
                         g.show_to(c, p);
                     }
+                }
+                if !*on_deck && !cards.is_empty() {
+                    g.holds.push(crate::game::Hold {
+                        player: p,
+                        cards: cards.clone(),
+                        depth: g.stack.len(),
+                    });
                 }
                 Flow::Done(Value::Cards(cards))
             }

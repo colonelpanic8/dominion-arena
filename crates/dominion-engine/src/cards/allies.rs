@@ -1019,7 +1019,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             0 => {
                 spend(g, p, 1);
                 f.pc = 1;
-                Flow::Call(Frame::look(p, 3))
+                Flow::Call(Frame::look_on_deck(p, 3))
             }
             1 => {
                 f.s.cards = input.cards();
@@ -1414,7 +1414,7 @@ fn sentinel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 5))
+            Flow::Call(Frame::look_on_deck(p, 5))
         }
         1 => {
             f.s.cards = input.cards();
@@ -1539,7 +1539,7 @@ fn courier(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 1))
+            Flow::Call(Frame::look_on_deck(p, 1))
         }
         1 => {
             f.pc = 2;
@@ -1679,7 +1679,7 @@ fn barbarian(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(target, 1))
+            Flow::Call(Frame::look_on_deck(target, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1822,7 +1822,7 @@ fn hunter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 3))
+            Flow::Call(Frame::reveal_on_deck(p, 3))
         }
         1 => {
             f.s.cards = input.cards();
@@ -2132,7 +2132,7 @@ fn miller(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 4))
+            Flow::Call(Frame::look_on_deck(p, 4))
         }
         1 => {
             f.s.cards = input.cards();
@@ -2244,7 +2244,7 @@ fn sorceress(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         2 => {
             let Some(c) = input.card() else {
@@ -2577,7 +2577,7 @@ fn sorcerer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal(target, 1))
+            Flow::Call(Frame::reveal_on_deck(target, 1))
         }
         2 => {
             f.pc = 3;

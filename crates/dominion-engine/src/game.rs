@@ -29,6 +29,9 @@ pub enum Zone {
     InPlay(PlayerId),
     /// Set aside by an effect; the effect (usually a [`Lasting`]) tracks which cards.
     SetAside(PlayerId),
+    /// Taken from the deck to be looked at or revealed: off the deck while the effect
+    /// resolves, and put back on top when it ends unless it moved them (`Frame::look`).
+    Looking(PlayerId),
     Mat(PlayerId, Mat),
     Pile(PileId),
     Trash,
@@ -43,6 +46,7 @@ impl Zone {
             | Zone::Discard(p)
             | Zone::InPlay(p)
             | Zone::SetAside(p)
+            | Zone::Looking(p)
             | Zone::Mat(p, _) => Some(p),
             Zone::Pile(_) | Zone::Trash => None,
         }
@@ -75,7 +79,11 @@ pub struct Player {
     pub discard: Vec<CardId>,
     pub in_play: Vec<CardId>,
     pub set_aside: Vec<CardId>,
-    /// The cards in `set_aside` that are face up; the rest only their owner may look at.
+    /// The cards an effect is looking at or revealed from the deck (see [`Zone::Looking`]).
+    #[serde(default)]
+    pub looking: Vec<CardId>,
+    /// The cards in `set_aside` and `looking` that are face up (revealed); the rest only
+    /// their owner may look at.
     pub face_up: Vec<CardId>,
     pub mats: BTreeMap<Mat, Vec<CardId>>,
     pub vp_tokens: i32,
@@ -120,6 +128,7 @@ impl Player {
             .chain(&self.discard)
             .chain(&self.in_play)
             .chain(&self.set_aside)
+            .chain(&self.looking)
             .chain(self.mats.values().flatten())
             .copied()
     }
@@ -457,6 +466,9 @@ pub struct Game {
     /// The cards of the latest shuffle (see [`Game::shuffled`]).
     #[serde(default)]
     pub(crate) last_shuffle: Vec<CardId>,
+    /// Cards taken off decks to be looked at or revealed, innermost last.
+    #[serde(default)]
+    pub(crate) holds: Vec<Hold>,
     /// How deep the effect stack was when a Supply pile last emptied (see
     /// [`Game::answers_emptying`]).
     #[serde(default)]
@@ -472,6 +484,16 @@ pub struct Game {
     pub(crate) outcome: Option<Outcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) trace: Option<Vec<crate::Trace>>,
+}
+
+/// Cards a look or reveal took off `player`'s deck (top first), held in
+/// [`Zone::Looking`] until the frame that asked for them (at `depth - 1` on the stack)
+/// finishes: then those still there go back on top of the deck, in their order.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Hold {
+    pub player: PlayerId,
+    pub cards: Vec<CardId>,
+    pub depth: usize,
 }
 
 /// A gain in progress. "Would gain" triggers may change it.
@@ -937,6 +959,7 @@ impl Game {
             plays: vec![],
             leaving: vec![],
             last_shuffle: vec![],
+            holds: vec![],
             emptied_depth: 0,
             ext: self.ext.clone(),
             stack: vec![],
@@ -989,7 +1012,10 @@ impl Game {
     pub(crate) fn run(&mut self, mut input: Input) {
         while let Some(mut frame) = self.stack.pop() {
             match frame.resume(self, input) {
-                Flow::Done(value) => input = Input::Return(value),
+                Flow::Done(value) => {
+                    self.release_holds();
+                    input = Input::Return(value);
+                }
                 Flow::Continue => {
                     self.stack.push(frame);
                     input = Input::Start;
@@ -1028,6 +1054,18 @@ impl Game {
         self.sync_log(None);
     }
 
+    /// Puts back on top of their decks the held cards of frames that have finished.
+    fn release_holds(&mut self) {
+        while let Some(i) = self.holds.iter().rposition(|h| h.depth > self.stack.len()) {
+            let h = self.holds.remove(i);
+            for &c in h.cards.iter().rev() {
+                if self.zones[c.index()] == Zone::Looking(h.player) {
+                    self.move_card(c, Zone::Deck(h.player), Pos::Top);
+                }
+            }
+        }
+    }
+
     // ---- Primitive state changes. These never trigger anything; frames do. ----
 
     pub(crate) fn add_pile(&mut self, pile: Pile) -> PileId {
@@ -1056,6 +1094,7 @@ impl Game {
             Zone::Discard(p) => &mut self.players[p.index()].discard,
             Zone::InPlay(p) => &mut self.players[p.index()].in_play,
             Zone::SetAside(p) => &mut self.players[p.index()].set_aside,
+            Zone::Looking(p) => &mut self.players[p.index()].looking,
             Zone::Mat(p, mat) => self.players[p.index()].mats.entry(mat).or_default(),
             Zone::Pile(id) => &mut self.piles[id.index()].cards,
             Zone::Trash => &mut self.trash,
@@ -1098,7 +1137,7 @@ impl Game {
             }
             self.left_play(id);
         }
-        if let Zone::SetAside(p) = from {
+        if let Zone::SetAside(p) | Zone::Looking(p) = from {
             self.players[p.index()].face_up.retain(|&c| c != id);
         }
         self.zones[id.index()] = to;

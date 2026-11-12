@@ -576,7 +576,7 @@ pub(crate) fn reveal_until(
 ) -> Result<Option<CardId>, Flow> {
     if f.pc == at {
         f.pc = at + 1;
-        return Err(Flow::Call(Frame::reveal(who, 1)));
+        return Err(Flow::Call(Frame::reveal_on_deck(who, 1)));
     }
     match input.card() {
         None => Ok(None),
@@ -709,7 +709,7 @@ fn advisor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 3))
+            Flow::Call(Frame::reveal_on_deck(f.player, 3))
         }
         1 => {
             f.s.cards = input.cards();
@@ -780,7 +780,7 @@ fn carnival(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 4))
+            Flow::Call(Frame::reveal_on_deck(f.player, 4))
         }
         1 => {
             let mut names = vec![];
@@ -833,7 +833,7 @@ fn herald(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 1))
+            Flow::Call(Frame::reveal_on_deck(f.player, 1))
         }
         1 => {
             f.pc = 2;
@@ -912,7 +912,7 @@ fn jester(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         match f.pc {
             0 => {
                 f.pc = 1;
-                return Flow::Call(Frame::look(t, 1));
+                return Flow::Call(Frame::look_on_deck(t, 1));
             }
             1 => {
                 let Some(c) = input.take().and_then(Input::card) else {
@@ -1416,7 +1416,7 @@ fn doctor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal(f.player, 3))
+            Flow::Call(Frame::reveal_on_deck(f.player, 3))
         }
         2 => {
             let named = f.s.card;
@@ -1447,7 +1447,7 @@ fn doctor_overpay(_g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.s.n += 1;
             f.pc = 1;
-            Flow::Call(Frame::look(f.player, 1))
+            Flow::Call(Frame::look_on_deck(f.player, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1510,7 +1510,7 @@ fn harvest(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 4))
+            Flow::Call(Frame::reveal_on_deck(f.player, 4))
         }
         1 => {
             let cards = input.cards();

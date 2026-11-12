@@ -569,7 +569,7 @@ fn lookout(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(f.player, 3))
+            Flow::Call(Frame::look_on_deck(f.player, 3))
         }
         1 => {
             f.s.cards = input.cards();
@@ -613,7 +613,7 @@ fn native_village(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.s.m = mode_mask(input);
             f.pc = 2;
             if f.s.m & 1 != 0 {
-                return Flow::Call(Frame::look(p, 1));
+                return Flow::Call(Frame::look_on_deck(p, 1));
             }
             Flow::Continue
         }
@@ -712,7 +712,7 @@ fn salvager(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 fn sea_chart(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     if f.pc == 0 {
         f.pc = 1;
-        return Flow::Call(Frame::reveal(f.player, 1));
+        return Flow::Call(Frame::reveal_on_deck(f.player, 1));
     }
     if let Some(c) = input.card() {
         let card = g.card(c);
@@ -1009,7 +1009,7 @@ fn navigator(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 5))
+            Flow::Call(Frame::look_on_deck(p, 5))
         }
         1 => {
             f.s.cards = input.cards();
@@ -1101,7 +1101,7 @@ fn pirate_ship(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 3;
-                return Flow::Call(Frame::reveal(target, 2));
+                return Flow::Call(Frame::reveal_on_deck(target, 2));
             }
             3 => {
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();
@@ -1152,7 +1152,7 @@ fn sea_hag(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 1;
-                return Flow::Call(Frame::look(target, 1));
+                return Flow::Call(Frame::look_on_deck(target, 1));
             }
             1 => {
                 f.pc = 2;

@@ -1395,7 +1395,7 @@ fn giant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 2;
-                return Flow::Call(Frame::reveal(t, 1));
+                return Flow::Call(Frame::reveal_on_deck(t, 1));
             }
             2 => {
                 let t = f.targets[f.s.i];
@@ -1431,7 +1431,7 @@ fn magpie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1535,7 +1535,7 @@ fn raze(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 3;
-            Flow::Call(Frame::look(p, f.s.n as usize))
+            Flow::Call(Frame::look_on_deck(p, f.s.n as usize))
         }
         3 => {
             f.s.cards = input.cards();
@@ -1615,7 +1615,7 @@ fn warrior(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.s.n += 1;
             f.pc = 2;
-            Flow::Call(Frame::look(t, 1))
+            Flow::Call(Frame::look_on_deck(t, 1))
         }
         2 => {
             let Some(c) = input.card() else {
@@ -1798,7 +1798,7 @@ fn scouting_party(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         0 => {
             add_buys(g, p, 1);
             f.pc = 1;
-            Flow::Call(Frame::look(p, 5))
+            Flow::Call(Frame::look_on_deck(p, 5))
         }
         1 => {
             f.s.cards = input.cards();

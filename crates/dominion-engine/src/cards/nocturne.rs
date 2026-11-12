@@ -676,7 +676,7 @@ fn sift(g: &mut Game, f: &mut CardFrame, input: Input, at: u8, n: usize) -> Flow
     match f.pc - at {
         0 => {
             f.pc = at + 1;
-            Flow::Call(Frame::look(p, n))
+            Flow::Call(Frame::look_on_deck(p, n))
         }
         1 => {
             f.s.cards = input.cards();
@@ -949,7 +949,7 @@ fn hex(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Famine => match f.pc {
             0 => {
                 f.pc = 1;
-                Flow::Call(Frame::reveal(p, 3))
+                Flow::Call(Frame::reveal_on_deck(p, 3))
             }
             1 => {
                 let actions: Vec<CardId> = input
@@ -1031,7 +1031,7 @@ fn locusts(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 1))
+            Flow::Call(Frame::look_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1072,7 +1072,7 @@ fn war(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1555,7 +1555,7 @@ fn ghost(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -2086,7 +2086,7 @@ fn will_o_wisp(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         _ => {
             if let Some(c) = input.card()
@@ -2145,7 +2145,7 @@ fn zombie_mason(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 1))
+            Flow::Call(Frame::look_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -2179,7 +2179,7 @@ fn zombie_spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 1))
+            Flow::Call(Frame::look_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {

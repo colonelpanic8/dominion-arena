@@ -360,7 +360,7 @@ fn trashing_attack(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, next
                 return goto(f, next);
             };
             f.pc = base + 1;
-            Flow::Call(Frame::reveal(target, 2))
+            Flow::Call(Frame::reveal_on_deck(target, 2))
         }
         1 => {
             let target = f.targets[f.s.i];
@@ -608,7 +608,7 @@ fn catacombs(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 3))
+            Flow::Call(Frame::look_on_deck(p, 3))
         }
         1 => {
             f.s.cards = input.cards();
@@ -984,7 +984,7 @@ fn ironmonger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -1094,7 +1094,7 @@ fn mystic(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         _ => {
             if let Some(c) = input.card()
@@ -1210,7 +1210,7 @@ fn reveal_until(
     let p = f.player;
     if f.pc == base {
         f.pc = base + 1;
-        return Flow::Call(Frame::reveal(p, 1));
+        return Flow::Call(Frame::reveal_on_deck(p, 1));
     }
     let Some(c) = input.card() else {
         return goto(f, next);
@@ -1426,7 +1426,7 @@ fn survivors(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 2))
+            Flow::Call(Frame::look_on_deck(p, 2))
         }
         1 => {
             f.s.cards = input.cards();
@@ -1464,7 +1464,7 @@ fn vagrant(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         _ => {
             if let Some(c) = input.card()
@@ -1482,7 +1482,7 @@ fn wandering_minstrel(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 3))
+            Flow::Call(Frame::reveal_on_deck(p, 3))
         }
         1 => {
             let (actions, rest): (Vec<CardId>, Vec<CardId>) =

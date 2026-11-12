@@ -649,7 +649,7 @@ fn reveal_and_take(g: &mut Game, f: &mut CardFrame, input: Input, n: usize, type
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, n))
+            Flow::Call(Frame::reveal_on_deck(f.player, n))
         }
         1 => {
             let (take, rest): (Vec<_>, Vec<_>) =
@@ -825,7 +825,7 @@ fn swindler(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 1;
-                return Flow::Call(Frame::look(target, 1));
+                return Flow::Call(Frame::look_on_deck(target, 1));
             }
             1 => {
                 let Some(c) = input.take().and_then(Input::card) else {
@@ -934,7 +934,7 @@ fn wishing_well(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         1 => {
             f.s.card = input.name();
             f.pc = 2;
-            Flow::Call(Frame::reveal(f.player, 1))
+            Flow::Call(Frame::reveal_on_deck(f.player, 1))
         }
         _ => {
             if let Some(c) = input.card()
@@ -959,7 +959,7 @@ fn saboteur(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             1 => {
                 f.pc = 2;
-                return Flow::Call(Frame::reveal(f.targets[f.s.i], 1));
+                return Flow::Call(Frame::reveal_on_deck(f.targets[f.s.i], 1));
             }
             2 => {
                 let target = f.targets[f.s.i];
@@ -1063,7 +1063,7 @@ fn tribute(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(left, 2))
+            Flow::Call(Frame::reveal_on_deck(left, 2))
         }
         1 => {
             f.s.cards = input.cards();

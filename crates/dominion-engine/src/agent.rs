@@ -53,8 +53,8 @@ pub fn play<'g>(
 }
 
 /// The game as one player is allowed to see it: everything public, plus what that player
-/// may look at (their hand, their face-down set-aside cards, their Native Village mat,
-/// cards offered to them in a decision).
+/// may look at (their hand, their face-down set-aside cards, the cards they are looking at,
+/// their Native Village mat, cards offered to them in a decision).
 ///
 /// A deck's order is never shown, nor which cards are in a discard pile under its top,
 /// nor any card of a face-down pile (the Black Market deck, Loot).
@@ -138,7 +138,9 @@ impl<'a> View<'a> {
         let g = self.game;
         let seen = match g.zone(id) {
             Zone::Hand(p) => p == self.me,
-            Zone::SetAside(p) => p == self.me || g.player(p).face_up.contains(&id),
+            Zone::SetAside(p) | Zone::Looking(p) => {
+                p == self.me || g.player(p).face_up.contains(&id)
+            }
             Zone::InPlay(_) | Zone::Trash => true,
             Zone::Discard(p) => g.player(p).discard.last() == Some(&id),
             Zone::Pile(pile) => !g.pile(pile).hidden && g.pile_top(pile) == Some(id),
@@ -318,6 +320,22 @@ impl<'a> PlayerView<'a> {
 
     pub fn set_aside_size(&self) -> usize {
         self.player.set_aside.len()
+    }
+
+    /// The cards an effect is looking at or revealed from their deck that the viewer may
+    /// see (revealed ones, or all if they are the viewer's).
+    pub fn looking(&self) -> Vec<CardId> {
+        let v = self.view;
+        self.player
+            .looking
+            .iter()
+            .copied()
+            .filter(|&c| v.visible(c))
+            .collect()
+    }
+
+    pub fn looking_size(&self) -> usize {
+        self.player.looking.len()
     }
 
     /// The cards on one of their mats, if the viewer may see them (the Native Village mat

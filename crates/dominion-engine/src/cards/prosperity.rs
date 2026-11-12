@@ -525,7 +525,7 @@ pub(super) fn reveal_until(
 ) -> Flow {
     if f.pc == base {
         f.pc = base + 1;
-        return Flow::Call(Frame::reveal(f.player, 1));
+        return Flow::Call(Frame::reveal_on_deck(f.player, 1));
     }
     let Some(c) = input.card() else {
         f.pc = base + 2;
@@ -668,7 +668,7 @@ fn crystal_ball(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(f.player, 1))
+            Flow::Call(Frame::look_on_deck(f.player, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -835,7 +835,7 @@ fn rabble(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 1;
-                return Flow::Call(Frame::reveal(target, 3));
+                return Flow::Call(Frame::reveal_on_deck(target, 3));
             }
             1 => {
                 let target = f.targets[f.s.i];

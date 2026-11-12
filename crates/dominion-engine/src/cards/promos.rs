@@ -501,7 +501,7 @@ fn envoy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 5))
+            Flow::Call(Frame::reveal_on_deck(f.player, 5))
         }
         1 => {
             f.s.cards = input.cards();

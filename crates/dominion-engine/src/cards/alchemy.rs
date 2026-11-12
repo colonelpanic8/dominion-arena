@@ -154,7 +154,7 @@ fn apothecary(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 4))
+            Flow::Call(Frame::reveal_on_deck(f.player, 4))
         }
         1 => {
             let (take, rest): (Vec<_>, Vec<_>) = input
@@ -279,7 +279,7 @@ fn scrying_pool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             };
             f.pc = 1;
-            Flow::Call(Frame::reveal(victim, 1))
+            Flow::Call(Frame::reveal_on_deck(victim, 1))
         }
         1 => {
             let Some(c) = input.card() else {

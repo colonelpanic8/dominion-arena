@@ -124,6 +124,8 @@ impl Game {
             Zone::Pile(p) => !self.piles[p.index()].hidden,
             Zone::Mat(_, mat) => mat != Mat::NativeVillage,
             Zone::SetAside(p) => self.players[p.index()].face_up.contains(&id),
+            // Revealed ones are shown, until put back in an order no one else follows.
+            Zone::Looking(_) => false,
             // The top card, unless the pile is being gone through.
             Zone::Discard(p) => {
                 self.players[p.index()].discard.last() == Some(&id)
@@ -177,7 +179,9 @@ impl Game {
             .into_iter()
             .filter(|&c| match self.zone(c) {
                 Zone::Hand(_) | Zone::Mat(_, Mat::NativeVillage) => false,
-                Zone::SetAside(p) => self.players[p.index()].face_up.contains(&c),
+                Zone::SetAside(p) | Zone::Looking(p) => {
+                    self.players[p.index()].face_up.contains(&c)
+                }
                 _ => true,
             })
             .collect();

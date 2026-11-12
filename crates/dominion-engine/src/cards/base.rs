@@ -172,7 +172,7 @@ fn vassal(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(f.player, 1))
+            Flow::Call(Frame::look_on_deck(f.player, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -432,7 +432,7 @@ fn bandit(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 2;
-                return Flow::Call(Frame::reveal(target, 2));
+                return Flow::Call(Frame::reveal_on_deck(target, 2));
             }
             2 => {
                 let target = f.targets[f.s.i];
@@ -526,7 +526,7 @@ fn sentry(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(f.player, 2))
+            Flow::Call(Frame::look_on_deck(f.player, 2))
         }
         1 => {
             f.s.cards = input.cards();
@@ -605,7 +605,7 @@ fn adventurer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 1;
-            Flow::Call(Frame::reveal(f.player, 1))
+            Flow::Call(Frame::reveal_on_deck(f.player, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -677,7 +677,7 @@ fn spy(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             };
             f.pc = 1;
-            Flow::Call(Frame::reveal(target, 1))
+            Flow::Call(Frame::reveal_on_deck(target, 1))
         }
         1 => {
             let Some(c) = input.card() else {
@@ -711,7 +711,7 @@ fn thief(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     return Flow::done();
                 };
                 f.pc = 1;
-                return Flow::Call(Frame::reveal(target, 2));
+                return Flow::Call(Frame::reveal_on_deck(target, 2));
             }
             1 => {
                 f.s.cards = input.take().map(Input::cards).unwrap_or_default();

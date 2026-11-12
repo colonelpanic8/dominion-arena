@@ -576,7 +576,7 @@ fn cartographer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(f.player, 4))
+            Flow::Call(Frame::look_on_deck(f.player, 4))
         }
         1 => {
             f.s.cards = input.cards();
@@ -735,7 +735,7 @@ fn jack_of_all_trades(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         1 => {
             f.pc = 2;
-            Flow::Call(Frame::look(f.player, 1))
+            Flow::Call(Frame::look_on_deck(f.player, 1))
         }
         2 => {
             f.s.pick = input.card();
@@ -996,7 +996,7 @@ fn duchess(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(q, 1))
+            Flow::Call(Frame::look_on_deck(q, 1))
         }
         1 => {
             f.s.pick = input.card();
@@ -1032,7 +1032,7 @@ fn noble_brigand(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     continue;
                 };
                 f.pc = 1;
-                return Flow::Call(Frame::reveal(t, 2));
+                return Flow::Call(Frame::reveal_on_deck(t, 2));
             }
             1 => {
                 let revealed = input.take().map(Input::cards).unwrap_or_default();
@@ -1112,7 +1112,7 @@ fn oracle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(q, 2))
+            Flow::Call(Frame::reveal_on_deck(q, 2))
         }
         1 => {
             f.s.cards = input.cards();

@@ -1016,7 +1016,7 @@ fn archive(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::look(p, 3))
+            Flow::Call(Frame::look_on_deck(p, 3))
         }
         1 => {
             let cards = input.cards();
@@ -1178,7 +1178,7 @@ fn chariot_race(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 emit_revealed(g, p, &[c]);
             }
             f.pc = 2;
-            Flow::Call(Frame::reveal(g.left_of(p), 1))
+            Flow::Call(Frame::reveal_on_deck(g.left_of(p), 1))
         }
         _ => {
             if let (Some(mine), Some(theirs)) = (f.s.pick, input.card())
@@ -1614,7 +1614,7 @@ fn patrician(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     match f.pc {
         0 => {
             f.pc = 1;
-            Flow::Call(Frame::reveal(p, 1))
+            Flow::Call(Frame::reveal_on_deck(p, 1))
         }
         _ => {
             if let Some(c) = input.card()
