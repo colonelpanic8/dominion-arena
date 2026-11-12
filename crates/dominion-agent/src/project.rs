@@ -1285,6 +1285,22 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             None,
             format!("{} starts turn {turn}", name(*player)),
         ),
+        Event::TurnSkipped { player, extra } => (
+            Some(*player),
+            *extra,
+            match extra {
+                Some(c) => format!("{} skips the extra turn from {c}", name(*player)),
+                None => format!("{} skips a turn", name(*player)),
+            },
+        ),
+        Event::ExtraTurnLost { player, source } => (
+            Some(*player),
+            Some(*source),
+            format!(
+                "{} loses the extra turn from {source} (it would be a third turn in a row)",
+                name(*player)
+            ),
+        ),
         Event::Played { player, card } => (
             Some(*player),
             Some(*card),

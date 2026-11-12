@@ -161,6 +161,11 @@ fn an_outpost_whose_turn_fails_is_discarded_in_the_next_clean_up() {
     assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
     end_turn(&mut g);
     assert_eq!(turn(&g), (P1, None));
+    let lost = Event::ExtraTurnLost {
+        player: P0,
+        source: Card::Outpost,
+    };
+    assert_eq!(g.log().iter().filter(|&e| *e == lost).count(), 1);
     assert_eq!(in_play_kinds(&g, P0), [Card::Outpost]);
     end_turn(&mut g);
     assert!(g.in_play(P0).is_empty());
@@ -176,6 +181,10 @@ fn lich_skips_the_extra_turn_its_player_takes_first() {
     take_turn(&mut g, P0, Card::Voyage);
     assert_eq!(turn(&g), (P0, Some(Card::Mission)));
     assert_eq!(g.player(P0).skip_turns, 0);
+    assert!(g.log().contains(&Event::TurnSkipped {
+        player: P0,
+        extra: Some(Card::Voyage),
+    }));
     end_turn(&mut g);
     assert_eq!(turn(&g), (P1, None));
     assert!(g.in_play(P0).is_empty());
@@ -194,6 +203,15 @@ fn turns_around_another_players_skipped_turn_are_in_a_row() {
     end_turn(&mut g);
     assert_eq!(turn(&g), (P0, None));
     assert_eq!(g.player(P0).turns_taken, 3);
+    let skipped = Event::TurnSkipped {
+        player: P1,
+        extra: None,
+    };
+    let at = g.log().iter().position(|e| *e == skipped).expect("logged");
+    assert!(matches!(
+        g.log()[at + 1],
+        Event::TurnStart { player: P0, .. }
+    ));
     buy_phase(&mut g, 4, 1);
     respond(&mut g, Response::Move(Move::BuyLandscape(Card::Mission)));
     // Mission's would be P0's third turn in a row.

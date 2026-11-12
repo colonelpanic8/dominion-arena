@@ -20,6 +20,18 @@ pub enum Event {
         player: PlayerId,
         turn: u32,
     },
+    /// `player` skipped the turn they would have taken next (Lich): the extra turn from
+    /// `extra`, if it was one.
+    TurnSkipped {
+        player: PlayerId,
+        extra: Option<Card>,
+    },
+    /// `player`'s extra turn from `source` doesn't happen: it would be a third turn in a
+    /// row.
+    ExtraTurnLost {
+        player: PlayerId,
+        source: Card,
+    },
     Played {
         player: PlayerId,
         card: Card,

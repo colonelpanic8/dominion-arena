@@ -868,6 +868,10 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 g.extra_turns = pending;
                 for e in lost {
                     release(g, &e);
+                    g.emit(Event::ExtraTurnLost {
+                        player: e.player,
+                        source: e.source,
+                    });
                 }
                 // The player who just took a turn takes theirs first, then the others in
                 // turn order; each chooses among their own.
@@ -919,6 +923,10 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 let e = g.extra_turns.remove(i).expect("found above");
                 release(g, &e);
                 if g.skips_turn(p, true) {
+                    g.emit(Event::TurnSkipped {
+                        player: p,
+                        extra: Some(source),
+                    });
                     continue;
                 }
                 g.turn = Turn::new(p);
@@ -934,6 +942,10 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 while let Some(p) = turn
                     && g.skips_turn(p, true)
                 {
+                    g.emit(Event::TurnSkipped {
+                        player: p,
+                        extra: None,
+                    });
                     turn = g.final_round.pop_front();
                 }
                 let Some(p) = turn else {
@@ -946,6 +958,10 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 g.players[p.index()].extra_turns_taken += 1;
             } else {
                 while g.skips_turn(*next, false) {
+                    g.emit(Event::TurnSkipped {
+                        player: *next,
+                        extra: None,
+                    });
                     *next = g.left_of(*next);
                 }
                 g.turn = Turn::new(*next);
