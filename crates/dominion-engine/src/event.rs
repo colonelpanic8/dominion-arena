@@ -1,5 +1,5 @@
 use crate::game::Token;
-use crate::{Card, PileId, PlayerId, Zone};
+use crate::{Card, Note, PileId, PlayerId, Zone};
 use serde::{Deserialize, Serialize};
 
 /// Where a gained card goes.
@@ -194,6 +194,29 @@ pub enum Event {
     Called {
         player: PlayerId,
         card: Card,
+    },
+    /// A pile joined the game during play (Divine Wind's, and those their setup adds):
+    /// `count` cards, in the Supply or not.
+    PileAdded {
+        pile: PileId,
+        count: usize,
+        supply: bool,
+    },
+    /// A pile left the game (Divine Wind): it is no card's pile any more.
+    PileRemoved {
+        pile: PileId,
+    },
+    /// A landscape or Artifact joined the game during play, or setup put `card` into `to`
+    /// (Necromancer's Zombies into the trash).
+    Added {
+        card: Card,
+        #[serde(default)]
+        to: Option<Zone>,
+    },
+    /// Public state that setup made during play (the Bane, Ferryman's pile, Druid's Boons,
+    /// Riverboat's card, the Black Market deck's cards), as a [`View`](crate::View) note.
+    Noted {
+        note: Note,
     },
 }
 

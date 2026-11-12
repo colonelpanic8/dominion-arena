@@ -1,8 +1,9 @@
 //! Game configuration and setup.
 
 use crate::cards::{self, Ext};
+use crate::event::Event;
 use crate::game::{CardDeck, Pile, Player, Turn, Zone};
-use crate::{Card, Game, Kind, PileId, PlayerId, Set, Types};
+use crate::{Card, CardId, Game, Kind, Note, PileId, PlayerId, Set, Types};
 use rand::SeedableRng;
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand_chacha::ChaCha8Rng;
@@ -421,18 +422,22 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
     Ok(g)
 }
 
-/// Where the cards and landscapes in the game ended at some point, so that setup can
-/// tell what joined since.
+/// Where the cards, piles, landscapes and Artifacts in the game ended at some point, so
+/// that setup can tell what joined since.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Mark {
     cards: usize,
+    piles: usize,
     landscapes: usize,
+    artifacts: usize,
 }
 
 pub(crate) fn mark(g: &Game) -> Mark {
     Mark {
         cards: g.cards.len(),
+        piles: g.piles.len(),
         landscapes: g.landscapes.len(),
+        artifacts: g.artifacts.len(),
     }
 }
 
@@ -578,6 +583,7 @@ pub(crate) fn complete(g: &mut Game, since: Mark) -> Setup {
             g.prophecy.is_some(),
         )
     };
+    let notes = cards::notes(g);
     let mut s = Setup::default();
     for pass in 0.. {
         assert!(pass < 32, "setup does not settle");
@@ -595,8 +601,56 @@ pub(crate) fn complete(g: &mut Game, since: Mark) -> Setup {
     joined.sort();
     joined.dedup();
     s.joined = joined;
+    let logging = g.logging();
+    if logging {
+        log_joined(g, since, &notes);
+    }
     cards::setup(g, &mut s);
+    if logging {
+        g.sync_log(None);
+    }
     s
+}
+
+/// Logs what joined the game during play, before what its setup gives: the new piles,
+/// landscapes and Artifacts, cards setup put elsewhere, and the public state it made.
+fn log_joined(g: &mut Game, since: Mark, notes: &[Note]) {
+    for i in since.piles..g.piles.len() {
+        let pile = &g.piles[i];
+        // A holder no one sees as a pile (Riverboat's card) is told by its note.
+        if !pile.removed {
+            let (count, supply) = (pile.cards.len(), pile.in_supply);
+            g.emit(Event::PileAdded {
+                pile: PileId(i as u8),
+                count,
+                supply,
+            });
+        }
+    }
+    let added: Vec<Card> = g.landscapes[since.landscapes..]
+        .iter()
+        .copied()
+        .chain(g.artifacts[since.artifacts..].iter().map(|&(c, _)| c))
+        .collect();
+    for card in added {
+        g.emit(Event::Added { card, to: None });
+    }
+    for i in since.cards..g.cards.len() {
+        let id = CardId(i as u32);
+        match g.zone(id) {
+            Zone::Pile(p) if p.index() >= since.piles => {}
+            zone if g.is_public(id) => g.emit(Event::Added {
+                card: g.cards[i],
+                to: Some(zone),
+            }),
+            _ => {}
+        }
+    }
+    for note in cards::notes(g) {
+        if !notes.contains(&note) {
+            g.emit(Event::Noted { note });
+        }
+    }
 }
 
 /// Whether a card matching `pred` is in the game, anywhere, or a landscape matches it.

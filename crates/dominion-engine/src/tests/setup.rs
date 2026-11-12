@@ -527,3 +527,50 @@ fn landscape_slots_take_only_their_kinds_and_ones_that_cannot_stay_empty_are_fil
     };
     assert!((0..50).all(|s| GameConfig::deal(2, &none, s).landscapes.is_empty()));
 }
+
+/// The log is complete by itself: piles joining during play are logged, with what their
+/// setup makes in the open (a Bane, Necromancer's Zombies in the trash), before what that
+/// setup gives (Baker's Coffers).
+#[test]
+fn piles_joining_during_play_are_logged_before_what_their_setup_gives() {
+    let mut g = game(&[Card::Smithy], &[], &[]);
+    g.start();
+    let n = g.log().len();
+    add_kingdom_piles(&mut g, &[Card::YoungWitch, Card::Baker, Card::Necromancer]);
+    let log = &g.log()[n..];
+    let at = |e: &Event| log.iter().position(|l| l == e);
+    let added = |card: Card| {
+        let pile = g.supply_pile(card).unwrap();
+        at(&Event::PileAdded {
+            pile,
+            count: g.pile(pile).cards.len(),
+            supply: true,
+        })
+        .unwrap_or_else(|| panic!("{card}: {log:#?}"))
+    };
+    let bane = g.ext.cornucopia_guilds.bane.unwrap();
+    let noted = at(&Event::Noted {
+        note: g
+            .view(P0)
+            .notes()
+            .into_iter()
+            .find(|n| n.pile == Some(bane))
+            .unwrap(),
+    });
+    assert!(noted > Some(added(g.pile(bane).card)));
+    let coffers = log.iter().position(|e| {
+        matches!(
+            e,
+            Event::Counter {
+                counter: Counter::Coffers,
+                ..
+            }
+        )
+    });
+    assert!(coffers > Some(added(Card::Baker)));
+    let zombie = Event::Added {
+        card: Card::ZombieSpy,
+        to: Some(Zone::Trash),
+    };
+    assert!(at(&zombie).is_some(), "{log:#?}");
+}

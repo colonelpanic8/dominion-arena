@@ -653,10 +653,13 @@ fn remove_sun(g: &mut Game, p: PlayerId) -> Flow {
 /// on the removed piles leave them: Adventures tokens go back to their players.
 fn divine_wind(g: &mut Game) {
     for i in 0..g.piles.len() {
-        let pile = &mut g.piles[i];
-        if !pile.is_kingdom() {
+        if !g.piles[i].is_kingdom() {
             continue;
         }
+        g.emit(Event::PileRemoved {
+            pile: PileId(i as u8),
+        });
+        let pile = &mut g.piles[i];
         pile.in_supply = false;
         pile.removed = true;
         (

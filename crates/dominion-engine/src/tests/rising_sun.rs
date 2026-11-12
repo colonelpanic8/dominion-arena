@@ -1397,6 +1397,47 @@ fn divine_wind_takes_the_tokens_off_the_piles_it_removes() {
     assert!(g.ext.allies.inventors.is_empty());
 }
 
+/// The log is complete by itself: it says which piles Divine Wind removes, before the
+/// tokens that leave them, and which piles it deals.
+#[test]
+fn the_log_says_which_piles_divine_wind_removes_and_deals() {
+    let mut g = before_divine_wind(&[Card::TeaHouse, Card::Smithy], &[], &[]);
+    let smithy = g.supply_pile(Card::Smithy).unwrap();
+    g.players[0].tokens.insert(Token::PlusCard, Some(smithy));
+    g.piles[smithy.index()].tokens.push((P0, Token::PlusCard));
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    deck(&mut g, P0, &coppers(5));
+    g.start();
+    let n = g.log().len();
+    play(&mut g, Card::TeaHouse);
+    let log = &g.log()[n..];
+    let at = |e: &Event| log.iter().position(|l| l == e);
+    let token = log.iter().position(|e| {
+        matches!(
+            e,
+            Event::TokenMoved {
+                token: Token::PlusCard,
+                pile: None,
+                ..
+            }
+        )
+    });
+    assert!(at(&Event::PileRemoved { pile: smithy }) < token);
+    let dealt: Vec<usize> = (0..g.piles().len())
+        .filter(|&i| g.piles()[i].is_kingdom())
+        .collect();
+    assert_eq!(dealt.len(), 10);
+    for i in dealt {
+        let pile = &g.piles()[i];
+        let e = Event::PileAdded {
+            pile: PileId(i as u8),
+            count: pile.cards.len(),
+            supply: true,
+        };
+        assert!(at(&e) > token, "{}: {log:#?}", pile.card);
+    }
+}
+
 #[test]
 fn in_games_using_this_abilities_go_on_after_divine_wind() {
     let mut g = before_divine_wind(&[Card::Shaman, Card::Footpad, Card::TeaHouse], &[], &[]);

@@ -165,6 +165,9 @@ pub enum Entry {
     },
     ReturnedToAction,
     Called(String),
+    /// What is in the game changed during play (Divine Wind): a pile joined or left, or
+    /// its setup added something. Worded as the log words it.
+    Setup,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -492,6 +495,12 @@ fn bonus(s: &str) -> Option<(u32, u32, u32)> {
 
 /// What `e` says, or `None` if no rule reads it. `names` are the seats' names.
 pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
+    if matches!(
+        e.kind.as_str(),
+        "pile-added" | "pile-removed" | "added" | "noted"
+    ) {
+        return Some(Entry::Setup);
+    }
     if e.kind == "card-counter" {
         let s = match e.player {
             Some(p) => e.text.strip_prefix(&format!("{}: ", seat_name(names, p)))?,

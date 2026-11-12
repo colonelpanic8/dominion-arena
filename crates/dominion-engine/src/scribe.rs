@@ -126,6 +126,11 @@ impl Game {
         }
     }
 
+    /// Whether the log is running: the game has started.
+    pub(crate) fn logging(&self) -> bool {
+        self.scribe.tally.is_some()
+    }
+
     /// Whether everyone knows which card `id` is, where it is now.
     pub(crate) fn is_public(&self, id: CardId) -> bool {
         if self.scribe.shown.contains(&id) {

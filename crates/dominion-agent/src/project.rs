@@ -2,8 +2,8 @@
 //! back onto engine responses.
 
 use dominion_engine::{
-    Card, CardId, Decision, DecisionKind, EndReason, Event, Game, Kind, KnownCards, Mat, Move, Opt,
-    Phase, PileId, PlayerId, Purpose, Response, Token, Types, Until, View, Zone,
+    Card, CardId, Decision, DecisionKind, EndReason, Event, Game, Kind, KnownCards, Mat, Move,
+    Note, Opt, Phase, PileId, PlayerId, Purpose, Response, Token, Types, Until, View, Zone,
 };
 use dominion_protocol::view::{self as types, *};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1108,6 +1108,33 @@ fn counter_text(
     }
 }
 
+/// Public state setup made during play, as a log line.
+fn note_text(game: &Game, note: &Note, cx: &Context<'_>) -> String {
+    let source = note.source;
+    let pile = note.pile.map(|p| game.pile(p).card);
+    match (source, pile, note.card) {
+        (Card::YoungWitch, Some(pile), _) => format!("The {pile} pile is the Bane"),
+        (Card::Ferryman, Some(pile), _) => format!("The {pile} pile is set aside for Ferryman"),
+        (Card::BlackMarket, _, Some(card)) if note.count > 1 => {
+            format!("The Black Market deck holds {card} ({})", note.count)
+        }
+        (Card::BlackMarket, _, Some(card)) => format!("The Black Market deck holds {card}"),
+        (Card::Riverboat | Card::Druid | Card::WayOfTheMouse, None, Some(card)) => {
+            format!("{card} is set aside for {source}")
+        }
+        _ => {
+            let mut parts: Vec<String> = vec![];
+            parts.extend(note.player.map(|p| cx.name(p)));
+            parts.extend(pile.map(|p| format!("the {p} pile")));
+            parts.extend(note.card.map(|c| c.to_string()));
+            if note.count != 0 {
+                parts.push(note.count.to_string());
+            }
+            format!("{source}: {}", parts.join(" "))
+        }
+    }
+}
+
 pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>) -> LogEntry {
     let name = |p: PlayerId| cx.name(p);
     let (player, card, text) = match event {
@@ -1377,6 +1404,44 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             Some(*card),
             format!("{} calls {card}", name(*player)),
         ),
+        Event::PileAdded {
+            pile,
+            count,
+            supply,
+        } => {
+            let pv = game.pile(*pile);
+            let cards = amount(*count as i32, "card", "cards");
+            let text = if pv.hidden {
+                format!("The {} deck joins the game face down ({cards})", pv.card)
+            } else if *supply {
+                format!("The {} pile joins the Supply ({cards})", pv.card)
+            } else {
+                format!(
+                    "The {} pile joins the game outside the Supply ({cards})",
+                    pv.card
+                )
+            };
+            (None, Some(pv.card), text)
+        }
+        Event::PileRemoved { pile } => {
+            let card = game.pile(*pile).card;
+            (
+                None,
+                Some(card),
+                format!("The {card} pile is removed from the game"),
+            )
+        }
+        Event::Added { card, to } => {
+            let text = match to {
+                None => format!("{card} joins the game"),
+                Some(zone) => {
+                    let nobody = PlayerId(u8::MAX);
+                    format!("{card} is put into {}", place(game, *zone, nobody, cx))
+                }
+            };
+            (None, Some(*card), text)
+        }
+        Event::Noted { note } => (note.player, note.card, note_text(game, note, cx)),
     };
     let kind = kebab(
         format!("{event:?}")

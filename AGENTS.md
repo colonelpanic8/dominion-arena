@@ -381,7 +381,10 @@ them.
   `Exchanged` line. Public modes and alternatives are announced centrally as `Chosen`;
   decisions mark their labels public with `public_choice`, and labels referring to private
   `about` cards are never announced. Set counters on Sinister Plot and Family of Inventors
-  are tallied as `CardCounter`.
+  are tallied as `CardCounter`. What is in the game changing during play (Divine Wind) is
+  logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
+  what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
+  `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The
