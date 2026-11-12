@@ -1790,20 +1790,22 @@ fn fated(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let mut on_top: Vec<CardId> =
                 f.s.cards[..top].iter().copied().filter(in_deck).collect();
             let under: Vec<CardId> = f.s.cards[top..].iter().copied().filter(in_deck).collect();
-            for &c in on_top.iter().chain(&under) {
+            let above = g.player(p).deck.len() - shuffled.len();
+            for &c in on_top.iter().rev() {
+                g.reveal(p, c);
+                if above == 0 {
+                    g.top_deck(c, p);
+                } else {
+                    g.move_card(c, Zone::Deck(p), Pos::Under(above));
+                }
+            }
+            for &c in &under {
                 if is_traited(g, c, Card::Fated) {
                     g.reveal(p, c);
                 }
+                g.move_card(c, Zone::Deck(p), Pos::Bottom);
             }
-            let rest = shuffled.len() - shuffled.iter().filter(|c| f.s.cards.contains(c)).count();
             f.s.cards.clear();
-            let deck = &mut g.players[p.index()].deck;
-            deck.retain(|c| !on_top.contains(c) && !under.contains(c));
-            let mut new: Vec<CardId> = under.iter().rev().copied().collect();
-            new.extend(&deck[..rest]);
-            new.extend(on_top.iter().rev());
-            new.extend(&deck[rest..]);
-            *deck = new;
             on_top.extend(under);
             g.reshuffle_unplaced(p, &on_top);
             Flow::done()

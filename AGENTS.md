@@ -391,6 +391,18 @@ them.
   set whole), the cards of a deck or discard pile they looked through, until shuffled with
   other cards. `g.show` such a card first when everyone
   knows which it is; other cards of a deck or discard pile are followed by everyone.
+  A hand discarded whole unseen keeps its known identities in the discard pile, but
+  nobody else follows which copy is on top; seeing that top may show the same copy
+  revealed earlier. Privately ordering a selection from a searched discard pile mixes
+  it with every card the selection could have included, before following the moves.
+  A shuffle records its mix before its individual zone moves, whose random order
+  nobody can follow.
+  Mixing splits the mixed cards from groups containing untouched cards. Cards with
+  only one possible identity are removed from their family's candidate pool.
+  A family wholly in one zone is known there as its whole multiset, even when its
+  groups still distinguish parts that could be followed later.
+  Deck placements record their destination even when nothing moves; an in-deck
+  placement does not expose the card's old position within a private set.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`
   that no event reports become `Event::Moved` (naming a card only if everyone knew which

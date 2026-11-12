@@ -440,7 +440,7 @@ fn crypt_sets_treasures_aside_and_returns_one_each_turn() {
         P0,
         Zone::InPlay(P0),
         Zone::SetAside(P0),
-        &[Card::Silver, Card::Gold],
+        &[Card::Gold, Card::Silver],
         2,
     );
     assert!(g.log().contains(&aside));
