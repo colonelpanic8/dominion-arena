@@ -14,6 +14,7 @@ use dominion_web::game::interaction::{
 };
 use dominion_web::game::logfmt::{Span, log_lines};
 use dominion_web::game::state::Selection;
+use dominion_web::game::table::model::{Spot, spots};
 use rand::rngs::StdRng;
 use rand::seq::IndexedRandom;
 use rand::{Rng, SeedableRng};
@@ -117,6 +118,28 @@ fn click_until_legal(d: &AgentDecision, inter: &Interaction, rng: &mut StdRng) -
     positions.sort();
     assert_eq!(positions, (0..sel.picks().len()).collect::<Vec<_>>());
     sel
+}
+
+/// Every target has one spot on the table, no two share one, and each is drawn where
+/// its place says.
+fn check_spots(b: &Board, inter: &Interaction) {
+    let spots = spots(b, inter);
+    assert_eq!(spots.len(), inter.targets.len());
+    let mut seen = BTreeSet::new();
+    for (t, s) in inter.targets.iter().zip(&spots) {
+        if !matches!(s, Spot::Tray | Spot::Button) {
+            assert!(seen.insert(format!("{s:?}")), "{s:?} twice: {inter:?}");
+        }
+        let card = t.card.clone().unwrap_or_default();
+        match s {
+            Spot::Hand(c) => assert!(t.place == Place::Hand && *c == card),
+            Spot::InPlay(c) => assert!(t.place == Place::InPlay && *c == card),
+            Spot::Pile(at) => assert_eq!(Some(*at), t.pile),
+            Spot::Landscape(c) => assert!(t.place == Place::Landscape && *c == card),
+            Spot::Button => assert_eq!(t.place, Place::Button),
+            Spot::Tray => assert_ne!(t.place, Place::Button),
+        }
+    }
 }
 
 fn zone_sum(z: &Zone) -> u32 {
@@ -372,6 +395,7 @@ fn play_checked(table: &mut Table, rng: &mut StdRng, cards: &CardDb, stats: &mut
         }
         let b = board(&view, Some(seat.0), cards);
         check_board(&b, &view, Some(seat.0));
+        check_spots(&b, &inter);
         if rng.random_bool(0.25) {
             let other = PlayerId(((seat.index() + 1) % table.names().len()) as u8);
             let theirs = table.view(other);
