@@ -391,7 +391,9 @@ them.
   ability's `Resolved` header (unless the trigger is `labelled`) names its lasting
   effect's owner and is logged before the first thing it does, or as it ends if all it
   did was change what the play in progress does (Enchantress, Highwayman); one that did
-  nothing has no line. `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
+  nothing has no line. An "In games using this" ability every player has
+  (`Trigger::game_wide`: Shaman, Footpad) is headed `ResolvedFor` instead, as no card
+  of the player's. `+Actions` / `+Buys` / `+$` given by a trigger, landscape or
   Boon rather than a card's own play are logged as `Bonus`. So never emit a move or
   counter event by hand; log what has its own event (draws, gains, discards, ...) with
   it. An exchange (Travellers, Changeling, Trader, ...) is `g.exchange`, logged as one

@@ -298,7 +298,7 @@ impl SetRules for Rules {
                 if g.gain_phase(card).is_some_and(Phase::is_action)
                     && setup::in_game(g, |c| c == Card::Footpad)
                 {
-                    out.push(Trigger::new(player, Card::Footpad, FOOTPAD_DRAW));
+                    out.push(Trigger::new(player, Card::Footpad, FOOTPAD_DRAW).game_wide());
                 }
             }
             Occasion::StartTurn { player } => {

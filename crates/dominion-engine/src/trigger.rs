@@ -147,6 +147,10 @@ pub struct Trigger {
     /// Reactions are offered again.
     #[serde(default)]
     pub reaction: bool,
+    /// An ability every player has in games using `card` ("In games using this", Shaman),
+    /// not one of a card of the owner's.
+    #[serde(default)]
+    pub game_wide: bool,
 }
 
 impl Trigger {
@@ -165,6 +169,7 @@ impl Trigger {
             does: None,
             protects: false,
             reaction: false,
+            game_wide: false,
         }
     }
 
@@ -215,6 +220,11 @@ impl Trigger {
 
     pub(crate) fn protects(mut self) -> Trigger {
         self.protects = true;
+        self
+    }
+
+    pub(crate) fn game_wide(mut self) -> Trigger {
+        self.game_wide = true;
         self
     }
 
@@ -430,12 +440,19 @@ impl Window {
         }
         self.done.push((i, t.clone()));
         // A label can say what only its owner knows.
-        let header = t.label.is_none().then_some(crate::Event::Resolved {
-            player: t
-                .lasting
-                .and_then(|id| g.lasting().iter().find(|l| l.id == id))
-                .map_or(t.owner, |l| l.owner),
-            card: t.card,
+        let player = t
+            .lasting
+            .and_then(|id| g.lasting().iter().find(|l| l.id == id))
+            .map_or(t.owner, |l| l.owner);
+        let header = t.label.is_none().then_some(match t.game_wide {
+            true => crate::Event::ResolvedFor {
+                player,
+                card: t.card,
+            },
+            false => crate::Event::Resolved {
+                player,
+                card: t.card,
+            },
         });
         g.begin_resolving(header);
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);

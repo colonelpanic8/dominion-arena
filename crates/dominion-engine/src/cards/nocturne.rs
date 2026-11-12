@@ -523,6 +523,7 @@ fn gain_triggers(g: &Game, player: PlayerId, card: CardId, out: &mut Vec<Trigger
         out.push(
             Trigger::new(player, Card::Changeling, CHANGELING_EXCHANGE)
                 .on(card)
+                .game_wide()
                 .optional(format!("exchange {} for a Changeling", g.card(card))),
         );
     }

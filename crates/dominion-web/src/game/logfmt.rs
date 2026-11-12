@@ -772,6 +772,13 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
                 spans.push(Span::Card(card.clone()));
                 text(&mut spans, " resolves.");
             }
+            Some(Entry::ResolvedFor(card)) => {
+                spans.clear();
+                spans.push(Span::Card(card.clone()));
+                text(&mut spans, " resolves for ");
+                spans.push(Span::Player(p));
+                text(&mut spans, ".");
+            }
             Some(Entry::Bonus {
                 actions,
                 buys,

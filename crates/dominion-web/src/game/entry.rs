@@ -158,6 +158,8 @@ pub enum Entry {
     },
     Returned(String),
     Resolved(String),
+    /// An ability every player has in games using the card resolved for the player.
+    ResolvedFor(String),
     Bonus {
         actions: u32,
         buys: u32,
@@ -547,6 +549,12 @@ pub fn parse(e: &LogEntry, names: &[String]) -> Option<Entry> {
             .strip_suffix(" resolves")?;
         return the_card(e, card).map(Entry::Resolved);
     }
+    if e.kind == "resolved-for" {
+        let card = e
+            .text
+            .strip_suffix(format!(" resolves for {name}").as_str())?;
+        return the_card(e, card).map(Entry::ResolvedFor);
+    }
     let s = e.text.strip_prefix(name.as_str())?.strip_prefix(' ')?;
     let after = |prefix: &str| s.strip_prefix(prefix);
     let card_after = |prefix: &str| after(prefix).and_then(|c| the_card(e, c));
@@ -790,7 +798,7 @@ mod tests {
     }
 
     #[test]
-    fn turns_that_dont_happen_are_read() {
+    fn turns_that_dont_happen_and_game_wide_abilities_are_read() {
         let p = |kind, card, text| parse(&entry(kind, Some(0), card, text), &names());
         assert_eq!(
             p("turn-skipped", None, "Ann skips a turn"),
@@ -811,6 +819,10 @@ mod tests {
                 "Ann loses the extra turn from Outpost (it would be a third turn in a row)"
             ),
             Some(Entry::ExtraTurnLost("Outpost".into()))
+        );
+        assert_eq!(
+            p("resolved-for", Some("Shaman"), "Shaman resolves for Ann"),
+            Some(Entry::ResolvedFor("Shaman".into()))
         );
     }
 

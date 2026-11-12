@@ -383,6 +383,7 @@ impl SetRules for Rules {
                 {
                     out.push(
                         Trigger::new(player, Card::Duchess, DUCHESS_GAIN)
+                            .game_wide()
                             .optional("gain a Duchess"),
                     );
                 }

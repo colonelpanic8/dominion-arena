@@ -1534,6 +1534,11 @@ pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>
             Some(*card),
             format!("{}'s {card} resolves", name(*player)),
         ),
+        Event::ResolvedFor { player, card } => (
+            Some(*player),
+            Some(*card),
+            format!("{card} resolves for {}", name(*player)),
+        ),
         Event::Bonus {
             player,
             actions,

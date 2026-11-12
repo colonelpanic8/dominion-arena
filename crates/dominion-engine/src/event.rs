@@ -184,6 +184,12 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
+    /// An ability every player has in games using `card` (Shaman's "In games using
+    /// this") began to resolve for `player`: logged like [`Event::Resolved`].
+    ResolvedFor {
+        player: PlayerId,
+        card: Card,
+    },
     /// +Actions, +Buys or +$ that `player` got other than from a card's own play (from a
     /// Duration's later part, a landscape, a Boon, ...), after what gave them.
     Bonus {
