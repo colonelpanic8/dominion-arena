@@ -999,6 +999,34 @@ fn a_highwayman_leaving_play_at_the_start_of_the_turn_is_not_a_clean_up() {
     assert_eq!(g.hand(P0).len(), 6);
 }
 
+/// "First" is by play: with Kiln, a Treasure's copy gained and played (Mining Road) while
+/// the Treasure's play is resolved comes after it (Kiln's FAQ: a Conspirator played after
+/// Kiln and its copy played with Innovation both count three Actions played).
+#[test]
+fn highwayman_stops_the_first_treasure_when_kiln_and_mining_road_play_a_copy_first() {
+    let mut g = game(&[Card::Highwayman, Card::Kiln, Card::MiningRoad]);
+    hand(&mut g, P0, &[Card::Highwayman]);
+    deck(&mut g, P0, &[Card::Copper; 20]);
+    hand(&mut g, P1, &[Card::MiningRoad, Card::Kiln, Card::Silver]);
+    deck(&mut g, P1, &[Card::Copper; 20]);
+    g.start();
+    play(&mut g, Card::Highwayman);
+    next_turn(&mut g);
+    play(&mut g, Card::MiningRoad);
+    play(&mut g, Card::Kiln);
+    assert_eq!(g.turn().coins, 4);
+    to_buy(&mut g);
+    play(&mut g, Card::Silver);
+    super::intrigue::trigger(&mut g, Card::Kiln);
+    yes(&mut g);
+    super::intrigue::trigger(&mut g, Card::MiningRoad);
+    while purpose(&g) == Purpose::Trigger {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(in_play_kinds(&g, P1)[2..], [Card::Silver, Card::Silver]);
+    assert_eq!(g.turn().coins, 4 + 2);
+}
+
 #[test]
 fn highwayman_is_not_cumulative_and_moat_blocks_it() {
     let mut g = game(&[Card::Highwayman, Card::Moat]);
