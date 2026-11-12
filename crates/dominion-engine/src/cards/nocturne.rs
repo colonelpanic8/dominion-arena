@@ -1301,12 +1301,9 @@ fn changeling(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Continue
         }
         1 => {
-            let candidates: Vec<CardId> = g
-                .in_play(p)
-                .iter()
-                .copied()
-                .filter(|&c| supply_pile_topped_by(g, g.card(c)).is_some())
-                .collect();
+            // Any card in play may be chosen; one with no copy on top of a Supply pile
+            // gains nothing.
+            let candidates = g.in_play(p).to_vec();
             if candidates.is_empty() {
                 return Flow::done();
             }
