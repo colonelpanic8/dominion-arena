@@ -44,7 +44,8 @@ fn counts(b: &Board) -> BTreeMap<Loc, i64> {
     out
 }
 
-/// Every card name a board holds anywhere: in its zones or on top of (or naming) a pile.
+/// Every card name a board holds anywhere: in its zones, among a player's cards whose
+/// place it can't tell, or on top of (or naming) a pile.
 fn names(b: &Board) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for p in b.you.iter().chain(&b.opponents) {
@@ -54,6 +55,8 @@ fn names(b: &Board) -> BTreeSet<String> {
         {
             out.extend(z.known.iter().map(|s| s.card.clone()));
         }
+        let unplaced = p.uncertain.iter().flat_map(|u| &u.candidates);
+        out.extend(unplaced.chain(&p.unlocated).map(|s| s.card.clone()));
     }
     out.extend(b.trash.known.iter().map(|s| s.card.clone()));
     for p in b
@@ -495,10 +498,6 @@ fn a_shuffle_moves_the_discard_pile_into_the_deck_before_the_draw() {
     let got = s.moves();
     let old = s.old.you.as_ref().unwrap();
     let new = s.new.you.as_ref().unwrap();
-    eprintln!(
-        "SHUF {:#?}\n{:#?}\nold {:?}\nnew {:?}",
-        s.log, got, old, new
-    );
     let shuffled = got
         .iter()
         .filter(|m| m.from == Loc::Discard(0) && m.to == Loc::Deck(0))
@@ -535,14 +534,6 @@ fn harbinger_puts_a_card_from_the_discard_pile_onto_the_deck() {
         },
     );
     let got = s.moves();
-    eprintln!(
-        "HARB {:#?}\n{:#?}\nold deck {:?}\nnew deck {:?}\nold discard {:?}",
-        s.log,
-        got,
-        s.old.you.as_ref().unwrap().deck,
-        s.new.you.as_ref().unwrap().deck,
-        s.old.you.as_ref().unwrap().discard
-    );
     // Harbinger to play, its card drawn, then a card from the discard pile to the deck.
     assert_eq!(got[0], mv(Some("Harbinger"), Loc::Hand(0), Loc::InPlay(0)));
     assert_eq!(
@@ -636,21 +627,17 @@ fn island_goes_to_its_mat_with_the_card_it_sets_aside() {
                     == 2
         },
     );
-    let got = s.moves();
+    // The log says Island goes to its mat from play: it is played first.
     let mat = Loc::Mat(0, "island".into());
-    assert!(
-        got.iter().all(|m| m.to == mat || m.to == Loc::InPlay(0)),
-        "{got:#?}"
-    );
-    let island = got
-        .iter()
-        .find(|m| m.card.as_deref() == Some("Island"))
-        .unwrap();
+    let aside = s.log.last().unwrap().card.clone().unwrap();
     assert_eq!(
-        (island.from.clone(), island.to.clone()),
-        (Loc::Hand(0), mat.clone())
+        s.moves(),
+        [
+            mv(Some("Island"), Loc::Hand(0), Loc::InPlay(0)),
+            mv(Some("Island"), Loc::InPlay(0), mat.clone()),
+            mv(Some(&aside), Loc::Hand(0), mat),
+        ]
     );
-    assert_eq!(got.iter().filter(|m| m.to == mat).count(), 2);
 }
 
 #[test]

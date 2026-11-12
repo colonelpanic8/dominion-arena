@@ -9,6 +9,7 @@
 //! better than wrong movement.
 
 use super::board::{Board, PileAt, PileEntry, PlayerEntry, Zone};
+use super::entry::{self, Entry, GainTo, Moved, Place};
 use dominion_protocol::LogEntry;
 use std::collections::BTreeMap;
 
@@ -141,6 +142,11 @@ impl Held {
 
 type Zones = BTreeMap<Loc, Held>;
 
+/// Where a player's cards taken off their deck to look at (or revealed) are held.
+fn looking(p: u8) -> Loc {
+    Loc::Mat(p, "looking".into())
+}
+
 fn player_zones(p: &PlayerEntry, out: &mut Zones) {
     let s = p.seat;
     out.insert(Loc::Hand(s), Held::from_zone(&p.hand));
@@ -182,53 +188,48 @@ fn zones(b: &Board) -> Zones {
 #[derive(Clone, Debug, PartialEq)]
 enum Step {
     Play(u8, String),
+    Call(u8, String),
     Gain(u8, String, Loc),
     Trash(u8, String),
     Discard(u8, String),
-    TopDeck(u8),
+    TopDeck(u8, Option<String>),
     SetAside(u8, String),
     Draw(u8, u32),
     Shuffle(u8),
-    Moved(u8, Option<String>, String),
+    /// Cards taken off the deck to look at.
+    Look(u8, u32),
+    /// A card revealed: from the hand, or taken off the deck.
+    Reveal(u8, String),
+    Moved(u8, Moved),
     /// Clean-up: what isn't kept in play and the hand go to the discard pile. When
     /// tentative (the new board is in the middle of Clean-up), only if cards in play
     /// still have to go.
     Cleanup(u8, bool),
 }
 
-fn drew_count(text: &str) -> u32 {
-    text.split_whitespace()
-        .find_map(|w| w.parse().ok())
-        .unwrap_or(0)
-}
-
-fn step(e: &LogEntry) -> Option<Step> {
+fn step(e: &LogEntry, names: &[String]) -> Option<Step> {
     let p = e.player?;
-    let card = e.card.clone();
-    Some(match e.kind.as_str() {
-        "played" => Step::Play(p, card?),
-        "gained" => {
-            let to = if e.text.ends_with(" to their hand") {
-                Loc::Hand(p)
-            } else if e.text.ends_with(" onto their deck") {
-                Loc::Deck(p)
-            } else if e.text.ends_with(", setting it aside") {
-                Loc::Mat(p, "setAside".into())
-            } else {
-                Loc::Discard(p)
+    Some(match entry::parse(e, names)? {
+        Entry::Played(c) => Step::Play(p, c),
+        Entry::Called(c) => Step::Call(p, c),
+        Entry::Gained(c, to) => {
+            let to = match to {
+                GainTo::Hand => Loc::Hand(p),
+                GainTo::Deck => Loc::Deck(p),
+                GainTo::SetAside => Loc::Mat(p, "setAside".into()),
+                GainTo::Discard => Loc::Discard(p),
             };
-            Step::Gain(p, card?, to)
+            Step::Gain(p, c, to)
         }
-        "trashed" => Step::Trash(p, card?),
-        "discarded" => Step::Discard(p, card?),
-        "top-decked" => Step::TopDeck(p),
-        "set-aside" => Step::SetAside(p, card?),
-        "drew" => Step::Draw(p, drew_count(&e.text)),
-        "shuffled" => Step::Shuffle(p),
-        "moved" => {
-            let to = e.text.rsplit_once(" to ")?.1.to_string();
-            Step::Moved(p, card, to)
-        }
+        Entry::Trashed(c) => Step::Trash(p, c),
+        Entry::Discarded(c) => Step::Discard(p, c),
+        Entry::TopDecked(c) => Step::TopDeck(p, c),
+        Entry::SetAside(c) => Step::SetAside(p, c),
+        Entry::Drew(n) => Step::Draw(p, n),
+        Entry::Shuffled => Step::Shuffle(p),
+        Entry::Looked(n) => Step::Look(p, n),
+        Entry::Revealed(c) => Step::Reveal(p, c),
+        Entry::Moved(m) => Step::Moved(p, m),
         _ => return None,
     })
 }
@@ -236,7 +237,12 @@ fn step(e: &LogEntry) -> Option<Step> {
 /// The log as steps, with Clean-up put where each turn's ended: before its last draws
 /// and shuffles, ahead of the next turn (or of the end of the game, or of the end of the
 /// log when the new board is in the middle of Clean-up).
-fn steps(log: &[LogEntry], turn_player: Option<u8>, end: Option<bool>) -> Vec<Step> {
+fn steps(
+    log: &[LogEntry],
+    names: &[String],
+    turn_player: Option<u8>,
+    end: Option<bool>,
+) -> Vec<Step> {
     let mut out: Vec<Step> = vec![];
     let mut cur = turn_player;
     let cleanup = |out: &mut Vec<Step>, p: u8, tentative: bool| {
@@ -254,7 +260,7 @@ fn steps(log: &[LogEntry], turn_player: Option<u8>, end: Option<bool>) -> Vec<St
             cur = e.player;
             continue;
         }
-        if let Some(s) = step(e) {
+        if let Some(s) = step(e, names) {
             out.push(s);
         }
     }
@@ -274,9 +280,11 @@ struct Sim<'a> {
     loose: bool,
     /// The step being run names its card.
     naming: bool,
+    /// How many times the steps still to come move each player's card of a name out of
+    /// their play area.
+    leaving_play: BTreeMap<(u8, String), u32>,
     old: &'a Board,
     new: &'a Board,
-    names: Vec<(u8, String)>,
     moves: Vec<Done>,
 }
 
@@ -310,9 +318,38 @@ impl Sim<'_> {
     /// gains, Clean-up and shuffles.
     fn look_ahead(&mut self, rest: &[Step]) {
         let mut pending: BTreeMap<Loc, i64> = BTreeMap::new();
+        let mut leaving: BTreeMap<(u8, String), u32> = BTreeMap::new();
         let mut add = |l: Loc, n: i64| *pending.entry(l).or_default() += n;
         for s in rest {
             match s {
+                Step::Moved(p, m) => {
+                    let n = i64::from(m.count());
+                    let first = m.cards.first().map(String::as_str);
+                    let from = match (&m.from, m.back) {
+                        (Some(f), _) => self.source_loc(f, first),
+                        (None, true) => Some(looking(*p)),
+                        (None, false) => None,
+                    };
+                    if let Some(f) = from {
+                        if let Loc::InPlay(q) = f {
+                            for c in &m.cards {
+                                *leaving.entry((q, c.clone())).or_default() += 1;
+                            }
+                        }
+                        add(f, -n);
+                    }
+                    if let Some(to) = self.dest_loc(&m.to, first) {
+                        add(to, n);
+                    }
+                }
+                Step::Look(p, n) => {
+                    add(Loc::Deck(*p), -i64::from(*n));
+                    add(looking(*p), i64::from(*n));
+                }
+                Step::Call(p, _) => {
+                    add(Loc::Mat(*p, "tavern".into()), -1);
+                    add(Loc::InPlay(*p), 1);
+                }
                 Step::Draw(p, n) => {
                     add(Loc::Deck(*p), -i64::from(*n));
                     add(Loc::Hand(*p), i64::from(*n));
@@ -339,6 +376,7 @@ impl Sim<'_> {
             }
         }
         self.pending = pending;
+        self.leaving_play = leaving;
     }
 
     fn has(&self, l: &Loc, c: Option<&str>) -> bool {
@@ -452,12 +490,19 @@ impl Sim<'_> {
             .cloned()
     }
 
+    /// A player's places, cards they are looking at first: what an effect does next is
+    /// most likely done to them.
     fn player_locs(&self, p: u8) -> Vec<Loc> {
-        let mut out = vec![Loc::Hand(p), Loc::InPlay(p), Loc::Deck(p), Loc::Discard(p)];
+        let look = looking(p);
+        let mut out = vec![];
+        if self.held(&look).count() > 0 {
+            out.push(look.clone());
+        }
+        out.extend([Loc::Hand(p), Loc::InPlay(p), Loc::Deck(p), Loc::Discard(p)]);
         out.extend(
             self.zones
                 .keys()
-                .filter(|l| matches!(l, Loc::Mat(s, _) if *s == p))
+                .filter(|l| matches!(l, Loc::Mat(s, _) if *s == p) && **l != look)
                 .cloned(),
         );
         out
@@ -477,26 +522,79 @@ impl Sim<'_> {
         out
     }
 
-    fn seat_named(&self, name: &str) -> Option<u8> {
-        self.names.iter().find(|(_, n)| n == name).map(|(s, _)| *s)
+    fn loc(&self, place: &Place, pile: impl Fn(&[Loc]) -> Option<Loc>) -> Option<Loc> {
+        Some(match place {
+            Place::Hand(p) => Loc::Hand(*p),
+            Place::Deck(p) => Loc::Deck(*p),
+            Place::Discard(p) => Loc::Discard(*p),
+            Place::InPlay(p) => Loc::InPlay(*p),
+            Place::Zone(p, k) => Loc::Mat(*p, (*k).into()),
+            Place::Trash => Loc::Trash,
+            Place::Pile(name) => return pile(&self.piles_of(name)),
+        })
     }
 
-    fn named_loc(&self, p: u8, key: &str) -> Loc {
-        match key {
-            "hand" | "their hand" => Loc::Hand(p),
-            "deck" | "their deck" => Loc::Deck(p),
-            "discard" | "their discard pile" => Loc::Discard(p),
-            "inPlay" => Loc::InPlay(p),
-            "trash" => Loc::Trash,
-            k => Loc::Mat(p, k.to_string()),
-        }
+    /// Where cards named `card` (if the log names them) come from: a pile by that name
+    /// that must lose cards, else one that has some.
+    fn source_loc(&self, place: &Place, card: Option<&str>) -> Option<Loc> {
+        self.loc(place, |piles| {
+            let mut piles = piles.to_vec();
+            if let Some(c) = card {
+                piles.extend(self.piles_of(c));
+            }
+            piles
+                .iter()
+                .find(|l| self.surplus(l))
+                .or_else(|| piles.iter().find(|l| self.has(l, None)))
+                .cloned()
+        })
+    }
+
+    /// Where cards go to: a pile by that name that must gain cards, else the first.
+    fn dest_loc(&self, place: &Place, card: Option<&str>) -> Option<Loc> {
+        self.loc(place, |piles| {
+            let mut piles = piles.to_vec();
+            if let Some(c) = card {
+                piles.extend(self.piles_of(c));
+            }
+            let wanting = |l: &&Loc| self.held(l).count() < self.goal(l).count();
+            piles.iter().find(wanting).or(piles.first()).cloned()
+        })
+    }
+
+    /// Moves one card the log moved from `from` (if it says, and the card is there) or
+    /// else from where it most likely was.
+    fn move_one(&mut self, p: u8, c: Option<&str>, from: Option<&Loc>, to: &Loc) {
+        let f = match from.filter(|f| self.has(f, c)) {
+            Some(f) => f.clone(),
+            None => {
+                let mut from: Vec<Loc> = self
+                    .player_locs(p)
+                    .into_iter()
+                    .filter(|l| l != to)
+                    .collect();
+                if let Some(c) = c {
+                    from.push(Loc::Trash);
+                    from.extend(self.piles_of(c).into_iter().filter(|l| l != to));
+                }
+                match self.source(c, &from) {
+                    Some(f) => f,
+                    None => return,
+                }
+            }
+        };
+        match c {
+            Some(c) => self.apply(Some(c), &f, to),
+            None => self.apply_unnamed(&f, to),
+        };
     }
 
     fn run(&mut self, s: &Step) {
         match s {
             Step::Play(p, c) => {
                 let to = Loc::InPlay(*p);
-                if self.held(&to).of(c) >= self.goal(&to).of(c) {
+                let leaving = self.leaving_play.get(&(*p, c.clone())).copied();
+                if self.held(&to).of(c) >= self.goal(&to).of(c) + leaving.unwrap_or(0) {
                     return;
                 }
                 let mut from = vec![Loc::Hand(*p)];
@@ -555,15 +653,37 @@ impl Sim<'_> {
                     self.apply(Some(c), &f, &to);
                 }
             }
-            Step::TopDeck(p) => {
+            Step::TopDeck(p, c) => {
                 let to = Loc::Deck(*p);
                 let from: Vec<Loc> = self
                     .player_locs(*p)
                     .into_iter()
                     .filter(|l| *l != to)
                     .collect();
-                if let Some(f) = self.source(None, &from) {
-                    self.apply_unnamed(&f, &to);
+                if let Some(f) = self.source(c.as_deref(), &from) {
+                    match c {
+                        Some(c) => self.apply(Some(c), &f, &to),
+                        None => self.apply_unnamed(&f, &to),
+                    };
+                }
+            }
+            Step::Call(p, c) => {
+                let tavern = Loc::Mat(*p, "tavern".into());
+                self.move_one(*p, Some(c), Some(&tavern), &Loc::InPlay(*p));
+            }
+            Step::Look(p, n) => {
+                for _ in 0..*n {
+                    if !self.apply_unnamed(&Loc::Deck(*p), &looking(*p)) {
+                        break;
+                    }
+                }
+            }
+            Step::Reveal(p, c) => {
+                let look = looking(*p);
+                let ahead = i64::from(self.held(&look).count())
+                    + self.pending.get(&look).copied().unwrap_or(0);
+                if ahead < i64::from(self.goal(&look).count()) {
+                    self.apply(Some(c), &Loc::Deck(*p), &look);
                 }
             }
             Step::Draw(p, n) => {
@@ -586,36 +706,23 @@ impl Sim<'_> {
                     self.apply(None, &from, &to);
                 }
             }
-            Step::Moved(p, c, to) => {
-                let to = if to == "its pile" {
-                    let piles = c.as_deref().map(|c| self.piles_of(c)).unwrap_or_default();
-                    let wanting = |l: &&Loc| self.held(l).count() < self.goal(l).count();
-                    match piles.iter().find(wanting).or(piles.first()).cloned() {
-                        Some(l) => l,
-                        None => return,
-                    }
-                } else if let Some((who, key)) = to.split_once("'s ") {
-                    match self.seat_named(who) {
-                        Some(s) => self.named_loc(s, key),
-                        None => return,
-                    }
-                } else {
-                    self.named_loc(*p, to)
+            Step::Moved(p, m) => {
+                let first = m.cards.first().map(String::as_str);
+                let Some(to) = self.dest_loc(&m.to, first) else {
+                    return;
                 };
-                let mut from: Vec<Loc> = self
-                    .player_locs(*p)
-                    .into_iter()
-                    .filter(|l| *l != to)
-                    .collect();
-                if let Some(c) = c {
-                    from.push(Loc::Trash);
-                    from.extend(self.piles_of(c).into_iter().filter(|l| *l != to));
+                let from = match (&m.from, m.back) {
+                    (Some(f), _) => self.source_loc(f, first),
+                    // Off the deck to look at, or the deck onto itself.
+                    (None, true) if self.held(&looking(*p)).count() > 0 => Some(looking(*p)),
+                    (None, true) => return,
+                    (None, false) => None,
+                };
+                for c in &m.cards {
+                    self.move_one(*p, Some(c), from.as_ref(), &to);
                 }
-                if let Some(f) = self.source(c.as_deref(), &from) {
-                    match c {
-                        Some(c) => self.apply(Some(c), &f, &to),
-                        None => self.apply_unnamed(&f, &to),
-                    };
+                for _ in 0..m.hidden {
+                    self.move_one(*p, None, from.as_ref(), &to);
                 }
             }
             Step::Cleanup(p, tentative) => {
@@ -757,20 +864,27 @@ impl Sim<'_> {
 pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
     let start = zones(old);
     let goal = zones(new);
-    let names = old
-        .you
-        .iter()
-        .chain(&old.opponents)
-        .map(|p| (p.seat, p.name.clone()))
-        .collect();
+    let mut names: Vec<String> = vec![];
+    for p in old.you.iter().chain(&old.opponents) {
+        let i = usize::from(p.seat);
+        if names.len() <= i {
+            names.resize_with(i + 1, String::new);
+        }
+        names[i] = p.name.clone();
+    }
+    for (i, n) in names.iter_mut().enumerate() {
+        if n.is_empty() {
+            *n = entry::seat_name(&[], i as u8);
+        }
+    }
     let mut sim = Sim {
         zones: start,
         goal: &goal,
         old,
         new,
-        names,
         moves: vec![],
         pending: BTreeMap::new(),
+        leaving_play: BTreeMap::new(),
         loose: false,
         naming: false,
     };
@@ -781,7 +895,7 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
     } else {
         None
     };
-    let steps = steps(log, old.status.player.as_ref().map(|w| w.seat), end);
+    let steps = steps(log, &names, old.status.player.as_ref().map(|w| w.seat), end);
     sim.loose = steps.iter().enumerate().any(|(i, s)| {
         matches!(s, Step::Draw(p, _)
             if steps[i + 1..].iter().any(|t| matches!(t, Step::Cleanup(q, _) if q == p)))
@@ -795,8 +909,10 @@ pub fn infer(old: &Board, new: &Board, log: &[LogEntry]) -> Inference {
                 | Step::Trash(..)
                 | Step::Discard(..)
                 | Step::SetAside(..)
-                | Step::Moved(_, Some(_), _)
-        );
+                | Step::Call(..)
+                | Step::Reveal(..)
+                | Step::TopDeck(_, Some(_))
+        ) || matches!(s, Step::Moved(_, m) if !m.cards.is_empty());
         sim.run(s);
     }
     sim.naming = false;
