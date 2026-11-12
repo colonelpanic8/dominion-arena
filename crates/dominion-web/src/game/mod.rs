@@ -13,11 +13,12 @@ pub mod wording;
 
 use crate::api;
 use crate::app::Route;
+use crate::lobby::seat_link::SeatLink;
 use crate::platform;
 use crate::session::{self, HeldSeat};
 use dioxus::prelude::*;
 use dominion_protocol::Answer;
-use dominion_protocol::api::Change;
+use dominion_protocol::api::{Change, GameSummary};
 use futures_util::StreamExt;
 pub use state::{Applied, GameState, Selection};
 
@@ -127,6 +128,72 @@ async fn send_answer(ctx: Live, answer: Answer) {
     }
 }
 
+/// The game as `/api/games` lists it, kept current while some seat hasn't joined.
+fn use_summary(game: Signal<String>) -> Signal<Option<GameSummary>> {
+    let mut summary = use_signal(|| None::<GameSummary>);
+    use_future(move || async move {
+        loop {
+            let id = game.peek().clone();
+            if let Ok(list) = api::games().await {
+                let g = list.into_iter().find(|g| g.game_id == id);
+                let done = g
+                    .as_ref()
+                    .is_none_or(|g| !g.running || g.joined.iter().all(|&j| j));
+                if *summary.peek() != g {
+                    summary.set(g);
+                }
+                if done {
+                    break;
+                }
+            }
+            platform::sleep(2000).await;
+        }
+    });
+    summary
+}
+
+/// The seat the game waits on when nobody has joined it: its number and name.
+pub fn waiting_for(g: &GameSummary, held: &[HeldSeat]) -> Option<(u8, String)> {
+    let d = g.deciding.filter(|_| g.running)?;
+    let joined = g.joined.get(usize::from(d)).copied().unwrap_or(true);
+    if joined || held.iter().any(|h| h.seat == d) {
+        return None;
+    }
+    Some((d, g.names.get(usize::from(d)).cloned().unwrap_or_default()))
+}
+
+/// Says the game is waiting for a seat nobody has joined, with what to give its agent
+/// when this browser handed the seat out.
+#[component]
+pub fn WaitingNotice(#[props(default)] style: String) -> Element {
+    let ctx = use_game();
+    let summary = use_context::<Signal<Option<GameSummary>>>();
+    let mut hidden = use_signal(|| false);
+    let game = ctx.game.read().clone();
+    let held = session::seats(&game);
+    let Some(g) = summary() else {
+        return rsx! {};
+    };
+    let Some((seat, name)) = waiting_for(&g, &held) else {
+        return rsx! {};
+    };
+    if hidden() {
+        return rsx! {};
+    }
+    let link = session::links(&game).into_iter().find(|l| l.seat == seat);
+    rsx! {
+        div { class: "waiting-notice", role: "status", style, "data-waiting-seat": "{seat}",
+            button { class: "waiting-hide", title: "Hide", onclick: move |_| hidden.set(true), "✕" }
+            if let Some(l) = link {
+                p { class: "waiting-title", "Waiting for {name} to join. Give its agent this line:" }
+                SeatLink { game, seat: l, joined: Some(false) }
+            } else {
+                p { class: "waiting-title", "Waiting for {name}, who hasn't joined this game yet." }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn GamePage(id: String) -> Element {
     let game = use_signal(|| id.clone());
@@ -139,6 +206,8 @@ pub fn GamePage(id: String) -> Element {
     let mut driver = use_signal(|| None::<dioxus::core::Task>);
 
     let live = Live { game, seat, state };
+    let summary = use_summary(game);
+    use_context_provider(|| summary);
     use_context_provider(|| GameCtx {
         game,
         seat,
@@ -274,6 +343,7 @@ pub fn GamePage(id: String) -> Element {
                 if let Some(e) = join_error() {
                     p { class: "error", "{e}" }
                 }
+                WaitingNotice {}
                 plain::PlainGame {}
             }
         }

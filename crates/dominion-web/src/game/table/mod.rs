@@ -715,6 +715,16 @@ pub fn TableGame(controls: Element) -> Element {
                 can_treasures,
             }
             prompt::DecisionWindow { g: g.clone(), ui: ui_now.clone(), sel: sel.clone() }
+            if !starting {
+                super::WaitingNotice {
+                    style: format!(
+                        "left:{:.1}px;top:{:.1}px;width:{:.1}px;",
+                        g.play_x,
+                        g.play_y + g.vh,
+                        g.play_right - g.play_x - 22.0 * g.vh,
+                    ),
+                }
+            }
             if let Some((p, _)) = ctx.popup.read().clone() {
                 PopupView { popup: p, g: g.clone() }
             }

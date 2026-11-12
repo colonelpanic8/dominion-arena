@@ -6,6 +6,7 @@ use super::rules::{
     LandscapeSlot, MAX_PLAYERS, Pick, SLOT_KINDS, SeatKind, SeatSpec, TableRules, Ternary,
     expansion_icon, expansions,
 };
+use super::seat_link::SeatLink;
 use super::selector::CardSelector;
 use super::store::{self, MyTable};
 use super::{
@@ -20,7 +21,7 @@ use crate::platform;
 use crate::session::{self, HeldSeat};
 use dioxus::prelude::*;
 use dioxus::router::Navigator;
-use dominion_protocol::api::SeatToken;
+use dominion_protocol::api::{GameSummary, SeatToken};
 
 /// Changes the table's rules, if there is a table.
 pub fn edit(mut table: Signal<Option<MyTable>>, f: impl FnOnce(&mut TableRules)) {
@@ -29,13 +30,14 @@ pub fn edit(mut table: Signal<Option<MyTable>>, f: impl FnOnce(&mut TableRules))
     }
 }
 
-/// Ready: deals the table's kingdom, creates the game and goes to it, or stays at the
-/// table to hand out the seats played elsewhere.
+/// Ready: deals the table's kingdom, creates the game and goes to it, or (unless
+/// `to_game`) stays at the table to hand out the seats played elsewhere.
 pub async fn start(
     mut table: Signal<Option<MyTable>>,
     banned: Vec<String>,
     toast: Signal<Option<String>>,
     nav: Navigator,
+    to_game: bool,
 ) {
     let Some(rules) = table.peek().as_ref().map(|t| t.rules.clone()) else {
         return;
@@ -91,7 +93,8 @@ pub async fn start(
         store::set_name(&you.name);
     }
     let id = created.game_id.clone();
-    let local = links.is_empty();
+    session::give_out(&id, &links);
+    let local = links.is_empty() || to_game;
     table.set(Some(MyTable {
         rules,
         game: Some(id.clone()),
@@ -103,6 +106,56 @@ pub async fn start(
     } else {
         nav.push(Route::MyTable {});
     }
+}
+
+/// The game a table started last, as the server has it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TableGame {
+    /// The table has started none, or the server no longer has it.
+    None,
+    /// Not known yet.
+    Unknown,
+    Running(GameSummary),
+    Over(GameSummary),
+}
+
+/// Follows the table's game on the server. A game the server doesn't have (it was
+/// started on a server since replaced) is forgotten, so the table can start another.
+pub fn use_table_game(mut table: Signal<Option<MyTable>>) -> Memo<TableGame> {
+    let watched = use_memo(move || table.read().as_ref().and_then(|t| t.game.clone()));
+    let mut seen = use_signal(|| None::<(String, TableGame)>);
+    use_future(move || async move {
+        loop {
+            let id = watched.peek().clone();
+            if let Some(id) = id
+                && let Ok(list) = api::games().await
+                && watched.peek().as_deref() == Some(id.as_str())
+            {
+                let status = match list.into_iter().find(|g| g.game_id == id) {
+                    Some(g) if g.running => TableGame::Running(g),
+                    Some(g) => TableGame::Over(g),
+                    None => {
+                        if let Some(t) = table.write().as_mut() {
+                            t.game = None;
+                            t.links.clear();
+                        }
+                        TableGame::None
+                    }
+                };
+                if seen.peek().as_ref() != Some(&(id.clone(), status.clone())) {
+                    seen.set(Some((id, status)));
+                }
+            }
+            platform::sleep(1500).await;
+        }
+    });
+    use_memo(move || match watched() {
+        None => TableGame::None,
+        Some(id) => match seen() {
+            Some((at, status)) if at == id => status,
+            _ => TableGame::Unknown,
+        },
+    })
 }
 
 #[component]
@@ -119,9 +172,26 @@ pub fn MyTableTab() -> Element {
             new_table(table, &expansions(&db));
         }
     });
+    let status = use_table_game(table);
+    let running = match status() {
+        TableGame::Running(g) => Some(g),
+        _ => None,
+    };
     rsx! {
         LobbyFrame { tab: Tab::MyTable,
-            if table.read().is_some() {
+            if let Some(g) = running {
+                div { class: "lb-table-content lb-locked",
+                    div { class: "lb-table-main",
+                        LockedKingdom { game: g.clone(), study }
+                    }
+                    div { class: "lb-table-side",
+                        LockedPlayers { table, game: g.clone() }
+                        SeatLinks { table, game: g }
+                    }
+                }
+                TableButtons { table, status: status() }
+                StudyView { study }
+            } else if table.read().is_some() {
                 div { class: "lb-table-content",
                     div { class: "lb-table-main",
                         KingdomOptions { table, selector, study }
@@ -129,10 +199,18 @@ pub fn MyTableTab() -> Element {
                     }
                     div { class: "lb-table-side",
                         Players { table }
-                        SeatLinks { table }
+                        if let TableGame::Over(g) = status() {
+                            Fieldset { title: "Last Game", class: "lb-links",
+                                div { class: "lb-links-content",
+                                    p { class: "lb-links-note", "data-last-game": "{g.game_id}",
+                                        "Game {g.game_id} has ended. Ready starts another with the rules on the left."
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-                TableButtons { table }
+                TableButtons { table, status: status() }
                 if selector() {
                     div { class: "lb-selector-shield", onclick: { let mut selector = selector; move |_| selector.set(false) } }
                     CardSelector { table, selector, study }
@@ -708,40 +786,139 @@ pub fn Players(table: Signal<Option<MyTable>>) -> Element {
     }
 }
 
-/// The seats of the started game that others play: their link, token and the line to
-/// give an agent. Where dominion.games has the table chat.
+/// The seats of the running game that others play: their link, token and the line to
+/// give an agent, and whether they have joined. Where dominion.games has the table chat.
 #[component]
-fn SeatLinks(table: Signal<Option<MyTable>>) -> Element {
+fn SeatLinks(table: Signal<Option<MyTable>>, game: GameSummary) -> Element {
     let Some(t) = table.read().clone() else {
         return rsx! {};
     };
-    let (Some(game), false) = (t.game.clone(), t.links.is_empty()) else {
+    if t.links.is_empty() {
         return rsx! {};
-    };
-    let origin = platform::origin();
+    }
+    let waiting = game
+        .deciding
+        .filter(|&d| t.links.iter().any(|l| l.seat == d))
+        .filter(|&d| !game.joined.get(usize::from(d)).copied().unwrap_or(true))
+        .and_then(|d| game.names.get(usize::from(d)).cloned());
     rsx! {
         Fieldset { title: "Seat Links", class: "lb-links",
             div { class: "lb-links-content",
-                p { class: "lb-links-note", "Each seat's token is the only way to play it." }
+                if let Some(name) = waiting {
+                    p { class: "lb-waiting", role: "status", "The game is waiting for {name}, who hasn't joined. Give its agent the line below." }
+                } else {
+                    p { class: "lb-links-note", "Each seat's token is the only way to play it." }
+                }
                 for s in t.links.iter().cloned() {
-                    {
-                        let link = format!("{origin}/game/{game}#token={}", platform::encode(&s.token));
-                        let mcp = format!(
-                            "Connect to the dominion MCP server at {origin}/mcp and call join_game with {{\"game_id\": \"{game}\", \"token\": \"{}\"}}",
-                            s.token
-                        );
-                        let token = s.token.clone();
-                        let l2 = link.clone();
-                        let m2 = mcp.clone();
-                        rsx! {
-                            div { key: "{s.seat}", class: "lb-link", "data-link-seat": "{s.seat}",
-                                div { class: "lb-link-name", "{s.name}" }
-                                div { class: "lb-link-line", "data-mcp": "1", "{mcp}" }
-                                div { class: "lb-link-buttons",
-                                    div { class: "lb-oval", onclick: move |_| platform::copy(&m2), "Copy for Agent" }
-                                    div { class: "lb-oval", onclick: move |_| platform::copy(&l2), "Copy Link" }
-                                    div { class: "lb-oval", onclick: move |_| platform::copy(&token), "Copy Token" }
+                    SeatLink {
+                        key: "{s.seat}",
+                        game: game.game_id.clone(),
+                        joined: game.joined.get(usize::from(s.seat)).copied(),
+                        seat: s,
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The running game's kingdom, which can't change until it ends.
+#[component]
+fn LockedKingdom(game: GameSummary, study: Signal<Option<String>>) -> Element {
+    let cards = use_cards();
+    let mut kingdom: Vec<String> = game.kingdom.clone();
+    kingdom.sort_by(|a, b| match (cards.get(a), cards.get(b)) {
+        (Some(x), Some(y)) => super::rules::card_order(&cards, x, y),
+        _ => a.cmp(b),
+    });
+    let code = game
+        .kingdom
+        .iter()
+        .chain(&game.landscapes)
+        .map(|n| n.to_lowercase())
+        .collect::<Vec<_>>()
+        .join(", ");
+    rsx! {
+        Fieldset { title: "Kingdom Options", class: "lb-kingdom-options",
+            div { class: "lb-kingdom-display",
+                div { class: "lb-kingdom-cards",
+                    for name in kingdom {
+                        div {
+                            key: "{name}",
+                            class: "lb-kcard",
+                            "data-dealt": "{name}",
+                            oncontextmenu: {
+                                let name = name.clone();
+                                move |e: MouseEvent| {
+                                    e.prevent_default();
+                                    study.set(Some(name.clone()));
                                 }
+                            },
+                            CardView { name: name.clone(), size: CardSize::Mini }
+                        }
+                    }
+                }
+                div { class: "lb-landscapes narrow",
+                    for name in game.landscapes.iter().cloned() {
+                        div {
+                            key: "{name}",
+                            class: "lb-lcard",
+                            "data-dealt": "{name}",
+                            oncontextmenu: {
+                                let name = name.clone();
+                                move |e: MouseEvent| {
+                                    e.prevent_default();
+                                    study.set(Some(name.clone()));
+                                }
+                            },
+                            CardView { name: name.clone(), size: CardSize::Mini }
+                        }
+                    }
+                }
+            }
+            div { class: "lb-kingdom-code", "data-kingdom-code": "{code}", "{code}" }
+            p { class: "lb-locked-note", role: "status",
+                "Game {game.game_id} is being played with this kingdom. The table's rules can be changed once it ends; Leave Table to set up another game now."
+            }
+        }
+    }
+}
+
+/// The running game's players in turn order: who plays here, who plays elsewhere, and
+/// whether they have joined.
+#[component]
+fn LockedPlayers(table: Signal<Option<MyTable>>, game: GameSummary) -> Element {
+    let tip = use_tooltip();
+    let Some(t) = table.read().clone() else {
+        return rsx! {};
+    };
+    let held = session::seats(&game.game_id);
+    let n = game.names.len();
+    rsx! {
+        Fieldset { title: "Players ({n}/{n})", class: "lb-players",
+            div { class: "lb-players-content",
+                for (i, name) in game.names.iter().cloned().enumerate() {
+                    {
+                        let here = held.iter().any(|h| usize::from(h.seat) == i);
+                        let kind = t.rules.seats.iter().find(|s| s.name.trim() == name).map(|s| s.kind);
+                        let joined = here || game.joined.get(i).copied().unwrap_or(false);
+                        let (icon, what) = match kind {
+                            Some(SeatKind::You) => ("lb-icon lb-icon-crown c3", "Host"),
+                            _ if here => ("lb-icon lb-icon-play c3", "Played in this browser"),
+                            Some(SeatKind::Agent) => ("lb-icon lb-icon-bot c3", "Agent: joins over MCP with the seat's token"),
+                            _ => ("lb-icon lb-icon-person c3", "Played with the seat link"),
+                        };
+                        let light = if joined { "lb-icon lb-icon-ready active c4" } else { "lb-icon lb-icon-ready c4" };
+                        let state = if here { "Here" } else if joined { "Joined" } else { "Hasn't joined yet" };
+                        let deciding = game.deciding == Some(i as u8);
+                        rsx! {
+                            div { key: "{i}", class: "lb-person", "data-seat": "{i}", "data-joined": "{joined}",
+                                div { class: "lb-person-name",
+                                    span { class: "lb-person-fixed", "{name}" }
+                                    if deciding { span { class: "lb-person-turn", "to play" } }
+                                }
+                                div { class: icon, onmouseenter: move |e| show_tooltip(tip, what.into(), &e), onmouseleave: move |_| { let mut tip = tip; tip.set(None); } }
+                                div { class: light, onmouseenter: move |e| show_tooltip(tip, state.into(), &e), onmouseleave: move |_| { let mut tip = tip; tip.set(None); } }
                             }
                         }
                     }
@@ -751,49 +928,47 @@ fn SeatLinks(table: Signal<Option<MyTable>>) -> Element {
     }
 }
 
-/// Ready (or Play, while the table's game is on) and Leave Table.
+/// Ready (Play while the table's game is running) and Leave Table.
 #[component]
-fn TableButtons(table: Signal<Option<MyTable>>) -> Element {
+fn TableButtons(table: Signal<Option<MyTable>>, status: TableGame) -> Element {
     let toast = use_toast();
     let banned = use_banned();
     let nav = navigator();
-    let game = table.read().as_ref().and_then(|t| t.game.clone());
-    let mut running = use_signal(|| None::<bool>);
-    use_future(move || async move {
-        loop {
-            let watched = table.peek().as_ref().and_then(|t| t.game.clone());
-            match watched {
-                Some(id) => {
-                    if let Ok(list) = api::games().await {
-                        running.set(Some(list.iter().any(|g| g.game_id == id && g.running)));
-                    }
-                }
-                None => running.set(Some(false)),
-            }
-            platform::sleep(1500).await;
+    let mut busy = use_signal(|| false);
+    let ready = move |_| {
+        if busy() {
+            return;
         }
-    });
-    let playing = game.is_some() && running() == Some(true);
+        busy.set(true);
+        let banned = banned.clone();
+        spawn(async move {
+            start(table, banned, toast, nav, false).await;
+            busy.set(false);
+        });
+    };
     rsx! {
         div { class: "lb-table-buttons",
-            if playing {
-                button {
-                    class: "lb-button lb-gold",
-                    "data-action": "play",
-                    onclick: move |_| {
-                        if let Some(id) = game.clone() {
-                            nav.push(Route::Game { id });
-                        }
-                    },
-                    "Play"
-                }
-            } else {
-                button {
-                    class: "lb-button lb-gold",
-                    "data-action": "ready",
-                    onclick: move |_| { spawn(start(table, banned.clone(), toast, nav)); },
-                    "Ready"
-                }
+            match status {
+                TableGame::Running(g) => rsx! {
+                    button {
+                        class: "lb-button lb-gold",
+                        "data-action": "play",
+                        onclick: move |_| { nav.push(Route::Game { id: g.game_id.clone() }); },
+                        "Play"
+                    }
+                },
+                TableGame::Unknown => rsx! {
+                    button { class: "lb-button lb-gold", "data-action": "ready", disabled: true, "Ready" }
+                },
+                _ => rsx! {
+                    button {
+                        class: "lb-button lb-gold",
+                        "data-action": "ready",
+                        disabled: busy(),
+                        onclick: ready,
+                        "Ready"
+                    }
+                },
             }
             button {
                 class: "lb-button lb-copper",
@@ -801,7 +976,7 @@ fn TableButtons(table: Signal<Option<MyTable>>) -> Element {
                 onclick: move |_| {
                     let mut table = table;
                     table.set(None);
-                    nav.push(Route::Tables {});
+                    nav.push(Route::Lobby {});
                 },
                 "Leave Table"
             }

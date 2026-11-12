@@ -74,11 +74,73 @@ mod imp {
             .unwrap_or_default()
     }
 
-    pub fn copy(text: &str) {
-        if let Some(w) = window() {
-            let _ = w.navigator().clipboard().write_text(text);
-        }
+    /// Puts `text` on the clipboard: the Clipboard API where the page may use it (a
+    /// secure context), else a selected textarea and `execCommand`. False if neither
+    /// worked.
+    pub fn copy(text: &str) -> bool {
+        let f = js_sys::Function::new_with_args("t", COPY_JS);
+        f.call1(
+            &wasm_bindgen::JsValue::NULL,
+            &wasm_bindgen::JsValue::from_str(text),
+        )
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
     }
+
+    const COPY_JS: &str = r#"
+        if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(t).catch(() => {});
+            return true;
+        }
+        const a = document.createElement('textarea');
+        a.value = t;
+        a.setAttribute('readonly', '');
+        a.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+        document.body.appendChild(a);
+        a.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) {}
+        a.remove();
+        return ok;
+    "#;
+
+    /// Covers the page with a notice when the app has crashed (a panic, or a script
+    /// error that leaves it unusable), instead of leaving it on screen unresponsive.
+    pub fn install_crash_notice() {
+        run_js(CRASH_JS);
+        std::panic::set_hook(Box::new(|info| {
+            let msg = info.to_string();
+            if let Some(f) = js_sys::Reflect::get(&js_sys::global(), &"__dominionCrashed".into())
+                .ok()
+                .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+            {
+                let _ = f.call1(&wasm_bindgen::JsValue::NULL, &msg.into());
+            }
+        }));
+    }
+
+    use wasm_bindgen::JsCast;
+
+    const CRASH_JS: &str = r#"
+        window.__dominionCrashed = function (msg) {
+            if (document.getElementById('crash-notice')) return;
+            console.error('dominion-web crashed: ' + msg);
+            const d = document.createElement('div');
+            d.id = 'crash-notice';
+            d.setAttribute('role', 'alert');
+            d.innerHTML = '<p>The page stopped working: <code></code></p><button>Reload</button>';
+            d.querySelector('code').textContent = msg;
+            d.querySelector('button').onclick = () => location.reload();
+            document.body.appendChild(d);
+        };
+        window.addEventListener('error', (e) => {
+            const stack = (e.error && e.error.stack) || '';
+            if (/unreachable|RuntimeError/.test(e.message || '') || /wasm-function/.test(stack)) {
+                window.__dominionCrashed(e.message);
+            }
+        });
+    "#;
 
     pub fn encode(s: &str) -> String {
         js_sys::encode_uri_component(s).into()
@@ -160,7 +222,11 @@ mod imp {
         String::new()
     }
 
-    pub fn copy(_text: &str) {}
+    pub fn copy(_text: &str) -> bool {
+        false
+    }
+
+    pub fn install_crash_notice() {}
 
     pub fn scroll_to_top() {}
 
