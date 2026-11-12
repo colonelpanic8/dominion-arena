@@ -69,7 +69,9 @@ async fn refresh(ctx: Live, token: &str) {
                 }
             }
             Err(e) => {
-                state.write().error = Some(e.message);
+                let mut st = state.write();
+                st.gone = matches!(e.status, 401 | 404);
+                st.error = Some(e.message);
                 return;
             }
         }
@@ -78,13 +80,16 @@ async fn refresh(ctx: Live, token: &str) {
 
 /// Keeps the shown seat's state current until cancelled.
 async fn drive(ctx: Live, token: String) {
+    refresh(ctx, &token).await;
+    if ctx.state.peek().gone {
+        return;
+    }
     let (tx, mut rx) = futures_channel::mpsc::unbounded::<Change>();
     let game = ctx.game.peek().clone();
     let watcher = api::watch(&game, &token, move |c| {
         let _ = tx.unbounded_send(c);
     });
     let worker = async {
-        refresh(ctx, &token).await;
         while let Some(c) = rx.next().await {
             if ctx.state.peek().is_news(c) {
                 refresh(ctx, &token).await;
@@ -248,6 +253,19 @@ pub fn GamePage(id: String) -> Element {
         }
     });
 
+    let gone = use_memo(move || {
+        let st = state.read();
+        st.gone.then(|| st.error.clone().unwrap_or_default())
+    });
+    use_effect(move || {
+        if gone().is_none() {
+            return;
+        }
+        if let Some(s) = seat.peek().as_ref() {
+            session::forget(&game.peek(), &s.token);
+        }
+    });
+
     use_effect(move || {
         let shown = seat();
         if let Some(t) = driver.take() {
@@ -314,6 +332,20 @@ pub fn GamePage(id: String) -> Element {
             Link { class: "right", to: Route::Lobby {}, "Lobby" }
         }
     };
+    if let Some(e) = gone() {
+        let id = game.read().clone();
+        return rsx! {
+            div { class: "game-page",
+                {seat_bar}
+                section { class: "panel", "data-gone": "1",
+                    h2 { "This game can't be opened" }
+                    p { "The server said: {e}." }
+                    p { "It may have been started on a server that didn't keep its games, or this browser's seat token for game {id} is no longer valid. This browser has forgotten that seat." }
+                    Link { class: "button primary", to: Route::Lobby {}, "Back to the lobby" }
+                }
+            }
+        };
+    }
     if !held.is_empty() && table_on() && join_error().is_none() {
         return rsx! {
             table::TableGame { controls: seat_bar }
