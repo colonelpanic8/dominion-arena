@@ -334,7 +334,8 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
 fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
     let result = game.outcome().map(|o| {
         let n = o.scores.len();
-        let key = |p: usize| (std::cmp::Reverse(o.scores[p]), o.turns[p]);
+        let resigned = |p: usize| o.resigned.contains(&PlayerId(p as u8));
+        let key = |p: usize| (resigned(p), std::cmp::Reverse(o.scores[p]), o.turns[p]);
         GameResult {
             reason: Some(
                 match o.reason {
@@ -342,6 +343,7 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
                     EndReason::ColoniesGone => "colonies-gone",
                     EndReason::PilesEmpty => "piles-empty",
                     EndReason::TurnLimit => "turn-limit",
+                    EndReason::Resigned => "resigned",
                 }
                 .into(),
             ),
@@ -352,7 +354,7 @@ fn game_info(game: &Game, cx: &Context<'_>) -> GameInfo {
                     vp: o.scores[p],
                     rank: 1 + (0..n).filter(|&q| key(q) < key(p)).count() as u32,
                     turns: o.turns[p],
-                    resigned: false,
+                    resigned: resigned(p),
                 })
                 .collect(),
         }

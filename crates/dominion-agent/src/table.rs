@@ -276,6 +276,37 @@ impl Table {
         }
     }
 
+    /// Whether the table keeps what someone watching knows (one saved before it did
+    /// doesn't).
+    pub fn watchable(&self) -> bool {
+        false
+    }
+
+    /// The view of someone watching without a seat: what every player may know, with the
+    /// log from `log_from` on and no decision. `None` unless [`Table::watchable`].
+    pub fn watch_view(&self, _log_from: usize) -> Option<AgentView> {
+        None
+    }
+
+    /// [`Table::extras`] for someone watching.
+    pub fn watch_extras(&self) -> Option<TableExtras> {
+        None
+    }
+
+    /// Ends the game with `seat` resigning, for good: nothing before it can be undone.
+    pub fn resign(&mut self, seat: PlayerId) -> Result<(), AnswerError> {
+        if self.is_over() {
+            return Err(AnswerError::GameOver);
+        }
+        if seat.index() >= self.names.len() {
+            return Err(AnswerError::Invalid(format!("there is no seat {}", seat.0)));
+        }
+        self.game.resign(seat);
+        self.ways.clear();
+        self.undo = None;
+        Ok(())
+    }
+
     /// The compact text rendering of `seat`'s view.
     pub fn text(&self, seat: PlayerId) -> String {
         text::render(&self.view(seat))

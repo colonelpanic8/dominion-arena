@@ -284,6 +284,7 @@ pub fn end_reason(code: &str) -> String {
         "colonies-gone" => "The Colonies ran out.".into(),
         "piles-empty" => "Supply piles ran out.".into(),
         "turn-limit" => "The turn limit was reached.".into(),
+        "resigned" => "A player resigned.".into(),
         other => other.into(),
     }
 }

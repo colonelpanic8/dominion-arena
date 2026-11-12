@@ -444,6 +444,8 @@ pub enum EndReason {
     ColoniesGone,
     PilesEmpty,
     TurnLimit,
+    /// A player resigned ([`Game::resign`]).
+    Resigned,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -454,6 +456,9 @@ pub struct Outcome {
     pub turns: Vec<u32>,
     /// More than one winner means a tie.
     pub winners: Vec<PlayerId>,
+    /// Who resigned: they finish behind everyone else, whatever the scores.
+    #[serde(default)]
+    pub resigned: Vec<PlayerId>,
 }
 
 /// A deck of non-physical cards (Boons, Hexes), top last.
@@ -1794,6 +1799,19 @@ impl Game {
     }
 
     pub(crate) fn finish(&mut self, reason: EndReason) {
+        self.finish_without(reason, vec![]);
+    }
+
+    /// Ends the game where it stands with `player` resigning. The other players are
+    /// ranked by their scores as they are now. Does nothing once the game is over.
+    pub fn resign(&mut self, player: PlayerId) {
+        if self.outcome.is_none() && player.index() < self.players.len() {
+            self.pending = None;
+            self.finish_without(EndReason::Resigned, vec![player]);
+        }
+    }
+
+    fn finish_without(&mut self, reason: EndReason, resigned: Vec<PlayerId>) {
         let n = self.players.len();
         let scores: Vec<i32> = (0..n).map(|p| self.score(PlayerId(p as u8))).collect();
         let turns: Vec<u32> = self
@@ -1801,12 +1819,12 @@ impl Game {
             .iter()
             .map(|p| p.turns_taken - p.extra_turns_taken + p.turns_skipped)
             .collect();
-        let best = (0..n)
-            .map(|p| (scores[p], std::cmp::Reverse(turns[p])))
-            .max()
-            .expect("at least two players");
+        let key = |p: usize| (scores[p], std::cmp::Reverse(turns[p]));
+        let playing = |p: &usize| !resigned.contains(&PlayerId(*p as u8));
+        let best = (0..n).filter(playing).map(key).max();
         let winners = (0..n)
-            .filter(|&p| (scores[p], std::cmp::Reverse(turns[p])) == best)
+            .filter(playing)
+            .filter(|&p| Some(key(p)) == best)
             .map(|p| PlayerId(p as u8))
             .collect();
         self.outcome = Some(Outcome {
@@ -1814,6 +1832,7 @@ impl Game {
             scores,
             turns,
             winners,
+            resigned,
         });
     }
 

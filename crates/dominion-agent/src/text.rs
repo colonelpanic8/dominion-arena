@@ -250,13 +250,20 @@ pub fn render(v: &AgentView) -> String {
         ranked.sort_by_key(|p| (p.rank, p.index));
         let players: Vec<String> = ranked
             .iter()
-            .map(|p| format!("{}. {} {} VP ({} turns)", p.rank, p.name, p.vp, p.turns))
+            .map(|p| {
+                let resigned = if p.resigned { ", resigned" } else { "" };
+                format!(
+                    "{}. {} {} VP ({} turns{resigned})",
+                    p.rank, p.name, p.vp, p.turns
+                )
+            })
             .collect();
         let reason = match r.reason.as_deref() {
             Some("provinces-gone") => " (the Provinces ran out)",
             Some("colonies-gone") => " (the Colonies ran out)",
             Some("piles-empty") => " (Supply piles ran out)",
             Some("turn-limit") => " (the turn limit was reached)",
+            Some("resigned") => " (a player resigned)",
             _ => "",
         };
         out.push(format!("RESULT{reason}: {}", players.join(", ")));

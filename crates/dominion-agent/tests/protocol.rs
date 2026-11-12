@@ -1617,3 +1617,35 @@ fn play_treasures_plays_only_what_was_offered_when_asked() {
         "runs {runs}, drawn left {drawn_left}"
     );
 }
+
+#[test]
+fn a_resignation_ends_the_game_with_the_resigner_last() {
+    let mut table = base_table();
+    let d = table.view(PlayerId(0)).decision.unwrap();
+    table.resign(PlayerId(0)).unwrap();
+    assert!(table.is_over());
+    assert_eq!(table.deciding(), None);
+    let view = table.view(PlayerId(1));
+    assert_valid(
+        &validator("view"),
+        &serde_json::to_value(&view).unwrap(),
+        "the view after a resignation",
+    );
+    assert!(!view.game.running && view.decision.is_none());
+    let result = view.game.result.unwrap();
+    assert_eq!(result.reason.as_deref(), Some("resigned"));
+    // Equal scores and turns: only the resignation ranks them.
+    let ranks: Vec<(u32, bool)> = result
+        .players
+        .iter()
+        .map(|p| (p.rank, p.resigned))
+        .collect();
+    assert_eq!(ranks, [(2, true), (1, false)]);
+    assert!(text::render(&table.view(PlayerId(0))).contains("resigned"));
+    assert_eq!(table.resign(PlayerId(1)), Err(AnswerError::GameOver));
+    assert!(!table.undo(PlayerId(0)) && !table.undo(PlayerId(1)));
+    assert_eq!(
+        table.answer(PlayerId(0), &Answer::indices(&d.id, vec![0])),
+        Err(AnswerError::GameOver)
+    );
+}
