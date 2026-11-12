@@ -253,8 +253,9 @@ them.
   play later does it with `g.keep_in_play`.
 - **Modifiers.** Rules code asks the game, never the static data: `g.cost_of(id)` /
   `g.cost(card)` (through `SetRules::modify_cost`; Events and Projects always cost what
-  they say), `g.types(id)` / `g.is(id, types)`
-  (through `modify_types`), `g.card(id)` (what a card currently is: `Game::masks` make
+  they say), `g.types(id)` / `g.is(id, types)`, and `g.card_types(card)` for a card
+  asked by name, a cost modifier's included (through `modify_types`, which sees only the
+  card's name: types never depend on the copy or where it is), `g.card(id)` (what a card currently is: `Game::masks` make
   Band of Misfits-style cards another card until they leave play; `g.printed(id)` is
   what is printed). `SetRules::behavior` lets a card use another card's abilities
   (Inheritance). Effects that look back at the turn ("the first Action you play", "the

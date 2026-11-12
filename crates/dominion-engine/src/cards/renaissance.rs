@@ -259,10 +259,10 @@ impl SetRules for Rules {
         *cost = cost.minus_coins((canal + inventors).min(u8::MAX as usize) as u8);
     }
 
-    fn modify_types(g: &Game, id: CardId, types: &mut Types) {
+    fn modify_types(g: &Game, card: Card, types: &mut Types) {
         if types.contains(Types::ACTION)
             && g.turn_player().is_some_and(|p| has(g, p, Card::Capitalism))
-            && g.card(id).text().contains("+$")
+            && card.text().contains("+$")
         {
             *types |= Types::TREASURE;
         }

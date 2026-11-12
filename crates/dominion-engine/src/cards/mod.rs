@@ -60,8 +60,9 @@ pub(crate) trait SetRules {
     /// [`CardFrame::hold`] defers the step's flow until after a frame it calls instead.
     fn after_step(g: &mut Game, f: &mut CardFrame, before: &Step, flow: &mut Flow) {}
 
-    /// Applies this set's type-changing effects to `id`.
-    fn modify_types(g: &Game, id: CardId, types: &mut Types) {}
+    /// Applies this set's type-changing effects to a card named `card`. Types depend on
+    /// what a card is, never on which copy it is or where.
+    fn modify_types(g: &Game, card: Card, types: &mut Types) {}
 
     /// Changes the vanilla bonuses `p` gets from following `id`'s own instructions.
     fn modify_bonus(g: &Game, p: PlayerId, id: CardId, bonus: &mut Bonus) {}
@@ -220,8 +221,8 @@ macro_rules! sets {
             true $(&& <$module::Rules as SetRules>::can_use_way(g, id, way))*
         }
 
-        pub(crate) fn modify_types(g: &Game, id: CardId, types: &mut Types) {
-            $(<$module::Rules as SetRules>::modify_types(g, id, types);)*
+        pub(crate) fn modify_types(g: &Game, card: Card, types: &mut Types) {
+            $(<$module::Rules as SetRules>::modify_types(g, card, types);)*
         }
 
         pub(crate) fn modify_bonus(g: &Game, p: PlayerId, id: CardId, bonus: &mut Bonus) {

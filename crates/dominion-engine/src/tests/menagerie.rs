@@ -1408,6 +1408,31 @@ fn wayfarer_costs_what_the_last_other_card_gained_this_turn_costs() {
     assert_eq!(g.cost(Card::Wayfarer), Cost::coins(6));
 }
 
+/// Quarry makes Actions cheaper, and the game decides what is an Action: under
+/// Enlightenment a Silver, under Inheritance an Estate. Wayfarer follows their costs.
+#[test]
+fn wayfarer_follows_a_cost_that_depends_on_the_types_a_card_has_now() {
+    let mut g = setup_with_landscapes(
+        &[Card::Wayfarer, Card::Quarry, Card::Village],
+        &[Card::Enlightenment, Card::Inheritance],
+    );
+    g.prophecy = Some((Card::Enlightenment, 0));
+    let village = g.pile_top(g.supply_pile(Card::Village).unwrap()).unwrap();
+    g.move_card(village, Zone::SetAside(P0), crate::game::Pos::Top);
+    g.ext.adventures.inherited.push((P0, Some(village)));
+    hand(&mut g, P0, &[Card::Quarry]);
+    g.start();
+    end_phase(&mut g);
+    play(&mut g, Card::Quarry);
+    g.turn.buys = 3;
+    assert_eq!(g.cost(Card::Silver), Cost::coins(1));
+    buy(&mut g, Card::Silver);
+    assert_eq!(g.cost(Card::Wayfarer), Cost::coins(1));
+    buy(&mut g, Card::Estate);
+    assert_eq!(g.turn().player, P0);
+    assert_eq!(g.cost(Card::Wayfarer), Cost::ZERO);
+}
+
 #[test]
 fn kiln_gains_a_stockpile_before_the_played_one_exiles_itself() {
     let mut g = setup(&[Card::Kiln, Card::Stockpile]);

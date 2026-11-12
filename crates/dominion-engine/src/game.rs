@@ -1086,8 +1086,13 @@ impl Game {
 
     /// The types `id` currently has, with every type-changing effect applied.
     pub fn types(&self, id: CardId) -> Types {
-        let mut types = self.card(id).types();
-        cards::modify_types(self, id, &mut types);
+        self.card_types(self.card(id))
+    }
+
+    /// The types a card named `card` has right now, e.g. the cards of a pile.
+    pub fn card_types(&self, card: Card) -> Types {
+        let mut types = card.types();
+        cards::modify_types(self, card, &mut types);
         types
     }
 

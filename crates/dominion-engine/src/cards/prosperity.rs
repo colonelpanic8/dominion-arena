@@ -245,9 +245,8 @@ impl SetRules for Rules {
         }
     }
 
-    fn modify_cost(g: &Game, card: Card, id: Option<CardId>, cost: &mut Cost) {
-        let is_action = id.map_or(card.is(Types::ACTION), |id| g.is(id, Types::ACTION));
-        if is_action {
+    fn modify_cost(g: &Game, card: Card, _id: Option<CardId>, cost: &mut Cost) {
+        if g.card_types(card).contains(Types::ACTION) {
             let quarries = g
                 .lasting()
                 .iter()
@@ -265,8 +264,8 @@ impl SetRules for Rules {
         }
     }
 
-    fn modify_types(g: &Game, id: CardId, types: &mut Types) {
-        if g.card(id) == Card::Curse && charlatan_in_game(g) {
+    fn modify_types(g: &Game, card: Card, types: &mut Types) {
+        if card == Card::Curse && charlatan_in_game(g) {
             *types |= Types::TREASURE;
         }
     }
