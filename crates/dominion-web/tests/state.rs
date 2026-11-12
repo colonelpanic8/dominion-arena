@@ -280,6 +280,7 @@ fn seat_view(table: &Table, seat: PlayerId, log_from: Option<usize>, version: u6
         table: table.extras(seat),
         undos: table.undos(),
         can_undo: table.can_undo(seat),
+        meta: Default::default(),
     }
 }
 

@@ -1,6 +1,7 @@
 //! The browser client of `dominion serve`: a Dioxus app holding seats through their
 //! tokens, like any other seat holder.
 
+pub mod account;
 pub mod api;
 pub mod app;
 pub mod assets;
