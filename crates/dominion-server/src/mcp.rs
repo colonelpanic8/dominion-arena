@@ -70,6 +70,17 @@ pub struct AnswerParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct StepsParams {
+    pub token: Option<String>,
+    /// Steps separated by `;`: `play A, B x2` (`play A as Way of X` for a Way), `treasures`
+    /// (play every Treasure in hand), `buy A, B`, `pay` (off Debt), `coffers N`,
+    /// `villagers N`, `end` (the phase), `next` (end the turn), `pick A, B` or `pick none`
+    /// (answer any question by card name, option text or option number), `name CARD`.
+    pub steps: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CardParams {
     pub name: String,
 }
@@ -231,6 +242,40 @@ impl Session {
             Ok(()) => self.view_of(&seat, p.format),
             Err(e) => failure(format!("rejected: {e}")),
         })
+    }
+
+    #[tool(
+        description = "Play several decisions at once by naming them: `play Village, Smithy x2; treasures; buy Gold, Silver; next`. Stops at the first step that can't be done (the ones before it stand) or when it's no longer your decision. Returns what happened and your view; then call wait_for_decision for your next decision. Use `answer` for anything steps can't express."
+    )]
+    async fn steps(
+        &self,
+        Parameters(p): Parameters<StepsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        let stepped = match self.hub.steps(&seat, &p.steps) {
+            Ok(s) => s,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        let (mut view, _) = match self.hub.view(&seat) {
+            Ok(v) => v,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        view.since_last_decision.clear();
+        let mut out = vec![];
+        if !stepped.log.is_empty() {
+            out.push("DONE".to_string());
+            out.extend(stepped.log.iter().map(|l| format!("  {l}")));
+        }
+        if let Some((step, why)) = &stepped.stopped {
+            out.push(format!("STOPPED at {step:?}: {why}"));
+        }
+        out.push(dominion_agent::text::render(&view));
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            out.join("\n"),
+        )]))
     }
 
     #[tool(description = "A card's official text, types, cost and set, by name.")]

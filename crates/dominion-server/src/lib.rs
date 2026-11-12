@@ -6,6 +6,7 @@ pub mod config;
 pub mod hub;
 pub mod mcp;
 pub mod solo;
+pub mod steps;
 
 use dominion_agent::GlossaryEntry;
 use rmcp::transport::streamable_http_server::{
