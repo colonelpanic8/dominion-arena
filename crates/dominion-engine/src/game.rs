@@ -1023,6 +1023,12 @@ impl Game {
 
     // ---- Primitive state changes. These never trigger anything; frames do. ----
 
+    pub(crate) fn add_pile(&mut self, pile: Pile) -> PileId {
+        let id = u8::try_from(self.piles.len()).expect("setup bounds how many piles a game has");
+        self.piles.push(pile);
+        PileId(id)
+    }
+
     pub(crate) fn create(&mut self, card: Card, zone: Zone) -> CardId {
         let id = CardId(self.cards.len() as u32);
         self.cards.push(card);

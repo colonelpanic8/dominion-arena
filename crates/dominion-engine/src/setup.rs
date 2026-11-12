@@ -109,7 +109,13 @@ pub enum SetupError {
     ChoiceCount(Card),
     #[error("a setup choice is given for {0}, which makes none in this game")]
     UnusedChoice(Card),
+    #[error("a game has at most {MAX_PILES} piles, Supply and non-Supply")]
+    TooManyPiles,
 }
+
+/// The most piles setup makes: what joins mid-game (Divine Wind's new Kingdom piles and
+/// the piles they need) must still fit in a [`PileId`].
+pub(crate) const MAX_PILES: usize = 128;
 
 /// Number of copies a Victory pile starts with.
 pub(crate) fn victory_pile_size(players: usize) -> usize {
@@ -235,12 +241,18 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         add_pile(&mut g, card, size, true);
     }
     for card in g.config.kingdom.clone() {
+        if g.piles.len() >= MAX_PILES {
+            return Err(SetupError::TooManyPiles);
+        }
         add_kingdom_pile(&mut g, card);
     }
 
     let s = complete(&mut g, Mark::default());
     if let Some(err) = s.error {
         return Err(err);
+    }
+    if g.piles.len() > MAX_PILES {
+        return Err(SetupError::TooManyPiles);
     }
     if let Some(&by) = g
         .config
@@ -447,7 +459,7 @@ pub(crate) fn unused(g: &Game, card: Card) -> bool {
 
 /// Adds the Kingdom pile named `card` to the Supply.
 pub(crate) fn add_kingdom_pile(g: &mut Game, card: Card) -> PileId {
-    let id = PileId(g.piles.len() as u8);
+    let id = PileId(g.piles.len().try_into().expect("setup bounds the piles"));
     if !cards::build_kingdom_pile(g, card) {
         let size = if card.is(Types::VICTORY) {
             victory_pile_size(g.num_players())
@@ -461,8 +473,7 @@ pub(crate) fn add_kingdom_pile(g: &mut Game, card: Card) -> PileId {
 
 /// Adds a pile of `size` copies of `card`.
 pub(crate) fn add_pile(g: &mut Game, card: Card, size: usize, in_supply: bool) -> PileId {
-    let id = PileId(g.piles.len() as u8);
-    g.piles.push(Pile::new(card, in_supply));
+    let id = g.add_pile(Pile::new(card, in_supply));
     for _ in 0..size {
         g.create(card, Zone::Pile(id));
     }
@@ -471,8 +482,7 @@ pub(crate) fn add_pile(g: &mut Game, card: Card, size: usize, in_supply: bool) -
 
 /// Adds a pile named `name` holding `cards`, listed top first.
 pub(crate) fn add_mixed_pile(g: &mut Game, name: Card, cards: &[Card], in_supply: bool) -> PileId {
-    let id = PileId(g.piles.len() as u8);
-    g.piles.push(Pile::new(name, in_supply));
+    let id = g.add_pile(Pile::new(name, in_supply));
     for &card in cards.iter().rev() {
         g.create(card, Zone::Pile(id));
     }
