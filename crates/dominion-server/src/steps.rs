@@ -348,17 +348,25 @@ impl Runner {
         ))
     }
 
-    /// `turn` is the turn the batch last saw the player in. A turn ends by itself when
-    /// nothing is left to do in it, and `next` must not then end the one after.
-    fn step(&mut self, step: &Step, turn: &mut Option<u32>) -> Result<(), String> {
+    /// `seen` is where the batch last saw the player. A turn or phase ends by itself when
+    /// nothing is left to do in it, and `next` or `end` must not then end the one after.
+    fn step(&mut self, step: &Step, seen: &mut Seen) -> Result<(), String> {
         let now = self.view().turn;
-        if matches!(step, Step::Next) && (now.number != *turn || !now.your_turn) {
-            *turn = now.number;
+        if matches!(step, Step::Next) && (now.number != seen.turn || !now.your_turn) {
+            seen.turn = now.number;
+            seen.phase_ended_itself = false;
+            return Ok(());
+        }
+        if matches!(step, Step::End) && std::mem::take(&mut seen.phase_ended_itself) {
             return Ok(());
         }
         let done = self.act(step);
+        let after = self.view().turn;
+        seen.phase_ended_itself = !matches!(step, Step::End | Step::Next | Step::Treasures)
+            && after.number == now.number
+            && after.phase != now.phase;
         if matches!(step, Step::Next) {
-            *turn = self.view().turn.number;
+            seen.turn = after.number;
         }
         done
     }
@@ -477,9 +485,12 @@ impl Runner {
     /// and why. The steps before it stand.
     pub fn run(&mut self, steps: &str) -> Result<Option<(String, String)>, String> {
         let steps = parse(steps)?;
-        let mut turn = self.view().turn.number;
+        let mut seen = Seen {
+            turn: self.view().turn.number,
+            phase_ended_itself: false,
+        };
         for (raw, step) in &steps {
-            if let Err(e) = self.step(step, &mut turn) {
+            if let Err(e) = self.step(step, &mut seen) {
                 if let Some(p) = self.table.deciding().filter(|&p| p != self.seat) {
                     let who = &self.table.names()[p.index()];
                     let why = format!("it is {who}'s decision now; wait for yours");
@@ -498,4 +509,11 @@ impl Runner {
         }
         Ok(None)
     }
+}
+
+/// Where a batch last saw its player: the turn, and whether the last step's phase ended
+/// by itself (playing the last Action moves on to the Buy phase).
+struct Seen {
+    turn: Option<u32>,
+    phase_ended_itself: bool,
 }

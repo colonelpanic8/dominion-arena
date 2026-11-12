@@ -262,6 +262,20 @@ mod tests {
     }
 
     #[test]
+    fn end_after_a_phase_that_ended_itself_does_not_end_the_next() {
+        let mut solo = game(&["Smithy"], 7);
+        solo.run("treasures; buy Smithy; next").unwrap();
+        while !solo.view().you.unwrap().hand.known.contains_key("Smithy") {
+            solo.run("treasures; next").unwrap();
+        }
+        let turn = solo.view().turn.number;
+        let out = solo.run("play Smithy; end; treasures; buy Copper").unwrap();
+        assert_eq!(out.stopped, None);
+        assert!(out.log.iter().any(|l| l.contains("buys Copper")));
+        assert_eq!(solo.view().turn.number, turn.map(|t| t + 1));
+    }
+
+    #[test]
     fn a_step_that_cannot_be_done_stops_the_batch_and_keeps_the_turn() {
         let mut solo = game(&["Village", "Smithy"], 7);
         let out = solo.run("treasures; buy Province; next").unwrap();
