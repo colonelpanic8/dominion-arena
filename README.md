@@ -81,13 +81,25 @@ game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) o
 | Route | Body | Returns |
 | --- | --- | --- |
 | `GET /api/cards` | | every card-shaped object as printed |
-| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume}` |
+| `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume, bannedCards}` |
+| `PUT /api/settings/banned-cards` | `["Witch", ...]` | the settings, after writing `banned_cards` to the settings file (409 when the server has none) |
 | `GET /api/games` | | the games, as `list_games` gives them |
 | `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
+| `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
 | `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them |
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version}`: on connect and after every change |
+
+`POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
+and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
+`sets` (default: every released set) shuffled into one stack fill the kingdom up to ten
+piles, a landscape going to a free slot that takes its kind (`slots`: `{kinds: ["event",
+"landmark", "project", "way", "trait"], optional}`; the default is the rulebook's two: any
+kind, then any but Way, both optional; a slot that isn't optional is always filled). Cards
+in `banned` are never dealt. Creating a game with the result's `kingdom`, `landscapes` and
+`seed` sets up exactly that kingdom, and `sets` alone with a seed deals what
+`POST /api/games` deals from those sets with that seed.
 
 `/assets/` serves the asset cache (`assets_dir`), then the web client's own bundled files
 (`web_dir/assets`), and every other path the built web client (`web_dir`, falling back to
@@ -112,6 +124,7 @@ web_confirm_single = false     # serve: a single card to trash, discard, exile o
 web_background = "inheritance" # serve: the painting under the table, from the asset cache's images/large ("" for none)
 web_sounds = true              # serve: the web client plays dominion.games' sounds (from the asset cache)
 web_volume = 0.5               # serve: their volume, 0.0 to 1.0
+banned_cards = []              # serve: dominion.games' Banned cards list (the web client's Cardlists tab writes it)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
@@ -136,14 +149,27 @@ personal use and are never part of this repository or its package.
 ## The web client
 
 `crates/dominion-web` is a browser client (Dioxus, compiled to wasm) for the same
-server: a lobby to create games and take seats, and a game page that shows a seat's view
+server: a lobby to set up games and take seats, and a game page that shows a seat's view
 and answers its decisions.
 
-The lobby's kingdom builder picks the sets, then either leaves the kingdom to the server
-(ten piles dealt at random from those sets) or fills a tray of ten slots by clicking
-cards, with Randomize filling the unlocked slots. A chosen kingdom is played exactly as
-given, also with fewer or more than ten piles; its landscapes are the ones in the tray,
-plus an Ally or Prophecy the kingdom needs.
+The lobby is laid out and behaves like dominion.games': a tab column on the left
+(Automatch, New Table / My Table, Tables, Cardlists) over its painting. **My Table** holds
+a table's rules until Ready starts a game: the ten Kingdom slots (cards you require, a
+random card from one set, or left to chance) with the kingdom written out under them,
+the landscape slots (each set to the kinds it may be dealt, or emptied), the expansions
+random cards come from, Colonies and Shelters (Random, Yes, No), whether the Banned
+cards list applies, a random seed and a turn limit, and the players. "Select Kingdom
+Cards" opens dominion.games' card selector: the expansions, a search (Enter adds a typed
+list, `smithy, witch, Colonies` as the table writes it), Replay Last Kingdom, and
+Randomize, which deals the random slots at once so the kingdom can be changed before
+Ready. Ready has the server deal the rest (`POST /api/deal`) and creates the game. Where
+dominion.games seats bots, a seat here is for an agent (it joins over MCP with its
+token), for another browser (an empty slot: the seat link), or for this browser too (hot
+seat); the seats played elsewhere get their token, link and `join_game` line beside the
+players. **Automatch**'s Bot Game starts a table at once with 1 to 3 agent seats.
+**Tables** lists this server's games; **Cardlists** edits the Banned cards list, kept in
+the config file. After a game the score page has the table's Ready (another game with
+the same rules), Edit Table and Leave Table, as dominion.games has.
 
 The game page is a table laid out and behaving like dominion.games': player bars and
 the basic piles on the left, the kingdom sorted by cost with the turn player's play row

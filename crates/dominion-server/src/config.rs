@@ -65,6 +65,9 @@ pub struct Config {
     pub web_sounds: Option<bool>,
     /// The web client's sound volume, 0.0 to 1.0 (default 0.5).
     pub web_volume: Option<f32>,
+    /// Cards a table never deals at random while it respects the Banned list (the web
+    /// client's Cardlists tab writes it).
+    pub banned_cards: Option<Vec<String>>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -132,6 +135,28 @@ impl Config {
         }
     }
 
+    /// Sets `key` in the settings file at `path` to `value`, keeping everything else in
+    /// it as it was, and returns the settings it then holds.
+    pub fn write_key(path: &Path, key: &str, value: toml_edit::Item) -> Result<Config, String> {
+        let text = match std::fs::read_to_string(path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        };
+        let mut doc: toml_edit::DocumentMut = text
+            .parse()
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        doc[key] = value;
+        let text = doc.to_string();
+        let config: Config =
+            toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(config)
+    }
+
     /// What `GET /api/settings` serves.
     pub fn web(&self) -> WebSettings {
         let d = WebSettings::default();
@@ -152,6 +177,7 @@ impl Config {
                 .web_volume
                 .filter(|v| v.is_finite())
                 .map_or(d.web_volume, |v| v.clamp(0.0, 1.0)),
+            banned_cards: self.banned_cards.clone().unwrap_or_default(),
         }
     }
 
@@ -219,7 +245,7 @@ mod tests {
         let set = web(
             "web_animations = false\nweb_animation_speed = \"swift\"\nweb_move_kingdom = false\n\
              web_confirm_single = true\nweb_background = \"dark-wood\"\nweb_sounds = false\n\
-             web_volume = 0.2",
+             web_volume = 0.2\nbanned_cards = [\"Witch\"]",
         );
         assert_eq!(
             set,
@@ -230,7 +256,8 @@ mod tests {
                 web_confirm_single: true,
                 web_background: "dark-wood".into(),
                 web_sounds: false,
-                web_volume: 0.2
+                web_volume: 0.2,
+                banned_cards: vec!["Witch".into()],
             }
         );
         assert_eq!(

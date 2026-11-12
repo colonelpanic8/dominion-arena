@@ -33,6 +33,55 @@ pub struct NewGame {
     pub shelters: Option<bool>,
 }
 
+/// `POST /api/deal`: a kingdom dealt by a table's rules without creating a game. Giving
+/// `POST /api/games` the result (`kingdom`, `landscapes`, `seed`) sets up exactly that
+/// kingdom; with only `sets` (or nothing) and the same seed, it is the kingdom
+/// `POST /api/games` would deal from those sets.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DealRequest {
+    /// Number of players, 2 to 6.
+    pub players: u8,
+    /// Sets the random piles and landscapes come from (default: every released set).
+    #[serde(default)]
+    pub sets: Vec<String>,
+    /// Kingdom piles the kingdom must have.
+    #[serde(default)]
+    pub kingdom: Vec<String>,
+    /// One random Kingdom pile from each of these sets, in or out of `sets`.
+    #[serde(default)]
+    pub from_sets: Vec<String>,
+    /// Landscapes the game must have, besides the slots.
+    #[serde(default)]
+    pub landscapes: Vec<String>,
+    /// Slots for random landscapes (default: one of any kind, one of any kind but Way,
+    /// both optional).
+    #[serde(default)]
+    pub slots: Option<Vec<DealSlot>>,
+    /// Cards never dealt at random.
+    #[serde(default)]
+    pub banned: Vec<String>,
+    pub seed: Option<u64>,
+}
+
+/// A place for one random landscape.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DealSlot {
+    /// `event`, `landmark`, `project`, `way` and `trait`: what it may hold.
+    pub kinds: Vec<String>,
+    /// It may stay empty.
+    pub optional: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Dealt {
+    pub kingdom: Vec<String>,
+    pub landscapes: Vec<String>,
+    pub seed: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct SeatToken {
@@ -90,6 +139,8 @@ pub struct WebSettings {
     pub web_sounds: bool,
     /// 0.0 to 1.0.
     pub web_volume: f32,
+    /// dominion.games' Banned cards list: a table that respects it never deals them.
+    pub banned_cards: Vec<String>,
 }
 
 /// dominion.games' animation speeds, slowest first.
@@ -115,6 +166,7 @@ impl Default for WebSettings {
             web_background: "inheritance".into(),
             web_sounds: true,
             web_volume: 0.5,
+            banned_cards: vec![],
         }
     }
 }

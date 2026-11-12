@@ -1,7 +1,7 @@
 use dominion_agent::{AgentDecision, Answer};
 use dominion_engine::{Card, PlayerId};
 use dominion_protocol::api::{
-    AnimationSpeed, CardInfo, Created, GameSummary, SeatInfo, SeatView, WebSettings,
+    AnimationSpeed, CardInfo, Created, Dealt, GameSummary, SeatInfo, SeatView, WebSettings,
 };
 use dominion_server::Options;
 use dominion_server::client::Client;
@@ -659,7 +659,8 @@ async fn settings_serve_the_web_client_settings_without_a_token() {
             "webConfirmSingle": false,
             "webBackground": "inheritance",
             "webSounds": true,
-            "webVolume": 0.25
+            "webVolume": 0.25,
+            "bannedCards": []
         })
     );
     let defaults: WebSettings = start().await.get("/api/settings", None).await.json();
@@ -695,4 +696,128 @@ async fn cards_lists_every_card_as_printed() {
     assert_eq!(card("Province").vp, 6);
     assert!(card("Copper").basic);
     assert_eq!(card("Sir Martin").pile.as_deref(), Some("Knights"));
+}
+
+#[tokio::test]
+async fn a_deal_is_what_a_game_with_the_same_rules_and_seed_is_set_up_with() {
+    let server = start().await;
+    let deal = |body: Value| {
+        let server = &server;
+        async move {
+            let reply = server.post("/api/deal", None, body.to_string()).await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+            reply.json::<Dealt>()
+        }
+    };
+    for seed in [1u64, 7, 42] {
+        let sets = json!(["Base", "Seaside", "Adventures"]);
+        let dealt = deal(json!({"players": 2, "sets": sets, "seed": seed})).await;
+        assert_eq!(dealt.seed, seed);
+        let random = server
+            .create(json!({"players": 2, "sets": sets, "seed": seed}))
+            .await;
+        let random = server.summary(&random.game_id).await;
+        assert_eq!(
+            (&random.kingdom, &random.landscapes),
+            (&dealt.kingdom, &dealt.landscapes)
+        );
+
+        let rules = json!({
+            "players": 3,
+            "sets": ["Base", "Prosperity"],
+            "kingdom": ["Witch", "Smithy"],
+            "fromSets": ["Intrigue"],
+            "banned": ["Village", "Market", "Bank"],
+            "slots": [{"kinds": ["event", "project"], "optional": false}],
+            "seed": seed,
+        });
+        let dealt = deal(rules).await;
+        assert_eq!(&dealt.kingdom[..2], ["Witch", "Smithy"]);
+        assert_eq!(dealt.kingdom.len(), 10);
+        assert!(
+            !dealt
+                .kingdom
+                .iter()
+                .any(|k| ["Village", "Market", "Bank"].contains(&k.as_str()))
+        );
+        let started = server
+            .create(json!({
+                "players": 3,
+                "kingdom": dealt.kingdom,
+                "landscapes": dealt.landscapes,
+                "seed": dealt.seed,
+            }))
+            .await;
+        let started = server.summary(&started.game_id).await;
+        assert_eq!(started.kingdom, dealt.kingdom);
+        assert!(
+            dealt
+                .landscapes
+                .iter()
+                .all(|l| started.landscapes.contains(l))
+        );
+    }
+    let bad = server
+        .post("/api/deal", None, r#"{"players": 2, "kingdom": ["Gold"]}"#)
+        .await;
+    assert!(bad.error(StatusCode::BAD_REQUEST).contains("Kingdom pile"));
+    let bad = server
+        .post(
+            "/api/deal",
+            None,
+            r#"{"players": 2, "slots": [{"kinds": ["ally"], "optional": true}]}"#,
+        )
+        .await;
+    assert!(bad.error(StatusCode::BAD_REQUEST).contains("slot kind"));
+}
+
+#[tokio::test]
+async fn the_banned_list_is_written_to_the_settings_file_and_served() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("dominion/config.toml");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "# mine\nweb_sounds = false   # quiet\n").unwrap();
+    let server = start_with(Options {
+        config_file: Some(file.clone()),
+        ..Options::default()
+    })
+    .await;
+    let put = |body: &str| {
+        let req = server
+            .http
+            .put(format!("{}/api/settings/banned-cards", server.base))
+            .header("content-type", "application/json")
+            .body(body.to_string());
+        server.send(req, None)
+    };
+    let reply = put(r#"["witch", "Mountebank", "Witch", "Delve"]"#).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    let settings: WebSettings = server.get("/api/settings", None).await.json();
+    assert_eq!(settings.banned_cards, ["Witch", "Mountebank", "Delve"]);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        text.starts_with("# mine\nweb_sounds = false   # quiet\n"),
+        "{text}"
+    );
+    let config = dominion_server::config::Config::load(Some(&file)).unwrap();
+    assert_eq!(config.web().banned_cards, ["Witch", "Mountebank", "Delve"]);
+
+    assert!(
+        put(r#"["Copper"]"#)
+            .await
+            .error(StatusCode::BAD_REQUEST)
+            .contains("Copper")
+    );
+    let nowhere = start().await;
+    let reply = nowhere
+        .send(
+            nowhere
+                .http
+                .put(format!("{}/api/settings/banned-cards", nowhere.base))
+                .header("content-type", "application/json")
+                .body("[]"),
+            None,
+        )
+        .await;
+    reply.error(StatusCode::CONFLICT);
 }

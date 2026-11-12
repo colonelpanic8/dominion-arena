@@ -43,6 +43,9 @@ pub fn StatusBar(
     g: Rc<Geometry>,
     ui: Option<Rc<Ui>>,
     error: Option<String>,
+    /// The first frame: "Your starting cards:".
+    #[props(default)]
+    starting: bool,
 ) -> Element {
     let ctx = use_table();
     let cards = use_cards();
@@ -66,7 +69,9 @@ pub fn StatusBar(
     let potions = s.potions.unwrap_or(0);
     let debt = s.debt.unwrap_or(0);
     let (coffers, villagers, favors) = (token("coffers"), token("villagers"), token("favors"));
-    let ticker: Element = if !s.running {
+    let ticker: Element = if starting {
+        rsx! { span { "data-prompt": "starting", "Your starting cards:" } }
+    } else if !s.running {
         rsx! { "The game has ended." }
     } else if let Some(u) = ui.clone() {
         let text = wording::prompt(&u.decision, &cards);

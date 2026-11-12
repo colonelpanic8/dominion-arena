@@ -3,7 +3,8 @@
 use crate::platform::{self, encode};
 use dominion_protocol::Answer;
 use dominion_protocol::api::{
-    CardInfo, Change, Created, GameSummary, NewGame, SeatInfo, SeatView, WebSettings,
+    CardInfo, Change, Created, DealRequest, Dealt, GameSummary, NewGame, SeatInfo, SeatView,
+    WebSettings,
 };
 use std::fmt;
 
@@ -48,6 +49,16 @@ pub async fn games() -> Result<Vec<GameSummary>> {
 
 pub async fn create_game(req: &NewGame) -> Result<Created> {
     imp::post("/api/games", None, req).await
+}
+
+/// The kingdom a table's rules deal, without creating a game.
+pub async fn deal(req: &DealRequest) -> Result<Dealt> {
+    imp::post("/api/deal", None, req).await
+}
+
+/// Replaces the Banned cards list in the server's settings file.
+pub async fn set_banned_cards(cards: &[String]) -> Result<WebSettings> {
+    imp::put("/api/settings/banned-cards", &cards).await
 }
 
 pub async fn seat(token: &str) -> Result<SeatInfo> {
@@ -160,6 +171,10 @@ mod imp {
         .await
     }
 
+    pub async fn put<T: DeserializeOwned>(url: &str, body: &impl Serialize) -> Result<T> {
+        send(Request::put(url).json(body).map_err(unreachable)?).await
+    }
+
     /// Reads one connection's events; returns when it drops.
     pub async fn follow(
         url: &str,
@@ -204,6 +219,10 @@ mod imp {
         _token: Option<&str>,
         _body: &impl Serialize,
     ) -> Result<T> {
+        unavailable()
+    }
+
+    pub async fn put<T: DeserializeOwned>(_url: &str, _body: &impl Serialize) -> Result<T> {
         unavailable()
     }
 

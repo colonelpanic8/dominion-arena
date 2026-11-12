@@ -1,6 +1,6 @@
 //! Helpers shared by the tests that drive real games.
 
-use dominion_engine::{Card, Kind};
+use dominion_engine::Card;
 use dominion_protocol::api::{CardCost, CardInfo};
 use dominion_web::cards::CardDb;
 
@@ -15,12 +15,7 @@ pub fn card_db() -> CardDb {
                     name: d.name.into(),
                     set: d.set.to_string(),
                     types: c.type_names().into_iter().map(String::from).collect(),
-                    kind: if c.kind() == Kind::Card {
-                        "card"
-                    } else {
-                        "other"
-                    }
-                    .into(),
+                    kind: format!("{:?}", c.kind()).to_lowercase(),
                     cost: d.cost.map(|c| CardCost {
                         coins: c.coins.into(),
                         potions: c.potions.into(),
@@ -34,7 +29,7 @@ pub fn card_db() -> CardDb {
                     kingdom: d.kingdom,
                     basic: d.basic,
                     removed: d.removed,
-                    pile: None,
+                    pile: d.pile.map(|p| p.name().into()),
                     text: d.text.into(),
                 }
             })

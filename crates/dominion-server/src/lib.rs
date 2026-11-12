@@ -32,6 +32,8 @@ pub struct Options {
     pub web_dir: Option<PathBuf>,
     /// What `GET /api/settings` tells the web client.
     pub web: dominion_protocol::api::WebSettings,
+    /// The settings file the web client's edits are written to.
+    pub config_file: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -42,6 +44,7 @@ impl Default for Options {
             assets_dir: None,
             web_dir: None,
             web: Default::default(),
+            config_file: None,
         }
     }
 }

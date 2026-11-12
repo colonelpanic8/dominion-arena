@@ -1,8 +1,12 @@
 //! The games a server hosts, and the seat tokens that let a client act for a seat.
 
 use dominion_agent::{AgentView, Answer, AnswerError, Table};
-use dominion_engine::{Card, GameConfig, PlayerId, Set};
-pub use dominion_protocol::api::{Created, GameSummary, NewGame, SeatToken, SeatView};
+use dominion_engine::{
+    Card, DealRules, Game, GameConfig, LandscapeSlot, PlayerId, SLOT_KINDS, Set,
+};
+pub use dominion_protocol::api::{
+    Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
+};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -252,6 +256,72 @@ pub fn config(req: &NewGame) -> Result<GameConfig, HubError> {
     config.colonies = req.colonies;
     config.shelters = req.shelters;
     Ok(config)
+}
+
+/// The kingdom `req`'s rules deal, checked by setting a game up with it.
+pub fn deal(req: &DealRequest) -> Result<Dealt, HubError> {
+    let seed = req.seed.unwrap_or_else(|| rand::rng().random());
+    let cards = |names: &[String], what: &str, want: fn(Card) -> bool| {
+        names
+            .iter()
+            .map(|n| card(n, what, want))
+            .collect::<Result<Vec<_>, _>>()
+    };
+    let sets = |names: &[String]| names.iter().map(|n| set(n)).collect::<Result<Vec<_>, _>>();
+    let slots = match &req.slots {
+        None => None,
+        Some(slots) => Some(
+            slots
+                .iter()
+                .map(|s| {
+                    let mut kinds = 0u8;
+                    for k in &s.kinds {
+                        let i = SLOT_KINDS
+                            .iter()
+                            .position(|kind| format!("{kind:?}").eq_ignore_ascii_case(k))
+                            .ok_or_else(|| {
+                                bad(format!(
+                                    "{k:?} is not a landscape slot kind; those are event, \
+                                     landmark, project, way and trait"
+                                ))
+                            })?;
+                        kinds |= 1 << i;
+                    }
+                    Ok(LandscapeSlot {
+                        kinds,
+                        optional: s.optional,
+                    })
+                })
+                .collect::<Result<Vec<_>, HubError>>()?,
+        ),
+    };
+    let mut rules = DealRules {
+        sets: sets(&req.sets)?,
+        kingdom: cards(&req.kingdom, "Kingdom pile", |c| c.def().kingdom)?,
+        from_sets: sets(&req.from_sets)?,
+        landscapes: cards(&req.landscapes, "landscape", |c| c.kind().is_landscape())?,
+        slots,
+        banned: cards(&req.banned, "card", |_| true)?,
+    };
+    if rules.sets.is_empty() {
+        rules.sets = dealable_sets();
+    }
+    let config = GameConfig::deal(req.players, &rules, seed);
+    let dealt = Dealt {
+        kingdom: config
+            .kingdom
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect(),
+        landscapes: config
+            .landscapes
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect(),
+        seed,
+    };
+    engine(|| Game::new(config))?.map_err(|e| bad(e.to_string()))?;
+    Ok(dealt)
 }
 
 const MAX_NAME_CHARS: usize = 32;
