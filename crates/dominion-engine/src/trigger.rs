@@ -10,7 +10,7 @@
 use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose, Response};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::Zone;
+use crate::game::{Scratch, Zone};
 use crate::{Card, CardId, Cost, Game, PlayerId};
 use serde::{Deserialize, Serialize};
 
@@ -399,13 +399,23 @@ impl Window {
 }
 
 /// Whether resolving `a` or `b` makes no difference: the same ability with the same data,
-/// from lasting effects (if any) holding the same data. Which physical card it is on does
+/// from lasting effects (if any) holding the same data, up to cards no one can tell apart
+/// (the same card, printed and now, in the same zone). Which physical card it is on does
 /// not matter.
 fn same_effect(g: &Game, a: &Trigger, b: &Trigger) -> bool {
+    let look = |&c: &CardId| (g.printed(c), g.card(c), g.zone(c));
     let lasting = |t: &Trigger| {
         t.lasting
             .and_then(|id| g.lasting().iter().find(|l| l.id == id))
-            .map(|l| (l.card, &l.data))
+            .map(|l| {
+                let rest = Scratch {
+                    cards: vec![],
+                    pick: None,
+                    ..l.data.clone()
+                };
+                let cards: Vec<_> = l.data.cards.iter().map(look).collect();
+                (l.card, rest, cards, l.data.pick.as_ref().map(look))
+            })
     };
     (a.card, a.ability, a.data, a.optional) == (b.card, b.ability, b.data, b.optional)
         && lasting(a) == lasting(b)
