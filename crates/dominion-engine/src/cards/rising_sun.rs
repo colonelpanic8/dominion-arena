@@ -514,15 +514,11 @@ impl SetRules for Rules {
 // ---- Helpers ----
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 /// This turn's lasting effects of `card` owned by `p`.
@@ -751,11 +747,6 @@ fn biding_time_set_aside(g: &mut Game, p: PlayerId) {
     let cards = g.hand(p).to_vec();
     for &c in &cards {
         g.move_card(c, Zone::SetAside(p), Pos::Top);
-        g.emit(Event::Moved {
-            player: p,
-            card: None,
-            to: Zone::SetAside(p),
-        });
     }
     let data = Scratch {
         cards,

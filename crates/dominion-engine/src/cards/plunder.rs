@@ -563,15 +563,11 @@ fn in_mask(mask: i32, p: PlayerId) -> bool {
 }
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 fn coins(g: &mut Game, p: PlayerId, n: u32) {
@@ -724,11 +720,6 @@ fn default_replaced(cards: impl Iterator<Item = Card> + Clone) -> Card {
 /// Asks `p` for a card from their hand to set aside face down.
 fn set_aside_hidden(g: &mut Game, c: CardId, p: PlayerId) {
     g.move_card(c, Zone::SetAside(p), Pos::Top);
-    g.emit(Event::Moved {
-        player: p,
-        card: None,
-        to: Zone::SetAside(p),
-    });
 }
 
 fn taskmaster_watch(g: &mut Game, p: PlayerId, source: Option<CardId>, keeps: Vec<CardId>) {
@@ -1086,11 +1077,6 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let c = f.this();
             if g.zone(c) == Zone::InPlay(p) {
                 g.move_card(c, Zone::Deck(p), Pos::Bottom);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: Some(Card::Jewels),
-                    to: Zone::Deck(p),
-                });
             }
             Flow::done()
         }
@@ -1896,7 +1882,7 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
             g.shuffle(&mut deck);
             let mixed = deck.clone();
-            g.record(|| Trace::Mixed { cards: mixed });
+            g.mixed(mixed);
             g.players[p.index()].deck = deck;
             for _ in 0..5 {
                 let Some(&top) = g.players[p.index()].deck.last() else {
@@ -2403,11 +2389,6 @@ fn pilgrim(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             for c in input.cards() {
                 g.move_card(c, Zone::Deck(f.player), Pos::Top);
-                g.emit(Event::Moved {
-                    player: f.player,
-                    card: None,
-                    to: Zone::Deck(f.player),
-                });
             }
             Flow::done()
         }
@@ -2663,11 +2644,6 @@ fn bury(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     for c in input.cards() {
         if g.zone(c) == Zone::Discard(p) {
             g.move_card(c, Zone::Deck(p), Pos::Bottom);
-            g.emit(Event::Moved {
-                player: p,
-                card: None,
-                to: Zone::Deck(p),
-            });
         }
     }
     Flow::done()
@@ -2755,8 +2731,8 @@ fn launch(g: &mut Game, f: &mut CardFrame) -> Flow {
             Flow::Call(Frame::draw(p, 1))
         }
         _ => {
-            g.turn.actions += 1;
-            g.turn.buys += 1;
+            g.add_actions(p, 1);
+            g.add_buys(p, 1);
             Flow::done()
         }
     }

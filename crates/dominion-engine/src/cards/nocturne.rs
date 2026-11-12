@@ -548,15 +548,11 @@ fn take_state(g: &mut Game, p: PlayerId, state: Card) {
 }
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 fn plus_coins(g: &mut Game, p: PlayerId, n: u32) {
@@ -587,11 +583,6 @@ fn exchange(g: &mut Game, p: PlayerId, c: CardId, card: Card) -> bool {
         return false;
     }
     g.move_card(new, Zone::Discard(p), Pos::Top);
-    g.emit(Event::Moved {
-        player: p,
-        card: Some(card),
-        to: Zone::Discard(p),
-    });
     true
 }
 
@@ -1406,11 +1397,6 @@ fn crypt(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             for &c in &chosen {
                 g.move_card(c, Zone::SetAside(p), Pos::Top);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: None,
-                    to: Zone::SetAside(p),
-                });
             }
             let data = Scratch {
                 cards: chosen,

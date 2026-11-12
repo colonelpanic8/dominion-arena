@@ -217,6 +217,12 @@ impl Window {
     }
 
     pub(crate) fn resume(&mut self, g: &mut Game, input: Input) -> Flow {
+        if let Input::Return(value) = &input {
+            g.end_resolving();
+            if matches!(value, Value::Bool(true)) && !self.result {
+                self.log_unaffected(g);
+            }
+        }
         match input {
             Input::Response(Response::Options(chosen)) => match chosen.first() {
                 Some(Opt::Trigger(i)) => {
@@ -330,8 +336,29 @@ impl Window {
         self.asked.iter().map(|(_, t)| t)
     }
 
-    fn run(&mut self, g: &Game, (i, t): (usize, Trigger)) -> Flow {
+    /// The trigger that just resolved made the target of an Attack unaffected.
+    fn log_unaffected(&self, g: &mut Game) {
+        let Some((i, t)) = self.done.last() else {
+            return;
+        };
+        if let Occasion::Attack { card, target, .. } = self.occs[*i] {
+            let attack = g.card(card);
+            g.emit(crate::Event::Unaffected {
+                player: target,
+                attack,
+                by: t.card,
+            });
+        }
+    }
+
+    fn run(&mut self, g: &mut Game, (i, t): (usize, Trigger)) -> Flow {
         self.done.push((i, t.clone()));
+        // A label can say what only its owner knows.
+        let header = t.label.is_none().then_some(crate::Event::Resolved {
+            player: t.owner,
+            card: t.card,
+        });
+        g.begin_resolving(header);
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
         f.occ = Some(self.occs[i].clone());
         f.lasting = t.lasting;

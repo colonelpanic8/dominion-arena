@@ -832,15 +832,11 @@ fn goto(f: &mut CardFrame, next: u8) -> Flow {
 }
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 fn add_vp(g: &mut Game, p: PlayerId, n: i32) {
@@ -1026,11 +1022,6 @@ fn archive(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let cards = input.cards();
             for &c in &cards {
                 g.move_card(c, Zone::SetAside(p), Pos::Top);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: None,
-                    to: Zone::SetAside(p),
-                });
             }
             if cards.is_empty() {
                 return Flow::done();
@@ -1501,11 +1492,6 @@ fn haunted_castle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 for &c in chosen.iter().rev() {
                     if g.zone(c) == Zone::Hand(other) {
                         g.move_card(c, Zone::Deck(other), Pos::Top);
-                        g.emit(Event::Moved {
-                            player: other,
-                            card: None,
-                            to: Zone::Deck(other),
-                        });
                     }
                 }
                 f.s.i += 1;

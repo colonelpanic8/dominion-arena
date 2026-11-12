@@ -475,15 +475,11 @@ fn in_mask(mask: i32, p: PlayerId) -> bool {
 }
 
 fn plus_actions(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.actions += n;
-    }
+    g.add_actions(p, n);
 }
 
 fn plus_buys(g: &mut Game, p: PlayerId, n: u32) {
-    if p == g.turn.player {
-        g.turn.buys += n;
-    }
+    g.add_buys(p, n);
 }
 
 fn favors(g: &Game, p: PlayerId) -> u32 {
@@ -550,11 +546,6 @@ fn top_of(g: &Game, card: Card) -> Option<PileId> {
 /// Puts `id` on top of `p`'s deck without revealing it.
 fn top_deck_hidden(g: &mut Game, id: CardId, p: PlayerId) {
     g.move_card(id, Zone::Deck(p), Pos::Top);
-    g.emit(Event::Moved {
-        player: p,
-        card: None,
-        to: Zone::Deck(p),
-    });
 }
 
 /// Whether rotating `pile` would change it: it holds a card other than its top run.
@@ -1346,11 +1337,6 @@ fn start(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let this = f.this();
             if g.zone(this) == Zone::InPlay(p) {
                 g.put_in_hand(this, p);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: Some(Card::Conjurer),
-                    to: Zone::Hand(p),
-                });
             }
             Flow::done()
         }
@@ -2301,11 +2287,6 @@ fn sibyl(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             for c in input.cards() {
                 g.move_card(c, Zone::Deck(p), Pos::Bottom);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: None,
-                    to: Zone::Deck(p),
-                });
             }
             Flow::done()
         }

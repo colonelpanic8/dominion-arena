@@ -2140,6 +2140,7 @@ fn launch_returns_to_the_action_phase_once_per_turn() {
     play(&mut g, Card::Copper);
     buy_event(&mut g, Card::Launch);
     assert_eq!(phase(&g), Some(Phase::Action));
+    assert!(g.log().contains(&Event::ReturnedToAction { player: P0 }));
     assert_eq!(hand_kinds(&g, P0), [Card::Village]);
     assert_eq!((g.turn().actions, g.turn().buys), (2, 1));
     play(&mut g, Card::Village);
@@ -3295,15 +3296,7 @@ fn bury_does_not_reveal_the_buried_card() {
     buy_event(&mut g, Card::Bury);
     choose(&mut g, &[buried]);
     assert_eq!(g.player(P0).deck.first(), Some(&buried));
-    let named = |e: &Event| {
-        matches!(
-            e,
-            Event::Moved {
-                card: Some(Card::Gold),
-                ..
-            }
-        )
-    };
+    let named = |e: &Event| matches!(e, Event::Moved { cards, .. } if cards.contains(&Card::Gold));
     assert!(!g.log().iter().any(named));
     let shown = Trace::Shown {
         card: buried,

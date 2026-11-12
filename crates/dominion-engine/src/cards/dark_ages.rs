@@ -424,11 +424,6 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         Card::Fortress => {
             if g.zone(this) == Zone::Trash {
                 g.put_in_hand(this, p);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: Some(Card::Fortress),
-                    to: Zone::Hand(p),
-                });
             }
             Flow::done()
         }
@@ -565,11 +560,6 @@ fn hermit_exchange(g: &mut Game, f: &mut CardFrame) {
     }
     let top = g.pile_top(madman).expect("checked above");
     g.move_card(top, Zone::Discard(p), Pos::Top);
-    g.emit(Event::Moved {
-        player: p,
-        card: Some(Card::Madman),
-        to: Zone::Discard(p),
-    });
 }
 
 fn altar(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

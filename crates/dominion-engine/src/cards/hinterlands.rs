@@ -175,11 +175,6 @@ impl SetRules for Rules {
                     });
                     if g.return_to_pile(card) {
                         g.move_card(silver, Zone::Discard(f.player), Pos::Top);
-                        g.emit(Event::Moved {
-                            player: f.player,
-                            card: Some(Card::Silver),
-                            to: Zone::Discard(f.player),
-                        });
                     }
                 }
                 Flow::done()
@@ -271,8 +266,8 @@ impl SetRules for Rules {
                 }
                 _ => {
                     let plays = g.turn.played_count(f.player, Card::Crossroads);
-                    if plays == 1 && f.player == g.turn.player {
-                        g.turn.actions += 3;
+                    if plays == 1 {
+                        g.add_actions(f.player, 3);
                     }
                     Flow::done()
                 }

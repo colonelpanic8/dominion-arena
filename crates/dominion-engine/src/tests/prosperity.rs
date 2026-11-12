@@ -834,6 +834,11 @@ fn watchtower_puts_a_bought_card_onto_the_deck() {
     mode(&mut g, 1);
     assert_eq!(deck_kinds(&g, P0), [Card::Silver]);
     assert!(g.player(P0).discard.is_empty());
+    // The card was just gained in public.
+    assert!(g.log().contains(&Event::TopDecked {
+        player: P0,
+        card: Some(Card::Silver)
+    }));
 }
 
 #[test]

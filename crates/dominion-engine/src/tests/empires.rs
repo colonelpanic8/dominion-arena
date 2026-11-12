@@ -1168,6 +1168,17 @@ fn villa_bought_goes_to_hand_and_returns_to_the_action_phase() {
     buy(&mut g, Card::Villa);
     assert_eq!(phase(&g), Phase::Action);
     assert_eq!(g.turn().actions, 2);
+    let order = [
+        moved(P0, Zone::Discard(P0), Zone::Hand(P0), &[Card::Villa], 1),
+        Event::Bonus {
+            player: P0,
+            actions: 1,
+            buys: 0,
+            coins: 0,
+        },
+        Event::ReturnedToAction { player: P0 },
+    ];
+    assert!(logged_in_order(&g, &order));
     // Keep an Action card in hand for Arena.
     let village = g.create(Card::Village, Zone::Hand(P0));
     play(&mut g, Card::Villa);

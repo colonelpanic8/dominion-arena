@@ -1952,9 +1952,7 @@ fn check_set_aside(g: &Game, m: &Memory, flags: &mut Flags) {
                 continue;
             }
             let detail = || format!("P{}'s {c:?}; lasting {:?}; {}", p + 1, g.lasting(), ctx(g));
-            // A Cargo Ship trashed in Clean-up (Improve) sets its card aside and ends
-            // with no decision in between.
-            if m.held.contains(&c) || g.cards.contains(&Card::CargoShip) {
+            if m.held.contains(&c) {
                 flags.audit(
                     format!("set-aside-card-whose-effect-ended:{}", g.printed(c)),
                     detail,
@@ -2282,9 +2280,22 @@ fn check_step(g: &Game, tracker: &Tracker, events: &[Event], trace: &[Trace], fl
             Event::Revealed { card, .. } => (*card, "Revealed"),
             Event::SetAside { card, .. } => (*card, "SetAside"),
             Event::Discarded { card, .. } => (*card, "Discarded"),
-            Event::Moved {
-                card: Some(card), ..
-            } => (*card, "Moved"),
+            Event::Moved { cards, .. } => {
+                for &card in cards {
+                    named.push(card);
+                    let public = shown
+                        .iter()
+                        .chain(&moved_public)
+                        .any(|&c| names(g, c).contains(&card));
+                    if card.kind() == Kind::Card && !public {
+                        flags.audit(
+                            format!("event-names-a-card-the-trace-never-shows:Moved:{last_played}"),
+                            || format!("{e:?}; {}", ctx(g)),
+                        );
+                    }
+                }
+                continue;
+            }
             Event::Played { card, .. }
             | Event::Gained { card, .. }
             | Event::Trashed { card, .. }
@@ -2870,7 +2881,7 @@ struct Memory {
 }
 
 /// Checks that compare a decision with the one before it.
-fn check_progress(g: &Game, m: &mut Memory, flags: &mut Flags) {
+fn check_progress(g: &Game, trace: &[Trace], m: &mut Memory, flags: &mut Flags) {
     if g.card_count() != m.cards {
         if g.piles().len() == m.piles && m.cards != 0 && !g.has_landscape(Card::Inherited) {
             flags.bug("cards-created-mid-game", || {
@@ -3006,6 +3017,21 @@ fn check_progress(g: &Game, m: &mut Memory, flags: &mut Flags) {
     for l in g.lasting() {
         m.held
             .extend(l.data.cards.iter().chain(&l.data.pick).copied());
+    }
+    // An effect that ended with a turn since the last decision may have held what it set
+    // aside then: a replay whose Throne Room never entered play (Captain's, replayed by
+    // Daimyo), a Cargo Ship trashed in Clean-up.
+    let mut aside = vec![];
+    for entry in trace {
+        match entry {
+            Trace::Moved {
+                card,
+                to: Zone::SetAside(_),
+                ..
+            } => aside.push(*card),
+            Trace::Turn { .. } => m.held.extend(aside.drain(..)),
+            _ => {}
+        }
     }
     if matches!(
         g.pending().map(|d| &d.kind),
@@ -3432,7 +3458,7 @@ fn drive(seed: u64, plan: Plan, report: &mut Report) {
         check_decision(&g, &d, flags);
         check_against_text(&g, &d, flags);
         check_invariants(&g, flags);
-        check_progress(&g, &mut memory, flags);
+        check_progress(&g, &trace, &mut memory, flags);
 
         if rng.random_bool(0.02) {
             let before = json(&g);
