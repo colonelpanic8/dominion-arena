@@ -298,7 +298,9 @@ scripts. A card script is `fn(&mut Game, &mut CardFrame, Input) -> Flow` matchin
 - Use frames for anything cards react to: `Frame::draw / reveal / look / gain /
   gain_card / trash / discard / play / receive / shuffle`. Primitive helpers
   (`g.move_card`, `top_deck`, `put_in_hand`, `set_aside`, `put_on_mat`,
-  `return_to_pile`, `add_coins`) trigger nothing.
+  `return_to_pile`, `add_coins`) trigger nothing. A card such a helper takes from a
+  Supply pile (Exiled, set aside) is followed at once by `cards::left_supply`, the
+  window that answers it (Search on the pile it emptied, Invest).
 - "When you discard ... from play" abilities answer `DiscardFromPlay { player }` for the
   cards in `g.leaving_play(player)`: in Clean-up the cards nothing keeps in play (each
   player's, not only the turn's), at other times the cards given to

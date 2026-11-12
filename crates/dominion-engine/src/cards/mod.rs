@@ -413,6 +413,13 @@ pub(crate) fn looking(g: &Game, p: PlayerId, cards: &[CardId]) -> Vec<CardId> {
         .collect()
 }
 
+/// The window of `card` having left a Supply pile other than by a gain or trash: call it
+/// right after such a move, so that what answers it (Search on a pile it emptied) does so
+/// at once.
+pub(crate) fn left_supply(player: PlayerId, card: CardId) -> Flow {
+    Flow::Call(Frame::window(Occasion::LeaveSupply { player, card }))
+}
+
 /// Puts back on `p`'s deck those of `cards` (top first) still taken off it by a look or
 /// reveal.
 pub(crate) fn put_back(g: &mut Game, p: PlayerId, cards: &[CardId]) {

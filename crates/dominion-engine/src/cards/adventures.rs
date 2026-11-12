@@ -2,8 +2,8 @@
 //! Adventures tokens.
 
 use super::{
-    CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, mode_mask, put_back,
-    turn_durations,
+    CardFrame, Hook, SetRules, due_durations, duration_trigger, left_supply, looking, mode_mask,
+    put_back, turn_durations,
 };
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
@@ -1926,7 +1926,7 @@ fn inheritance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             f.pc = 1;
             f.ask_pile(piles, false, Purpose::SetAside)
         }
-        _ => {
+        1 => {
             let Some(top) = input.pile().and_then(|pile| g.pile_top(pile)) else {
                 return Flow::done();
             };
@@ -1936,8 +1936,10 @@ fn inheritance(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let st = &mut g.ext.adventures.inherited;
             st.retain(|&(q, _)| q != p);
             st.push((p, Some(top)));
-            Flow::done()
+            f.pc = 2;
+            left_supply(p, top)
         }
+        _ => Flow::done(),
     }
 }
 
