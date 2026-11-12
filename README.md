@@ -146,7 +146,9 @@ The game page is a table laid out like dominion.games': opponents along the top,
 Supply with the play area under it, your hand, and the log on the right. The cards and
 piles you may choose glow and are clicked where they lie; other choices appear in a tray
 or as buttons. Hovering over a card or right-clicking it shows it large; Enter confirms,
-Escape clears, E ends a phase and T plays your Treasures. A Plain toggle shows the same
+Escape clears, E ends a phase and T plays your Treasures. Cards are seen moving between
+zones, as inferred from the log and the change in the view (`web_animations`,
+`web_animation_ms`; none with `prefers-reduced-motion`). A Plain toggle shows the same
 game as text and buttons.
 
 The client keeps the seat tokens it holds in the browser's localStorage; a seat link

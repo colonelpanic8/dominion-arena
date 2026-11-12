@@ -4,6 +4,7 @@
 pub mod board;
 pub mod interaction;
 pub mod logfmt;
+pub mod moves;
 pub mod plain;
 pub mod state;
 pub mod table;
@@ -59,6 +60,7 @@ async fn refresh(ctx: Live, token: &str) {
         }
         match result {
             Ok(sv) => {
+                table::before_change();
                 if state.write().apply(sv) == Applied::Done {
                     break;
                 }
@@ -102,6 +104,7 @@ async fn send_answer(ctx: Live, answer: Answer) {
     }
     let stale = match result {
         Ok(sv) => {
+            table::before_change();
             let mut st = state.write();
             st.answering = false;
             st.apply(sv) == Applied::Refetch

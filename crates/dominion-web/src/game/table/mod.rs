@@ -6,6 +6,7 @@
 
 pub mod layout;
 pub mod model;
+mod motion;
 mod pieces;
 mod players;
 mod prompt;
@@ -22,6 +23,7 @@ use crate::platform;
 use dioxus::prelude::*;
 use dominion_protocol::{AgentDecision, Answer};
 pub use model::Spot;
+pub use motion::before_change;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -109,6 +111,9 @@ pub struct TableCtx {
     pub sel: Signal<Sel>,
     pub hover: Signal<Option<Hover>>,
     hover_seq: Signal<u64>,
+    /// After a click, no preview until the pointer moves: things slide under a still
+    /// pointer and would pop one up.
+    hover_quiet: Signal<bool>,
     pub popup: Signal<Option<Popup>>,
     run: Signal<Option<Run>>,
     cards: Signal<Rc<crate::cards::CardDb>>,
@@ -271,6 +276,9 @@ impl TableCtx {
     }
 
     pub fn hover_enter(&self, name: &str, x: f64, y: f64) {
+        if *self.hover_quiet.peek() {
+            return;
+        }
         let mut seq = self.hover_seq;
         let n = *seq.peek() + 1;
         seq.set(n);
@@ -302,6 +310,22 @@ impl TableCtx {
             y,
             shown: true,
         }));
+    }
+
+    /// A click: the preview goes, and stays away until the pointer moves.
+    pub fn clicked(&self) {
+        let mut q = self.hover_quiet;
+        if !*q.peek() {
+            q.set(true);
+        }
+        self.hover_leave();
+    }
+
+    pub fn pointer_moved(&self) {
+        let mut q = self.hover_quiet;
+        if *q.peek() {
+            q.set(false);
+        }
     }
 
     pub fn hover_leave(&self) {
@@ -479,6 +503,7 @@ pub fn TableGame(controls: Element) -> Element {
         sel: Signal::new(Sel::default()),
         hover: Signal::new(None),
         hover_seq: Signal::new(0),
+        hover_quiet: Signal::new(false),
         popup: Signal::new(None),
         run: Signal::new(None),
         cards,
@@ -510,6 +535,7 @@ pub fn TableGame(controls: Element) -> Element {
         }
     });
 
+    let flight = motion::use_motion(board_memo, game);
     let mut boxes = use_signal(Boxes::guess);
     use_future(move || async move {
         let mut eval = document::eval(MEASURE_JS);
@@ -600,6 +626,8 @@ pub fn TableGame(controls: Element) -> Element {
                     ctx.close();
                 }
             },
+            onmousedown: move |_| ctx.clicked(),
+            onmousemove: move |_| ctx.pointer_moved(),
             div { class: "dt-main",
                 players::Opponents { opponents: b.opponents.clone() }
                 div { class: "dt-middle", style: "{mid_style}",
@@ -637,7 +665,8 @@ pub fn TableGame(controls: Element) -> Element {
                 }
             }
             aside { class: "dt-side",
-                div { class: "dt-controls", {controls} }
+                div { class: "dt-controls", {controls}
+                }
                 players::YouPanel { board: b.clone(), ui: ui_now.clone(), sel: sel.clone() }
                 side::More { board: b.clone() }
                 side::Log { entries: log, names }
@@ -646,6 +675,7 @@ pub fn TableGame(controls: Element) -> Element {
                 side::GameOver { board: b.clone() }
             }
             pieces::HoverLayer {}
+            motion::GhostPool { flight: flight() }
         }
     }
 }
