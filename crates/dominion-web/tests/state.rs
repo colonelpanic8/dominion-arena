@@ -1,9 +1,12 @@
 //! The game page's model against real games: the log it accumulates and the answers it
 //! builds from selections, checked by the server's own `Table`.
 
+mod common;
+
+use common::card_db;
 use dominion_agent::Table;
-use dominion_engine::{Card, GameConfig, Kind, PlayerId, Response, Set};
-use dominion_protocol::api::{CardCost, CardInfo, SeatView};
+use dominion_engine::{Card, GameConfig, PlayerId, Response, Set};
+use dominion_protocol::api::SeatView;
 use dominion_protocol::{AgentDecision, AgentOption, Answer, DecisionGroup, LogEntry};
 use dominion_web::cards::CardDb;
 use dominion_web::game::state::{Applied, GameState, Selection, answers_on_click, name_answer};
@@ -11,43 +14,6 @@ use rand::rngs::StdRng;
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
 use std::collections::BTreeSet;
-
-fn card_db() -> CardDb {
-    CardDb::new(
-        Card::ALL
-            .iter()
-            .map(|&c| {
-                let d = c.def();
-                CardInfo {
-                    name: d.name.into(),
-                    set: d.set.to_string(),
-                    types: c.type_names().into_iter().map(String::from).collect(),
-                    kind: if c.kind() == Kind::Card {
-                        "card"
-                    } else {
-                        "other"
-                    }
-                    .into(),
-                    cost: d.cost.map(|c| CardCost {
-                        coins: c.coins.into(),
-                        potions: c.potions.into(),
-                        debt: c.debt.into(),
-                    }),
-                    variable_cost: d.variable_cost,
-                    overpay: d.overpay,
-                    coins: d.coins.into(),
-                    potions: d.potions.into(),
-                    vp: d.vp.into(),
-                    kingdom: d.kingdom,
-                    basic: d.basic,
-                    removed: d.removed,
-                    pile: None,
-                    text: d.text.into(),
-                }
-            })
-            .collect(),
-    )
-}
 
 fn entries(seqs: std::ops::Range<usize>) -> Vec<LogEntry> {
     seqs.map(|seq| LogEntry {
@@ -312,7 +278,11 @@ impl Client {
     fn fetch(&mut self, table: &Table, version: u64) -> Applied {
         let from = self.state.log_from();
         let view = table.view_from(self.seat, from);
-        self.state.apply(SeatView { view, version })
+        self.state.apply(SeatView {
+            view,
+            version,
+            deciding: table.deciding().map(|p| p.0),
+        })
     }
 }
 
@@ -361,6 +331,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
             stale = Some(SeatView {
                 view: table.view_from(seat, 0),
                 version,
+                deciding: Some(seat.0),
             });
         }
         table.answer(seat, &answer).unwrap();
@@ -369,6 +340,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
         let applied = cl.state.apply(SeatView {
             view: table.view(seat),
             version,
+            deciding: table.deciding().map(|p| p.0),
         });
         if applied == Applied::Refetch {
             assert_eq!(cl.fetch(&table, version), Applied::Done);

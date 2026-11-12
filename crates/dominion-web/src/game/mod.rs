@@ -1,6 +1,9 @@
 //! The game page: which seat this browser shows, keeping its [`GameState`] current over
 //! the change feed, and answering for it.
 
+pub mod board;
+pub mod interaction;
+pub mod logfmt;
 pub mod plain;
 pub mod state;
 
@@ -22,7 +25,7 @@ pub struct GameCtx {
     pub seat: Signal<Option<HeldSeat>>,
     pub state: Signal<GameState>,
     /// The seat deciding now, when the game is running and someone is.
-    pub deciding: Signal<Option<u8>>,
+    pub deciding: Memo<Option<u8>>,
     /// Sends an answer for the shown seat.
     pub submit: Callback<Answer>,
 }
@@ -37,14 +40,13 @@ struct Live {
     game: Signal<String>,
     seat: Signal<Option<HeldSeat>>,
     state: Signal<GameState>,
-    deciding: Signal<Option<u8>>,
 }
 
 fn still_shown(seat: Signal<Option<HeldSeat>>, token: &str) -> bool {
     seat.peek().as_ref().is_some_and(|s| s.token == token)
 }
 
-/// Fetches the view from the end of the log held, and who is deciding.
+/// Fetches the view from the end of the log held.
 async fn refresh(ctx: Live, token: &str) {
     let game = ctx.game.peek().clone();
     let mut state = ctx.state;
@@ -65,33 +67,6 @@ async fn refresh(ctx: Live, token: &str) {
                 return;
             }
         }
-    }
-    update_deciding(ctx, token).await;
-}
-
-async fn update_deciding(ctx: Live, token: &str) {
-    let mut deciding = ctx.deciding;
-    let (running, mine) = {
-        let st = ctx.state.peek();
-        let view = st.view.as_ref();
-        (
-            view.is_some_and(|v| v.game.running),
-            st.decision().and(view.and_then(|v| v.seat)),
-        )
-    };
-    if !running || mine.is_some() {
-        deciding.set(mine);
-        return;
-    }
-    let game = ctx.game.peek().clone();
-    if let Ok(list) = api::games().await
-        && still_shown(ctx.seat, token)
-    {
-        deciding.set(
-            list.iter()
-                .find(|g| g.game_id == game)
-                .and_then(|g| g.deciding),
-        );
     }
 }
 
@@ -143,8 +118,6 @@ async fn send_answer(ctx: Live, answer: Answer) {
     };
     if stale {
         refresh(ctx, &seat.token).await;
-    } else {
-        update_deciding(ctx, &seat.token).await;
     }
 }
 
@@ -154,17 +127,12 @@ pub fn GamePage(id: String) -> Element {
     let mut seats = use_signal(|| session::seats(&id));
     let mut seat = use_signal(|| seats.peek().first().cloned());
     let mut state = use_signal(GameState::default);
-    let deciding = use_signal(|| None::<u8>);
+    let deciding = use_memo(move || state.read().deciding);
     let mut follow = use_signal(|| true);
     let mut join_error = use_signal(|| None::<String>);
     let mut driver = use_signal(|| None::<dioxus::core::Task>);
 
-    let live = Live {
-        game,
-        seat,
-        state,
-        deciding,
-    };
+    let live = Live { game, seat, state };
     use_context_provider(|| GameCtx {
         game,
         seat,

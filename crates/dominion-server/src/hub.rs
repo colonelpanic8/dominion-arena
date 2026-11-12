@@ -2,7 +2,7 @@
 
 use dominion_agent::{AgentView, Answer, AnswerError, Table};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
-pub use dominion_protocol::api::{Created, GameSummary, NewGame, SeatToken};
+pub use dominion_protocol::api::{Created, GameSummary, NewGame, SeatToken, SeatView};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -475,19 +475,20 @@ impl Hub {
         })
     }
 
-    /// `seat`'s view, with the log from `log_from` on if given, and the game's version.
-    pub fn seat_view(
-        &self,
-        seat: &Seat,
-        log_from: Option<usize>,
-    ) -> Result<(AgentView, u64), HubError> {
+    /// `seat`'s view, with the log from `log_from` on if given, the game's version and
+    /// the seat deciding, all read together.
+    pub fn seat_view(&self, seat: &Seat, log_from: Option<usize>) -> Result<SeatView, HubError> {
         let game = self.game(&seat.game)?;
         let table = lock(&game.table);
         let view = engine(|| match log_from {
             Some(from) => table.view_from(seat.seat, from),
             None => table.view(seat.seat),
         })?;
-        Ok((view, *game.version.borrow()))
+        Ok(SeatView {
+            view,
+            version: *game.version.borrow(),
+            deciding: table.deciding().map(|p| p.0),
+        })
     }
 
     /// Game `id`'s version, which [`Hub::answer`] bumps, and a receiver of every bump.

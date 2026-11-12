@@ -13,6 +13,8 @@ pub struct GameState {
     /// the whole log from `log`.
     pub view: Option<AgentView>,
     pub version: u64,
+    /// The seat deciding as of `version`, if any.
+    pub deciding: Option<u8>,
     /// Every log entry from seq 0, without gaps.
     pub log: Vec<LogEntry>,
     /// The message of the last failed call, until the next success.
@@ -58,6 +60,7 @@ impl GameState {
         if self.view.is_none() || sv.version >= self.version {
             self.version = sv.version;
             self.view = Some(sv.view);
+            self.deciding = sv.deciding;
         }
         self.error = None;
         if complete {
@@ -137,25 +140,64 @@ impl Selection {
     pub fn toggle(&mut self, d: &AgentDecision, index: u32) {
         if let Some(i) = self.position(index) {
             self.picks.remove(i);
-            return;
+        } else {
+            self.add(d, index);
         }
-        let Some(g) = group_of(d, index) else { return };
+    }
+
+    fn add(&mut self, d: &AgentDecision, index: u32) -> bool {
+        let Some(g) = group_of(d, index) else {
+            return false;
+        };
         if let Some(gr) = group(d, g)
             && self.in_group(d, g) >= gr.max as usize
         {
             if gr.max != 1 {
-                return;
+                return false;
             }
             self.picks.retain(|&p| group_of(d, p) != Some(g));
         }
         let (_, max) = bounds(d);
         if self.picks.len() >= max as usize {
             if max != 1 {
-                return;
+                return false;
             }
             self.picks.clear();
         }
         self.picks.push(index);
+        true
+    }
+
+    /// Picks the next unpicked option of a target's interchangeable `options`, under the
+    /// same limits as [`Selection::toggle`]. False if nothing was picked.
+    pub fn click(&mut self, d: &AgentDecision, options: &[u32]) -> bool {
+        match options.iter().find(|&&o| self.position(o).is_none()) {
+            Some(&o) => self.add(d, o),
+            None => false,
+        }
+    }
+
+    /// Unpicks the option of `options` picked last.
+    pub fn unclick(&mut self, options: &[u32]) -> bool {
+        match self.picks.iter().rposition(|p| options.contains(p)) {
+            Some(i) => {
+                self.picks.remove(i);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// How many of `options` are picked.
+    pub fn count(&self, options: &[u32]) -> usize {
+        self.picks.iter().filter(|p| options.contains(p)).count()
+    }
+
+    /// The positions in the answer of the picked ones among `options`, in answer order.
+    pub fn positions(&self, options: &[u32]) -> Vec<usize> {
+        (0..self.picks.len())
+            .filter(|&i| options.contains(&self.picks[i]))
+            .collect()
     }
 
     /// Moves the pick at position `from` to position `to`.
