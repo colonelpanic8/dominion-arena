@@ -661,7 +661,13 @@ fn announced(label: &str) -> String {
         if i == 0 && VERBS.contains(&word) {
             out.push_str("to ");
         }
-        if i == 0 && (VERBS.contains(&word) || LOWER.contains(&word)) {
+        // "chooses that they gain it"
+        if i == 0 && word == "They" {
+            out.push_str("that ");
+        }
+        if i == 0
+            && (VERBS.contains(&word) || LOWER.contains(&word) || ["They", "Their"].contains(&word))
+        {
             out.push_str(&word.to_lowercase());
         } else {
             out.push_str(word);
@@ -1642,6 +1648,8 @@ mod tests {
                 "to take the extra turn from Mission",
             ),
             ("Gold", "Gold"),
+            ("You gain it", "that they gain it"),
+            ("Your choice", "their choice"),
             (
                 "2 (how many go on your deck?)",
                 "2 (how many go on their deck?)",
