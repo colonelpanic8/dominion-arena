@@ -36,6 +36,7 @@ crates/dominion-protocol/ serde types of agent-view@2 and the HTTP API; engine-f
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
+  src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

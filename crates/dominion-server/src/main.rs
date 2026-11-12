@@ -22,7 +22,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Host games as an MCP server (streamable HTTP at /mcp).
+    /// Host games as an MCP server (streamable HTTP at /mcp), with an HTTP API at /api
+    /// for the web client.
     Serve {
         #[arg(long)]
         listen: Option<IpAddr>,
@@ -34,6 +35,12 @@ enum Command {
         /// Keep games in memory only.
         #[arg(long)]
         ephemeral: bool,
+        /// Directory of the asset cache, served at /assets.
+        #[arg(long)]
+        assets_dir: Option<PathBuf>,
+        /// Directory of the built web client, served at /.
+        #[arg(long)]
+        web_dir: Option<PathBuf>,
     },
     /// Play one seat from the terminal against a server.
     Play(PlayArgs),
@@ -116,6 +123,9 @@ async fn serve(config: Config) -> Result<(), String> {
         }
     };
     eprintln!("dominion: MCP endpoint http://{addr}/mcp");
+    if config.web_dir.is_some() {
+        eprintln!("dominion: web client http://{addr}/");
+    }
     let stop = CancellationToken::new();
     let signal = stop.clone();
     tokio::spawn(async move {
@@ -125,6 +135,8 @@ async fn serve(config: Config) -> Result<(), String> {
     let options = Options {
         allowed_hosts: hosts,
         session_idle: config.session_idle(),
+        assets_dir: config.assets_dir(),
+        web_dir: config.web_dir.clone(),
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
@@ -147,7 +159,11 @@ async fn main() -> ExitCode {
             port,
             state_dir,
             ephemeral,
+            assets_dir,
+            web_dir,
         } => {
+            config.assets_dir = assets_dir.or(config.assets_dir);
+            config.web_dir = web_dir.or(config.web_dir);
             config.listen = listen.or(config.listen);
             config.port = port.or(config.port);
             config.state_dir = state_dir.or(config.state_dir);

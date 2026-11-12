@@ -1,5 +1,7 @@
-//! Bodies of `dominion serve`'s game creation and listing.
+//! Request and response bodies of `dominion serve`'s HTTP API under `/api`. Game
+//! creation and listing share the MCP tools' snake_case types; the rest are camelCase.
 
+use crate::view::AgentView;
 use serde::{Deserialize, Serialize};
 
 /// What a client asks for when creating a game.
@@ -55,4 +57,84 @@ pub struct GameSummary {
     /// The seat that must decide now.
     pub deciding: Option<u8>,
     pub kingdom: Vec<String>,
+}
+
+/// `GET /api/seat`: the seat a token holds.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatInfo {
+    pub game_id: String,
+    pub seat: u8,
+    pub name: String,
+}
+
+/// A seat's view and the game's change counter, which only ever changes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatView {
+    pub view: AgentView,
+    pub version: u64,
+}
+
+/// The data of an SSE `change` event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Change {
+    pub version: u64,
+}
+
+/// Query of `GET /api/games/{id}/view`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewQuery {
+    /// Log from this sequence number on, instead of from the seat's last answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_from: Option<usize>,
+}
+
+/// Every error's body.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiError {
+    pub error: String,
+}
+
+/// `GET /api/cards`: one card-shaped object as printed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardInfo {
+    pub name: String,
+    /// The set's display name.
+    pub set: String,
+    pub types: Vec<String>,
+    /// `card`, `event`, `landmark`, `project`, `way`, `ally`, `trait`, `prophecy`,
+    /// `study`, `boon`, `hex`, `state`, `artifact` or `randomizer`.
+    pub kind: String,
+    /// Absent for things with no cost (most landscapes, Boons, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<CardCost>,
+    /// The printed cost has a `*`.
+    pub variable_cost: bool,
+    /// The printed cost has a `+`.
+    pub overpay: bool,
+    /// $ a Treasure produces.
+    pub coins: u32,
+    pub potions: u32,
+    pub vp: i32,
+    pub kingdom: bool,
+    pub basic: bool,
+    pub removed: bool,
+    /// The randomizer or top card of the mixed or split pile it belongs to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pile: Option<String>,
+    /// Official text: lines separated by `\n`, `---` for the dividing line.
+    pub text: String,
+}
+
+/// A printed cost, every component present.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CardCost {
+    pub coins: u32,
+    pub potions: u32,
+    pub debt: u32,
 }

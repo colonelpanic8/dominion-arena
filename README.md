@@ -72,6 +72,26 @@ resumes them on startup. Finished games are deleted on a later startup once they
 week old. One server uses the directory at a time. `--ephemeral` keeps games in memory
 only.
 
+The same server has a JSON API under `/api` for browser clients, which act for a seat
+the way MCP agents do (types in `crates/dominion-protocol`). A seat authenticates with
+its token as `Authorization: Bearer <token>` (or `?token=` on the event stream). Errors
+are `{"error": "..."}` with 400 (bad request), 401 (missing or wrong token), 404 (unknown
+game or route), 409 (stale decision, or not this seat's), 422 (invalid answer) or 500.
+
+| Route | Body | Returns |
+| --- | --- | --- |
+| `GET /api/cards` | | every card-shaped object as printed |
+| `GET /api/games` | | the games, as `list_games` gives them |
+| `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
+| `GET /api/seat` | | `{gameId, seat, name}` of the token |
+| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version}`; with `logFrom`, the log from entry N |
+| `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | `{view, version}` after it |
+| `GET /api/games/{id}/events` | | server-sent `change` events with `{version}`: on connect and after every change |
+
+`/assets/` serves the asset cache (`assets_dir`) and every other path the built web
+client (`web_dir`, falling back to its `index.html`). These routes accept the same Host
+headers as `/mcp`.
+
 Settings live in `$XDG_CONFIG_HOME/dominion/config.toml`; flags override them:
 
 ```toml
@@ -81,6 +101,8 @@ allowed_hosts = []             # serve: extra Host header values to accept
 persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: delete finished games this old at startup
+assets_dir = "/srv/dominion/assets"  # serve: the asset cache served at /assets (default $XDG_CACHE_HOME/dominion/assets)
+web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default none)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
