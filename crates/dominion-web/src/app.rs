@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use std::rc::Rc;
 
 const CSS: &str = include_str!("../assets/style.css");
+const CARD_CSS: &str = include_str!("../assets/cards.css");
 
 #[derive(Routable, Clone, PartialEq, Debug)]
 #[rustfmt::skip]
@@ -45,9 +46,13 @@ pub fn App() -> Element {
             }
         }
     });
+    let assets = crate::assets::use_provide_assets();
+    let asset_css = assets.read().css();
     rsx! {
         document::Title { "Dominion" }
         document::Style { "{CSS}" }
+        document::Style { "{CARD_CSS}" }
+        style { "{asset_css}" }
         Router::<Route> {}
     }
 }

@@ -3,6 +3,8 @@
 
 pub mod api;
 pub mod app;
+pub mod assets;
+pub mod card;
 pub mod cards;
 pub mod gallery;
 pub mod game;

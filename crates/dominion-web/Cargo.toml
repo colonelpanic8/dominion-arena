@@ -31,7 +31,7 @@ gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 # wasm-bindgen must match flake.nix's wasm-bindgen-cli; js-sys and web-sys ship in lockstep with it.
 js-sys = { version = "=0.3.107", optional = true }
 wasm-bindgen = { version = "=0.2.130", optional = true }
-web-sys = { version = "=0.3.107", features = ["Window", "Storage", "Location", "History", "Document", "Element", "Navigator", "Clipboard"], optional = true }
+web-sys = { version = "=0.3.107", features = ["Window", "Storage", "Location", "History", "Document", "Element", "Navigator", "Clipboard", "HtmlCanvasElement", "CanvasRenderingContext2d", "TextMetrics"], optional = true }
 
 [dev-dependencies]
 dominion-agent = { path = "../dominion-agent" }
