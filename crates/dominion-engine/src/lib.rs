@@ -17,6 +17,7 @@ mod frame;
 mod game;
 mod ids;
 mod knowledge;
+mod scribe;
 mod setup;
 mod trace;
 mod trigger;
@@ -27,7 +28,7 @@ mod tests;
 pub use agent::{Agent, CardDeckView, Note, PileView, PlayError, PlayerView, View, play};
 pub use card::{Card, CardDef, Cost, Kind, Plus, Set, TYPE_NAMES, Types};
 pub use decision::{Decision, DecisionKind, Move, Opt, Purpose, Response, ResponseError};
-pub use event::{Dest, Event};
+pub use event::{Counter, Dest, Event, Marker};
 pub use game::{
     CardDeck, EndReason, ExtraLimit, ExtraTurn, Game, Lasting, Mat, Outcome, Phase, Pile, Player,
     Scratch, Token, Turn, Until, Zone,

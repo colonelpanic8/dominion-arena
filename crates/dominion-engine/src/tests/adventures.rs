@@ -314,6 +314,16 @@ fn teacher_moves_a_bonus_token_to_a_pile_without_the_players_tokens() {
     assert!(!piles.contains(&smithy));
     assert!(piles.contains(&g.supply_pile(Card::Peasant).unwrap()));
     choose_pile(&mut g, Card::Village);
+    let called = Event::Called {
+        player: P0,
+        card: Card::Teacher,
+    };
+    let token = Event::TokenMoved {
+        player: P0,
+        token: Token::PlusAction,
+        pile: g.supply_pile(Card::Village),
+    };
+    assert!(logged_in_order(&g, &[called, token]));
     play(&mut g, Card::Village);
     // +1 Action token, then +2 Actions.
     assert_eq!(g.turn().actions, 3);
@@ -822,6 +832,10 @@ fn gear_sets_cards_aside_until_the_next_turn() {
     finish_turn(&mut g);
     assert_eq!(g.hand(P0).len(), 7);
     assert_eq!(g.zone(kept[1]), Zone::Hand(P0));
+    // Set aside face down: everyone sees two cards go and come back, not which.
+    let aside = moved(P0, Zone::Hand(P0), Zone::SetAside(P0), &[], 2);
+    let back = moved(P0, Zone::SetAside(P0), Zone::Hand(P0), &[], 2);
+    assert!(logged_in_order(&g, &[aside, back]));
 }
 
 #[test]
@@ -1200,6 +1214,12 @@ fn ranger_draws_five_every_other_play() {
     play(&mut g, Card::Ranger);
     assert_eq!(g.hand(P0).len(), 6);
     assert_eq!(g.turn().buys, 3);
+    let journey = |on| Event::Marker {
+        player: P0,
+        marker: Marker::Journey,
+        on,
+    };
+    assert!(logged_in_order(&g, &[journey(false), journey(true)]));
 }
 
 #[test]
@@ -1245,6 +1265,12 @@ fn relic_gives_the_other_players_their_minus_card_token() {
     // P1's Clean-up drew one card fewer.
     assert_eq!(g.hand(P1).len(), 4);
     assert!(!g.player(P1).minus_card);
+    let token = |on| Event::Marker {
+        player: P1,
+        marker: Marker::MinusCard,
+        on,
+    };
+    assert!(logged_in_order(&g, &[token(true), token(false)]));
 }
 
 #[test]
@@ -1735,6 +1761,17 @@ fn lost_arts_training_and_pathfinding_move_their_tokens() {
         g.player(P0).tokens[&Token::PlusAction],
         g.supply_pile(Card::Village)
     );
+    let token = |token, pile| Event::TokenMoved {
+        player: P0,
+        token,
+        pile: g.supply_pile(pile),
+    };
+    let order = [
+        token(Token::PlusAction, Card::Smithy),
+        token(Token::PlusCoin, Card::Smithy),
+        token(Token::PlusAction, Card::Village),
+    ];
+    assert!(logged_in_order(&g, &order));
 }
 
 #[test]

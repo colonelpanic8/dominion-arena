@@ -1397,6 +1397,12 @@ fn survivors_discards_or_reorders_the_top_two() {
     mode(&mut g, 1);
     choose_kinds(&mut g, &[Card::Gold, Card::Estate]);
     assert_eq!(deck_kinds(&g, P0), [Card::Gold, Card::Estate, Card::Copper]);
+    let looked = Event::Looked {
+        player: P0,
+        count: 2,
+    };
+    let back = moved(P0, Zone::Deck(P0), Zone::Deck(P0), &[], 2);
+    assert!(logged_in_order(&g, &[looked, back]));
 
     let mut g = setup(&[Card::Marauder]);
     hand(&mut g, P0, &[Card::Survivors]);

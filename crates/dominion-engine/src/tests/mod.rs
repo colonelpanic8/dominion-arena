@@ -109,6 +109,18 @@ pub(crate) fn logged_in_order(g: &Game, events: &[Event]) -> bool {
     events.iter().all(|e| log.any(|l| l == e))
 }
 
+/// The game's own lines for cards moved with no event of their own.
+pub(crate) fn moved(player: PlayerId, from: Zone, to: Zone, cards: &[Card], count: usize) -> Event {
+    Event::Moved {
+        player,
+        from: Some(from),
+        to,
+        cards: cards.to_vec(),
+        count,
+        bottom: false,
+    }
+}
+
 pub(crate) fn respond(g: &mut Game, r: Response) {
     if let Err(e) = g.respond(r.clone()) {
         panic!("{r:?} rejected: {e} (pending {:?})", g.pending());
@@ -623,6 +635,43 @@ fn coffers_and_debt_can_be_used_in_every_phase() {
     }
     assert_eq!(g.pending().unwrap().player, P1);
     assert_eq!((g.player(P0).coffers, g.player(P0).debt), (0, 0));
+    let spent = |counter| Event::Counter {
+        player: Some(P0),
+        pile: None,
+        counter,
+        delta: -1,
+    };
+    let each = [spent(Counter::Coffers), spent(Counter::Debt)];
+    assert!(logged_in_order(
+        &g,
+        &[&each[..], &each[..], &each[..]].concat()
+    ));
+}
+
+#[test]
+fn debt_taken_for_a_buy_is_logged_after_the_buy() {
+    let mut g = setup(&[Card::Engineer]);
+    hand(&mut g, P0, &[]);
+    g.start();
+    buy(&mut g, Card::Engineer);
+    let order = [
+        Event::Bought {
+            player: P0,
+            card: Card::Engineer,
+        },
+        Event::Counter {
+            player: Some(P0),
+            pile: None,
+            counter: Counter::Debt,
+            delta: 4,
+        },
+        Event::Gained {
+            player: P0,
+            card: Card::Engineer,
+            to: Dest::Discard,
+        },
+    ];
+    assert!(logged_in_order(&g, &order));
 }
 
 /// Outside the Buy phase the token moves wait for something to play, except paying Debt at
@@ -669,6 +718,11 @@ fn a_draw_that_shuffles_partway_logs_the_cards_drawn_before_the_shuffle_first() 
     let drew = |count| Event::Drew { player: P0, count };
     let order = [drew(1), Event::Shuffled { player: P0 }, drew(2)];
     assert!(logged_in_order(&g, &order));
+    // Clean-up's discards have no lines of their own.
+    while g.turn().player == P0 {
+        end_phase(&mut g);
+    }
+    assert!(!g.log().iter().any(|e| matches!(e, Event::Moved { .. })));
 }
 
 /// Resolves a pending Star Chart trigger, picking `card` to go on top of the shuffle.

@@ -175,11 +175,6 @@ impl SetRules for Rules {
                     });
                     if g.return_to_pile(card) {
                         g.move_card(silver, Zone::Discard(f.player), Pos::Top);
-                        g.emit(Event::Moved {
-                            player: f.player,
-                            card: Some(Card::Silver),
-                            to: Zone::Discard(f.player),
-                        });
                     }
                 }
                 Flow::done()

@@ -27,6 +27,7 @@ crates/dominion-engine/
   src/setup.rs            GameConfig, setup, random kingdoms
   src/agent.rs            Agent trait, play() driver, View (one player's legal knowledge)
   src/event.rs            the public event log
+  src/scribe.rs           logs what changed without an event: moves, counters, tokens
   src/cards/mod.rs        SetRules trait, dispatch, CardFrame and its helpers
   src/cards/<set>.rs      one module per set: its State, Rules and card scripts
   src/tests/mod.rs        engine tests, shared helpers, the random-game fuzz test
@@ -219,6 +220,15 @@ them.
   cards set aside face down together (move them one after the other), the cards of a
   deck or discard pile they looked through. `g.show` such a card first when everyone
   knows which it is; other cards of a deck or discard pile are followed by everyone.
+- **The log** (`scribe.rs`) is complete by itself: before each event and each decision
+  the game logs what changed without an event of its own. Cards moved by `move_card`
+  that no event reports become `Event::Moved` (naming a card only if everyone knew which
+  it was: shown with `g.show`, or leaving or entering a public zone; Clean-up's discards
+  stay silent, `g.move_unlogged`); counters and tokens (Coffers, Villagers, Favors,
+  Debt, VP tokens, Adventures tokens, -1 Card / -$1 / Journey, pile tokens, Sun tokens,
+  States returned) become `Counter` / `TokenMoved` / `Marker` / `Returned`. So never
+  emit a move or counter event by hand; log what has its own event (draws, gains,
+  discards, ...) with it.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-agents/protocol/`; change it there first, then `just sync-protocol`. The

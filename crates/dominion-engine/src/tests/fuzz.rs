@@ -2280,9 +2280,22 @@ fn check_step(g: &Game, tracker: &Tracker, events: &[Event], trace: &[Trace], fl
             Event::Revealed { card, .. } => (*card, "Revealed"),
             Event::SetAside { card, .. } => (*card, "SetAside"),
             Event::Discarded { card, .. } => (*card, "Discarded"),
-            Event::Moved {
-                card: Some(card), ..
-            } => (*card, "Moved"),
+            Event::Moved { cards, .. } => {
+                for &card in cards {
+                    named.push(card);
+                    let public = shown
+                        .iter()
+                        .chain(&moved_public)
+                        .any(|&c| names(g, c).contains(&card));
+                    if card.kind() == Kind::Card && !public {
+                        flags.audit(
+                            format!("event-names-a-card-the-trace-never-shows:Moved:{last_played}"),
+                            || format!("{e:?}; {}", ctx(g)),
+                        );
+                    }
+                }
+                continue;
+            }
             Event::Played { card, .. }
             | Event::Gained { card, .. }
             | Event::Trashed { card, .. }

@@ -218,11 +218,6 @@ pub(crate) fn put_into_deck(g: &mut Game, id: CardId, p: PlayerId, pos: usize) {
     let card = deck.pop().expect("just put there");
     let at = deck.len().saturating_sub(pos);
     deck.insert(at, card);
-    g.emit(Event::Moved {
-        player: p,
-        card: None,
-        to: Zone::Deck(p),
-    });
 }
 
 fn gain_from_supply(g: &Game, p: PlayerId, card: Card, to: Dest) -> Option<Frame> {
@@ -506,11 +501,6 @@ fn masquerade(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 for (k, &c) in picks.iter().enumerate() {
                     let to = owners[(k + 1) % owners.len()];
                     g.move_card(c, Zone::Hand(to), Pos::Top);
-                    g.emit(Event::Moved {
-                        player: owners[k],
-                        card: None,
-                        to: Zone::Hand(to),
-                    });
                 }
             }
             f.pc = 3;

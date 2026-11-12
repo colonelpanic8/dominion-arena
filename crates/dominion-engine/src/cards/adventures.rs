@@ -189,10 +189,6 @@ impl SetRules for Rules {
             (Card::Relic, _) => {
                 for &t in &f.targets {
                     g.players[t.index()].minus_card = true;
-                    g.emit(Event::Received {
-                        player: t,
-                        card: Card::Relic,
-                    });
                 }
                 Flow::done()
             }
@@ -331,10 +327,6 @@ impl SetRules for Rules {
                         .count() as i32;
                     for o in g.others_in_turn_order(f.player) {
                         g.players[o.index()].minus_card = true;
-                        g.emit(Event::Received {
-                            player: o,
-                            card: Card::Raid,
-                        });
                     }
                     f.pc = 1;
                 }
@@ -615,10 +607,9 @@ fn call_from_tavern(g: &mut Game, f: &CardFrame) -> bool {
         return false;
     }
     g.move_card(this, Zone::InPlay(f.player), Pos::Top);
-    g.emit(Event::Moved {
+    g.emit(Event::Called {
         player: f.player,
-        card: Some(g.card(this)),
-        to: Zone::InPlay(f.player),
+        card: g.card(this),
     });
     true
 }
@@ -960,11 +951,6 @@ fn exchange(g: &mut Game, f: &mut CardFrame) -> Flow {
         return Flow::done();
     }
     g.move_card(top, Zone::Discard(p), Pos::Top);
-    g.emit(Event::Moved {
-        player: p,
-        card: Some(next),
-        to: Zone::Discard(p),
-    });
     Flow::done()
 }
 
@@ -1325,10 +1311,6 @@ fn bridge_troll(g: &mut Game, f: &mut CardFrame) -> Flow {
     let p = f.player;
     for &t in &f.targets {
         g.players[t.index()].minus_coin = true;
-        g.emit(Event::Received {
-            player: t,
-            card: Card::BridgeTroll,
-        });
     }
     add_buys(g, p, 1);
     f.add_duration(g, Scratch::default());
@@ -1386,11 +1368,6 @@ fn gear(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             for &c in &chosen {
                 g.move_card(c, Zone::SetAside(p), Pos::Top);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: None,
-                    to: Zone::SetAside(p),
-                });
             }
             f.add_duration(
                 g,
@@ -1495,11 +1472,6 @@ fn messenger(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 for c in deck {
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
-                g.emit(Event::Moved {
-                    player: p,
-                    card: None,
-                    to: Zone::Discard(p),
-                });
             }
             Flow::done()
         }

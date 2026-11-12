@@ -622,3 +622,55 @@ fn the_journey_token_is_shown_face_up_or_down_in_games_using_it() {
     view.you.as_mut().unwrap().tokens.journey_face_up = Some(false);
     assert!(text::render(&view).contains("Journey token face down"));
 }
+
+#[test]
+fn the_log_says_which_tokens_changed() {
+    let mut t = table(&[Card::SilkMerchant], 2, &["Ada", "Bo"]);
+    let waiting = |seat: PlayerId, _: &AgentDecision| seat.0 == 1;
+    let bought = |t: &Table| t.game().count_owned(PlayerId(0), Card::SilkMerchant) > 0;
+    while !bought(&t) {
+        let seat = play_to(&mut t, "Silk Merchant", waiting).expect("the game goes on");
+        if !bought(&t) {
+            let d = t.view(seat).decision.unwrap();
+            let end = pick(&d, |o| o.action == "end-phase").unwrap();
+            t.answer(seat, &end).unwrap();
+        }
+    }
+    let lines: Vec<String> = t
+        .view(PlayerId(1))
+        .since_last_decision
+        .into_iter()
+        .map(|e| e.text)
+        .collect();
+    let at = lines
+        .iter()
+        .position(|l| l == "Ada gains Silk Merchant")
+        .unwrap_or_else(|| panic!("{lines:#?}"));
+    assert_eq!(
+        lines[at + 1..at + 3],
+        ["Ada takes 1 Coffers", "Ada takes 1 Villager"],
+        "{lines:#?}"
+    );
+}
+
+#[test]
+fn the_final_view_knows_the_last_clean_ups_discard_top() {
+    let config = GameConfig {
+        colonies: Some(false),
+        shelters: Some(false),
+        turn_limit: Some(2),
+        ..GameConfig::new(2, vec![Card::Smithy], 3)
+    };
+    let mut t = Table::new("t", config, vec![]).unwrap();
+    while let Some(seat) = t.deciding() {
+        let d = t.view(seat).decision.unwrap();
+        let answer = pick(&d, |o| o.action == "end-phase").unwrap_or_else(|| first(&d));
+        t.answer(seat, &answer).unwrap();
+    }
+    let g = t.game();
+    let last = PlayerId(1);
+    let top = *g.player(last).discard.last().unwrap();
+    let known = t.knowledge().known(g, PlayerId(0));
+    let discard = known.zone(dominion_engine::Zone::Discard(last));
+    assert!(discard.known.contains_key(&g.card(top)), "{discard:?}");
+}

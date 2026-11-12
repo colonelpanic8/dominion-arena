@@ -283,6 +283,12 @@ fn underling_draws_and_gives_a_favor() {
     assert_eq!(g.hand(P0).len(), 1);
     assert_eq!(g.turn().actions, 1);
     assert_eq!(favors(&g, P0), 2);
+    assert!(g.log().contains(&Event::Counter {
+        player: Some(P0),
+        pile: None,
+        counter: Counter::Favors,
+        delta: 1
+    }));
 }
 
 #[test]
@@ -1380,6 +1386,8 @@ fn herb_gatherer_puts_the_deck_in_the_discard_pile_and_may_play_a_treasure_from_
     play(&mut g, Card::HerbGatherer);
     assert!(g.player(P0).deck.is_empty());
     assert_eq!(g.turn().buys, 2);
+    let away = moved(P0, Zone::Deck(P0), Zone::Discard(P0), &[], 2);
+    assert!(g.log().contains(&away));
     choose_kinds(&mut g, &[Card::Gold]);
     assert_eq!(g.turn().coins, 3);
     no(&mut g);

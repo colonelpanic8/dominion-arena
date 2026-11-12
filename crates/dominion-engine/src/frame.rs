@@ -477,6 +477,12 @@ impl Frame {
                     return Flow::Call(Frame::shuffle(p));
                 }
                 let cards: Vec<CardId> = pl.deck.iter().rev().take(*count).copied().collect();
+                if !*reveal && !cards.is_empty() {
+                    g.emit(Event::Looked {
+                        player: p,
+                        count: cards.len(),
+                    });
+                }
                 for &c in &cards {
                     if *reveal {
                         g.reveal(p, c);
@@ -547,7 +553,7 @@ impl Frame {
             } => {
                 if *cleanup {
                     for &c in cards.iter() {
-                        g.move_card(c, Zone::Discard(*player), Pos::Top);
+                        g.move_unlogged(c, Zone::Discard(*player));
                     }
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
@@ -628,6 +634,7 @@ impl Frame {
                 turn.phase = Phase::Action;
                 turn.bought = false;
                 turn.earlier_buy_phase_gains = turn.gained_in_buy_phase.len();
+                g.emit(Event::ReturnedToAction { player: *player });
                 Flow::done()
             }
         }
@@ -675,7 +682,7 @@ fn resume_shuffle(
                 });
             }
             let mixed = under.clone();
-            g.record(|| crate::Trace::Mixed { cards: mixed });
+            g.mixed(mixed);
             *count = under.len();
             g.last_shuffle = under.clone();
             let pl = &mut g.players[p.index()];
@@ -1071,7 +1078,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         7 => {
             for other in g.others(p) {
                 for c in g.leaving_play(other) {
-                    g.move_card(c, Zone::Discard(other), Pos::Top);
+                    g.move_unlogged(c, Zone::Discard(other));
                 }
             }
             let mut cards = g.leaving_play(p);
@@ -1250,8 +1257,8 @@ fn resume_buy(
         return match pc {
             0 => {
                 let cost = g.cost(l);
-                pay(g, p, cost);
                 g.emit(Event::BoughtLandscape { player: p, card: l });
+                pay(g, p, cost);
                 if l.kind() == Kind::Project {
                     g.players[p.index()].projects.push(l);
                 }
@@ -1297,14 +1304,14 @@ fn resume_buy(
             } else {
                 g.cost_of(top)
             };
-            pay(g, p, cost);
             let kind = g.card(top);
-            g.turn.bought_cards.push(kind);
-            *index = g.turn.bought_cards.len();
             g.emit(Event::Bought {
                 player: p,
                 card: kind,
             });
+            pay(g, p, cost);
+            g.turn.bought_cards.push(kind);
+            *index = g.turn.bought_cards.len();
             *pc = 2;
             if kind.def().overpay {
                 return Flow::Call(Frame::overpay(p, top));

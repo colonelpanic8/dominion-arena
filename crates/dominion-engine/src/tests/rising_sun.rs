@@ -213,6 +213,12 @@ fn kitsune_does_two_different_options_in_order_and_moat_stops_the_curse() {
     play(&mut g, Card::Kitsune);
     modes(&mut g, &[0, 1]);
     assert_eq!((g.turn().coins, g.turn().actions), (2, 2));
+    assert!(g.log().contains(&Event::Counter {
+        player: None,
+        pile: None,
+        counter: Counter::Sun,
+        delta: -1
+    }));
 
     let mut g = setup(&[Card::Kitsune]);
     hand(&mut g, P0, &[Card::Kitsune]);

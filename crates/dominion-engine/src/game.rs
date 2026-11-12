@@ -466,6 +466,9 @@ pub struct Game {
     pub(crate) pending: Option<Decision>,
     pub(crate) rng: ChaCha8Rng,
     pub(crate) log: Vec<Event>,
+    /// What the log hasn't shown yet.
+    #[serde(default)]
+    pub(crate) scribe: crate::scribe::Scribe,
     pub(crate) outcome: Option<Outcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) trace: Option<Vec<crate::Trace>>,
@@ -558,6 +561,7 @@ impl Game {
             pc: 0,
         });
         self.stack.push(Frame::window(Occasion::GameStart));
+        self.start_log();
         self.run(Input::Start);
     }
 
@@ -939,6 +943,7 @@ impl Game {
             pending: None,
             rng: self.rng.clone(),
             log: vec![],
+            scribe: Default::default(),
             outcome: None,
             trace: None,
         };
@@ -1007,19 +1012,20 @@ impl Game {
                     } = &decision.kind
                         && candidates.len() > 1
                     {
-                        self.record(|| crate::Trace::Mixed {
-                            cards: candidates.clone(),
-                        });
+                        self.mixed(candidates.clone());
                     }
                     if let Some(response) = decision.forced(self) {
                         input = Input::Response(response);
                     } else {
+                        self.sync_log(None);
+                        self.forget_hidden_shows();
                         self.pending = Some(decision);
                         return;
                     }
                 }
             }
         }
+        self.sync_log(None);
     }
 
     // ---- Primitive state changes. These never trigger anything; frames do. ----
@@ -1057,6 +1063,7 @@ impl Game {
     }
 
     pub(crate) fn move_card(&mut self, id: CardId, to: Zone, pos: Pos) {
+        self.note_move(id, to, pos == Pos::Bottom);
         let from = self.zones[id.index()];
         let src = self.zone_vec(from);
         let i = src
@@ -1103,15 +1110,20 @@ impl Game {
     }
 
     pub(crate) fn emit(&mut self, event: Event) {
-        if let Event::RevealedHand { player, .. } = event
-            && self.trace.is_some()
-        {
+        if let Event::RevealedHand { player, .. } = event {
             for c in self.players[player.index()].hand.clone() {
                 self.show(c);
             }
         }
+        self.sync_log(Some(&event));
         cards::on_event(self, &event);
         self.log.push(event);
+    }
+
+    /// Records that no one but their owner can follow `cards` any more.
+    pub(crate) fn mixed(&mut self, cards: Vec<CardId>) {
+        self.note_mixed(&cards);
+        self.record(|| crate::Trace::Mixed { cards });
     }
 
     pub(crate) fn shuffle<T>(&mut self, items: &mut [T]) {
@@ -1210,8 +1222,9 @@ impl Game {
 
     /// Puts `id` on top of `p`'s deck.
     pub(crate) fn top_deck(&mut self, id: CardId, p: PlayerId) {
+        let card = self.is_public(id).then(|| self.card(id));
         self.move_card(id, Zone::Deck(p), Pos::Top);
-        self.emit(Event::TopDecked { player: p });
+        self.emit(Event::TopDecked { player: p, card });
     }
 
     pub(crate) fn put_in_hand(&mut self, id: CardId, p: PlayerId) {
@@ -1231,18 +1244,12 @@ impl Game {
     /// Sets aside a card that was just revealed: face up, with no event of its own.
     pub(crate) fn set_aside_revealed(&mut self, id: CardId, p: PlayerId) {
         self.show(id);
-        self.move_card(id, Zone::SetAside(p), Pos::Top);
+        self.move_unlogged(id, Zone::SetAside(p));
         self.players[p.index()].face_up.push(id);
     }
 
     pub(crate) fn put_on_mat(&mut self, id: CardId, p: PlayerId, mat: Mat) {
-        let public = mat != Mat::NativeVillage;
         self.move_card(id, Zone::Mat(p, mat), Pos::Top);
-        self.emit(Event::Moved {
-            player: p,
-            card: public.then(|| self.card(id)),
-            to: Zone::Mat(p, mat),
-        });
     }
 
     /// Returns `id` to the pile it came from (no gain or trash happens). Returns whether
@@ -1252,16 +1259,8 @@ impl Game {
         let Some(pile) = self.home_pile(printed) else {
             return false;
         };
-        let owner = self.zone(id).owner();
         self.show(id);
         self.move_card(id, Zone::Pile(pile), Pos::Top);
-        if let Some(player) = owner {
-            self.emit(Event::Moved {
-                player,
-                card: Some(printed),
-                to: Zone::Pile(pile),
-            });
-        }
         true
     }
 

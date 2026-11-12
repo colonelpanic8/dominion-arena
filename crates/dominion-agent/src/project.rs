@@ -889,7 +889,165 @@ pub(crate) fn response(
     })
 }
 
-pub(crate) fn log_entry(seq: usize, event: &Event, cx: &Context<'_>) -> LogEntry {
+/// `n` of a thing, in words: "a card", "3 cards".
+fn several(n: usize, one: &str, many: &str) -> String {
+    match n {
+        1 => format!("a {one}"),
+        n => format!("{n} {many}"),
+    }
+}
+
+fn amount(n: i32, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// A token's printed name.
+fn token_text(t: Token) -> &'static str {
+    match t {
+        Token::PlusCard => "+1 Card",
+        Token::PlusAction => "+1 Action",
+        Token::PlusBuy => "+1 Buy",
+        Token::PlusCoin => "+$1",
+        Token::MinusCost => "-$2 cost",
+        Token::Trashing => "Trashing",
+        Token::Estate => "Estate",
+    }
+}
+
+/// Where `zone` is, from `player`'s side of the table.
+fn place(game: &Game, zone: Zone, player: PlayerId, cx: &Context<'_>) -> String {
+    let whose = |p: PlayerId| {
+        if p == player {
+            "their".to_string()
+        } else {
+            format!("{}'s", cx.name(p))
+        }
+    };
+    match zone {
+        Zone::Hand(p) => format!("{} hand", whose(p)),
+        Zone::Deck(p) => format!("{} deck", whose(p)),
+        Zone::Discard(p) => format!("{} discard pile", whose(p)),
+        Zone::InPlay(p) if p == player => "play".to_string(),
+        Zone::InPlay(p) => format!("{} play area", whose(p)),
+        Zone::SetAside(p) if p == player => "set aside".to_string(),
+        Zone::SetAside(p) => format!("{} set-aside cards", whose(p)),
+        Zone::Mat(p, mat) => {
+            let mat = match mat {
+                Mat::Tavern => "Tavern",
+                Mat::Island => "Island",
+                Mat::NativeVillage => "Native Village",
+                Mat::Exile => "Exile",
+            };
+            format!("{} {mat} mat", whose(p))
+        }
+        Zone::Pile(id) => format!("the {} pile", game.pile(id).card),
+        Zone::Trash => "the trash".to_string(),
+    }
+}
+
+/// "puts Copper from their hand onto their deck" and the like.
+fn put_text(
+    game: &Game,
+    player: PlayerId,
+    (from, to, bottom): (Option<Zone>, Zone, bool),
+    cards: &[Card],
+    count: usize,
+    cx: &Context<'_>,
+) -> String {
+    let mut what: Vec<String> = cards.iter().map(|c| c.to_string()).collect();
+    let hidden = count.saturating_sub(cards.len());
+    if hidden > 0 {
+        what.push(if cards.is_empty() {
+            several(hidden, "card", "cards")
+        } else {
+            several(hidden, "other card", "other cards")
+        });
+    }
+    let what = what.join(", ");
+    let mut to_text = place(game, to, player, cx);
+    if bottom {
+        to_text = format!("the bottom of {to_text}");
+    }
+    if from == Some(to) && matches!(to, Zone::Deck(_)) {
+        return format!("puts {what} back onto {to_text}");
+    }
+    let from = match from {
+        Some(Zone::SetAside(p)) if p == player => " they had set aside".to_string(),
+        Some(Zone::Pile(_)) if matches!(to, Zone::Pile(_)) => String::new(),
+        Some(z) => format!(" from {}", place(game, z, player, cx)),
+        None => String::new(),
+    };
+    match to {
+        Zone::SetAside(p) if p == player => format!("sets aside {what}{from}"),
+        Zone::Pile(_) => format!("returns {what}{from} to {to_text}"),
+        Zone::Deck(_) => format!("puts {what}{from} onto {to_text}"),
+        Zone::Mat(..) => format!("puts {what}{from} on {to_text}"),
+        _ => format!("puts {what}{from} into {to_text}"),
+    }
+}
+
+fn counter_text(
+    game: &Game,
+    (player, pile): (Option<PlayerId>, Option<PileId>),
+    counter: dominion_engine::Counter,
+    delta: i32,
+    cx: &Context<'_>,
+) -> String {
+    use dominion_engine::Counter as C;
+    let n = delta.abs();
+    let up = delta > 0;
+    if let Some(p) = player {
+        let (verb, what) = match counter {
+            C::Coffers => (if up { "takes" } else { "spends" }, format!("{n} Coffers")),
+            C::Villagers => (
+                if up { "takes" } else { "spends" },
+                amount(n, "Villager", "Villagers"),
+            ),
+            C::Favors => (
+                if up { "takes" } else { "spends" },
+                amount(n, "Favor", "Favors"),
+            ),
+            C::Debt => (if up { "takes" } else { "pays off" }, format!("{n} Debt")),
+            C::VpTokens => (
+                if up { "takes" } else { "loses" },
+                amount(n, "VP token", "VP tokens"),
+            ),
+            C::PirateShip => {
+                let what = amount(n, "coin token", "coin tokens");
+                return if up {
+                    format!("{} puts {what} on their Pirate Ship mat", cx.name(p))
+                } else {
+                    format!("{} removes {what} from their Pirate Ship mat", cx.name(p))
+                };
+            }
+            _ => ("gets", format!("{delta:+} {counter:?}")),
+        };
+        return format!("{} {verb} {what}", cx.name(p));
+    }
+    let what = match counter {
+        C::VpTokens => amount(n, "VP token", "VP tokens"),
+        C::Debt => amount(n, "Debt token", "Debt tokens"),
+        C::Embargo => amount(n, "Embargo token", "Embargo tokens"),
+        C::TradeRoute if pile.is_some() => amount(n, "Trade Route token", "Trade Route tokens"),
+        C::TradeRoute => amount(n, "coin token", "coin tokens"),
+        C::Sun => amount(n, "Sun token", "Sun tokens"),
+        _ => amount(n, "token", "tokens"),
+    };
+    let place = match (pile, counter) {
+        (Some(id), _) => format!("the {} pile", game.pile(id).card),
+        (None, C::TradeRoute) => "the Trade Route mat".to_string(),
+        (None, _) => game
+            .prophecy()
+            .map_or("the Prophecy".to_string(), |(c, _)| c.to_string()),
+    };
+    if up {
+        format!("{what} put on {place}")
+    } else {
+        format!("{what} removed from {place}")
+    }
+}
+
+pub(crate) fn log_entry(seq: usize, event: &Event, game: &Game, cx: &Context<'_>) -> LogEntry {
     let name = |p: PlayerId| cx.name(p);
     let (player, card, text) = match event {
         Event::TurnStart { player, turn } => (
@@ -956,10 +1114,14 @@ pub(crate) fn log_entry(seq: usize, event: &Event, cx: &Context<'_>) -> LogEntry
             Some(*card),
             format!("{} discards {card}", name(*player)),
         ),
-        Event::TopDecked { player } => (
+        Event::TopDecked { player, card } => (
             Some(*player),
-            None,
-            format!("{} puts a card onto their deck", name(*player)),
+            *card,
+            format!(
+                "{} puts {} onto their deck",
+                name(*player),
+                card.map_or("a card".to_string(), |c| c.to_string())
+            ),
         ),
         Event::SetAside { player, card } => (
             Some(*player),
@@ -995,29 +1157,91 @@ pub(crate) fn log_entry(seq: usize, event: &Event, cx: &Context<'_>) -> LogEntry
             Some(*card),
             format!("{} receives {card}", name(*player)),
         ),
-        Event::Rotated { player, .. } => (
+        Event::Rotated { player, pile } => (
             Some(*player),
             None,
-            format!("{} rotates a pile", name(*player)),
+            format!(
+                "{} rotates the {} pile",
+                name(*player),
+                game.pile(*pile).card
+            ),
         ),
-        Event::Moved { player, card, to } => {
-            let what = card.map_or("a card".to_string(), |c| c.to_string());
-            let to = match to {
-                Zone::Hand(p) if p == player => "their hand".to_string(),
-                Zone::Deck(p) if p == player => "their deck".to_string(),
-                Zone::Discard(p) if p == player => "their discard pile".to_string(),
-                Zone::Pile(_) => "its pile".to_string(),
-                z => match z.owner() {
-                    Some(p) if p != *player => format!("{}'s {}", name(p), zone_name(*z)),
-                    _ => zone_name(*z),
-                },
+        Event::Moved {
+            player,
+            from,
+            to,
+            cards,
+            count,
+            bottom,
+        } => {
+            let text = put_text(game, *player, (*from, *to, *bottom), cards, *count, cx);
+            let card = (*count == 1).then(|| cards.first().copied()).flatten();
+            (Some(*player), card, format!("{} {text}", name(*player)))
+        }
+        Event::Looked { player, count } => {
+            let top = match count {
+                1 => "the top card".to_string(),
+                n => format!("the top {n} cards"),
             };
             (
                 Some(*player),
-                *card,
-                format!("{} moves {what} to {to}", name(*player)),
+                None,
+                format!("{} looks at {top} of their deck", name(*player)),
             )
         }
+        Event::Counter {
+            player,
+            pile,
+            counter,
+            delta,
+        } => (
+            *player,
+            None,
+            counter_text(game, (*player, *pile), *counter, *delta, cx),
+        ),
+        Event::TokenMoved {
+            player,
+            token,
+            pile,
+        } => {
+            let token = token_text(*token);
+            let text = match pile {
+                Some(id) => format!(
+                    "{} puts their {token} token on the {} pile",
+                    name(*player),
+                    game.pile(*id).card
+                ),
+                None => format!("{} takes their {token} token", name(*player)),
+            };
+            (Some(*player), None, text)
+        }
+        Event::Marker { player, marker, on } => {
+            use dominion_engine::Marker as M;
+            let text = match (marker, on) {
+                (M::MinusCard, true) => "takes the -1 Card token",
+                (M::MinusCard, false) => "removes their -1 Card token",
+                (M::MinusCoin, true) => "takes the -$1 token",
+                (M::MinusCoin, false) => "removes their -$1 token",
+                (M::Journey, true) => "turns their Journey token face up",
+                (M::Journey, false) => "turns their Journey token face down",
+            };
+            (Some(*player), None, format!("{} {text}", name(*player)))
+        }
+        Event::Returned { player, card } => (
+            Some(*player),
+            Some(*card),
+            format!("{} returns {card}", name(*player)),
+        ),
+        Event::ReturnedToAction { player } => (
+            Some(*player),
+            None,
+            format!("{} returns to their Action phase", name(*player)),
+        ),
+        Event::Called { player, card } => (
+            Some(*player),
+            Some(*card),
+            format!("{} calls {card}", name(*player)),
+        ),
     };
     let kind = kebab(
         format!("{event:?}")
@@ -1039,6 +1263,6 @@ fn log(game: &Game, cx: &Context<'_>) -> Vec<LogEntry> {
         .iter()
         .enumerate()
         .skip(cx.log_from)
-        .map(|(i, e)| log_entry(i, e, cx))
+        .map(|(i, e)| log_entry(i, e, game, cx))
         .collect()
 }

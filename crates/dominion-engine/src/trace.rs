@@ -80,6 +80,7 @@ impl Game {
 
     /// Records that `card` was revealed to everyone.
     pub(crate) fn show(&mut self, card: CardId) {
+        self.note_shown(card);
         self.record(|| Trace::Shown { card, to: None });
     }
 

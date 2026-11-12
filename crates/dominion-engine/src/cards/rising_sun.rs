@@ -751,11 +751,6 @@ fn biding_time_set_aside(g: &mut Game, p: PlayerId) {
     let cards = g.hand(p).to_vec();
     for &c in &cards {
         g.move_card(c, Zone::SetAside(p), Pos::Top);
-        g.emit(Event::Moved {
-            player: p,
-            card: None,
-            to: Zone::SetAside(p),
-        });
     }
     let data = Scratch {
         cards,

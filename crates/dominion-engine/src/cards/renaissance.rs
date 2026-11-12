@@ -383,11 +383,6 @@ fn improvable(g: &Game, p: PlayerId) -> Vec<CardId> {
 /// Puts `c` from `p`'s hand on top of their deck, unseen.
 fn top_deck_hidden(g: &mut Game, c: CardId, p: PlayerId) {
     g.move_card(c, Zone::Deck(p), Pos::Top);
-    g.emit(Event::Moved {
-        player: p,
-        card: None,
-        to: Zone::Deck(p),
-    });
 }
 
 /// At step `pc`: asks `p` to trash one of their hand (if any), moving on to `pc + 1`
@@ -1099,11 +1094,6 @@ fn research(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             for &c in &cards {
                 g.move_card(c, Zone::SetAside(p), Pos::Top);
-                g.emit(Event::Moved {
-                    player: p,
-                    card: None,
-                    to: Zone::SetAside(p),
-                });
             }
             let data = Scratch {
                 cards,

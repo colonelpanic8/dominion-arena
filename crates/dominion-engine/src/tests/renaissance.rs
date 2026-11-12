@@ -899,6 +899,14 @@ fn silk_merchant_gives_coffers_and_a_villager_when_gained_or_trashed() {
     play(&mut g, Card::Silver);
     buy(&mut g, Card::SilkMerchant);
     assert_eq!((g.player(P0).coffers, g.player(P0).villagers), (1, 1));
+    let took = |counter| Event::Counter {
+        player: Some(P0),
+        pile: None,
+        counter,
+        delta: 1,
+    };
+    let order = [took(Counter::Coffers), took(Counter::Villagers)];
+    assert!(logged_in_order(&g, &order));
     next_turn(&mut g);
     play(&mut g, Card::Chapel);
     choose_kinds(&mut g, &[Card::SilkMerchant]);

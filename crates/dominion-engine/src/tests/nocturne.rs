@@ -396,9 +396,20 @@ fn crypt_sets_treasures_aside_and_returns_one_each_turn() {
     choose_kinds(&mut g, &[Card::Silver, Card::Gold]);
     assert_eq!(in_play_kinds(&g, P0), [Card::Crypt]);
     assert_eq!(g.view(P1).card(g.player(P0).set_aside[0]), None);
+    // Everyone saw them in play; which one comes back is hidden.
+    let aside = moved(
+        P0,
+        Zone::InPlay(P0),
+        Zone::SetAside(P0),
+        &[Card::Silver, Card::Gold],
+        2,
+    );
+    assert!(g.log().contains(&aside));
     next_turn(&mut g);
     choose_kinds(&mut g, &[Card::Gold]);
     assert!(hand_kinds(&g, P0).contains(&Card::Gold));
+    let back = moved(P0, Zone::SetAside(P0), Zone::Hand(P0), &[], 1);
+    assert!(g.log().contains(&back));
     next_turn(&mut g);
     assert_eq!(in_play_kinds(&g, P0), [Card::Crypt]);
     next_turn(&mut g);
@@ -1253,6 +1264,8 @@ fn will_o_wisp_takes_the_revealed_card_if_it_costs_two_or_less() {
     play(&mut g, Card::WillOWisp);
     assert_eq!(hand_kinds(&g, P0), [Card::Copper, Card::Estate]);
     assert_eq!(g.turn().actions, 1);
+    let taken = moved(P0, Zone::Deck(P0), Zone::Hand(P0), &[Card::Estate], 1);
+    assert!(g.log().contains(&taken));
 
     let mut g = setup(&[Card::Bard]);
     hand(&mut g, P0, &[Card::WillOWisp]);
@@ -1743,6 +1756,16 @@ fn bad_omens_puts_the_deck_away_but_two_coppers() {
     );
     assert_eq!(deck_kinds(&g, P1), [Card::Copper, Card::Copper]);
     assert_eq!(g.player(P1).discard.len(), 3);
+    let copper = Event::TopDecked {
+        player: P1,
+        card: Some(Card::Copper),
+    };
+    let order = [
+        moved(P1, Zone::Deck(P1), Zone::Discard(P1), &[], 5),
+        copper.clone(),
+        copper,
+    ];
+    assert!(logged_in_order(&g, &order));
 }
 
 #[test]

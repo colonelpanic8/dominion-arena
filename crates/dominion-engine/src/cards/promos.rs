@@ -454,11 +454,6 @@ fn church(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let chosen = input.cards();
             for &c in &chosen {
                 g.move_card(c, Zone::SetAside(f.player), Pos::Top);
-                g.emit(Event::Moved {
-                    player: f.player,
-                    card: None,
-                    to: Zone::SetAside(f.player),
-                });
             }
             f.add_duration(
                 g,

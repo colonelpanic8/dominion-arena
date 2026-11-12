@@ -1,4 +1,5 @@
-use crate::{Card, PlayerId};
+use crate::game::Token;
+use crate::{Card, PileId, PlayerId, Zone};
 use serde::{Deserialize, Serialize};
 
 /// Where a gained card goes.
@@ -60,9 +61,11 @@ pub enum Event {
         player: PlayerId,
         card: Card,
     },
-    /// A card went onto the deck. Which card is public only if it was revealed.
+    /// A card went onto the deck: `card` if everyone knew which it was.
     TopDecked {
         player: PlayerId,
+        #[serde(default)]
+        card: Option<Card>,
     },
     SetAside {
         player: PlayerId,
@@ -93,11 +96,92 @@ pub enum Event {
         player: PlayerId,
         pile: crate::PileId,
     },
-    /// A card moved somewhere not covered by the other events (a mat, Exile, back to its
-    /// pile, ...). `card` is `None` when only its owner may know which card it was.
+    /// Cards moved from one zone to another with no event of their own (onto a mat, into a
+    /// hand from set aside, a deck into its discard pile, back to a pile, ...): `count` of
+    /// them, of which `cards` are the ones everyone knew which they were. `player` is the
+    /// owner of `from`, else of `to`. Logged by the game itself, for every card moved
+    /// with no other event. (`from` is `None` only in logs saved before it was recorded.)
     Moved {
         player: PlayerId,
-        card: Option<Card>,
-        to: crate::Zone,
+        #[serde(default)]
+        from: Option<Zone>,
+        to: Zone,
+        #[serde(default)]
+        cards: Vec<Card>,
+        #[serde(default = "one")]
+        count: usize,
+        /// Under the cards already in `to`.
+        #[serde(default)]
+        bottom: bool,
     },
+    /// `player` looked at the top `count` cards of their deck.
+    Looked {
+        player: PlayerId,
+        count: usize,
+    },
+    /// A counter changed by `delta`: a player's (`player`), a pile's (`pile`) or the
+    /// game's (neither).
+    Counter {
+        player: Option<PlayerId>,
+        pile: Option<PileId>,
+        counter: Counter,
+        delta: i32,
+    },
+    /// `player`'s Adventures `token` went onto `pile`, or off its pile (`None`).
+    TokenMoved {
+        player: PlayerId,
+        token: Token,
+        pile: Option<PileId>,
+    },
+    /// `player` took (`on`) or lost a marker token.
+    Marker {
+        player: PlayerId,
+        marker: Marker,
+        on: bool,
+    },
+    /// `player` returned a State.
+    Returned {
+        player: PlayerId,
+        card: Card,
+    },
+    /// `player` returned to their Action phase.
+    ReturnedToAction {
+        player: PlayerId,
+    },
+    /// `player` called `card` from their Tavern mat.
+    Called {
+        player: PlayerId,
+        card: Card,
+    },
+}
+
+fn one() -> usize {
+    1
+}
+
+/// A count of tokens [`Event::Counter`] reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Counter {
+    Coffers,
+    Villagers,
+    Favors,
+    Debt,
+    VpTokens,
+    /// Coin tokens on a Pirate Ship mat.
+    PirateShip,
+    /// Embargo's Curse tokens.
+    Embargo,
+    /// Trade Route's coin token on a pile, or coin tokens on the Trade Route mat.
+    TradeRoute,
+    /// Sun tokens on the Prophecy.
+    Sun,
+}
+
+/// A token a player has or not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Marker {
+    MinusCard,
+    MinusCoin,
+    /// The Journey token; `on` is face up.
+    Journey,
 }
