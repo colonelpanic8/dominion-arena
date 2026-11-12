@@ -114,7 +114,7 @@ impl Shape {
 
     pub fn name(&self, size: CardSize) -> Rect {
         match size {
-            CardSize::Full if self.landscape => r(0.32, 0.05, 0.39, 0.068),
+            CardSize::Full if self.landscape => r(0.32, 0.04, 0.36, 0.085),
             CardSize::Full if self.curse && self.basic => r(0.09, 0.061, 0.82, 0.097),
             CardSize::Full if self.basic && self.treasure_only => r(0.21, 0.06, 0.58, 0.097),
             CardSize::Full if self.basic => r(0.09, 0.057, 0.82, 0.097),
@@ -129,7 +129,7 @@ impl Shape {
     /// The type line; landscapes have it in the corner at full size, turned 45°.
     pub fn types(&self, size: CardSize) -> Option<Rect> {
         match size {
-            CardSize::Full if self.landscape => Some(r(0.83, 0.05, 0.17, 0.045)),
+            CardSize::Full if self.landscape => Some(r(0.85, 0.068, 0.13, 0.06)),
             CardSize::Mini if self.landscape => Some(r(0.32, 0.012, 0.36, 0.07)),
             CardSize::Full if self.basic && self.treasure_only => Some(r(0.23, 0.85, 0.54, 0.097)),
             CardSize::Full if self.basic => Some(r(0.23, 0.86, 0.54, 0.097)),

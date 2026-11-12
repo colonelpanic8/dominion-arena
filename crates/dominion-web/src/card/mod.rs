@@ -203,7 +203,11 @@ fn draw_unknown(name: &str, size: CardSize, assets: &AssetDb, m: &dyn Measure) -
     let ratio = shape.ratio(size);
     let name_box = shape.name(size);
     let title = title_text(name, assets);
-    let fill = if size == CardSize::Micro { 0.8 } else { 0.7 };
+    let fill = match size {
+        CardSize::Micro => 0.8,
+        CardSize::Full if shape.landscape => 0.9,
+        _ => 0.7,
+    };
     let name_size = fit_line(
         &title,
         Font::Title,
@@ -274,7 +278,11 @@ fn draw(
         name_box.w -= (start - name_box.x).max(0.0);
         name_box.x = name_box.x.max(start);
     }
-    let fill = if size == CardSize::Micro { 0.8 } else { 0.7 };
+    let fill = match size {
+        CardSize::Micro => 0.8,
+        CardSize::Full if shape.landscape => 0.9,
+        _ => 0.7,
+    };
     let name_size = fit_line(
         &title,
         Font::Title,
@@ -287,6 +295,7 @@ fn draw(
         CardSize::Mini if shape.landscape => false,
         _ => shape.dark_title,
     };
+    let corner_types = shape.landscape && size == CardSize::Full;
     let types = shape.types(size).map(|rect| {
         let line = title_text(&layout::type_line(info), assets);
         let s = fit_line(
@@ -294,12 +303,11 @@ fn draw(
             Font::Title,
             rect.width_cqw(),
             rect.height_cqw(ratio),
-            0.6,
+            if corner_types { 0.75 } else { 0.6 },
             m,
         );
         (rect, line, s)
     });
-    let corner_types = shape.landscape && size == CardSize::Full;
     let lines = text::parse(&info.text);
     let (heirloom, body): (Vec<Line>, Vec<Line>) = lines
         .into_iter()
