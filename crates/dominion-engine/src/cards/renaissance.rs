@@ -1132,7 +1132,7 @@ fn scepter(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     candidates.push(c);
                 }
             }
-            if candidates.is_empty() || p != g.turn.player {
+            if candidates.is_empty() {
                 return Flow::done();
             }
             f.pc = 2;

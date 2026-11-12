@@ -318,6 +318,7 @@ impl SetRules for Rules {
                         player: p,
                         source: Card::Journey,
                         limit: ExtraLimit::ThirdInARow,
+                        lasting: None,
                     });
                 }
                 Flow::done()

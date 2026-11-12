@@ -1148,6 +1148,17 @@ fn prizes() {
     assert_eq!(g.turn().coins, 2 + 1);
 }
 
+/// "+$1 per unused Action you have": a player has none on another player's turn.
+#[test]
+fn diadem_on_another_players_turn_counts_no_actions() {
+    let mut g = setup(&[Card::Tournament]);
+    hand(&mut g, P1, &[Card::Diadem]);
+    g.start();
+    assert_eq!(g.turn().actions, 1);
+    play_out_of_turn(&mut g, P1, Card::Diadem);
+    assert_eq!(g.player(P1).coins_got, 2);
+}
+
 #[test]
 fn followers_gains_an_estate_and_attacks_each_player_in_turn() {
     let mut g = setup_with(GameConfig::new(3, vec![Card::Tournament], 1));

@@ -172,7 +172,7 @@ pub(crate) enum Frame {
         from: From,
         to: Dest,
         bought: bool,
-        /// For a bought card: which buy of the turn (see [`GainState::buy`]).
+        /// For a bought card: which buy (see [`GainState::buy`]).
         #[serde(default)]
         buy: Option<usize>,
         card: Option<CardId>,
@@ -186,8 +186,7 @@ pub(crate) enum Frame {
         pile: Option<PileId>,
         landscape: Option<Card>,
         card: Option<CardId>,
-        /// Which buy of the turn this is, once paid for: its position in
-        /// `Turn::bought_cards`, from 1.
+        /// Which buy this is, once paid for (see [`GainState::buy`]).
         #[serde(default)]
         index: usize,
         pc: u8,
@@ -214,6 +213,9 @@ pub(crate) enum Frame {
     Overpay {
         player: PlayerId,
         card: CardId,
+        /// Which buy (see [`GainState::buy`]).
+        #[serde(default)]
+        buy: usize,
         paid: crate::Cost,
         pc: u8,
     },
@@ -353,10 +355,11 @@ impl Frame {
         }
     }
 
-    pub(crate) fn overpay(player: PlayerId, card: CardId) -> Frame {
+    pub(crate) fn overpay(player: PlayerId, card: CardId, buy: usize) -> Frame {
         Frame::Overpay {
             player,
             card,
+            buy,
             paid: crate::Cost::ZERO,
             pc: 0,
         }
@@ -624,9 +627,10 @@ impl Frame {
             Frame::Overpay {
                 player,
                 card,
+                buy,
                 paid,
                 pc,
-            } => resume_overpay(g, *player, *card, paid, pc, input),
+            } => resume_overpay(g, *player, (*card, *buy), paid, pc, input),
             Frame::Receive { player, card, pc } => match pc {
                 0 => {
                     *pc = 1;
@@ -771,6 +775,14 @@ fn fails(g: &Game, extra: &ExtraTurn) -> bool {
     }
 }
 
+/// Ends what kept a card in play for extra turn `e` (Outpost, Voyage), which is starting,
+/// skipped or lost: the card is discarded in that turn's Clean-up, or the next one.
+fn release(g: &mut Game, e: &ExtraTurn) {
+    if let Some(id) = e.lasting {
+        g.lasting.retain(|l| l.id != id);
+    }
+}
+
 fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> Flow {
     match pc {
         0 | 2 => {
@@ -782,9 +794,13 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
             };
             loop {
                 // An extra turn that can't follow the turn that just ended is lost.
-                let mut pending = std::mem::take(&mut g.extra_turns);
-                pending.retain(|e| !fails(g, e));
+                let (lost, pending) = std::mem::take(&mut g.extra_turns)
+                    .into_iter()
+                    .partition(|e| fails(g, e));
                 g.extra_turns = pending;
+                for e in lost {
+                    release(g, &e);
+                }
                 // The player who just took a turn takes theirs first, then the others in
                 // turn order; each chooses among their own.
                 let Some(p) = g
@@ -828,13 +844,9 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     .iter()
                     .position(|e| e.player == p && e.source == source)
                     .expect("the chosen extra turn is pending");
-                g.extra_turns.remove(i);
+                let e = g.extra_turns.remove(i).expect("found above");
+                release(g, &e);
                 if g.skips_turn(p, true) {
-                    // What kept its card in play for that turn (Voyage, Outpost) ends, so
-                    // the card is discarded in the next Clean-up.
-                    let until = Until::StartOfTurn(p);
-                    g.lasting
-                        .retain(|l| !(l.owner == p && l.card == source && l.until == until));
                     continue;
                 }
                 g.turn = Turn::new(p);
@@ -1134,12 +1146,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             for l in std::mem::take(&mut g.lasting) {
                 if l.until != Until::EndOfTurn && !l.ending {
                     g.lasting.push(l);
-                } else if l.until == Until::StartOfTurn(l.owner)
-                    && let Some(i) = g
-                        .extra_turns
-                        .iter()
-                        .position(|t| t.player == l.owner && t.source == l.card)
-                {
+                } else if let Some(i) = g.extra_turns.iter().position(|t| t.lasting == Some(l.id)) {
                     // The extra turn a Duration stayed in play for (Outpost, Voyage) is
                     // one of the things it no longer does.
                     g.extra_turns.remove(i);
@@ -1344,12 +1351,12 @@ fn resume_buy(
                 player: p,
                 card: kind,
             });
+            *index = g.log.len();
             pay(g, p, cost);
             g.turn.bought_cards.push(kind);
-            *index = g.turn.bought_cards.len();
             *pc = 2;
             if kind.def().overpay {
-                return Flow::Call(Frame::overpay(p, top));
+                return Flow::Call(Frame::overpay(p, top, *index));
             }
             Flow::Continue
         }
@@ -1391,11 +1398,12 @@ fn resume_buy(
 fn resume_overpay(
     g: &mut Game,
     p: PlayerId,
-    card: CardId,
+    (card, buy): (CardId, usize),
     paid: &mut crate::Cost,
     pc: &mut u8,
     input: Input,
 ) -> Flow {
+    let (coins, potions) = g.funds(p);
     let ask = |max: u32| {
         Flow::Ask(Decision {
             player: p,
@@ -1412,16 +1420,16 @@ fn resume_overpay(
     match pc {
         0 => {
             *pc = 1;
-            if g.turn.coins > 0 {
-                return ask(g.turn.coins);
+            if coins > 0 {
+                return ask(coins);
             }
             Flow::Continue
         }
         1 => {
             paid.coins = input.number().unwrap_or(0).max(0) as u8;
             *pc = 2;
-            if g.turn.potions > 0 {
-                return ask(g.turn.potions);
+            if potions > 0 {
+                return ask(potions);
             }
             Flow::Continue
         }
@@ -1441,6 +1449,7 @@ fn resume_overpay(
             let mut f = CardFrame::new(g.card(card), Hook::Ability(OVERPAY), p, Some(card));
             f.data = paid.coins as i32;
             f.s.cost = *paid;
+            f.s.i = buy;
             Flow::Call(Frame::Card(Box::new(f)))
         }
         _ => Flow::done(),

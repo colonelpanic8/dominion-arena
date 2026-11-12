@@ -307,6 +307,7 @@ impl SetRules for Rules {
                     player: f.player,
                     source: Card::Mission,
                     limit: ExtraLimit::ThirdInARow,
+                    lasting: None,
                 });
                 Flow::done()
             }
@@ -549,7 +550,8 @@ impl SetRules for Rules {
                 .iter()
                 .any(|l| l.card == card && l.owner == p && l.until == Until::EndOfTurn),
             Card::Inheritance => g.ext.adventures.inherited.iter().all(|&(q, _)| q != p),
-            _ => !(card.kind() == Kind::Card && g.turn.extra == Some(Card::Mission)),
+            // Only the Mission turn's player can't buy cards.
+            _ => !(card.kind() == Kind::Card && p == g.turn.player && g.turn.extra == Some(Card::Mission)),
         }
     }
 
@@ -699,18 +701,10 @@ fn inherited(g: &Game) -> bool {
         .is_some_and(|p| inherited_card(g, p).is_some())
 }
 
-/// How many cards `p` gained on their most recent turn.
+/// How many cards `p` gained on their last turn.
 fn gains_on_last_turn(g: &Game, p: PlayerId) -> usize {
-    let log = g.log();
-    let Some(start) = log
+    g.last_turn_log(p)
         .iter()
-        .rposition(|e| matches!(e, Event::TurnStart { player, .. } if *player == p))
-    else {
-        return 0;
-    };
-    log[start + 1..]
-        .iter()
-        .take_while(|e| !matches!(e, Event::TurnStart { .. }))
         .filter(|e| matches!(e, Event::Gained { player, .. } if *player == p))
         .count()
 }

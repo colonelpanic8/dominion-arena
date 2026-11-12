@@ -1411,6 +1411,17 @@ fn good_harvest_gives_a_buy_and_a_coin_for_the_first_play_of_each_treasure() {
 }
 
 #[test]
+fn good_harvest_counts_treasures_played_on_another_players_turn() {
+    let mut g = with_prophecy(&[Card::Smithy], Card::GoodHarvest);
+    hand(&mut g, P1, &[Card::Silver, Card::Silver]);
+    g.start();
+    play_out_of_turn(&mut g, P1, Card::Silver);
+    play_out_of_turn(&mut g, P1, Card::Silver);
+    assert_eq!(g.player(P1).coins_got, 2 + 1 + 2);
+    assert_eq!((g.turn().coins, g.turn().buys), (0, 1));
+}
+
+#[test]
 fn growth_gains_a_cheaper_card_when_a_treasure_is_gained_and_chains() {
     let mut g = with_prophecy(&[Card::Smithy], Card::Growth);
     hand(&mut g, P0, &[Card::Gold, Card::Gold]);

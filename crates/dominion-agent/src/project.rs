@@ -240,6 +240,8 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
                 _ if l.ending => ("end-of-turn", None),
                 Until::EndOfTurn => ("end-of-turn", None),
                 Until::StartOfTurn(p) => ("start-of-turn", Some(p.0)),
+                // The start of its owner's extra turn.
+                Until::ExtraTurn => ("start-of-turn", Some(l.owner.0)),
                 Until::Removed => ("removed", None),
             };
             LastingView {

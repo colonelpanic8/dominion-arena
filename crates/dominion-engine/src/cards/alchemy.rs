@@ -104,12 +104,14 @@ impl SetRules for Rules {
 
     fn triggers(g: &Game, occ: &Occasion, out: &mut Vec<Trigger>) {
         match *occ {
-            Occasion::StartCleanup { player } if potion_in_play(g, player) => {
+            Occasion::StartCleanup { .. } => {
+                // Whoever played it, on whoever's turn.
                 for l in g.lasting() {
+                    let player = l.owner;
                     if l.card == Card::Alchemist
-                        && l.owner == player
                         && let Some(src) = l.source
                         && g.zone(src) == Zone::InPlay(player)
+                        && potion_in_play(g, player)
                     {
                         out.push(
                             Trigger::new(player, Card::Alchemist, ALCHEMIST_TOPDECK)
