@@ -158,6 +158,26 @@ fn merchant_after_a_silver_does_nothing() {
     assert_eq!(g.turn().coins, 2 + 1 + 2);
 }
 
+/// Merchant's page: "if playing a Silver causes you to play a Merchant (e.g. you trash a
+/// Catacombs with Sauna, gain a Merchant, and play it with Innovation), you'll get +$1."
+#[test]
+fn merchant_played_while_the_first_silver_resolves_boosts_it() {
+    let mut g = setup(&[Card::Sauna, Card::Catacombs, Card::Merchant]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Sauna, Card::Silver, Card::Catacombs]);
+    deck(&mut g, P0, &[Card::Estate; 3]);
+    g.start();
+    play(&mut g, Card::Sauna);
+    end_phase(&mut g);
+    play(&mut g, Card::Silver);
+    super::intrigue::trigger(&mut g, Card::Sauna);
+    choose_kinds(&mut g, &[Card::Catacombs]);
+    choose_pile(&mut g, Card::Merchant);
+    super::intrigue::trigger(&mut g, Card::Innovation);
+    assert_eq!(g.turn().played, [Card::Sauna, Card::Silver, Card::Merchant]);
+    assert_eq!(g.turn().coins, 2 + 1);
+}
+
 #[test]
 fn library_sets_aside_actions_and_discards_them() {
     let mut g = setup(&[Card::Library, Card::Village]);

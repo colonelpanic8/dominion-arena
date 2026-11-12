@@ -944,15 +944,13 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 pl.extra_turns_taken += 1;
             }
             let turn = pl.turns_taken;
+            // "Until your next turn" ends the instant it starts, before anything at its start.
+            g.lasting.retain(|l| l.until != Until::StartOfTurn(p));
             g.emit(Event::TurnStart { player: p, turn });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::StartTurn { player: p }))
         }
         1 => {
-            // One made during this start of turn lasts until the next turn.
-            let turn = g.players[p.index()].turns_taken;
-            g.lasting
-                .retain(|l| l.until != Until::StartOfTurn(p) || (l.owner == p && l.turn == turn));
             g.turn.phase = Phase::Action;
             *pc = 2;
             Flow::Continue
@@ -1478,6 +1476,7 @@ impl PlayFrame {
                 let card = g.card(id);
                 let since = g.log.len();
                 g.emit(Event::Played { player: p, card });
+                let index = g.turn.played.len();
                 g.turn.played.push(card);
                 g.turn.played_by.push(p);
                 g.turn.played_types.push(g.types(id));
@@ -1495,6 +1494,7 @@ impl PlayFrame {
                     gave_coins: false,
                     run_since: since,
                     tracker: self.chain.last().copied().filter(|_| !enters),
+                    index,
                 });
                 self.pc = 1;
                 Flow::Call(Frame::window(Occasion::Play {
