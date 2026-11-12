@@ -1245,6 +1245,50 @@ fn obelisk_still_scores_its_pile_after_divine_wind() {
     assert_eq!(g.score(P0), 2);
 }
 
+/// "The removed piles are gone", though "Traits still affect their removed piles" (Divine
+/// Wind, official FAQ): there is no Fawning card left to gain.
+#[test]
+fn fawning_gains_nothing_from_a_pile_divine_wind_removed() {
+    let mut g = before_divine_wind(
+        &[Card::TeaHouse, Card::Smithy],
+        &[Card::Fawning],
+        &[(Card::Fawning, Card::Smithy)],
+    );
+    hand(&mut g, P0, &[Card::TeaHouse]);
+    deck(&mut g, P0, &coppers(10));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Smithy), None);
+    to_buy(&mut g);
+    g.turn.coins = 8;
+    reask(&mut g);
+    buy(&mut g, Card::Province);
+    resolve_triggers(&mut g);
+    assert_eq!(g.count_owned(P0, Card::Smithy), 0);
+}
+
+/// A Friendly card from the removed pile is still Friendly and may be discarded, but there
+/// is no Friendly card left to gain.
+#[test]
+fn friendly_gains_nothing_from_a_pile_divine_wind_removed() {
+    let mut g = before_divine_wind(
+        &[Card::TeaHouse, Card::Smithy],
+        &[Card::Friendly],
+        &[(Card::Friendly, Card::Smithy)],
+    );
+    hand(&mut g, P0, &[Card::TeaHouse, Card::Smithy]);
+    deck(&mut g, P0, &coppers(10));
+    g.start();
+    play(&mut g, Card::TeaHouse);
+    assert_eq!(g.supply_pile(Card::Smithy), None);
+    to_buy(&mut g);
+    end_phase(&mut g);
+    assert_eq!(trigger_cards(&g), [Card::Friendly]);
+    respond(&mut g, Response::option(Opt::Trigger(0)));
+    assert_eq!(g.turn().player, P1);
+    assert_eq!(g.count_owned(P0, Card::Smithy), 1);
+}
+
 /// "Tokens on the removed piles are no longer on them"; Adventures tokens go back to their
 /// player, the others are gone (Divine Wind, official FAQ).
 #[test]

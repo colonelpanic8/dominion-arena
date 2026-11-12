@@ -637,20 +637,21 @@ fn this_turn_lasting(g: &Game, card: Card, p: PlayerId) -> Option<&Lasting> {
         .find(|l| l.card == card && l.owner == p && l.until == Until::EndOfTurn)
 }
 
-/// The pile Trait `t` is on.
+/// The pile Trait `t` is on, unless Divine Wind removed it.
 fn trait_pile(g: &Game, t: Card) -> Option<PileId> {
     if !g.has_landscape(t) {
         return None;
     }
     (0..g.piles().len())
         .map(|i| PileId(i as u8))
-        .find(|&p| g.pile(p).traits.contains(&t))
+        .find(|&p| !g.pile(p).removed && g.pile(p).traits.contains(&t))
 }
 
 /// Whether cards named `card` are from the pile with Trait `t` (even once that pile is
 /// out of the game).
 fn is_trait(g: &Game, card: Card, t: Card) -> bool {
-    trait_pile(g, t).is_some_and(|pile| g.origin_pile(card) == Some(pile))
+    g.has_landscape(t)
+        && g.origin_pile(card).is_some_and(|pile| g.pile(pile).traits.contains(&t))
 }
 
 fn is_traited(g: &Game, id: CardId, t: Card) -> bool {
@@ -658,7 +659,7 @@ fn is_traited(g: &Game, id: CardId, t: Card) -> bool {
 }
 
 fn traited_in_hand(g: &Game, p: PlayerId, t: Card) -> Vec<CardId> {
-    if trait_pile(g, t).is_none() {
+    if !g.has_landscape(t) {
         return vec![];
     }
     g.hand(p)
@@ -1593,7 +1594,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 fn shuffled_fated(g: &Game, p: PlayerId) -> Vec<CardId> {
-    if trait_pile(g, Card::Fated).is_none() {
+    if !g.has_landscape(Card::Fated) {
         return vec![];
     }
     let mut fated: Vec<CardId> = g
