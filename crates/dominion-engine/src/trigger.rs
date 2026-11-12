@@ -11,7 +11,7 @@ use crate::cards::{self, CardFrame, Hook};
 use crate::decision::{Decision, DecisionKind, Opt, Purpose, Response};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{Scratch, Zone};
-use crate::{Card, CardId, Cost, Game, PlayerId};
+use crate::{Card, CardId, Cost, Game, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 
 /// Something that happened, or is about to, that abilities can respond to.
@@ -56,7 +56,7 @@ pub enum Occasion {
     },
     /// `attacker` played `card`, an Attack, and `target` may answer it, even if the play was
     /// replaced or blocked. A trigger that finishes with `Value::Bool(true)` makes `target`
-    /// unaffected.
+    /// unaffected. One window holds the occasions of all the players attacked.
     Attack {
         attacker: PlayerId,
         card: CardId,
@@ -200,20 +200,26 @@ impl Trigger {
 }
 
 /// Resolves every trigger for one occasion, or for several that happen together (cards
-/// trashed or discarded at once), whose triggers the players then order together.
-/// Finishes with `Value::Bool(true)` if any resolved trigger finished with
-/// `Value::Bool(true)`.
+/// trashed or discarded at once, the players an Attack is played against), whose triggers
+/// the players then order together. Finishes with `Value::Flags`: for each occasion,
+/// whether a resolved trigger finished with `Value::Bool(true)`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Window {
     occs: Vec<Occasion>,
-    /// Resolved or declined triggers, with the index of their occasion.
+    /// Resolved triggers, with the index of their occasion.
     done: Vec<(usize, Trigger)>,
+    /// Optional triggers their owner declined. A declined Reaction is offered again once
+    /// another player has used one.
+    #[serde(default)]
+    declined: Vec<(usize, Trigger)>,
     /// One trigger per option of the pending decision.
     asked: Vec<(usize, Trigger)>,
     /// Every trigger the pending decision is about, interchangeable ones included.
     #[serde(default)]
     offered: Vec<(usize, Trigger)>,
-    result: bool,
+    /// The occasions for which a resolved trigger finished with `Value::Bool(true)`.
+    #[serde(default)]
+    granted: Vec<usize>,
 }
 
 impl Window {
@@ -222,40 +228,38 @@ impl Window {
     }
 
     pub(crate) fn open_all(occs: Vec<Occasion>) -> Frame {
-        Frame::Window(Window {
+        Frame::Window(Box::new(Window {
             occs,
             done: vec![],
+            declined: vec![],
             asked: vec![],
             offered: vec![],
-            result: false,
-        })
+            granted: vec![],
+        }))
     }
 
     pub(crate) fn resume(&mut self, g: &mut Game, input: Input) -> Flow {
         if let Input::Return(value) = &input {
             g.end_resolving();
-            if matches!(value, Value::Bool(true)) && !self.result {
+            if matches!(value, Value::Bool(true))
+                && let Some(&(i, _)) = self.done.last()
+                && !self.granted.contains(&i)
+            {
                 self.log_unaffected(g);
+                self.granted.push(i);
             }
         }
-        match input {
-            Input::Response(Response::Options(chosen)) => match chosen.first() {
+        if let Input::Response(Response::Options(chosen)) = input {
+            match chosen.first() {
                 Some(Opt::Trigger(i)) => {
                     let t = self.asked[*i as usize].clone();
                     return self.run(g, t);
                 }
                 _ => {
-                    let declined: Vec<(usize, Trigger)> = self
-                        .offered
-                        .iter()
-                        .filter(|(_, t)| t.optional)
-                        .cloned()
-                        .collect();
-                    self.done.extend(declined);
+                    let declined = self.offered.iter().filter(|(_, t)| t.optional);
+                    self.declined.extend(declined.cloned());
                 }
-            },
-            Input::Return(Value::Bool(true)) => self.result = true,
-            _ => {}
+            }
         }
 
         let mut all = vec![];
@@ -264,12 +268,17 @@ impl Window {
             cards::triggers(g, occ, &mut found);
             all.extend(found.into_iter().map(|t| (i, t)));
         }
-        all.retain(|t| !self.done.contains(t) && !(self.result && t.1.protects));
+        all.retain(|t| {
+            !self.done.contains(t)
+                && !self.declined.contains(t)
+                && !(self.granted.contains(&t.0) && t.1.protects)
+        });
         if all.iter().any(|(_, t)| t.first) {
             all.retain(|(_, t)| t.first);
         }
         if all.is_empty() {
-            return Flow::Done(Value::Bool(self.result));
+            let flags = (0..self.occs.len()).map(|i| self.granted.contains(&i));
+            return Flow::Done(Value::Flags(flags.collect()));
         }
         let order = g.players_from(g.turn.player);
         let owner = *order
@@ -384,6 +393,12 @@ impl Window {
     }
 
     fn run(&mut self, g: &mut Game, (i, t): (usize, Trigger)) -> Flow {
+        // "If another player uses a Reaction, any previous players in turn order get
+        // another chance to react": only to react, and only until everyone has declined.
+        if reaction(g, &t) {
+            self.declined
+                .retain(|(_, d)| d.owner == t.owner || !reaction(g, d));
+        }
         self.done.push((i, t.clone()));
         // A label can say what only its owner knows.
         let header = t.label.is_none().then_some(crate::Event::Resolved {
@@ -406,6 +421,11 @@ impl Window {
         f.data = t.data;
         Flow::Call(Frame::Card(Box::new(f)))
     }
+}
+
+/// Whether `t` is a Reaction card's "you may" ability.
+fn reaction(g: &Game, t: &Trigger) -> bool {
+    t.optional && t.source.is_some_and(|c| g.is(c, Types::REACTION))
 }
 
 /// Whether resolving `a` or `b` makes no difference: the same ability with the same data,

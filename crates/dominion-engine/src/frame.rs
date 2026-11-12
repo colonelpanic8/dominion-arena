@@ -82,6 +82,8 @@ pub(crate) enum Value {
     None,
     Cards(Vec<CardId>),
     Bool(bool),
+    /// A window's result: one flag per occasion.
+    Flags(Vec<bool>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,7 +136,7 @@ pub(crate) enum Frame {
     },
     Play(PlayFrame),
     Card(Box<CardFrame>),
-    Window(Window),
+    Window(Box<Window>),
     Draw {
         player: PlayerId,
         count: usize,
@@ -1561,23 +1563,24 @@ impl PlayFrame {
                 })
             }
             3 => {
-                if let Input::Return(Value::Bool(unaffected)) = input {
-                    let target = self.remaining.remove(0);
-                    if !unaffected {
-                        self.targets.push(target);
-                    }
+                // One window for all the players attacked: a Reaction one of them uses
+                // gives the others another chance to react.
+                if let Input::Return(Value::Flags(unaffected)) = input {
+                    let asked = unaffected.len().max(1).min(self.remaining.len());
+                    let asked = self.remaining.drain(..asked).zip(unaffected);
+                    self.targets
+                        .extend(asked.filter(|(_, safe)| !safe).map(|(t, _)| t));
                 }
-                match self.remaining.first() {
-                    Some(&target) => Flow::Call(Frame::window(Occasion::Attack {
-                        attacker: p,
-                        card: id,
-                        target,
-                    })),
-                    None => {
-                        self.pc = 2;
-                        Flow::Continue
-                    }
+                if self.remaining.is_empty() {
+                    self.pc = 2;
+                    return Flow::Continue;
                 }
+                let occs = self.remaining.iter().map(|&target| Occasion::Attack {
+                    attacker: p,
+                    card: id,
+                    target,
+                });
+                Flow::Call(Window::open_all(occs.collect()))
             }
             6 => {
                 if let Some(Opt::Card(way)) = input.opt() {
