@@ -1906,8 +1906,10 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             let labels = kinds.iter().map(|k| k.to_string()).collect();
             let options = kinds.into_iter().map(Opt::Card).collect();
+            let card = pile.map_or(Card::Inherited, |pile| g.pile(pile).card);
             f.pc = 1;
             f.ask_choose_for(p, options, labels, 1, 1, Purpose::Other)
+                .question(format!("which starting card does your {card} replace?"))
         }
         _ => {
             if let Some(Opt::Card(k)) = input.opt()

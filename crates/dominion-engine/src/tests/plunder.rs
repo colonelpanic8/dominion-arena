@@ -2574,6 +2574,10 @@ fn inherited_replaces_an_estate_or_the_starting_card_each_player_chooses() {
     .unwrap();
     // P0 keeps the default (an Estate); P1 replaces a Copper, which goes back to its pile.
     assert_eq!(g.pending().unwrap().player, P0);
+    assert_eq!(
+        g.pending().unwrap().question.as_deref(),
+        Some("which starting card does your Village replace?")
+    );
     assert!(g.hand(P0).is_empty());
     pick(&mut g, Card::Estate);
     assert_eq!(g.pending().unwrap().player, P1);
