@@ -307,7 +307,7 @@ impl SetRules for Rules {
             Occasion::Play { player, card } => {
                 if g.is(card, Types::TREASURE)
                     && highwayman_attacks(g, player)
-                    && g.turn.played_of(player, Types::TREASURE) == 1
+                    && !g.plays_before(player, card).any(|(_, t)| t.contains(Types::TREASURE))
                 {
                     out.push(Trigger::new(player, Card::Highwayman, HIGHWAYMAN_BLOCK).on(card));
                 }

@@ -207,6 +207,27 @@ fn crossroads_gives_actions_only_the_first_time() {
     assert_eq!(g.hand(P0).len(), 2 + 2 + 2);
 }
 
+/// Kiln gains a copy of the first Crossroads as its play begins, and Innovation plays the
+/// copy at once: the first Crossroads is still the first one played.
+#[test]
+fn crossroads_played_during_the_first_ones_play_is_not_the_first() {
+    let mut g = setup(&[Card::Crossroads, Card::Kiln]);
+    g.players[0].projects.push(Card::Innovation);
+    hand(&mut g, P0, &[Card::Kiln, Card::Crossroads]);
+    deck(&mut g, P0, &[Card::Copper; 6]);
+    g.start();
+    g.turn.actions = 2;
+    play(&mut g, Card::Kiln);
+    play(&mut g, Card::Crossroads);
+    yes(&mut g);
+    super::intrigue::trigger(&mut g, Card::Innovation);
+    assert_eq!(
+        g.turn().played,
+        [Card::Kiln, Card::Crossroads, Card::Crossroads]
+    );
+    assert_eq!(g.turn().actions, 3);
+}
+
 #[test]
 fn develop_gains_one_more_and_one_less_onto_the_deck() {
     let mut g = setup(&[Card::Develop, Card::Smithy]);

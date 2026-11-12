@@ -1478,6 +1478,7 @@ impl PlayFrame {
                 let card = g.card(id);
                 let since = g.log.len();
                 g.emit(Event::Played { player: p, card });
+                let index = g.turn.played.len();
                 g.turn.played.push(card);
                 g.turn.played_by.push(p);
                 g.turn.played_types.push(g.types(id));
@@ -1495,6 +1496,7 @@ impl PlayFrame {
                     gave_coins: false,
                     run_since: since,
                     tracker: self.chain.last().copied().filter(|_| !enters),
+                    index,
                 });
                 self.pc = 1;
                 Flow::Call(Frame::window(Occasion::Play {

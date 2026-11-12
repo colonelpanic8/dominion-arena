@@ -580,6 +580,9 @@ pub struct PlayState {
     /// replays it, if a card does.
     #[serde(default)]
     pub tracker: Option<CardId>,
+    /// Its place in `Turn::played`.
+    #[serde(default)]
+    pub index: usize,
 }
 
 impl Game {
@@ -816,6 +819,38 @@ impl Game {
             .rev()
             .find(|st| st.card == id)
             .map(|st| st.phase)
+    }
+
+    /// `p`'s plays this turn before the play of `id` being resolved ("the first Silver you
+    /// play", "if this is the first time you played"): not the ones made while it resolves.
+    pub fn plays_before(
+        &self,
+        p: PlayerId,
+        id: CardId,
+    ) -> impl Iterator<Item = (Card, Types)> + '_ {
+        let end = self
+            .plays
+            .iter()
+            .rev()
+            .find(|st| st.card == id)
+            .map_or(self.turn.played.len(), |st| st.index);
+        self.plays_where(p, move |i| i < end)
+    }
+
+    /// `p`'s plays this turn that have finished resolving.
+    pub fn finished_plays(&self, p: PlayerId) -> impl Iterator<Item = (Card, Types)> + '_ {
+        self.plays_where(p, |i| !self.plays.iter().any(|st| st.index == i))
+    }
+
+    fn plays_where<'a>(
+        &'a self,
+        p: PlayerId,
+        keep: impl Fn(usize) -> bool + 'a,
+    ) -> impl Iterator<Item = (Card, Types)> + 'a {
+        let t = &self.turn;
+        (0..t.played.len())
+            .filter(move |&i| t.played_by.get(i) == Some(&p) && keep(i))
+            .map(move |i| (t.played[i], t.played_types[i]))
     }
 
     /// Where `id` was trashed from, while its "when trashed" abilities resolve.

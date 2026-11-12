@@ -173,6 +173,10 @@ them.
   third Action you gain") count the types cards had then: `Turn::played_types` /
   `gained_types` (`played_of`, `gained_of`), never `Card::is` on `played` / `gained`.
   Plays are recorded for every player, off-turn ones too: count one player's (`plays_by`).
+  A play is in `played` from its start, so cards can be played while it still resolves:
+  "the first X you play" and "if this is the first time you played" ask
+  `g.plays_before(p, id)`, and an effect made mid-turn that counts what was played before
+  it asks `g.finished_plays(p)` (Merchant played during the first Silver's play).
   "During your turns" and "this turn" modifiers ask `g.turn_player()`, which is no one
   between turns and when the game is scored, never `g.turn.player`.
 - **State.** Generic state is on `Game`, `Player` (mats, Coffers, Villagers, Favors,
