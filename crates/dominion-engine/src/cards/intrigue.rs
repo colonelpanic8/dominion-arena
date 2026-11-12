@@ -91,7 +91,7 @@ impl SetRules for Rules {
                     }
                     Card::SecretChamber => (
                         SECRET_CHAMBER_REACT,
-                        "reveal it to draw 2 cards, then put 2 cards from your hand onto your deck",
+                        "reveal it for +2 Cards, then put 2 cards from your hand on top of your deck",
                     ),
                     _ => continue,
                 };
