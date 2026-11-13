@@ -681,6 +681,10 @@ pub fn seat_edits(seats: &[TableSeat]) -> Vec<SeatEdit> {
                 None => SeatEdit::Open,
             },
             SeatKind::Token => SeatEdit::Token(seat.name.clone().unwrap_or_default()),
+            SeatKind::Agent => match &seat.user {
+                Some(user) => SeatEdit::Agent(user.name.clone()),
+                None => SeatEdit::Open,
+            },
         })
         .collect()
 }

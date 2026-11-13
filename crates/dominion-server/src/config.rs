@@ -14,6 +14,8 @@ pub const DEFAULT_RECONNECT_SECONDS: u32 = 30;
 pub const DEFAULT_KEEP_IDLE_DAYS: u32 = 30;
 pub const DEFAULT_AWAY_MINUTES: u32 = 5;
 pub const DEFAULT_DECISION_MINUTES: u32 = 30;
+pub const DEFAULT_AGENT_SEATS_PER_DAY: u32 = 5;
+pub const DEFAULT_AGENTS_AT_ONCE: u32 = 2;
 /// The environment variable naming the web client to serve when `web_dir` is unset.
 pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 
@@ -93,6 +95,21 @@ pub struct Config {
     /// In a lobby game, minutes a player may take over one decision before they forfeit
     /// (default 30; 0 never).
     pub decision_minutes: Option<u32>,
+    /// The Unix socket where `dominion serve` takes a runner of its own agents and
+    /// `dominion agents` connects (default: none, and no such agents).
+    pub agent_socket: Option<PathBuf>,
+    /// How many seats one registered player may fill with the server's agents a day
+    /// (default 5).
+    pub agent_seats_per_day: Option<u32>,
+    /// The agents `dominion agents` offers, as `[[agents]]` tables: `name`, `program`
+    /// (`claude` or `codex`), and optionally `model`, `command`, `about` (default: Claude
+    /// Opus, Claude Sonnet and Codex).
+    pub agents: Option<Vec<crate::runner::AgentSpec>>,
+    /// How many games `dominion agents` plays at once (default 2).
+    pub agents_at_once: Option<u32>,
+    /// Where `dominion agents` runs its agents and keeps their logs (default
+    /// `$XDG_STATE_HOME/dominion/agents`).
+    pub agents_dir: Option<PathBuf>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -174,7 +191,29 @@ impl Config {
             max_games: self.max_games.unwrap_or(crate::hub::DEFAULT_MAX_GAMES),
             keep_finished: self.keep_finished(),
             keep_idle: minutes(self.keep_idle_days.unwrap_or(DEFAULT_KEEP_IDLE_DAYS) * 24 * 60),
+            agent_seats_per_day: self
+                .agent_seats_per_day
+                .unwrap_or(DEFAULT_AGENT_SEATS_PER_DAY),
         }
+    }
+
+    /// What `dominion agents` runs with, if the settings say where the server is.
+    pub fn runner(&self) -> Result<crate::runner::Settings, String> {
+        let socket = (self.agent_socket.clone())
+            .ok_or("no agent_socket: set it to the server's in the settings file")?;
+        let dir = (self.agents_dir.clone())
+            .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/agents")))
+            .ok_or("no place for the agents: set agents_dir (or XDG_STATE_HOME or HOME)")?;
+        Ok(crate::runner::Settings {
+            socket,
+            server: self.server(),
+            agents: self
+                .agents
+                .clone()
+                .unwrap_or_else(crate::runner::default_agents),
+            capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),
+            dir,
+        })
     }
 
     /// The host of `public_url`, as a Host header has it.

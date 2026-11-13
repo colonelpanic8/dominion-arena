@@ -158,6 +158,10 @@ fn the_host_sends_the_seats_back_and_names_new_ones_apart() {
         TableSeat::default(),
         token("Agent 1"),
         player("agent 2", false),
+        TableSeat {
+            kind: SeatKind::Agent,
+            ..player("Claude Opus", true)
+        },
     ];
     assert_eq!(
         seat_edits(&seats),
@@ -166,6 +170,7 @@ fn the_host_sends_the_seats_back_and_names_new_ones_apart() {
             SeatEdit::Open,
             SeatEdit::Token("Agent 1".into()),
             SeatEdit::Player("agent 2".into()),
+            SeatEdit::Agent("Claude Opus".into()),
         ]
     );
     assert_eq!(free_seat_name(&seats, "Agent"), "Agent 3");
@@ -250,6 +255,7 @@ fn the_tables_tab_offers_what_each_line_allows() {
         }),
         queue: None,
         games: vec![],
+        house: Default::default(),
     };
     let games = [
         game("g0", &["Ada", "Zed"], false, true),

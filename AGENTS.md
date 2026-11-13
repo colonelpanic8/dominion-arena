@@ -58,8 +58,14 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and ter
     accounts.rs           accounts, passwords, sessions, bots and their API keys
     tables.rs matching.rs lobby tables; the automatch queue
     chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard
+    house.rs              the server's own agents: their accounts, the runner connected,
+                          its jobs (every seat they hold in a running game, sent when they
+                          change), each player's agent seats a day
   src/rating.rs           Glicko-2 (pure)
   src/limits.rs           token-bucket rate limits (pure)
+  src/house.rs            the agent socket: the runner's messages and the server's end
+  src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
+                          `codex exec` playing each job's seat, its command line (pure)
   src/store.rs            the state directory: its lock, a JSON file per game written atomically
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
@@ -140,7 +146,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           kingdom, the token seats played at this screen, the last search
     my_table.rs           My Table, the server's table: Kingdom Options and Game Options
                           (the host edits, the others read), Players (accounts, token
-                          seats, open seats), the table's chat, Ready and Leave Table;
+                          seats, the server's agents, open seats), the table's chat, Ready and Leave Table;
                           while its game runs, that game locked, with the seat links of the
                           tokens handed out. Shared with the score page
     seat_link.rs          a seat handed out: its agent line, link, token, copy buttons
@@ -148,7 +154,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     account.rs            `SignIn` (log in, register, play as guest) and the Account tab:
                           keeping a guest account, the password, bots and their keys
     chat.rs               a chat channel (the lobby's, a table's)
-    home.rs               Automatch: the search, Bot Game (a search for agents), Create
+    home.rs               Automatch: the search, Bot Game (a search for agents, with the
+                          server's agent to play when none answers), Create
                           Table, Join a Seat, the lobby's chat
     tables.rs             Tables: `listing` (pure) of the lobby's tables and the games
                           without one, with Join / Open / Play / Watch

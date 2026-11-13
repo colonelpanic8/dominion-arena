@@ -687,6 +687,25 @@ pub fn Players() -> Element {
         tip.set(None);
     };
     let n = t.seats.len();
+    let house = ctx
+        .lobby
+        .read()
+        .as_ref()
+        .map(|l| l.house.clone())
+        .unwrap_or_default();
+    // The server's agents a host may seat: those it offers, if the host may seat any.
+    let agents: Vec<(String, String)> = match house.left {
+        Some(_) => (house.agents.iter())
+            .filter(|a| {
+                !t.seats
+                    .iter()
+                    .any(|s| s.kind == SeatKind::Agent && s.user.as_ref() == Some(&a.user))
+            })
+            .map(|a| (a.user.name.clone(), a.about.clone()))
+            .collect(),
+        None => vec![],
+    };
+    let left = house.left.unwrap_or(0);
     rsx! {
         Fieldset { title: "Players ({filled}/{n})", class: "lb-players",
             div { class: "lb-players-content",
@@ -721,7 +740,30 @@ pub fn Players() -> Element {
                                 "data-here": "{seat.here}",
                                 div { class: "lb-person-name",
                                     match kind {
+                                        SeatKind::Open if host && !agents.is_empty() => rsx! {
+                                            select {
+                                                class: "lb-agent-select",
+                                                "data-action": "seat-agent",
+                                                title: "Seat one of the server's agents: the server starts it when the game does ({left} more today)",
+                                                onchange: move |e| {
+                                                    let name = e.value();
+                                                    if !name.is_empty() {
+                                                        change_seats(ctx, toast, move |_, s| s[i] = SeatEdit::Agent(name));
+                                                    }
+                                                },
+                                                option { value: "", selected: true, "Empty Slot" }
+                                                for (agent, about) in agents.iter().cloned() {
+                                                    option { key: "{agent}", value: "{agent}", "{agent} ({about})" }
+                                                }
+                                            }
+                                        },
                                         SeatKind::Open => rsx! { span { class: "lb-empty-label", "Empty Slot" } },
+                                        SeatKind::Agent => rsx! {
+                                            if let Some(u) = user.clone() {
+                                                UserName { user: u }
+                                            }
+                                            span { class: "lb-person-away", if seat.here { "agent" } else { "agent, unavailable" } }
+                                        },
                                         SeatKind::Token => rsx! { TokenName { index: i, name: name.clone(), editable: host } },
                                         SeatKind::Player => rsx! {
                                             if let Some(u) = user.clone() {
@@ -748,6 +790,35 @@ pub fn Players() -> Element {
                                         }
                                         div { class: "{ready} c4", onmouseenter: move |e| show_tooltip(tip, if seat.ready { "Ready" } else { "Not Ready" }.into(), &e), onmouseleave: hide }
                                         if host && !is_me {
+                                            div {
+                                                class: "{exit} c7 clickable",
+                                                "data-action": "kick",
+                                                onmouseenter: move |e| show_tooltip(tip, "Kick".into(), &e),
+                                                onmouseleave: hide,
+                                                onclick: move |_| {
+                                                    let mut tip = tip;
+                                                    tip.set(None);
+                                                    change_seats(ctx, toast, move |_, s| s[i] = SeatEdit::Open);
+                                                },
+                                                if let Some(g) = exit_g { "{g}" }
+                                            }
+                                        }
+                                    },
+                                    SeatKind::Agent => rsx! {
+                                        div {
+                                            class: "{bot} c3",
+                                            onmouseenter: {
+                                                let about = house.agents.iter().find(|a| Some(&a.user) == user.as_ref()).map(|a| a.about.clone());
+                                                move |e| show_tooltip(tip, match &about {
+                                                    Some(about) => format!("One of the server's agents ({about}): the server starts it when the game does"),
+                                                    None => "One of the server's agents, which the server can't start now".into(),
+                                                }, &e)
+                                            },
+                                            onmouseleave: hide,
+                                            if let Some(g) = bot_g { "{g}" }
+                                        }
+                                        div { class: "{ready} c4", onmouseenter: move |e| show_tooltip(tip, "Ready".into(), &e), onmouseleave: hide }
+                                        if host {
                                             div {
                                                 class: "{exit} c7 clickable",
                                                 "data-action": "kick",

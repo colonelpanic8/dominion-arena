@@ -49,6 +49,9 @@ enum Command {
         #[arg(required = true)]
         names: Vec<String>,
     },
+    /// Play the server's own agents on this machine: connect to its `agent_socket` and
+    /// run Claude Code or Codex for every seat they hold.
+    Agents,
     /// Manage the local cache of dominion.games' images, fonts and sounds.
     Assets {
         #[command(subcommand)]
@@ -166,6 +169,7 @@ async fn serve(config: Config) -> Result<(), String> {
         arena: config.arena(),
         public_url: config.public_url.clone(),
         trust_proxy: config.trust_proxy.unwrap_or(false),
+        agent_socket: config.agent_socket.clone(),
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
@@ -243,6 +247,10 @@ async fn main() -> ExitCode {
             dominion_server::client::play(&url, new, seat, reconnect).await
         }
         Command::Assets { command } => assets(command, config).await,
+        Command::Agents => match config.runner() {
+            Ok(settings) => dominion_server::runner::run(settings).await,
+            Err(e) => Err(e),
+        },
         Command::Card { names } => names.iter().try_for_each(|name| {
             dominion_agent::glossary(name)
                 .map(|e| println!("{}\n", dominion_server::card_text(&e)))

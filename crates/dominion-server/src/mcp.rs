@@ -539,6 +539,7 @@ impl Session {
             players: p.players.unwrap_or(defaults.players),
             opponents: p.opponents.unwrap_or_default(),
             rated: p.rated.unwrap_or(defaults.rated),
+            agent: None,
         };
         let searching = (self.arena.queue_status(&ident))
             .is_some_and(|q| q.state == QueueState::Searching && (!asked || q.request == request));
@@ -588,6 +589,7 @@ impl Session {
                     .map(|s| match (&s.kind, &s.user, &s.name) {
                         (SeatKind::Player, Some(u), _) => u.name.clone(),
                         (SeatKind::Token, _, Some(n)) => format!("{n} (by token)"),
+                        (SeatKind::Agent, Some(u), _) => format!("{} (the server's agent)", u.name),
                         _ => "open".to_string(),
                     })
                     .collect();

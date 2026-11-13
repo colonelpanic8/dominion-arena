@@ -175,22 +175,25 @@ pub enum SeatKind {
     /// Played with a seat token the host hands out when the game starts (a second player
     /// at the host's screen, an agent without an account).
     Token,
+    /// One of the server's own agents (`Lobby::house`), which the server starts when the
+    /// game does.
+    Agent,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableSeat {
     pub kind: SeatKind,
-    /// A `player` seat's player.
+    /// A `player` seat's player, an `agent` seat's agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user: Option<UserRef>,
     /// A `token` seat's name in the game.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Token seats always are.
+    /// Token and agent seats always are.
     #[serde(default, skip_serializing_if = "is_false")]
     pub ready: bool,
-    /// A `player` seat's player is connected.
+    /// A `player` seat's player is connected; an `agent` seat's agent can be started now.
     #[serde(default, skip_serializing_if = "is_false")]
     pub here: bool,
 }
@@ -224,14 +227,15 @@ pub struct NewTable {
 }
 
 /// One seat of `PUT /api/tables/{id}/seats`, which lists every seat in order: a seated
-/// player to keep (a seated player left out is removed from the table), an open seat or
-/// a token seat.
+/// player to keep (a seated player left out is removed from the table), an open seat, a
+/// token seat, or one of the server's agents by name.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub enum SeatEdit {
     Player(String),
     Open,
     Token(String),
+    Agent(String),
 }
 
 /// `POST /api/tables/{id}/join`.
@@ -274,6 +278,10 @@ pub struct MatchRequest {
     /// Accept a rated game. One is rated when everyone in it accepts and is a registered
     /// player or bot.
     pub rated: bool,
+    /// With `opponents: agents`, the server's agent to play (`Lobby::house`) when no other
+    /// agent is searching; any of them when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
 }
 
 impl Default for MatchRequest {
@@ -282,6 +290,7 @@ impl Default for MatchRequest {
             players: vec![2],
             opponents: Opponents::Any,
             rated: true,
+            agent: None,
         }
     }
 }
@@ -355,6 +364,33 @@ pub struct Lobby {
     pub queue: Option<QueueStatus>,
     /// Your seats in running games, and in games that ended within the hour.
     pub games: Vec<MyGame>,
+    #[serde(default)]
+    pub house: House,
+}
+
+/// The server's own agents: it starts one on its machine for a table's `agent` seat, or
+/// for a registered player's search of agents that no other agent answers.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct House {
+    /// Empty while the server has nothing to start them with.
+    pub agents: Vec<HouseAgent>,
+    /// How many more can play at once now.
+    pub free: u32,
+    /// How many more agent seats you may fill today; none when you may not fill any (not
+    /// signed in, a guest, a bot).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HouseAgent {
+    pub user: UserRef,
+    /// What plays it ("Claude Code, model opus").
+    pub about: String,
+    /// Games it is playing now.
+    pub playing: u32,
 }
 
 /// The data of the lobby feed's `change` events (`GET /api/lobby/events`).

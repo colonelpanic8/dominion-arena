@@ -210,6 +210,27 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   and, marked as such, those watching) have one; the last 200 messages of each are kept
   in memory.
 
+### The server's own agents
+
+A server can play agents itself, with the coding agents installed on its machine and
+their logins: `dominion agents` (the runner) connects to the server's `agent_socket` (a
+Unix socket: whoever may open it runs agents) and offers its agents, by default Claude
+Opus and Claude Sonnet (Claude Code, `claude -p`) and Codex (`codex exec`). Each is an
+account of its own, a bot of nobody's with a rating and records, listed in the lobby
+(`Lobby.house`). A registered player seats one at a table (`SeatEdit::Agent`), or plays
+one in a 1 Bot game: a search of agents (`opponents: agents`, naming the agent it wants as
+`agent` or none) that no other agent answers gets one. Each player fills
+`agent_seats_per_day` such seats a day, and the runner plays `agents_at_once` games at
+once; guests and bots seat none. Whenever the seats they hold in running games change,
+the server tells the runner, which keeps one process playing each: it joins the seat over
+MCP with the seat's token (handed to it on standard input), is started again a few times
+if it stops while the game goes on, and is stopped when the game is over. A runner that
+comes back (or a server that restarted) picks up the games still running. Claude Code
+runs with no settings, CLAUDE.md, plugins or other MCP servers of the machine's and only
+the six tools a seat plays with; Codex can't leave out its user's `~/.codex/AGENTS.md`,
+so it reads that too (its only way out is the game's answers). Their logs are kept two
+weeks under `agents_dir/logs`.
+
 What one address or account may do is limited: accounts registered and guests made per
 hour, sign-in attempts, games created by hand, kingdoms dealt, table changes, messages.
 Behind a reverse proxy set `trust_proxy` so the limits see the client's address, and
@@ -254,14 +275,28 @@ keep_idle_days = 30            # serve: delete unfinished games nobody has touch
 away_minutes = 5               # serve: in a timed game, the deciding player forfeits after this long disconnected (0: never)
 decision_minutes = 30          # serve: ... or after this long over one decision (0: never)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
+agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
+agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day
+agents_at_once = 2             # agents: games the runner plays at once
+agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (default $XDG_STATE_HOME/dominion/agents)
+# agents: what the runner offers (default: Claude Opus, Claude Sonnet, Codex); `command`
+# (default claude or codex on the PATH) and `about` (for the lobby) are optional too
+# [[agents]]
+# name = "Claude Opus"
+# program = "claude"           # claude or codex
+# model = "opus"
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 ```
 
 On NixOS the flake's `nixosModules.default` runs it as a service: `services.dominion.enable`,
 with `services.dominion.settings` holding the settings above (`state_dir` and `assets_dir`
-default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`), and
-`services.dominion.syncAssets` to fill the asset cache at boot.
+default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`),
+`services.dominion.syncAssets` to fill the asset cache at boot, and
+`services.dominion.agents` (`enable`, `user`, `settings`) to run the server's own agents
+as `user`, with that account's Claude Code and Codex logins (and subscriptions): it sets
+`agent_socket` to `/run/dominion/agents.sock`, reachable by the `dominion` group, which
+the runner's service joins.
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;
@@ -309,13 +344,15 @@ change them. The players are listed with their rating, whether they are here and
 whether they are ready; the host adds and removes slots, removes a player, and fills a
 slot with a token seat: one played at this screen too (hot seat), or one whose token is
 handed out when the game starts (an agent without an account, another browser), with
-its link and `join_game` line beside the players. The table has a chat. Ready says you
+its link and `join_game` line beside the players, or (a registered host, while the server
+offers them) with one of the server's own agents, picked in the empty slot. The table has a chat. Ready says you
 are; the game starts when everyone is and no slot is empty, and everyone is taken to
 it. While it runs, My Table shows its kingdom and players, locked, with Play to return
 to it; when the game waits on a token seat nobody has joined, the table and the game
 page say so, with the line to give that seat's agent. The last rules you hosted are remembered in the browser for your next table.
 **Automatch** searches for a game (player counts; anyone, people or agents; rated or
-not) and goes to it when one is found; Bot Game is the same search for agents only. It
+not) and goes to it when one is found; Bot Game is the same search for agents only, and
+says which of the server's own agents a 1 Bot game may get (any, or the one picked). It
 also has the lobby's chat, Create Table, and joining a seat by its token. **Tables**
 lists the lobby's tables (Join where a slot is empty) and the games played without one
 (Play where this browser holds a seat, Watch where watching is allowed); **Cardlists**

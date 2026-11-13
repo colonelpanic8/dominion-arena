@@ -14,6 +14,7 @@
 mod accounts;
 mod chat;
 mod db;
+mod house;
 mod matching;
 mod records;
 mod tables;
@@ -32,6 +33,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 pub use accounts::SESSION_COOKIE;
+pub use house::RunnerId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -81,6 +83,8 @@ pub struct Settings {
     pub keep_finished: Duration,
     /// How long an unfinished game nobody touches is kept.
     pub keep_idle: Duration,
+    /// How many seats one account may fill with the server's agents a day.
+    pub agent_seats_per_day: u32,
 }
 
 impl Default for Settings {
@@ -93,6 +97,7 @@ impl Default for Settings {
             max_games: crate::hub::DEFAULT_MAX_GAMES,
             keep_finished: Duration::from_secs(7 * 86_400),
             keep_idle: Duration::from_secs(30 * 86_400),
+            agent_seats_per_day: 5,
         }
     }
 }
@@ -116,6 +121,9 @@ enum Login {
         owner: String,
         key: String,
     },
+    /// One of the server's own agents (`house`): a bot of nobody's, with no way to sign
+    /// in.
+    House,
 }
 
 /// An account, as the database has it.
@@ -138,7 +146,7 @@ impl User {
         match self.login {
             Login::Password(_) => UserKind::Registered,
             Login::Guest => UserKind::Guest,
-            Login::Bot { .. } => UserKind::Bot,
+            Login::Bot { .. } | Login::House => UserKind::Bot,
         }
     }
 
@@ -187,6 +195,7 @@ struct State {
     matched: HashMap<String, matching::Matched>,
     presence: HashMap<String, Presence>,
     chats: HashMap<String, Chat>,
+    house: house::House,
 }
 
 impl State {
@@ -392,6 +401,7 @@ impl Arena {
         if let Some(user) = &user {
             state.touch(&user.id);
         }
+        let house = self.house_info(&mut state, user.as_ref());
         let state = &*state;
         let agents = state.queue.iter().filter(|e| e.agent).count() as u32;
         let mine = user.as_ref().map(|u| u.id.as_str());
@@ -412,6 +422,7 @@ impl Arena {
             }),
             queue: mine.and_then(|id| state.queue_status(id)),
             games,
+            house,
         }
     }
 
@@ -432,6 +443,7 @@ impl Arena {
             self.bump();
         }
         self.run_matching();
+        self.dispatch();
         let mut swept = lock(&self.swept);
         if swept.is_some_and(|at| at.elapsed() < Duration::from_secs(600)) {
             return;

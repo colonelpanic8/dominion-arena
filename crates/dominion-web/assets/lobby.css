@@ -752,6 +752,17 @@ a.lb-user-name:hover { text-decoration: underline; }
 }
 .lb-person-input:hover, .lb-person-input:focus { border-bottom-color: #888; outline: none; }
 .lb-empty-label { font-style: italic; color: #aaa; }
+.lb-agent-select {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #555;
+  color: #aaa;
+  font: italic 400 2vh var(--ui);
+  max-width: 100%;
+}
+.lb-agent-select:hover, .lb-agent-select:focus { border-bottom-color: #888; color: #fff; outline: none; }
+.lb-agent-select option { background: #111; color: #fff; font-style: normal; }
+.lb-house .lb-agent-select { font-size: 1.8vh; }
 .lb-order { grid-column: 2; display: flex; flex-direction: column; align-items: center; font-size: 1.4vh; }
 .lb-order-up, .lb-order-down { cursor: pointer; color: #ccc; line-height: 1; }
 .lb-order-up::before { content: "▲"; }

@@ -23,6 +23,8 @@ pub enum SeatMark {
     Player(String),
     /// A seat played by token.
     Token(String),
+    /// One of the server's agents.
+    Agent(String),
     Open,
 }
 
@@ -99,6 +101,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
                 (SeatKind::Player, Some(u)) if Some(u.name.as_str()) == me => SeatMark::You,
                 (SeatKind::Player, Some(u)) => SeatMark::Player(u.name.clone()),
                 (SeatKind::Token, _) => SeatMark::Token(s.name.clone().unwrap_or_default()),
+                (SeatKind::Agent, Some(u)) => SeatMark::Agent(u.name.clone()),
                 _ => SeatMark::Open,
             })
             .collect();
@@ -301,6 +304,7 @@ pub fn TablesTab() -> Element {
                                                     SeatMark::You => ("lb-seat-icon", "You".to_string()),
                                                     SeatMark::Player(name) => ("lb-seat-icon other", name.clone()),
                                                     SeatMark::Token(name) => ("lb-seat-icon token", format!("{name}: played with a seat token")),
+                                                    SeatMark::Agent(name) => ("lb-seat-icon token agent", format!("{name}: one of the server's agents")),
                                                     SeatMark::Open => ("lb-seat-icon open", "Empty Slot".to_string()),
                                                 };
                                                 rsx! { div { key: "{s}", class, title } }

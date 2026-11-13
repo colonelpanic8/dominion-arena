@@ -20,8 +20,13 @@ const ABSENT: Duration = Duration::from_secs(180);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Seat {
     Open,
-    Player { user: String, ready: bool },
+    Player {
+        user: String,
+        ready: bool,
+    },
     Token(String),
+    /// One of the server's agents, by its account's id.
+    Agent(String),
 }
 
 pub(super) struct Table {
@@ -45,6 +50,14 @@ impl Table {
     fn players(&self) -> impl Iterator<Item = &str> {
         self.seats.iter().filter_map(|s| match s {
             Seat::Player { user, .. } => Some(user.as_str()),
+            _ => None,
+        })
+    }
+
+    /// The server's agents seated, by account id.
+    fn agents(&self) -> impl Iterator<Item = &str> {
+        self.seats.iter().filter_map(|s| match s {
+            Seat::Agent(user) => Some(user.as_str()),
             _ => None,
         })
     }
@@ -79,6 +92,13 @@ impl Table {
                         name: Some(name.clone()),
                         ready: true,
                         here: false,
+                    },
+                    Seat::Agent(user) => TableSeat {
+                        kind: SeatKind::Agent,
+                        user: db.user_ref(user),
+                        name: None,
+                        ready: true,
+                        here: state.house.offers(user),
                     },
                 })
                 .collect(),
@@ -128,7 +148,8 @@ fn check_seats(seats: &[Seat]) -> Result<()> {
     }
     let names: Vec<String> = (seats.iter())
         .filter_map(|s| match s {
-            Seat::Token(name) => Some(name.to_lowercase()),
+            Seat::Token(name) => Some(format!("token {}", name.to_lowercase())),
+            Seat::Agent(user) => Some(format!("agent {user}")),
             _ => None,
         })
         .collect();
@@ -136,6 +157,30 @@ fn check_seats(seats: &[Seat]) -> Result<()> {
         return bad("two seats have the same name");
     }
     Ok(())
+}
+
+/// A seat for the server's agent `name`, set by `host`: one the runner offers now, or
+/// one of the table's seats already.
+fn agent_seat(state: &State, db: &Db, host: &User, name: &str, old: &[Seat]) -> Result<Seat> {
+    if host.kind() != UserKind::Registered {
+        return Err(Error::Forbidden(
+            "only registered players seat the server's agents".into(),
+        ));
+    }
+    if let Some(agent) = state.house.agent_named(name) {
+        return Ok(Seat::Agent(agent.user.clone()));
+    }
+    let key = name.trim().to_lowercase();
+    let seated = old.iter().find(|s| match s {
+        Seat::Agent(user) => db
+            .user_ref(user)
+            .is_some_and(|u| u.name.to_lowercase() == key),
+        _ => false,
+    });
+    match seated {
+        Some(seat) => Ok(seat.clone()),
+        None => bad(format!("the server has no agent called {}", name.trim())),
+    }
 }
 
 impl State {
@@ -225,6 +270,7 @@ impl State {
 /// What a table's game is set up from, taken while the table is locked.
 struct Start {
     table: String,
+    host: String,
     spec: TableSpec,
     seats: Vec<Seat>,
     banned: Vec<String>,
@@ -246,23 +292,25 @@ impl Arena {
     /// A new table hosted by `ident`, who leaves the one they sat at.
     pub fn new_table(&self, ident: &Ident, new: &NewTable) -> Result<TableInfo> {
         limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
+        let host = self.user(&ident.user)?;
+        let edits = new.seats.as_deref().unwrap_or(&[SeatEdit::Open]);
+        let mut state = lock(&self.state);
         let mut seats = vec![Seat::Player {
             user: ident.user.clone(),
             ready: false,
         }];
-        for seat in new.seats.as_deref().unwrap_or(&[SeatEdit::Open]) {
+        for seat in edits {
             seats.push(match seat {
                 SeatEdit::Open => Seat::Open,
                 SeatEdit::Token(name) => Seat::Token(
                     seat_name(name).map_err(|e| Error::BadRequest(format!("a seat's name {e}")))?,
                 ),
+                SeatEdit::Agent(name) => agent_seat(&state, &self.db, &host, name, &[])?,
                 SeatEdit::Player(_) => return bad("a new table seats only its host"),
             });
         }
         check_seats(&seats)?;
         check_spec(&new.spec, seats.len())?;
-        self.user(&ident.user)?;
-        let mut state = lock(&self.state);
         if state.tables.len() >= MAX_TABLES {
             return conflict("the lobby is full of tables; join one");
         }
@@ -312,6 +360,7 @@ impl Arena {
         limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
         let spec = lock(&self.state).hosted(id, &ident.user)?.spec.clone();
         check_spec(&spec, edits.len().clamp(2, 6))?;
+        let host = self.user(&ident.user)?;
         let mut state = lock(&self.state);
         let old = state.hosted(id, &ident.user)?.seats.clone();
         let mut seats = vec![];
@@ -321,6 +370,7 @@ impl Arena {
                 SeatEdit::Token(name) => Seat::Token(
                     seat_name(name).map_err(|e| Error::BadRequest(format!("a seat's name {e}")))?,
                 ),
+                SeatEdit::Agent(name) => agent_seat(&state, &self.db, &host, name, &old)?,
                 SeatEdit::Player(name) => {
                     let user = self.db.user_by_name(name)?.map(|u| u.id);
                     let seat = old.iter().find(
@@ -445,7 +495,7 @@ impl Arena {
             let all = table.seats.iter().all(|s| match s {
                 Seat::Open => false,
                 Seat::Player { ready, .. } => *ready,
-                Seat::Token(_) => true,
+                Seat::Token(_) | Seat::Agent(_) => true,
             });
             if all {
                 table.starting = true;
@@ -471,12 +521,12 @@ impl Arena {
 
     fn starting(&self, state: &State, id: &str) -> Option<Start> {
         let table = state.tables.get(id)?;
-        let users: Vec<User> = (table.players())
+        let users: Vec<User> = (table.players().chain(table.agents()))
             .filter_map(|u| self.db.user(u).ok().flatten())
             .collect();
         let mut banned: Vec<String> = vec![];
         if table.spec.respect_banned {
-            for user in &users {
+            for user in users.iter().filter(|u| !table.agents().any(|a| a == u.id)) {
                 let list = user.banned_cards.as_ref();
                 for card in list.unwrap_or(&self.settings.banned_cards) {
                     if !banned.contains(card) {
@@ -494,6 +544,7 @@ impl Arena {
             && users.iter().all(|u| u.kind() != UserKind::Guest);
         Some(Start {
             table: id.to_string(),
+            host: table.host.clone(),
             spec: table.spec.clone(),
             seats: table.seats.clone(),
             banned,
@@ -526,6 +577,10 @@ impl Arena {
                     let name = self.db.user_ref(user).map(|u| u.name);
                     (name.unwrap_or_default(), Some(user.clone()))
                 }
+                Seat::Agent(user) => {
+                    let name = self.db.user_ref(user).map(|u| u.name);
+                    (name.unwrap_or_default(), Some(user.clone()))
+                }
                 Seat::Token(name) => (name.clone(), None),
                 Seat::Open => (String::new(), None),
             })
@@ -547,6 +602,12 @@ impl Arena {
             table: Some(start.table.clone()),
             ..Meta::default()
         };
+        let agents = start
+            .seats
+            .iter()
+            .filter(|s| matches!(s, Seat::Agent(_)))
+            .count();
+        let reservation = self.reserve(&start.host, agents as u32)?;
         let created = self.hub.host(config, names, meta)?;
         let mut state = lock(&self.state);
         if let Some(table) = state.tables.get_mut(&start.table) {
@@ -556,6 +617,8 @@ impl Arena {
                 .cloned()
                 .collect();
         }
+        drop(state);
+        reservation.keep();
         Ok(())
     }
 

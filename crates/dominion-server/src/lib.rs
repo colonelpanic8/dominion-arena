@@ -5,11 +5,13 @@ pub mod arena;
 pub mod assets;
 pub mod client;
 pub mod config;
+pub mod house;
 pub mod http;
 pub mod hub;
 pub mod limits;
 pub mod mcp;
 pub mod rating;
+pub mod runner;
 pub mod store;
 
 use dominion_agent::GlossaryEntry;
@@ -45,6 +47,8 @@ pub struct Options {
     pub public_url: Option<String>,
     /// A client's address is the last one in `X-Forwarded-For`.
     pub trust_proxy: bool,
+    /// Where a runner of the server's own agents connects ([`house`]).
+    pub agent_socket: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -58,6 +62,7 @@ impl Default for Options {
             arena: Default::default(),
             public_url: None,
             trust_proxy: false,
+            agent_socket: None,
         }
     }
 }
@@ -77,6 +82,14 @@ pub async fn serve(
     hosts.extend(options.allowed_hosts.iter().cloned());
     let arena = arena::Arena::open(hub, options.arena.clone())?;
     let site = http::router(arena.clone(), &options, hosts.clone(), stop.clone());
+    if let Some(path) = &options.agent_socket {
+        let (arena, path, stop) = (arena.clone(), path.clone(), stop.clone());
+        tokio::spawn(async move {
+            if let Err(e) = house::listen(arena, &path, stop).await {
+                eprintln!("dominion: agent socket {}: {e}", path.display());
+            }
+        });
+    }
     let (sweeper, stopped) = (arena.clone(), stop.clone());
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(SWEEP);

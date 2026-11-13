@@ -14,6 +14,7 @@ impl Arena {
         if let Some(table) = &ended.meta.table {
             self.table_game_over(&mut lock(&self.state), table, &id);
         }
+        self.dispatch();
         if ended.meta.recorded || ended.meta.owners.iter().all(Option::is_none) {
             return;
         }

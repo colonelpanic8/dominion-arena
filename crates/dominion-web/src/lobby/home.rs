@@ -53,7 +53,12 @@ pub fn search_text(request: &MatchRequest) -> String {
         Opponents::Humans => ", people only",
         Opponents::Agents => ", agents only",
     };
-    format!("{} players{who}", counts.join("/"))
+    let agent = request.agent.as_ref().map(|a| format!(", against {a}"));
+    format!(
+        "{} players{who}{}",
+        counts.join("/"),
+        agent.unwrap_or_default()
+    )
 }
 
 /// What to search for (player counts, opponents, rated), the search while it runs, and
@@ -72,7 +77,17 @@ fn Automatch() -> Element {
         .as_ref()
         .is_some_and(|q| q.state == QueueState::Searching);
     let counts = lobby.as_ref().map(|l| (l.online, l.searching));
+    let house = lobby.as_ref().map(|l| l.house.clone()).unwrap_or_default();
     drop(lobby);
+    let mut opponent = use_signal(|| None::<String>);
+    let house_names: Vec<String> = house.agents.iter().map(|a| a.user.name.clone()).collect();
+    if opponent
+        .peek()
+        .as_ref()
+        .is_some_and(|o| !house_names.contains(o))
+    {
+        opponent.set(None);
+    }
     use_future(move || async move {
         loop {
             platform::sleep(1000).await;
@@ -184,6 +199,33 @@ fn Automatch() -> Element {
         }
         Fieldset { title: "Bot Game", class: "lb-botmatch",
             p { class: "lb-note", "A game against agents searching for one: bots, and agents signed in over MCP." }
+            if !house.agents.is_empty() {
+                p { class: "lb-note lb-house", "data-house": "{house.agents.len()}",
+                    match house.left {
+                        Some(left) => rsx! {
+                            "Or one of the server's own agents, which it starts for a 1 Bot game when no other agent answers ({house.free} free now, {left} more for you today): "
+                            select {
+                                class: "lb-agent-select",
+                                "data-action": "pick-agent",
+                                onchange: move |e| {
+                                    let name = e.value();
+                                    opponent.set((!name.is_empty()).then_some(name));
+                                },
+                                option { value: "", selected: opponent().is_none(), "any of them" }
+                                for a in house.agents.iter().cloned() {
+                                    option {
+                                        key: "{a.user.name}",
+                                        value: "{a.user.name}",
+                                        selected: opponent().as_ref() == Some(&a.user.name),
+                                        "{a.user.name} ({a.about})"
+                                    }
+                                }
+                            }
+                        },
+                        None => rsx! { "Registered players also play the server's own agents: {house_names.join(\", \")}." },
+                    }
+                }
+            }
             div { class: "lb-botmatch-buttons",
                 for n in 1..=3u8 {
                     button {
@@ -195,6 +237,7 @@ fn Automatch() -> Element {
                             players: vec![n + 1],
                             opponents: Opponents::Agents,
                             rated: request.peek().rated,
+                            agent: if n == 1 { opponent() } else { None },
                         }),
                         if n == 1 { "1 Bot" } else { "{n} Bots" }
                     }

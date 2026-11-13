@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     kind TEXT NOT NULL CHECK (kind IN ('registered', 'guest', 'bot')),
     -- An argon2 hash in PHC form, of a registered account.
     password TEXT,
-    -- A bot's owner.
+    -- A bot's owner; none for the server's own agents.
     owner INTEGER REFERENCES users (id) ON DELETE CASCADE,
     -- The SHA-256 of a bot's API key.
     api_key TEXT UNIQUE,
@@ -94,9 +94,12 @@ fn read_user(row: &Row<'_>) -> rusqlite::Result<User> {
     let kind: String = row.get(2)?;
     let login = match kind.as_str() {
         "registered" => Login::Password(row.get::<_, Option<String>>(3)?.unwrap_or_default()),
-        "bot" => Login::Bot {
-            owner: id_of(row.get::<_, Option<i64>>(4)?.unwrap_or(-1)),
-            key: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+        "bot" => match row.get::<_, Option<i64>>(4)? {
+            Some(owner) => Login::Bot {
+                owner: id_of(owner),
+                key: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+            },
+            None => Login::House,
         },
         _ => Login::Guest,
     };
@@ -263,6 +266,7 @@ impl Db {
             Login::Bot { owner, key } => {
                 (UserKind::Bot, None, Some(row_of(owner)), Some(key.as_str()))
             }
+            Login::House => (UserKind::Bot, None, None, None),
         };
         let fresh = Rating::default();
         let conn = lock(&self.conn);

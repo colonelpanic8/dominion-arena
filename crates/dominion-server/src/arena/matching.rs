@@ -117,6 +117,16 @@ impl Arena {
             return conflict("finish or resign the game you are in first");
         }
         let user = self.user(&ident.user)?;
+        if let Some(name) = &request.agent {
+            if request.opponents != Opponents::Agents {
+                return bad("`agent` names the server's agent for a search of agents");
+            }
+            let state = lock(&self.state);
+            let Some(agent) = state.house.agent_named(name) else {
+                return conflict(format!("the server has no agent called {name} now"));
+            };
+            request.agent = Some(agent.name.clone());
+        }
         let mut state = lock(&self.state);
         state.leave_all(&self.db, &user.id);
         state.touch(&user.id);
@@ -154,11 +164,12 @@ impl Arena {
         state.queue_status(&ident.user)
     }
 
-    /// Starts a game for every group in the queue that can play together.
+    /// Starts a game for every group in the queue that can play together, then one
+    /// against the server's agents for each search of agents left that may have one.
     pub(super) fn run_matching(&self) {
         loop {
             let Some(mut group) = lock(&self.state).take_group() else {
-                return;
+                break;
             };
             group.shuffle(&mut rand::rng());
             match self.start_match(&group) {
@@ -180,6 +191,94 @@ impl Arena {
                     eprintln!("dominion: starting a matched game: {e}");
                     lock(&self.state).queue.extend(group);
                     return;
+                }
+            }
+        }
+        self.match_house();
+    }
+
+    /// Pairs the searches of agents that the server's agents may answer, each with the
+    /// agent it asks for, else the one closest in rating: two players, by a registered
+    /// player within their day's agent seats, while the runner has room. Searches that
+    /// may not have one go on waiting for other agents.
+    fn match_house(&self) {
+        let mut tried: Vec<String> = vec![];
+        loop {
+            let found = {
+                let state = lock(&self.state);
+                let agents = state.house.agents().to_vec();
+                state.queue.iter().find_map(|e| {
+                    if tried.contains(&e.user)
+                        || e.agent
+                        || e.guest
+                        || e.request.opponents != Opponents::Agents
+                        || !e.request.players.contains(&2)
+                    {
+                        return None;
+                    }
+                    let rated = |a: &super::house::Agent| {
+                        let user = self.db.user(&a.user).ok().flatten()?;
+                        Some((a.clone(), user.rating.rating))
+                    };
+                    let candidates: Vec<(super::house::Agent, f64)> =
+                        agents.iter().filter_map(rated).collect();
+                    let pick = match &e.request.agent {
+                        Some(name) => candidates.into_iter().find(|(a, _)| a.name == *name),
+                        None => candidates.into_iter().min_by(|(_, x), (_, y)| {
+                            (x - e.rating).abs().total_cmp(&(y - e.rating).abs())
+                        }),
+                    };
+                    pick.map(|(agent, rating)| (e.user.clone(), agent, rating))
+                })
+            };
+            let Some((user, agent, rating)) = found else {
+                return;
+            };
+            tried.push(user.clone());
+            let Ok(reservation) = self.reserve(&user, 1) else {
+                continue;
+            };
+            let entry = {
+                let mut state = lock(&self.state);
+                let Some(at) = state.queue.iter().position(|e| e.user == user) else {
+                    continue;
+                };
+                state.queue.remove(at)
+            };
+            let house = Entry {
+                user: agent.user.clone(),
+                owner: agent.user.clone(),
+                agent: true,
+                guest: false,
+                rating,
+                request: entry.request.clone(),
+                since: now_ms(),
+                banned: vec![],
+            };
+            let mut group = vec![entry, house];
+            group.shuffle(&mut rand::rng());
+            match self.start_match(&group) {
+                Ok(game) => {
+                    reservation.keep();
+                    let mut state = lock(&self.state);
+                    for e in group.into_iter().filter(|e| e.user == user) {
+                        let matched = Matched {
+                            game: game.clone(),
+                            request: e.request,
+                            since: e.since,
+                            at: Instant::now(),
+                        };
+                        state.matched.insert(e.user, matched);
+                    }
+                    drop(state);
+                    self.bump();
+                }
+                Err(e) => {
+                    eprintln!("dominion: starting a game against {}: {e}", agent.name);
+                    let mut state = lock(&self.state);
+                    state
+                        .queue
+                        .extend(group.into_iter().filter(|e| e.user == user));
                 }
             }
         }
