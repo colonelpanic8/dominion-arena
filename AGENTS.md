@@ -157,6 +157,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
                           Tables listing
+nix/module.nix            `nixosModules.default`: `services.dominion`, the server as a system service
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

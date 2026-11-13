@@ -16,7 +16,10 @@
     fenix,
     flake-utils,
   }:
-    flake-utils.lib.eachDefaultSystem (system: let
+    {
+      nixosModules.default = import ./nix/module.nix self;
+    }
+    // flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
       fenixPkgs = fenix.packages.${system};
       toolchain = fenixPkgs.combine [
