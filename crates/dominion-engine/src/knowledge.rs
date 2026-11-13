@@ -66,6 +66,10 @@ pub struct Knowledge {
     shown: Option<CardId>,
     #[serde(default)]
     face_up: HashSet<CardId>,
+    /// Cards put in a private order while in a public zone: everyone follows them out of
+    /// it, so they are mixed once they have left it.
+    #[serde(default)]
+    ordering: Vec<CardId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -388,6 +392,18 @@ impl Mind {
         }
     }
 
+    /// The viewer can no longer tell `cards` apart, but nothing else moved with them: the
+    /// rest of their groups is some of what each was. Cards the viewer already couldn't
+    /// tell apart stay with the rest of their group.
+    fn mix(&mut self, cards: &[CardId]) {
+        let group = |c: &CardId| self.group_of[c.index()];
+        if cards.iter().all(|c| group(c) == group(&cards[0])) {
+            return;
+        }
+        self.split_off(cards);
+        self.merge(cards.iter().copied());
+    }
+
     /// The viewer sees that one of `among` is an `is`: `card`, but any of them that may be
     /// an `is` could be the one.
     fn identify_among(&mut self, card: CardId, is: Card, among: &[CardId]) {
@@ -520,8 +536,7 @@ impl Mind {
             }
             // Only the set's cards: the rest of their groups didn't go anywhere.
             let set: Vec<CardId> = l.left.into_iter().chain(l.rest).collect();
-            self.split_off(&set);
-            self.merge(set);
+            self.mix(&set);
         }
     }
 
@@ -677,6 +692,7 @@ impl Knowledge {
             joining: None,
             shown: None,
             face_up: HashSet::new(),
+            ordering: vec![],
         }
     }
 
@@ -710,6 +726,7 @@ impl Knowledge {
         for entry in game.take_trace() {
             self.apply(game, entry);
         }
+        self.end_ordering(game);
         self.settle();
         self.observe(game);
         self.minds_mut().for_each(|(_, mind)| mind.reduce());
@@ -720,6 +737,10 @@ impl Knowledge {
     }
 
     fn apply(&mut self, game: &Game, entry: Trace) {
+        let moving = |card: &CardId| self.ordering.contains(card);
+        if !matches!(&entry, Trace::Moved { card, .. } if moving(card)) {
+            self.end_ordering(game);
+        }
         let shown = self.shown.take();
         let joining = self.joining.take();
         if !matches!(entry, Trace::Created { .. }) {
@@ -736,54 +757,20 @@ impl Knowledge {
             Trace::Moved { card, from, to, .. } => {
                 let face_up = shown == Some(card);
                 self.moved(game, card, from, to, face_up, joining);
+                if self
+                    .ordering
+                    .iter()
+                    .all(|c| !public(game, self.zone[c.index()]))
+                {
+                    self.end_ordering(game);
+                }
             }
             Trace::Mixed { cards } => {
-                self.settle();
-                self.minds_mut().for_each(|(_, mind)| mind.reduce());
-                let mut held: Vec<_> = cards.iter().filter_map(|&c| self.held_with(c)).collect();
-                held.sort_unstable();
-                held.dedup();
-                self.face_up.retain(|c| !cards.contains(c));
-                // Mixed with other cards (a whole deck shuffled), a held set's cards are
-                // no longer the ones looked at together.
-                let set = |c: &CardId| self.held[c.index()];
-                if cards.iter().any(|c| set(c) != set(&cards[0])) {
-                    cards.iter().for_each(|c| self.held[c.index()] = 0);
-                }
-                let mixed: Vec<CardId> = cards
-                    .iter()
-                    .copied()
-                    .filter(|c| !marked(self.is[c.index()]))
-                    .collect();
-                for (v, mind) in minds(&mut self.minds, &mut self.watcher) {
-                    let arrivals = std::mem::take(&mut mind.arrived);
-                    for set in arrivals {
-                        if set.iter().any(|c| cards.contains(c)) {
-                            if set.iter().any(|c| !cards.contains(c)) {
-                                mind.split_off(&set);
-                                mind.merge(set);
-                            }
-                        } else {
-                            mind.arrived.push(set);
-                        }
-                    }
-                    for set in &held {
-                        // Not all the viewer's own, which someone watching has none of.
-                        let theirs = |c: &CardId| {
-                            let owner = self.zone[c.index()].owner();
-                            owner.is_some_and(|o| Some(o) == v)
-                        };
-                        if !set.iter().all(theirs) {
-                            mind.split_off(set);
-                            mind.merge(set.iter().copied());
-                        }
-                    }
-                    mind.split_off(&mixed);
-                    mind.merge(mixed.iter().copied());
-                    for c in &mixed {
-                        mind.recent.remove(c);
-                    }
-                }
+                let (ordering, cards): (Vec<CardId>, Vec<CardId>) = cards
+                    .into_iter()
+                    .partition(|c| public(game, self.zone[c.index()]));
+                self.ordering = ordering;
+                self.mix(&cards);
             }
             Trace::Shown { card, to } => {
                 let is = self.is[card.index()];
@@ -846,6 +833,65 @@ impl Knowledge {
                         mind.identify(card, to);
                     }
                 }
+            }
+        }
+    }
+
+    /// The cards an `ordering` put out of public view, mixed where they went.
+    fn end_ordering(&mut self, game: &Game) {
+        let cards = std::mem::take(&mut self.ordering);
+        let gone: Vec<CardId> = cards
+            .into_iter()
+            .filter(|c| !public(game, self.zone[c.index()]))
+            .collect();
+        if gone.len() > 1 {
+            self.mix(&gone);
+        }
+    }
+
+    /// Nobody can follow `cards` any more.
+    fn mix(&mut self, cards: &[CardId]) {
+        self.settle();
+        self.minds_mut().for_each(|(_, mind)| mind.reduce());
+        let mut held: Vec<_> = cards.iter().filter_map(|&c| self.held_with(c)).collect();
+        held.sort_unstable();
+        held.dedup();
+        self.face_up.retain(|c| !cards.contains(c));
+        // Mixed with other cards (a whole deck shuffled), a held set's cards are
+        // no longer the ones looked at together.
+        let set = |c: &CardId| self.held[c.index()];
+        if cards.iter().any(|c| set(c) != set(&cards[0])) {
+            cards.iter().for_each(|c| self.held[c.index()] = 0);
+        }
+        let mixed: Vec<_> = cards
+            .iter()
+            .copied()
+            .filter(|c| !marked(self.is[c.index()]))
+            .collect();
+        for (v, mind) in minds(&mut self.minds, &mut self.watcher) {
+            let arrivals = std::mem::take(&mut mind.arrived);
+            for set in arrivals {
+                if set.iter().any(|c| cards.contains(c)) {
+                    if set.iter().any(|c| !cards.contains(c)) {
+                        mind.mix(&set);
+                    }
+                } else {
+                    mind.arrived.push(set);
+                }
+            }
+            for set in &held {
+                // Not all the viewer's own, which someone watching has none of.
+                let theirs = |c: &CardId| {
+                    let owner = self.zone[c.index()].owner();
+                    owner.is_some_and(|o| Some(o) == v)
+                };
+                if !set.iter().all(theirs) {
+                    mind.mix(set);
+                }
+            }
+            mind.mix(&mixed);
+            for c in &mixed {
+                mind.recent.remove(c);
             }
         }
     }

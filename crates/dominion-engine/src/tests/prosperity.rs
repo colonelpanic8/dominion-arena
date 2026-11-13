@@ -1284,3 +1284,28 @@ fn crystal_ball_does_not_announce_a_privately_seen_card_left_on_the_deck() {
     assert_eq!(a.log(), b.log());
     assert!(!a.log().iter().any(|e| matches!(e, Event::Chosen { .. })));
 }
+
+#[test]
+fn peddler_stacks_with_other_reductions_down_to_nothing() {
+    let mut g = setup(&[Card::Peddler, Card::Bridge, Card::Quarry, Card::Highway]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Highway, Card::Bridge, Card::Quarry, Card::Peddler],
+    );
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.start();
+    play(&mut g, Card::Highway);
+    play(&mut g, Card::Bridge);
+    assert_eq!(g.turn().phase, Phase::Buy);
+    // Highway and Bridge: $1 each. Two Actions in play: $4 more.
+    assert_eq!(g.cost(Card::Peddler), Cost::coins(2));
+    play(&mut g, Card::Quarry);
+    // Quarry: $2 more for an Action, and no less than $0.
+    assert_eq!(g.cost(Card::Peddler), Cost::coins(0));
+    assert_eq!(g.cost_of(find(&g, P0, Card::Peddler)), Cost::coins(0));
+    assert_eq!(g.cost(Card::Gold), Cost::coins(4));
+    let coins = g.turn().coins;
+    buy(&mut g, Card::Peddler);
+    assert_eq!(g.turn().coins, coins);
+}

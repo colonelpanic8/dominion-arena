@@ -356,3 +356,75 @@ fn until_your_next_turn_effects_are_over_during_the_start_of_that_turn() {
     assert_eq!(g.count_owned(P0, Card::Curse), 1);
     assert_eq!(g.hand(P1).len(), 5 - 1 + 2, "no discarding down to 4");
 }
+
+fn turns_started(g: &Game) -> usize {
+    g.log()
+        .iter()
+        .filter(|e| matches!(e, Event::TurnStart { .. }))
+        .count()
+}
+
+/// Ends phases until the next turn has started.
+fn to_next_turn(g: &mut Game) {
+    let n = turns_started(g);
+    while turns_started(g) == n
+        && let Some(DecisionKind::Turn { .. }) = g.pending().map(|d| &d.kind)
+    {
+        end_phase(g);
+    }
+}
+
+/// Wiki, Outpost: "If multiple players play Outpost on the same turn, the extra turns go in
+/// turn order, starting with the player who took the most recent regular turn."
+#[test]
+fn extra_turns_go_in_turn_order_from_the_last_regular_turn() {
+    let mut g = crate::tests::intrigue::setup3(&[Card::Outpost]);
+    for p in [P0, P1, P2] {
+        hand(&mut g, p, &[Card::Outpost]);
+        deck(&mut g, p, &[Card::Copper; 20]);
+    }
+    g.start();
+    // P0's regular turn: P1 plays an Outpost.
+    play_out_of_turn(&mut g, P1, Card::Outpost);
+    to_next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Outpost)));
+    hand(&mut g, P0, &[Card::Outpost]);
+    hand(&mut g, P2, &[Card::Outpost]);
+    // P1's extra turn: P2 and P0 play an Outpost. The most recent regular turn was P0's.
+    play_out_of_turn(&mut g, P2, Card::Outpost);
+    play_out_of_turn(&mut g, P0, Card::Outpost);
+    to_next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Outpost)));
+}
+
+/// Wiki, Outpost: an extra turn that would be a third in a row fails only once it is up
+/// next: "Outpost hasn't failed yet because another player might somehow be able to take an
+/// extra turn first." With extra turns in turn order from the most recent regular turn's
+/// player, another player's extra turn can come between.
+#[test]
+fn an_extra_turn_fails_only_when_it_is_up_next() {
+    let mut g = crate::tests::intrigue::setup3(&[Card::Outpost, Card::Odysseys]);
+    for p in [P0, P1, P2] {
+        deck(&mut g, p, &[Card::Copper; 30]);
+    }
+    hand(&mut g, P1, &[Card::Outpost, Card::Outpost]);
+    g.start();
+    // P0's regular turn: P1 plays two Outposts, for two turns in a row.
+    play_out_of_turn(&mut g, P1, Card::Outpost);
+    play_out_of_turn(&mut g, P1, Card::Outpost);
+    to_next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Outpost)));
+    to_next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Outpost)));
+    // P1's second Outpost turn: P1 plays a Voyage, P0 an Outpost.
+    hand(&mut g, P1, &[Card::Voyage]);
+    hand(&mut g, P0, &[Card::Outpost]);
+    play_out_of_turn(&mut g, P1, Card::Voyage);
+    play_out_of_turn(&mut g, P0, Card::Outpost);
+    to_next_turn(&mut g);
+    // P0's turn first (the most recent regular turn was theirs), then P1's Voyage turn,
+    // which is no longer a third turn in a row.
+    assert_eq!((g.turn().player, g.turn().extra), (P0, Some(Card::Outpost)));
+    to_next_turn(&mut g);
+    assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Voyage)));
+}

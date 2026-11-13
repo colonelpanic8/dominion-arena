@@ -204,10 +204,11 @@ them.
   in `Game::extra_turns`; each one's `ExtraLimit` says when it fails (not a third turn
   in a row, decided between turns: queue it anyway, and a card kept in play for it stays
   until the Clean-up after it fails; Seize the Day: never), and
-  extra turns don't count for the tiebreaker. Between turns the player who just took a turn takes
-  their extra turns first, then the others in turn order; one with different extra turns
+  extra turns don't count for the tiebreaker. Between turns extra turns go in turn order
+  starting with the player of the most recent regular turn; one with different extra turns
   pending chooses which to take (`Purpose::Either`, `Opt::Card(source)`), and an extra
-  turn that can't follow the last turn is lost. A card kept in play for an extra turn
+  turn that can't follow the last turn is lost once it is up next, not before (another
+  player's may come first). A card kept in play for an extra turn
   (Outpost, Voyage) is kept by an `Until::ExtraTurn` lasting named in its
   `ExtraTurn::lasting`, which ends when that turn starts, is skipped or is lost. Once
   the game has ended, extra turns happen only before a turn of Fleet's round. `Player::skip_turns` skips the next turns
@@ -439,9 +440,13 @@ them.
   nobody else follows which copy is on top; seeing that top may show the same copy
   revealed earlier. Privately ordering a selection from a searched discard pile mixes
   it with every card the selection could have included, before following the moves.
+  Cards put in a private order out of a public zone (Mandarin's Treasures from play) are
+  followed out of it and mixed once they have all left it.
   A shuffle records its mix before its individual zone moves, whose random order
   nobody can follow.
-  Mixing splits the mixed cards from groups containing untouched cards. Cards with
+  Mixing (a shuffle, a private order, cards leaving a held set unseen) splits the mixed
+  cards from groups containing untouched cards, unless they are all of one group (cards
+  the viewer already could not tell apart). Cards with
   only one possible identity are removed from their family's candidate pool.
   A family wholly in one zone is known there as its whole multiset, even when its
   groups still distinguish parts that could be followed later.

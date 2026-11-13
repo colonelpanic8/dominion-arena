@@ -925,8 +925,14 @@ fn gain_triggers(g: &Game, gainer: PlayerId, card: CardId, out: &mut Vec<Trigger
             Card::Deliver if mine && where_gained(g, card) => {
                 out.push(via(THIS_TURN));
             }
+            // It answers the gain either way, and plays the card only if it has stayed.
             Card::Rush if next(Types::ACTION) => {
-                out.push(via(THIS_TURN).plays(g, card));
+                let t = via(THIS_TURN);
+                out.push(if where_gained(g, card) {
+                    t.plays(g, card)
+                } else {
+                    t
+                });
             }
             Card::Mirror if next(Types::ACTION) => {
                 out.push(via(THIS_TURN));
