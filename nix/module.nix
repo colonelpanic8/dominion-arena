@@ -80,14 +80,14 @@ in {
       };
     };
 
-    # The cache fills while the server already runs without it; a restart then serves it.
+    # Nothing waits for it: the server serves each file once it is there. It runs at
+    # every boot and activation, fetching only what the cache lacks.
     systemd.services.dominion-assets = lib.mkIf cfg.syncAssets {
       description = "Sync the Dominion server's asset cache";
       wantedBy = ["multi-user.target"];
       after = ["network-online.target"];
       wants = ["network-online.target"];
       serviceConfig = {
-        Type = "oneshot";
         ExecStart = "${dominion} assets sync";
         User = "dominion";
         Group = "dominion";
