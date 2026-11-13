@@ -2552,11 +2552,16 @@ fn check_move_discipline(g: &Game, events: &[Event], trace: &[Trace], flags: &mu
             continue;
         };
         let name = g.printed(card);
-        // Wiki, Ferryman: besides gaining a Ferryman, Rats gains from its own pile there
-        // and Changeling can be exchanged for; Gladiator trashes "from its pile".
+        // Wiki, Ferryman: besides gaining a Ferryman, a card that gains a copy of itself
+        // by name gains from its own pile there and Changeling can be exchanged for;
+        // Gladiator trashes "from its pile".
+        let own = matches!(
+            name,
+            Card::Rats | Card::Magpie | Card::Port | Card::Experiment
+        );
         if let Zone::Pile(pile) = from
             && Some(pile) == g.ext.cornucopia_guilds.ferryman
-            && !(name == Card::Rats && named(&gained, card))
+            && !(own && named(&gained, card))
             && name != Card::Changeling
             && !(name == Card::Gladiator && to == Zone::Trash)
             && !g.log().iter().rev().take(80).any(|e| {
