@@ -126,27 +126,30 @@ impl Shape {
         }
     }
 
-    /// The type line; landscapes have it in the corner at full size, turned 45°.
+    /// The type line; landscapes have it in the corner at full size, turned 45°. Centred
+    /// between the cost and the set icon.
     pub fn types(&self, size: CardSize) -> Option<Rect> {
         match size {
             CardSize::Full if self.landscape => Some(r(0.85, 0.068, 0.13, 0.06)),
             CardSize::Mini if self.landscape => Some(r(0.32, 0.012, 0.36, 0.07)),
-            CardSize::Full if self.basic && self.treasure_only => Some(r(0.23, 0.85, 0.54, 0.097)),
-            CardSize::Full if self.basic => Some(r(0.23, 0.86, 0.54, 0.097)),
-            CardSize::Full => Some(r(0.23, 0.88, 0.54, 0.068)),
+            CardSize::Full if self.basic && self.treasure_only => Some(r(0.21, 0.85, 0.64, 0.097)),
+            CardSize::Full if self.basic => Some(r(0.21, 0.86, 0.64, 0.097)),
+            CardSize::Full => Some(r(0.21, 0.88, 0.64, 0.068)),
             _ => None,
         }
     }
 
+    /// Centred on the parchment between the art and the type banner (upstream's box is
+    /// a little lower, reaching into the banner).
     pub fn text(&self) -> Option<Rect> {
         if self.landscape {
             Some(r(0.09, 0.72, 0.815, 0.21))
         } else if self.basic {
             None
         } else if self.heirloom {
-            Some(r(0.1, 0.55, 0.795, 0.27))
+            Some(r(0.1, 0.54, 0.795, 0.27))
         } else {
-            Some(r(0.1, 0.55, 0.795, 0.31))
+            Some(r(0.1, 0.54, 0.795, 0.31))
         }
     }
 
@@ -182,8 +185,9 @@ impl Shape {
         if self.landscape {
             r(0.925, 0.72, 0.03, 0.03 / LANDSCAPE_RATIO)
         } else {
+            // On the flat end of the type banner, clear of its curl.
             let s = 0.039;
-            r(0.9, 0.89, s * FULL_RATIO, s)
+            r(0.865, 0.89, s * FULL_RATIO, s)
         }
     }
 }
