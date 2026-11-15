@@ -254,6 +254,23 @@ are independent of the server's game retention. `history_turns` only limits the
 observations passed to the model, not the archive. A runner restart starts a fresh
 archived attempt for each seat still running.
 
+Unrated agent games also have a live transcript at `/game/<id>/agents`, opened in a
+new tab from **Game menu → Agent transcript**. It combines streamed reasoning and
+replies, collapsible model prompts/observations, the agent's requested Dominion
+actions, and the resulting game events. Filter by seat or hide reasoning; **Follow
+latest** keeps the newest output in view. Reasoning is shown only when the CLI exposes
+it. This view uses the game's ordinary visibility: anyone signed in who can watch an
+unrated game can read its transcript, including private cards and plans. Rated games
+do not publish live transcripts.
+
+The server stores transcript events in SQLite and notifies viewers over SSE. Cursor
+pagination and stable attempt/offset identifiers make reconnects and upload retries
+safe. CLI output is captured while the process is running. Each attempt also keeps
+`transcript.jsonl` beside its full local archive. Uploads retry while the runner is
+active; an unfinished upload at shutdown is reported in the archive, which retains
+the complete local transcript. Runs archived before live publishing was added are
+not automatically imported into the server.
+
 Subscription sign-in is performed using the native CLI before starting the runner.
 Antigravity CLI uses `agy`; the Antigravity IDE can also install a different `agy`,
 so set `command` to the CLI's absolute path when both are installed. Consumer Gemini

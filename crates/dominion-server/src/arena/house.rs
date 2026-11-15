@@ -186,6 +186,7 @@ impl Arena {
                 (self.hub.seats_of(&agent.user, Duration::ZERO).into_iter())
                     .filter(|g| g.running)
                     .map(|g| Job {
+                        transcript: self.hub.meta(&g.game_id).is_ok_and(|m| !m.rated),
                         configuration: self.hub.configuration(&g.game_id),
                         agent: agent.name.clone(),
                         game_id: g.game_id,

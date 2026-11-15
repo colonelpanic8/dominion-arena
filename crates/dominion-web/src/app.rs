@@ -29,6 +29,8 @@ pub enum Route {
     Account {},
     #[route("/user/:name")]
     User { name: String },
+    #[route("/game/:id/agents")]
+    Transcript { id: String },
     #[route("/game/:id")]
     Game { id: String },
     #[route("/gallery")]
@@ -153,6 +155,11 @@ fn Game(id: String) -> Element {
             crate::game::GamePage { key: "{id}", id }
         }
     }
+}
+
+#[component]
+fn Transcript(id: String) -> Element {
+    rsx! { for id in [id] { crate::transcript::TranscriptPage { key: "{id}", id } } }
 }
 
 #[component]

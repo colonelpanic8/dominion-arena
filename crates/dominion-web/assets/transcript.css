@@ -1,0 +1,24 @@
+.agent-transcript { max-width: 1080px; margin: 24px auto 64px; padding: 0 20px; }
+.transcript-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.transcript-heading h1 { margin: 3px 0; font-size: 28px; }
+.transcript-eyebrow { margin: 0; font-size: 11px; letter-spacing: .12em; opacity: .6; }
+.transcript-description { max-width: 780px; line-height: 1.6; opacity: .75; }
+.transcript-controls { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+.transcript-controls button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 5px; background: transparent; cursor: pointer; }
+.transcript-controls button.on { background: #324b35; color: white; border-color: #5f8e64; }
+.transcript-controls label { display: flex; align-items: center; gap: 5px; font-size: 13px; padding: 4px; }
+.transcript-timeline { list-style: none; padding: 0; margin: 20px 0; }
+.trace-block { padding: 12px 16px; margin: 0 0 12px; border: 1px solid var(--line); border-left: 3px solid #857661; border-radius: 5px; background: var(--panel); }
+.trace-block header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; font-size: 12px; margin-bottom: 8px; }
+.trace-kind { font-weight: 700; }
+.trace-agent { opacity: .75; }
+.trace-block time { margin-left: auto; opacity: .6; font-variant-numeric: tabular-nums; }
+.trace-block pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.6 ui-monospace, monospace; }
+.trace-reasoning { border-left-color: #687d98; background: #1b2634; }
+.trace-action { border-left-color: #477246; background: #1c2b20; }
+.trace-game { border-left-color: #9a712f; }
+.trace-status { padding: 8px 16px; background: transparent; border-style: dashed; }
+.trace-status pre { font-family: inherit; font-size: 13px; }
+.transcript-error { padding: 12px; color: #efaaaa; background: #352021; border: 1px solid #7b4545; }
+.transcript-empty { padding: 40px 0; opacity: .7; }
+@media (max-width: 600px) { .agent-transcript { padding: 0 10px; } .transcript-heading { align-items: flex-start; } .transcript-heading h1 { font-size: 23px; } .trace-block { padding: 10px; } }

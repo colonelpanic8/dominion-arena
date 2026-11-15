@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS games (
     record TEXT NOT NULL
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS games_ended ON games (ended DESC);
+CREATE TABLE IF NOT EXISTS agent_transcript (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    game TEXT NOT NULL,
+    seat INTEGER NOT NULL,
+    agent TEXT NOT NULL,
+    attempt TEXT NOT NULL,
+    offset INTEGER NOT NULL,
+    activity TEXT NOT NULL,
+    UNIQUE (game, seat, attempt, offset)
+);
+CREATE INDEX IF NOT EXISTS agent_transcript_game ON agent_transcript (game, sequence);
 -- The accounts that played each game. They outlive a guest's account.
 CREATE TABLE IF NOT EXISTS game_players (
     user INTEGER NOT NULL,
@@ -67,7 +78,7 @@ CREATE TABLE IF NOT EXISTS game_players (
 ";
 
 /// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
                     rated_at, rated_games, games, wins, banned_cards";
@@ -200,6 +211,56 @@ impl Db {
         Ok(Db {
             conn: Mutex::new(conn),
             refs: Mutex::default(),
+        })
+    }
+
+    pub fn append_transcript(
+        &self,
+        game: &str,
+        seat: u8,
+        agent: &str,
+        activity: &dominion_protocol::transcript::TranscriptInput,
+    ) -> Result<()> {
+        let text = serde_json::to_string(activity).map_err(|e| Error::Storage(e.to_string()))?;
+        lock(&self.conn).execute("INSERT OR IGNORE INTO agent_transcript (game,seat,agent,attempt,offset,activity) VALUES (?1,?2,?3,?4,?5,?6)", params![game,seat,agent,activity.attempt,activity.offset,text])?;
+        Ok(())
+    }
+
+    pub fn transcript(
+        &self,
+        game: &str,
+        after: u64,
+    ) -> Result<dominion_protocol::transcript::TranscriptPage> {
+        use dominion_protocol::transcript::{TranscriptEntry, TranscriptPage};
+        let conn = lock(&self.conn);
+        let mut query = conn.prepare_cached("SELECT sequence,seat,agent,activity FROM agent_transcript WHERE game=?1 AND sequence>?2 ORDER BY sequence LIMIT 201")?;
+        let rows = query.query_map(params![game, after.min(i64::MAX as u64)], |r| {
+            Ok((
+                r.get::<_, u64>(0)?,
+                r.get::<_, u8>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut entries = vec![];
+        for row in rows {
+            let (sequence, seat, agent, activity) = row?;
+            let activity =
+                serde_json::from_str(&activity).map_err(|e| Error::Storage(e.to_string()))?;
+            entries.push(TranscriptEntry {
+                sequence,
+                seat,
+                agent,
+                activity,
+            });
+        }
+        let more = entries.len() > 200;
+        entries.truncate(200);
+        let next = entries.last().map_or(after, |e| e.sequence);
+        Ok(TranscriptPage {
+            entries,
+            next,
+            more,
         })
     }
 
@@ -532,4 +593,39 @@ pub(super) fn add_record(
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod transcript_tests {
+    use super::*;
+    use dominion_protocol::transcript::{TranscriptInput, TranscriptKind};
+
+    #[test]
+    fn transcripts_survive_reopening_and_page_without_repeating_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(Some(dir.path())).unwrap();
+        for offset in 1..=220 {
+            let entry = TranscriptInput {
+                attempt: "attempt".into(),
+                offset,
+                time: offset,
+                kind: TranscriptKind::Reasoning,
+                block: "thought".into(),
+                append: true,
+                text: "x".into(),
+            };
+            db.append_transcript("g1", 0, "Agent", &entry).unwrap();
+            db.append_transcript("g1", 0, "Agent", &entry).unwrap();
+        }
+        drop(db);
+        let db = Db::open(Some(dir.path())).unwrap();
+        let page = db.transcript("g1", 0).unwrap();
+        assert_eq!(page.entries.len(), 200);
+        assert!(page.more);
+        let rest = db.transcript("g1", page.next).unwrap();
+        assert_eq!(rest.entries.len(), 20);
+        assert!(!rest.more);
+        assert_eq!(rest.entries[0].activity.offset, 201);
+        assert!(db.transcript("g2", 0).unwrap().entries.is_empty());
+    }
 }

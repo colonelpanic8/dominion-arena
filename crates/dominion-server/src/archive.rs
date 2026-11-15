@@ -12,6 +12,7 @@ use std::time::Duration;
 pub struct Archive {
     pub dir: PathBuf,
     file: File,
+    live: Option<crate::transcript::Live>,
 }
 
 impl Archive {
@@ -36,17 +37,39 @@ impl Archive {
         Ok(Self {
             dir: dir.into(),
             file,
+            live: None,
         })
+    }
+
+    pub fn publish(&mut self, server: &str, job: &crate::house::Job) -> Result<(), String> {
+        if job.transcript {
+            self.live = Some(crate::transcript::Live::new(&self.dir, server, job)?);
+        }
+        Ok(())
+    }
+
+    pub async fn finish_publish(&mut self) {
+        if let Some(live) = self.live.take()
+            && let Err(error) = live.finish().await
+        {
+            eprintln!("dominion agents: {error}");
+            let _ = self.record("transcript_delivery_error", json!({"error":error}));
+        }
     }
 
     pub fn record(&mut self, kind: &str, mut data: Value) -> Result<(), String> {
         redact(&mut data);
-        let line = json!({"time": now_ms(), "kind": kind, "data": data});
+        let time = now_ms();
+        let line = json!({"time": time, "kind": kind, "data": data});
         serde_json::to_writer(&mut self.file, &line).map_err(|e| e.to_string())?;
         self.file.write_all(b"\n").map_err(|e| e.to_string())?;
         self.file
             .sync_data()
-            .map_err(|e| format!("saving interaction archive: {e}"))
+            .map_err(|e| format!("saving interaction archive: {e}"))?;
+        if let Some(live) = &mut self.live {
+            live.record(kind, &line["data"], time)?;
+        }
+        Ok(())
     }
 }
 

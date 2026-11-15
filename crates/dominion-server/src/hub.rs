@@ -147,6 +147,7 @@ struct Hosted {
     version: watch::Sender<u64>,
     /// Bumped after every chat message.
     chat: watch::Sender<u64>,
+    transcript: watch::Sender<u64>,
 }
 
 impl Hosted {
@@ -166,6 +167,7 @@ impl Hosted {
             tokens,
             version: watch::channel(0).0,
             chat: watch::channel(0).0,
+            transcript: watch::channel(0).0,
         }
     }
 
@@ -978,6 +980,15 @@ impl Hub {
     }
 
     /// Game `id`'s version, which every change bumps, and its chat's counter.
+    pub fn transcript_changes(&self, id: &str) -> Result<watch::Receiver<u64>, HubError> {
+        Ok(self.game(id)?.transcript.subscribe())
+    }
+
+    pub(crate) fn transcript_changed(&self, id: &str) -> Result<(), HubError> {
+        self.game(id)?.transcript.send_modify(|n| *n += 1);
+        Ok(())
+    }
+
     pub fn subscribe(&self, id: &str) -> Result<Feed, HubError> {
         let game = self.game(id)?;
         Ok(Feed {

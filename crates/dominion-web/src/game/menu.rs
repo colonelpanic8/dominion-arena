@@ -12,6 +12,15 @@ pub fn GameMenu() -> Element {
     let mut resigning = ctx.resigning;
     let running = (ctx.state.read().view.as_ref()).is_some_and(|v| v.game.running);
     let can_resign = running && ctx.seat.read().is_some();
+    let has_agents = !ctx.state.read().meta.rated
+        && ctx
+            .state
+            .read()
+            .meta
+            .users
+            .iter()
+            .flatten()
+            .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
     rsx! {
         span { class: "game-menu right",
             if open() {
@@ -25,6 +34,9 @@ pub fn GameMenu() -> Element {
                         },
                         "Resign"
                     }
+                }
+                if has_agents {
+                    a {class:"button",href:Route::Transcript {id:ctx.game.read().clone()}.to_string(),target:"_blank",rel:"noopener","Agent transcript"}
                 }
                 Link { class: "button", to: Route::Lobby {}, "data-action": "lobby", "Lobby" }
             }

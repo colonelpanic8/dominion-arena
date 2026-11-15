@@ -4,6 +4,7 @@
 pub mod api;
 pub mod assets;
 pub mod lobby;
+pub mod transcript;
 pub mod view;
 
 pub use view::*;

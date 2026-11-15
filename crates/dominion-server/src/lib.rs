@@ -15,6 +15,7 @@ pub mod mcp;
 pub mod rating;
 pub mod runner;
 pub mod store;
+mod transcript;
 
 use dominion_agent::GlossaryEntry;
 use rmcp::transport::streamable_http_server::{

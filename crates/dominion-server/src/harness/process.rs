@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[derive(Debug)]
 pub struct Launch {
@@ -244,11 +244,11 @@ impl Harness {
         let stdout = archive.dir.join(format!("{stem}.stdout.jsonl"));
         let stderr = archive.dir.join(format!("{stem}.stderr"));
         archive.record("native_request",json!({"program":spec.program,"executable":self.launch.program,"arguments":self.launch.args,"prompt":prompt,"stdout":stdout.file_name(),"stderr":stderr.file_name()}))?;
-        let output = private_file(&stdout)?;
+        let mut output = private_file(&stdout)?;
         let error = private_file(&stderr)?;
         let mut cmd = self.command(spec)?;
         cmd.stdin(Stdio::piped())
-            .stdout(Stdio::from(output))
+            .stdout(Stdio::piped())
             .stderr(Stdio::from(error));
         let mut child = cmd
             .spawn()
@@ -261,6 +261,7 @@ impl Harness {
         } else {
             prompt.clone()
         };
+        let mut events = vec![];
         let result = async {
             let mut stdin = child.stdin.take().ok_or("native harness has no stdin")?;
             stdin
@@ -268,6 +269,44 @@ impl Harness {
                 .await
                 .map_err(|e| format!("sending native prompt: {e}"))?;
             drop(stdin);
+            let stream = child.stdout.take().ok_or("native harness has no stdout")?;
+            let mut stream = BufReader::new(stream);
+            let mut line = vec![];
+            loop {
+                line.clear();
+                if stream
+                    .read_until(b'\n', &mut line)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    == 0
+                {
+                    break;
+                }
+                output
+                    .write_all(&line)
+                    .and_then(|()| output.sync_data())
+                    .map_err(|e| format!("saving native output: {e}"))?;
+                if line.iter().all(u8::is_ascii_whitespace) {
+                    continue;
+                }
+                let event: Value = serde_json::from_slice(&line).map_err(|e| {
+                    format!(
+                        "native harness emitted invalid JSON: {e}; see {}",
+                        stdout.display()
+                    )
+                })?;
+                archive.record("native_event", event.clone())?;
+                if event["type"] == "system"
+                    && event["subtype"] == "init"
+                    && event["tools"].as_array().is_some_and(|v| !v.is_empty())
+                {
+                    return Err("native harness exposed forbidden tools; see its archive".into());
+                }
+                if tool_event(&event) {
+                    return Err("native harness attempted a forbidden tool; see its archive".into());
+                }
+                events.push(event);
+            }
             child.wait().await.map_err(|e| e.to_string())
         };
         let status = match tokio::time::timeout(
@@ -287,27 +326,6 @@ impl Harness {
             File::open(path)
                 .and_then(|f| f.sync_all())
                 .map_err(|e| format!("saving native output: {e}"))?;
-        }
-        let text = std::fs::read_to_string(&stdout).map_err(|e| e.to_string())?;
-        let mut events = vec![];
-        for line in text.lines().filter(|l| !l.trim().is_empty()) {
-            let event: Value = serde_json::from_str(line).map_err(|e| {
-                format!(
-                    "native harness emitted invalid JSON: {e}; see {}",
-                    stdout.display()
-                )
-            })?;
-            archive.record("native_event", event.clone())?;
-            if event["type"] == "system"
-                && event["subtype"] == "init"
-                && event["tools"].as_array().is_some_and(|v| !v.is_empty())
-            {
-                return Err("native harness exposed forbidden tools; see its archive".into());
-            }
-            if tool_event(&event) {
-                return Err("native harness attempted a forbidden tool; see its archive".into());
-            }
-            events.push(event);
         }
         archive.record(
             "native_exit",

@@ -58,11 +58,13 @@ pub async fn play(
     stop: CancellationToken,
 ) -> Result<(), String> {
     spec.validate()?;
+    archive.publish(server, job)?;
     archive.record("seat", json!({"agent":spec,"job":job,"server":server}))?;
     let client = match Client::connect(server).await {
         Ok(client) => client,
         Err(error) => {
             archive.record("seat_finished", json!({"result":{"Err":error}}))?;
+            archive.finish_publish().await;
             return Err(error);
         }
     };
@@ -91,6 +93,7 @@ pub async fn play(
     }
     archive.record("seat_finished", json!({"result":result}))?;
     client.close().await;
+    archive.finish_publish().await;
     result
 }
 

@@ -20,6 +20,9 @@ assert 'ANTHROPIC_API_KEY' not in os.environ
 prompt = sys.stdin.read()
 if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content"]
 assert 'test-credential' not in prompt
+if 'fixture:streaming' in prompt:
+    print(json.dumps({'type':'reasoning','text':'streaming reasoning'}), flush=True)
+    time.sleep(2)
 if 'fixture:timeout' in prompt:
     print(json.dumps({'type':'reasoning','text':'before timeout'}), flush=True)
     time.sleep(20)
@@ -255,6 +258,32 @@ async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
         assert!(results.iter().all(Result::is_ok), "{program}: {results:?}");
         assert!(!h.arena.hub.list()[0].running);
         assert!(h.arena.hub.list()[0].watchable);
+        let mut cursor = 0;
+        let mut central = vec![];
+        loop {
+            let page = h.arena.transcript(&created.game_id, cursor).unwrap();
+            cursor = page.next;
+            central.extend(page.entries);
+            if !page.more {
+                break;
+            }
+        }
+        assert!(
+            central.iter().any(
+                |e| e.activity.kind == dominion_protocol::transcript::TranscriptKind::Reasoning
+            )
+        );
+        assert!(
+            central
+                .iter()
+                .any(|e| e.activity.kind == dominion_protocol::transcript::TranscriptKind::Action)
+        );
+        assert!(
+            central
+                .iter()
+                .any(|e| e.activity.kind == dominion_protocol::transcript::TranscriptKind::Game)
+        );
+
         for seat in 0..2 {
             let path = root.join(format!("seat-{seat}"));
             let journal = records(&path);
@@ -414,6 +443,22 @@ async fn live_native_game() {
                 .any(|r| r["kind"] == "result")
         );
     }
+    let trace = h
+        .arena
+        .transcript(&h.arena.hub.list()[0].game_id, 0)
+        .unwrap();
+    assert!(
+        trace
+            .entries
+            .iter()
+            .any(|e| e.activity.kind == dominion_protocol::transcript::TranscriptKind::Message)
+    );
+    assert!(
+        trace
+            .entries
+            .iter()
+            .any(|e| e.activity.kind == dominion_protocol::transcript::TranscriptKind::Action)
+    );
     eprintln!("Completed native game: {}", root.display());
 }
 
@@ -507,4 +552,132 @@ async fn mcp_creation_accepts_a_registered_bearer_session_and_hides_agent_tokens
     assert_eq!(dispatched(&mut h.jobs).len(), 2);
     assert!(h.arena.hub.list()[0].watchable);
     client.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn reasoning_reaches_the_server_before_the_native_response_finishes() {
+    use dominion_protocol::transcript::TranscriptKind;
+    let mut h = setup("claude").await;
+    h.config.agents.as_mut().unwrap()[0].instructions = Some("fixture:streaming".into());
+    let created = h.arena.create_game(Some(&h.who), &request()).unwrap();
+    let job = dispatched(&mut h.jobs)
+        .into_iter()
+        .find(|j| j.seat == 0)
+        .unwrap();
+    let mut changes = h.arena.hub.transcript_changes(&created.game_id).unwrap();
+    let stop = CancellationToken::new();
+    let cancelled = stop.clone();
+    let spec = h.config.agents.as_ref().unwrap()[0].clone();
+    let server = h.config.server();
+    let mut archive = Archive::create(h._dir.path()).unwrap();
+    let task =
+        tokio::spawn(
+            async move { harness::play(&spec, &job, &server, &mut archive, cancelled).await },
+        );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let page = h.arena.transcript(&created.game_id, 0).unwrap();
+            if page.entries.iter().any(|e| {
+                e.activity.kind == TranscriptKind::Reasoning
+                    && e.activity.text == "streaming reasoning"
+            }) {
+                assert!(
+                    !page
+                        .entries
+                        .iter()
+                        .any(|e| e.activity.kind == TranscriptKind::Action)
+                );
+                break;
+            }
+            changes.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!task.is_finished());
+    stop.cancel();
+    assert!(task.await.unwrap().is_err());
+}
+
+#[tokio::test]
+async fn transcripts_follow_game_visibility_and_retry_without_duplicate_entries() {
+    use dominion_protocol::transcript::{TranscriptInput, TranscriptKind, TranscriptPage};
+    let mut h = setup("codex").await;
+    let created = h.arena.create_game(Some(&h.who), &request()).unwrap();
+    let jobs = dispatched(&mut h.jobs);
+    let input = TranscriptInput {
+        attempt: "attempt-1".into(),
+        offset: 1,
+        time: 10,
+        kind: TranscriptKind::Reasoning,
+        block: "thought".into(),
+        append: false,
+        text: "Choose a card".into(),
+    };
+    let base = h.config.server().trim_end_matches("/mcp").to_string();
+    let url = format!("{base}/api/games/{}/transcript", created.game_id);
+    let http = reqwest::Client::new();
+    let (_, viewer) = h
+        .arena
+        .guest("127.0.0.2".parse().unwrap(), Some("Viewer"))
+        .unwrap();
+    let feed = http
+        .get(format!("{url}/events"))
+        .bearer_auth(&viewer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(feed.status(), reqwest::StatusCode::OK);
+    use futures_util::StreamExt;
+    let mut updates = feed.bytes_stream();
+    assert!(
+        String::from_utf8_lossy(&updates.next().await.unwrap().unwrap()).contains("event: change")
+    );
+    for _ in 0..2 {
+        let reply = http
+            .post(&url)
+            .bearer_auth(&jobs[0].token)
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_string(&input).unwrap())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reply.status(), reqwest::StatusCode::NO_CONTENT);
+    }
+    let change = tokio::time::timeout(std::time::Duration::from_secs(2), updates.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&change).contains("event: change"));
+    drop(updates);
+    let reply = http.get(&url).bearer_auth(&viewer).send().await.unwrap();
+    assert_eq!(reply.status(), reqwest::StatusCode::OK);
+    let page: TranscriptPage = serde_json::from_str(&reply.text().await.unwrap()).unwrap();
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].activity, input);
+    let empty = h.arena.transcript(&created.game_id, page.next).unwrap();
+    assert!(empty.entries.is_empty());
+    assert_eq!(
+        http.get(&url).send().await.unwrap().status(),
+        reqwest::StatusCode::UNAUTHORIZED
+    );
+    let mut private = request();
+    private.watchable = Some(false);
+    h.arena
+        .hub
+        .resign(
+            &h.arena.hub.claim(&created.game_id, &jobs[0].token).unwrap(),
+            "finished",
+        )
+        .unwrap();
+    let private = h.arena.create_game(Some(&h.who), &private).unwrap();
+    let reply = http
+        .get(format!("{base}/api/games/{}/transcript", private.game_id))
+        .bearer_auth(viewer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(reply.status(), reqwest::StatusCode::FORBIDDEN);
 }

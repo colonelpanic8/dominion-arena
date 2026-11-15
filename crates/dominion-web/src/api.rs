@@ -452,6 +452,26 @@ mod imp {
     }
 }
 
+pub async fn transcript(
+    game: &str,
+    token: Option<&str>,
+    after: u64,
+) -> Result<dominion_protocol::transcript::TranscriptPage> {
+    imp::get(
+        &format!("/api/games/{}/transcript?after={after}", encode(game)),
+        token,
+    )
+    .await
+}
+
+pub async fn watch_transcript(game: &str, token: Option<&str>, on_change: impl FnMut(Change)) {
+    let mut url = format!("/api/games/{}/transcript/events", encode(game));
+    if let Some(token) = token {
+        url.push_str(&format!("?token={}", encode(token)));
+    }
+    follow(&url, on_change).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

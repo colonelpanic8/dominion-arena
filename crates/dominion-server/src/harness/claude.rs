@@ -21,6 +21,7 @@ pub fn launch(spec: &AgentSpec) -> Launch {
         "--output-format",
         "stream-json",
         "--verbose",
+        "--include-partial-messages",
     ]
     .map(String::from)
     .to_vec();

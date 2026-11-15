@@ -75,6 +75,11 @@ pub fn router(
         .route("/games/{id}/resign", post(resign))
         .route("/games/{id}/undo", post(undo))
         .route("/games/{id}/events", get(events))
+        .route(
+            "/games/{id}/transcript",
+            get(transcript).post(publish_transcript),
+        )
+        .route("/games/{id}/transcript/events", get(transcript_events))
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
         .route("/auth/guest", post(guest))
@@ -651,6 +656,72 @@ async fn undo(
     let seat = api.seat(&id, &headers, None, query(seat_query)?.seat)?;
     api.hub.undo(&seat)?;
     Ok(axum::Json(api.hub.seat_view(&seat, Some(0))?))
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+fn transcript_access(api: &Api, id: &str, headers: &HeaderMap, q: &SeatQuery) -> Result<()> {
+    if api.hub.meta(id)?.rated {
+        return Err(Error::new(
+            StatusCode::FORBIDDEN,
+            "live transcripts are available in unrated games",
+        ));
+    }
+    if api.seat(id, headers, q.token.as_deref(), q.seat).is_ok() {
+        return Ok(());
+    }
+    api.signed_in(headers)?;
+    if !api.hub.meta(id)?.watchable {
+        return Err(Error::new(StatusCode::FORBIDDEN, "this game is private"));
+    }
+    Ok(())
+}
+
+async fn transcript(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    cursor: Queried<TranscriptQuery>,
+    seat: Queried<SeatQuery>,
+) -> Json<dominion_protocol::transcript::TranscriptPage> {
+    transcript_access(&api, &id, &headers, &query(seat)?)?;
+    let after = query(cursor)?.after;
+    let arena = api.arena.clone();
+    let page = blocking(move || arena.transcript(&id, after)).await?;
+    Ok(axum::Json(page))
+}
+
+async fn publish_transcript(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    req: Bytes,
+) -> Result<StatusCode> {
+    let seat = api.seat(&id, &headers, None, None)?;
+    let input: dominion_protocol::transcript::TranscriptInput = body(&req)?;
+    let arena = api.arena.clone();
+    blocking(move || arena.append_transcript(&seat, &input)).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn transcript_events(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    seat: Queried<SeatQuery>,
+) -> Result<Events> {
+    transcript_access(&api, &id, &headers, &query(seat)?)?;
+    let changes = api.hub.transcript_changes(&id)?;
+    let (held, idle) = tokio::sync::watch::channel(0);
+    Ok(feed(&api, changes, idle, held, |version, _| Change {
+        version,
+        chat: 0,
+    }))
 }
 
 /// Waits for either counter to change. Whether its sender is gone.

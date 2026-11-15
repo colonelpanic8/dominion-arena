@@ -12,3 +12,4 @@ pub mod game;
 pub mod lobby;
 pub mod platform;
 pub mod session;
+pub mod transcript;

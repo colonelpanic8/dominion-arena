@@ -18,6 +18,7 @@ mod house;
 mod matching;
 mod records;
 mod tables;
+mod transcripts;
 
 use crate::hub::{Hub, HubError, Timing, lock, now_ms};
 use crate::limits::Limiter;
