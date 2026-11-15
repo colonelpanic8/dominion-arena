@@ -212,24 +212,62 @@ played by token, by whoever holds it. The lobby makes games between accounts:
 
 ### The server's own agents
 
-A server can play agents itself, with the coding agents installed on its machine and
-their logins: `dominion agents` (the runner) connects to the server's `agent_socket` (a
-Unix socket: whoever may open it runs agents) and offers its agents, by default Claude
-Opus and Claude Sonnet (Claude Code, `claude -p`) and Codex (`codex exec`). Each is an
-account of its own, a bot of nobody's with a rating and records, listed in the lobby
-(`Lobby.house`). A registered player seats one at a table (`SeatEdit::Agent`), or plays
-one in a 1 Bot game: a search of agents (`opponents: agents`, naming the agent it wants as
-`agent` or none) that no other agent answers gets one. Each player fills
-`agent_seats_per_day` such seats a day, and the runner plays `agents_at_once` games at
-once; guests and bots seat none. Whenever the seats they hold in running games change,
-the server tells the runner, which keeps one process playing each: it joins the seat over
-MCP with the seat's token (handed to it on standard input), is started again a few times
-if it stops while the game goes on, and is stopped when the game is over. A runner that
-comes back (or a server that restarted) picks up the games still running. Claude Code
-runs with no settings, CLAUDE.md, plugins or other MCP servers of the machine's and only
-the six tools a seat plays with; Codex can't leave out its user's `~/.codex/AGENTS.md`,
-so it reads that too (its only way out is the game's answers). Their logs are kept two
-weeks under `agents_dir/logs`.
+A server can play agents using its account's native subscription logins: Claude Code,
+Codex, and Gemini through Antigravity CLI. `dominion agents` connects to `agent_socket`
+and offers the configured `[[agents]]` profiles in the lobby. A registered player can
+seat them at a table, request one in Bot Game, or assign any seats through ordinary
+`POST /api/games` / MCP `create_game`:
+
+```json
+{"players":2,"agents":["Claude Opus","Gemini"],"seed":42,"turn_limit":100}
+```
+
+`agents` has one entry per player; `null` creates a token seat. The creator receives
+only those token seats. A profile may play multiple seats. Existing game options
+configure the kingdom, landscapes, seed, Colonies/Shelters, and turn limit. These games
+are unrated, disallow undo, and are watchable through the server by default; an explicit
+`watchable: false` makes one private. They appear in the normal lobby games listing.
+Each registered player fills `agent_seats_per_day` agent seats a day; the runner's
+`agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
+
+Each model receives its player's legal observations and returns one structured game
+action. The Dominion bridge holds the seat token and executes only `answer`,
+`play_treasures`, and `card`. Native computer tools, MCP connections, hooks, and user
+instructions are disabled. On Linux, bubblewrap also hides the host home and project
+files and clears the environment, exposing only the runtime, a per-seat workspace,
+and that provider's native login directory. Provider network access remains available.
+The runner requires Linux user namespaces and bubblewrap and fails if isolation cannot
+start. Claude uses restricted mode and an empty tool list; Codex uses an adjusted local
+model catalog without shell, patch, or other tool capabilities; Antigravity uses a
+completion-only custom agent and deny rules. Its init event lists the global registry,
+including tools excluded by the selected custom agent. Use current compatible CLI versions
+(tested with Claude 2.1.319, Codex 0.167.0, and Antigravity 1.5.10; Antigravity
+requires the session `--settings` option).
+
+Every seat attempt gets a private directory under `agents_dir/archives`. Its
+`interactions.jsonl` records resolved game configuration, agent settings, every game
+request/response, complete prompts, native events, failures, and the final view.
+`response-*.stdout.jsonl` and `.stderr` preserve the CLI's complete output, including
+any reasoning or usage events it exposes. Credentials are redacted from the game
+journal and never sent in model prompts. Archives are never automatically pruned and
+are independent of the server's game retention. `history_turns` only limits the
+observations passed to the model, not the archive. A runner restart starts a fresh
+archived attempt for each seat still running.
+
+Subscription sign-in is performed using the native CLI before starting the runner.
+Antigravity CLI uses `agy`; the Antigravity IDE can also install a different `agy`,
+so set `command` to the CLI's absolute path when both are installed. Consumer Gemini
+subscriptions use Antigravity, not Gemini CLI. `auth_dir` selects a provider's native
+login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and respects
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or `GEMINI_HOME`). Codex needs its native
+`models_cache.json`, populated by starting Codex once after sign-in.
+
+For an opt-in native subscription check, set `DOMINION_LIVE_AGENT` to `claude`, `codex`,
+or `antigravity` and run `cargo test -p dominion-server --lib live_native -- --ignored
+--nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL` select the
+executable and model. `DOMINION_LIVE_PROBE=1` also checks that a request to run a
+command cannot create a marker file. This uses the same sandbox and writes evidence under
+`/tmp/dominion-native-live`.
 
 What one address or account may do is limited: accounts registered and guests made per
 hour, sign-in attempts, games created by hand, kingdoms dealt, table changes, messages.
@@ -277,14 +315,23 @@ decision_minutes = 30          # serve: ... or after this long over one decision
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
 agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day
-agents_at_once = 2             # agents: games the runner plays at once
+agents_at_once = 2             # agents: seats the runner plays at once
 agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (default $XDG_STATE_HOME/dominion/agents)
 # agents: what the runner offers (default: Claude Opus, Claude Sonnet, Codex); `command`
-# (default claude or codex on the PATH) and `about` (for the lobby) are optional too
+# (default claude, codex, or agy on PATH) and `about` (for the lobby) are optional too
 # [[agents]]
 # name = "Claude Opus"
-# program = "claude"           # claude or codex
+# program = "claude"           # claude, codex, or antigravity
 # model = "opus"
+# effort = "high"
+# instructions = "Prefer engine strategies when the kingdom supports them."
+# response_seconds = 300
+# history_turns = 20
+# [[agents]]
+# name = "Gemini"
+# program = "antigravity"
+# command = "/path/to/antigravity-cli/bin/agy"
+# model = "gemini-4-argon-medium"       # use a model ID from `agy models`
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 ```
@@ -294,7 +341,7 @@ with `services.dominion.settings` holding the settings above (`state_dir` and `a
 default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`),
 `services.dominion.syncAssets` to fill the asset cache at boot, and
 `services.dominion.agents` (`enable`, `user`, `settings`) to run the server's own agents
-as `user`, with that account's Claude Code and Codex logins (and subscriptions): it sets
+as `user`, with that account's native CLI logins (and subscriptions): it sets
 `agent_socket` to `/run/dominion/agents.sock`, reachable by the `dominion` group, which
 the runner's service joins.
 

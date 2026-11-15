@@ -1,0 +1,510 @@
+#![cfg(target_os = "linux")]
+use dominion_server::arena::{Arena, Ident};
+use dominion_server::config::Config;
+use dominion_server::house::{Job, Offer, ToRunner};
+use dominion_server::hub::{Hub, NewGame};
+use dominion_server::{archive::Archive, harness};
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+};
+use serde_json::Value;
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
+
+const FIXTURE: &str = r#"
+import json, sys, os, time
+from pathlib import Path
+assert not Path('/home/imalison').exists()
+assert not Path('/srv/dotfiles').exists()
+assert 'ANTHROPIC_API_KEY' not in os.environ
+prompt = sys.stdin.read()
+if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content"]
+assert 'test-credential' not in prompt
+if 'fixture:timeout' in prompt:
+    print(json.dumps({'type':'reasoning','text':'before timeout'}), flush=True)
+    time.sleep(20)
+if 'fixture:native-tool' in prompt:
+    print(json.dumps({'type':'item.completed','item':{'type':'command_execution','command':'not executed'}}), flush=True)
+    sys.exit(0)
+if 'fixture:unsupported' in prompt:
+    print(json.dumps({'type':'result','is_error':False,'result':json.dumps({'tool':'resign'})}), flush=True)
+    sys.exit(0)
+state = Path('/work/fixture.json')
+if '\n\nCurrent view:\n' in prompt:
+    view = json.loads(prompt.rsplit('\n\nCurrent view:\n', 1)[1])
+    state.write_text(json.dumps(view))
+else:
+    view = json.loads(state.read_text())
+marker = Path('/work/looked')
+if not marker.exists():
+    marker.touch()
+    action = {'tool':'card', 'name':'Village'}
+else:
+    d = view['decision']
+    opts = d['options']
+    index = next((o['index'] for o in opts if 'End your Buy phase' in o['label']), opts[0]['index'])
+    action = {'tool':'answer', 'decision_id':d['id'], 'indices':[index]}
+answer = json.dumps(action)
+print(json.dumps({'type':'reasoning', 'text':'r' * 120003}))
+print('native diagnostic', file=sys.stderr)
+if '--restricted' in sys.argv:
+    assert sys.argv[sys.argv.index('--tools')+1] == ''
+    print(json.dumps({'type':'system','subtype':'init','tools':[], 'mcp_servers':[]}))
+    print(json.dumps({'type':'result', 'is_error':False, 'result':answer}))
+elif '--agent' in sys.argv:
+    assert 'tools: [finish]' in Path('/work/.agents/agents/dominion.md').read_text()
+    assert 'command(*)' in Path('/work/settings.json').read_text()
+    print(json.dumps({'event':'init','init':{'tools':[]}}))
+    print(json.dumps({'event':'result', 'result':{'status':'SUCCESS','response':answer}}))
+else:
+    assert Path('/home/agent/.codex/AGENTS.md').read_text() == ''
+    assert '--ignore-user-config' in sys.argv
+    assert '--disable' in sys.argv
+    print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':answer}}))
+    print(json.dumps({'type':'turn.completed'}))
+"#;
+
+struct Harness {
+    config: Config,
+    arena: Arc<Arena>,
+    who: Ident,
+    token: String,
+    jobs: tokio::sync::mpsc::UnboundedReceiver<ToRunner>,
+    stop: CancellationToken,
+    _dir: tempfile::TempDir,
+}
+
+async fn setup(program: &str) -> Harness {
+    let dir = tempfile::tempdir().unwrap();
+    let stop = CancellationToken::new();
+    let hub = Arc::new(Hub::default());
+    let arena = Arena::open(hub, Default::default()).unwrap();
+    let (_, token) = arena
+        .register(
+            "127.0.0.1".parse().unwrap(),
+            &dominion_protocol::lobby::Credentials {
+                name: "Host".into(),
+                password: "correct horse".into(),
+            },
+            None,
+        )
+        .unwrap();
+    let token = token.unwrap();
+    let who = arena.identify(&token).unwrap();
+    let (send, jobs) = tokio::sync::mpsc::unbounded_channel();
+    arena.runner_connected(
+        vec![Offer {
+            name: "Test".into(),
+            about: "T3 Code".into(),
+        }],
+        2,
+        send,
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let sessions = Arc::new(LocalSessionManager::default());
+    let served = arena.clone();
+    let service = StreamableHttpService::new(
+        move || {
+            Ok(dominion_server::mcp::Session::new(
+                served.clone(),
+                std::time::Duration::from_secs(600),
+                false,
+            ))
+        },
+        sessions,
+        StreamableHttpServerConfig::default(),
+    );
+    let router = dominion_server::http::router(
+        arena.clone(),
+        &Default::default(),
+        vec!["127.0.0.1".into()],
+        stop.clone(),
+    )
+    .nest_service("/mcp", service);
+    let stopped = stop.clone();
+    tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(stopped.cancelled_owned())
+            .await
+            .unwrap();
+    });
+    let auth = dir.path().join("auth");
+    std::fs::create_dir_all(auth.join("antigravity-cli")).unwrap();
+    std::fs::write(auth.join("guidance"), "host instructions").unwrap();
+    std::os::unix::fs::symlink("guidance", auth.join("AGENTS.md")).unwrap();
+    std::fs::write(
+        auth.join("models_cache.json"),
+        r#"{"models":[{"slug":"fixture","visibility":"list","priority":0}]}"#,
+    )
+    .unwrap();
+    let command = dir.path().join("fixture");
+    let python = std::process::Command::new("which")
+        .arg("python3")
+        .output()
+        .unwrap();
+    let python = std::fs::canonicalize(String::from_utf8(python.stdout).unwrap().trim()).unwrap();
+    let source = format!("#!{}\n{}", python.display(), FIXTURE);
+    std::fs::write(&command, source).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let config: Config = toml::from_str(&format!(
+        r#"
+        server = {server:?}
+        agents_dir = {:?}
+        [[agents]]
+        name = "Test"
+        program = {program:?}
+        command = {:?}
+        auth_dir = {:?}
+        instructions = "Buy Provinces."
+        response_seconds = 5
+    "#,
+        dir.path().join("agents"),
+        command,
+        auth
+    ))
+    .unwrap();
+    Harness {
+        config,
+        arena,
+        who,
+        token,
+        jobs,
+        stop,
+        _dir: dir,
+    }
+}
+
+impl Drop for Harness {
+    fn drop(&mut self) {
+        self.stop.cancel();
+    }
+}
+
+fn request() -> NewGame {
+    NewGame {
+        players: 2,
+        agents: vec![Some("Test".into()), Some("Test".into())],
+        kingdom: vec!["Village".into()],
+        seed: Some(42),
+        turn_limit: Some(2),
+        ..NewGame::default()
+    }
+}
+
+fn dispatched(jobs: &mut tokio::sync::mpsc::UnboundedReceiver<ToRunner>) -> Vec<Job> {
+    let mut result = vec![];
+    while let Ok(message) = jobs.try_recv() {
+        if let ToRunner::Jobs { jobs } = message {
+            result = jobs;
+        }
+    }
+    result
+}
+
+async fn play(h: &mut Harness, jobs: Vec<Job>) -> (std::path::PathBuf, Vec<Result<(), String>>) {
+    let root = h._dir.path().join("archive");
+    let mut tasks = tokio::task::JoinSet::new();
+    for job in jobs {
+        let mut archive = Archive::open(&root.join(format!("seat-{}", job.seat))).unwrap();
+
+        let spec = h.config.agents.as_ref().unwrap()[0].clone();
+        let server = h.config.server();
+        tasks.spawn(async move {
+            harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await
+        });
+    }
+    let mut results = vec![];
+    while let Some(result) = tasks.join_next().await {
+        results.push(result.unwrap());
+    }
+    (root, results)
+}
+
+fn records(path: &std::path::Path) -> Vec<Value> {
+    std::fs::read_to_string(path.join("interactions.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
+    for program in ["claude", "codex", "antigravity"] {
+        let mut h = setup(program).await;
+        let created = h.arena.create_game(Some(&h.who), &request()).unwrap();
+        assert!(created.seats.is_empty());
+        let jobs = dispatched(&mut h.jobs);
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].configuration.as_ref().unwrap().seed, 42);
+        assert!(
+            h.arena
+                .hub
+                .watch_view(&created.game_id, 0)
+                .unwrap()
+                .view
+                .spectating
+        );
+        let (root, results) =
+            tokio::time::timeout(std::time::Duration::from_secs(30), play(&mut h, jobs))
+                .await
+                .unwrap();
+        assert!(results.iter().all(Result::is_ok), "{program}: {results:?}");
+        assert!(!h.arena.hub.list()[0].running);
+        assert!(h.arena.hub.list()[0].watchable);
+        for seat in 0..2 {
+            let path = root.join(format!("seat-{seat}"));
+            let journal = records(&path);
+            assert!(journal.iter().any(|r| r["kind"] == "result"));
+            assert!(journal.iter().any(|r| {
+                r["kind"] == "native_event"
+                    && r["data"]["text"]
+                        .as_str()
+                        .is_some_and(|s| s.len() == 120_003)
+            }));
+            assert!(
+                journal
+                    .iter()
+                    .any(|r| r["kind"] == "request" && r["data"]["tool"] == "card")
+            );
+            assert!(
+                std::fs::read_to_string(path.join("response-000001.stderr"))
+                    .unwrap()
+                    .contains("native diagnostic")
+            );
+            assert_eq!(journal[0]["data"]["job"]["configuration"]["seed"], 42);
+            let joined = journal
+                .iter()
+                .find(|r| r["kind"] == "request" && r["data"]["tool"] == "join_game")
+                .unwrap();
+            assert_eq!(joined["data"]["arguments"]["token"], "[redacted]");
+        }
+    }
+}
+
+#[tokio::test]
+async fn http_creation_assigns_only_requested_seats_and_respects_privacy() {
+    let mut h = setup("claude").await;
+    let mut request = request();
+    request.agents = vec![None, Some("Test".into())];
+    request.watchable = Some(false);
+    let base = h.config.server().trim_end_matches("/mcp").to_string();
+    let response = reqwest::Client::new()
+        .post(format!("{base}/api/games"))
+        .bearer_auth(&h.token)
+        .body(serde_json::to_string(&request).unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let created: Value = serde_json::from_str(&response.text().await.unwrap()).unwrap();
+    assert_eq!(created["seats"].as_array().unwrap().len(), 1);
+    assert_eq!(created["seats"][0]["seat"], 0);
+    assert_eq!(dispatched(&mut h.jobs).len(), 1);
+    assert!(!h.arena.hub.list()[0].watchable);
+}
+
+#[tokio::test]
+async fn creation_checks_permissions_capacity_and_seat_assignments() {
+    let h = setup("claude").await;
+    assert!(h.arena.create_game(None, &request()).is_err());
+    let mut malformed = request();
+    malformed.agents.pop();
+    assert!(h.arena.create_game(Some(&h.who), &malformed).is_err());
+    malformed.agents = vec![Some("Missing".into()), None];
+    assert!(h.arena.create_game(Some(&h.who), &malformed).is_err());
+    assert!(h.arena.hub.list().is_empty());
+    h.arena.create_game(Some(&h.who), &request()).unwrap();
+    assert!(h.arena.create_game(Some(&h.who), &request()).is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn the_existing_runner_dispatches_native_seats_and_archives_game_completion() {
+    let mut h = setup("claude").await;
+    let socket = h._dir.path().join("agents.sock");
+    h.config.agent_socket = Some(socket.clone());
+    let arena = h.arena.clone();
+    let server_stop = h.stop.clone();
+    let mut listening = Box::pin(async move {
+        dominion_server::house::listen(arena, &socket, server_stop)
+            .await
+            .unwrap();
+    });
+    assert!(futures_util::poll!(listening.as_mut()).is_pending());
+    let listener_task = tokio::spawn(listening);
+    let (mut changes, _) = h.arena.subscribe();
+    let runner_stop = CancellationToken::new();
+    let runner = tokio::spawn(dominion_server::runner::run_until(
+        h.config.runner().unwrap(),
+        runner_stop.clone(),
+    ));
+    tokio::time::timeout(std::time::Duration::from_secs(10), changes.changed())
+        .await
+        .unwrap()
+        .unwrap();
+    let created = h.arena.create_game(Some(&h.who), &request()).unwrap();
+    let hub = h.arena.hub.clone();
+    let mut game_changes = hub.subscribe(&created.game_id).unwrap().version;
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        while hub.list()[0].running {
+            game_changes.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    runner_stop.cancel();
+    tokio::time::timeout(std::time::Duration::from_secs(10), runner)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let root = h.config.agents_dir.as_ref().unwrap().join("archives");
+    let mut finished = 0;
+    for entry in std::fs::read_dir(root).unwrap() {
+        let records = records(&entry.unwrap().path());
+        if records.iter().any(|r| r["kind"] == "seat") {
+            assert!(records.iter().any(|r| r["kind"] == "result"));
+            assert!(records.iter().any(|r| r["kind"] == "seat_finished"));
+            finished += 1;
+        }
+    }
+    assert_eq!(finished, 2);
+    listener_task.abort();
+}
+
+#[tokio::test]
+#[ignore = "uses native subscription credentials and real model requests"]
+async fn live_native_game() {
+    let program = std::env::var("DOMINION_LIVE_AGENT").expect("DOMINION_LIVE_AGENT");
+    let mut h = setup(&program).await;
+    let mut spec: dominion_server::runner::AgentSpec =
+        serde_json::from_value(serde_json::json!({"name":"Test","program":program})).unwrap();
+    spec.command = std::env::var("DOMINION_LIVE_COMMAND").ok();
+    spec.model = std::env::var("DOMINION_LIVE_MODEL").ok();
+    spec.instructions = Some("This short integration game should finish quickly: end your Buy phase as soon as it is offered.".into());
+    h.config.agents = Some(vec![spec]);
+    h.arena.create_game(Some(&h.who), &request()).unwrap();
+    let jobs = dispatched(&mut h.jobs);
+    let root = Archive::create(std::path::Path::new("/tmp/dominion-native-live"))
+        .unwrap()
+        .dir;
+    let mut tasks = tokio::task::JoinSet::new();
+    for job in jobs {
+        let mut archive = Archive::open(&root.join(format!("seat-{}", job.seat))).unwrap();
+        let spec = h.config.agents.as_ref().unwrap()[0].clone();
+        let server = h.config.server();
+        tasks.spawn(async move {
+            harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await
+        });
+    }
+    while let Some(result) = tasks.join_next().await {
+        let result = result.unwrap();
+        assert!(result.is_ok(), "{result:?}");
+    }
+    assert!(!h.arena.hub.list()[0].running);
+    assert!(h.arena.hub.list()[0].watchable);
+    for seat in 0..2 {
+        assert!(
+            records(&root.join(format!("seat-{seat}")))
+                .iter()
+                .any(|r| r["kind"] == "result")
+        );
+    }
+    eprintln!("Completed native game: {}", root.display());
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn forbidden_actions_tools_and_timeouts_preserve_failure_logs_without_resigning() {
+    for mode in ["unsupported", "native-tool", "timeout"] {
+        let mut h = setup("claude").await;
+        let spec = &mut h.config.agents.as_mut().unwrap()[0];
+        spec.instructions = Some(format!("fixture:{mode}"));
+        spec.response_seconds = Some(1);
+        h.arena.create_game(Some(&h.who), &request()).unwrap();
+        let mut jobs = dispatched(&mut h.jobs);
+        jobs.retain(|j| j.seat == 0);
+        let (root, results) = play(&mut h, jobs).await;
+        let error = results[0].as_ref().unwrap_err();
+        assert!(
+            error.contains(match mode {
+                "unsupported" => "game-tool JSON",
+                "native-tool" => "forbidden tool",
+                _ => "timed out",
+            }),
+            "{error}"
+        );
+        assert!(h.arena.hub.list()[0].running);
+        let path = root.join("seat-0");
+        assert!(records(&path).iter().any(|r| r["kind"] == "seat_finished"));
+        assert!(
+            !std::fs::read_to_string(path.join("response-000001.stdout.jsonl"))
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn profiles_validate_provider_options_and_reject_ambiguous_configuration() {
+    let read = |text: &str| toml::from_str::<Config>(text).unwrap().runner();
+    let base = "agent_socket='/tmp/fixture.sock'\n";
+    assert!(
+        read(&format!(
+            "{base}[[agents]]\nname='A'\nprogram='antigravity'\neffort='high'\nhistory_turns=0"
+        ))
+        .is_ok()
+    );
+    assert!(
+        read(&format!(
+            "{base}[[agents]]\nname='A'\nprogram='claude'\neffort='ultra'"
+        ))
+        .is_err()
+    );
+    assert!(
+        read(&format!(
+            "{base}[[agents]]\nname='A'\nprogram='codex'\nresponse_seconds=0"
+        ))
+        .is_err()
+    );
+    assert!(
+        read(&format!(
+            "{base}[[agents]]\nname='A'\nprogram='codex'\n[[agents]]\nname='a'\nprogram='claude'"
+        ))
+        .is_err()
+    );
+    assert!(toml::from_str::<Config>(&format!("{base}[[agents]]\nname='A'\nprogram='codex'\narguments=['--dangerously-bypass-approvals-and-sandbox']")).is_err());
+}
+
+#[tokio::test]
+async fn mcp_creation_accepts_a_registered_bearer_session_and_hides_agent_tokens() {
+    let mut h = setup("codex").await;
+    let guest = dominion_server::client::Client::connect(&h.config.server())
+        .await
+        .unwrap();
+    let denied = guest
+        .call("create_game", serde_json::to_value(request()).unwrap())
+        .await
+        .unwrap();
+    assert!(!denied.ok);
+    guest.close().await;
+    let client = dominion_server::client::Client::connect_authenticated(
+        &h.config.server(),
+        Some(h.token.clone()),
+    )
+    .await
+    .unwrap();
+    let reply = client
+        .call("create_game", serde_json::to_value(request()).unwrap())
+        .await
+        .unwrap();
+    assert!(reply.ok, "{}", reply.text);
+    assert_eq!(reply.json.unwrap()["seats"], serde_json::json!([]));
+    assert_eq!(dispatched(&mut h.jobs).len(), 2);
+    assert!(h.arena.hub.list()[0].watchable);
+    client.close().await;
+}

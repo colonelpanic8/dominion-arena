@@ -332,13 +332,14 @@ impl Session {
 #[tool_router]
 impl Session {
     #[tool(
-        description = "Create a game. Give `players` and optionally `kingdom` (card names), `landscapes`, `sets` (to deal a random kingdom from), `seed`, `turn_limit`, `names`. Returns the game id and one secret token per seat; hand each token only to whoever plays that seat."
+        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`. `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents; agent games are watchable by default. Returns the game id and secret tokens only for seats without agents."
     )]
     async fn create_game(
         &self,
         Parameters(req): Parameters<NewGame>,
     ) -> Result<CallToolResult, ErrorData> {
-        Ok(match self.hub.create(&req) {
+        let ident = self.ident().ok();
+        Ok(match self.arena.create_game(ident.as_ref(), &req) {
             Ok(created) => {
                 let mut text = format!("Created game {}.", created.game_id);
                 for s in &created.seats {

@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 /// A tool call's outcome: its text content, structured content, and whether it failed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct Reply {
     pub ok: bool,
     pub text: String,
@@ -38,11 +38,16 @@ pub struct Client {
 
 impl Client {
     pub async fn connect(url: &str) -> Result<Client, String> {
+        Self::connect_authenticated(url, None).await
+    }
+
+    pub async fn connect_authenticated(url: &str, token: Option<String>) -> Result<Client, String> {
         // A response stream that breaks is resumed a few times, not forever, so a call to
         // a server that is gone fails.
         let mut retry = FixedInterval::default();
         retry.max_times = Some(3);
         let mut config = StreamableHttpClientTransportConfig::with_uri(url.to_string());
+        config.auth_header = token;
         config.retry_config = Arc::new(retry);
         let transport = StreamableHttpClientTransport::from_config(config);
         let service = ().serve(transport).await.map_err(|e| format!("connecting to {url}: {e}"))?;

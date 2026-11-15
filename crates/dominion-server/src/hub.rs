@@ -511,7 +511,7 @@ pub fn seat_name(given: &str) -> Result<String, String> {
 
 /// Every seat's name: the ones given, then the defaults. Seats must be told apart by
 /// them.
-fn names(req: &NewGame) -> Result<Vec<String>, HubError> {
+pub(crate) fn names(req: &NewGame) -> Result<Vec<String>, HubError> {
     let players = usize::from(req.players);
     if req.names.len() > players {
         return Err(bad(format!(
@@ -698,6 +698,9 @@ impl Hub {
     }
 
     pub fn create(&self, req: &NewGame) -> Result<Created, HubError> {
+        if req.agents.iter().any(Option::is_some) {
+            return Err(bad("agent seats must be assigned through the arena".into()));
+        }
         let config = config(req)?;
         let names = names(req)?;
         let meta = Meta {
@@ -761,6 +764,12 @@ impl Hub {
             .get(id)
             .cloned()
             .ok_or_else(|| HubError::UnknownGame(id.into()))
+    }
+
+    pub fn configuration(&self, id: &str) -> Option<GameConfig> {
+        self.game(id)
+            .ok()
+            .map(|game| lock(&game.table).game().config().clone())
     }
 
     /// The seat `token` claims in game `id`.

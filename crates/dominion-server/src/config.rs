@@ -102,10 +102,10 @@ pub struct Config {
     /// (default 5).
     pub agent_seats_per_day: Option<u32>,
     /// The agents `dominion agents` offers, as `[[agents]]` tables: `name`, `program`
-    /// (`claude` or `codex`), and optionally `model`, `command`, `about` (default: Claude
+    /// (`claude`, `codex`, or `antigravity`), and optionally `model`, `command`, `about` (default: Claude
     /// Opus, Claude Sonnet and Codex).
     pub agents: Option<Vec<crate::runner::AgentSpec>>,
-    /// How many games `dominion agents` plays at once (default 2).
+    /// How many agent seats `dominion agents` plays at once (default 2).
     pub agents_at_once: Option<u32>,
     /// Where `dominion agents` runs its agents and keeps their logs (default
     /// `$XDG_STATE_HOME/dominion/agents`).
@@ -204,13 +204,23 @@ impl Config {
         let dir = (self.agents_dir.clone())
             .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/agents")))
             .ok_or("no place for the agents: set agents_dir (or XDG_STATE_HOME or HOME)")?;
+        let agents = self
+            .agents
+            .clone()
+            .unwrap_or_else(crate::runner::default_agents);
+        for (i, agent) in agents.iter().enumerate() {
+            agent.validate()?;
+            if agents[..i]
+                .iter()
+                .any(|a| a.name.eq_ignore_ascii_case(&agent.name))
+            {
+                return Err(format!("duplicate agent profile name {:?}", agent.name));
+            }
+        }
         Ok(crate::runner::Settings {
             socket,
             server: self.server(),
-            agents: self
-                .agents
-                .clone()
-                .unwrap_or_else(crate::runner::default_agents),
+            agents,
             capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),
             dir,
         })

@@ -49,6 +49,11 @@
         version = workspace.workspace.package.version;
         inherit src;
         cargoLock.lockFile = ./Cargo.lock;
+        nativeBuildInputs = [pkgs.makeWrapper];
+        nativeCheckInputs = [pkgs.python3];
+        postInstall = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
+          wrapProgram $out/bin/dominion --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.bubblewrap]}
+        '';
         meta.mainProgram = "dominion";
       };
       # The web client, as `just web-build` builds it: dx drives cargo (offline, from the
@@ -98,16 +103,19 @@
       };
 
       devShells.default = pkgs.mkShell {
-        packages = [
-          toolchain
-          pkgs.just
-          pkgs.alejandra
-          # The web client: dx drives the wasm build, with the wasm-bindgen matching
-          # crates/dominion-web's pin and wasm-opt for release builds.
-          pkgs.dioxus-cli
-          pkgs.wasm-bindgen-cli_0_2_130
-          pkgs.binaryen
-        ];
+        packages =
+          [
+            toolchain
+            pkgs.just
+            pkgs.alejandra
+            pkgs.python3
+            # The web client: dx drives the wasm build, with the wasm-bindgen matching
+            # crates/dominion-web's pin and wasm-opt for release builds.
+            pkgs.dioxus-cli
+            pkgs.wasm-bindgen-cli_0_2_130
+            pkgs.binaryen
+          ]
+          ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [pkgs.bubblewrap];
         RUST_BACKTRACE = 1;
       };
 

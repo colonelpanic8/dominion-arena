@@ -24,7 +24,7 @@ pub struct Offer {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum FromRunner {
-    /// The first line: the agents it offers, and how many games it plays at once.
+    /// The first line: the agents it offers, and how many seats it plays at once.
     Hello { agents: Vec<Offer>, capacity: u32 },
 }
 
@@ -37,9 +37,11 @@ pub enum ToRunner {
     Refused { agent: String, reason: String },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<dominion_engine::GameConfig>,
     pub agent: String,
     pub game_id: String,
     pub seat: u8,

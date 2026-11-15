@@ -108,6 +108,77 @@ impl Drop for Reservation<'_> {
 }
 
 impl Arena {
+    /// Creates an ordinary game, optionally seating the server's agents directly.
+    pub fn create_game(
+        &self,
+        who: Option<&super::Ident>,
+        req: &crate::hub::NewGame,
+    ) -> Result<crate::hub::Created> {
+        if !req.agents.is_empty() && req.agents.len() != usize::from(req.players) {
+            return super::bad("agents must have one entry per player (null for a token seat)");
+        }
+        let count = req.agents.iter().filter(|a| a.is_some()).count();
+        if count == 0 {
+            return Ok(self.hub.create(req)?);
+        }
+        let who =
+            who.ok_or_else(|| Error::Unauthorized("sign in to seat the server's agents".into()))?;
+        let agents = {
+            let state = lock(&self.state);
+            req.agents
+                .iter()
+                .map(|name| {
+                    name.as_ref()
+                        .map(|name| {
+                            state.house.agent_named(name).cloned().ok_or_else(|| {
+                                Error::BadRequest(format!(
+                                    "the server's agent {name:?} is unavailable"
+                                ))
+                            })
+                        })
+                        .transpose()
+                })
+                .collect::<Result<Vec<_>>>()?
+        };
+        let mut req = req.clone();
+        if req.names.len() > usize::from(req.players) {
+            return super::bad("more names than players");
+        }
+        for (i, agent) in agents.iter().enumerate().skip(req.names.len()) {
+            req.names.push(agent.as_ref().map_or_else(
+                || format!("P{}", i + 1),
+                |a| {
+                    if agents.iter().flatten().filter(|b| b.user == a.user).count() > 1 {
+                        format!("{} ({})", a.name, i + 1)
+                    } else {
+                        a.name.clone()
+                    }
+                },
+            ));
+        }
+        let config = crate::hub::config(&req)?;
+        let names = crate::hub::names(&req)?;
+        let owners: Vec<_> = agents
+            .iter()
+            .map(|a| a.as_ref().map(|a| a.user.clone()))
+            .collect();
+        let meta = crate::hub::Meta {
+            owners: owners.clone(),
+            watchable: req.watchable.unwrap_or(true),
+            timed: true,
+            no_undo: true,
+            ..Default::default()
+        };
+        let reservation = self.reserve(&who.user, count as u32)?;
+        let mut created = self.hub.host(config, names, meta)?;
+        // Agent credentials go only to the runner; the creator gets token seats.
+        created
+            .seats
+            .retain(|s| owners[usize::from(s.seat)].is_none());
+        reservation.keep();
+        Ok(created)
+    }
+
     /// The jobs: every seat the runner's agents hold in a running game.
     fn jobs(&self, agents: &[Agent]) -> Vec<Job> {
         let mut jobs: Vec<Job> = (agents.iter())
@@ -115,6 +186,7 @@ impl Arena {
                 (self.hub.seats_of(&agent.user, Duration::ZERO).into_iter())
                     .filter(|g| g.running)
                     .map(|g| Job {
+                        configuration: self.hub.configuration(&g.game_id),
                         agent: agent.name.clone(),
                         game_id: g.game_id,
                         seat: g.seat,
