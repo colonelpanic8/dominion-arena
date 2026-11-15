@@ -65,7 +65,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and ter
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
-                          `codex exec` playing each job's seat, its command line (pure)
+                          `codex exec` or T3 Code conversation playing each job's seat
+  src/t3.rs               T3 MCP client bridge: per-seat conversations, game tool calls,
+                          durable interaction archives and OAuth sign-in
   src/store.rs            the state directory: its lock, a JSON file per game written atomically
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session

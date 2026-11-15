@@ -50,8 +50,10 @@ enum Command {
         names: Vec<String>,
     },
     /// Play the server's own agents on this machine: connect to its `agent_socket` and
-    /// run Claude Code or Codex for every seat they hold.
+    /// run Claude Code, Codex or T3 Code for every seat they hold.
     Agents,
+    /// Authorize the runner with T3 Code; print the access token to stdout for a credential manager.
+    T3Login,
     /// Manage the local cache of dominion.games' images, fonts and sounds.
     Assets {
         #[command(subcommand)]
@@ -250,6 +252,14 @@ async fn main() -> ExitCode {
         Command::Agents => match config.runner() {
             Ok(settings) => dominion_server::runner::run(settings).await,
             Err(e) => Err(e),
+        },
+        Command::T3Login => match &config.t3code {
+            None => Err("add [t3code] to the settings file".into()),
+            Some(settings) => dominion_server::t3::login(&settings.url, |url| {
+                eprintln!("Open this URL and approve Full access for the Dominion runner:\n{url}");
+            })
+            .await
+            .map(|token| println!("{token}")),
         },
         Command::Card { names } => names.iter().try_for_each(|name| {
             dominion_agent::glossary(name)

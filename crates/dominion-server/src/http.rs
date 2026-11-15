@@ -555,7 +555,7 @@ async fn create(
 ) -> Result<impl IntoResponse> {
     let req: NewGame = body(&req)?;
     api.arena.may_create(api.ip(&headers, peer(info)))?;
-    let created = api.hub.create(&req)?;
+    let created = api.arena.create_game(api.ident(&headers).as_ref(), &req)?;
     Ok((StatusCode::CREATED, axum::Json(created)))
 }
 

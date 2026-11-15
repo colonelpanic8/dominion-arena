@@ -105,11 +105,13 @@ pub struct Config {
     /// (`claude` or `codex`), and optionally `model`, `command`, `about` (default: Claude
     /// Opus, Claude Sonnet and Codex).
     pub agents: Option<Vec<crate::runner::AgentSpec>>,
-    /// How many games `dominion agents` plays at once (default 2).
+    /// How many agent seats `dominion agents` plays at once (default 2).
     pub agents_at_once: Option<u32>,
     /// Where `dominion agents` runs its agents and keeps their logs (default
     /// `$XDG_STATE_HOME/dominion/agents`).
     pub agents_dir: Option<PathBuf>,
+    /// Connection and workspace used by T3 Code agents.
+    pub t3code: Option<crate::t3::Settings>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -204,15 +206,35 @@ impl Config {
         let dir = (self.agents_dir.clone())
             .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/agents")))
             .ok_or("no place for the agents: set agents_dir (or XDG_STATE_HOME or HOME)")?;
+        let agents = self
+            .agents
+            .clone()
+            .unwrap_or_else(crate::runner::default_agents);
+        for (i, agent) in agents.iter().enumerate() {
+            if agents[..i]
+                .iter()
+                .any(|a| a.name.eq_ignore_ascii_case(&agent.name))
+            {
+                return Err(format!("duplicate agent profile name {:?}", agent.name));
+            }
+            if agent.program != crate::runner::Program::T3Code
+                && (!agent.options.is_empty()
+                    || agent.provider_instance.is_some()
+                    || agent.instructions.is_some())
+            {
+                return Err(format!(
+                    "{}: options, provider_instance and instructions require program = \"t3code\"",
+                    agent.name
+                ));
+            }
+        }
         Ok(crate::runner::Settings {
             socket,
             server: self.server(),
-            agents: self
-                .agents
-                .clone()
-                .unwrap_or_else(crate::runner::default_agents),
+            agents,
             capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),
             dir,
+            t3code: self.t3code.clone(),
         })
     }
 

@@ -16,6 +16,11 @@ pub struct NewGame {
     /// one line, and no two seats share a name.
     #[serde(default)]
     pub names: Vec<String>,
+    /// Per seat: the server's agent profile to play it, or null for a token seat.
+    /// When supplied, one entry per player. Seating agents requires a registered
+    /// account and uses its agent-seat allowance. Agent games are watchable by default.
+    #[serde(default)]
+    pub agents: Vec<Option<String>>,
     /// Kingdom piles by name. Without it, a random kingdom is dealt from `sets`.
     #[serde(default)]
     pub kingdom: Vec<String>,
@@ -32,7 +37,8 @@ pub struct NewGame {
     pub turn_limit: Option<u32>,
     pub colonies: Option<bool>,
     pub shelters: Option<bool>,
-    /// Let anyone signed in watch the game: public information only (default false).
+    /// Let anyone signed in watch the game: public information only (default true
+    /// with assigned agents, false otherwise).
     pub watchable: Option<bool>,
 }
 

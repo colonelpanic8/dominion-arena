@@ -7,8 +7,8 @@
 //! token, which it is given on its standard input.
 
 use crate::house::{FromRunner, Job, Offer, ToRunner};
-use serde::Deserialize;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, SystemTime};
@@ -26,17 +26,19 @@ const RECONNECT: Duration = Duration::from_secs(5);
 /// Logs older than this are deleted when the runner starts.
 const KEEP_LOGS: Duration = Duration::from_secs(14 * 86_400);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Program {
     /// Claude Code (`claude -p`).
     Claude,
     /// Codex (`codex exec`).
     Codex,
+    /// T3 Code's MCP server, with one persistent conversation per seat.
+    T3Code,
 }
 
 /// One agent the runner offers: an `[[agents]]` entry of the settings file.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgentSpec {
     /// Its account's name on the server.
@@ -48,6 +50,13 @@ pub struct AgentSpec {
     pub command: Option<String>,
     /// What the lobby says plays it (default from `program` and `model`).
     pub about: Option<String>,
+    /// T3 Code's provider instance (account), when program is t3code.
+    pub provider_instance: Option<String>,
+    /// Options advertised by T3 Code for this model.
+    #[serde(default)]
+    pub options: BTreeMap<String, crate::t3::OptionValue>,
+    /// Additional instructions for this player.
+    pub instructions: Option<String>,
 }
 
 impl AgentSpec {
@@ -58,6 +67,7 @@ impl AgentSpec {
         let program = match self.program {
             Program::Claude => "Claude Code",
             Program::Codex => "Codex",
+            Program::T3Code => "T3 Code",
         };
         match &self.model {
             Some(model) => format!("{program} ({model})"),
@@ -74,6 +84,9 @@ pub fn default_agents() -> Vec<AgentSpec> {
         model: model.map(String::from),
         command: None,
         about: None,
+        provider_instance: None,
+        options: BTreeMap::new(),
+        instructions: None,
     };
     vec![
         agent("Claude Opus", Program::Claude, Some("opus")),
@@ -89,10 +102,11 @@ pub struct Settings {
     /// The MCP endpoint the agents play through.
     pub server: String,
     pub agents: Vec<AgentSpec>,
-    /// Games played at once.
+    /// Agent seats played at once.
     pub capacity: u32,
     /// Where the agents run and their logs go.
     pub dir: PathBuf,
+    pub t3code: Option<crate::t3::Settings>,
 }
 
 const INSTRUCTIONS: &str = "\
@@ -144,10 +158,11 @@ pub struct Launch {
 const TOOL_TIMEOUT: Duration = Duration::from_secs(crate::mcp::MAX_WAIT.as_secs() + 60);
 
 /// What runs to play `job`.
-pub fn command(spec: &AgentSpec, job: &Job, server: &str, work: &Path) -> Launch {
+pub fn command(spec: &AgentSpec, job: &Job, server: &str, work: &Path) -> Option<Launch> {
     let mut args: Vec<String> = vec![];
     let mut arg = |a: &str| args.push(a.to_string());
-    match spec.program {
+    Some(match spec.program {
+        Program::T3Code => return None,
         Program::Claude => {
             let mcp = serde_json::json!({
                 "mcpServers": { "dominion": { "type": "http", "url": server } }
@@ -232,7 +247,7 @@ pub fn command(spec: &AgentSpec, job: &Job, server: &str, work: &Path) -> Launch
                 input: format!("{INSTRUCTIONS}\n\n{}", job_text(job)),
             }
         }
-    }
+    })
 }
 
 fn toml_string(s: &str) -> String {
@@ -249,12 +264,40 @@ struct Playing {
 /// Runs until the process is stopped, reconnecting to a server that goes away; the
 /// agents playing meanwhile go on.
 pub async fn run(settings: Settings) -> Result<(), String> {
+    let stop = CancellationToken::new();
+    let signal = stop.clone();
+    let handler = tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        signal.cancel();
+    });
+    let result = run_until(settings, stop).await;
+    handler.abort();
+    result
+}
+
+pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<(), String> {
     let logs = settings.dir.join("logs");
     let work = settings.dir.join("work");
     for dir in [&logs, &work] {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     prune_logs(&logs);
+    if settings.agents.iter().any(|a| a.program == Program::T3Code) {
+        let t3 = settings
+            .t3code
+            .as_ref()
+            .ok_or("a t3code agent needs [t3code] settings")?;
+        let mut archive = crate::t3::Archive::create(&settings.dir.join("archives"))?;
+        let client = t3.connect().await?;
+        for spec in settings
+            .agents
+            .iter()
+            .filter(|a| a.program == Program::T3Code)
+        {
+            crate::t3::validate(t3, &client, spec, &mut archive).await?;
+        }
+        client.close().await;
+    }
     let hello = FromRunner::Hello {
         agents: (settings.agents.iter())
             .map(|a| Offer {
@@ -268,46 +311,59 @@ pub async fn run(settings: Settings) -> Result<(), String> {
     hello.push('\n');
     let mut playing: HashMap<Key, Playing> = HashMap::new();
     let mut said_unreachable = false;
-    loop {
-        let stream = match UnixStream::connect(&settings.socket).await {
-            Ok(stream) => stream,
-            Err(e) => {
-                if !said_unreachable {
-                    eprintln!(
-                        "dominion agents: {}: {e}; retrying",
-                        settings.socket.display()
-                    );
-                    said_unreachable = true;
+    let connected = async {
+        loop {
+            let stream = match UnixStream::connect(&settings.socket).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    if !said_unreachable {
+                        eprintln!(
+                            "dominion agents: {}: {e}; retrying",
+                            settings.socket.display()
+                        );
+                        said_unreachable = true;
+                    }
+                    tokio::time::sleep(RECONNECT).await;
+                    continue;
                 }
+            };
+            said_unreachable = false;
+            eprintln!(
+                "dominion agents: connected to {}",
+                settings.socket.display()
+            );
+            let (read, mut write) = stream.into_split();
+            if write.write_all(hello.as_bytes()).await.is_err() {
                 tokio::time::sleep(RECONNECT).await;
                 continue;
             }
-        };
-        said_unreachable = false;
-        eprintln!(
-            "dominion agents: connected to {}",
-            settings.socket.display()
-        );
-        let (read, mut write) = stream.into_split();
-        if write.write_all(hello.as_bytes()).await.is_err() {
-            tokio::time::sleep(RECONNECT).await;
-            continue;
-        }
-        let mut lines = BufReader::new(read).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            match serde_json::from_str::<ToRunner>(&line) {
-                Ok(ToRunner::Jobs { jobs }) => {
-                    reconcile(&settings, &mut playing, jobs, &logs, &work)
+            let mut lines = BufReader::new(read).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                match serde_json::from_str::<ToRunner>(&line) {
+                    Ok(ToRunner::Jobs { jobs }) => {
+                        reconcile(&settings, &mut playing, jobs, &logs, &work)
+                    }
+                    Ok(ToRunner::Refused { agent, reason }) => {
+                        eprintln!("dominion agents: the server refused {agent}: {reason}");
+                    }
+                    Err(_) => eprintln!("dominion agents: the server said {line}"),
                 }
-                Ok(ToRunner::Refused { agent, reason }) => {
-                    eprintln!("dominion agents: the server refused {agent}: {reason}");
-                }
-                Err(_) => eprintln!("dominion agents: the server said {line}"),
             }
+            eprintln!("dominion agents: lost the server; reconnecting");
+            tokio::time::sleep(RECONNECT).await;
         }
-        eprintln!("dominion agents: lost the server; reconnecting");
-        tokio::time::sleep(RECONNECT).await;
+    };
+    tokio::select! {
+        _ = stop.cancelled() => {},
+        () = connected => {},
     }
+    for p in playing.values() {
+        p.stop.cancel();
+    }
+    for (_, p) in playing {
+        let _ = p.task.await;
+    }
+    Ok(())
 }
 
 fn reconcile(
@@ -351,6 +407,7 @@ fn reconcile(
             work.to_path_buf(),
             log,
             stop.clone(),
+            settings.t3code.clone(),
         ));
         playing.insert(key, Playing { stop, task });
     }
@@ -363,8 +420,52 @@ async fn keep_playing(
     work: PathBuf,
     log: PathBuf,
     stop: CancellationToken,
+    t3code: Option<crate::t3::Settings>,
 ) {
-    let launch = command(&spec, &job, &server, &work);
+    let Some(launch) = command(&spec, &job, &server, &work) else {
+        let result = async {
+            let settings = t3code.ok_or("a t3code agent needs [t3code] settings")?;
+            let root = log
+                .parent()
+                .and_then(Path::parent)
+                .ok_or("no archive directory")?
+                .join("archives");
+            let mut archive = crate::t3::Archive::create(&root)?;
+            eprintln!(
+                "dominion agents: {} in {}: archive {}",
+                spec.name,
+                job.game_id,
+                archive.dir.display()
+            );
+            let cancelled = CancellationToken::new();
+            let play = crate::t3::play(
+                &settings,
+                &spec,
+                &job,
+                &server,
+                &mut archive,
+                cancelled.clone(),
+            );
+            tokio::pin!(play);
+            tokio::select! {
+                result = &mut play => result,
+                _ = stop.cancelled() => {
+                    match tokio::time::timeout(GRACE, &mut play).await {
+                        Ok(result) => result,
+                        Err(_) => {
+                            cancelled.cancel();
+                            play.await
+                        }
+                    }
+                }
+            }
+        }
+        .await;
+        if let Err(e) = result {
+            eprintln!("dominion agents: {} in {}: {e}", spec.name, job.game_id);
+        }
+        return;
+    };
     for start in 0..=RESTARTS {
         let file = std::fs::OpenOptions::new()
             .create(true)
@@ -447,6 +548,7 @@ mod tests {
 
     fn job() -> Job {
         Job {
+            configuration: None,
             agent: "Claude Opus".into(),
             game_id: "g7".into(),
             seat: 1,
@@ -458,7 +560,7 @@ mod tests {
     #[test]
     fn the_token_goes_on_standard_input_only() {
         for spec in default_agents() {
-            let launch = command(&spec, &job(), "http://127.0.0.1:1/mcp", Path::new("/w"));
+            let launch = command(&spec, &job(), "http://127.0.0.1:1/mcp", Path::new("/w")).unwrap();
             assert!(
                 launch.args.iter().all(|a| !a.contains("secret")),
                 "{launch:?}"
@@ -472,7 +574,7 @@ mod tests {
     fn claude_gets_only_the_server_and_its_tools() {
         let spec = &default_agents()[0];
         let Launch { program, args, .. } =
-            command(spec, &job(), "http://127.0.0.1:1/mcp", Path::new("/w"));
+            command(spec, &job(), "http://127.0.0.1:1/mcp", Path::new("/w")).unwrap();
         assert_eq!(program, "claude");
         let after = |flag: &str| {
             let i = args.iter().position(|a| a == flag).unwrap();
@@ -499,7 +601,7 @@ mod tests {
             args,
             input,
             ..
-        } = command(spec, &job(), "http://h/mcp", Path::new("/w"));
+        } = command(spec, &job(), "http://h/mcp", Path::new("/w")).unwrap();
         assert_eq!(program, "codex");
         assert!(args.contains(&"mcp_servers.dominion.url=\"http://h/mcp\"".to_string()));
         let enabled = args.iter().find(|a| a.contains("enabled_tools")).unwrap();
