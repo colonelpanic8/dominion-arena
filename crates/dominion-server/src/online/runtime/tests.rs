@@ -438,3 +438,168 @@ async fn resign_consumes_the_open_decision_even_if_transmission_fails() {
     assert!(runtime.resign().await.is_err());
     assert!(runtime.update.reducer.view().unwrap().decision.is_none());
 }
+
+#[tokio::test]
+async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
+    use dominion_protocol::{api::OnlineObservation, lobby::Credentials};
+    use futures_util::StreamExt;
+    use std::net::{IpAddr, Ipv4Addr};
+    let (_directory, runtime) = active_runtime();
+    let (publish, updates) = watch::channel(runtime.update.clone());
+    let (tx, _requests) = mpsc::channel(16);
+    let client = Client { tx, updates };
+    let hosted = crate::online::Hosted {
+        client: client.clone(),
+        owner: "observer-owner".into(),
+    };
+    let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
+        .unwrap();
+    let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
+    let (_, owner) = arena
+        .register(
+            ip,
+            &Credentials {
+                name: "observer-owner".into(),
+                password: "fixture-password".into(),
+            },
+            None,
+        )
+        .unwrap();
+    let owner = owner.unwrap();
+    let (_, outsider) = arena
+        .register(
+            ip,
+            &Credentials {
+                name: "observer-outsider".into(),
+                password: "fixture-password".into(),
+            },
+            None,
+        )
+        .unwrap();
+    let outsider = outsider.unwrap();
+    let ident = arena.identify(&owner).unwrap();
+    let bot = arena.new_bot(&ident, "observer-agent").unwrap();
+    let stop = tokio_util::sync::CancellationToken::new();
+    let router = hosted.router(arena.clone(), vec!["127.0.0.1".into()], None, stop.clone());
+    let router = axum::Router::new()
+        .nest_service(
+            "/mcp",
+            axum::Router::new().fallback(|| async { axum::http::StatusCode::IM_A_TEAPOT }),
+        )
+        .merge(router);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let stopped = stop.clone();
+    let serving = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(stopped.cancelled_owned())
+            .await
+            .unwrap()
+    });
+    let http = reqwest::Client::new();
+    for path in ["/api/online/view", "/api/online/events", "/mcp/online"] {
+        assert_eq!(
+            http.get(format!("{base}{path}"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            http.get(format!("{base}{path}"))
+                .bearer_auth(&outsider)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::FORBIDDEN
+        );
+    }
+    let response = http
+        .get(format!("{base}/api/online/view"))
+        .bearer_auth(&bot.key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let observed: OnlineObservation =
+        serde_json::from_str(&response.text().await.unwrap()).unwrap();
+    assert!(observed.view.as_ref().unwrap().spectating);
+    assert!(observed.view.as_ref().unwrap().decision.is_none());
+    assert!(client.current().view().unwrap().unwrap().decision.is_some());
+    let agent = crate::client::Client::connect_authenticated(
+        &format!("{base}/mcp/online"),
+        Some(bot.key.clone()),
+    )
+    .await
+    .unwrap();
+    let reply = agent.call("state", serde_json::json!({})).await.unwrap();
+    assert!(reply.ok, "{}", reply.text);
+    assert!(!reply.json.unwrap()["view"]["decision"].is_null());
+    agent.close().await;
+    let response = http
+        .get(format!("{base}/api/online/events"))
+        .header("cookie", format!("dominion_session={owner}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let mut stream = response.bytes_stream();
+    let first = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        std::str::from_utf8(&first)
+            .unwrap()
+            .contains("event: change")
+    );
+    let mut next = runtime.update.clone();
+    next.reducer.revision += 1;
+    publish.send_replace(next.clone());
+    let changed = tokio::time::timeout(Duration::from_secs(2), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        std::str::from_utf8(&changed)
+            .unwrap()
+            .contains(&format!("\"version\":{}", next.reducer.revision))
+    );
+    arena.logout(&owner);
+    next.reducer.revision += 1;
+    publish.send_replace(next);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), stream.next())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let response = http
+        .get(format!("{base}/api/online/events"))
+        .bearer_auth(&bot.key)
+        .send()
+        .await
+        .unwrap();
+    let mut shutdown_stream = response.bytes_stream();
+    let _ = tokio::time::timeout(Duration::from_secs(2), shutdown_stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    stop.cancel();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), shutdown_stream.next())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    tokio::time::timeout(Duration::from_secs(2), serving)
+        .await
+        .unwrap()
+        .unwrap();
+}

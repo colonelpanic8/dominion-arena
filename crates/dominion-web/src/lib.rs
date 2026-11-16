@@ -10,6 +10,7 @@ pub mod cards;
 pub mod gallery;
 pub mod game;
 pub mod lobby;
+pub mod online;
 pub mod platform;
 pub mod session;
 pub mod transcript;

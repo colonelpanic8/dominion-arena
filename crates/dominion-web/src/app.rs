@@ -33,6 +33,8 @@ pub enum Route {
     Transcript { id: String },
     #[route("/game/:id")]
     Game { id: String },
+    #[route("/online")]
+    Online {},
     #[route("/gallery")]
     Gallery {},
     #[route("/:..rest")]
@@ -105,6 +107,7 @@ fn Shell() -> Element {
             nav {
                 Link { to: Route::Lobby {}, "Lobby" }
                 Link { to: Route::Gallery {}, "Gallery" }
+                Link { to: Route::Online {}, "dominion.games" }
             }
         }
         main { class: "content", Outlet::<Route> {} }
@@ -176,4 +179,9 @@ fn NotFound(rest: Vec<String>) -> Element {
             Link { to: Route::Lobby {}, "Back to the lobby" }
         }
     }
+}
+
+#[component]
+fn Online() -> Element {
+    rsx! {crate::online::OnlinePage {}}
 }

@@ -53,6 +53,7 @@ pub struct Options {
     pub trust_proxy: bool,
     /// Where a runner of the server's own agents connects ([`house`]).
     pub agent_socket: Option<PathBuf>,
+    pub online: Option<online::Hosted>,
 }
 
 impl Default for Options {
@@ -67,6 +68,7 @@ impl Default for Options {
             public_url: None,
             trust_proxy: false,
             agent_socket: None,
+            online: None,
         }
     }
 }
@@ -85,6 +87,16 @@ pub async fn serve(
         .collect();
     hosts.extend(options.allowed_hosts.iter().cloned());
     let arena = arena::Arena::open(hub, options.arena.clone())?;
+    if let Some(online) = &options.online
+        && !arena
+            .profile(&online.owner)
+            .is_ok_and(|p| p.user.kind == dominion_protocol::lobby::UserKind::Registered)
+    {
+        let _ = online.client.disconnect().await;
+        return Err(std::io::Error::other(
+            "online_owner must name an existing registered Arena account",
+        ));
+    }
     let site = http::router(arena.clone(), &options, hosts.clone(), stop.clone());
     if let Some(path) = &options.agent_socket {
         let (arena, path, stop) = (arena.clone(), path.clone(), stop.clone());
@@ -108,13 +120,21 @@ pub async fn serve(
         }
     });
     let config = StreamableHttpServerConfig::default()
-        .with_allowed_hosts(hosts)
+        .with_allowed_hosts(hosts.clone())
         .with_cancellation_token(stop.child_token());
     let mut sessions = LocalSessionManager::default();
     sessions.session_config.keep_alive = options.session_idle;
     // A call in progress doesn't keep its session alive, so no wait may outlast it.
     let max_wait = options.session_idle.map_or(mcp::MAX_WAIT, |idle| idle / 2);
     let trust_proxy = options.trust_proxy;
+    let online = options.online.as_ref().map(|online| {
+        online.router(
+            arena.clone(),
+            hosts.clone(),
+            options.session_idle,
+            stop.clone(),
+        )
+    });
     let service = StreamableHttpService::new(
         move || Ok(mcp::Session::new(arena.clone(), max_wait, trust_proxy)),
         Arc::new(sessions),
@@ -123,10 +143,19 @@ pub async fn serve(
     let router = axum::Router::new()
         .nest_service("/mcp", service)
         .merge(site);
+    let router = if let Some(online) = online {
+        router.merge(online)
+    } else {
+        router
+    };
     let service = router.into_make_service_with_connect_info::<std::net::SocketAddr>();
-    axum::serve(listener, service)
+    let result = axum::serve(listener, service)
         .with_graceful_shutdown(async move { stop.cancelled_owned().await })
-        .await
+        .await;
+    if let Some(online) = options.online {
+        let _ = online.client.disconnect().await;
+    }
+    result
 }
 
 /// A glossary entry as plain text.

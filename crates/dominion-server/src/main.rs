@@ -187,6 +187,11 @@ async fn serve(config: Config) -> Result<(), String> {
         public_url: config.public_url.clone(),
         trust_proxy: config.trust_proxy.unwrap_or(false),
         agent_socket: config.agent_socket.clone(),
+        online: if config.online_enabled.unwrap_or(false) {
+            Some(dominion_server::online::Hosted::start(&config).await?)
+        } else {
+            None
+        },
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
