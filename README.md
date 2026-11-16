@@ -308,7 +308,7 @@ configure the kingdom, landscapes, seed, Colonies/Shelters, and turn limit. Thes
 are unrated, allow undo when the token seats' players allow it (the agents always do),
 and are watchable through the server by default; an explicit
 `watchable: false` makes one private. They appear in the normal lobby games listing.
-Each registered player fills `agent_seats_per_day` agent seats a day; the runner's
+Each registered player fills `agent_seats_per_day` agent seats a day (0: no limit); the runner's
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
 
 Each model plays through a private, seat-scoped MCP server exposing the common
@@ -517,7 +517,7 @@ away_minutes = 5               # serve: in a timed game, the deciding player for
 decision_minutes = 30          # serve: ... or after this long over one decision (0: never)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
-agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day
+agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day (0: no limit)
 agents_at_once = 2             # agents: seats the runner plays at once
 agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (default $XDG_STATE_HOME/dominion/agents)
 # agents: what the runner offers (default: Claude Opus, Claude Sonnet, Codex); `command`
