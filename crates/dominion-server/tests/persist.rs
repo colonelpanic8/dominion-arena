@@ -167,6 +167,25 @@ fn retired_games_leave_at_once_unless_something_plays_them() {
 }
 
 #[test]
+fn a_restart_does_not_make_an_idle_game_new() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    {
+        let (hub, _) = Hub::open(dir, KEEP).unwrap();
+        create(&hub, None);
+    }
+    let file = std::fs::File::options()
+        .write(true)
+        .open(dir.join("g1.json"))
+        .unwrap();
+    let then = std::time::SystemTime::now() - 2 * KEEP;
+    file.set_modified(then).unwrap();
+    let (hub, _) = Hub::open(dir, KEEP).unwrap();
+    assert!(hub.hosting()[0].idle_seconds >= 2 * KEEP.as_secs() - 60);
+    assert_eq!(hub.expire(KEEP, KEEP), 1);
+}
+
+#[test]
 fn files_that_do_not_hold_their_game_are_skipped() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();

@@ -256,10 +256,12 @@ struct Hosted {
 }
 
 impl Hosted {
-    /// When the game last changed or a seat last used its token.
+    /// When the game last changed or a seat last used its token. A seat's `seen` counts
+    /// once it has joined: it starts at the server's start, for the away forfeit.
     fn last_active(&self) -> u64 {
-        (self.seen.iter())
-            .map(|s| s.load(Ordering::Relaxed))
+        (self.seen.iter().zip(&self.joined))
+            .filter(|(_, joined)| joined.load(Ordering::Relaxed))
+            .map(|(seen, _)| seen.load(Ordering::Relaxed))
             .chain([self.changed.load(Ordering::Relaxed)])
             .max()
             .unwrap_or(0)
