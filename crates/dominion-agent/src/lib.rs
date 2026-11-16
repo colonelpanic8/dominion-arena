@@ -15,19 +15,34 @@ pub use dominion_protocol::view::*;
 pub use project::WAY_HINT;
 pub use table::{AnswerError, Answered, Table, WayChoice};
 
-use dominion_engine::Card;
+use dominion_engine::{Card, Kind};
 
 /// The vendored JSON Schema of agent-view@2.
 pub const JSON_SCHEMA: &str = include_str!("../protocol/agent-view.schema.json");
 
 /// The glossary entry for a card, landscape or other card-shaped object.
 pub fn glossary_entry(card: Card) -> GlossaryEntry {
+    let def = card.def();
+    let mut text = card.text().to_string();
+    if text.is_empty() {
+        let mut values = vec![];
+        if def.coins > 0 {
+            values.push(format!("${}", def.coins));
+        }
+        if def.potions > 0 {
+            values.push(dominion_engine::amount(def.potions, "Potion", "Potions"));
+        }
+        if def.vp != 0 {
+            values.push(format!("{} VP", def.vp));
+        }
+        text = values.join("\n");
+    }
     GlossaryEntry {
         name: card.name().to_string(),
         types: card.type_names().into_iter().map(String::from).collect(),
         set: Some(card.set().to_string()),
         cost: card.cost().map(project::cost),
-        text: card.text().to_string(),
+        text,
     }
 }
 
@@ -36,8 +51,7 @@ pub fn glossary(name: &str) -> Option<GlossaryEntry> {
     Card::from_name(name).map(glossary_entry)
 }
 
-/// Glossary entries for every card named in a view: piles, landscapes, known cards,
-/// options.
+/// Official entries for visible cards, including every possible member of their piles.
 pub fn glossary_for(view: &AgentView) -> Vec<GlossaryEntry> {
     let mut names = std::collections::BTreeSet::new();
     let mut zone = |z: &CardCount| names.extend(z.keys().cloned());
@@ -52,12 +66,50 @@ pub fn glossary_for(view: &AgentView) -> Vec<GlossaryEntry> {
         zone(&p.owned.known);
     }
     zone(&view.trash.known);
+    for p in view.you.iter().chain(&view.opponents) {
+        names.extend(
+            p.projects
+                .iter()
+                .chain(&p.states)
+                .chain(&p.boons)
+                .chain(&p.artifacts)
+                .cloned(),
+        );
+    }
     for pile in view.supply.iter().chain(&view.non_supply) {
         names.insert(pile.card.clone());
         names.extend(pile.top.clone());
+        names.extend(pile.traits.iter().cloned());
+        if let Some(card) = Card::from_name(&pile.card) {
+            names.extend(card.pile_members().iter().map(|c| c.name().to_string()));
+        }
     }
+    names.extend(
+        view.game
+            .kingdom
+            .iter()
+            .chain(&view.game.landscapes)
+            .cloned(),
+    );
     names.extend(view.landscapes.iter().map(|l| l.card.clone()));
+    names.extend(view.artifacts.iter().map(|a| a.card.clone()));
+    for lasting in &view.lasting {
+        names.insert(lasting.card.clone());
+        names.extend(lasting.cards.iter().cloned());
+    }
+    for note in &view.notes {
+        names.insert(note.source.clone());
+        names.extend(note.card.clone());
+    }
+    for &card in Card::ALL {
+        if (view.boons.is_some() && card.kind() == Kind::Boon)
+            || (view.hexes.is_some() && matches!(card.kind(), Kind::Hex | Kind::State))
+        {
+            names.insert(card.name().to_string());
+        }
+    }
     if let Some(d) = &view.decision {
+        names.extend(d.source.clone());
         names.extend(d.options.iter().filter_map(|o| o.card.clone()));
     }
     names.iter().filter_map(|n| glossary(n)).collect()

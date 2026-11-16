@@ -48,6 +48,9 @@ pub struct ViewParams {
     pub token: Option<String>,
     #[serde(default)]
     pub format: Format,
+    /// Include the game's flat card reference in the response content, as on joining.
+    #[serde(default)]
+    pub include_cards: bool,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -285,7 +288,7 @@ impl Session {
             game: game.game_id.clone(),
             seat: PlayerId(game.seat),
         };
-        let mut result = self.view_of(&seat, Format::Text);
+        let mut result = self.view_with_cards(&seat, Format::Text, true);
         let note = format!(
             "Game {}: you are {} (seat {}) against {}. Your seat token is {}; this session \
              is joined to the seat.",
@@ -318,9 +321,24 @@ impl Session {
     }
 
     fn view_of(&self, seat: &Seat, format: Format) -> CallToolResult {
+        self.view_with_cards(seat, format, false)
+    }
+
+    fn view_with_cards(&self, seat: &Seat, format: Format, include_cards: bool) -> CallToolResult {
         match self.hub.view(seat) {
             Ok((view, text, note)) => {
                 let mut result = view_result(&view, text, format);
+                if include_cards {
+                    let cards = dominion_agent::glossary_for(&view);
+                    let reference = match format {
+                        Format::Text => dominion_agent::text::reference(&cards),
+                        Format::Json => {
+                            serde_json::to_string_pretty(&serde_json::json!({"cards": cards}))
+                                .expect("glossary entries serialize")
+                        }
+                    };
+                    result.content.insert(0, ContentBlock::text(reference));
+                }
                 if let Some(note) = note {
                     result.content.insert(0, ContentBlock::text(note));
                 }
@@ -357,7 +375,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Returns that seat's view."
+        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Returns that seat's view and a flat reference of official card text, including related non-Supply and split-pile cards."
     )]
     async fn join_game(
         &self,
@@ -374,19 +392,21 @@ impl Session {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner) = Some(connection);
                 *self.joined() = Some(seat.clone());
-                self.view_of(&seat, Format::Text)
+                self.view_with_cards(&seat, Format::Text, true)
             }
             Err(e) => failure(e.to_string()),
         })
     }
 
-    #[tool(description = "Your seat's current view of the game (agent-view@2).")]
+    #[tool(
+        description = "Your seat's current view of the game (agent-view@2). Set include_cards to retrieve the flat card reference again, including cards introduced during play. The reference is additional response content; the structured view is unchanged."
+    )]
     async fn view(
         &self,
         Parameters(p): Parameters<ViewParams>,
     ) -> Result<CallToolResult, ErrorData> {
         Ok(match self.seat(p.token.as_deref()) {
-            Ok(seat) => self.view_of(&seat, p.format),
+            Ok(seat) => self.view_with_cards(&seat, p.format, p.include_cards),
             Err(e) => failure(e.to_string()),
         })
     }

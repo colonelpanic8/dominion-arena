@@ -32,6 +32,92 @@ fn seeds(default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+#[test]
+fn glossary_includes_travellers_and_every_split_or_mixed_pile_member() {
+    let kingdom = vec![
+        Card::Page,
+        Card::Peasant,
+        Card::Castles,
+        Card::Knights,
+        Card::Encampment,
+        Card::Catapult,
+        Card::Patrician,
+        Card::Settlers,
+        Card::Gladiator,
+        Card::Sauna,
+    ];
+    let table = Table::new("reference", GameConfig::new(2, kingdom.clone(), 11), vec![]).unwrap();
+    let entries = glossary_for(&table.view(PlayerId(0)));
+    let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+    assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+    for card in kingdom.iter().flat_map(|c| c.pile_members()).chain([
+        Card::TreasureHunter,
+        Card::Warrior,
+        Card::Hero,
+        Card::Champion,
+        Card::Soldier,
+        Card::Fugitive,
+        Card::Disciple,
+        Card::Teacher,
+    ]) {
+        let entry = entries
+            .iter()
+            .find(|e| e.name == card.name())
+            .unwrap_or_else(|| panic!("missing {card}"));
+        assert_eq!(entry.text, card.text());
+    }
+    let rendered = text::reference(&entries);
+    assert!(rendered.contains("Page | Action - Traveller | $2\n  +1 Card\n  +1 Action\n  ---\n  When you discard this from play"));
+    assert!(rendered.contains("Plunder | Treasure | $5"));
+    assert!(rendered.contains("Fortune | Treasure | $88D"), "{rendered}");
+}
+
+#[test]
+fn glossary_includes_loot_boons_hexes_artifacts_and_public_setup_cards() {
+    let mut config = GameConfig::new(
+        2,
+        vec![
+            Card::BlackMarket,
+            Card::Pickaxe,
+            Card::BlessedVillage,
+            Card::Tormentor,
+            Card::Swashbuckler,
+        ],
+        11,
+    );
+    config
+        .setup_choices
+        .insert(Card::BlackMarket, vec![Card::Smithy, Card::Village]);
+    let table = Table::new("reference", config, vec![]).unwrap();
+    let entries = glossary_for(&table.view(PlayerId(0)));
+    let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+    for &card in Card::ALL {
+        if matches!(card.kind(), Kind::Boon | Kind::Hex) || card.def().pile == Some(Card::Loot) {
+            assert!(names.contains(&card.name()), "missing {card}");
+        }
+    }
+    assert!(names.contains(&"Treasure Chest"));
+    assert!(names.contains(&"Imp"));
+    assert!(names.contains(&"Smithy"));
+    assert!(names.contains(&"Village"));
+    assert!(!names.contains(&"Laboratory"));
+}
+
+#[test]
+fn glossary_includes_printed_values_for_basic_cards_without_rules_text() {
+    for (card, expected) in [
+        (Card::Copper, "$1"),
+        (Card::Silver, "$2"),
+        (Card::Gold, "$3"),
+        (Card::Potion, "1 Potion"),
+        (Card::Estate, "1 VP"),
+        (Card::Province, "6 VP"),
+        (Card::Curse, "-1 VP"),
+    ] {
+        assert_eq!(dominion_agent::glossary_entry(card).text, expected);
+    }
+}
+
 fn released() -> Vec<Set> {
     Set::ALL
         .iter()

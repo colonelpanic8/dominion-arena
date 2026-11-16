@@ -4,6 +4,21 @@ use crate::project::cost_text;
 use dominion_protocol::view::*;
 use std::fmt::Write;
 
+/// A flat reference, preserving official wording and dividing lines.
+pub fn reference(entries: &[GlossaryEntry]) -> String {
+    let mut out = String::from("CARDS (printed text and costs)");
+    for entry in entries {
+        let _ = write!(out, "\n\n{} | {}", entry.name, entry.types.join(" - "));
+        if let Some(cost) = &entry.cost {
+            let _ = write!(out, " | {}", cost_text(cost));
+        }
+        for line in entry.text.lines() {
+            let _ = write!(out, "\n  {line}");
+        }
+    }
+    out
+}
+
 fn cards(count: &CardCount) -> String {
     count
         .iter()

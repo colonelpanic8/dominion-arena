@@ -20,6 +20,8 @@ assert 'ANTHROPIC_API_KEY' not in os.environ
 prompt = sys.stdin.read()
 if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content"]
 assert 'test-credential' not in prompt
+assert 'CARDS (printed text and costs)' in prompt
+assert 'Village | Action | $3' in prompt
 if 'fixture:transient' in prompt:
     failed = Path('/home/agent/.gemini/transient-failed')
     if not failed.exists():

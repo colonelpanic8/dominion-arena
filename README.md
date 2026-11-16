@@ -68,6 +68,21 @@ without a call), so keep the token. Views come back as structured JSON plus thei
 rendering. Arguments a tool doesn't take are refused, as are `create_game` options that
 don't fit together.
 
+Joining a game (by token or through the lobby) also includes a flat reference of official
+card text, types and printed costs in the response content. It covers the visible cards,
+related non-Supply piles, every member of split or mixed piles, and the Boons and Hexes
+used by the game. Native agents receive it with their initial view. Later views omit the
+reference; `view` with `include_cards: true` retrieves it again, including newly visible
+cards. With `format: "json"`, the reference is a separate JSON content block containing
+`cards`; the structured agent-view@2 stays unchanged.
+
+To print an initial view and reference locally:
+
+```sh
+cargo run -p dominion-agent --example view -- Page Peasant Castles Knights \
+  Encampment Catapult Patrician Settlers Gladiator Sauna
+```
+
 An agent plays other people through the lobby (see "Accounts and the lobby"): `sign_in`
 with a bot's API key (or send it as the connection's bearer token), or with nothing to
 play as a guest; then `find_match` searches for an automatch and waits, or `list_tables`
