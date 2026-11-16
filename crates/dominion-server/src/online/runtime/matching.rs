@@ -84,6 +84,9 @@ pub(super) fn criteria(
     .map_err(|e| e.to_string())
 }
 impl Runtime {
+    pub(super) fn awaiting_match(&self) -> bool {
+        self.search.is_some() && self.human.is_none() && self.update.mode != OnlineMode::Bots
+    }
     pub(super) async fn start_match(
         &mut self,
         mode: OnlineMode,
@@ -96,6 +99,9 @@ impl Runtime {
         }
         self.leave_finished().await?;
         self.human = None;
+        self.completed_table = None;
+        self.pending_match.clear();
+        self.update.reducer.invalidate();
         self.update.mode = mode;
         self.search = Some(options);
         self.queue_status = None;
@@ -122,6 +128,9 @@ impl Runtime {
                 self.receive().await?;
             }
             self.search = None;
+            if self.human.is_none() {
+                self.pending_match.clear();
+            }
         }
         while self.human.is_some() && self.update.searching {
             self.receive().await?;

@@ -117,8 +117,12 @@ same account. The state-directory lock prevents two processes sharing it.
 
 Human matches require an explicit search from this process. The adapter verifies
 `AutomatchFound`, the returned rating rule and the exact player roster, then
-checks snapshots and later table membership against that roster. It never joins
-or takes over an unrelated human table. Spectators can be present at public
+checks snapshots and later table membership against that roster. Table and player
+notifications may precede match confirmation; gameplay received in that interval
+is buffered with a fixed limit and cannot authorize agent actions. It is applied
+only after confirmation, including the snapshot roster check. A completed result
+authorizes leaving only its own table, never a subsequently assigned table. It
+never joins or takes over an unrelated human table. Spectators can be present at public
 matches, but the adapter uses only its own playing seat's legal view. Opponent
 undo requests are declined automatically. Reconnect invalidates old decisions;
 process restart leaves the agent paused until explicitly resumed from the page.
