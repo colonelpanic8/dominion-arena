@@ -26,7 +26,14 @@ pub fn default_hosts(program: crate::runner::Program) -> &'static [&'static str]
             "platform.claude.com",
         ],
         Program::Codex => &["chatgpt.com", "auth.openai.com", "api.openai.com"],
-        Program::Antigravity | Program::T3Code => &[],
+        Program::Antigravity => &[
+            "daily-cloudcode-pa.googleapis.com",
+            "cloudcode-pa.googleapis.com",
+            "aicode.googleapis.com",
+            "oauth2.googleapis.com",
+            "www.googleapis.com",
+        ],
+        Program::T3Code => &[],
     }
 }
 
