@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "dominion-playbook": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1794864487,
+        "narHash": "sha256-ObOsN+Hnc/l5FSHK0EkBPkMy8k2wcvL8mhbJDOc1zHI=",
+        "owner": "colonelpanic8",
+        "repo": "dominion-playbook",
+        "rev": "554924c2086a02fea04fbf89fb546e84cf81fe77",
+        "type": "github"
+      },
+      "original": {
+        "owner": "colonelpanic8",
+        "repo": "dominion-playbook",
+        "type": "github"
+      }
+    },
     "fenix": {
       "inputs": {
         "nixpkgs": [
@@ -57,6 +73,7 @@
     },
     "root": {
       "inputs": {
+        "dominion-playbook": "dominion-playbook",
         "fenix": "fenix",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs"
