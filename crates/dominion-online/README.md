@@ -112,8 +112,9 @@ same account. The state-directory lock prevents two processes sharing it.
   refuses `new_game`, `resign` and `online_reconnect`; use management for those.
 - **`GET /api/online/view`** and **`GET /api/online/events`** provide the legal
   observation. Responses use `Cache-Control: no-store`, omit the current decision
-  and are restricted to the configured owner and its bot keys. The stream
-  rechecks authorization and closes on logout or shutdown.
+  and are public, including to signed-out viewers. Watching shows the playing
+  account's legal view, including its hand. The stream closes on shutdown.
+  Management and gameplay MCP access remain restricted to the owner and its bot keys.
 
 Human matches require an explicit search from this process. The adapter verifies
 `AutomatchFound`, the returned rating rule and the exact player roster, then

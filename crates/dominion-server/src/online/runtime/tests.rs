@@ -502,7 +502,7 @@ async fn resign_consumes_the_open_decision_even_if_transmission_fails() {
 }
 
 #[tokio::test]
-async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
+async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     use dominion_protocol::{api::OnlineObservation, lobby::Credentials};
     use futures_util::StreamExt;
     use std::net::{IpAddr, Ipv4Addr};
@@ -556,7 +556,7 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
             .unwrap()
     });
     let http = reqwest::Client::new();
-    for path in ["/api/online/view", "/api/online/events", "/mcp/online"] {
+    for path in ["/api/online/manage", "/mcp/online"] {
         assert_eq!(
             http.get(format!("{base}{path}"))
                 .send()
@@ -575,9 +575,41 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
             reqwest::StatusCode::FORBIDDEN
         );
     }
+    for token in [None, Some(&outsider)] {
+        for path in ["/api/online/view", "/api/online/events"] {
+            let mut request = http.get(format!("{base}{path}"));
+            if let Some(token) = token {
+                request = request.bearer_auth(token);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::OK);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
+        for (method, path) in [
+            (reqwest::Method::POST, "start"),
+            (reqwest::Method::POST, "agent"),
+            (reqwest::Method::DELETE, "agent"),
+            (reqwest::Method::DELETE, "matchmaking"),
+            (reqwest::Method::POST, "reconnect"),
+            (reqwest::Method::POST, "resign"),
+        ] {
+            let mut request = http.request(method, format!("{base}/api/online/{path}"));
+            if let Some(token) = token {
+                request = request.bearer_auth(token);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(
+                response.status(),
+                if token.is_some() {
+                    reqwest::StatusCode::FORBIDDEN
+                } else {
+                    reqwest::StatusCode::UNAUTHORIZED
+                }
+            );
+        }
+    }
     let response = http
         .get(format!("{base}/api/online/view"))
-        .bearer_auth(&bot.key)
         .send()
         .await
         .unwrap();
@@ -807,7 +839,6 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
     assert!(!assigned.token.is_empty());
     let response = http
         .get(format!("{base}/api/online/events"))
-        .header("cookie", format!("dominion_session={owner}"))
         .send()
         .await
         .unwrap();
@@ -843,7 +874,8 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
         tokio::time::timeout(Duration::from_secs(2), stream.next())
             .await
             .unwrap()
-            .is_none()
+            .unwrap()
+            .is_ok()
     );
     let response = http
         .get(format!("{base}/api/online/events"))

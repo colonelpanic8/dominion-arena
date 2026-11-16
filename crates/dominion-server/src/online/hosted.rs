@@ -148,6 +148,11 @@ impl Access {
     }
 }
 async fn authorize(State(access): State<Access>, request: Request, next: Next) -> Response {
+    let watching = request.method() == axum::http::Method::GET
+        && matches!(
+            request.uri().path(),
+            "/api/online/view" | "/api/online/events"
+        );
     let runner = request.uri().path().starts_with("/mcp/online")
         && crate::http::bearer(request.headers()).is_some_and(|token| {
             access
@@ -155,7 +160,10 @@ async fn authorize(State(access): State<Access>, request: Request, next: Next) -
                 .official_job()
                 .is_some_and(|job| !job.token.is_empty() && job.token == token)
         });
-    if !runner && let Err(status) = access.allowed(request.headers()) {
+    if !watching
+        && !runner
+        && let Err(status) = access.allowed(request.headers())
+    {
         return (
             status,
             axum::Json(dominion_protocol::api::ApiError {
@@ -220,12 +228,11 @@ async fn snapshot(State(web): State<Web>) -> axum::Json<OnlineObservation> {
 }
 async fn events(
     State(web): State<Web>,
-    headers: HeaderMap,
 ) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
     let updates = web.hosted.client.updates.clone();
     let stream = futures_util::stream::unfold(
-        (updates, true, web, headers),
-        |(mut updates, first, web, headers)| async move {
+        (updates, true, web),
+        |(mut updates, first, web)| async move {
             if web.stop.is_cancelled() {
                 return None;
             }
@@ -235,15 +242,12 @@ async fn events(
                     changed=updates.changed()=>if changed.is_err(){return None;},
                 }
             }
-            if web.access.allowed(&headers).is_err() {
-                return None;
-            }
             let update = updates.borrow_and_update().clone();
             let event = Event::default()
                 .event("change")
                 .json_data(observation(update))
                 .expect("serializable observation");
-            Some((Ok(event), (updates, false, web, headers)))
+            Some((Ok(event), (updates, false, web)))
         },
     );
     Sse::new(stream).keep_alive(KeepAlive::new())
