@@ -446,17 +446,7 @@ pub async fn play(
         _ = stop.cancelled() => Err("seat runner cancelled".into()),
         result = play_inner(&client, spec, sandbox, job, archive) => result,
     };
-    let (tool, args) = if job.official {
-        ("state", json!({}))
-    } else {
-        ("view", json!({"token": job.token}))
-    };
-    if let Ok(view) = call(&client, archive, "dominion", tool, args).await
-        && let Some(state) = view.json
-        && state.get("view").unwrap_or(&state)["game"]["running"] == false
-    {
-        archive.record("result", state)?;
-    }
+    crate::harness::record_final_result(&client, archive, job).await?;
     archive.record("seat_finished", json!({"result": result}))?;
     client.close().await;
     archive.finish_publish().await;
@@ -563,7 +553,7 @@ async fn play_inner(
             input.push(item);
         }
         if calls.is_empty() {
-            if over {
+            if over || archive.has_result() {
                 archive.record("native_response", json!({"response": said}))?;
                 return Ok(());
             }
@@ -607,7 +597,12 @@ async fn play_inner(
                         if args["timeout_s"].as_u64().is_some_and(|t| t > 60) {
                             args["timeout_s"] = json!(60);
                         }
-                        let reply = call(client, archive, "dominion", tool, args).await?;
+                        let reply = match call(client, archive, "dominion", tool, args).await {
+                            Ok(reply) => reply,
+                            // An official seat's access ends with its game.
+                            Err(_) if archive.has_result() => return Ok(()),
+                            Err(error) => return Err(error),
+                        };
                         if reply.text.contains("GAME OVER") {
                             over = true;
                         }

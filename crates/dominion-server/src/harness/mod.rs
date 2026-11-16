@@ -109,24 +109,7 @@ pub async fn play(
         }
     }
     .await;
-    let final_view = call(
-        &client,
-        archive,
-        "dominion",
-        if job.official { "state" } else { "view" },
-        if job.official {
-            json!({})
-        } else {
-            json!({"token":job.token})
-        },
-    )
-    .await;
-    if let Ok(view) = final_view
-        && let Some(state) = view.json
-        && game_state(&state)["game"]["running"] == false
-    {
-        archive.record("result", state)?;
-    }
+    record_final_result(&client, archive, job).await?;
     archive.record("seat_finished", json!({"result":result}))?;
     client.close().await;
     archive.finish_publish().await;
@@ -168,6 +151,16 @@ async fn play_inner(
     }
     let message = format!("Initial view and card reference:\n{}", view.text);
     harness.reply(spec, &message, archive).await?;
+    session_end(client, archive, job).await
+}
+
+/// Whether the game is over once the CLI has finished: shown by a reply during play, else
+/// by a fresh view. An official seat's access ends with its game, so a reply that showed
+/// it settles it without asking.
+async fn session_end(client: &Client, archive: &mut Archive, job: &Job) -> Result<(), String> {
+    if archive.has_result() {
+        return Ok(());
+    }
     let view = call(
         client,
         archive,
@@ -194,6 +187,46 @@ async fn play_inner(
     }
 }
 
+/// Asks for the finished game when no reply during play showed it (the archive records
+/// the `result` from the reply). An official seat's access ends with its game, so a
+/// refusal there is no transport error.
+pub async fn record_final_result(
+    client: &Client,
+    archive: &mut Archive,
+    job: &Job,
+) -> Result<(), String> {
+    if archive.has_result() {
+        return Ok(());
+    }
+    if !job.official {
+        let _ = call(
+            client,
+            archive,
+            "dominion",
+            "view",
+            json!({"token":job.token}),
+        )
+        .await;
+        return Ok(());
+    }
+    let reply = tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        client.call("state", json!({})),
+    )
+    .await;
+    match reply {
+        Ok(Ok(reply)) => archive.record(
+            "response",
+            json!({"source":"dominion", "tool":"state", "reply":reply}),
+        ),
+        Ok(Err(e)) => archive.record("final_view_unavailable", json!({"error":e.to_string()})),
+        Err(_) => archive.record(
+            "final_view_unavailable",
+            json!({"error":"state: no reply within 90 seconds"}),
+        ),
+    }
+}
+
 pub fn endpoint(server: &str, job: &Job) -> Result<String, String> {
     if !job.official {
         return Ok(server.into());
@@ -210,6 +243,96 @@ fn game_state(value: &serde_json::Value) -> &serde_json::Value {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use axum::response::IntoResponse as _;
+    use rmcp::transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[derive(Clone)]
+    struct Server;
+    impl rmcp::ServerHandler for Server {}
+
+    /// A client of an MCP server that answers 401, as dominion.games' seat endpoint does
+    /// once the game is over, after `revoked` is set.
+    async fn revocable() -> (Client, Arc<AtomicBool>) {
+        let revoked = Arc::new(AtomicBool::new(false));
+        let service = StreamableHttpService::new(
+            || Ok(Server),
+            Arc::new(LocalSessionManager::default()),
+            StreamableHttpServerConfig::default(),
+        );
+        let gate = revoked.clone();
+        let router =
+            axum::Router::new()
+                .nest_service("/mcp", service)
+                .layer(axum::middleware::from_fn(
+                    move |request: axum::extract::Request, next: axum::middleware::Next| {
+                        let revoked = gate.load(Ordering::SeqCst);
+                        async move {
+                            if revoked {
+                                axum::http::StatusCode::UNAUTHORIZED.into_response()
+                            } else {
+                                next.run(request).await
+                            }
+                        }
+                    },
+                ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        (Client::connect(&url).await.unwrap(), revoked)
+    }
+
+    fn kinds(archive: &Archive) -> Vec<String> {
+        std::fs::read_to_string(archive.dir.join("interactions.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()["kind"].to_string())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_finished_official_seat_ends_well_once_its_access_is_revoked() {
+        let (client, revoked) = revocable().await;
+        revoked.store(true, Ordering::SeqCst);
+        let job = Job {
+            official: true,
+            transcript: false,
+            configuration: None,
+            agent: "a".into(),
+            game_id: "dominion.games:1".into(),
+            seat: 0,
+            name: "a".into(),
+            token: "t".into(),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mut archive = Archive::open(&dir.path().join("over")).unwrap();
+        archive
+            .record(
+                "response",
+                json!({"source":"dominion", "tool":"step", "reply":{"ok":true, "text":"GAME OVER",
+                    "json":{"view":{"game":{"running":false}}, "glossary":{}}}}),
+            )
+            .unwrap();
+        assert_eq!(session_end(&client, &mut archive, &job).await, Ok(()));
+        record_final_result(&client, &mut archive, &job)
+            .await
+            .unwrap();
+        assert_eq!(kinds(&archive), ["\"response\"", "\"result\""]);
+
+        // No reply showed the game over: the seat can't tell, and says so without a
+        // transport error.
+        let mut archive = Archive::open(&dir.path().join("unknown")).unwrap();
+        record_final_result(&client, &mut archive, &job)
+            .await
+            .unwrap();
+        assert_eq!(kinds(&archive), ["\"final_view_unavailable\""]);
+        assert!(session_end(&client, &mut archive, &job).await.is_err());
+        client.close().await;
+    }
     #[test]
     fn the_inlined_playbook_is_agents_md_then_context_then_skills() {
         let dir = tempfile::tempdir().unwrap();
