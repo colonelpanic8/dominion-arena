@@ -84,7 +84,7 @@ pub struct Settings {
     pub keep_finished: Duration,
     /// How long an unfinished game nobody touches is kept.
     pub keep_idle: Duration,
-    /// How many seats one account may fill with the server's agents a day.
+    /// How many seats one account may fill with the server's agents a day (0: no limit).
     pub agent_seats_per_day: u32,
 }
 

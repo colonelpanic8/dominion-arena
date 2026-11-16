@@ -14,7 +14,7 @@ use crate::app::Route;
 use crate::platform;
 use crate::session::{self, HeldSeat};
 use dioxus::prelude::*;
-use dominion_protocol::lobby::{MatchRequest, Opponents, QueueState};
+use dominion_protocol::lobby::{House, MatchRequest, Opponents, QueueState};
 
 #[component]
 pub fn AutomatchTab() -> Element {
@@ -202,8 +202,10 @@ fn Automatch() -> Element {
             if !house.agents.is_empty() {
                 p { class: "lb-note lb-house", "data-house": "{house.agents.len()}",
                     match house.left {
-                        Some(left) => rsx! {
-                            "Or one of the server's own agents, which it starts for a 1 Bot game when no other agent answers ({house.free} free now, {left} more for you today): "
+                        Some(left) => {
+                            let left_today = House::left_today(left);
+                            rsx! {
+                            "Or one of the server's own agents, which it starts for a 1 Bot game when no other agent answers ({house.free} free now, {left_today} for you): "
                             select {
                                 class: "lb-agent-select",
                                 "data-action": "pick-agent",
@@ -221,7 +223,8 @@ fn Automatch() -> Element {
                                     }
                                 }
                             }
-                        },
+                            }
+                        }
                         None => rsx! { "Registered players also play the server's own agents: {house_names.join(\", \")}." },
                     }
                 }

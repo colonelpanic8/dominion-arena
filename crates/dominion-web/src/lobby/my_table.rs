@@ -24,7 +24,7 @@ use crate::platform;
 use crate::session;
 use dioxus::prelude::*;
 use dominion_protocol::api::GameSummary;
-use dominion_protocol::lobby::{SeatEdit, SeatKind, TableInfo, TableSeat, UndoRule};
+use dominion_protocol::lobby::{House, SeatEdit, SeatKind, TableInfo, TableSeat, UndoRule};
 
 /// The table's game as `/api/games` lists it, asked again every few seconds while the
 /// game runs.
@@ -740,7 +740,7 @@ pub fn Players() -> Element {
             .collect(),
         None => vec![],
     };
-    let left = house.left.unwrap_or(0);
+    let left_today = House::left_today(house.left.unwrap_or(0));
     rsx! {
         Fieldset { title: "Players ({filled}/{n})", class: "lb-players",
             div { class: "lb-players-content",
@@ -779,7 +779,7 @@ pub fn Players() -> Element {
                                             select {
                                                 class: "lb-agent-select",
                                                 "data-action": "seat-agent",
-                                                title: "Seat one of the server's agents: the server starts it when the game does ({left} more today)",
+                                                title: "Seat one of the server's agents: the server starts it when the game does ({left_today})",
                                                 onchange: move |e| {
                                                     let name = e.value();
                                                     if !name.is_empty() {

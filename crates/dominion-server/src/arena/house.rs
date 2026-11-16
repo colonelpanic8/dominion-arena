@@ -323,7 +323,7 @@ impl Arena {
             ));
         }
         let filled = state.house.filled_today(host);
-        if filled + seats > per_day {
+        if per_day != 0 && filled + seats > per_day {
             return Err(Error::TooMany(
                 format!("you have filled {filled} of your {per_day} agent seats for today"),
                 Duration::from_secs(3600),
@@ -338,7 +338,10 @@ impl Arena {
         let per_day = self.settings.agent_seats_per_day;
         let left = you
             .filter(|u| u.kind() == UserKind::Registered)
-            .map(|u| per_day.saturating_sub(state.house.filled_today(&u.id)));
+            .map(|u| match per_day {
+                0 => lobby::House::UNLIMITED,
+                _ => per_day.saturating_sub(state.house.filled_today(&u.id)),
+            });
         let Some(runner) = &state.house.runner else {
             return lobby::House {
                 left,

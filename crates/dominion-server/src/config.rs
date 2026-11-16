@@ -119,7 +119,7 @@ pub struct Config {
     /// `dominion agents` connects (default: none, and no such agents).
     pub agent_socket: Option<PathBuf>,
     /// How many seats one registered player may fill with the server's agents a day
-    /// (default 5).
+    /// (default 5; 0: no limit).
     pub agent_seats_per_day: Option<u32>,
     /// The agents `dominion agents` offers, as `[[agents]]` tables: `name`, `program`
     /// (`claude`, `codex`, or `antigravity`), and optionally `model`, `command`, `about` (default: Claude

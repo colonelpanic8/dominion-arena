@@ -426,10 +426,23 @@ pub struct House {
     pub agents: Vec<HouseAgent>,
     /// How many more can play at once now.
     pub free: u32,
-    /// How many more agent seats you may fill today; none when you may not fill any (not
-    /// signed in, a guest, a bot).
+    /// How many more agent seats you may fill today (`House::UNLIMITED` when the server
+    /// sets no daily limit); none when you may not fill any (not signed in, a guest, a bot).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<u32>,
+}
+
+impl House {
+    pub const UNLIMITED: u32 = u32::MAX;
+
+    /// "N more today", or that there is no daily limit.
+    pub fn left_today(left: u32) -> String {
+        if left == House::UNLIMITED {
+            "no daily limit".into()
+        } else {
+            format!("{left} more today")
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

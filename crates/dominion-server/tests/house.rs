@@ -228,3 +228,21 @@ fn an_agent_named_like_someone_elses_account_is_refused() {
     let names: Vec<&str> = agents.iter().map(|a| a.user.name.as_str()).collect();
     assert_eq!(names, ["Claude Opus"]);
 }
+
+#[test]
+fn no_daily_limit_when_seats_per_day_is_zero() {
+    let arena = arena(0);
+    let mut told = runner(&arena, &["Claude Opus"], 1);
+    let ada = register(&arena, "Ada");
+    assert_eq!(
+        arena.lobby(Some(&ada)).house.left,
+        Some(dominion_protocol::lobby::House::UNLIMITED)
+    );
+    for _ in 0..3 {
+        let table = arena.new_table(&ada, &with_agent("Claude Opus")).unwrap();
+        let game = arena.ready(&ada, &table.id, true).unwrap().game.unwrap();
+        end(&arena, &game);
+        jobs(&mut told);
+        arena.leave_table(&ada);
+    }
+}
