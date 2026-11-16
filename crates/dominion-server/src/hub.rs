@@ -1312,6 +1312,13 @@ impl Hub {
         })
     }
 
+    /// Ages `seat`'s last call past [`CONNECTED_MS`], so only a live connection counts.
+    #[cfg(test)]
+    pub(crate) fn forget_last_call(&self, seat: &Seat) {
+        let game = self.game(&seat.game).unwrap();
+        game.seen[seat.seat.index()].store(0, Ordering::Relaxed);
+    }
+
     /// Counts someone watching game `id` until the result is dropped.
     pub fn watching(&self, id: &str) -> Result<Watching, HubError> {
         let game = self.game(id)?;
