@@ -115,9 +115,10 @@ impl Runtime {
     }
     pub(super) async fn cancel_match(&mut self) -> Result<(), String> {
         if let Some(options) = &self.search {
-            self.send(criteria(self.update.mode, options, false)?)
-                .await?;
-            while self.update.searching {
+            let bytes = criteria(self.update.mode, options, false)?;
+            self.queue_status = None;
+            self.send(bytes).await?;
+            while self.queue_status != Some(false) && self.human.is_none() {
                 self.receive().await?;
             }
             self.search = None;

@@ -87,7 +87,11 @@ impl Hosted {
                     {
                         eprintln!("dominion: assigning matched game: {e}");
                     }
-                } else if !update.searching {
+                } else if !update.searching
+                    && lifecycle_arena
+                        .official_job()
+                        .is_some_and(|j| !j.game_id.is_empty())
+                {
                     lifecycle_arena.set_official_job(None);
                 }
             }
@@ -262,7 +266,12 @@ fn management(web: &Web) -> OnlineManagement {
         agents: web.access.arena.official_agents(),
         agent: web.access.arena.official_job().map(|j| j.agent),
         running: view.is_some_and(|v| v.game.running),
-        searching: update.searching,
+        searching: update.searching
+            || web
+                .access
+                .arena
+                .official_job()
+                .is_some_and(|j| j.game_id.is_empty()),
         queue_feedback: update.queue_feedback,
         mode: update.mode,
     }
@@ -389,7 +398,7 @@ async fn attach_agent(
 }
 async fn pause_agent(State(web): State<Web>) -> Response {
     let _guard = web.hosted.control.lock().await;
-    if web.hosted.client.current().searching {
+    if management(&web).searching {
         return refused("cancel matchmaking before pausing the assigned agent");
     }
     web.access.arena.set_official_job(None);
@@ -397,6 +406,9 @@ async fn pause_agent(State(web): State<Web>) -> Response {
 }
 async fn reconnect(State(web): State<Web>) -> Response {
     let _guard = web.hosted.control.lock().await;
+    if management(&web).searching {
+        return refused("cancel matchmaking before reconnecting");
+    }
     web.access.arena.set_official_job(None);
     match web.hosted.client.reconnect().await {
         Ok(()) => axum::Json(management(&web)).into_response(),

@@ -919,7 +919,7 @@ impl Reducer {
         for marker in &state.pile_markers {
             let zone = self.zone(marker.zone_index)?;
             notes.push(view::NoteView {
-                    setup: None,
+                setup: None,
                 source: ["Bane", "Obelisk", "Split pile", "Mixed pile", "Ferryman"]
                     .get(marker.kind as usize)
                     .unwrap_or(&"Pile marker")
@@ -967,7 +967,7 @@ impl Reducer {
                 for linked in &association.linked_cards {
                     if let Some(name) = self.card_name(*linked) {
                         notes.push(view::NoteView {
-                    setup: None,
+                            setup: None,
                             source: format!("Associated with {name}"),
                             player: None,
                             pile: None,

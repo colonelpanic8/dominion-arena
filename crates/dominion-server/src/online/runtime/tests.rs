@@ -700,6 +700,31 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
             .reserve_official("observer-owner", "fixture-agent")
             .is_err()
     );
+    let mut between = client.current();
+    between.searching = false;
+    publish.send_replace(between);
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(
+        arena.official_job().is_some(),
+        "queue-to-match notification gap must keep the reservation"
+    );
+    let status: serde_json::Value = http
+        .get(format!("{manager}/manage"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(status["searching"], true);
+    let response = http
+        .post(format!("{manager}/reconnect"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CONFLICT);
     let matched = runtime.update.clone();
     let queue_publish = publish.clone();
     let backend = tokio::spawn(async move {
