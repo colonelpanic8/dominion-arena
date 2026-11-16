@@ -62,7 +62,9 @@ async fn shared_startup_preserves_seat_secrets_and_legacy_tools() {
             .unwrap()
             .contains(&json!("Village"))
     );
-    assert_eq!(view["opponents"][0]["hand"]["unknown"], 5);
+    assert_eq!(view["opponents"][0]["hand"]["count"], 5);
+    assert_eq!(view["opponents"][0]["hand"]["known"]["Copper"], 2);
+    assert_eq!(view["opponents"][0]["hand"]["unknown"], 3);
     assert!(created.text.starts_with("STATUS game"));
     assert!(created.text.contains("\nCARDS\n") && created.text.contains("\nVillage | Action | $3"));
     assert!(!created.text.contains("\nCopper |"));

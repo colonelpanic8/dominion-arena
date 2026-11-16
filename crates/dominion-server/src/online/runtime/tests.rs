@@ -58,6 +58,7 @@ fn runtime() -> (TempDir, Runtime) {
         socket: None,
         needs_snapshot: false,
         request_game: false,
+        leaving_finished: false,
         resuming: false,
         endpoint: Endpoint::Alpha,
         session: None,
@@ -935,4 +936,32 @@ fn matching_criteria_match_official_player_rating_timer_and_cancellation_fields(
     ] {
         assert!(matching::criteria(OnlineMode::Rated, &options, true).is_err());
     }
+}
+
+#[test]
+fn a_completed_table_already_left_by_the_server_does_not_block_the_next_game() {
+    let (_directory, mut runtime) = active_runtime();
+    let failure = || {
+        Message::Failed(dominion_online::transport::Failure {
+            reason: "COMMAND_REQUIRES_TABLE",
+            card: None,
+        })
+    };
+    runtime.leaving_finished = true;
+    assert!(runtime.process(failure()).is_err());
+    assert!(runtime.table.is_some());
+    runtime.update.reducer.running = false;
+    assert!(runtime.process(failure()).is_err());
+    runtime.update.reducer.result = Some(dominion_protocol::GameResult {
+        reason: None,
+        players: vec![],
+    });
+    runtime.leaving_finished = false;
+    assert!(runtime.process(failure()).is_err());
+    runtime.leaving_finished = true;
+    runtime.process(failure()).unwrap();
+    assert!(runtime.table.is_none());
+    assert!(runtime.bots.is_empty());
+    assert!(!runtime.leaving_finished);
+    assert!(runtime.update.reducer.result.is_some());
 }

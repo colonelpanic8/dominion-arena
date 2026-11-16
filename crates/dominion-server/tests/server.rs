@@ -138,7 +138,9 @@ async fn two_clients_play_their_seats_to_the_end() {
     .await;
     assert!(joined.ok, "{}", joined.text);
     let theirs = &joined.json.unwrap()["opponents"][0]["hand"];
-    assert_eq!(theirs["unknown"], theirs["count"]);
+    assert_eq!(theirs["count"], 5);
+    assert_eq!(theirs["known"]["Copper"], 2);
+    assert_eq!(theirs["unknown"], 3);
     let bound = call(&b, "view", json!({})).await;
     assert!(bound.text.contains("YOU P2: Bo"), "{}", bound.text);
 

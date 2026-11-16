@@ -932,10 +932,17 @@ fn deck_composition_preserves_deductions_and_uncertainty() {
         "starting cards minus the known hand identify the deck"
     );
     assert_eq!(
-        other_deck.unknown, 5,
-        "the opponent's hand/deck split is private"
+        other_deck.unknown, 3,
+        "the private split retains uncertainty beyond public starting-deck deductions"
     );
-    assert!(other_deck.known.is_empty());
+    assert_eq!(
+        other_deck
+            .known
+            .iter()
+            .map(|s| (s.card.as_str(), s.count))
+            .collect::<Vec<_>>(),
+        [("Copper", 2)]
+    );
     assert_eq!(
         other.iter().find(|z| z.key == "owned").unwrap().zone.count,
         10
