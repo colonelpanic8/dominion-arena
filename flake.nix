@@ -50,7 +50,7 @@
         inherit src;
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [pkgs.makeWrapper];
-        nativeCheckInputs = [pkgs.python3];
+        nativeCheckInputs = [pkgs.python3 pkgs.which];
         postInstall = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
           wrapProgram $out/bin/dominion --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.bubblewrap]}
         '';
