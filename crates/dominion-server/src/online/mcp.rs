@@ -12,13 +12,21 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone)]
 pub struct Session {
     client: Client,
+    managed: bool,
     presentation: Arc<Mutex<play::Presentation>>,
 }
 impl Session {
     pub fn new(client: Client) -> Self {
         Self {
             client,
+            managed: false,
             presentation: Arc::new(Mutex::new(play::Presentation::default())),
+        }
+    }
+    pub(crate) fn managed(client: Client) -> Self {
+        Self {
+            managed: true,
+            ..Self::new(client)
         }
     }
     fn failure(&self, message: String) -> CallToolResult {
@@ -130,6 +138,10 @@ impl Session {
         description = "Start an unrated official-server game against server bots. players defaults to 2 and bots to 1; bots must equal players minus one. Optional kingdom and landscapes are required card names. No humans or spectators. Never replaces or resigns an existing game. Settings the backend cannot honor are refused."
     )]
     async fn new_game(&self, Parameters(p): Parameters<NewGame>) -> CallToolResult {
+        if self.managed {
+            return self
+                .failure("Manage this connection through the Arena official-game controls".into());
+        }
         if let Err(e) = self.client.new_game(p).await {
             return self.failure(e);
         }
@@ -180,6 +192,10 @@ impl Session {
         description = "Explicitly resign this account's current official-server game. Token is ignored."
     )]
     async fn resign(&self, Parameters(_): Parameters<StateParams>) -> CallToolResult {
+        if self.managed {
+            return self
+                .failure("Manage this connection through the Arena official-game controls".into());
+        }
         match self.client.resign().await {
             Ok(()) => match self.client.wait(30).await {
                 Ok(update) => self.observation(update, true),
@@ -192,6 +208,10 @@ impl Session {
         description = "Reconnect only this process's own official-server session. Invalidates prior decisions, does not resend actions, and never imports a browser session or removes another login."
     )]
     async fn online_reconnect(&self) -> CallToolResult {
+        if self.managed {
+            return self
+                .failure("Manage this connection through the Arena official-game controls".into());
+        }
         match self.client.reconnect().await {
             Ok(()) => match self.client.wait(30).await {
                 Ok(update) => self.observation(update, true),

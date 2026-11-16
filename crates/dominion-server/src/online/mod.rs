@@ -115,13 +115,6 @@ async fn start(config: &Config) -> Result<Client, String> {
         return Err("REFUSED: set online_exclusive = true only while the account is idle and exclusive to this client; existing sessions are never removed".into());
     }
     let account = config.online_account.clone().ok_or("set online_account")?;
-    let entry = config
-        .online_password_entry
-        .clone()
-        .ok_or("set online_password_entry to an existing pass entry")?;
-    if entry.starts_with('-') || entry.is_empty() {
-        return Err("invalid online_password_entry".into());
-    }
     let catalog = catalog(config)?;
     let state = Store::open(
         &config
@@ -130,20 +123,29 @@ async fn start(config: &Config) -> Result<Client, String> {
     )
     .map_err(|e| format!("official client state lock: {e}"))?;
     let endpoint = endpoint(config).await?;
-    let output = tokio::process::Command::new("pass")
-        .args(["show", &entry])
-        .output()
-        .await
-        .map_err(|e| format!("reading password-store entry: {e}"))?;
-    if !output.status.success() {
-        return Err("password-store lookup failed".into());
-    }
-    let password = std::str::from_utf8(&output.stdout)
-        .map_err(|_| "password-store entry is not UTF-8")?
+    let secret = match (&config.online_password_entry, &config.online_password_file) {
+        (Some(entry), None) if !entry.is_empty() && !entry.starts_with('-') => {
+            let output = tokio::process::Command::new("pass")
+                .args(["show", entry])
+                .output()
+                .await
+                .map_err(|e| format!("reading password-store entry: {e}"))?;
+            if !output.status.success() {
+                return Err("password-store lookup failed".into());
+            }
+            output.stdout
+        }
+        (None, Some(path)) => tokio::fs::read(path)
+            .await
+            .map_err(|e| format!("reading runtime password credential: {e}"))?,
+        _ => return Err("set exactly one of online_password_entry or online_password_file".into()),
+    };
+    let password = std::str::from_utf8(&secret)
+        .map_err(|_| "password credential is not UTF-8")?
         .lines()
         .next()
         .filter(|s| !s.is_empty())
-        .ok_or("password-store entry has no password")?;
+        .ok_or("password credential has no password")?;
     let result = Client::login(
         catalog,
         endpoint,
@@ -153,7 +155,7 @@ async fn start(config: &Config) -> Result<Client, String> {
         config.online_resume.unwrap_or(false),
     )
     .await;
-    drop(output);
+    drop(secret);
     result
 }
 

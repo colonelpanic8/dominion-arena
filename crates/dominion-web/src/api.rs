@@ -484,6 +484,37 @@ pub async fn follow_online(on_change: &mut dyn FnMut(dominion_protocol::api::Onl
     .await;
 }
 
+pub async fn online_management() -> Result<dominion_protocol::api::OnlineManagement> {
+    imp::get("/api/online/manage", None).await
+}
+pub async fn online_start(
+    request: &dominion_protocol::api::OnlineStart,
+) -> Result<dominion_protocol::api::OnlineManagement> {
+    imp::post("/api/online/start", None, request).await
+}
+pub async fn online_attach(agent: String) -> Result<dominion_protocol::api::OnlineManagement> {
+    imp::post(
+        "/api/online/agent",
+        None,
+        &dominion_protocol::api::OnlineAttach { agent },
+    )
+    .await
+}
+pub async fn online_manage_action(
+    action: &str,
+) -> Result<dominion_protocol::api::OnlineManagement> {
+    match action {
+        "cancel" => imp::send("DELETE", "/api/online/matchmaking", None, None::<&()>).await,
+        "pause" => imp::send("DELETE", "/api/online/agent", None, None::<&()>).await,
+        "resign" => imp::post("/api/online/resign", None, &()).await,
+        "reconnect" => imp::post("/api/online/reconnect", None, &()).await,
+        _ => Err(ApiError {
+            status: 400,
+            message: "unknown official game action".into(),
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

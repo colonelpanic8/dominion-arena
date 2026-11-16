@@ -63,10 +63,17 @@ fn runtime() -> (TempDir, Runtime) {
         session: None,
         table: Some(table()),
         bots: vec![-2],
+        human: None,
+        search: None,
+        queue_status: None,
+        outbox: Vec::new(),
         update: Update {
             reducer: Reducer::new(catalog(), 42),
             error: None,
             connected: true,
+            searching: false,
+            queue_feedback: Vec::new(),
+            mode: OnlineMode::Bots,
         },
         store,
     };
@@ -446,12 +453,9 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
     use std::net::{IpAddr, Ipv4Addr};
     let (_directory, runtime) = active_runtime();
     let (publish, updates) = watch::channel(runtime.update.clone());
-    let (tx, _requests) = mpsc::channel(16);
+    let (tx, mut requests) = mpsc::channel(16);
     let client = Client { tx, updates };
-    let hosted = crate::online::Hosted {
-        client: client.clone(),
-        owner: "observer-owner".into(),
-    };
+    let hosted = crate::online::Hosted::new(client.clone(), "observer-owner".into());
     let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
         .unwrap();
     let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -539,6 +543,188 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
     assert!(reply.ok, "{}", reply.text);
     assert!(!reply.json.unwrap()["view"]["decision"].is_null());
     agent.close().await;
+    // Management is operator-only, and hosted MCP cannot bypass the runner's lifecycle.
+    let manager = format!("{base}/api/online");
+    let response = http
+        .post(format!("{manager}/start"))
+        .bearer_auth(&owner)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CONFLICT);
+    assert!(requests.try_recv().is_err());
+    let (offering, mut jobs) = mpsc::unbounded_channel();
+    arena.runner_connected(
+        vec![crate::house::Offer {
+            name: "fixture-agent".into(),
+            about: "fixture".into(),
+        }],
+        1,
+        offering,
+    );
+    let _ = jobs.recv().await.unwrap();
+    let response = http
+        .post(format!("{manager}/start"))
+        .bearer_auth(&outsider)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+    let response = http
+        .post(format!("{manager}/start"))
+        .bearer_auth(&owner)
+        .header("origin", "https://elsewhere.example")
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+    assert!(requests.try_recv().is_err());
+    let backend = tokio::spawn(async move {
+        match requests.recv().await.unwrap() {
+            Request::NewGame(options, reply) => {
+                assert_eq!(options.bots, Some(1));
+                assert_eq!(options.players, Some(2));
+                reply.send(Ok(())).unwrap();
+            }
+            _ => panic!("expected a bot game request"),
+        }
+        requests
+    });
+    let response = http
+        .post(format!("{manager}/start"))
+        .bearer_auth(&owner)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let mut requests = backend.await.unwrap();
+    let first = arena.official_job().unwrap();
+    assert!(first.official);
+    assert!(!first.transcript);
+    let crate::house::ToRunner::Jobs { jobs } = jobs.recv().await.unwrap() else {
+        panic!("job dispatch")
+    };
+    assert_eq!(jobs, vec![first.clone()]);
+    let capability = crate::client::Client::connect_authenticated(
+        &format!("{base}/mcp/online"),
+        Some(first.token.clone()),
+    )
+    .await
+    .unwrap();
+    assert!(
+        capability
+            .call("state", serde_json::json!({}))
+            .await
+            .unwrap()
+            .ok
+    );
+    for tool in ["new_game", "resign", "online_reconnect"] {
+        let reply = capability.call(tool, serde_json::json!({})).await.unwrap();
+        assert!(!reply.ok, "{tool} unexpectedly allowed");
+    }
+    assert!(requests.try_recv().is_err());
+    let response = http
+        .get(format!("{manager}/manage"))
+        .bearer_auth(&first.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let response = http
+        .delete(format!("{manager}/agent"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert!(arena.official_job().is_none());
+    let response = http
+        .get(format!("{base}/mcp/online"))
+        .bearer_auth(&first.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+    capability.close().await;
+    let response = http
+        .post(format!("{manager}/agent"))
+        .bearer_auth(&owner)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_ne!(arena.official_job().unwrap().token, first.token);
+    http.delete(format!("{manager}/agent"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let mut searching = client.current();
+    searching.reducer.running = false;
+    searching.reducer.invalidate();
+    searching.searching = true;
+    searching.mode = OnlineMode::Rated;
+    let queue_publish = publish.clone();
+    let backend = tokio::spawn(async move {
+        match requests.recv().await.unwrap() {
+            Request::Match(mode, options, reply) => {
+                assert_eq!(mode, OnlineMode::Rated);
+                assert_eq!(options.players, 2);
+                queue_publish.send_replace(searching);
+                reply.send(Ok(())).unwrap();
+            }
+            _ => panic!("expected public matchmaking request"),
+        }
+        requests
+    });
+    let response = http
+        .post(format!("{manager}/start"))
+        .bearer_auth(&owner)
+        .json(&serde_json::json!({"agent":"fixture-agent","mode":"rated"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let mut requests = backend.await.unwrap();
+    assert!(arena.official_job().unwrap().game_id.is_empty());
+    // The reserved slot cannot be reused while waiting for the public opponent.
+    assert!(
+        arena
+            .reserve_official("observer-owner", "fixture-agent")
+            .is_err()
+    );
+    let matched = runtime.update.clone();
+    let queue_publish = publish.clone();
+    let backend = tokio::spawn(async move {
+        match requests.recv().await.unwrap() {
+            Request::CancelMatch(reply) => {
+                queue_publish.send_replace(matched);
+                reply.send(Ok(())).unwrap();
+            }
+            _ => panic!("expected matchmaking cancellation"),
+        }
+    });
+    let response = http
+        .delete(format!("{manager}/matchmaking"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    backend.await.unwrap();
+    let assigned = arena.official_job().unwrap();
+    assert!(
+        !assigned.game_id.is_empty(),
+        "a cancellation race must assign the game instead of abandoning it"
+    );
+    assert!(!assigned.token.is_empty());
     let response = http
         .get(format!("{base}/api/online/events"))
         .header("cookie", format!("dominion_session={owner}"))
@@ -602,4 +788,126 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
         .await
         .unwrap()
         .unwrap();
+}
+
+fn human_table(rated: bool) -> TableDetails {
+    let mut table = table();
+    table.host_id = 99;
+    table.players.push(named(99));
+    table.ready.push(true);
+    table.bots.clear();
+    table.spectators.push(named(100));
+    table
+        .rules
+        .iter_mut()
+        .find(|(r, _)| r.id == 19)
+        .unwrap()
+        .0
+        .value = RuleValue::Boolean(rated);
+    table
+}
+fn match_found(table: TableDetails) -> Message {
+    Message::Ancillary(
+        dominion_online::transport::ancillary::Message::AutomatchFound {
+            table,
+            is_bot_game: false,
+        },
+    )
+}
+#[test]
+fn human_matching_requires_explicit_search_and_checks_roster_rating_and_snapshot() {
+    for mode in [OnlineMode::Rated, OnlineMode::Unrated] {
+        let (_directory, mut runtime) = runtime();
+        runtime.process(Message::Login(login(false))).unwrap();
+        let matched = human_table(mode == OnlineMode::Rated);
+        assert!(runtime.process(match_found(matched.clone())).is_err());
+        runtime.search = Some(OnlineMatching::default());
+        runtime.update.mode = mode;
+        let mut wrong_rating = matched.clone();
+        wrong_rating
+            .rules
+            .iter_mut()
+            .find(|(r, _)| r.id == 19)
+            .unwrap()
+            .0
+            .value = RuleValue::Boolean(mode != OnlineMode::Rated);
+        assert!(runtime.process(match_found(wrong_rating)).is_err());
+        runtime.search = Some(OnlineMatching::default());
+        runtime.process(match_found(matched.clone())).unwrap();
+        assert!(runtime.update.searching);
+        assert!(runtime.safe_table().is_ok());
+        let mut snapshot = snapshot();
+        snapshot.state.players[1].player_id = 99;
+        runtime
+            .process(Message::Snapshot(snapshot.clone()))
+            .unwrap();
+        assert!(!runtime.update.searching);
+        assert!(runtime.update.view().unwrap().unwrap().game.running);
+        snapshot.state.players[1].player_id = 101;
+        assert!(runtime.process(Message::Snapshot(snapshot)).is_err());
+        let mut foreign = matched;
+        foreign.players[1].id = 101;
+        assert!(runtime.process(Message::TableDetails(foreign)).is_err());
+        runtime
+            .process(Message::Metagame {
+                kind: 0,
+                player: 99,
+                decision: 7,
+            })
+            .unwrap();
+        let bytes = runtime.outbox.pop().unwrap();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(reader.int().unwrap(), 42);
+        assert_eq!(reader.int().unwrap(), 99);
+        assert_eq!(reader.int().unwrap(), 7);
+    }
+}
+#[test]
+fn matching_criteria_match_official_player_rating_timer_and_cancellation_fields() {
+    for (mode, players, rated) in [(OnlineMode::Rated, 2, 2), (OnlineMode::Unrated, 3, 0)] {
+        for searching in [true, false] {
+            let options = OnlineMatching {
+                players,
+                ..Default::default()
+            };
+            let bytes = matching::criteria(mode, &options, searching).unwrap();
+            let mut reader = Reader::new(&bytes);
+            assert_eq!(reader.int().unwrap(), 22);
+            assert_eq!(reader.int().unwrap(), 0);
+            assert_eq!(reader.boolean().unwrap(), searching);
+            assert_eq!(reader.int().unwrap(), 10);
+            assert_eq!(reader.int().unwrap(), -10);
+            assert_eq!(reader.int().unwrap(), 4);
+            for (key, value) in [
+                (0, 0),
+                (1, if players == 2 { 2 } else { 0 }),
+                (2, rated),
+                (3, 0),
+            ] {
+                assert_eq!(reader.int().unwrap(), key);
+                assert_eq!(reader.int().unwrap(), value);
+            }
+            assert_eq!(reader.int().unwrap(), 4);
+            for key in 0..4 {
+                assert_eq!(reader.int().unwrap(), key);
+                assert_eq!(reader.int().unwrap(), if key == 3 { 4 } else { -1 });
+            }
+        }
+    }
+    for options in [
+        OnlineMatching {
+            players: 1,
+            ..Default::default()
+        },
+        OnlineMatching {
+            timer: 4,
+            ..Default::default()
+        },
+        OnlineMatching {
+            min_rating: 20,
+            ..Default::default()
+        },
+    ] {
+        assert!(matching::criteria(OnlineMode::Rated, &options, true).is_err());
+    }
 }

@@ -46,9 +46,11 @@ A `Game` can be cloned or serialized at any point, including mid-decision.
 
 `dominion online mcp` exposes the common gameplay tools against the official
 `dominion.games` server, without Chromium. This experimental, version-pinned
-backend supports an exclusive account playing unrated server-bot games.
+backend supports an exclusive account playing server bots or public human
+matchmaking (rated or unrated).
 With `online_enabled` and `online_owner` configured, `dominion serve` shares the
-connection through `/mcp/online` and an authenticated live observer at `/online`. Its
+connection through `/mcp/online` and authenticated management and live watching at
+`/online`. Select an agent, start/cancel searches, or pause/resume play there. Its
 account setup, cache, state, reconnect rules, and current limitations are in
 [the official-backend guide](crates/dominion-online/README.md). Arena's hosted
 engine and existing APIs remain available through `dominion serve`.
