@@ -450,6 +450,13 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-log-turn { font-size: calc(2 * var(--vh)); font-weight: 700; margin-top: calc(1.5 * var(--vh)); color: #c8c8c8; }
 .dt-log-meta-last { margin-bottom: calc(1.5 * var(--vh)); }
 .dt-log-shuffled { color: #ff7f7f; font-style: italic; }
+.dt-log-group, .dt-log-body { list-style: none; margin: 0; padding: 0; }
+.dt-log-head { cursor: pointer; user-select: none; }
+.dt-log-head:hover { color: #fff; }
+.dt-log-caret { display: inline-block; width: 1.1em; color: #888; }
+.dt-log-gains { margin: 0 0 calc(0.4 * var(--vh)) calc(2% + 1.1em); font-size: calc(1.8 * var(--vh)); color: #a8a8a8; }
+.dt-log-gains::before { content: "gains "; color: #777; }
+.dt-log-gain + .dt-log-gain::before { content: " · "; color: #777; }
 .dt-below-log {
   position: absolute;
   box-sizing: border-box;

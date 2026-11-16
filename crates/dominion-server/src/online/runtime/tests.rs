@@ -1,9 +1,11 @@
 use super::*;
 use dominion_online::{
+    model,
     questions::{Question, QuestionDescription, QuestionKind, Story},
     transport::{LoginSuccess, NamedId},
     wire::{Reader, Writer},
 };
+use dominion_protocol::LogEntry;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 

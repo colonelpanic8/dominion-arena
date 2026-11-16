@@ -1,7 +1,6 @@
 use crate::store::Store;
 use dominion_online::{
     catalog::{Catalog, VERSION},
-    model,
     reducer::Reducer,
     transport::{
         Endpoint, Group, Message, RequiredSlot, RuleValue, TableDetails, TableRule, Transport,
@@ -9,7 +8,7 @@ use dominion_online::{
     },
 };
 use dominion_protocol::{
-    AgentView, Answer, GlossaryEntry, LogEntry,
+    AgentView, Answer, GlossaryEntry,
     api::{OnlineMatching, OnlineMode},
 };
 mod matching;
@@ -607,43 +606,11 @@ impl Runtime {
                 if reducer.logs.iter().any(|e| e.seq >= start) {
                     reducer.logs.retain(|e| e.seq < start);
                 }
-                for (offset, entry) in change.entries.into_iter().enumerate() {
-                    let (kind, player, text) = match entry {
-                        model::LogEntry::Named {
-                            name, arguments, ..
-                        } => {
-                            let template = reducer
-                                .catalog
-                                .label("LogEntryNames", name)
-                                .ok_or("unknown log entry name")?;
-                            let text = reducer
-                                .render_template(template, &arguments)
-                                .ok_or("unsupported log argument")?;
-                            ("official", None, text)
-                        }
-                        model::LogEntry::Decision {
-                            player, autoplayed, ..
-                        } => (
-                            "decision",
-                            u8::try_from(player).ok(),
-                            format!(
-                                "{} {}",
-                                reducer.player_name(player),
-                                if autoplayed {
-                                    "resolved a forced decision"
-                                } else {
-                                    "answered"
-                                }
-                            ),
-                        ),
-                    };
-                    reducer.logs.push(LogEntry {
-                        seq: start + offset,
-                        kind: kind.into(),
-                        player,
-                        card: None,
-                        text,
-                    });
+                for (offset, entry) in change.entries.iter().enumerate() {
+                    let entry = reducer
+                        .log_entry(start + offset, entry)
+                        .ok_or("unknown or unsupported official log entry")?;
+                    reducer.logs.push(entry);
                 }
             }
             Message::TableJoined { table, .. } | Message::TableDetails(table) => {

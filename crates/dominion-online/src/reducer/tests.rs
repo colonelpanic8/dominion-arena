@@ -472,6 +472,85 @@ fn upstream_placeholder_dialects_render_player_names_and_amounts_without_reparsi
     );
 }
 
+#[test]
+fn log_entries_carry_turns_players_and_entry_names() {
+    let mut r = reducer();
+    Arc::make_mut(&mut r.catalog).enums.extend([
+        (
+            "LogEntryNames".to_string(),
+            vec!["NEW_TURN".to_string(), "BUY_AND_GAIN".to_string()],
+        ),
+        (
+            "ExtraTurnTypes".to_string(),
+            vec!["REGULAR".into(), "BETWEEN".into(), "VILLAGE".into()],
+        ),
+    ]);
+    Arc::make_mut(&mut r.catalog).labels.insert(
+        "LogEntryNames".into(),
+        vec![
+            Some("Argument0".into()),
+            Some("Argument0 buys and gains Argument1.".into()),
+        ],
+    );
+    r.names.insert(99, "Bo".into());
+    let turn = |kind| model::LogEntry::Named {
+        name: 0,
+        depth: 0,
+        arguments: vec![LogArgument::Turn {
+            owner: 1,
+            number: 3,
+            kind,
+            controller: 1,
+        }],
+    };
+    let entry = r.log_entry(4, &turn(0)).unwrap();
+    assert_eq!(
+        (
+            entry.seq,
+            entry.kind.as_str(),
+            entry.player,
+            entry.card,
+            entry.text.as_str()
+        ),
+        (4, "turn-start", Some(1), None, "Bo starts turn 3")
+    );
+    assert_eq!(
+        r.log_entry(5, &turn(2)).unwrap().card.as_deref(),
+        Some("Village")
+    );
+    assert_eq!(r.log_entry(6, &turn(1)).unwrap().kind, "between-turns");
+    let gain = r
+        .log_entry(
+            7,
+            &model::LogEntry::Named {
+                name: 1,
+                depth: 1,
+                arguments: vec![
+                    LogArgument::Player(1),
+                    LogArgument::CardNames(vec![crate::questions::CardFrequency {
+                        name: 3,
+                        frequency: 1,
+                    }]),
+                ],
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        (
+            gain.kind.as_str(),
+            gain.player,
+            gain.card.as_deref(),
+            gain.text.as_str()
+        ),
+        (
+            "official-buy-and-gain",
+            Some(1),
+            Some("Gold"),
+            "Bo buys and gains 1 Gold."
+        )
+    );
+}
+
 mod campaign;
 
 fn inspect(r: &mut Reducer, zone: i32, cards: Vec<i32>) {

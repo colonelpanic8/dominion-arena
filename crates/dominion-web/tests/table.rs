@@ -12,7 +12,7 @@ use dominion_protocol::{AgentDecision, AgentView, PlayerView, Tokens};
 use dominion_web::cards::CardDb;
 use dominion_web::game::board::{Board, NamedZone, PileAt, PileEntry, PlayerEntry, Zone, board};
 use dominion_web::game::interaction::{Interaction, Place, Target, TreasureRun, interaction};
-use dominion_web::game::logfmt::{Span, log_lines};
+use dominion_web::game::logfmt::{Span, log_lines, log_turns};
 use dominion_web::game::state::{GameState, Selection};
 use dominion_web::game::table::model::{Spot, spots};
 use dominion_web::game::{entry, wording};
@@ -781,10 +781,82 @@ fn log_lines_follow_a_real_game() {
         }
     }
     assert!(turns.values().all(|&t| t > 5));
+    let grouped = log_turns(log, &names, &cards);
+    assert_eq!(
+        grouped.iter().filter(|t| t.head.is_some()).count(),
+        log.iter().filter(|e| e.kind == "turn-start").count()
+    );
+    let gained: u32 = grouped
+        .iter()
+        .flat_map(|t| &t.gains)
+        .flat_map(|(_, items)| items)
+        .map(|(_, n)| n)
+        .sum();
+    assert_eq!(
+        gained as usize,
+        log.iter().filter(|e| e.kind == "gained").count()
+    );
     assert!(
         treasures > 0 && buys > 0 && under_smithy > 0 && cleanup > 0,
         "{treasures} {buys} {under_smithy} {cleanup}"
     );
+}
+
+#[test]
+fn official_log_entries_group_by_turn_with_their_gains() {
+    let cards = card_db();
+    let names: Vec<String> = ["Ann", "Bo"].map(String::from).to_vec();
+    let entry = |seq, kind: &str, player, text: &str| dominion_protocol::LogEntry {
+        seq,
+        kind: kind.into(),
+        player,
+        card: None,
+        text: text.into(),
+    };
+    let log = [
+        entry(
+            0,
+            "official-starts-with",
+            Some(0),
+            "Ann starts with 7 Copper, 3 Estate.",
+        ),
+        entry(1, "turn-start", Some(0), "Ann starts turn 1"),
+        entry(2, "official-play", Some(0), "Ann plays 3 Copper, 1 Silver."),
+        entry(3, "decision", Some(0), "Ann answered"),
+        entry(
+            4,
+            "official-buy-and-gain",
+            Some(0),
+            "Ann buys and gains 1 Witch.",
+        ),
+        entry(5, "official-gain", Some(1), "Bo gains 1 Curse."),
+        entry(6, "turn-start", Some(1), "Bo starts turn 1"),
+        entry(
+            7,
+            "official-gain-to-hand",
+            Some(1),
+            "Bo gains 2 Silver to their hand.",
+        ),
+    ];
+    let turns = log_turns(&log, &names, &cards);
+    assert_eq!(turns.len(), 3);
+    assert!(turns[0].head.is_none());
+    assert_eq!(
+        turns[0].lines[0].text(&["A".into(), "B".into()]),
+        "A starts with 7 Coppers and 3 Estates."
+    );
+    let line = |t: usize, i: usize| turns[t].lines[i].text(&["A".into(), "B".into()]);
+    assert_eq!(turns[1].head.as_ref().unwrap().turn, Some(1));
+    assert_eq!(line(1, 0), "A plays 3 Coppers and a Silver.");
+    assert_eq!(line(1, 1), "A buys and gains a Witch.");
+    let items = |v: &[(&str, u32)]| -> Vec<(String, u32)> {
+        v.iter().map(|(c, n)| (c.to_string(), *n)).collect()
+    };
+    assert_eq!(
+        turns[1].gains,
+        [(0, items(&[("Witch", 1)])), (1, items(&[("Curse", 1)]))]
+    );
+    assert_eq!(turns[2].gains, [(1, items(&[("Silver", 2)]))]);
 }
 
 #[test]

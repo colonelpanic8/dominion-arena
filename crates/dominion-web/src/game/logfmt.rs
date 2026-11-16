@@ -570,6 +570,11 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
                 if let Some(p) = e.player {
                     spans.push(Span::FullPlayer(p, seat_name(names, p)));
                 }
+                if let Some(card) = &e.card {
+                    text(&mut spans, " [");
+                    spans.push(Span::Card(card.clone()));
+                    text(&mut spans, "]");
+                }
             }
             Some(Entry::TurnSkipped(None)) => text(&mut spans, "skips a turn."),
             Some(Entry::TurnSkipped(Some(card))) => {
@@ -835,6 +840,9 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
                 push_list(&mut spans, &[(card.clone(), 1)], false);
                 text(&mut spans, ".");
             }
+            None if e.kind.starts_with("official-") => {
+                spans.extend(official_spans(&rest_of(e, names), cards));
+            }
             Some(Entry::Setup) | None => {
                 let rest = rest_of(e, names);
                 match e
@@ -862,6 +870,181 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
             count: used as u32,
         });
         i += used;
+    }
+    out
+}
+
+/// One turn of the log: its header (none for what comes before the first turn), its
+/// lines, and the cards each player gained in it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LogTurn {
+    pub head: Option<LogLine>,
+    pub lines: Vec<LogLine>,
+    pub gains: Vec<(u8, Vec<(String, u32)>)>,
+}
+
+/// The log's lines, by turn, without the official server's "answered" entries.
+pub fn log_turns(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<LogTurn> {
+    let entries: Vec<LogEntry> = entries
+        .iter()
+        .filter(|e| e.kind != "decision")
+        .cloned()
+        .collect();
+    let entries = entries.as_slice();
+    let mut turns = vec![LogTurn {
+        head: None,
+        lines: vec![],
+        gains: vec![],
+    }];
+    for line in log_lines(entries, names, cards) {
+        if line.is_turn() {
+            turns.push(LogTurn {
+                head: Some(line),
+                lines: vec![],
+                gains: vec![],
+            });
+        } else {
+            turns.last_mut().expect("a turn").lines.push(line);
+        }
+    }
+    let mut at = 0;
+    for e in entries {
+        while turns
+            .get(at + 1)
+            .and_then(|t| t.head.as_ref())
+            .is_some_and(|h| h.seq <= e.seq)
+        {
+            at += 1;
+        }
+        let (Some(p), gained) = (e.player, gained(e, names, cards)) else {
+            continue;
+        };
+        if gained.is_empty() {
+            continue;
+        }
+        let gains = &mut turns[at].gains;
+        let i = match gains.iter().position(|(q, _)| *q == p) {
+            Some(i) => i,
+            None => {
+                gains.push((p, vec![]));
+                gains.len() - 1
+            }
+        };
+        for (card, n) in gained {
+            match gains[i].1.iter_mut().find(|(c, _)| *c == card) {
+                Some((_, k)) => *k += n,
+                None => gains[i].1.push((card, n)),
+            }
+        }
+    }
+    if turns[0].lines.is_empty() && turns[0].gains.is_empty() {
+        turns.remove(0);
+    }
+    turns
+}
+
+/// What a player gained, as a list: "a Gold and 2 Coppers".
+pub fn gain_spans(items: &[(String, u32)]) -> Vec<Span> {
+    let mut out = vec![];
+    push_list(&mut out, items, false);
+    out
+}
+
+/// The cards an entry says its player gained.
+fn gained(e: &LogEntry, names: &[String], cards: &CardDb) -> Vec<(String, u32)> {
+    if let Some(kind) = e.kind.strip_prefix("official-") {
+        if !(kind.starts_with("gain") || kind == "buy-and-gain") {
+            return vec![];
+        }
+        return official_lists(&rest_of(e, names), cards)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+    }
+    match entry::parse(e, names) {
+        Some(Entry::Gained(card, _)) => vec![(card, 1)],
+        _ => vec![],
+    }
+}
+
+/// The official server's card lists in `text` ("1 Silver, 2 Copper"), in order.
+fn official_lists(text: &str, cards: &CardDb) -> Vec<Vec<(String, u32)>> {
+    official_parts(text, cards)
+        .into_iter()
+        .filter_map(|p| match p {
+            Part::List(items) => Some(items),
+            Part::Text(_) => None,
+        })
+        .collect()
+}
+
+enum Part {
+    Text(String),
+    List(Vec<(String, u32)>),
+}
+
+/// `text` split into plain text and the card lists the official server writes as
+/// "1 Silver, 2 Copper".
+fn official_parts(text: &str, cards: &CardDb) -> Vec<Part> {
+    // "<n> <card>" at `rest`: the card, how many, and the length taken.
+    let item = |rest: &str| -> Option<(String, u32, usize)> {
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        let n: u32 = rest[..digits].parse().ok()?;
+        let after = rest[digits..].strip_prefix(' ')?;
+        let words: Vec<(usize, &str)> = after
+            .split(' ')
+            .scan(0, |at, w| {
+                let start = *at;
+                *at += w.len() + 1;
+                Some((start, w))
+            })
+            .take(5)
+            .collect();
+        (1..=words.len()).rev().find_map(|k| {
+            let (start, last) = words[k - 1];
+            let end = start + last.trim_end_matches(['.', ',', ')', ':', ';']).len();
+            let name = &after[..end];
+            let card = cards.get(name).filter(|c| c.name == name)?;
+            Some((card.name.clone(), n, digits + 1 + end))
+        })
+    };
+    let mut out = vec![];
+    let mut plain = String::new();
+    let mut i = 0;
+    while i < text.len() {
+        let at_word = i == 0 || text[..i].ends_with([' ', '(', '[']);
+        if let Some((card, n, len)) = at_word.then(|| item(&text[i..])).flatten() {
+            let mut items = vec![(card, n)];
+            i += len;
+            while let Some((card, n, len)) = text[i..].strip_prefix(", ").and_then(item) {
+                items.push((card, n));
+                i += 2 + len;
+            }
+            if !plain.is_empty() {
+                out.push(Part::Text(std::mem::take(&mut plain)));
+            }
+            out.push(Part::List(items));
+        } else {
+            let c = text[i..].chars().next().expect("in the text");
+            plain.push(c);
+            i += c.len_utf8();
+        }
+    }
+    if !plain.is_empty() {
+        out.push(Part::Text(plain));
+    }
+    out
+}
+
+/// An official entry's words after its player, its card lists worded as the log words
+/// them: "buys and gains a Gold.", "plays 3 Coppers.".
+fn official_spans(text: &str, cards: &CardDb) -> Vec<Span> {
+    let mut out = vec![];
+    for part in official_parts(text, cards) {
+        match part {
+            Part::Text(t) => out.push(Span::Text(t)),
+            Part::List(items) => push_list(&mut out, &items, false),
+        }
     }
     out
 }
