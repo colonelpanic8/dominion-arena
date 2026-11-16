@@ -7,41 +7,78 @@ use super::pieces::{CardName, TableCard, seat_class};
 use crate::app::{Route, use_cards};
 use crate::card::CardSize;
 use crate::game::board::{Board, Stack};
-use crate::game::logfmt::{LogLine, Span, initials, log_lines};
+use crate::game::logfmt::{LogLine, LogTurn, Span, gain_spans, initials, log_turns};
 use dioxus::prelude::*;
 use dominion_protocol::LogEntry;
+use std::collections::HashMap;
 use std::rc::Rc;
 
-#[component]
-fn LogRow(line: LogLine, short: Vec<String>) -> Element {
-    let l = &line;
+fn spans(spans: &[Span], short: &[String]) -> Element {
     let name = |p: u8| {
         short
             .get(usize::from(p))
             .cloned()
             .unwrap_or_else(|| format!("P{}", p + 1))
     };
+    rsx! {
+        for (i, s) in spans.iter().enumerate() {
+            match s {
+                Span::Text(t) => rsx! { span { key: "{i}", "{t}" } },
+                Span::Card(c) => rsx! { CardName { key: "{i}", name: c.clone() } },
+                Span::Cards(c, label) => rsx! { CardName { key: "{i}", name: c.clone(), label: label.clone() } },
+                Span::Player(p) => rsx! { span { key: "{i}", class: "dt-lp {seat_class(*p)}", "{name(*p)}" } },
+                Span::FullPlayer(p, n) => rsx! { span { key: "{i}", class: "dt-lp-full", "data-seat": "{p}", "{n}" } },
+            }
+        }
+    }
+}
+
+#[component]
+fn LogRow(line: LogLine, short: Vec<String>) -> Element {
+    let l = &line;
     let pad = f64::from(l.depth) / (f64::from(l.depth) + 10.0) * 50.0;
     rsx! {
         li {
             class: "dt-log-line dt-log-{l.kind}",
-            class: if l.is_turn() { "dt-log-turn" },
             style: if l.depth > 0 { format!("padding-left:{pad:.1}%;") } else { String::new() },
             "data-seq": "{l.seq}",
-            for (i, s) in l.spans.iter().enumerate() {
-                match s {
-                    Span::Text(t) => rsx! { span { key: "{i}", "{t}" } },
-                    Span::Card(c) => rsx! { CardName { key: "{i}", name: c.clone() } },
-                    Span::Cards(c, label) => rsx! { CardName { key: "{i}", name: c.clone(), label: label.clone() } },
-                    Span::Player(p) => rsx! { span { key: "{i}", class: "dt-lp {seat_class(*p)}", "{name(*p)}" } },
-                    Span::FullPlayer(p, n) => rsx! { span { key: "{i}", class: "dt-lp-full", "data-seat": "{p}", "{n}" } },
+            {spans(&l.spans, &short)}
+        }
+    }
+}
+
+/// A turn's header, which opens and closes it, with what each player gained in it.
+#[component]
+fn TurnHead(turn: LogTurn, short: Vec<String>, open: bool, ontoggle: EventHandler) -> Element {
+    let head = turn.head.as_ref().expect("a turn's header");
+    let owner = head.player;
+    let mut gains = turn.gains.clone();
+    gains.sort_by_key(|(p, _)| Some(*p) != owner);
+    rsx! {
+        div {
+            class: "dt-log-line dt-log-turn dt-log-head",
+            "data-seq": "{head.seq}",
+            onclick: move |_| ontoggle.call(()),
+            span { class: "dt-log-caret", if open { "▾" } else { "▸" } }
+            {spans(&head.spans, &short)}
+        }
+        if !gains.is_empty() {
+            div { class: "dt-log-gains",
+                for (p, items) in gains {
+                    span { key: "{p}", class: "dt-log-gain",
+                        if Some(p) != owner {
+                            {spans(&[Span::Player(p), Span::Text(": ".into())], &short)}
+                        }
+                        {spans(&gain_spans(&items), &short)}
+                    }
                 }
             }
         }
     }
 }
 
-/// The log, following its end unless scrolled up.
+/// The log, a turn to a group that opens and closes, following its end unless scrolled
+/// up. The last round's turns are open until someone opens or closes them.
 #[component]
 pub fn Log(
     entries: Vec<LogEntry>,
@@ -52,9 +89,10 @@ pub fn Log(
     #[props(default = true)] arena: bool,
 ) -> Element {
     let cards = use_cards();
-    let lines = use_memo(use_reactive!(|entries, names| {
-        log_lines(&entries, &names, &cards)
+    let turns = use_memo(use_reactive!(|entries, names| {
+        log_turns(&entries, &names, &cards)
     }));
+    let mut toggled = use_signal(HashMap::<usize, bool>::new);
     let short = initials(&names);
     let header = crate::game::meta::log_header(game_id.as_deref(), board.rated, board.timed);
     let mut stick = use_signal(|| true);
@@ -67,6 +105,9 @@ pub fn Log(
             );
         }
     }));
+    let turns = turns.read();
+    let headed = turns.iter().filter(|t| t.head.is_some()).count();
+    let recent = headed.saturating_sub(names.len().max(1));
     rsx! {
         div { class: "dt-log-wrap", style: "{g.log.style()}",
             ol {
@@ -82,8 +123,35 @@ pub fn Log(
                     li { class: "dt-log-line dt-log-meta", "{header[0]}" }
                     li { class: "dt-log-line dt-log-meta dt-log-meta-last", "{header[1]}" }
                 }
-                for l in lines.read().iter() {
-                    LogRow { key: "{l.seq}", line: l.clone(), short: short.clone() }
+                if let Some(before) = turns.first().filter(|t| t.head.is_none()) {
+                    for l in before.lines.iter() {
+                        LogRow { key: "{l.seq}", line: l.clone(), short: short.clone() }
+                    }
+                }
+                for (i, t) in turns.iter().filter(|t| t.head.is_some()).enumerate() {
+                    {
+                        let key = t.head.as_ref().map_or(0, |h| h.seq);
+                        let open = toggled.read().get(&key).copied().unwrap_or(i >= recent);
+                        rsx! {
+                            li { key: "{key}", class: "dt-log-group",
+                                TurnHead {
+                                    turn: t.clone(),
+                                    short: short.clone(),
+                                    open,
+                                    ontoggle: move |_| {
+                                        toggled.write().insert(key, !open);
+                                    },
+                                }
+                                if open {
+                                    ol { class: "dt-log-body",
+                                        for l in t.lines.iter() {
+                                            LogRow { key: "{l.seq}", line: l.clone(), short: short.clone() }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

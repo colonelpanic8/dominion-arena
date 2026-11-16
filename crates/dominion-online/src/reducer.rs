@@ -1336,6 +1336,113 @@ impl Reducer {
             LogArgument::MetaGame(m) => format!("game {}", m.game_id),
         })
     }
+    /// An official log entry as agents and watchers get it: a turn header is `turn-start`
+    /// ("Ann starts turn 3", an extra turn's card as `card`), another named entry
+    /// `official-<name>` with the player it starts with. None for an unknown entry.
+    pub fn log_entry(&self, seq: usize, entry: &model::LogEntry) -> Option<view::LogEntry> {
+        let (kind, player, card, text) = match entry {
+            model::LogEntry::Named {
+                name, arguments, ..
+            } => {
+                let key = self
+                    .catalog
+                    .enums
+                    .get("LogEntryNames")?
+                    .get(*name as usize)?;
+                match (key.as_str(), arguments.as_slice()) {
+                    ("NEW_TURN", [LogArgument::Turn { kind: 1, .. }]) => {
+                        ("between-turns".into(), None, None, "Between turns".into())
+                    }
+                    (
+                        "NEW_TURN",
+                        [
+                            LogArgument::Turn {
+                                owner,
+                                number,
+                                kind,
+                                ..
+                            },
+                        ],
+                    ) => {
+                        let card = (*kind > 1)
+                            .then(|| {
+                                let key = self
+                                    .catalog
+                                    .enums
+                                    .get("ExtraTurnTypes")?
+                                    .get(*kind as usize)?;
+                                Some(
+                                    self.catalog
+                                        .card(self.catalog.ordinal(key)?)
+                                        .ok()?
+                                        .name
+                                        .clone(),
+                                )
+                            })
+                            .flatten();
+                        (
+                            "turn-start".into(),
+                            u8::try_from(*owner).ok(),
+                            card,
+                            format!("{} starts turn {number}", self.player_name(*owner)),
+                        )
+                    }
+                    _ => {
+                        let text = self.render_template(
+                            self.catalog.label("LogEntryNames", *name)?,
+                            arguments,
+                        )?;
+                        let player = match arguments.first() {
+                            Some(LogArgument::Player(p)) => u8::try_from(*p).ok(),
+                            _ => None,
+                        };
+                        let mut cards = arguments.iter().flat_map(|a| match a {
+                            LogArgument::CardNames(v) => {
+                                v.iter().map(|c| (c.name, c.frequency)).collect()
+                            }
+                            LogArgument::SingularCard(n) => vec![(*n, 1)],
+                            _ => vec![],
+                        });
+                        let card = match (cards.next(), cards.next()) {
+                            (Some((n, 1)), None) => {
+                                self.catalog.card(n).ok().map(|c| c.name.clone())
+                            }
+                            _ => None,
+                        };
+                        (
+                            format!("official-{}", key.to_lowercase().replace('_', "-")),
+                            player,
+                            card,
+                            text,
+                        )
+                    }
+                }
+            }
+            model::LogEntry::Decision {
+                player, autoplayed, ..
+            } => (
+                "decision".into(),
+                u8::try_from(*player).ok(),
+                None,
+                format!(
+                    "{} {}",
+                    self.player_name(*player),
+                    if *autoplayed {
+                        "resolved a forced decision"
+                    } else {
+                        "answered"
+                    }
+                ),
+            ),
+        };
+        Some(view::LogEntry {
+            seq,
+            kind,
+            player,
+            card,
+            text,
+        })
+    }
     pub fn render_template(&self, template: String, args: &[LogArgument]) -> Option<String> {
         let mut result = String::new();
         let mut remaining = template.as_str();
