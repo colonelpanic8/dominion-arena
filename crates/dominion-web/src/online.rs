@@ -5,7 +5,7 @@ use crate::{
 };
 use dioxus::prelude::*;
 use dominion_protocol::api::{
-    OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineStart,
+    GameSummary, OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineStart,
 };
 #[derive(Clone, Copy)]
 enum Action {
@@ -44,6 +44,8 @@ fn apply(mut state: Signal<GameState>, mut game: Signal<String>, update: OnlineO
 pub fn OnlinePage() -> Element {
     let mut state = use_signal(GameState::default);
     let game = use_signal(String::new);
+    let summary = use_signal(|| None::<GameSummary>);
+    use_context_provider(|| summary);
     let seat = use_signal(|| None);
     let watching = use_memo(|| true);
     let deciding = use_memo(|| None);
@@ -239,10 +241,20 @@ pub fn OnlinePage() -> Element {
     };
     rsx! {
         style { {include_str!("../assets/online.css")} }
-        if state.read().view.is_some() {
+        if state.read().view.as_ref().is_some_and(|v| v.game.running) {
             table::TableGame {controls}
         } else {
-            section {class:"online-idle",{controls}}
+            section {class:"online-idle",
+                {controls}
+                if let Some(result) = state.read().view.as_ref().and_then(|v| v.game.result.as_ref()) {
+                    div {class:"panel",
+                        h2 {"Last game"}
+                        for player in &result.players {
+                            p {"{player.rank}. {player.name} · {player.vp} VP"}
+                        }
+                    }
+                }
+            }
         }
     }
 }
