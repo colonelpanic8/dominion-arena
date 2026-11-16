@@ -290,7 +290,8 @@ A subsequent game after a completed-game reconnect exposed stale table
 membership; the client now handles the server's already-left-table response
 only while leaving a verified completed table. Browser checks also exposed a
 cached generated-script URL and a missing shared-table context; both have
-regression fixes. Native Arena chat is omitted from the official table.
+regression fixes. Native Arena chat and native rating/clock headers are omitted
+from the official table; its active game mode comes from official management.
 
 Public human matchmaking criteria, verified-roster/rating gates, queue capacity,
 notification gaps and cancellation races have synthetic coverage. No public

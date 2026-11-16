@@ -49,6 +49,7 @@ pub fn Log(
     g: Rc<Geometry>,
     game_id: Option<String>,
     board: Rc<Board>,
+    #[props(default = true)] arena: bool,
 ) -> Element {
     let cards = use_cards();
     let lines = use_memo(use_reactive!(|entries, names| {
@@ -77,8 +78,10 @@ pub fn Log(
                         stick.set(end);
                     }
                 },
-                li { class: "dt-log-line dt-log-meta", "{header[0]}" }
-                li { class: "dt-log-line dt-log-meta dt-log-meta-last", "{header[1]}" }
+                if arena {
+                    li { class: "dt-log-line dt-log-meta", "{header[0]}" }
+                    li { class: "dt-log-line dt-log-meta dt-log-meta-last", "{header[1]}" }
+                }
                 for l in lines.read().iter() {
                     LogRow { key: "{l.seq}", line: l.clone(), short: short.clone() }
                 }

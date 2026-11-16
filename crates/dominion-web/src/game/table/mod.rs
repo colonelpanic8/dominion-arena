@@ -542,9 +542,9 @@ fn shape(
     }
 }
 
-/// The game page's table. `controls` (seat switching, the view toggle) go under the log.
+/// The game page's table. `controls` go under the log; `arena` enables its metadata and chat.
 #[component]
-pub fn TableGame(controls: Element, #[props(default = true)] chat: bool) -> Element {
+pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Element {
     let game = use_game();
     let cards = use_context::<Cards>().0;
     let settings = use_context::<Settings>().0;
@@ -763,7 +763,7 @@ pub fn TableGame(controls: Element, #[props(default = true)] chat: bool) -> Elem
             if let Some((p, _)) = ctx.popup.read().clone() {
                 PopupView { popup: p, g: g.clone(), board: b.clone() }
             }
-            side::Log { entries: log, names, g: g.clone(), game_id, board: b.clone() }
+            side::Log { entries: log, names, g: g.clone(), game_id, board: b.clone(), arena }
             div { class: "dt-below-log", style: "{g.below_log.style()}",
                 div { class: "dt-controls", {controls}
                     if can_undo {
@@ -778,7 +778,7 @@ pub fn TableGame(controls: Element, #[props(default = true)] chat: bool) -> Elem
                     sound::MuteToggle { muted }
                 }
                 side::More { board: b.clone() }
-                if chat { super::chat::Chat {} }
+                if arena { super::chat::Chat {} }
             }
             if b.result.is_some() {
                 side::GameOver { board: b.clone() }
