@@ -424,6 +424,19 @@ impl Table {
 
     /// The engine response `answer` stands for, without playing it.
     pub fn resolve(&self, seat: PlayerId, answer: &Answer) -> Result<Response, AnswerError> {
+        self.check_decision(seat, &answer.decision)?;
+        let d = self.game.pending().expect("checked pending decision");
+        let open = format!("d{}", self.seq);
+        let known = self.knowledge.known(&self.game, seat);
+        let (agent, targets) = project::decision(&self.game, &known, d, &open, &self.names);
+        let response =
+            project::response(d, &agent, &targets, answer).map_err(AnswerError::Invalid)?;
+        d.validate(&response)
+            .map_err(|e| AnswerError::Invalid(e.to_string()))?;
+        Ok(response)
+    }
+
+    fn check_decision(&self, seat: PlayerId, decision: &str) -> Result<(), AnswerError> {
         let Some(d) = self.game.pending() else {
             return Err(AnswerError::GameOver);
         };
@@ -435,19 +448,30 @@ impl Table {
                 open,
             });
         }
-        if answer.decision != open {
+        if decision != open {
             return Err(AnswerError::StaleDecision {
-                given: answer.decision.clone(),
+                given: decision.to_string(),
                 open,
             });
         }
-        let known = self.knowledge.known(&self.game, seat);
-        let (agent, targets) = project::decision(&self.game, &known, d, &open, &self.names);
-        let response =
-            project::response(d, &agent, &targets, answer).map_err(AnswerError::Invalid)?;
-        d.validate(&response)
+        Ok(())
+    }
+
+    /// Applies an engine response to the exact open decision, with normal knowledge,
+    /// undo and pending Way bookkeeping.
+    pub fn respond(
+        &mut self,
+        seat: PlayerId,
+        decision: &str,
+        response: Response,
+    ) -> Result<(), AnswerError> {
+        self.check_decision(seat, decision)?;
+        self.game
+            .pending()
+            .expect("checked pending decision")
+            .validate(&response)
             .map_err(|e| AnswerError::Invalid(e.to_string()))?;
-        Ok(response)
+        self.apply_response(seat, response, None).map(|_| ())
     }
 
     /// Answers the open decision for `seat`.
@@ -467,6 +491,15 @@ impl Table {
         way: Option<WayChoice>,
     ) -> Result<Answered, AnswerError> {
         let response = self.resolve(seat, answer)?;
+        self.apply_response(seat, response, way)
+    }
+
+    fn apply_response(
+        &mut self,
+        seat: PlayerId,
+        response: Response,
+        way: Option<WayChoice>,
+    ) -> Result<Answered, AnswerError> {
         let log = self.game.log().len();
         let answered = self.respond_with(seat, response.clone(), way)?;
         self.history.push(Step {

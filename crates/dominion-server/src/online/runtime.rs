@@ -755,36 +755,9 @@ impl Runtime {
                 }
             }
             Message::GameFinished { table, result, .. } => {
-                if reducer.game_id != Some(result.game_id) {
-                    return Err("game result has unexpected id".into());
-                }
-                let mut players = Vec::new();
-                for p in result.players {
-                    let index = reducer
-                        .state()
-                        .map_err(|e| e.to_string())?
-                        .players
-                        .iter()
-                        .position(|s| s.player_id == p.player_id)
-                        .ok_or("result player not in snapshot")?;
-                    players.push(dominion_protocol::ResultPlayer {
-                        index: index as u8,
-                        name: reducer.player_name(index as i32),
-                        vp: p.score.total_points,
-                        rank: u32::try_from(p.rank).map_err(|_| "negative result rank")?,
-                        turns: u32::try_from(p.score.used_turns)
-                            .map_err(|_| "negative turn count")?,
-                        resigned: p.resignation_type.is_some(),
-                    });
-                }
-                reducer.invalidate();
-                reducer.running = false;
+                reducer.finish(&result).map_err(|e| e.to_string())?;
                 self.store.remove("own-table").map_err(|e| e.to_string())?;
                 self.store.remove("own-match").map_err(|e| e.to_string())?;
-                reducer.result = Some(dominion_protocol::GameResult {
-                    reason: Some("official server result".into()),
-                    players,
-                });
                 self.completed_table = Some(table.table_id);
                 self.table = Some(table);
             }

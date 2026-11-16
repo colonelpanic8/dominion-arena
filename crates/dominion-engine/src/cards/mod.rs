@@ -516,6 +516,10 @@ pub(crate) struct CardFrame {
     pub lasting: Option<u32>,
     /// For a triggered ability: its `Trigger::data`; for overpay: the amount.
     pub data: i32,
+    #[serde(default)]
+    pub choice_cost: Option<Cost>,
+    #[serde(default)]
+    pub choice_subject: Option<PlayerId>,
     pub pc: u8,
     /// Free for the script's use between steps.
     pub s: Scratch,
@@ -530,6 +534,8 @@ pub(crate) struct CardFrame {
 impl CardFrame {
     pub(crate) fn new(card: Card, hook: Hook, player: PlayerId, this: Option<CardId>) -> CardFrame {
         CardFrame {
+            choice_cost: None,
+            choice_subject: None,
             card,
             hook,
             player,

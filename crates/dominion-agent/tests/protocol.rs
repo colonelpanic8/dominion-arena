@@ -488,8 +488,8 @@ fn spectators_see_hands_and_private_looks_without_changing_seat_knowledge() {
     let mut t = table(&[Card::Navigator], 1, &["Ann", "Ben"]);
     let before = t.view(PlayerId(0));
     let watch = watching(&t);
-    for p in 0..2 {
-        let player = &watch.opponents[p];
+    assert_eq!(watch.opponents.len(), 2);
+    for player in &watch.opponents {
         assert_eq!((player.hand.count, player.hand.unknown), (5, 0));
         assert_eq!(total(&player.hand.known), 5);
         assert_eq!(total(&player.deck.known), player.deck.count);

@@ -55,6 +55,91 @@ account setup, cache, state, reconnect rules, and current limitations are in
 [the official-backend guide](crates/dominion-online/README.md). Arena's hosted
 engine and existing APIs remain available through `dominion serve`.
 
+## Binary client compatibility
+
+Arena serves the pinned dominion.games 2.3.7 binary layouts using its own accounts,
+lobby tables, game rules and records. This is independent of the official-account
+client above. Enable the service in the flat settings file:
+
+```toml
+official_server_enabled = true
+official_server_catalog_file = "/path/to/body-2.3.7.js"
+# Required for the original client's host/port-only connection; ordinary HTTP / stays native.
+official_server_root_socket = true
+# Optional; defaults to $XDG_CONFIG_HOME/dominion/official-preferences.
+official_preferences_dir = "/path/to/account-preferences"
+```
+
+The body must match the pinned SHA-256. The service never downloads a client or logs
+in to an official server. A missing/mismatched catalog fails startup; all compatibility
+routes are absent when disabled. A complete original graphical distribution is not
+bundled. `official_client_assets_dir` currently refuses startup with an explicit missing
+launcher error rather than presenting the native web client as the original application.
+
+`/api/official/2.3.7` is the lifecycle WebSocket; the optional `/` alias accepts the same
+commands. Both require an allowed same-origin `Origin` and enforce the existing Host
+policy. A socket has 15 seconds to authenticate against Arena. It supports the special
+probe envelope, password login, Arena session resume/reconnect, new table, joining as a
+player, canonical rule edits/readiness, host transfer/removal, chat, completion and a
+second game on the same connection. Login credentials and sessions never belong in URLs.
+`POST /api/official/launch-code` exchanges existing Arena authentication for a 30-second,
+single-use in-memory code usable by LoginWithCode; parent-session revocation revokes it.
+
+Tables use explicit unrated, untimed and undo-off defaults. The original New Table request
+can create an editable all-expansion table; compatibility is checked before any game
+starts, including starts triggered by native readiness. Every rule change transforms the
+latest Arena spec atomically. Unsupported timers, undo policies, live total-VP display, spectator table roles,
+automatch and other unmapped rules/operations receive protocol failures. They are not
+silently accepted. Native-only tables retain their usual policies. Every game uses Hub's
+existing transaction, persistence and completion hook; native and binary participants
+share seats, chat and records. After restart, retained owned games reconnect using a
+read-only detached table context; old lobby membership is not recreated.
+
+`GET /api/official/coverage` returns the machine-readable catalog/semantic/requirement
+report. Catalog presence, mapped semantics and exercised behavior are separate facts.
+Setup admission and live projection can report gaps; this does not claim whole-expansion
+support. An unsupported live state preserves the game for native continuation. Historical
+log/event streaming and smooth animation parity remain separate work.
+
+An existing seat can also attach to `/api/games/{id}/official/2.3.7?seat=<u8>` using a
+seat token, Arena session or bot API key in `Authorization: Bearer ...`, or an Arena
+session cookie. A bearer attachment may omit Origin; cookies require it. This fixed-seat
+route keeps its stricter pre-upgrade authorization and capability checks. Its commands
+remain AnswerQuestion, ReconnectGame, Resign, Ping and AnimationCompensationAck.
+
+Account, table and game identities are stable, checked namespaces; snapshot card handles
+are local to each replacement. A headless AttachedReceiver must use the selected player's
+`Snapshot.state.players[seat].player_id`, rather than assuming account IDs equal seat
+indices. New sockets restart message counters; question IDs increase across table/game
+changes on a persistent socket. Stale answers cannot commit to a new decision or game.
+Every command/update rechecks authorization; sessions and bot-key rotation revoke ongoing
+access. Messages are bounded to 64 KiB inbound/4 MiB outbound, with bounded sends, heartbeat
+checks and shutdown cancellation.
+
+Run focused socket regressions:
+
+```sh
+nix develop -c cargo test -p dominion-server --test official_host --test official_lifecycle
+```
+
+With the separately obtained pinned body and the locked Node dependencies under
+`tools/protocol-proof`, run the original service/model/question consumers against isolated
+ephemeral listeners (synthetic accounts only):
+
+```sh
+just official-client-proof /path/to/body-2.3.7.js /path/to/evidence
+just official-client-proof /path/to/body-2.3.7.js /path/to/mixed-evidence 1
+```
+
+The second command uses one original binary consumer and one native HTTP participant.
+The fixture exercises original discovery/login/session checks, New Table creation/rule edits/chat,
+fresh-client midgame resume, final-score reconnects and two ordinary games.
+The report distinguishes original service/model/answer acceptance from full graphical
+acceptance; DOM/canvas and Angular mounting are simulated. These tests never contact an
+official server, import browser sessions, or download assets. See
+[protocol proof tooling](tools/protocol-proof/README.md) for harness details and the exact
+missing graphical assets.
+
 ## Playing over the agent protocol
 
 `crates/dominion-agent` implements `dominion/agent-view@2`, the protocol defined in

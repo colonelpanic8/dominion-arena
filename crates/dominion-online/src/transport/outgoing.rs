@@ -179,7 +179,7 @@ macro_rules! commands {
 commands! {
  0 => SendChat {receiver:String,sender:String,text:String},
  1 => Login {username:String,password:String,version:String,language:i32},
- 2 => JoinTable {table:i64,spectator:bool},
+ 2 => JoinTable {table:i64,as_player:bool},
  3 => SendInvite {table:i64,player:i32},
  4 => ChangeTableRule {table:i64,rule:TableRule},
  5 => ChangeHost {table:i64,player:i32},
@@ -266,7 +266,7 @@ mod tests {
             },
             Command::JoinTable {
                 table: 100,
-                spectator: true,
+                as_player: true,
             },
             Command::SendInvite {
                 table: 100,

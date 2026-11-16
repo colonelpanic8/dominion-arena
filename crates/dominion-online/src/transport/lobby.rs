@@ -555,6 +555,81 @@ impl std::fmt::Debug for LoginSuccess {
     }
 }
 impl LoginSuccess {
+    /// Local bootstrap values for every non-deleted preference consumed by 2.3.7.
+    pub fn new(player_id: i32, username: String, session_id: String) -> Self {
+        use PreferenceValue::*;
+        let mut preferences = Vec::new();
+        for id in 0..52 {
+            let value = match id {
+                0 => Ownership {
+                    expansions: vec![(4_102_444_800_000, (0..20).collect())],
+                    levels: vec![(4_102_444_800_000, (1..=10).collect())],
+                },
+                1 => Text(String::new()),
+                2 | 14 | 38 | 42 | 48 => Int(0),
+                30 => Int(3),
+                29 => Int(10),
+                34 => Int(1),
+                36 | 37 => Int(50),
+                8 | 9 | 23 => Cards {
+                    list_id: id,
+                    cards: vec![],
+                },
+                17 => Matching {
+                    bot: -1,
+                    human: false,
+                    max_rating: 100,
+                    min_rating: 0,
+                    preferences: vec![],
+                    timers: vec![],
+                },
+                19 => Autoplay(vec![]),
+                3 | 4 | 7 | 12 | 27 | 28 | 31 | 32 => continue,
+                18 | 25 => Boolean(true),
+                _ => Boolean(false),
+            };
+            preferences.push(Preference { id, value });
+        }
+        Self {
+            player_id,
+            username,
+            session_id,
+            reconnecting: false,
+            previous_reconnects: 0,
+            preferences,
+            unread_mail: 0,
+            relationships: Relationships {
+                following: vec![],
+                friends: vec![],
+                followers: vec![],
+                blacklisted: vec![],
+            },
+            card_levels: (0..881)
+                .filter(|id| {
+                    ![
+                        370, 371, 372, 373, 374, 591, 592, 593, 594, 595, 596, 597, 598, 599, 600,
+                        601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 638, 639, 640, 641, 642,
+                        643, 644, 645, 646, 647, 648, 649, 650, 732,
+                    ]
+                    .contains(id)
+                })
+                .map(|id| (id, 1))
+                .collect(),
+            timer_presets: (0..8)
+                .map(|preset| {
+                    (
+                        preset,
+                        TimerSettings {
+                            parameters: (0..29).map(|id| (id, 0)).collect(),
+                            force_resign: false,
+                            preset,
+                        },
+                    )
+                })
+                .collect(),
+            feature_words: vec![],
+        }
+    }
     pub fn session_id(&self) -> &str {
         &self.session_id
     }

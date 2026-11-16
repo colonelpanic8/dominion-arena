@@ -22,6 +22,16 @@ pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Serve fixed Arena seats using the pinned binary gameplay protocol (default false).
+    pub official_server_enabled: Option<bool>,
+    /// Hash-pinned client bundle; defaults to the existing online catalog cache.
+    pub official_server_catalog_file: Option<PathBuf>,
+    /// Enable the original client's host/port-only root WebSocket alias.
+    pub official_server_root_socket: Option<bool>,
+    /// Per-account flat preference files, separate from game state and asset cache.
+    pub official_preferences_dir: Option<PathBuf>,
+    /// Separately populated original application cache; never downloaded by the host.
+    pub official_client_assets_dir: Option<PathBuf>,
     /// Official-server account (separate from Arena's own accounts).
     pub online_account: Option<String>,
     /// Keep one official connection in `dominion serve`.
@@ -340,6 +350,39 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn official_host_is_opt_in_and_independent_of_official_accounts() {
+        assert!(
+            crate::official_host::Host::from_config(&Config::default())
+                .unwrap()
+                .is_none()
+        );
+        let config: Config = toml::from_str("official_server_enabled = false\nofficial_server_catalog_file = \"/missing\"\nonline_enabled = false").unwrap();
+        assert!(
+            crate::official_host::Host::from_config(&config)
+                .unwrap()
+                .is_none()
+        );
+        let config: Config = toml::from_str(
+            "official_server_enabled = true\nofficial_server_catalog_file = \"/missing\"",
+        )
+        .unwrap();
+        let error = crate::official_host::Host::from_config(&config).unwrap_err();
+        assert!(error.contains("/missing") && error.contains("dominion online sync"));
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"untrusted bundle").unwrap();
+        let config = Config {
+            official_server_enabled: Some(true),
+            official_server_catalog_file: Some(file.path().into()),
+            ..Config::default()
+        };
+        assert!(
+            crate::official_host::Host::from_config(&config)
+                .unwrap_err()
+                .contains("hash")
+        );
+    }
 
     #[test]
     fn reads_a_flat_file_and_rejects_unknown_keys() {

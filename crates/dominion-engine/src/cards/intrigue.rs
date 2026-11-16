@@ -200,6 +200,11 @@ pub(crate) fn trash_and_gain(
                 f.pc = base + 5;
                 return None;
             }
+            f.choice_cost = Some(match rule {
+                GainRule::UpTo(n) | GainRule::Exactly(n) => f.s.cost.plus_coins(n),
+                GainRule::Cheaper => f.s.cost,
+            });
+            f.choice_subject = Some(who);
             f.pc = base + 3;
             Some(f.ask_pile_for(who, piles, false, Purpose::Gain))
         }
@@ -859,6 +864,8 @@ fn swindler(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     continue;
                 }
                 f.pc = 3;
+                f.choice_cost = Some(cost);
+                f.choice_subject = Some(f.targets[f.s.i]);
                 return f.ask_pile(piles, false, Purpose::Gain);
             }
             3 => {

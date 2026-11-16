@@ -315,8 +315,7 @@ impl Arena {
             return conflict("the lobby is full of tables; join one");
         }
         state.leave_all(&self.db, &ident.user);
-        state.next_table += 1;
-        let id = format!("t{}", state.next_table);
+        let id = format!("t{}", self.db.next_table_number()?);
         let table = Table {
             id: id.clone(),
             host: ident.user.clone(),
@@ -339,13 +338,36 @@ impl Arena {
 
     /// Replaces a table's rules, which nobody is ready for yet.
     pub fn set_spec(&self, ident: &Ident, id: &str, spec: &TableSpec) -> Result<TableInfo> {
+        self.transform_spec(ident, id, |current| {
+            *current = spec.clone();
+            Ok(())
+        })
+    }
+
+    /// Applies one rule to the latest spec while membership and rules are locked.
+    pub fn transform_spec(
+        &self,
+        ident: &Ident,
+        id: &str,
+        change: impl FnOnce(&mut TableSpec) -> Result<()>,
+    ) -> Result<TableInfo> {
+        self.transform_table_spec(ident, id, |spec, _| change(spec))
+    }
+
+    pub(crate) fn transform_table_spec(
+        &self,
+        ident: &Ident,
+        id: &str,
+        change: impl FnOnce(&mut TableSpec, usize) -> Result<()>,
+    ) -> Result<TableInfo> {
         limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
-        let seats = lock(&self.state).hosted(id, &ident.user)?.seats.len();
-        check_spec(spec, seats)?;
         let mut state = lock(&self.state);
         let table = state.hosted(id, &ident.user)?;
-        if table.spec != *spec {
-            table.spec = spec.clone();
+        let mut spec = table.spec.clone();
+        change(&mut spec, table.seats.len())?;
+        check_spec(&spec, table.seats.len())?;
+        if table.spec != spec {
+            table.spec = spec;
             table.unready();
         }
         let info = self.table_info(&state, id);
@@ -469,6 +491,67 @@ impl Arena {
             self.bump();
             self.chat.send_modify(|v| *v += 1);
         }
+    }
+
+    pub(crate) fn resize_table(&self, ident: &Ident, id: &str, seats: usize) -> Result<TableInfo> {
+        limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
+        if !(2..=6).contains(&seats) {
+            return bad("a table has 2 to 6 seats");
+        }
+        let mut state = lock(&self.state);
+        let table = state.hosted(id, &ident.user)?;
+        if table
+            .seats
+            .get(seats..)
+            .is_some_and(|tail| tail.iter().any(|s| *s != Seat::Open))
+        {
+            return conflict("only open seats can be removed");
+        }
+        check_spec(&table.spec, seats)?;
+        if table.seats.len() != seats {
+            table.seats.resize(seats, Seat::Open);
+            table.unready();
+        }
+        let info = self.table_info(&state, id);
+        drop(state);
+        self.bump();
+        info
+    }
+
+    pub(crate) fn transfer_host(&self, ident: &Ident, id: &str, target: &str) -> Result<TableInfo> {
+        limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
+        let mut state = lock(&self.state);
+        let table = state.hosted(id, &ident.user)?;
+        if !table.players().any(|p| p == target) {
+            return bad("the new host must sit at the table");
+        }
+        table.host = target.into();
+        table.unready();
+        let info = self.table_info(&state, id);
+        drop(state);
+        self.bump();
+        info
+    }
+
+    pub(crate) fn remove_player(&self, ident: &Ident, id: &str, target: &str) -> Result<TableInfo> {
+        limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
+        let mut state = lock(&self.state);
+        let table = state.hosted(id, &ident.user)?;
+        if target == ident.user {
+            return bad("leave your own table instead");
+        }
+        let seat = table
+            .seats
+            .iter_mut()
+            .find(|s| matches!(s,Seat::Player{user,..} if user==target))
+            .ok_or_else(|| Error::NotFound("player is not at this table".into()))?;
+        *seat = Seat::Open;
+        table.unready();
+        state.seated.remove(target);
+        let info = self.table_info(&state, id);
+        drop(state);
+        self.bump();
+        info
     }
 
     /// Says whether `ident` is ready. With everyone ready and no seat open, the table's
@@ -611,6 +694,7 @@ impl Arena {
             .iter()
             .filter(|s| matches!(s, Seat::Agent(_)))
             .count();
+        self.validate_start(&config, &meta)?;
         let reservation = self.reserve(&start.host, agents as u32)?;
         let created = self.hub.host(config, names, meta)?;
         let mut state = lock(&self.state);

@@ -133,6 +133,18 @@ impl Default for Timing {
     }
 }
 
+pub(crate) struct SeatObservation<'a> {
+    pub view: dominion_engine::View<'a>,
+    pub known: &'a dominion_engine::KnownCards,
+    pub names: &'a [String],
+    pub decision_id: Option<&'a str>,
+    pub deciding: Option<PlayerId>,
+    pub version: u64,
+    pub undos: u64,
+    pub outcome: Option<&'a dominion_engine::Outcome>,
+    pub ended: Option<&'a str>,
+}
+
 pub(crate) struct PlayObservation {
     pub view: AgentView,
     pub log: Vec<dominion_agent::LogEntry>,
@@ -1050,6 +1062,45 @@ impl Hub {
         }
     }
 
+    pub(crate) fn project_seat<T>(
+        &self,
+        seat: &Seat,
+        project: impl for<'a> FnOnce(SeatObservation<'a>) -> T,
+    ) -> Result<T, HubError> {
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        if seat.seat.index() >= table.names().len() {
+            return Err(HubError::Forbidden("invalid seat".into()));
+        }
+        let meta = lock(&game.meta);
+        engine(|| {
+            let known = table.knowledge().known(table.game(), seat.seat);
+            let decision = table.decision_id();
+            project(SeatObservation {
+                view: table.game().view(seat.seat),
+                known: &known,
+                names: table.names(),
+                decision_id: decision.as_deref(),
+                deciding: table.deciding(),
+                version: *game.version.borrow(),
+                undos: table.undos(),
+                outcome: table.game().outcome(),
+                ended: meta.ended.as_deref(),
+            })
+        })
+    }
+
+    pub(crate) fn admission<T>(
+        &self,
+        id: &str,
+        check: impl FnOnce(&GameConfig, &Meta) -> T,
+    ) -> Result<T, HubError> {
+        let game = self.game(id)?;
+        let table = lock(&game.table);
+        let meta = lock(&game.meta);
+        engine(|| check(table.game().config(), &meta))
+    }
+
     /// The common MCP presentation reads the seat's actual view and complete visible
     /// log together; its log cursor must not change `sinceLastDecision` in the view.
     pub(crate) fn play_observation(&self, seat: &Seat) -> Result<PlayObservation, HubError> {
@@ -1265,12 +1316,28 @@ impl Hub {
         answer: &Answer,
         way: Option<WayChoice>,
     ) -> Result<Answered, HubError> {
+        self.mutate(seat, |next| next.answer_with(seat.seat, answer, way))
+    }
+
+    pub(crate) fn respond(
+        &self,
+        seat: &Seat,
+        decision: &str,
+        response: dominion_engine::Response,
+    ) -> Result<(), HubError> {
+        self.mutate(seat, |next| next.respond(seat.seat, decision, response))
+    }
+
+    fn mutate<T>(
+        &self,
+        seat: &Seat,
+        apply: impl FnOnce(&mut Table) -> Result<T, AnswerError>,
+    ) -> Result<T, HubError> {
         let game = self.game(&seat.game)?;
         let (answered, ended) = {
             let mut table = lock(&game.table);
-            // Played on a copy, so an answer the engine fails on leaves the game as it was.
             let mut next = table.clone();
-            let answered = engine(|| next.answer_with(seat.seat, answer, way))??;
+            let answered = engine(|| apply(&mut next))??;
             *table = next;
             self.answered(&game, &table, seat.seat);
             (answered, self.changed(&game, &table))
@@ -1632,5 +1699,103 @@ impl Hub {
                 _ => return Ok(ready()),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_response_tests {
+    use super::*;
+    use dominion_engine::{Move, Response};
+    use std::sync::Barrier;
+
+    #[test]
+    fn typed_commit_is_atomic_against_http_style_answers_and_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let (hub, _) = Hub::open(dir.path(), Duration::from_secs(3600)).unwrap();
+        let hub = Arc::new(hub);
+        let game = hub
+            .create(&NewGame {
+                players: 2,
+                kingdom: vec!["Village".into()],
+                seed: Some(1),
+                ..NewGame::default()
+            })
+            .unwrap();
+        let seat = hub.find(&game.seats[0].token).unwrap();
+        let before = hub.seat_view(&seat, None).unwrap();
+        let decision = before.view.decision.as_ref().unwrap();
+        let answer = Answer::indices(&decision.id, vec![decision.options[0].index]);
+        let saved_path = dir.path().join(format!("{}.json", game.game_id));
+        let saved_before = fs::read(&saved_path).unwrap();
+        let failed: Result<(), HubError> = hub.mutate(&seat, |next| {
+            next.respond(seat.seat, &decision.id, Response::Move(Move::EndPhase))
+                .unwrap();
+            panic!("engine failure after a partial application");
+        });
+        assert!(matches!(failed, Err(HubError::Engine(_))));
+        assert_eq!(fs::read(&saved_path).unwrap(), saved_before);
+        assert_eq!(hub.seat_view(&seat, None).unwrap().view, before.view);
+        assert!(
+            hub.respond(&seat, &decision.id, Response::Cards(vec![]))
+                .is_err()
+        );
+        assert_eq!(fs::read(&saved_path).unwrap(), saved_before);
+        assert_eq!(hub.seat_view(&seat, None).unwrap().version, before.version);
+        let barrier = Arc::new(Barrier::new(2));
+        let (other_hub, other_seat, other_barrier) = (hub.clone(), seat.clone(), barrier.clone());
+        let other = std::thread::spawn(move || {
+            other_barrier.wait();
+            other_hub.answer(&other_seat, &answer)
+        });
+        barrier.wait();
+        let typed = hub.respond(&seat, &decision.id, Response::Move(Move::EndPhase));
+        let generic = other.join().unwrap();
+        assert_ne!(typed.is_ok(), generic.is_ok());
+        assert_eq!(
+            hub.seat_view(&seat, None).unwrap().version,
+            before.version + 1
+        );
+        let committed = fs::read(&saved_path).unwrap();
+        assert_ne!(committed, saved_before);
+        assert!(
+            hub.respond(&seat, &decision.id, Response::Move(Move::EndPhase))
+                .is_err()
+        );
+        assert_eq!(fs::read(&saved_path).unwrap(), committed);
+    }
+
+    #[test]
+    fn observation_is_coherent_and_invalid_seats_are_rejected() {
+        let hub = Hub::default();
+        let game = hub
+            .create(&NewGame {
+                players: 2,
+                kingdom: vec!["Village".into()],
+                seed: Some(1),
+                ..NewGame::default()
+            })
+            .unwrap();
+        let seat = hub.find(&game.seats[0].token).unwrap();
+        let before = hub.seat_view(&seat, None).unwrap();
+        hub.project_seat(&seat, |observation| {
+            assert_eq!(observation.version, before.version);
+            assert_eq!(
+                observation.decision_id,
+                before.view.decision.as_ref().map(|d| d.id.as_str())
+            );
+            assert_eq!(observation.deciding, Some(seat.seat));
+            assert!(observation.outcome.is_none());
+            assert_eq!(observation.names.len(), 2);
+            assert_eq!(observation.view.me(), Some(seat.seat));
+        })
+        .unwrap();
+        let invalid = Seat {
+            game: game.game_id,
+            seat: PlayerId(9),
+        };
+        assert!(matches!(
+            hub.project_seat(&invalid, |_| ()),
+            Err(HubError::Forbidden(_))
+        ));
     }
 }

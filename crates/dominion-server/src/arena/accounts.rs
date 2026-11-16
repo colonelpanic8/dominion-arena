@@ -19,7 +19,7 @@ const MIN_PASSWORD: usize = 8;
 const MAX_PASSWORD: usize = 200;
 const DAY: u64 = 86_400;
 /// How long a session lasts unused.
-const SESSION_DAYS: u64 = 60;
+pub(super) const SESSION_DAYS: u64 = 60;
 const GUEST_DAYS: u64 = 30;
 
 fn now() -> u64 {

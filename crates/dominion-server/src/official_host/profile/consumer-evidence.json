@@ -1,0 +1,1343 @@
+{
+  "verified": true,
+  "protocol": "2.3.7",
+  "bundle_sha256": "53f5163219f75d782e971d9dd96337a016c1f4d2c23a51476f50700ec6a816dc",
+  "fixture": "2026-11-16-next-a-final-scenarios.json",
+  "fixture_sha256": "589cedfea41ea1bfa7095fe456cf21d5ff2be1920763ecfdbb41d5dde2a412e2",
+  "report": "2026-11-16-a-final-rules-evidence/consumer-report.json",
+  "report_sha256": "5016367b237d022b5a04b0b1bd665ea07384a65d3bacb85b5a44f83241e18321",
+  "case_count": 107,
+  "scope": "Original service/model presentation and answer encoding. Engine effects are separate Rust assertions; no exhaustive interaction or graphical claim.",
+  "cards": {
+    "Alchemist": [
+      "alchemist-cleanup"
+    ],
+    "Bustling Village": [
+      "bustling-village-take-settlers"
+    ],
+    "Caravan": [
+      "repeated-haven-start-0",
+      "repeated-haven-start-1",
+      "repeated-haven-start-2",
+      "repeated-haven-start-3"
+    ],
+    "Cathedral": [
+      "buy-Cathedral",
+      "state-Cathedral"
+    ],
+    "Cellar": [
+      "Cellar-0-0",
+      "Cellar-1-0",
+      "Cellar-2-0"
+    ],
+    "Chapel": [
+      "Chapel-0-0",
+      "Chapel-1-0",
+      "Chapel-2-0"
+    ],
+    "Colony": [
+      "colonies-gone-ordinary-engine-completion"
+    ],
+    "Engineer": [
+      "Engineer-0-0",
+      "Engineer-0-1",
+      "Engineer-0-2",
+      "Engineer-1-0",
+      "Engineer-1-1",
+      "Engineer-1-2",
+      "Engineer-2-0",
+      "Engineer-2-1",
+      "Engineer-2-2"
+    ],
+    "Expedition": [
+      "buy-Expedition",
+      "state-Expedition"
+    ],
+    "Harbinger": [
+      "Harbinger-0-0",
+      "Harbinger-1-0",
+      "Harbinger-2-0"
+    ],
+    "Haven": [
+      "Haven-0-0",
+      "Haven-1-0",
+      "Haven-2-0",
+      "repeated-haven-start-0",
+      "repeated-haven-start-1",
+      "repeated-haven-start-2",
+      "repeated-haven-start-3"
+    ],
+    "Island": [
+      "Island-0-0",
+      "Island-1-0",
+      "Island-2-0"
+    ],
+    "Library": [
+      "library-keep-action",
+      "library-skip-action"
+    ],
+    "Lighthouse": [
+      "repeated-haven-start-0",
+      "repeated-haven-start-1",
+      "repeated-haven-start-2",
+      "repeated-haven-start-3"
+    ],
+    "Lurker": [
+      "Lurker-0-0",
+      "Lurker-0-1",
+      "Lurker-1-0",
+      "Lurker-2-0",
+      "Lurker-2-1",
+      "lurker-gain-from-two-actions"
+    ],
+    "Mill": [
+      "Mill-0-0",
+      "Mill-0-1",
+      "Mill-1-0",
+      "Mill-1-1",
+      "Mill-2-0",
+      "Mill-2-1"
+    ],
+    "Mine": [
+      "Mine-0-0",
+      "Mine-1-0",
+      "Mine-1-1",
+      "Mine-2-0",
+      "Mine-2-1"
+    ],
+    "Moat": [
+      "Swindler-0-0",
+      "Swindler-1-0",
+      "Swindler-2-0",
+      "Torturer-0-0",
+      "Torturer-1-0",
+      "Torturer-2-0",
+      "three-player-off-turn-moat"
+    ],
+    "Native Village": [
+      "Native Village-0-0",
+      "Native Village-1-0",
+      "Native Village-2-0"
+    ],
+    "Patrol": [
+      "patrol-four-card-order",
+      "patrol-original-done-keeps-order"
+    ],
+    "Pawn": [
+      "Pawn-0-0",
+      "Pawn-1-0",
+      "Pawn-2-0",
+      "pawn-original-card-action-shortcut"
+    ],
+    "Recruiter": [
+      "Recruiter-0-0",
+      "Recruiter-1-0",
+      "Recruiter-2-0"
+    ],
+    "Remodel": [
+      "Remodel-0-0",
+      "Remodel-0-1",
+      "Remodel-1-0",
+      "Remodel-1-1",
+      "Remodel-2-0",
+      "Remodel-2-1"
+    ],
+    "Secret Passage": [
+      "Secret Passage-0-0",
+      "Secret Passage-0-1",
+      "Secret Passage-1-0",
+      "Secret Passage-1-1",
+      "Secret Passage-2-0",
+      "Secret Passage-2-1"
+    ],
+    "Sentry": [
+      "Sentry-0-0",
+      "Sentry-0-1",
+      "Sentry-0-2",
+      "Sentry-1-0",
+      "Sentry-2-0"
+    ],
+    "Steward": [
+      "Steward-0-0",
+      "Steward-1-0",
+      "Steward-2-0",
+      "Steward-2-1"
+    ],
+    "Swindler": [
+      "swindler-replacement-for-other-seat"
+    ],
+    "Torturer": [
+      "Torturer-0-1",
+      "Torturer-0-2",
+      "Torturer-2-1",
+      "Torturer-2-2"
+    ],
+    "Vassal": [
+      "vassal-decline-action",
+      "vassal-play-action"
+    ],
+    "Wishing Well": [
+      "Wishing Well-0-0",
+      "Wishing Well-1-0",
+      "Wishing Well-2-0"
+    ]
+  },
+  "branches": [
+    {
+      "card": "Cellar",
+      "case": "Cellar-0-0",
+      "binding": "CELLAR",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Cellar",
+      "case": "Cellar-1-0",
+      "binding": "CELLAR",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Cellar",
+      "case": "Cellar-2-0",
+      "binding": "CELLAR",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Chapel",
+      "case": "Chapel-0-0",
+      "binding": "CHAPEL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Chapel",
+      "case": "Chapel-1-0",
+      "binding": "CHAPEL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Chapel",
+      "case": "Chapel-2-0",
+      "binding": "CHAPEL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Harbinger",
+      "case": "Harbinger-0-0",
+      "binding": "HARBINGER_TOPDECK",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Harbinger",
+      "case": "Harbinger-1-0",
+      "binding": "HARBINGER_TOPDECK",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Harbinger",
+      "case": "Harbinger-2-0",
+      "binding": "HARBINGER_TOPDECK",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mine",
+      "case": "Mine-0-0",
+      "binding": "MINE_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mine",
+      "case": "Mine-1-0",
+      "binding": "MINE_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mine",
+      "case": "Mine-1-1",
+      "binding": "MINE_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mine",
+      "case": "Mine-2-0",
+      "binding": "MINE_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mine",
+      "case": "Mine-2-1",
+      "binding": "MINE_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Remodel",
+      "case": "Remodel-0-0",
+      "binding": "REMODEL_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Remodel",
+      "case": "Remodel-0-1",
+      "binding": "REMODEL_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Remodel",
+      "case": "Remodel-1-0",
+      "binding": "REMODEL_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Remodel",
+      "case": "Remodel-1-1",
+      "binding": "REMODEL_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Remodel",
+      "case": "Remodel-2-0",
+      "binding": "REMODEL_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Remodel",
+      "case": "Remodel-2-1",
+      "binding": "REMODEL_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Sentry",
+      "case": "Sentry-0-0",
+      "binding": "SENTRY_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Sentry",
+      "case": "Sentry-0-1",
+      "binding": "SENTRY_DISCARD",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Sentry",
+      "case": "Sentry-0-2",
+      "binding": "SENTRY_TOPDECK",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Sentry",
+      "case": "Sentry-1-0",
+      "binding": "SENTRY_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Sentry",
+      "case": "Sentry-2-0",
+      "binding": "SENTRY_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Pawn",
+      "case": "Pawn-0-0",
+      "binding": "PAWN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Pawn",
+      "case": "Pawn-1-0",
+      "binding": "PAWN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Pawn",
+      "case": "Pawn-2-0",
+      "binding": "PAWN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Steward",
+      "case": "Steward-0-0",
+      "binding": "STEWARD_MODE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Steward",
+      "case": "Steward-1-0",
+      "binding": "STEWARD_MODE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Steward",
+      "case": "Steward-2-0",
+      "binding": "STEWARD_MODE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Steward",
+      "case": "Steward-2-1",
+      "binding": "STEWARD_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Secret Passage",
+      "case": "Secret Passage-0-0",
+      "binding": "SECRET_PASSAGE_INSERT",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Secret Passage",
+      "case": "Secret Passage-0-1",
+      "binding": "SECRET_PASSAGE_INSERT",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Secret Passage",
+      "case": "Secret Passage-1-0",
+      "binding": "SECRET_PASSAGE_INSERT",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Secret Passage",
+      "case": "Secret Passage-1-1",
+      "binding": "SECRET_PASSAGE_INSERT",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Secret Passage",
+      "case": "Secret Passage-2-0",
+      "binding": "SECRET_PASSAGE_INSERT",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Secret Passage",
+      "case": "Secret Passage-2-1",
+      "binding": "SECRET_PASSAGE_INSERT",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Wishing Well",
+      "case": "Wishing Well-0-0",
+      "binding": "WISHING_WELL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Wishing Well",
+      "case": "Wishing Well-1-0",
+      "binding": "WISHING_WELL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Wishing Well",
+      "case": "Wishing Well-2-0",
+      "binding": "WISHING_WELL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lurker",
+      "case": "Lurker-0-0",
+      "binding": "LURKER_COMPLEX",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lurker",
+      "case": "Lurker-0-1",
+      "binding": "LURKER_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lurker",
+      "case": "Lurker-1-0",
+      "binding": "LURKER_COMPLEX",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lurker",
+      "case": "Lurker-2-0",
+      "binding": "LURKER_COMPLEX",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lurker",
+      "case": "Lurker-2-1",
+      "binding": "LURKER_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mill",
+      "case": "Mill-0-0",
+      "binding": "MILL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mill",
+      "case": "Mill-0-1",
+      "binding": "MILL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mill",
+      "case": "Mill-1-0",
+      "binding": "MILL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mill",
+      "case": "Mill-1-1",
+      "binding": "MILL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mill",
+      "case": "Mill-2-0",
+      "binding": "MILL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Mill",
+      "case": "Mill-2-1",
+      "binding": "MILL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Moat",
+      "case": "Torturer-0-0",
+      "binding": "MOAT_REACTION",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-0-1",
+      "binding": "TORTURER_DISCARD_OR_CURSE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-0-1",
+      "binding": "TORTURER_MAY_CURSE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-0-1",
+      "binding": "TORTURER_MAY_DISCARD",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-0-2",
+      "binding": "TORTURER_MAY_DISCARD",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Moat",
+      "case": "Torturer-1-0",
+      "binding": "MOAT_REACTION",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Moat",
+      "case": "Torturer-2-0",
+      "binding": "MOAT_REACTION",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-2-1",
+      "binding": "TORTURER_DISCARD_OR_CURSE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-2-1",
+      "binding": "TORTURER_MAY_CURSE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-2-1",
+      "binding": "TORTURER_MAY_DISCARD",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Torturer",
+      "case": "Torturer-2-2",
+      "binding": "TORTURER_MAY_DISCARD",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Moat",
+      "case": "Swindler-0-0",
+      "binding": "MOAT_REACTION",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Moat",
+      "case": "Swindler-1-0",
+      "binding": "MOAT_REACTION",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Moat",
+      "case": "Swindler-2-0",
+      "binding": "MOAT_REACTION",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Haven",
+      "case": "Haven-0-0",
+      "binding": "HAVEN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Haven",
+      "case": "Haven-1-0",
+      "binding": "HAVEN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Haven",
+      "case": "Haven-2-0",
+      "binding": "HAVEN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Native Village",
+      "case": "Native Village-0-0",
+      "binding": "NATIVE_VILLAGE_BOTH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Native Village",
+      "case": "Native Village-1-0",
+      "binding": "NATIVE_VILLAGE_BOTH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Native Village",
+      "case": "Native Village-2-0",
+      "binding": "NATIVE_VILLAGE_BOTH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Island",
+      "case": "Island-0-0",
+      "binding": "ISLAND",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Island",
+      "case": "Island-1-0",
+      "binding": "ISLAND",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Island",
+      "case": "Island-2-0",
+      "binding": "ISLAND",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Recruiter",
+      "case": "Recruiter-0-0",
+      "binding": "RECRUITER",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Recruiter",
+      "case": "Recruiter-1-0",
+      "binding": "RECRUITER",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Recruiter",
+      "case": "Recruiter-2-0",
+      "binding": "RECRUITER",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-0-0",
+      "binding": "ENGINEER_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-0-1",
+      "binding": "ENGINEER_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-0-2",
+      "binding": "ENGINEER_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-1-0",
+      "binding": "ENGINEER_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-1-1",
+      "binding": "ENGINEER_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-1-2",
+      "binding": "ENGINEER_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-2-0",
+      "binding": "ENGINEER_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-2-1",
+      "binding": "ENGINEER_TRASH",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Engineer",
+      "case": "Engineer-2-2",
+      "binding": "ENGINEER_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Caravan",
+      "case": "repeated-haven-start-0",
+      "binding": "CARAVAN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Haven",
+      "case": "repeated-haven-start-0",
+      "binding": "HAVEN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lighthouse",
+      "case": "repeated-haven-start-0",
+      "binding": "LIGHTHOUSE_COIN",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Caravan",
+      "case": "repeated-haven-start-1",
+      "binding": "CARAVAN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Haven",
+      "case": "repeated-haven-start-1",
+      "binding": "HAVEN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lighthouse",
+      "case": "repeated-haven-start-1",
+      "binding": "LIGHTHOUSE_COIN",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Caravan",
+      "case": "repeated-haven-start-2",
+      "binding": "CARAVAN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Haven",
+      "case": "repeated-haven-start-2",
+      "binding": "HAVEN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lighthouse",
+      "case": "repeated-haven-start-2",
+      "binding": "LIGHTHOUSE_COIN",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Caravan",
+      "case": "repeated-haven-start-3",
+      "binding": "CARAVAN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Haven",
+      "case": "repeated-haven-start-3",
+      "binding": "HAVEN_ABILITY",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Lighthouse",
+      "case": "repeated-haven-start-3",
+      "binding": "LIGHTHOUSE_COIN",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "reminders"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Alchemist",
+      "case": "alchemist-cleanup",
+      "binding": "ALCHEMIST_TOPDECK",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "playerCounters"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Patrol",
+      "case": "patrol-original-done-keeps-order",
+      "binding": "PATROL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "targetNames"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Patrol",
+      "case": "patrol-four-card-order",
+      "binding": "PATROL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Pawn",
+      "case": "pawn-original-card-action-shortcut",
+      "binding": "PAWN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Expedition",
+      "case": "buy-Expedition",
+      "binding": "buy-Expedition",
+      "scope": "landscape state/buy",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Expedition",
+      "case": "state-Expedition",
+      "binding": "state-Expedition",
+      "scope": "landscape state/buy",
+      "original_answer_checked": false,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Cathedral",
+      "case": "buy-Cathedral",
+      "binding": "buy-Cathedral",
+      "scope": "landscape state/buy",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Cathedral",
+      "case": "state-Cathedral",
+      "binding": "CATHEDRAL",
+      "scope": "story",
+      "original_answer_checked": false,
+      "semantic_assertions": [
+        "projects"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Cathedral",
+      "case": "state-Cathedral",
+      "binding": "state-Cathedral",
+      "scope": "landscape state/buy",
+      "original_answer_checked": false,
+      "semantic_assertions": [
+        "projects"
+      ],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Vassal",
+      "case": "vassal-decline-action",
+      "binding": "VASSAL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "questionTexts",
+        "targetNames"
+      ],
+      "engine_effect_assertion": {
+        "card": "Village",
+        "zone": "discard"
+      }
+    },
+    {
+      "card": "Library",
+      "case": "library-keep-action",
+      "binding": "LIBRARY",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "questionTexts"
+      ],
+      "engine_effect_assertion": {
+        "Village": "hand",
+        "hand_count": 7
+      }
+    },
+    {
+      "card": "Vassal",
+      "case": "vassal-play-action",
+      "binding": "VASSAL",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "questionTexts",
+        "targetNames"
+      ],
+      "engine_effect_assertion": {
+        "card": "Village",
+        "zone": "in_play"
+      }
+    },
+    {
+      "card": "Library",
+      "case": "library-skip-action",
+      "binding": "LIBRARY",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "questionTexts"
+      ],
+      "engine_effect_assertion": {
+        "Village": "discard",
+        "hand_count": 7
+      }
+    },
+    {
+      "card": "Lurker",
+      "case": "lurker-gain-from-two-actions",
+      "binding": "LURKER_GAIN",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "questionTexts",
+        "targetNames"
+      ],
+      "engine_effect_assertion": {
+        "from": "trash",
+        "gained": "Village",
+        "player": 0,
+        "to": "discard"
+      }
+    },
+    {
+      "card": "Swindler",
+      "case": "swindler-replacement-for-other-seat",
+      "binding": "SWINDLER",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "questionTexts",
+        "targetNames"
+      ],
+      "engine_effect_assertion": {
+        "cost": {
+          "coins": 3,
+          "debt": 0,
+          "potions": 0
+        },
+        "gained": "Village",
+        "player": 1
+      }
+    },
+    {
+      "card": "Colony",
+      "case": "colonies-gone-ordinary-engine-completion",
+      "binding": "ColoniesGone",
+      "scope": "ordinary final score",
+      "original_answer_checked": false,
+      "semantic_assertions": [],
+      "engine_effect_assertion": {
+        "reason": "ColoniesGone"
+      }
+    },
+    {
+      "card": "Moat",
+      "case": "three-player-off-turn-moat",
+      "binding": "MOAT_REACTION",
+      "scope": "offered ability",
+      "original_answer_checked": true,
+      "semantic_assertions": [],
+      "engine_effect_assertion": null
+    },
+    {
+      "card": "Bustling Village",
+      "case": "bustling-village-take-settlers",
+      "binding": "BUSTLING_VILLAGE",
+      "scope": "story",
+      "original_answer_checked": true,
+      "semantic_assertions": [
+        "questionTexts",
+        "targetNames"
+      ],
+      "engine_effect_assertion": {
+        "card": "Settlers",
+        "from": "discard",
+        "player": 0,
+        "to": "hand"
+      }
+    }
+  ],
+  "features": {
+    "coffers": [
+      "coffers-move"
+    ],
+    "villagers": [
+      "villager-move"
+    ],
+    "debt": [
+      "debt-move"
+    ],
+    "ordered-default": [
+      "patrol-original-done-keeps-order"
+    ],
+    "ordered-drag": [
+      "patrol-four-card-order"
+    ],
+    "mode-shortcut": [
+      "pawn-original-card-action-shortcut"
+    ]
+  }
+}

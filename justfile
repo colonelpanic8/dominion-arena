@@ -60,3 +60,7 @@ web-dev server="127.0.0.1:7317" *args:
         printf '\n[[web.proxy]]\nbackend = "http://%s/%s"\n' "{{server}}" "$path" >> Dioxus.toml
     done
     dx serve --platform web --package dominion-web --features web {{args}}
+
+# The integration test owns its ephemeral listener and synthetic Arena accounts.
+official-client-proof bundle output mixed="0":
+    DOMINION_ORIGINAL_BUNDLE="{{bundle}}" DOMINION_ORIGINAL_EVIDENCE="{{output}}" DOMINION_ORIGINAL_MIXED="{{mixed}}" cargo test -p dominion-server --test official_lifecycle original_consumer_lifecycle_and_rules -- --ignored --nocapture

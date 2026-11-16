@@ -72,6 +72,68 @@ impl Reducer {
         self.question_visible.clear();
         self.revision += 1;
     }
+    /// Validate and normalize an authoritative result without account/session policy.
+    pub fn finish(&mut self, result: &model::GameResult) -> Result<()> {
+        if self.game_id != Some(result.game_id) {
+            return Err(invalid("game result has unexpected id"));
+        }
+        let state = self.state()?;
+        let expected: BTreeSet<_> = state.players.iter().map(|p| p.player_id).collect();
+        if expected.len() != state.players.len() || result.players.len() != expected.len() {
+            return Err(invalid("game result player count mismatch"));
+        }
+        if !(-crate::wire::MAX_SAFE_LONG..=crate::wire::MAX_SAFE_LONG).contains(&result.table_id)
+            || result.rating_type.is_some_and(|v| !(0..4).contains(&v))
+        {
+            return Err(invalid("invalid game result metadata"));
+        }
+        let mut seen = BTreeSet::new();
+        let mut players = Vec::new();
+        for p in &result.players {
+            if !expected.contains(&p.player_id) || !seen.insert(p.player_id) {
+                return Err(invalid("unknown or duplicate result player"));
+            }
+            if p.rank < 1
+                || p.rank as usize > expected.len()
+                || p.score.used_turns < 0
+                || p.resign_index < -1
+                || p.resignation_type.is_some_and(|v| !(0..4).contains(&v))
+                || p.card_names
+                    .iter()
+                    .any(|c| c.frequency < 0 || self.catalog.card(c.card_name).is_err())
+                || p.score
+                    .parts
+                    .iter()
+                    .any(|part| part.frequency < 0 || self.catalog.card(part.card_name).is_err())
+            {
+                return Err(invalid("invalid player result"));
+            }
+            let index = state
+                .players
+                .iter()
+                .position(|s| s.player_id == p.player_id)
+                .ok_or_else(|| invalid("result player not in snapshot"))?;
+            players.push(view::ResultPlayer {
+                index: index as u8,
+                name: self.player_name(index as i32),
+                vp: p.score.total_points,
+                rank: p.rank as u32,
+                turns: p.score.used_turns as u32,
+                resigned: p.resignation_type.is_some(),
+            });
+        }
+        for name in &result.empty_piles {
+            self.catalog.card(*name)?;
+        }
+        players.sort_by_key(|p| p.index);
+        self.invalidate();
+        self.running = false;
+        self.result = Some(view::GameResult {
+            reason: Some("official server result".into()),
+            players,
+        });
+        Ok(())
+    }
     pub fn seat(&self) -> Option<u8> {
         self.state
             .as_ref()?

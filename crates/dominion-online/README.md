@@ -303,3 +303,27 @@ from the official table; its active game mode comes from official management.
 Public human matchmaking criteria, verified-roster/rating gates, queue capacity,
 notification gaps and cancellation races have synthetic coverage. No public
 human match was started during this live validation.
+
+### Arena lifecycle server codecs
+
+`server::decode_command` and the five fixed-seat `ClientCommand` variants are
+preserved. `decode_lifecycle_command` adds the selected bootstrap/table/chat and
+visual-preference surface as `LifecycleCommand`. Passwords, session tokens and
+login codes use redacted `Secret`; unsupported account/commerce producers are
+validated for framing but return only `Unsupported { opcode }`. All 68 original
+producer layouts have exact-consumption/truncation checks, and no codec grants
+mutation authority. Arena remains responsible for authentication and permissions.
+
+`ServerEncoder` writes bounded, counted normal lifecycle/game batches.
+`encode_probe` is separate because its response is counter + ServerStates ordinal
+without a normal message opcode. `LoginSuccess::new` provides non-deleted typed
+client preferences, local card availability and timer descriptions; host policy
+still decides which settings and game setups are supported. Synthetic session
+values are not printed by Debug.
+
+The [original consumer harness](../../tools/protocol-proof/README.md#original-servicemodelanswer-consumer)
+runs the pinned upstream services, real model/zone/card/question associations,
+buttons and answer serializer against Rust fixtures and local Arena sockets.
+Reports distinguish those checks from full graphical acceptance. The cached
+asset inventory is incomplete, and no production login/download is part of the
+Arena compatibility workflow.

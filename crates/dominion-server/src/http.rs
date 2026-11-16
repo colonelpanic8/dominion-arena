@@ -61,6 +61,8 @@ pub fn router(
         secure: public.is_some_and(|u| u.starts_with("https://")),
         trust_proxy: options.trust_proxy,
         origin: public.map(|u| Arc::new(u.to_ascii_lowercase())),
+        official_server: options.official_server.clone(),
+        native_web_dir: options.web_dir.clone(),
     };
     let api = Router::new()
         .route("/cards", get(cards))
@@ -110,10 +112,19 @@ pub fn router(
         .fallback(|| async { Error::new(StatusCode::NOT_FOUND, "no such route") })
         .method_not_allowed_fallback(|| async {
             Error::new(StatusCode::METHOD_NOT_ALLOWED, "method not allowed")
-        })
+        });
+    let api = if options.official_server.is_some() {
+        api.route("/games/{id}/official/2.3.7", get(official_socket))
+            .route("/official/2.3.7", get(official_lifecycle_socket))
+            .route("/official/launch-code", post(official_launch_code))
+            .route("/official/coverage", get(official_coverage))
+    } else {
+        api
+    };
+    let api = api
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .layer(middleware::from_fn_with_state(state.clone(), same_origin))
-        .with_state(state);
+        .with_state(state.clone());
     // The web client's bundler puts its own (content-hashed) files under /assets too:
     // the cache answers first, then the client's.
     let dir = |d: &std::path::Path| ServeDir::new(d).append_index_html_on_directories(false);
@@ -138,7 +149,23 @@ pub fn router(
                 )
                 .layer(middleware::from_fn(fresh_client)),
         ),
+        None if options
+            .official_server
+            .as_ref()
+            .is_some_and(|h| h.root_socket) =>
+        {
+            site
+        }
         None => site.route("/", get(no_client)),
+    };
+    let site = if options
+        .official_server
+        .as_ref()
+        .is_some_and(|h| h.root_socket)
+    {
+        site.route("/", get(official_root).with_state(state))
+    } else {
+        site
     };
     site.layer(middleware::from_fn_with_state(
         Arc::new(allowed_hosts),
@@ -228,27 +255,12 @@ pub(crate) async fn check_host(
 /// own pages may make one, since a session's cookie goes along with it.
 async fn same_origin(State(api): State<Api>, req: Request, next: Next) -> Response {
     let safe = matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
-    let origin = req
-        .headers()
-        .get(header::ORIGIN)
-        .and_then(|o| o.to_str().ok());
-    if let (false, Some(origin)) = (safe, origin) {
-        let origin = origin.to_ascii_lowercase();
-        let from = origin.split_once("://").map(|(_, authority)| authority);
-        let host = host_of(&req).map(|h| h.as_str().to_ascii_lowercase());
-        // A page of this machine's own asking this machine: a development server
-        // proxying to this one.
-        let local = |authority: Option<&str>| {
-            let name = authority.and_then(|a| Authority::try_from(a).ok());
-            name.is_some_and(|a| {
-                let host = a.host().trim_matches(['[', ']']);
-                host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
-            })
-        };
-        let own = from == host.as_deref()
-            || api.origin.as_deref().is_some_and(|o| *o == origin)
-            || (local(from) && local(host.as_deref()));
-        if !own {
+    if !safe && let Some(origin) = req.headers().get(header::ORIGIN) {
+        let host = host_of(&req);
+        if !origin
+            .to_str()
+            .is_ok_and(|origin| origin_allowed(&api, origin, host.as_ref(), true))
+        {
             return Error::new(
                 StatusCode::FORBIDDEN,
                 "requests from other sites are refused",
@@ -257,6 +269,255 @@ async fn same_origin(State(api): State<Api>, req: Request, next: Next) -> Respon
         }
     }
     next.run(req).await
+}
+
+fn origin_allowed(api: &Api, origin: &str, host: Option<&Authority>, local_proxy: bool) -> bool {
+    let Ok(uri) = origin.parse::<axum::http::Uri>() else {
+        return false;
+    };
+    let (Some(scheme), Some(from)) = (uri.scheme_str(), uri.authority()) else {
+        return false;
+    };
+    if !matches!(scheme, "http" | "https")
+        || from.as_str().contains('@')
+        || origin != format!("{scheme}://{from}")
+    {
+        return false;
+    }
+    let origin = origin.to_ascii_lowercase();
+    let local = |authority: &Authority| {
+        let host = authority.host().trim_matches(['[', ']']);
+        host.eq_ignore_ascii_case("localhost")
+            || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    };
+    host.is_some_and(|host| host.as_str().eq_ignore_ascii_case(from.as_str()))
+        || api.origin.as_deref().is_some_and(|own| *own == origin)
+        || (local_proxy && local(from) && host.is_some_and(local))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OfficialQuery {
+    seat: Option<u8>,
+}
+
+async fn official_socket(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    Query(query): Query<OfficialQuery>,
+    Peer(peer): Peer,
+    headers: HeaderMap,
+    upgrade: axum::extract::ws::WebSocketUpgrade,
+) -> Result<Response> {
+    use crate::official_host::{
+        identity::ProjectionRequest, lifecycle::context::context, profile, projection, session,
+    };
+    let host = api
+        .official_server
+        .clone()
+        .ok_or_else(|| Error::new(StatusCode::NOT_FOUND, "no such route"))?;
+    let authority = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| Authority::try_from(h).ok());
+    let origin_ok = match headers.get(header::ORIGIN) {
+        Some(origin) => origin
+            .to_str()
+            .is_ok_and(|origin| origin_allowed(&api, origin, authority.as_ref(), false)),
+        None => bearer(&headers).is_some(),
+    };
+    if !origin_ok {
+        return Err(Error::new(
+            StatusCode::FORBIDDEN,
+            "WebSocket Origin is missing or not allowed",
+        ));
+    }
+    host.upgrades.sweep();
+    host.upgrades
+        .take(api.ip(&headers, peer))
+        .map_err(|wait| Error {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            message: "too many socket upgrades".into(),
+            retry_after: Some(wait),
+        })?;
+    let permit = host.connections.clone().try_acquire_owned().map_err(|_| {
+        Error::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "too many socket connections",
+        )
+    })?;
+    let seat = api.seat(&id, &headers, None, query.seat)?;
+    api.hub
+        .admission(&id, |config, meta| {
+            profile::check_supported(config, meta, &host.catalog)
+        })?
+        .map_err(|error| Error::new(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
+    let context = context(&api.arena, &seat, &host)
+        .map_err(|error| Error::new(StatusCode::UNPROCESSABLE_ENTITY, error))?;
+    api.hub
+        .project_seat(&seat, |observation| {
+            projection::project(
+                observation,
+                &context,
+                &host.catalog,
+                ProjectionRequest {
+                    question_index: 1,
+                    reconnect: false,
+                    epoch: 1,
+                },
+            )
+        })?
+        .map_err(|error| Error::new(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
+    // Keep only the credential actually selected by Api::seat, never arbitrary headers.
+    let mut credential = HeaderMap::new();
+    if bearer(&headers).is_some() {
+        credential.insert(
+            header::AUTHORIZATION,
+            headers[header::AUTHORIZATION].clone(),
+        );
+    } else if let Some(token) = cookie(&headers) {
+        let value = HeaderValue::from_str(&format!("{SESSION_COOKIE}={token}"))
+            .map_err(|_| Error::new(StatusCode::UNAUTHORIZED, "invalid session cookie"))?;
+        credential.insert(header::COOKIE, value);
+    }
+    let fixed = seat.clone();
+    let arena = api.arena.clone();
+    let stop = api.stop.clone();
+    Ok(upgrade
+        .max_message_size(session::MAX_INBOUND)
+        .max_frame_size(session::MAX_INBOUND)
+        .on_upgrade(move |socket| async move {
+            let _permit = permit;
+            session::run(
+                socket,
+                arena,
+                seat,
+                host,
+                move || {
+                    api.seat(&fixed.game, &credential, None, query.seat)
+                        .is_ok_and(|seat| seat == fixed)
+                },
+                stop,
+            )
+            .await;
+        }))
+}
+
+async fn official_lifecycle_socket(
+    State(api): State<Api>,
+    Peer(peer): Peer,
+    headers: HeaderMap,
+    upgrade: axum::extract::ws::WebSocketUpgrade,
+) -> Result<Response> {
+    lifecycle_upgrade(api, peer, headers, upgrade)
+}
+
+fn lifecycle_upgrade(
+    api: Api,
+    peer: Option<SocketAddr>,
+    headers: HeaderMap,
+    upgrade: axum::extract::ws::WebSocketUpgrade,
+) -> Result<Response> {
+    let host = api
+        .official_server
+        .clone()
+        .ok_or_else(|| Error::new(StatusCode::NOT_FOUND, "no such route"))?;
+    let authority = headers
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| Authority::try_from(h).ok());
+    if !headers
+        .get(header::ORIGIN)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|origin| origin_allowed(&api, origin, authority.as_ref(), false))
+    {
+        return Err(Error::new(
+            StatusCode::FORBIDDEN,
+            "WebSocket Origin is missing or not allowed",
+        ));
+    }
+    host.upgrades.sweep();
+    let ip = api.ip(&headers, peer);
+    host.upgrades.take(ip).map_err(|wait| Error {
+        status: StatusCode::TOO_MANY_REQUESTS,
+        message: "too many socket upgrades".into(),
+        retry_after: Some(wait),
+    })?;
+    let permit = host.connections.clone().try_acquire_owned().map_err(|_| {
+        Error::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "too many socket connections",
+        )
+    })?;
+    Ok(upgrade
+        .max_message_size(crate::official_host::session::MAX_INBOUND)
+        .max_frame_size(crate::official_host::session::MAX_INBOUND)
+        .on_upgrade(move |socket| async move {
+            let _permit = permit;
+            crate::official_host::lifecycle::run(socket, api.arena, host, ip, api.stop).await;
+        }))
+}
+
+async fn official_root(
+    State(api): State<Api>,
+    Peer(peer): Peer,
+    headers: HeaderMap,
+    upgrade: std::result::Result<
+        axum::extract::ws::WebSocketUpgrade,
+        axum::extract::ws::rejection::WebSocketUpgradeRejection,
+    >,
+) -> Result<Response> {
+    if let Ok(upgrade) = upgrade {
+        return lifecycle_upgrade(api, peer, headers, upgrade);
+    }
+    if let Some(dir) = &api.native_web_dir {
+        let bytes = std::fs::read(dir.join("index.html"))
+            .map_err(|_| Error::new(StatusCode::NOT_FOUND, "web client unavailable"))?;
+        return Ok((
+            [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
+            bytes,
+        )
+            .into_response());
+    }
+    Ok(no_client().await.into_response())
+}
+
+async fn official_coverage(State(api): State<Api>) -> Result<axum::Json<serde_json::Value>> {
+    let host = api
+        .official_server
+        .as_ref()
+        .ok_or_else(|| Error::new(StatusCode::NOT_FOUND, "no such route"))?;
+    Ok(axum::Json(host.coverage_report()))
+}
+
+async fn official_launch_code(State(api): State<Api>, headers: HeaderMap) -> Result<Response> {
+    let host = api
+        .official_server
+        .as_ref()
+        .ok_or_else(|| Error::new(StatusCode::NOT_FOUND, "no such route"))?;
+    let ident = api
+        .ident(&headers)
+        .ok_or_else(|| Error::new(StatusCode::UNAUTHORIZED, "Arena authentication required"))?;
+    let token = bearer(&headers)
+        .or_else(|| cookie(&headers))
+        .ok_or_else(|| Error::new(StatusCode::UNAUTHORIZED, "Arena authentication required"))?;
+    if api.arena.identify(token).as_ref() != Some(&ident) {
+        return Err(Error::new(
+            StatusCode::UNAUTHORIZED,
+            "invalid Arena session",
+        ));
+    }
+    let code = host
+        .issue_code(token, &api.arena)
+        .map_err(|e| Error::new(StatusCode::TOO_MANY_REQUESTS, e))?;
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        axum::Json(serde_json::json!({"code":code,"expiresIn":30})),
+    )
+        .into_response())
 }
 
 #[derive(Clone)]
@@ -271,6 +532,8 @@ struct Api {
     trust_proxy: bool,
     /// The origin people reach the server at, when it isn't what `Host` says.
     origin: Option<Arc<String>>,
+    official_server: Option<Arc<crate::official_host::Host>>,
+    native_web_dir: Option<std::path::PathBuf>,
 }
 
 struct Error {

@@ -12,6 +12,7 @@ pub mod http;
 pub mod hub;
 pub mod limits;
 pub mod mcp;
+pub mod official_host;
 pub mod online;
 pub mod rating;
 pub mod runner;
@@ -57,6 +58,7 @@ pub struct Options {
     /// Where a runner of the server's own agents connects ([`house`]).
     pub agent_socket: Option<PathBuf>,
     pub online: Option<online::Hosted>,
+    pub official_server: Option<Arc<official_host::Host>>,
 }
 
 impl Default for Options {
@@ -72,6 +74,7 @@ impl Default for Options {
             trust_proxy: false,
             agent_socket: None,
             online: None,
+            official_server: None,
         }
     }
 }

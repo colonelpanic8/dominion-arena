@@ -78,7 +78,7 @@ impl Failure {
             .get(usize::try_from(id).unwrap_or(usize::MAX))
             .ok_or_else(|| Error::Unsupported(format!("failure ordinal {id}")))?;
         let card = r.int()?;
-        if card < -1 {
+        if !(-1..881).contains(&card) {
             return Err(Error::Protocol("invalid failure card".into()));
         }
         Ok(Self {
@@ -263,7 +263,7 @@ fn checked(r: &mut Reader<'_>, n: i32, name: &str) -> Result<i32> {
         Err(Error::Unsupported(format!("{name} ordinal {x}")))
     }
 }
-fn parse_message(r: &mut Reader<'_>) -> Result<Message> {
+pub(crate) fn parse_message(r: &mut Reader<'_>) -> Result<Message> {
     Ok(match r.int()? {
         0 => Message::Chat {
             receiver: r.string()?,
@@ -406,6 +406,13 @@ impl Transport {
             .insert("Origin", HeaderValue::from_static("https://dominion.games"));
         let (socket, _) = connect_async(request).await.map_err(connection_error)?;
         Ok(Self::from_socket(socket, probe))
+    }
+    /// Connect to an already authorized endpoint without adding an official-site Origin.
+    pub async fn connect_request(
+        request: tokio_tungstenite::tungstenite::http::Request<()>,
+    ) -> Result<Self> {
+        let (socket, _) = connect_async(request).await.map_err(connection_error)?;
+        Ok(Self::from_socket(socket, false))
     }
     fn from_socket(socket: WebSocketStream<MaybeTlsStream<TcpStream>>, probe: bool) -> Self {
         Self {
@@ -599,7 +606,7 @@ pub mod command {
     }
 }
 
-const FAILURES: &[&str] = &[
+pub const FAILURES: &[&str] = &[
     "WRONG_PASSWORD",
     "NOT_ENOUGH_PLAYERS",
     "TOO_MANY_PLAYERS",

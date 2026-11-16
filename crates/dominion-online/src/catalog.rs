@@ -56,6 +56,18 @@ impl Catalog {
             "LogEntryNames",
             "DeclineButtonIds",
             "MovementTypes",
+            "ResignationTypes",
+            "TimerPresetOptions",
+            "TimeSettingsParameters",
+            "TableRuleIds",
+            "Expansions",
+            "UpdateTypes",
+            "UserPrefIds",
+            "UserPrefTypes",
+            "ActivityStati",
+            "TableStati",
+            "FailureReasons",
+            "SuccessDescriptions",
         ] {
             let values: Vec<String> = object(source, name)?
                 .into_iter()
@@ -63,6 +75,18 @@ impl Catalog {
                 .collect();
             enums.insert(name.to_string(), values);
         }
+        let zones = list(assignment(source, "ZoneNames").ok_or_else(|| malformed("ZoneNames"))?)?;
+        if zones.len() != 35
+            || zones
+                .iter()
+                .any(|name| !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+        {
+            return Err(malformed("ZoneNames constructors"));
+        }
+        enums.insert(
+            "ZoneNames".into(),
+            zones.into_iter().map(str::to_owned).collect(),
+        );
         let types: Vec<_> = object(source, "Types")?
             .into_iter()
             .map(|(_, v)| {
@@ -129,7 +153,7 @@ impl Catalog {
             ("QuestionIds", "EnglishQuestionDescriptions"),
             ("CleanupActions", "EnglishCleanupActions"),
             ("LogEntryNames", "EnglishLogEntries"),
-            ("DeclineButtonIds", "EnglishDeclineButtonText"),
+            ("DeclineButtonIds", "EnglishDeclineButtons"),
         ] {
             let entries = enums[en]
                 .iter()
@@ -335,6 +359,40 @@ mod tests {
         let path = std::env::var("DOMINION_ONLINE_TEST_BUNDLE").expect("test bundle path");
         let catalog = Catalog::from_bundle(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(catalog.cards.len(), 881);
+        assert_eq!(catalog.enums["ZoneNames"].len(), 35);
+        for (index, name) in [
+            (0, "HandZone"),
+            (1, "DrawZone"),
+            (2, "DiscardZone"),
+            (3, "TrashZone"),
+            (4, "SupplyCardZone"),
+            (5, "BasicTreasureZone"),
+            (6, "BasicVictoryZone"),
+            (8, "InPlayZone"),
+        ] {
+            assert_eq!(catalog.enums["ZoneNames"][index], name);
+        }
+        assert_eq!(catalog.enums["ResignationTypes"][0], "MANUAL");
+        assert_eq!(catalog.enums["TimerPresetOptions"][4], "OFF");
+        assert_eq!(catalog.enums["ExtraTurnTypes"][0], "REGULAR");
+        assert_eq!(
+            catalog.enums["UpdateTypes"],
+            ["NONE", "AUTOMATCH", "FRIEND_LIST", "TABLES"]
+        );
+        assert_eq!(catalog.enums["Expansions"].len(), 20);
+        assert_eq!(catalog.enums["TableRuleIds"].len(), 25);
+        assert_eq!(catalog.enums["UserPrefIds"].len(), 52);
+        assert_eq!(catalog.enums["ActivityStati"].len(), 6);
+        assert_eq!(catalog.enums["TableStati"].len(), 5);
+        assert_eq!(catalog.enums["SuccessDescriptions"].len(), 11);
+        assert_eq!(catalog.enums["FailureReasons"], crate::transport::FAILURES);
+        assert_eq!(catalog.enums["CardModes"].len(), 221);
+        assert_eq!(catalog.enums["GameButtons"].len(), 8);
+        assert_eq!(catalog.enums["DeclineButtonIds"].len(), 71);
+        assert_eq!(
+            catalog.label("DeclineButtonIds", 0).as_deref(),
+            Some("End Actions")
+        );
         assert_eq!(
             catalog
                 .card(catalog.ordinal("King's Court").unwrap())

@@ -14,6 +14,7 @@ use std::sync::Mutex;
 pub(super) const FILE: &str = "dominion.sqlite";
 
 const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS sequences (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -78,7 +79,7 @@ CREATE TABLE IF NOT EXISTS game_players (
 ";
 
 /// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 3;
 
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
                     rated_at, rated_games, games, wins, banned_cards";
@@ -440,6 +441,10 @@ impl Db {
         let Some((id, kind, seen)) = query.query_row([token], read).optional()? else {
             return Ok(None);
         };
+        if now.saturating_sub(seen as u64) >= super::accounts::SESSION_DAYS * 86_400 {
+            conn.execute("DELETE FROM sessions WHERE token = ?1", [token])?;
+            return Ok(None);
+        }
         if now.saturating_sub(seen as u64) >= 86_400 {
             conn.execute(
                 "UPDATE sessions SET seen = ?2 WHERE token = ?1",
@@ -496,6 +501,22 @@ impl Db {
         drop(conn);
         self.changed();
         Ok(out)
+    }
+
+    /// Allocates a lobby identity that will never be reused after restart.
+    pub fn reserve_table_numbers(&self, through: u64) -> Result<()> {
+        self.transaction(|tx| {
+            tx.execute("INSERT INTO sequences (name,value) VALUES ('table',?1) ON CONFLICT(name) DO UPDATE SET value = MAX(value,excluded.value)",[through.min(i64::MAX as u64) as i64])?;
+            Ok(())
+        })
+    }
+
+    pub fn next_table_number(&self) -> Result<u64> {
+        self.transaction(|tx| {
+            tx.execute("INSERT INTO sequences (name, value) VALUES ('table', 1) ON CONFLICT(name) DO UPDATE SET value = value + 1", [])?;
+            let n: i64 = tx.query_row("SELECT value FROM sequences WHERE name = 'table'", [], |r| r.get(0))?;
+            u64::try_from(n).map_err(|_| Error::Storage("table identity overflow".into()))
+        })
     }
 
     /// The number of the last game recorded.

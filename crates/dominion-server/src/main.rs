@@ -334,6 +334,7 @@ async fn serve(config: Config) -> Result<(), String> {
         public_url: config.public_url.clone(),
         trust_proxy: config.trust_proxy.unwrap_or(false),
         agent_socket: config.agent_socket.clone(),
+        official_server: dominion_server::official_host::Host::from_config(&config)?,
         online: if config.online_enabled.unwrap_or(false) {
             Some(dominion_server::online::Hosted::start(&config).await?)
         } else {

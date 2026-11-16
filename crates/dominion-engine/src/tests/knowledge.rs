@@ -1494,9 +1494,9 @@ fn check_knowledge(g: &Game, k: &Knowledge, step: usize) {
 /// Changing what `v` can't observe doesn't change what they know.
 fn check_no_leak(g: &Game, k: &Knowledge, v: PlayerId, known: &KnownCards) {
     let mut altered = g.clone();
-    for o in 0..g.num_players() {
+    for (o, player) in altered.players.iter_mut().enumerate() {
         if o != v.index() {
-            altered.players[o].deck.reverse();
+            player.deck.reverse();
         }
     }
     let view = g.view(v);

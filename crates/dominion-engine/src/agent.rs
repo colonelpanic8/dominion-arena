@@ -121,6 +121,47 @@ impl<'a> View<'a> {
         }
     }
 
+    fn pending_card_frame(&self) -> Option<&'a crate::cards::CardFrame> {
+        let source = self.pending()?.source?;
+        self.game.stack.iter().rev().find_map(|frame| match frame {
+            Frame::Card(f) if f.card == source => Some(f.as_ref()),
+            _ => None,
+        })
+    }
+
+    /// The actual source of this choice, when its physical identity is visible.
+    pub fn pending_source(&self) -> Option<CardId> {
+        self.pending_card_frame()?
+            .this
+            .filter(|&id| self.visible(id))
+    }
+
+    /// A visible card this effect retained across its preceding steps.
+    pub fn pending_reference(&self) -> Option<CardId> {
+        self.pending_card_frame()?
+            .s
+            .pick
+            .filter(|&id| self.visible(id))
+    }
+
+    /// The cost bound stated by the effect, before filtering available piles.
+    pub fn pending_cost_limit(&self) -> Option<Cost> {
+        self.pending_card_frame()?.choice_cost
+    }
+
+    /// The explicitly recorded affected player, which may differ from the decision maker.
+    pub fn pending_subject(&self) -> Option<PlayerId> {
+        let f = self.pending_card_frame()?;
+        f.choice_subject
+    }
+
+    /// The original pile of a legally visible card, including split piles.
+    pub fn origin_pile(&self, id: CardId) -> Option<PileId> {
+        self.visible(id)
+            .then(|| self.game.origin_pile(self.game.printed(id)))
+            .flatten()
+    }
+
     /// What `id` is, if this player can see it: cards in play, in the trash, on public
     /// mats, set aside face up, on top of a discard pile or a face-up pile, their own
     /// hand and face-down cards, and cards offered to them in a decision or that it is about.
@@ -624,5 +665,63 @@ impl Note {
     pub(crate) fn setup(mut self, role: SetupRole) -> Note {
         self.setup = Some(role);
         self
+    }
+}
+
+#[cfg(test)]
+mod presentation_tests {
+    use super::*;
+    use crate::tests::{P0, P1, choose_kinds, deck, hand, play, setup};
+
+    #[test]
+    fn exact_gain_bounds_and_visible_sources_survive_old_frame_serialization() {
+        for (card, trashed, expected) in [
+            (Card::Mine, Card::Silver, Cost::coins(6)),
+            (Card::Remodel, Card::Silver, Cost::coins(5)),
+            (Card::Upgrade, Card::Silver, Cost::coins(4)),
+        ] {
+            let mut g = setup(&[
+                card,
+                Card::Village,
+                Card::Smithy,
+                Card::Caravan,
+                Card::Market,
+            ]);
+            hand(&mut g, P0, &[card, trashed]);
+            g.start();
+            play(&mut g, card);
+            let source = g.view(P0).pending_source().unwrap();
+            assert_eq!(g.card(source), card);
+            if matches!(g.pending().unwrap().kind, DecisionKind::Cards { .. }) {
+                choose_kinds(&mut g, &[trashed]);
+            }
+            assert_eq!(g.view(P0).pending_cost_limit(), Some(expected));
+            let mut value = serde_json::to_value(&g).unwrap();
+            for frame in value["stack"].as_array_mut().unwrap() {
+                if let Some(f) = frame.get_mut("Card") {
+                    f.as_object_mut().unwrap().remove("choice_cost");
+                    f.as_object_mut().unwrap().remove("choice_subject");
+                }
+            }
+            let old: Game = serde_json::from_value(value).unwrap();
+            assert_eq!(old.view(P0).pending_cost_limit(), None);
+            assert_eq!(old.pending(), g.pending());
+            assert!(old.view(P1).pending_source().is_none());
+        }
+    }
+
+    #[test]
+    fn swindler_presentation_records_affected_seat_without_exposing_private_card() {
+        let mut g = setup(&[Card::Swindler, Card::Village]);
+        hand(&mut g, P0, &[Card::Swindler]);
+        deck(&mut g, P1, &[Card::Silver, Card::Copper]);
+        g.start();
+        // Setup draws P1's opening hand before the attack, so replace the deck afterwards.
+        deck(&mut g, P1, &[Card::Silver]);
+        play(&mut g, Card::Swindler);
+        assert_eq!(g.pending().unwrap().player, P0);
+        assert_eq!(g.view(P0).pending_subject(), Some(P1));
+        assert_eq!(g.view(P0).pending_cost_limit(), Some(Cost::coins(3)));
+        assert!(g.view(P1).pending_cost_limit().is_none());
     }
 }

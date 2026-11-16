@@ -188,7 +188,6 @@ struct Chat {
 #[derive(Default)]
 struct State {
     tables: BTreeMap<String, tables::Table>,
-    next_table: u64,
     /// The table each account sits at.
     seated: HashMap<String, String>,
     queue: Vec<matching::Entry>,
@@ -264,7 +263,12 @@ pub struct Arena {
     limits: Limits,
     /// When the slow part of [`Arena::sweep`] last ran.
     swept: Mutex<Option<Instant>>,
+    start_checks: Mutex<HashMap<String, Vec<Weak<StartCheck>>>>,
 }
+
+pub(crate) type StartCheck = dyn Fn(&dominion_engine::GameConfig, &crate::hub::Meta) -> std::result::Result<(), String>
+    + Send
+    + Sync;
 
 /// Counts an account as connected until dropped.
 pub struct Attendance {
@@ -295,6 +299,20 @@ impl Arena {
         let db = Db::open(store.as_deref().map(|s| s.dir())).map_err(failed)?;
         // A finished game's id stays its record's, after the game itself is deleted.
         hub.reserve_ids(db.last_game_number().map_err(failed)?);
+        let retained_table = hub
+            .list()
+            .into_iter()
+            .filter_map(|game| {
+                hub.meta(&game.game_id)
+                    .ok()?
+                    .table?
+                    .strip_prefix('t')?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .max()
+            .unwrap_or(0);
+        db.reserve_table_numbers(retained_table).map_err(failed)?;
         hub.set_timing(settings.timing);
         hub.set_max_games(settings.max_games);
         let arena = Arc::new(Arena {
@@ -306,6 +324,7 @@ impl Arena {
             chat: watch::channel(0).0,
             limits: Limits::default(),
             swept: Mutex::new(None),
+            start_checks: Mutex::default(),
         });
         let (on_end, users) = (Arc::downgrade(&arena), Arc::downgrade(&arena));
         hub.set_hooks(
@@ -323,6 +342,53 @@ impl Arena {
             arena.record(ended);
         }
         Ok(arena)
+    }
+
+    /// Registers an attached consumer's capabilities. Keeping the handle keeps the
+    /// check active; every transport's table start uses the same checks.
+    pub(crate) fn check_starts(&self, ident: &Ident, check: Arc<StartCheck>) -> Arc<StartCheck> {
+        let mut checks = lock(&self.start_checks);
+        checks
+            .entry(ident.user.clone())
+            .or_default()
+            .push(Arc::downgrade(&check));
+        check
+    }
+
+    pub(crate) fn account_id(&self, name: &str) -> Result<(String, UserKind)> {
+        let user = self
+            .db
+            .user_by_name(name)?
+            .ok_or_else(|| Error::NotFound("account no longer exists".into()))?;
+        Ok((user.id.clone(), user.kind()))
+    }
+
+    pub(crate) fn account_ref(&self, id: &str) -> Result<UserRef> {
+        Ok(self.user_ref(&self.user(id)?))
+    }
+
+    fn validate_start(
+        &self,
+        config: &dominion_engine::GameConfig,
+        meta: &crate::hub::Meta,
+    ) -> Result<()> {
+        let active: Vec<Arc<StartCheck>> = {
+            let mut checks = lock(&self.start_checks);
+            checks.retain(|_, checks| {
+                checks.retain(|c| c.strong_count() > 0);
+                !checks.is_empty()
+            });
+            meta.owners
+                .iter()
+                .flatten()
+                .flat_map(|user| checks.get(user).into_iter().flatten())
+                .filter_map(Weak::upgrade)
+                .collect()
+        };
+        for check in active {
+            check(config, meta).map_err(Error::Conflict)?;
+        }
+        Ok(())
     }
 
     pub fn settings(&self) -> &Settings {

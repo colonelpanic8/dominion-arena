@@ -217,6 +217,7 @@ fn gain_up_to(g: &mut Game, f: &mut CardFrame, input: Input, limit: u8, to: Dest
                 return Flow::done();
             }
             f.pc = 1;
+            f.choice_cost = Some(Cost::coins(limit));
             f.ask_pile(piles, false, Purpose::Gain)
         }
         1 => {
@@ -388,6 +389,7 @@ fn upgrade(
                 return Flow::done();
             }
             f.pc = 3;
+            f.choice_cost = Some(limit);
             f.ask_pile(piles, false, Purpose::Gain)
         }
         3 => {
