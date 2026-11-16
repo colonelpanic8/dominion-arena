@@ -47,7 +47,8 @@ fn glossary_includes_travellers_and_every_split_or_mixed_pile_member() {
         Card::Sauna,
     ];
     let table = Table::new("reference", GameConfig::new(2, kingdom.clone(), 11), vec![]).unwrap();
-    let entries = glossary_for(&table.view(PlayerId(0)));
+    let view = table.view(PlayerId(0));
+    let entries = glossary_for(&view);
     let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
     assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
     for card in kingdom.iter().flat_map(|c| c.pile_members()).chain([
@@ -66,10 +67,13 @@ fn glossary_includes_travellers_and_every_split_or_mixed_pile_member() {
             .unwrap_or_else(|| panic!("missing {card}"));
         assert_eq!(entry.text, card.text());
     }
-    let rendered = text::reference(&entries);
+    let rendered = text::reference(&view, &entries);
     assert!(rendered.contains("Page | Action - Traveller | $2\n  +1 Card\n  +1 Action\n  ---\n  When you discard this from play"));
     assert!(rendered.contains("Plunder | Treasure | $5"));
-    assert!(rendered.contains("Fortune | Treasure | $88D"), "{rendered}");
+    assert!(
+        rendered.contains("Fortune | Treasure | $8 + 8D"),
+        "{rendered}"
+    );
 }
 
 #[test]
@@ -116,6 +120,99 @@ fn glossary_includes_printed_values_for_basic_cards_without_rules_text() {
     ] {
         assert_eq!(dominion_agent::glossary_entry(card).text, expected);
     }
+}
+
+#[test]
+fn pile_structure_projects_and_renders_setup_without_hidden_order() {
+    let config = GameConfig::new(
+        2,
+        vec![
+            Card::Augurs,
+            Card::Wizards,
+            Card::Encampment,
+            Card::Knights,
+            Card::DeathCart,
+            Card::Pickaxe,
+        ],
+        11,
+    );
+    let table = Table::new("structure", config, vec![]).unwrap();
+    let view = table.view(PlayerId(0));
+    assert_valid(
+        &validator("view"),
+        &serde_json::to_value(&view).unwrap(),
+        "pile structure",
+    );
+    let rendered = text::reference(&view, &glossary_for(&view));
+    assert!(rendered.contains("Augurs: rotating; initially top to bottom: 4 Herb Gatherer, 4 Acolyte, 4 Sorceress, 4 Sibyl."), "{rendered}");
+    assert!(rendered.contains(
+        "Wizards: rotating; initially top to bottom: 4 Student, 4 Conjurer, 4 Sorcerer, 4 Lich."
+    ));
+    assert!(
+        rendered.contains("Encampment: stacked; initially top to bottom: 5 Encampment, 5 Plunder.")
+    );
+    assert!(
+        rendered.contains("Ruins: shuffled; random sample of 10 cards without replacement from:")
+    );
+    assert!(rendered.contains("Exact selected counts are not revealed."));
+    assert!(rendered.contains("Rotation happens only when an effect says so:"));
+    assert!(rendered.contains("Only the current top is exposed; order below it is hidden."));
+    assert!(rendered.contains("Face down, including the top card."));
+    assert!(text::render(&view).contains("Augurs (rotating) (top Herb Gatherer)"));
+    let other_seed = Table::new(
+        "structure",
+        GameConfig::new(2, vec![Card::Knights, Card::DeathCart, Card::Pickaxe], 12),
+        vec![],
+    )
+    .unwrap()
+    .view(PlayerId(0));
+    for card in ["Knights", "Ruins", "Loot"] {
+        let structure = |v: &AgentView| {
+            v.supply
+                .iter()
+                .chain(&v.non_supply)
+                .find(|pile| pile.card == card)
+                .unwrap()
+                .structure
+                .clone()
+        };
+        assert_eq!(structure(&view), structure(&other_seed));
+    }
+    let mut saved = serde_json::to_value(&table).unwrap();
+    for pile in saved["game"]["piles"].as_array_mut().unwrap() {
+        if pile["structure"]["kind"] != "Shuffled" {
+            continue;
+        }
+        let cards = pile["cards"].as_array_mut().unwrap();
+        let hidden_len = cards.len() - 1;
+        cards[..hidden_len].reverse();
+    }
+    let reordered: Table = serde_json::from_value(saved.clone()).unwrap();
+    for seat in [PlayerId(0), PlayerId(1)] {
+        let original = table.view(seat);
+        let other = reordered.view(seat);
+        assert_eq!(original, other);
+        assert_eq!(
+            text::reference(&original, &glossary_for(&original)),
+            text::reference(&other, &glossary_for(&other))
+        );
+    }
+    for pile in saved["game"]["piles"].as_array_mut().unwrap() {
+        pile.as_object_mut().unwrap().remove("structure");
+    }
+    let legacy: Table = serde_json::from_value(saved).unwrap();
+    let legacy_view = legacy.view(PlayerId(0));
+    assert!(
+        legacy_view
+            .supply
+            .iter()
+            .all(|pile| pile.structure.is_none())
+    );
+    assert!(
+        glossary_for(&legacy_view)
+            .iter()
+            .any(|entry| entry.name == "Lich")
+    );
 }
 
 fn released() -> Vec<Set> {

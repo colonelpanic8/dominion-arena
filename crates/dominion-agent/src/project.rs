@@ -193,6 +193,22 @@ fn view_of(game: &Game, known: &KnownCards, seat: Option<PlayerId>, cx: &Context
             types,
             kingdom: pile.kingdom(),
             hidden: pile.hidden(),
+            structure: pile.structure().map(|structure| PileStructure {
+                kind: match structure.kind {
+                    dominion_engine::PileKind::Stacked => PileKind::Stacked,
+                    dominion_engine::PileKind::Rotating => PileKind::Rotating,
+                    dominion_engine::PileKind::Shuffled => PileKind::Shuffled,
+                },
+                cards: structure
+                    .cards
+                    .iter()
+                    .map(|group| PileGroup {
+                        card: group.card.name().to_string(),
+                        count: group.count,
+                    })
+                    .collect(),
+                sample_size: structure.sample_size,
+            }),
             tokens: PileTokens {
                 embargo: pile.embargo(),
                 trade_route: pile.trade_route(),

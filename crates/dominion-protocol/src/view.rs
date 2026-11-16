@@ -267,6 +267,30 @@ pub struct PlayerToken {
     pub token: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PileKind {
+    Stacked,
+    Rotating,
+    Shuffled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PileGroup {
+    pub card: String,
+    pub count: u32,
+}
+
+/// Public initial recipe, independent of the current visible top and total count.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PileStructure {
+    pub kind: PileKind,
+    pub cards: Vec<PileGroup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample_size: Option<u32>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PileView {
@@ -281,6 +305,8 @@ pub struct PileView {
     pub kingdom: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub hidden: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<PileStructure>,
     #[serde(default, skip_serializing_if = "PileTokens::is_empty")]
     pub tokens: PileTokens,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

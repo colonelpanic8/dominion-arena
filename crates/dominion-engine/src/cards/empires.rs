@@ -14,7 +14,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Lasting, Phase, Pos, Scratch, Until, Zone};
-use crate::setup::{Setup, add_mixed_pile};
+use crate::setup::{Setup, add_stacked_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Plus, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -618,7 +618,7 @@ impl SetRules for Rules {
         if let Some(&(top, bottom)) = SPLIT_PILES.iter().find(|(top, _)| *top == card) {
             let mut cards = vec![top; 5];
             cards.extend([bottom; 5]);
-            add_mixed_pile(g, top, &cards, true);
+            add_stacked_pile(g, top, &cards, true);
             return true;
         }
         if card != Card::Castles {
@@ -634,7 +634,7 @@ impl SetRules for Rules {
             ]);
         }
         castles.sort_by_key(|c| c.cost().unwrap_or_default().coins);
-        add_mixed_pile(g, Card::Castles, &castles, true);
+        add_stacked_pile(g, Card::Castles, &castles, true);
         true
     }
 

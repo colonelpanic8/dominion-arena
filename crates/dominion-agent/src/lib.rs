@@ -80,7 +80,9 @@ pub fn glossary_for(view: &AgentView) -> Vec<GlossaryEntry> {
         names.insert(pile.card.clone());
         names.extend(pile.top.clone());
         names.extend(pile.traits.iter().cloned());
-        if let Some(card) = Card::from_name(&pile.card) {
+        if let Some(structure) = &pile.structure {
+            names.extend(structure.cards.iter().map(|group| group.card.clone()));
+        } else if let Some(card) = Card::from_name(&pile.card) {
             names.extend(card.pile_members().iter().map(|c| c.name().to_string()));
         }
     }

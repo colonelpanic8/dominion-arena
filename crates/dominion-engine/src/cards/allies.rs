@@ -17,7 +17,7 @@ use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{ExtraLimit, ExtraTurn, Lasting, Pos, Scratch, Until, Zone};
-use crate::setup::{self, Setup, add_mixed_pile};
+use crate::setup::{self, Setup, add_rotating_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -478,7 +478,7 @@ impl SetRules for Rules {
             return false;
         };
         let cards: Vec<Card> = members.iter().flat_map(|&c| [c; 4]).collect();
-        add_mixed_pile(g, card, &cards, true);
+        add_rotating_pile(g, card, &cards, true);
         true
     }
 

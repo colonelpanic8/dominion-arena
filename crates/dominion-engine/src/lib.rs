@@ -31,8 +31,8 @@ pub use card::{Card, CardDef, Cost, Kind, Plus, Set, TYPE_NAMES, Types};
 pub use decision::{Decision, DecisionKind, Move, Opt, Purpose, Response, ResponseError};
 pub use event::{Counter, Dest, Event, Marker};
 pub use game::{
-    CardDeck, EndReason, ExtraLimit, ExtraTurn, Game, Lasting, Mat, Outcome, Phase, Pile, Player,
-    Scratch, Token, Turn, Until, Zone,
+    CardDeck, EndReason, ExtraLimit, ExtraTurn, Game, Lasting, Mat, Outcome, Phase, Pile,
+    PileGroup, PileKind, PileStructure, Player, Scratch, Token, Turn, Until, Zone,
 };
 pub use ids::{CardId, PileId, PlayerId};
 pub use knowledge::{CardCount, GroupView, Knowledge, KnownCards, UncertainCards, ZoneKnowledge};

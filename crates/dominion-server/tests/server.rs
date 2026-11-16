@@ -460,6 +460,7 @@ fn card_text_shows_costs_as_views_do() {
     assert_eq!(head("Transmute"), "Transmute | Action | P | Alchemy");
     assert_eq!(head("Golem"), "Golem | Action | $4P | Alchemy");
     assert_eq!(head("Engineer"), "Engineer | Action | 4D | Empires");
+    assert_eq!(head("Fortune"), "Fortune | Treasure | $8 + 8D | Empires");
 }
 
 #[tokio::test]

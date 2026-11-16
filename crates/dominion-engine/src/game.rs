@@ -139,6 +139,59 @@ impl Player {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PileKind {
+    Stacked,
+    Rotating,
+    Shuffled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PileGroup {
+    pub card: Card,
+    pub count: u32,
+}
+
+/// Public setup recipe; never the pile's current hidden contents or order.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PileStructure {
+    pub kind: PileKind,
+    /// Consecutive groups top first, or an unordered pool for a shuffled pile.
+    pub cards: Vec<PileGroup>,
+    pub sample_size: Option<u32>,
+}
+
+impl PileStructure {
+    pub(crate) fn new(kind: PileKind, cards: &[Card]) -> Self {
+        let mut groups: Vec<PileGroup> = vec![];
+        if kind == PileKind::Shuffled {
+            let mut counts = BTreeMap::<Card, u32>::new();
+            for &card in cards {
+                *counts.entry(card).or_default() += 1;
+            }
+            groups.extend(
+                counts
+                    .into_iter()
+                    .map(|(card, count)| PileGroup { card, count }),
+            );
+            groups.sort_by_key(|group| group.card.name());
+        } else {
+            for &card in cards {
+                if let Some(last) = groups.last_mut().filter(|last| last.card == card) {
+                    last.count += 1;
+                } else {
+                    groups.push(PileGroup { card, count: 1 });
+                }
+            }
+        }
+        Self {
+            kind,
+            cards: groups,
+            sample_size: None,
+        }
+    }
+}
+
 /// A stack of cards; the top card is last. Mixed and split piles are just stacks too.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Pile {
@@ -164,6 +217,8 @@ pub struct Pile {
     pub holder: bool,
     /// Face down: no card in it is public, not even the top (the Black Market deck).
     pub hidden: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<PileStructure>,
     /// How many times it became empty while in the Supply.
     pub emptied: u32,
 }
@@ -183,6 +238,7 @@ impl Pile {
             removed: false,
             holder: false,
             hidden: false,
+            structure: None,
             emptied: 0,
         }
     }

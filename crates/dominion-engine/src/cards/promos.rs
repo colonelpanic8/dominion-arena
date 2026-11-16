@@ -194,7 +194,7 @@ impl SetRules for Rules {
         }
         let mut cards = vec![Card::Sauna; 5];
         cards.extend([Card::Avanto; 5]);
-        setup::add_mixed_pile(g, Card::Sauna, &cards, true);
+        setup::add_stacked_pile(g, Card::Sauna, &cards, true);
         true
     }
 

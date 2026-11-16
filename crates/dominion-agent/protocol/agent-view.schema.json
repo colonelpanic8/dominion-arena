@@ -183,6 +183,29 @@
       ],
       "additionalProperties": false
     },
+    "pileStructure": {
+      "description": "Public initial setup recipe, never the current hidden order or remaining per-card counts. For stacked/rotating piles, cards lists consecutive groups top first. For shuffled piles, cards is an unordered pool; sampleSize, when present, selects that many cards without replacement, leaving the selected counts hidden.",
+      "type": "object",
+      "properties": {
+        "kind": { "enum": ["stacked", "rotating", "shuffled"] },
+        "cards": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "card": { "$ref": "#/$defs/cardName" },
+              "count": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["card", "count"],
+            "additionalProperties": false
+          }
+        },
+        "sampleSize": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["kind", "cards"],
+      "additionalProperties": false
+    },
     "pile": {
       "type": "object",
       "properties": {
@@ -195,6 +218,14 @@
           "description": "The top card, when it differs from `card` or the pile is mixed.",
           "$ref": "#/$defs/cardName"
         },
+        "members": {
+          "description": "The possible card names in a split or mixed pile, from its public definition. Includes depleted members; gives no remaining counts or current order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/cardName" },
+          "minItems": 2,
+          "uniqueItems": true
+        },
+        "structure": { "$ref": "#/$defs/pileStructure" },
         "cost": { "$ref": "#/$defs/cost" },
         "types": { "type": "array", "items": { "type": "string" } },
         "kingdom": { "type": "boolean" },
@@ -507,7 +538,12 @@
           "type": "array",
           "items": { "$ref": "#/$defs/count" }
         },
-        "name": { "$ref": "#/$defs/cardName" }
+        "name": { "$ref": "#/$defs/cardName" },
+        "expect": {
+          "description": "What the answerer takes each chosen option to be, one per index in the same order: the option's label or card. The answer is rejected if an option is something else.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       },
       "required": ["decision"],
       "oneOf": [{ "required": ["indices"] }, { "required": ["name"] }],

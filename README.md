@@ -76,11 +76,19 @@ reference; `view` with `include_cards: true` retrieves it again, including newly
 cards. With `format: "json"`, the reference is a separate JSON content block containing
 `cards`; the structured agent-view@2 stays unchanged.
 
+Mixed piles also carry `structure`: their public initial recipe, captured by the same
+setup helpers that construct the pile. It distinguishes stacked splits (including
+Castles), rotating four-card piles, and shuffled pools (including random samples such
+as Ruins). The reference explains these generically with initial group sizes and order;
+the live view labels the pile type and gives its current top and total. The recipe never
+reveals hidden order, chosen Ruins counts, or remaining counts by card. Old saved games
+without recipes still load and omit that metadata.
+
 To print an initial view and reference locally:
 
 ```sh
 cargo run -p dominion-agent --example view -- Page Peasant Castles Knights \
-  Encampment Catapult Patrician Settlers Gladiator Sauna
+  Encampment Catapult Augurs Wizards Pickaxe DeathCart
 ```
 
 An agent plays other people through the lobby (see "Accounts and the lobby"): `sign_in`

@@ -114,6 +114,9 @@ impl fmt::Display for Cost {
             f.write_str("P")?;
         }
         if self.debt > 0 {
+            if self.coins > 0 || self.potions > 0 {
+                f.write_str(" + ")?;
+            }
             write!(f, "{}D", self.debt)?;
         }
         Ok(())
@@ -240,7 +243,7 @@ impl Card {
         Card::ALL.iter().copied().filter(move |c| c.set() == set)
     }
 
-    /// The cards of a mixed or split pile named by `self`, in pile order (top first).
+    /// Possible cards of a mixed or split pile, in card-data order, not stack order.
     pub fn pile_members(self) -> Vec<Card> {
         Card::ALL
             .iter()

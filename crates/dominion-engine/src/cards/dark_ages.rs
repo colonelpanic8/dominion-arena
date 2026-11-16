@@ -6,7 +6,7 @@ use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
 use crate::game::{Pos, Scratch, Until, Zone};
-use crate::setup::{self, Setup, add_mixed_pile, add_pile};
+use crate::setup::{self, Setup, add_pile, add_shuffled_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Opt, PileId, PlayerId, Types};
 use serde::{Deserialize, Serialize};
@@ -213,9 +213,9 @@ impl SetRules for Rules {
     fn build_kingdom_pile(g: &mut Game, card: Card) -> bool {
         match card {
             Card::Knights => {
-                let mut knights = Card::Knights.pile_members();
-                g.shuffle(&mut knights);
-                add_mixed_pile(g, Card::Knights, &knights, true);
+                let knights = Card::Knights.pile_members();
+                let size = knights.len();
+                add_shuffled_pile(g, Card::Knights, knights, size, true);
                 true
             }
             Card::Rats => {
@@ -228,14 +228,12 @@ impl SetRules for Rules {
 
     fn ensure(g: &mut Game, _s: &mut Setup) {
         if setup::in_game(g, |c| c.is(Types::LOOTER)) && g.pile_of(Card::Ruins).is_none() {
-            let mut ruins: Vec<Card> = Card::Ruins
+            let ruins: Vec<Card> = Card::Ruins
                 .pile_members()
                 .into_iter()
                 .flat_map(|c| [c; 10])
                 .collect();
-            g.shuffle(&mut ruins);
-            ruins.truncate(10 * (g.num_players() - 1));
-            add_mixed_pile(g, Card::Ruins, &ruins, true);
+            add_shuffled_pile(g, Card::Ruins, ruins, 10 * (g.num_players() - 1), true);
         }
         let extra = [
             (

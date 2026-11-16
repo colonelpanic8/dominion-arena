@@ -19,7 +19,7 @@ use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
-use crate::setup::{self, Setup, add_mixed_pile};
+use crate::setup::{self, Setup, add_shuffled_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Note, PileId, PlayerId, Set, Trace, Types};
 use serde::{Deserialize, Serialize};
@@ -572,13 +572,13 @@ fn add_loot_pile(g: &mut Game) {
     if g.pile_of(Card::Loot).is_some() {
         return;
     }
-    let mut loot: Vec<Card> = Card::Loot
+    let loot: Vec<Card> = Card::Loot
         .pile_members()
         .into_iter()
         .flat_map(|c| [c; 2])
         .collect();
-    g.shuffle(&mut loot);
-    let pile = add_mixed_pile(g, Card::Loot, &loot, false);
+    let size = loot.len();
+    let pile = add_shuffled_pile(g, Card::Loot, loot, size, false);
     g.piles[pile.index()].hidden = true;
 }
 

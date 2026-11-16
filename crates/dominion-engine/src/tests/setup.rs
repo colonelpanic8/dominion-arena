@@ -26,6 +26,103 @@ fn black_market(g: &Game) -> Vec<Card> {
 }
 
 #[test]
+fn pile_setup_recipes_match_stacked_and_rotating_piles_for_each_player_count() {
+    for players in 2..=6 {
+        for card in [
+            Card::Encampment,
+            Card::Catapult,
+            Card::Patrician,
+            Card::Settlers,
+            Card::Gladiator,
+            Card::Sauna,
+            Card::Castles,
+            Card::Augurs,
+            Card::Clashes,
+            Card::Forts,
+            Card::Odysseys,
+            Card::Townsfolk,
+            Card::Wizards,
+        ] {
+            let mut config = GameConfig::new(players, vec![card], 7);
+            config.shelters = Some(false);
+            config.colonies = Some(false);
+            let g = setup_with(config);
+            let pile = g.pile(g.pile_of(card).unwrap());
+            let recipe = pile.structure.as_ref().unwrap();
+            assert_eq!(recipe.sample_size, None);
+            assert_eq!(
+                recipe.kind,
+                if card.set() == Set::Allies {
+                    PileKind::Rotating
+                } else {
+                    PileKind::Stacked
+                }
+            );
+            let expected: Vec<_> = recipe
+                .cards
+                .iter()
+                .flat_map(|group| std::iter::repeat_n(group.card, group.count as usize))
+                .collect();
+            let actual: Vec<_> = pile.cards.iter().rev().map(|&id| g.printed(id)).collect();
+            assert_eq!(actual, expected, "{card}, {players} players");
+            if card.set() == Set::Allies {
+                assert_eq!(recipe.cards.len(), 4);
+                assert!(recipe.cards.iter().all(|group| group.count == 4));
+            } else if card == Card::Castles {
+                assert_eq!(actual.len(), if players == 2 { 8 } else { 12 });
+            } else {
+                assert_eq!(
+                    recipe
+                        .cards
+                        .iter()
+                        .map(|group| group.count)
+                        .collect::<Vec<_>>(),
+                    [5, 5]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn pile_setup_recipes_survive_rotation_depletion_and_midgame_setup() {
+    let mut g = setup(&[Card::Augurs]);
+    let pile = g.pile_of(Card::Augurs).unwrap();
+    let recipe = g.pile(pile).structure.clone();
+    crate::cards::allies::rotate(&mut g, P0, pile);
+    assert_eq!(g.card(*g.pile(pile).cards.last().unwrap()), Card::Acolyte);
+    for id in g.pile(pile).cards.clone() {
+        g.move_card(id, Zone::Trash, crate::game::Pos::Top);
+    }
+    assert_eq!(g.view(P0).pile(pile).structure(), recipe.as_ref());
+    add_kingdom_piles(&mut g, &[Card::Wizards]);
+    let wizards = g.pile(g.pile_of(Card::Wizards).unwrap());
+    assert_eq!(wizards.structure.as_ref().unwrap().kind, PileKind::Rotating);
+}
+
+#[test]
+fn pile_setup_recipes_describe_the_public_pool_before_random_sampling() {
+    let g = setup(&[Card::DeathCart, Card::Knights, Card::Pickaxe]);
+    for (card, groups, copies, sample_size) in [
+        (Card::Ruins, 5, 10, Some(10)),
+        (Card::Knights, 10, 1, None),
+        (Card::Loot, 15, 2, None),
+    ] {
+        let pile = g.view(P0).pile(g.pile_of(card).unwrap());
+        let recipe = pile.structure().unwrap();
+        assert_eq!(recipe.kind, PileKind::Shuffled);
+        assert_eq!(recipe.sample_size, sample_size);
+        assert_eq!(recipe.cards.len(), groups);
+        assert!(recipe.cards.iter().all(|group| group.count == copies));
+        assert_eq!(
+            pile.size(),
+            sample_size.unwrap_or(groups as u32 * copies) as usize
+        );
+        assert_eq!(pile.top().is_none(), card == Card::Loot);
+    }
+}
+
+#[test]
 fn a_looter_in_the_black_market_deck_brings_ruins() {
     let g = game(
         &[Card::BlackMarket],

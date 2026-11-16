@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let view = table.view(PlayerId(0));
     println!(
         "{}\n\n{}",
-        text::reference(&glossary_for(&view)),
+        text::reference(&view, &glossary_for(&view)),
         text::render(&view)
     );
     Ok(())

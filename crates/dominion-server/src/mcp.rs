@@ -331,7 +331,7 @@ impl Session {
                 if include_cards {
                     let cards = dominion_agent::glossary_for(&view);
                     let reference = match format {
-                        Format::Text => dominion_agent::text::reference(&cards),
+                        Format::Text => dominion_agent::text::reference(&view, &cards),
                         Format::Json => {
                             serde_json::to_string_pretty(&serde_json::json!({"cards": cards}))
                                 .expect("glossary entries serialize")

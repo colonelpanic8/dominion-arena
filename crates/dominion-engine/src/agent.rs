@@ -536,6 +536,10 @@ impl<'a> PileView<'a> {
     pub fn hidden(&self) -> bool {
         self.pile.hidden
     }
+
+    pub fn structure(&self) -> Option<&'a crate::PileStructure> {
+        self.pile.structure.as_ref()
+    }
 }
 
 /// A deck of Boons or Hexes: how many are left to draw, and its face-up discard pile.

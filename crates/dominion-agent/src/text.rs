@@ -1,12 +1,63 @@
-//! The compact text rendering of an agent view, derived only from the view's JSON shape.
+//! Text renderings of agent views and their official card references.
 
 use crate::project::cost_text;
 use dominion_protocol::view::*;
 use std::fmt::Write;
 
 /// A flat reference, preserving official wording and dividing lines.
-pub fn reference(entries: &[GlossaryEntry]) -> String {
-    let mut out = String::from("CARDS (printed text and costs)");
+pub fn reference(view: &AgentView, entries: &[GlossaryEntry]) -> String {
+    let mut out = String::new();
+    let mut rotating = false;
+    for pile in view.supply.iter().chain(&view.non_supply) {
+        let Some(structure) = &pile.structure else {
+            continue;
+        };
+        if out.is_empty() {
+            out.push_str("PILE SETUP (initial composition, not remaining counts)\nOnly the top card of a Supply pile can be bought or gained.");
+        }
+        let _ = write!(out, "\n{}: ", pile.card);
+        let groups = structure
+            .cards
+            .iter()
+            .map(|group| format!("{} {}", group.count, group.card))
+            .collect::<Vec<_>>()
+            .join(", ");
+        match structure.kind {
+            PileKind::Stacked => {
+                let _ = write!(out, "stacked; initially top to bottom: {groups}.");
+            }
+            PileKind::Rotating => {
+                rotating = true;
+                let _ = write!(out, "rotating; initially top to bottom: {groups}.");
+            }
+            PileKind::Shuffled => {
+                if let Some(size) = structure.sample_size {
+                    let _ = write!(
+                        out,
+                        "shuffled; random sample of {size} cards without replacement from: {groups}. Exact selected counts are not revealed."
+                    );
+                } else {
+                    let _ = write!(out, "shuffled; initial contents: {groups}.");
+                }
+                out.push_str(if pile.hidden {
+                    " Order is hidden."
+                } else {
+                    " Only the current top is exposed; order below it is hidden."
+                });
+            }
+        }
+        if pile.hidden {
+            out.push_str(" Face down, including the top card.");
+        }
+    }
+    if rotating {
+        out.push_str("\nRotation happens only when an effect says so: move the top card and consecutive copies directly under it to the bottom.");
+    }
+    if !out.is_empty() {
+        out.push_str("\n\n");
+    }
+    out.push_str("CARDS (printed text and costs)");
+    out.push_str("\nEntries include related possibilities; use the current view for availability and current costs.");
     for entry in entries {
         let _ = write!(out, "\n\n{} | {}", entry.name, entry.types.join(" - "));
         if let Some(cost) = &entry.cost {
@@ -156,6 +207,13 @@ fn player(out: &mut Vec<String>, label: &str, p: &PlayerView) {
 
 fn pile(p: &PileView) -> String {
     let mut s = p.card.clone();
+    if let Some(structure) = &p.structure {
+        s.push_str(match structure.kind {
+            PileKind::Stacked => " (stacked)",
+            PileKind::Rotating => " (rotating)",
+            PileKind::Shuffled => " (shuffled)",
+        });
+    }
     if let Some(top) = &p.top {
         let _ = write!(s, " (top {top})");
     }

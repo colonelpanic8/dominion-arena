@@ -3,7 +3,9 @@
 use crate::cards::{self, Ext};
 use crate::event::Event;
 use crate::game::{CardDeck, Pile, Player, Turn, Zone};
-use crate::{Card, CardId, Game, Kind, Note, PileId, PlayerId, Set, Types};
+use crate::{
+    Card, CardId, Game, Kind, Note, PileId, PileKind, PileStructure, PlayerId, Set, Types,
+};
 use rand::SeedableRng;
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand_chacha::ChaCha8Rng;
@@ -694,5 +696,45 @@ pub(crate) fn add_mixed_pile(g: &mut Game, name: Card, cards: &[Card], in_supply
     for &card in cards.iter().rev() {
         g.create(card, Zone::Pile(id));
     }
+    id
+}
+
+/// Adds a known stack, listed top first, and records its public setup recipe.
+pub(crate) fn add_stacked_pile(
+    g: &mut Game,
+    name: Card,
+    cards: &[Card],
+    in_supply: bool,
+) -> PileId {
+    let id = add_mixed_pile(g, name, cards, in_supply);
+    g.piles[id.index()].structure = Some(PileStructure::new(PileKind::Stacked, cards));
+    id
+}
+
+pub(crate) fn add_rotating_pile(
+    g: &mut Game,
+    name: Card,
+    cards: &[Card],
+    in_supply: bool,
+) -> PileId {
+    let id = add_stacked_pile(g, name, cards, in_supply);
+    g.piles[id.index()].structure.as_mut().unwrap().kind = PileKind::Rotating;
+    id
+}
+
+/// Shuffles a public pool, optionally taking only a random sample of it.
+pub(crate) fn add_shuffled_pile(
+    g: &mut Game,
+    name: Card,
+    mut pool: Vec<Card>,
+    size: usize,
+    in_supply: bool,
+) -> PileId {
+    let mut structure = PileStructure::new(PileKind::Shuffled, &pool);
+    structure.sample_size = (size < pool.len()).then_some(size as u32);
+    g.shuffle(&mut pool);
+    pool.truncate(size);
+    let id = add_mixed_pile(g, name, &pool, in_supply);
+    g.piles[id.index()].structure = Some(structure);
     id
 }
