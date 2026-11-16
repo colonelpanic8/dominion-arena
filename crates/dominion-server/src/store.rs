@@ -1,6 +1,7 @@
 //! The state directory: one `<game id>.json` per game, rewritten whole and atomically
 //! after every change. The accounts' database lies beside them (`arena::db`). Games the
-//! server stops hosting are moved to `expired/`, never deleted.
+//! server stops hosting are moved to `expired/`, never deleted, and are still read from
+//! there to be looked at.
 
 use serde::Serialize;
 use std::fs;

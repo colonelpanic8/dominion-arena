@@ -159,7 +159,12 @@ fn retired_games_leave_at_once_unless_something_plays_them() {
 
     hub.retire("g1").unwrap();
     assert!(dir.join("expired/g1.json").exists() && !dir.join("g1.json").exists());
-    assert!(hub.claim("g1", &tokens[0]).is_err());
+    let seat = hub.claim("g1", &tokens[0]).unwrap();
+    assert!(hub.seat_view(&seat, None).is_ok());
+    assert!(matches!(
+        hub.resign(&seat, "resigned"),
+        Err(HubError::UnknownGame(_))
+    ));
     assert!(matches!(hub.retire("g1"), Err(HubError::UnknownGame(_))));
     assert!(matches!(hub.retire("g2"), Err(HubError::Conflict(_))));
     let hosting: Vec<String> = hub.hosting().into_iter().map(|g| g.id).collect();

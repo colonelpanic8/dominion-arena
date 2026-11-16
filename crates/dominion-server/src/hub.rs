@@ -15,7 +15,7 @@ use dominion_protocol::view::GameInfo;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::fs;
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -414,11 +414,16 @@ impl Index {
 type OnEnd = Box<dyn Fn(Ended) + Send + Sync>;
 type Users = Box<dyn Fn(&[Option<String>]) -> Vec<Option<UserRef>> + Send + Sync>;
 
+/// How many games read from `expired/` are kept loaded.
+const ARCHIVE_CACHE: usize = 16;
+
 /// The most games in progress unless [`Hub::set_max_games`] says otherwise.
 pub const DEFAULT_MAX_GAMES: usize = 1000;
 
 pub struct Hub {
     index: Mutex<Index>,
+    /// Games read from `expired/` lately, most recent first: never hosted again.
+    archive: Mutex<VecDeque<(String, Arc<Hosted>)>>,
     store: Option<Arc<Store>>,
     timing: Mutex<Timing>,
     max_games: AtomicU64,
@@ -432,6 +437,7 @@ impl Default for Hub {
     fn default() -> Hub {
         Hub {
             index: Mutex::default(),
+            archive: Mutex::default(),
             store: None,
             timing: Mutex::default(),
             max_games: AtomicU64::new(DEFAULT_MAX_GAMES as u64),
@@ -927,6 +933,39 @@ impl Hub {
             .ok_or_else(|| HubError::UnknownGame(id.into()))
     }
 
+    /// Game `id` to look at: the hosted one, else the one kept in `expired/`, which
+    /// nothing changes.
+    fn read(&self, id: &str) -> Result<Arc<Hosted>, HubError> {
+        self.game(id).or_else(|e| self.archived(id).ok_or(e))
+    }
+
+    fn archived(&self, id: &str) -> Option<Arc<Hosted>> {
+        let store = self.store.as_ref()?;
+        // The id names a file: nothing but `g<number>`.
+        if id_number(id).is_none_or(|n| format!("g{n}") != id) {
+            return None;
+        }
+        let mut archive = lock(&self.archive);
+        if let Some(i) = archive.iter().position(|(k, _)| k == id) {
+            let entry = archive.remove(i)?;
+            let game = entry.1.clone();
+            archive.push_front(entry);
+            return Some(game);
+        }
+        let path = store.expired_dir().join(format!("{id}.json"));
+        let modified = fs::metadata(&path).and_then(|m| m.modified()).ok()?;
+        let (table, tokens, meta) = load(&path, id)
+            .inspect_err(|e| eprintln!("dominion: reading {}: {e}", path.display()))
+            .ok()?;
+        let changed = modified
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        let game = Arc::new(Hosted::new(table, tokens, meta, changed));
+        archive.push_front((id.into(), game.clone()));
+        archive.truncate(ARCHIVE_CACHE);
+        Some(game)
+    }
+
     pub fn configuration(&self, id: &str) -> Option<GameConfig> {
         self.game(id)
             .ok()
@@ -937,7 +976,14 @@ impl Hub {
     pub fn claim(&self, id: &str, token: &str) -> Result<Seat, HubError> {
         let index = lock(&self.index);
         let Some(game) = index.games.get(id) else {
-            return Err(HubError::UnknownGame(id.into()));
+            drop(index);
+            let game = self.archived(id).ok_or(HubError::UnknownGame(id.into()))?;
+            let seat = (game.tokens.iter().position(|t| t == token))
+                .ok_or_else(|| HubError::BadToken(id.into()))?;
+            return Ok(Seat {
+                game: id.into(),
+                seat: PlayerId(seat as u8),
+            });
         };
         let seat = index
             .seats
@@ -973,8 +1019,22 @@ impl Hub {
     /// The seats account `user` plays in game `id`.
     pub fn owned_in(&self, id: &str, user: &str) -> Vec<Seat> {
         let index = lock(&self.index);
-        let seats = index.owned.get(user).into_iter().flatten();
-        seats.filter(|s| s.game == id).cloned().collect()
+        if index.games.contains_key(id) {
+            let seats = index.owned.get(user).into_iter().flatten();
+            return seats.filter(|s| s.game == id).cloned().collect();
+        }
+        drop(index);
+        let Some(game) = self.archived(id) else {
+            return vec![];
+        };
+        let meta = lock(&game.meta);
+        (meta.owners.iter().enumerate())
+            .filter(|(_, owner)| owner.as_deref() == Some(user))
+            .map(|(i, _)| Seat {
+                game: id.into(),
+                seat: PlayerId(i as u8),
+            })
+            .collect()
     }
 
     /// The seats account `user` plays: in games still running, and in games that ended
@@ -1044,13 +1104,13 @@ impl Hub {
     }
 
     pub fn meta(&self, id: &str) -> Result<Meta, HubError> {
-        Ok(lock(&self.game(id)?.meta).clone())
+        Ok(lock(&self.read(id)?.meta).clone())
     }
 
     /// `seat`'s view, its text rendering, and what it is told about undos
     /// ([`Hub::undo_note`]), read together.
     pub fn view(&self, seat: &Seat) -> Result<(AgentView, String, Option<String>), HubError> {
-        let game = self.game(&seat.game)?;
+        let game = self.read(&seat.game)?;
         let table = lock(&game.table);
         let note = self.undo_note(&game, &table, seat.seat);
         engine(|| {
@@ -1112,7 +1172,7 @@ impl Hub {
         seat: &Seat,
         project: impl for<'a> FnOnce(SeatObservation<'a>) -> T,
     ) -> Result<T, HubError> {
-        let game = self.game(&seat.game)?;
+        let game = self.read(&seat.game)?;
         let table = lock(&game.table);
         if seat.seat.index() >= table.names().len() {
             return Err(HubError::Forbidden("invalid seat".into()));
@@ -1149,7 +1209,7 @@ impl Hub {
     /// The common MCP presentation reads the seat's actual view and complete visible
     /// log together; its log cursor must not change `sinceLastDecision` in the view.
     pub(crate) fn play_observation(&self, seat: &Seat) -> Result<PlayObservation, HubError> {
-        let game = self.game(&seat.game)?;
+        let game = self.read(&seat.game)?;
         let table = lock(&game.table);
         engine(|| {
             let view = table.view(seat.seat);
@@ -1184,7 +1244,7 @@ impl Hub {
             })
             .collect::<Result<_, _>>()?;
         let Some(seat) = seat else { return Ok(entries) };
-        let game = self.game(&seat.game)?;
+        let game = self.read(&seat.game)?;
         let table = lock(&game.table);
         engine(|| {
             entries
@@ -1223,7 +1283,7 @@ impl Hub {
     /// `seat`'s view, with the log from `log_from` on if given, the game's version and
     /// the seat deciding, all read together.
     pub fn seat_view(&self, seat: &Seat, log_from: Option<usize>) -> Result<SeatView, HubError> {
-        let game = self.game(&seat.game)?;
+        let game = self.read(&seat.game)?;
         let (mut seat_view, owners) = {
             let table = lock(&game.table);
             let view = engine(|| match log_from {
@@ -1250,7 +1310,7 @@ impl Hub {
 
     /// Game `id` as someone watching sees it, with the log from `log_from` on.
     pub fn watch_view(&self, id: &str, log_from: usize) -> Result<SeatView, HubError> {
-        let game = self.game(id)?;
+        let game = self.read(id)?;
         let refused = || HubError::Forbidden(format!("game {id} can't be watched"));
         let (mut seat_view, owners) = {
             let table = lock(&game.table);
@@ -1278,7 +1338,7 @@ impl Hub {
 
     /// Game `id`'s version, which every change bumps, and its chat's counter.
     pub fn transcript_changes(&self, id: &str) -> Result<watch::Receiver<u64>, HubError> {
-        Ok(self.game(id)?.transcript.subscribe())
+        Ok(self.read(id)?.transcript.subscribe())
     }
 
     pub(crate) fn transcript_changed(&self, id: &str) -> Result<(), HubError> {
@@ -1287,7 +1347,7 @@ impl Hub {
     }
 
     pub fn subscribe(&self, id: &str) -> Result<Feed, HubError> {
-        let game = self.game(id)?;
+        let game = self.read(id)?;
         Ok(Feed {
             version: game.version.subscribe(),
             chat: game.chat.subscribe(),
@@ -1304,7 +1364,7 @@ impl Hub {
     /// Counts a call waiting on the game for `seat` until the result is dropped: while
     /// there is one, the seat is connected.
     pub fn connect(&self, seat: &Seat) -> Result<Connection, HubError> {
-        let game = self.game(&seat.game)?;
+        let game = self.read(&seat.game)?;
         game.streams[seat.seat.index()].fetch_add(1, Ordering::Relaxed);
         Ok(Connection {
             game,
@@ -1321,14 +1381,14 @@ impl Hub {
 
     /// Counts someone watching game `id` until the result is dropped.
     pub fn watching(&self, id: &str) -> Result<Watching, HubError> {
-        let game = self.game(id)?;
+        let game = self.read(id)?;
         game.watchers.fetch_add(1, Ordering::Relaxed);
         Ok(Watching(game))
     }
 
     /// The name of `seat`.
     pub fn seat_name(&self, seat: &Seat) -> Result<String, HubError> {
-        let game = self.game(&seat.game)?;
+        let game = self.read(&seat.game)?;
         let table = lock(&game.table);
         Ok(table.names()[seat.seat.index()].clone())
     }
@@ -1736,6 +1796,7 @@ impl Hub {
 
     fn unhost(&self, id: &str) -> Result<(), String> {
         lock(&self.index).remove(id);
+        lock(&self.archive).retain(|(k, _)| k != id);
         match &self.store {
             Some(store) => {
                 (store.retire(id)).map_err(|e| format!("moving game {id} to expired: {e}"))
@@ -1895,5 +1956,56 @@ mod shared_response_tests {
             hub.project_seat(&invalid, |_| ()),
             Err(HubError::Forbidden(_))
         ));
+    }
+}
+
+#[cfg(test)]
+mod archive_tests {
+    use super::*;
+
+    #[test]
+    fn expired_games_can_be_viewed_but_not_played() {
+        let dir = tempfile::tempdir().unwrap();
+        let (hub, _) = Hub::open(dir.path(), Duration::from_secs(3600)).unwrap();
+        let game = hub
+            .create(&NewGame {
+                players: 2,
+                kingdom: vec!["Village".into()],
+                seed: Some(1),
+                watchable: Some(true),
+                ..NewGame::default()
+            })
+            .unwrap();
+        let id = game.game_id.clone();
+        let token = game.seats[0].token.clone();
+        let seat = hub.claim(&id, &token).unwrap();
+        hub.resign(&seat, "resigned").unwrap();
+        let ended = hub.seat_view(&seat, Some(0)).unwrap();
+        hub.retire(&id).unwrap();
+        assert!(hub.list().is_empty());
+
+        let check = |hub: &Hub| {
+            let seat = hub.claim(&id, &token).unwrap();
+            assert_eq!(hub.seat_view(&seat, Some(0)).unwrap().view, ended.view);
+            assert!(!hub.watch_view(&id, 0).unwrap().view.game.running);
+            assert!(hub.subscribe(&id).is_ok());
+            assert!(matches!(
+                hub.resign(&seat, "resigned"),
+                Err(HubError::UnknownGame(_))
+            ));
+            assert!(matches!(hub.claim(&id, "nope"), Err(HubError::BadToken(_))));
+            assert!(hub.list().is_empty());
+        };
+        check(&hub);
+        drop(hub);
+        let (hub, loaded) = Hub::open(dir.path(), Duration::from_secs(3600)).unwrap();
+        assert_eq!(loaded.games, 0);
+        check(&hub);
+        for id in ["../g1", "g01", "g1/../g1", "expired/g1"] {
+            assert!(matches!(
+                hub.watch_view(id, 0),
+                Err(HubError::UnknownGame(_))
+            ));
+        }
     }
 }

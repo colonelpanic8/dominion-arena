@@ -616,7 +616,9 @@ names another site as its `Origin` is refused. The server hosts at most `max_gam
 unfinished games. It stops hosting finished games after `keep_finished_days` and
 unfinished ones nobody has touched after `keep_idle_days` (0: never), moving their files
 to `state_dir/expired/`; no game file is ever deleted, and an expired game's id is never
-reused.
+reused. An expired game can still be opened: its players' seats and anyone allowed to
+watch it see it as it was left, read from `expired/` when asked for, and nothing more
+can be done in it.
 
 Accounts, sessions and finished games' records are kept in a SQLite database beside the
 games, `dominion.sqlite` under `state_dir` (in memory with `--ephemeral`): a game's
