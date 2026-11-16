@@ -70,7 +70,7 @@ if Path('/work/seat-mcp.json').exists():
     rpc('initialize',{'protocolVersion':'2025-03-26','capabilities':{},'clientInfo':{'name':'fixture','version':'1'}})
     rpc('notifications/initialized',{},None)
     tools = rpc('tools/list',{})['result']['tools']
-    assert sorted(t['name'] for t in tools)==['cards','log','play_treasures','state','step','wait']
+    assert sorted(t['name'] for t in tools)==['cards','log','play_treasures','state','step','turns','wait']
     assert all('token' not in t['inputSchema'].get('properties',{}) for t in tools)
     assert 'error' in rpc('tools/call',{'name':'create_game','arguments':{'players':2}})
     assert 'error' in rpc('tools/call',{'name':'view','arguments':{'token':'another-seat'}})
