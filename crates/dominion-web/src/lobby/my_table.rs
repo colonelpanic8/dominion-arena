@@ -558,7 +558,7 @@ pub fn GameOptions() -> Element {
                 div { class: "lb-row-rule" }
                 Switch { on: r.rated, fixed: !host, onclick: move |_| ctx.edit(|r| r.rated = !r.rated) }
             }
-            div { class: "lb-row", "data-option": "watchable", title: "Anyone signed in may watch the game: what every player may know, nobody's hand",
+            div { class: "lb-row", "data-option": "watchable", title: "Anyone signed in may watch the game with every player's hand and full deck visible",
                 div { class: "lb-row-label", "Spectators allowed" }
                 div { class: "lb-row-rule" }
                 Switch { on: r.watchable, fixed: !host, onclick: move |_| ctx.edit(|r| r.watchable = !r.watchable) }

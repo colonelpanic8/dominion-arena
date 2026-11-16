@@ -285,7 +285,7 @@ impl Table {
         self.knowledge.watches()
     }
 
-    /// The view of someone watching without a seat: what every player may know, with the
+    /// The view of someone watching without a seat: every player's cards, with the
     /// log from `log_from` on and no decision. `None` unless [`Table::watchable`].
     pub fn watch_view(&self, log_from: usize) -> Option<AgentView> {
         let known = self.knowledge.watched(&self.game)?;

@@ -20,6 +20,7 @@ fn zone_popup(title: String, z: &Zone, note: Option<String>) -> Popup {
         stacks: z.known.clone(),
         unknown: z.unknown,
         note,
+        composition: None,
     }
 }
 
@@ -154,12 +155,13 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
         }
         if let Some(o) = them {
             {
-                let hand_n = o.hand.count as usize;
-                let row = g.opp_hand_row(hand_n.min(12));
+                let slots = hand_slots(&o.hand, b.watching);
+                let row = g.opp_hand_row(slots.len());
                 let hand = zone_popup(format!("{}'s hand", o.name), &o.hand, None);
-                let deck = zone_popup(format!("{}'s deck", o.name), &o.deck, None);
+                let deck = deck_popup(&o);
+                let deck_key = deck.clone();
                 let discard = zone_popup(format!("{}'s discard pile", o.name), &o.discard, None);
-                let hand_box = if hand_n > 0 {
+                let hand_box = if !slots.is_empty() {
                     Rect::new(row.xs[0], row.y, row.xs[row.xs.len() - 1] + row.w - row.xs[0], row.h)
                 } else {
                     Rect::new(g.opp_hand_x, g.opp_hand_y, row.w, row.h)
@@ -170,15 +172,15 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                         style: "{hand_box.style()}",
                         "data-anchor": "hand:{o.seat}",
                         onclick: move |e| { e.stop_propagation(); ctx.open(hand.clone()); },
-                        for (i, x) in row.xs.iter().enumerate() {
+                        for (i, (s, back)) in slots.iter().enumerate() {
                             TableCard {
                                 key: "{i}",
-                                name: "",
+                                name: s.card.clone(),
                                 size: CardSize::Full,
-                                back: true,
+                                back: *back,
                                 inverted: true,
-                                count: (i + 1 == row.xs.len()).then_some(o.hand.count),
-                                at: Rect::new(x - hand_box.x, 0.0, row.w, row.h),
+                                count: (s.count > 1).then_some(s.count),
+                                at: Rect::new(row.xs[i] - hand_box.x, 0.0, row.w, row.h),
                             }
                         }
                     }
@@ -209,7 +211,17 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                             class: "dt-peek",
                         }
                     } else {
-                        div { class: "dt-anchor-box", style: "{g.opp_deck.style()}", "data-anchor": "deck:{o.seat}" }
+                        div {
+                            class: "dt-anchor-box dt-click", style: "{g.opp_deck.style()}",
+                            "data-anchor": "deck:{o.seat}", role: "button", tabindex: 0,
+                            title: "Deck composition",
+                            onclick: move |e| { e.stop_propagation(); ctx.open(deck.clone()); },
+                            onkeydown: move |e| {
+                                if e.key() == Key::Enter || e.key() == Key::Character(" ".into()) {
+                                    e.stop_propagation(); e.prevent_default(); ctx.open(deck_key.clone());
+                                }
+                            },
+                        }
                     }
                     PlayerTabs { player: o.clone(), g: g.clone(), you: false, show_in_play: !o.is_turn }
                 }
@@ -279,8 +291,95 @@ pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     }
 }
 
-/// The most backs drawn for a watched hand.
-const WATCHED_HAND_BACKS: u32 = 12;
+fn hand_slots(hand: &Zone, faces: bool) -> Vec<(Stack, bool)> {
+    let mut slots: Vec<_> = if faces {
+        hand.known.iter().map(|s| (s.clone(), false)).collect()
+    } else {
+        vec![]
+    };
+    let unknown = if faces { hand.unknown } else { hand.count };
+    let backs = if faces {
+        unknown.min(1)
+    } else {
+        unknown.min(12)
+    };
+    for i in 0..backs {
+        slots.push((
+            Stack {
+                card: String::new(),
+                count: if i + 1 == backs { unknown } else { 1 },
+            },
+            true,
+        ));
+    }
+    slots
+}
+
+fn deck_popup(p: &PlayerEntry) -> Popup {
+    Popup {
+        title: format!("{}'s deck composition", p.name),
+        stacks: vec![],
+        unknown: 0,
+        note: None,
+        composition: Some(p.seat),
+    }
+}
+
+#[component]
+pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
+    let ctx = use_table();
+    let Some(p) = board.players().find(|p| p.seat == seat) else {
+        return rsx! {};
+    };
+    let sections = p.composition();
+    rsx! {
+        div {
+            class: "dt-window dt-composition",
+            role: "dialog",
+            "aria-label": "{p.name}'s deck composition",
+            onclick: move |e| e.stop_propagation(),
+            div { class: "dt-window-title", "{p.name}'s deck composition" }
+            button { class: "dt-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+            div { class: "dt-composition-body",
+                p { class: "dt-composition-note", "Known cards by location; deck order is not shown." }
+                div { class: "dt-composition-zones",
+                    for section in sections {
+                        section { key: "{section.key}", "data-zone": "{section.key}",
+                            h3 { "{section.label}" span { "{section.zone.count}" } }
+                            ul {
+                                for s in &section.zone.known {
+                                    li { key: "{s.card}",
+                                        CardName { name: s.card.clone() }
+                                        span { "{s.count}" }
+                                    }
+                                }
+                                if section.zone.unknown > 0 {
+                                    li { class: "dt-composition-unknown", "Unknown" span { "{section.zone.unknown}" } }
+                                }
+                                if section.zone.count == 0 { li { "Empty" } }
+                            }
+                        }
+                    }
+                }
+                if !p.unlocated.is_empty() {
+                    h3 { "Known cards with uncertain locations" }
+                    for s in &p.unlocated {
+                        p { CardName { name: s.card.clone() } " × {s.count}" }
+                    }
+                }
+                for (i, u) in p.uncertain.iter().chain(&board.uncertain).enumerate() {
+                    p { key: "uncertain{i}", class: "dt-composition-note",
+                        "{u.count} of "
+                        for s in &u.candidates {
+                            span { CardName { name: s.card.clone() } " × {s.count}; " }
+                        }
+                        "are among {u.text}. Their exact locations are unknown."
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// The area of the seat's own player: their bar, deck and discard pile, hand and tabs.
 /// Someone watching sees the first player there.
@@ -290,54 +389,20 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
         return rsx! {};
     };
     let watching = board.watching;
-    let (deck, discard) = if watching {
-        (
-            zone_popup(format!("{}'s deck", you.name), &you.deck, None),
-            zone_popup(format!("{}'s discard pile", you.name), &you.discard, None),
-        )
-    } else {
-        (
-            zone_popup(
-                "Your deck".into(),
-                &you.deck,
-                Some(if you.deck_order_known {
-                    "You know its order.".into()
-                } else {
-                    "What you know is in it, in no order.".into()
-                }),
-            ),
-            zone_popup("Your discard pile".into(), &you.discard, None),
-        )
-    };
-    // Someone watching sees a hand as its player's opponents do: backs, one a card, the
-    // last with their number; what is known of it opens from them.
+    let deck = deck_popup(&you);
+    let deck_key = deck.clone();
+    let discard = zone_popup(
+        if watching {
+            format!("{}'s discard pile", you.name)
+        } else {
+            "Your discard pile".into()
+        },
+        &you.discard,
+        None,
+    );
     let hand = watching.then(|| zone_popup(format!("{}'s hand", you.name), &you.hand, None));
-    let mut slots: Vec<(Stack, bool)> = if watching {
-        vec![]
-    } else {
-        you.hand.known.iter().map(|s| (s.clone(), false)).collect()
-    };
-    let faces = slots.len();
-    let backs = if watching {
-        you.hand.count.min(WATCHED_HAND_BACKS)
-    } else {
-        you.hand.unknown.min(1)
-    };
-    for i in 0..backs {
-        let last = i + 1 == backs;
-        let count = match (watching, last) {
-            (true, true) => you.hand.count,
-            (false, _) => you.hand.unknown,
-            _ => 1,
-        };
-        slots.push((
-            Stack {
-                card: String::new(),
-                count,
-            },
-            true,
-        ));
-    }
+    let slots = hand_slots(&you.hand, true);
+    let faces = slots.iter().filter(|(_, back)| !back).count();
     let row = g.hand_row(slots.len());
     let hand_box = Rect::new(g.hand_x, g.hand_y, g.hand_right - g.hand_x, g.hand_h);
     let your_turn = board.play_area.player.as_ref().map(|w| w.seat) == Some(you.seat);
@@ -370,7 +435,17 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                 class: "dt-own-pile",
             }
         } else {
-            div { class: "dt-anchor-box", style: "{g.your_deck.style()}", "data-anchor": "deck:{you.seat}" }
+            div {
+                class: "dt-anchor-box dt-click", style: "{g.your_deck.style()}",
+                "data-anchor": "deck:{you.seat}", role: "button", tabindex: 0,
+                title: "Deck composition",
+                onclick: move |e| { e.stop_propagation(); ctx.open(deck.clone()); },
+                onkeydown: move |e| {
+                    if e.key() == Key::Enter || e.key() == Key::Character(" ".into()) {
+                        e.stop_propagation(); e.prevent_default(); ctx.open(deck_key.clone());
+                    }
+                },
+            }
         }
         div {
             class: "dt-hand {seat_class(you.seat)}",
@@ -408,5 +483,46 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
             }
         }
         PlayerTabs { player: you.clone(), g: g.clone(), you: true, show_in_play: !your_turn }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_hands_show_known_cards_and_keep_unknown_cards_face_down() {
+        let hand = Zone {
+            count: 5,
+            known: vec![Stack {
+                card: "Copper".into(),
+                count: 3,
+            }],
+            unknown: 2,
+        };
+        let visible = hand_slots(&hand, true);
+        assert_eq!(
+            visible,
+            vec![
+                (
+                    Stack {
+                        card: "Copper".into(),
+                        count: 3
+                    },
+                    false
+                ),
+                (
+                    Stack {
+                        card: String::new(),
+                        count: 2
+                    },
+                    true
+                ),
+            ]
+        );
+        let hidden = hand_slots(&hand, false);
+        assert_eq!(hidden.len(), 5);
+        assert!(hidden.iter().all(|(s, back)| s.card.is_empty() && *back));
+        assert_eq!(hidden.last().unwrap().0.count, 5);
     }
 }

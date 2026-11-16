@@ -910,3 +910,75 @@ fn a_game_ended_early_says_who_ended_it_to_every_viewer() {
         assert!(b.players().find(|p| p.seat == 0).unwrap().account.is_some());
     }
 }
+
+#[test]
+fn deck_composition_preserves_deductions_and_uncertainty() {
+    let cards = card_db();
+    let t = Table::new("composition", config(&[], 2, 7), vec![]).unwrap();
+    let view = t.view(PlayerId(0));
+    let b = board(
+        &view,
+        t.deciding().map(|p| p.0),
+        &t.extras(PlayerId(0)),
+        &cards,
+    );
+    let own = b.you.as_ref().unwrap().composition();
+    let other = b.opponents[0].composition();
+    let own_deck = &own.iter().find(|z| z.key == "deck").unwrap().zone;
+    let other_deck = &other.iter().find(|z| z.key == "deck").unwrap().zone;
+    assert_eq!(own_deck.count, 5);
+    assert_eq!(
+        own_deck.unknown, 0,
+        "starting cards minus the known hand identify the deck"
+    );
+    assert_eq!(
+        other_deck.unknown, 5,
+        "the opponent's hand/deck split is private"
+    );
+    assert!(other_deck.known.is_empty());
+    assert_eq!(
+        other.iter().find(|z| z.key == "owned").unwrap().zone.count,
+        10
+    );
+
+    let watch = t.watch_view(0).unwrap();
+    let b = board(
+        &watch,
+        t.deciding().map(|p| p.0),
+        &t.watch_extras().unwrap(),
+        &cards,
+    );
+    for p in b.players() {
+        for section in p.composition() {
+            assert_eq!(section.zone.unknown, 0);
+            assert_eq!(zone_sum(&section.zone), section.zone.count);
+        }
+    }
+}
+
+#[test]
+fn deck_composition_keeps_private_set_aside_cards_unknown() {
+    let cards = card_db();
+    let t = Table::new("composition", config(&[], 2, 7), vec![]).unwrap();
+    let mut view = t.view(PlayerId(0));
+    view.opponents[0].other_zones.insert(
+        "setAside".into(),
+        dominion_protocol::ZoneView {
+            count: 2,
+            known: BTreeMap::new(),
+            unknown: 2,
+        },
+    );
+    let b = board(
+        &view,
+        t.deciding().map(|p| p.0),
+        &t.extras(PlayerId(0)),
+        &cards,
+    );
+    let sections = b.opponents[0].composition();
+    let aside = sections.iter().find(|z| z.key == "setAside").unwrap();
+    assert_eq!(aside.label, "Set aside");
+    assert_eq!(aside.zone.count, 2);
+    assert_eq!(aside.zone.unknown, 2);
+    assert!(aside.zone.known.is_empty());
+}

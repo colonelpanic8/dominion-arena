@@ -619,7 +619,14 @@ async fn watch(
     let ident = api.signed_in(&headers)?;
     api.arena.touch(&ident);
     let from = query(view_query)?.log_from.unwrap_or(0);
-    Ok(axum::Json(api.hub.watch_view(&id, from)?))
+    let watched = api.hub.watch_view(&id, from)?;
+    if watched.view.game.running && !api.hub.owned_in(&id, &ident.user).is_empty() {
+        return Err(Error::new(
+            StatusCode::FORBIDDEN,
+            "players must use their seat view while the game is running",
+        ));
+    }
+    Ok(axum::Json(watched))
 }
 
 async fn answer(

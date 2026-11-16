@@ -77,7 +77,7 @@ fn random_games_produce_valid_views_and_answerable_options() {
             assert_valid(&decision_schema, &json["decision"], "decision");
             assert_cards_placed_where_it_tells_them_apart(&d);
             let log_from = table.game().log().len().saturating_sub(40);
-            assert_watcher_sees_only_what_is_public(
+            assert_watcher_sees_every_players_cards(
                 &table,
                 &view_schema,
                 log_from,
@@ -132,7 +132,7 @@ fn random_games_produce_valid_views_and_answerable_options() {
         assert_valid(&view_schema, &json, "the final view");
         assert!(json["game"]["result"].is_object());
         let what = format!("seed {seed} at the end");
-        assert_watcher_sees_only_what_is_public(&table, &view_schema, 0, &what);
+        assert_watcher_sees_every_players_cards(&table, &view_schema, 0, &what);
     }
 }
 
@@ -181,13 +181,8 @@ fn words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// Someone watching is shown a valid view with no seat and no decision, in which all the
-/// public state is what every seat is shown, and every zone holds as many cards as the
-/// seats see there. What they know of those cards is held to the truth, and to being the
-/// same in worlds that differ only in what is hidden, by the engine's fuzz tests: it is no
-/// subset of what a seat's view states, since either may state a deduction the other
-/// leaves unsaid (a deck of twelve with nine other cards to hold has three Coppers).
-fn assert_watcher_sees_only_what_is_public(
+/// Spectators see every player's cards, with public state and no decision.
+fn assert_watcher_sees_every_players_cards(
     table: &Table,
     schema: &Validator,
     log_from: usize,
@@ -261,9 +256,31 @@ fn assert_watcher_sees_only_what_is_public(
                 let what = format!("{what} {zone}");
                 assert_eq!((zone, count), (zone_b, count_b), "{what}");
                 assert_eq!(total(known) + unknown, *count, "{what}");
+                assert_eq!(*unknown, 0, "{what}");
             }
             let owned = |p: &PlayerView| total(&p.owned.known) + p.owned.unknown;
             assert_eq!(owned(ours), owned(theirs), "{what}");
+            assert_eq!(ours.owned.unknown, 0, "{what}");
+            assert!(ours.uncertain.is_empty(), "{what}");
+            let game = table.game();
+            let p = PlayerId(ours.index);
+            let mut truth = CardCount::new();
+            for id in game.player(p).owned() {
+                *truth.entry(game.printed(id).name().into()).or_default() += 1;
+            }
+            assert_eq!(ours.owned.known, truth, "{what}");
+            for (zone, ids) in [
+                (&ours.hand.known, &game.player(p).hand),
+                (&ours.deck.known, &game.player(p).deck),
+                (&ours.discard.known, &game.player(p).discard),
+                (&ours.in_play.known, &game.player(p).in_play),
+            ] {
+                let mut truth = CardCount::new();
+                for &id in ids {
+                    *truth.entry(game.card(id).name().into()).or_default() += 1;
+                }
+                assert_eq!(*zone, truth, "{what}");
+            }
             // Everything else about a player is public.
             let mut rest = ours.clone();
             rest.hand = theirs.hand.clone();
@@ -283,67 +300,37 @@ fn watching(t: &Table) -> AgentView {
     t.watch_view(0).expect("a new table is watchable")
 }
 
-/// A hand its owner drew and the cards they look at are theirs alone; a card revealed to
-/// everyone is known to someone watching too.
 #[test]
-fn someone_watching_knows_revealed_cards_but_not_the_ones_a_player_looks_at() {
+fn spectators_see_hands_and_private_looks_without_changing_seat_knowledge() {
     let mut t = table(&[Card::Navigator], 1, &["Ann", "Ben"]);
-    let hand = |v: &AgentView, p: usize| v.opponents[p].hand.clone();
-    assert_eq!(t.view(PlayerId(0)).you.unwrap().hand.unknown, 0);
+    let before = t.view(PlayerId(0));
+    let watch = watching(&t);
     for p in 0..2 {
-        let hand = hand(&watching(&t), p);
-        assert_eq!((hand.count, hand.unknown, hand.known.len()), (5, 5, 0));
+        let player = &watch.opponents[p];
+        assert_eq!((player.hand.count, player.hand.unknown), (5, 0));
+        assert_eq!(total(&player.hand.known), 5);
+        assert_eq!(total(&player.deck.known), player.deck.count);
+        assert_eq!(player.deck.unknown, 0);
+        assert_eq!(
+            player.owned.known,
+            CardCount::from([("Copper".into(), 7), ("Estate".into(), 3)])
+        );
     }
+    assert_eq!(t.view(PlayerId(0)), before);
+    assert_eq!(before.opponents[0].hand.unknown, 5);
     let asked = |_: PlayerId, d: &AgentDecision| d.source.as_deref() == Some("Navigator");
     assert_eq!(play_to(&mut t, "Navigator", asked), Some(PlayerId(0)));
-    let looker = t.view(PlayerId(0)).you.unwrap();
-    let mine = &looker.other_zones["looking"];
-    assert_eq!((mine.count, mine.unknown), (5, 0));
+    let before = t.view(PlayerId(1));
     let watch = watching(&t);
-    let theirs = &watch.opponents[0].other_zones["looking"];
+    let looked_at = &watch.opponents[0].other_zones["looking"];
+    assert_eq!((looked_at.count, looked_at.unknown), (5, 0));
     assert_eq!(
-        (theirs.count, theirs.unknown, theirs.known.len()),
-        (5, 5, 0)
+        looked_at.known,
+        t.view(PlayerId(0)).you.unwrap().other_zones["looking"].known
     );
-    assert!(text::render(&watch).contains("\n  looking 5 (5 unknown)"));
     assert!(text::render(&watch).contains("PLAYER P1: Ann"));
-
-    // Bureaucrat: Ben reveals a Victory card from his hand and puts it onto his deck.
-    let mut t = table(&[Card::Bureaucrat], 3, &["Ann", "Ben"]);
-    let bens_turn = |seat: PlayerId, d: &AgentDecision| seat.0 == 1 && d.kind == "turn";
-    for _ in 0..30 {
-        assert_eq!(play_to(&mut t, "Bureaucrat", bens_turn), Some(PlayerId(1)));
-        let watch = watching(&t);
-        let revealed = (watch.since_last_decision.iter().rev())
-            .take_while(|e| e.kind != "turn-start" || e.player != Some(0))
-            .find(|e| e.kind == "revealed" && e.player == Some(1));
-        if let Some(card) = revealed.and_then(|e| e.card.clone()) {
-            assert_eq!(watch.opponents[1].deck.known.get(&card), Some(&1));
-            assert_eq!(
-                t.view(PlayerId(0)).opponents[0].deck.known.get(&card),
-                Some(&1)
-            );
-            assert!(
-                t.view(PlayerId(1))
-                    .you
-                    .unwrap()
-                    .deck
-                    .known
-                    .contains_key(&card)
-            );
-            // Ben's hand is still his alone.
-            let hand = hand(&watch, 1);
-            assert_eq!((hand.unknown, hand.known.len()), (hand.count, 0));
-            assert_eq!(t.view(PlayerId(1)).you.unwrap().hand.unknown, 0);
-            return;
-        }
-        while t.deciding() == Some(PlayerId(1)) {
-            let d = t.view(PlayerId(1)).decision.unwrap();
-            let end = pick(&d, |o| o.action == "end-phase").unwrap_or_else(|| first(&d));
-            t.answer(PlayerId(1), &end).unwrap();
-        }
-    }
-    panic!("Bureaucrat never made Ben reveal a card");
+    assert_eq!(t.view(PlayerId(1)), before);
+    assert_eq!(before.opponents[0].other_zones["looking"].unknown, 5);
 }
 
 /// A table saved before tables kept what someone watching knows has no such knowledge:

@@ -252,6 +252,29 @@ pub struct PlayerEntry {
     pub account: Option<SeatAccount>,
 }
 
+impl PlayerEntry {
+    /// Zone summaries from the viewer's knowledge, without assigning uncertain cards
+    /// to a particular location.
+    pub fn composition(&self) -> Vec<NamedZone> {
+        let mut sections: Vec<_> = [
+            ("owned", "All owned cards", &self.owned),
+            ("deck", "Remaining deck", &self.deck),
+            ("hand", "Hand", &self.hand),
+            ("discard", "Discard pile", &self.discard),
+            ("inPlay", "In play", &self.in_play),
+        ]
+        .into_iter()
+        .map(|(key, label, zone)| NamedZone {
+            key: key.into(),
+            label: label.into(),
+            zone: zone.clone(),
+        })
+        .collect();
+        sections.extend(self.zones.iter().cloned());
+        sections
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlayArea {
     pub player: Option<Who>,

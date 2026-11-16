@@ -118,7 +118,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     supply.rs players.rs prompt.rs side.rs   Supply and tabs; player bars, peeking opponent
                           piles, play row, your hand and piles; status bar, buttons, decision
                           window; log, "more" panel, game end and score screen. Someone
-                          watching sees the first player's area with the hand as backs
+                          watching sees the first player's area with hands face up; deck
+                          clicks show composition by zone, using the viewer's knowledge
   src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
   assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
   src/game/entry.rs       log entries parsed back from their text in every form the agent
@@ -461,9 +462,11 @@ them.
   Deck placements record their destination even when nothing moves; an in-deck
   placement does not expose the card's old position within a private set.
   `Knowledge::with_watcher` also keeps the mind of a viewer who is no player
-  (`Game::watch()` is their `View`, `Table::watch_view` their agent view): they follow
-  exactly what is public. The fuzz test holds what they know to the truth, and the twin
-  worlds to their knowing the same wherever some player observed the same. `Game::resign` ends a game where it stands, out of band: the
+  (`Game::watch()` is their `View`): they follow exactly what is public.
+  `Table::watch_view` adds full visibility of player-owned cards for spectators,
+  without changing the engine watcher or any seated player's knowledge. The fuzz test
+  holds what they know to the truth, and the twin worlds to their knowing the same
+  wherever some player observed the same. `Game::resign` ends a game where it stands, out of band: the
   resigner is last, and nothing is logged.
 - **The log** (`scribe.rs`) is complete by itself: before each event and each decision
   the game logs what changed without an event of its own. Cards moved by `move_card`

@@ -164,6 +164,7 @@ fn TrashTab(board: Rc<Board>, g: Rc<Geometry>) -> Element {
         stacks: b.trash.known.clone(),
         unknown: b.trash.unknown,
         note: None,
+        composition: None,
     };
     let w = 11.0 * g.vw;
     let at = Rect::new(
@@ -283,6 +284,7 @@ fn Deck(label: String, deck: CardDeck, at: Rect) -> Element {
         stacks,
         unknown: 0,
         note: Some(format!("{} left to draw", deck.count)),
+        composition: None,
     };
     let open = popup.clone();
     let lower = label.to_lowercase();

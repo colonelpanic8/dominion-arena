@@ -118,7 +118,7 @@ will) or 500.
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
 | `POST /api/games/{id}/undo` | | the same with the whole log, after taking back the seat's last answer (and the Way answers that came with it); 409 when another seat has answered since. A seat can keep undoing back to the last answer of another seat. The game, with its shuffles, is restored exactly, and decision ids are never reused. The server keeps nothing to undo across a restart. 403 in a lobby game, unless its table allows undo, and in any lobby game once it is over |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
-| `GET /api/games/{id}/watch[?logFrom=N]` | | the same shape for someone watching (signed in; the game must be watchable): no seat, no decision, public knowledge only |
+| `GET /api/games/{id}/watch[?logFrom=N]` | | the same shape for someone watching (signed in; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, signed in, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |
 | `POST /api/auth/login` | `{name, password}` | the account and the session cookie |
@@ -205,7 +205,8 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   `wait_for_decision` is a connection), or when it takes longer than `decision_minutes`
   over one decision; `meta.forfeitAt` says when.
 - **Watching.** Anyone signed in may watch a watchable game: the view of someone with no
-  seat, holding what every player may know and nothing any one of them knows alone.
+  seat, seeing every player's hand, deck contents and other owned cards. Accounts
+  playing in a running game must use their seat view instead.
 - **Chat.** The lobby, each table (for those sitting at it) and each game (for its seats
   and, marked as such, those watching) have one; the last 200 messages of each are kept
   in memory.
@@ -452,8 +453,11 @@ and buttons.
 Opening `/game/<id>` shows the seat this browser holds, else the seat the account
 signed in plays there (no token in the address), else, when the game is watchable, the
 game as someone watching sees it (signing in as a guest if nobody is signed in): the
-same table with the first player where your own would be, every hand face down and
-nothing to answer. In a game between accounts each player's bar has their rating (or
+same table with the first player where your own would be, every hand face up and
+nothing to answer. Clicking any player’s deck opens its composition: all owned cards,
+remaining deck, hand, discard, in play, mats and set-aside cards. Seated players see
+only their knowledge, including deductions and uncertain locations; spectators see
+the full contents. In a game between accounts each player's bar has their rating (or
 `guest`, `bot`) and whether they are connected; when the player who must decide has
 left, the status bar counts down to their forfeit ("Bo has left: forfeits in 0:47"), as
 it does for anyone's last minute, your own included. The game's chat is under the log,

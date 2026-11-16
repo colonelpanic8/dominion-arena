@@ -131,10 +131,26 @@ pub fn view(game: &Game, known: &KnownCards, seat: PlayerId, cx: &Context<'_>) -
     view_of(game, known, Some(seat), cx)
 }
 
-/// The view of someone watching without a seat. `known` is what they know
-/// (`Knowledge::watched`): every player is an opponent, and nothing is asked.
+/// The view of someone watching without a seat, with every player's cards visible
+/// and nothing to answer. Non-player zones retain their public knowledge.
 pub fn watch_view(game: &Game, known: &KnownCards, cx: &Context<'_>) -> AgentView {
-    view_of(game, known, None, cx)
+    let mut known = known.clone();
+    known.zones.retain(|zone, _| zone.owner().is_none());
+    known
+        .uncertain
+        .retain(|u| u.zones.iter().all(|(zone, _)| zone.owner().is_none()));
+    for i in 0..game.num_players() {
+        let p = PlayerId(i as u8);
+        let owned = &mut known.owned[i];
+        *owned = Default::default();
+        for id in game.player(p).owned() {
+            *owned.0.entry(game.printed(id)).or_default() += 1;
+            let zone = known.zones.entry(game.zone(id)).or_default();
+            zone.count += 1;
+            *zone.known.entry(game.card(id)).or_default() += 1;
+        }
+    }
+    view_of(game, &known, None, cx)
 }
 
 fn view_of(game: &Game, known: &KnownCards, seat: Option<PlayerId>, cx: &Context<'_>) -> AgentView {

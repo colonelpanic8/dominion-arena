@@ -109,6 +109,7 @@ pub struct Popup {
     pub stacks: Vec<Stack>,
     pub unknown: u32,
     pub note: Option<String>,
+    pub composition: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -760,7 +761,7 @@ pub fn TableGame(controls: Element) -> Element {
                 }
             }
             if let Some((p, _)) = ctx.popup.read().clone() {
-                PopupView { popup: p, g: g.clone() }
+                PopupView { popup: p, g: g.clone(), board: b.clone() }
             }
             side::Log { entries: log, names, g: g.clone(), game_id, board: b.clone() }
             div { class: "dt-below-log", style: "{g.below_log.style()}",
@@ -820,7 +821,10 @@ fn starting_board(b: &Board) -> Board {
 
 /// A window listing a pile's or mat's cards, as dominion.games opens them from tabs.
 #[component]
-fn PopupView(popup: Popup, g: Rc<layout::Geometry>) -> Element {
+fn PopupView(popup: Popup, g: Rc<layout::Geometry>, board: Rc<Board>) -> Element {
+    if let Some(seat) = popup.composition {
+        return rsx! { players::DeckComposition { board, seat } };
+    }
     let ctx = use_table();
     let p = &popup;
     let n = p.stacks.len() + usize::from(p.unknown > 0);

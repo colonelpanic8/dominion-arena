@@ -324,7 +324,7 @@ async fn two_people_are_matched_and_play_through_their_sessions() {
 }
 
 #[tokio::test]
-async fn a_signed_in_onlooker_watches_a_lobby_game_and_sees_no_hands() {
+async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
     let server = start().await;
     let (ada, bo, cy) = (
         server.register("Ada").await,
@@ -349,8 +349,18 @@ async fn a_signed_in_onlooker_watches_a_lobby_game_and_sees_no_hands() {
     assert!(watched.view.you.is_none() && watched.view.decision.is_none());
     assert_eq!(watched.view.opponents.len(), 2);
     for player in &watched.view.opponents {
-        assert_eq!((player.hand.count, player.hand.unknown), (5, 5));
+        assert_eq!((player.hand.count, player.hand.unknown), (5, 0));
+        assert_eq!(player.deck.unknown, 0);
+        assert_eq!(player.deck.known.values().sum::<u32>(), player.deck.count);
+        assert_eq!(player.owned.unknown, 0);
     }
+    server
+        .get(&format!("{path}/watch"), Some(&ada))
+        .await
+        .error(StatusCode::FORBIDDEN);
+    let seated: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
+    assert!(!seated.view.spectating);
+    assert_eq!(seated.view.opponents[0].hand.unknown, 5);
     assert!(watched.deciding.is_some());
     // While the onlooker's feed is open, the players see that someone watches.
     let mut feed = server
