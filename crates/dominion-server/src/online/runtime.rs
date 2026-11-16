@@ -191,6 +191,7 @@ impl Client {
             session: None,
             needs_snapshot: false,
             request_game: false,
+            leaving_finished: false,
             resuming: saved.is_some(),
             bots: saved
                 .as_ref()
@@ -404,6 +405,7 @@ struct Runtime {
     session: Option<SessionSecret>,
     needs_snapshot: bool,
     request_game: bool,
+    leaving_finished: bool,
     resuming: bool,
     table: Option<TableDetails>,
     bots: Vec<i32>,
@@ -424,6 +426,7 @@ impl Runtime {
         }
         self.update.reducer.invalidate();
         self.update.connected = false;
+        self.leaving_finished = false;
         self.update.searching = false;
         self.search = None;
         if let Some(mut socket) = self.socket.take() {
@@ -485,6 +488,17 @@ impl Runtime {
     fn process(&mut self, message: Message) -> Result<bool, String> {
         let reducer = &mut self.update.reducer;
         match message {
+            Message::Failed(f)
+                if f.reason == "COMMAND_REQUIRES_TABLE"
+                    && self.leaving_finished
+                    && !reducer.running
+                    && reducer.result.is_some() =>
+            {
+                self.table = None;
+                self.bots.clear();
+                self.human = None;
+                self.leaving_finished = false;
+            }
             Message::Failed(f) => return Err(f.error().to_string()),
             Message::Login(login) => {
                 let existing_game = login.reconnecting || login.previous_reconnects > 0;
@@ -978,10 +992,12 @@ impl Runtime {
             }
             .encode()
             .map_err(|e| e.to_string())?;
+            self.leaving_finished = true;
             self.send(bytes).await?;
             while self.table.is_some() {
                 self.receive().await?;
             }
+            self.leaving_finished = false;
         }
         Ok(())
     }
