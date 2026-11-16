@@ -912,7 +912,8 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-scard.disabled { filter: grayscale(1) brightness(.6); cursor: default; }
 .lb-scard .lb-set-title { font-size: calc(1.6 * var(--lu)); }
 
-.lb-study { position: fixed; inset: 0; z-index: 25000; background: rgba(0, 0, 0, .4); display: flex; align-items: center; justify-content: center; }
+.lb-study { position: fixed; inset: 0; z-index: 25000; background: rgba(0, 0, 0, .4); display: flex; flex-direction: column; gap: 2vh; align-items: center; justify-content: center; }
+.lb-study-pile { display: flex; flex-wrap: wrap; justify-content: center; gap: .5vh; max-width: 90vw; max-height: 20vh; overflow-y: auto; }
 .lb-study-card { height: 67.5vh; aspect-ratio: 630 / 994; }
 
 /* Account. */

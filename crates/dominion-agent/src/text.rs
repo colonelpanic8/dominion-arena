@@ -151,6 +151,9 @@ fn pile(p: &PileView) -> String {
         let _ = write!(s, " {}", cost_text(c));
     }
     let _ = write!(s, " x{}", p.count);
+    if !p.members.is_empty() {
+        let _ = write!(s, " (members: {})", p.members.join(" / "));
+    }
     let t = &p.tokens;
     let mut tokens = vec![];
     if t.embargo > 0 {

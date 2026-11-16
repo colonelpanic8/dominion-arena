@@ -207,13 +207,8 @@ fn Pile(
     });
     let mark = mark_at(&ui, &sel, Spot::Pile(pile.at));
     let changed = cost.is_some();
-    // A pile of different cards (split or mixed) shows a back peeking out under it.
-    let split = !pile.hidden
-        && size == CardSize::Mini
-        && cards
-            .get(&pile.name)
-            .is_some_and(|c| c.kind == "randomizer" || c.pile.is_some())
-        && pile.count > 1;
+    let inspect_pile = !pile.hidden && cards.pile_members(&pile.name).len() > 1;
+    let split = inspect_pile && size == CardSize::Mini && pile.count > 1;
     let plus = mark.target.is_some() && size != CardSize::Full;
     rsx! {
         TableCard {
@@ -229,6 +224,7 @@ fn Pile(
             at,
             plus,
             split,
+            inspect_pile,
             class: format!(
                 "dt-pile{}{}{}",
                 if pile.kingdom { " dt-kpile" } else { "" },

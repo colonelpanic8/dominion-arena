@@ -195,6 +195,13 @@
           "description": "The top card, when it differs from `card` or the pile is mixed.",
           "$ref": "#/$defs/cardName"
         },
+        "members": {
+          "description": "The possible card names in a split or mixed pile, from its public definition. Includes depleted members; gives no remaining counts or current order.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/cardName" },
+          "minItems": 2,
+          "uniqueItems": true
+        },
         "cost": { "$ref": "#/$defs/cost" },
         "types": { "type": "array", "items": { "type": "string" } },
         "kingdom": { "type": "boolean" },

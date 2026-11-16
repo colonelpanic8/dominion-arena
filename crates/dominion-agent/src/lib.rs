@@ -55,6 +55,7 @@ pub fn glossary_for(view: &AgentView) -> Vec<GlossaryEntry> {
     for pile in view.supply.iter().chain(&view.non_supply) {
         names.insert(pile.card.clone());
         names.extend(pile.top.clone());
+        names.extend(pile.members.iter().cloned());
     }
     names.extend(view.landscapes.iter().map(|l| l.card.clone()));
     if let Some(d) = &view.decision {

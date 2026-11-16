@@ -43,6 +43,18 @@ impl CardDb {
         self.by_key.get(&key(name)).map(|&i| &self.cards[i])
     }
 
+    /// Possible cards in the same pile, whether named by its top, randomizer or a member.
+    pub fn pile_members(&self, name: &str) -> Vec<&CardInfo> {
+        let Some(card) = self.get(name) else {
+            return vec![];
+        };
+        let pile = card.pile.as_deref().unwrap_or(&card.name);
+        self.cards
+            .iter()
+            .filter(|c| c.kind == "card" && (c.name == pile || c.pile.as_deref() == Some(pile)))
+            .collect()
+    }
+
     /// The card's text as a tooltip: name, types, cost and official text.
     pub fn tooltip(&self, name: &str) -> String {
         let Some(c) = self.get(name) else {

@@ -156,14 +156,36 @@ pub fn CardSelectorFor(selector: Signal<bool>, study: Signal<Option<String>>) ->
     rsx! { CardSelector { selector, study } }
 }
 
-/// A card large over a dim backdrop; any click closes it.
+/// A card large over a dim backdrop, with links to the other cards in its pile.
 #[component]
 pub fn StudyView(study: Signal<Option<String>>) -> Element {
+    let cards = use_cards();
     let Some(name) = study() else {
         return rsx! {};
     };
+    let members = cards.pile_members(&name);
     rsx! {
         div { class: "lb-study", onclick: move |_| study.set(None),
+            if members.len() > 1 {
+                div { class: "lb-study-pile",
+                    for member in members {
+                        button {
+                            key: "{member.name}",
+                            class: "lb-oval",
+                            class: if member.name == name { "active" },
+                            r#type: "button",
+                            onclick: {
+                                let name = member.name.clone();
+                                move |e| {
+                                    e.stop_propagation();
+                                    study.set(Some(name.clone()));
+                                }
+                            },
+                            "{member.name}"
+                        }
+                    }
+                }
+            }
             div { class: "lb-study-card",
                 CardView { name, size: CardSize::Full }
             }

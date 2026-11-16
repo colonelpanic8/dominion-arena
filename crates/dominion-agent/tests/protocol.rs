@@ -766,6 +766,112 @@ fn the_kingdom_is_the_kingdom_piles_in_the_game() {
     assert_eq!(view.game.kingdom, flagged);
 }
 
+#[test]
+fn split_pile_members_reach_json_text_and_glossary_before_they_are_exposed() {
+    let t = table(&[Card::Encampment, Card::Catapult, Card::Augurs], 0, &[]);
+    for view in [t.view(PlayerId(0)), t.view(PlayerId(1)), watching(&t)] {
+        let json = serde_json::to_value(&view).unwrap();
+        assert_valid(&validator("view"), &json, "split pile view");
+        let encampment = view.supply.iter().find(|p| p.card == "Encampment").unwrap();
+        assert_eq!(encampment.count, 10);
+        assert!(encampment.top.is_none());
+        assert_eq!(encampment.members, ["Encampment", "Plunder"]);
+        let pile_json = json["supply"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["card"] == "Encampment")
+            .unwrap();
+        assert_eq!(pile_json["members"], json!(["Encampment", "Plunder"]));
+        let rendered = text::render(&view);
+        assert!(rendered.contains("Encampment $2 x10 (members: Encampment / Plunder)"));
+        let glossary = glossary_for(&view);
+        for member in [Card::Plunder, Card::Rocks, Card::Sorceress, Card::Sibyl] {
+            let entry = glossary.iter().find(|e| e.name == member.name()).unwrap();
+            assert_eq!(entry.text, member.text());
+            assert_eq!(
+                entry.cost.as_ref().unwrap().coins,
+                member.cost().unwrap().coins as u32
+            );
+        }
+        assert!(
+            view.supply
+                .iter()
+                .filter(|p| p.card == "Copper")
+                .all(|p| p.members.is_empty())
+        );
+    }
+}
+
+#[test]
+fn mixed_pile_members_describe_possible_cards_without_revealing_their_order() {
+    let view = table(&[Card::Knights, Card::Marauder, Card::SackOfLoot], 4, &[]).view(PlayerId(0));
+    for card in [Card::Knights, Card::Ruins, Card::Loot] {
+        let pile = view
+            .supply
+            .iter()
+            .chain(&view.non_supply)
+            .find(|p| p.card == card.name())
+            .unwrap();
+        let expected: Vec<&str> = card.pile_members().into_iter().map(Card::name).collect();
+        assert_eq!(pile.members, expected);
+        if pile.hidden {
+            assert!(pile.top.is_none());
+            assert!(pile.cost.is_none());
+        }
+    }
+    let black_market = table(&[Card::BlackMarket], 4, &[]).view(PlayerId(0));
+    assert!(
+        black_market
+            .non_supply
+            .iter()
+            .filter(|p| p.hidden && p.card == "Black Market")
+            .all(|p| p.members.is_empty())
+    );
+}
+
+#[test]
+fn split_pile_top_and_buy_options_change_when_the_first_half_runs_out() {
+    let mut t = table(&[Card::Encampment], 0, &[]);
+    for _ in 0..300 {
+        let seat = t
+            .deciding()
+            .expect("the pile can be uncovered before the game ends");
+        let view = t.view(seat);
+        let pile = view.supply.iter().find(|p| p.card == "Encampment").unwrap();
+        assert_eq!(pile.members, ["Encampment", "Plunder"]);
+        let d = view.decision.as_ref().unwrap();
+        if pile.top.as_deref() == Some("Plunder") {
+            assert_eq!(pile.count, 5);
+            assert_eq!(pile.cost.as_ref().unwrap().coins, 5);
+            assert!(text::render(&view).contains("Encampment (top Plunder) $5 x5"));
+            assert!(
+                !d.options
+                    .iter()
+                    .any(|o| o.action == "buy" && o.card.as_deref() == Some("Encampment"))
+            );
+            return;
+        }
+        assert!(
+            !d.options
+                .iter()
+                .any(|o| o.action == "buy" && o.card.as_deref() == Some("Plunder"))
+        );
+        let answer = pick(d, |o| {
+            o.action == "play" && o.card.as_deref() == Some("Copper")
+        })
+        .or_else(|| {
+            pick(d, |o| {
+                o.action == "buy" && o.card.as_deref() == Some("Encampment")
+            })
+        })
+        .or_else(|| pick(d, |o| o.action == "end-phase"))
+        .unwrap_or_else(|| first(d));
+        t.answer(seat, &answer).unwrap();
+    }
+    panic!("the first half never ran out");
+}
+
 /// A table of ten base cards, Divine Wind and `landscapes`, whose seat 0 buys and plays
 /// Poets until the last Sun is gone; seat 1 does nothing.
 fn after_divine_wind(landscapes: &[Card], choices: &[(Card, Card)]) -> Table {
