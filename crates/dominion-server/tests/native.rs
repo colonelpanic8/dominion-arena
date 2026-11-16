@@ -700,15 +700,27 @@ async fn live_native_game() {
         let server = h.config.server();
         let sandbox = h.sandbox.clone();
         tasks.spawn(async move {
-            let result = harness::play(
-                &spec,
-                &sandbox,
-                &job,
-                &server,
-                &mut archive,
-                CancellationToken::new(),
-            )
-            .await;
+            let result = if spec.program == dominion_server::runner::Program::OpenAi {
+                dominion_server::openai::play(
+                    &spec,
+                    &sandbox,
+                    &job,
+                    &server,
+                    &mut archive,
+                    CancellationToken::new(),
+                )
+                .await
+            } else {
+                harness::play(
+                    &spec,
+                    &sandbox,
+                    &job,
+                    &server,
+                    &mut archive,
+                    CancellationToken::new(),
+                )
+                .await
+            };
             if let Err(error) = &result {
                 eprintln!("Seat {} failed: {error}", job.seat);
                 for entry in std::fs::read_dir(&archive.dir).unwrap().flatten() {
@@ -732,13 +744,14 @@ async fn live_native_game() {
     assert!(!h.arena.hub.list()[0].running);
     assert!(h.arena.hub.list()[0].watchable);
     for seat in 0..2 {
-        assert_eq!(
-            records(&root.join(format!("seat-{seat}")))
-                .iter()
-                .filter(|r| r["kind"] == "native_request")
-                .count(),
-            1
-        );
+        // One CLI process per seat, or (the direct OpenAI agent) none.
+        let journal = records(&root.join(format!("seat-{seat}")));
+        let cli = journal
+            .iter()
+            .filter(|r| r["kind"] == "native_request")
+            .count();
+        let direct = journal.iter().any(|r| r["kind"] == "direct_request");
+        assert!(cli == 1 && !direct || cli == 0 && direct, "seat {seat}");
         assert!(
             records(&root.join(format!("seat-{seat}")))
                 .iter()

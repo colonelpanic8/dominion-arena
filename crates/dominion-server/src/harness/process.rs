@@ -48,6 +48,11 @@ pub fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     write(path, &serde_json::to_vec(value).map_err(|e| e.to_string())?)
 }
 
+/// Writes a file only its owner may read.
+pub fn write_private(path: &Path, data: &[u8]) -> Result<(), String> {
+    write(path, data)
+}
+
 fn write(path: &Path, data: &[u8]) -> Result<(), String> {
     let mut options = OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -80,8 +85,8 @@ pub fn executable(name: &str) -> Result<PathBuf, String> {
 
 impl Harness {
     pub fn new(spec: &AgentSpec, settings: &Sandbox, archive: &Path) -> Result<Self, String> {
-        if spec.program == Program::T3Code {
-            return Err("T3 Code agents have no native harness".into());
+        if matches!(spec.program, Program::T3Code | Program::OpenAi) {
+            return Err("only CLI agents have a native harness".into());
         }
         if !cfg!(target_os = "linux") {
             return Err(
@@ -100,7 +105,9 @@ impl Harness {
             Program::Codex => std::env::var_os("CODEX_HOME")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| home.join(".codex")),
-            Program::T3Code => unreachable!("T3 Code agents have no native harness"),
+            Program::T3Code | Program::OpenAi => {
+                unreachable!("only CLI agents have a native harness")
+            }
             Program::Antigravity => std::env::var_os("GEMINI_HOME")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| home.join(".gemini")),
@@ -133,7 +140,9 @@ impl Harness {
                 antigravity::settings(&work)?;
                 antigravity::launch(spec)
             }
-            Program::T3Code => unreachable!("T3 Code agents have no native harness"),
+            Program::T3Code | Program::OpenAi => {
+                unreachable!("only CLI agents have a native harness")
+            }
         };
         launch.program = executable(&launch.program)?.to_string_lossy().into_owned();
         executable("bwrap")?;
@@ -220,7 +229,9 @@ impl Harness {
                     &json!({"permissions":{"deny":["read_file(*)","write_file(*)","command(*)","read_url(*)","execute_url(*)"],"allow":["mcp(dominion/*)"],"ask":[]},"toolPermission":"request-review"}),
                 )?;
             }
-            Program::T3Code => unreachable!("T3 Code agents have no native harness"),
+            Program::T3Code | Program::OpenAi => {
+                unreachable!("only CLI agents have a native harness")
+            }
         }
         self.records = Some(records);
         Ok(())
@@ -291,7 +302,9 @@ impl Harness {
                     "antigravity-cli/installation_id",
                 ],
             ),
-            Program::T3Code => unreachable!("T3 Code agents have no native harness"),
+            Program::T3Code | Program::OpenAi => {
+                unreachable!("only CLI agents have a native harness")
+            }
         };
         cmd.args(["--dir", home]);
         for file in files {
@@ -495,7 +508,9 @@ impl Harness {
                 Program::Claude => claude::response(&events),
                 Program::Codex => codex::response(&events),
                 Program::Antigravity => antigravity::response(&events),
-                Program::T3Code => unreachable!("T3 Code agents have no native harness"),
+                Program::T3Code | Program::OpenAi => {
+                    unreachable!("only CLI agents have a native harness")
+                }
             }
             .err()
             .unwrap_or_else(|| format!("exited with {status}"));
@@ -509,7 +524,9 @@ impl Harness {
             Program::Claude => claude::response(&events),
             Program::Codex => codex::response(&events),
             Program::Antigravity => antigravity::response(&events),
-            Program::T3Code => unreachable!("T3 Code agents have no native harness"),
+            Program::T3Code | Program::OpenAi => {
+                unreachable!("only CLI agents have a native harness")
+            }
         }?;
         archive.record("native_response", json!({"response":answer}))?;
         Ok(answer)

@@ -14,6 +14,7 @@ pub mod limits;
 pub mod mcp;
 pub mod official_host;
 pub mod online;
+pub mod openai;
 pub mod rating;
 pub mod runner;
 pub mod solo;

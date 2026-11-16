@@ -23,6 +23,8 @@ pub enum Program {
     Antigravity,
     /// T3 Code's MCP server, with one persistent conversation per seat.
     T3Code,
+    /// OpenAI's Responses API called directly (`crate::openai`), with no CLI.
+    OpenAi,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -47,6 +49,12 @@ pub struct AgentSpec {
     /// Options T3 Code advertises for this model, when program is t3code.
     #[serde(default)]
     pub options: BTreeMap<String, crate::t3::OptionValue>,
+    /// openai: the environment variable holding an API key; without it the agent signs in
+    /// with Codex's ChatGPT login (`auth.json` in `auth_dir`, default `$CODEX_HOME`).
+    pub api_key_env: Option<String>,
+    /// openai: game updates kept verbatim in the conversation (default 60); older ones
+    /// are replaced by a note.
+    pub context_results: Option<usize>,
 }
 
 impl AgentSpec {
@@ -76,6 +84,17 @@ impl AgentSpec {
                 self.name
             ));
         }
+        if self.program == Program::OpenAi && self.model.is_none() {
+            return Err(format!("{}: an openai agent needs a model", self.name));
+        }
+        if self.program != Program::OpenAi
+            && (self.api_key_env.is_some() || self.context_results.is_some())
+        {
+            return Err(format!(
+                "{}: api_key_env and context_results require program = \"openai\"",
+                self.name
+            ));
+        }
         if let Some(effort) = &self.effort {
             let allowed = match self.program {
                 Program::Claude => &["low", "medium", "high", "max"][..],
@@ -83,6 +102,7 @@ impl AgentSpec {
                     &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"][..]
                 }
                 Program::Antigravity => &["low", "medium", "high", "xhigh", "max"][..],
+                Program::OpenAi => &["minimal", "low", "medium", "high", "xhigh"][..],
                 Program::T3Code => &[][..],
             };
             if !allowed.contains(&effort.as_str()) {
@@ -110,6 +130,8 @@ pub fn default_agents() -> Vec<AgentSpec> {
         effort: None,
         response_seconds: None,
         history_turns: None,
+        api_key_env: None,
+        context_results: None,
         auth_dir: None,
         provider_instance: None,
         options: BTreeMap::new(),
@@ -315,6 +337,17 @@ async fn keep_playing(
             let play = async {
                 match (spec.program, &t3code) {
                     (Program::T3Code, None) => Err("a t3code agent needs [t3code] settings".into()),
+                    (Program::OpenAi, _) => {
+                        crate::openai::play(
+                            &spec,
+                            &sandbox,
+                            &job,
+                            &server,
+                            &mut archive,
+                            cancelled.clone(),
+                        )
+                        .await
+                    }
                     (Program::T3Code, Some(t3)) => {
                         crate::t3::play(t3, &spec, &job, &server, &mut archive, cancelled.clone())
                             .await
