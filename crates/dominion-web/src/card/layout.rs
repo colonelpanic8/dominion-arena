@@ -126,12 +126,12 @@ impl Shape {
         }
     }
 
-    /// The type line; landscapes have it in the corner at full size, turned 45°. Centred
-    /// between the cost and the set icon.
+    /// The type line; landscapes have it in the corner at full size, turned 45°, and in
+    /// the top banner at mini size. Portrait cards centre it between the cost and set icon.
     pub fn types(&self, size: CardSize) -> Option<Rect> {
         match size {
-            CardSize::Full if self.landscape => Some(r(0.85, 0.068, 0.13, 0.06)),
-            CardSize::Mini if self.landscape => Some(r(0.32, 0.012, 0.36, 0.07)),
+            CardSize::Full if self.landscape => Some(r(0.848, 0.103, 0.124, 0.056)),
+            CardSize::Mini if self.landscape => Some(r(0.32, 0.036, 0.36, 0.072)),
             CardSize::Full if self.basic && self.treasure_only => Some(r(0.21, 0.85, 0.64, 0.097)),
             CardSize::Full if self.basic => Some(r(0.21, 0.86, 0.64, 0.097)),
             CardSize::Full => Some(r(0.21, 0.88, 0.64, 0.068)),
