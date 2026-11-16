@@ -34,9 +34,9 @@ pub struct AgentSpec {
     pub instructions: Option<String>,
     /// Native reasoning effort.
     pub effort: Option<String>,
-    /// Maximum time for one response (default 300 seconds).
+    /// Maximum model inactivity between events, excluding MCP calls (default 300 seconds).
     pub response_seconds: Option<u32>,
-    /// Previous game observations/responses included with a request (default 20).
+    /// Legacy setting, accepted for compatibility. Native sessions retain their own context.
     pub history_turns: Option<usize>,
     /// Provider's native credential/config directory (default its standard location).
     pub auth_dir: Option<PathBuf>,

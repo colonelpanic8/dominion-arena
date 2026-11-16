@@ -38,21 +38,6 @@ if 'fixture:native-tool' in prompt:
 if 'fixture:unsupported' in prompt:
     print(json.dumps({'type':'result','is_error':False,'result':json.dumps({'tool':'resign'})}), flush=True)
     sys.exit(0)
-state = Path('/work/fixture.json')
-if '\n\nCurrent view:\n' in prompt:
-    view = json.loads(prompt.rsplit('\n\nCurrent view:\n', 1)[1])
-    state.write_text(json.dumps(view))
-else:
-    view = json.loads(state.read_text())
-marker = Path('/work/looked')
-if not marker.exists():
-    marker.touch()
-    action = {'tool':'card', 'name':'Village'}
-else:
-    d = view['decision']
-    opts = d['options']
-    index = next((o['index'] for o in opts if 'End your Buy phase' in o['label']), opts[0]['index'])
-    action = {'tool':'answer', 'decision_id':d['id'], 'indices':[index]}
 if Path('/work/seat-mcp.json').exists():
     import urllib.request
     url = json.loads(Path('/work/seat-mcp.json').read_text())['url']
@@ -75,10 +60,25 @@ if Path('/work/seat-mcp.json').exists():
     assert all('token' not in t['inputSchema'].get('properties',{}) for t in tools)
     assert 'error' in rpc('tools/call',{'name':'create_game','arguments':{'players':2}})
     assert 'error' in rpc('tools/call',{'name':'view','arguments':{'token':'another-seat'}})
-    requested = dict(action); tool = requested.pop('tool')
-    result = rpc('tools/call',{'name':tool,'arguments':requested})['result']
-    assert not result.get('isError',False), result
-    action = {'message':'Move submitted through MCP'}
+    def call(tool, args):
+        result = rpc('tools/call',{'name':tool,'arguments':args})['result']
+        assert not result.get('isError',False), result
+        return result.get('structuredContent')
+    call('card',{'name':'Village'})
+    view = call('view',{})
+    while view['game']['running']:
+        d = view.get('decision')
+        if d is None:
+            view = call('wait_for_decision',{'timeout_ms':2000})
+            continue
+        if 'fixture:activity' in prompt:
+            for _ in range(4):
+                print(json.dumps({'type':'reasoning','text':'considering move'}),flush=True)
+                time.sleep(.3)
+        opts = d['options']
+        index = next((o['index'] for o in opts if 'End your Buy phase' in o['label']), opts[0]['index'])
+        view = call('answer',{'decision_id':d['id'],'indices':[index]})
+    action = {'message':'Game completed through MCP'}
 answer = json.dumps(action)
 print(json.dumps({'type':'reasoning', 'text':'r' * 120003}))
 print('native diagnostic', file=sys.stderr)
@@ -280,7 +280,9 @@ fn records(path: &std::path::Path) -> Vec<Value> {
 async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
     for program in ["claude", "codex", "antigravity"] {
         let mut h = setup(program).await;
-        let created = h.arena.create_game(Some(&h.who), &request()).unwrap();
+        let mut game = request();
+        game.turn_limit = Some(6);
+        let created = h.arena.create_game(Some(&h.who), &game).unwrap();
         assert!(created.seats.is_empty());
         let jobs = dispatched(&mut h.jobs);
         assert_eq!(jobs.len(), 2);
@@ -329,6 +331,30 @@ async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
         for seat in 0..2 {
             let path = root.join(format!("seat-{seat}"));
             let journal = records(&path);
+            assert_eq!(
+                journal
+                    .iter()
+                    .filter(|r| r["kind"] == "native_request")
+                    .count(),
+                1
+            );
+            assert!(
+                journal
+                    .iter()
+                    .filter(|r| r["kind"] == "request" && r["data"]["tool"] == "answer")
+                    .count()
+                    >= 3
+            );
+            assert!(
+                !journal
+                    .iter()
+                    .filter(|r| r["kind"] == "native_request")
+                    .any(|r| r["data"]["prompt"]
+                        .as_str()
+                        .unwrap()
+                        .contains("Earlier interactions"))
+            );
+
             assert!(journal.iter().any(|r| r["kind"] == "result"));
             assert!(journal.iter().any(|r| {
                 r["kind"] == "native_event"
@@ -390,6 +416,37 @@ async fn creation_checks_permissions_capacity_and_seat_assignments() {
     assert!(h.arena.hub.list().is_empty());
     h.arena.create_game(Some(&h.who), &request()).unwrap();
     assert!(h.arena.create_game(Some(&h.who), &request()).is_err());
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn active_sessions_and_opponent_waits_outlive_the_inactivity_limit() {
+    let mut h = setup("claude").await;
+    let spec = &mut h.config.agents.as_mut().unwrap()[0];
+    spec.instructions = Some("fixture:activity".into());
+    spec.response_seconds = Some(1);
+    let mut game = request();
+    game.turn_limit = Some(6);
+    h.arena.create_game(Some(&h.who), &game).unwrap();
+    let jobs = dispatched(&mut h.jobs);
+    let start = std::time::Instant::now();
+    let (root, results) =
+        tokio::time::timeout(std::time::Duration::from_secs(20), play(&mut h, jobs))
+            .await
+            .unwrap();
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    assert!(start.elapsed() > std::time::Duration::from_secs(3));
+    for seat in 0..2 {
+        let journal = records(&root.join(format!("seat-{seat}")));
+        assert_eq!(
+            journal
+                .iter()
+                .filter(|r| r["kind"] == "native_request")
+                .count(),
+            1
+        );
+        assert!(!journal.iter().any(|r| r["kind"] == "native_timeout"));
+    }
 }
 
 #[tokio::test]
@@ -522,6 +579,13 @@ async fn live_native_game() {
     assert!(!h.arena.hub.list()[0].running);
     assert!(h.arena.hub.list()[0].watchable);
     for seat in 0..2 {
+        assert_eq!(
+            records(&root.join(format!("seat-{seat}")))
+                .iter()
+                .filter(|r| r["kind"] == "native_request")
+                .count(),
+            1
+        );
         assert!(
             records(&root.join(format!("seat-{seat}")))
                 .iter()
@@ -562,7 +626,7 @@ async fn forbidden_actions_tools_and_timeouts_preserve_failure_logs_without_resi
         let error = results[0].as_ref().unwrap_err();
         assert!(
             error.contains(match mode {
-                "unsupported" => "without submitting a move",
+                "unsupported" => "session ended before the game finished",
                 "native-tool" => "forbidden tool",
                 _ => "timed out",
             }),

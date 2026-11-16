@@ -14,7 +14,7 @@ use crate::runner::AgentSpec;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-const INSTRUCTIONS: &str = "You play one assigned seat of Dominion. Play to win using only the dominion MCP tools. Use view for your legal observations, card for official card text, and answer or play_treasures to submit a move. You may look up cards before deciding. Submit one move, then finish your response. Never print a JSON action in place of calling a tool. Do not inspect files, run commands, delegate, resign, or ask a person for help. The server supplies your seat credentials. When a tool rejects a request, correct it using the returned error.";
+const INSTRUCTIONS: &str = "You play one assigned seat of Dominion. Play to win using only the dominion MCP tools. Use view for your legal observations, card for official card text, and answer or play_treasures to submit a move. You may look up cards before deciding. Keep playing this seat for the entire game in this conversation. After each move, use the tool result as your new observation. If no decision is available for you, call wait_for_decision and continue. Finish only when the returned game.running is false. Do not call view after a tool already returned the current view. Never print a JSON action in place of calling a tool. Do not inspect files, run commands, delegate, resign, or ask a person for help. The server supplies your seat credentials. When a tool rejects a request, correct it using the returned error.";
 
 pub async fn play(
     spec: &AgentSpec,
@@ -71,7 +71,7 @@ async fn play_inner(
     server: &str,
     archive: &mut Archive,
 ) -> Result<(), String> {
-    let mut view = call(
+    let view = call(
         client,
         archive,
         "dominion",
@@ -88,55 +88,33 @@ async fn play_inner(
         &bridge.url,
         bridge.records.take().expect("new bridge"),
     )?;
-    let mut errors = 0;
-    loop {
-        let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
-        if state["game"]["running"] == false {
-            archive.record("result", state.clone())?;
-            return Ok(());
-        }
-        if state["decision"].is_null() {
-            view = call(
-                client,
-                archive,
-                "dominion",
-                "wait_for_decision",
-                json!({"token":job.token,"timeout_ms":60_000}),
-            )
-            .await?;
-            if !view.ok {
-                return Err(view.text);
-            }
-            continue;
-        }
-        let decision = state["decision"]["id"].clone();
-        let message = format!(
-            "Current view:\n{}",
-            serde_json::to_string(state).expect("serializable")
-        );
-        harness.reply(spec, &message, archive).await?;
-        view = call(
-            client,
-            archive,
-            "dominion",
-            "view",
-            json!({"token":job.token}),
-        )
-        .await?;
-        if !view.ok {
-            return Err(view.text);
-        }
-        if view
-            .json
-            .as_ref()
-            .is_some_and(|v| v["decision"]["id"] == decision && v["game"]["running"] != false)
-        {
-            errors += 1;
-            if errors >= 3 {
-                return Err("agent finished without submitting a move through MCP".into());
-            }
-        } else {
-            errors = 0;
-        }
+    let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
+    if state["game"]["running"] == false {
+        return Ok(());
+    }
+    let message = format!(
+        "Initial view:\n{}",
+        serde_json::to_string(state).expect("serializable")
+    );
+    harness.reply(spec, &message, archive).await?;
+    let view = call(
+        client,
+        archive,
+        "dominion",
+        "view",
+        json!({"token":job.token}),
+    )
+    .await?;
+    if !view.ok {
+        return Err(view.text);
+    }
+    if view
+        .json
+        .as_ref()
+        .is_some_and(|v| v["game"]["running"] == false)
+    {
+        Ok(())
+    } else {
+        Err("agent session ended before the game finished".into())
     }
 }

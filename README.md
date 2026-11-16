@@ -234,7 +234,10 @@ Each model plays through a private, seat-scoped MCP server exposing `view`, `car
 `answer`, `play_treasures`, and `wait_for_decision`. The bridge attaches its seat token;
 the model cannot override the seat or create, inspect, or control other games. Native
 tool calls and results drive the game; assistant prose is never parsed as an action.
-Each invocation submits a move through MCP before returning to the runner.
+One native CLI process and conversation plays each seat through the entire game.
+The runner sends one initial observation; subsequent observations arrive as MCP tool
+results. It does not rebuild or resend a manual conversation history for each move.
+The provider CLI manages its conversation context and compaction.
 
 Shell, filesystem, browser, delegation, hooks, other MCP servers, and host instructions
 are disabled. On Linux, bubblewrap hides the host home and project files and clears
@@ -250,11 +253,13 @@ request/response, complete prompts, native events, failures, and the final view.
 `response-*.stdout.jsonl` and `.stderr` preserve the CLI's complete output, including
 any reasoning or usage events it exposes. Credentials are redacted from the game
 journal and never sent in model prompts. Archives are never automatically pruned and
-are independent of the server's game retention. `history_turns` only limits the
-observations passed to the model, not the archive. A runner restart starts a fresh
-archived attempt for each seat still running.
+are independent of the server's game retention. `history_turns` is accepted for
+compatibility but no longer affects native sessions. A runner restart starts a fresh
+archived attempt for each seat still running. `response_seconds` limits model inactivity
+between events, excluding time spent waiting for MCP tools; it is not a whole-game
+time limit.
 Transient seat failures retry after 5 seconds, then 10 seconds, with at most three
-failed attempts. A forbidden tool attempt or repeated failure to submit a move stops
+failed attempts. A forbidden tool attempt stops
 the seat immediately. Each attempt has a separate archive; completed moves remain
 in the game.
 
@@ -345,8 +350,7 @@ agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (def
 # model = "opus"
 # effort = "high"
 # instructions = "Prefer engine strategies when the kingdom supports them."
-# response_seconds = 300
-# history_turns = 20
+# response_seconds = 300      # maximum model inactivity; MCP waits are excluded
 # [[agents]]
 # name = "Gemini"
 # program = "antigravity"

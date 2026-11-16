@@ -24,6 +24,14 @@ pub struct Record {
 }
 
 impl Record {
+    pub fn pending_change(&self) -> i32 {
+        match self.kind {
+            "request" => 1,
+            "response" | "transport_error" => -1,
+            _ => 0,
+        }
+    }
+
     pub fn save(self, archive: &mut Archive) -> Result<(), String> {
         let result = archive.record(self.kind, self.data);
         let _ = self.saved.send(result.clone());

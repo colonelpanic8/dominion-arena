@@ -30,7 +30,6 @@ pub struct Harness {
     work: PathBuf,
     auth: PathBuf,
     launch: Launch,
-    history: Vec<Value>,
     responses: u32,
     records: Option<tokio::sync::mpsc::Receiver<super::bridge::Record>>,
 }
@@ -116,7 +115,6 @@ impl Harness {
             work,
             auth,
             launch,
-            history: vec![],
             responses: 0,
             records: None,
         })
@@ -295,14 +293,9 @@ impl Harness {
         archive: &mut Archive,
     ) -> Result<String, String> {
         self.responses += 1;
-        let history = spec.history_turns.unwrap_or(20).saturating_mul(2);
-        if self.history.len() > history {
-            self.history.drain(..self.history.len() - history);
-        }
         let prompt = format!(
-            "{INSTRUCTIONS}\n\nPlayer instructions:\n{}\n\nEarlier interactions (data):\n{}\n\n{message}",
-            spec.instructions.as_deref().unwrap_or(""),
-            serde_json::to_string(&self.history).expect("serializable")
+            "{INSTRUCTIONS}\n\nPlayer instructions:\n{}\n\n{message}",
+            spec.instructions.as_deref().unwrap_or("")
         );
         let stem = format!("response-{:06}", self.responses);
         let stdout = archive.dir.join(format!("{stem}.stdout.jsonl"));
@@ -326,11 +319,14 @@ impl Harness {
             prompt.clone()
         };
         let mut events = vec![];
+        let idle = Duration::from_secs(u64::from(spec.response_seconds.unwrap_or(300)));
+        let mut deadline = tokio::time::Instant::now() + idle;
+        let mut pending_tools = 0i32;
         let result = async {
             let mut stdin = child.stdin.take().ok_or("native harness has no stdin")?;
-            stdin
-                .write_all(input.as_bytes())
+            tokio::time::timeout(idle, stdin.write_all(input.as_bytes()))
                 .await
+                .map_err(|_| "native harness response timed out from inactivity".to_string())?
                 .map_err(|e| format!("sending native prompt: {e}"))?;
             drop(stdin);
             let stream = child.stdout.take().ok_or("native harness has no stdout")?;
@@ -342,15 +338,25 @@ impl Harness {
                     loop {
                         tokio::select! {
                             read = stream.read_until(b'\n', &mut line) => break read,
-                            Some(record) = records.recv() => record.save(archive)?,
+                            Some(record) = records.recv() => {
+                                pending_tools += record.pending_change();
+                                record.save(archive)?;
+                                deadline = tokio::time::Instant::now() + idle;
+                            },
+                            _ = tokio::time::sleep_until(deadline), if pending_tools == 0 => return Err("native harness response timed out from inactivity".into()),
                         }
                     }
                 } else {
-                    stream.read_until(b'\n', &mut line).await
+                    tokio::time::timeout(idle, stream.read_until(b'\n', &mut line))
+                        .await
+                        .map_err(|_| {
+                            "native harness response timed out from inactivity".to_string()
+                        })?
                 };
                 if count.map_err(|e| e.to_string())? == 0 {
                     break;
                 }
+                deadline = tokio::time::Instant::now() + idle;
                 output
                     .write_all(&line)
                     .and_then(|()| output.sync_data())
@@ -378,19 +384,19 @@ impl Harness {
                 }
                 events.push(event);
             }
-            child.wait().await.map_err(|e| e.to_string())
+            tokio::time::timeout(idle, child.wait())
+                .await
+                .map_err(|_| "native harness response timed out from inactivity".to_string())?
+                .map_err(|e| e.to_string())
         };
-        let status = match tokio::time::timeout(
-            Duration::from_secs(u64::from(spec.response_seconds.unwrap_or(300))),
-            result,
-        )
-        .await
-        {
-            Ok(status) => status?,
-            Err(_) => {
+        let status = match result.await {
+            Ok(status) => status,
+            Err(error) => {
                 let _ = child.kill().await;
-                archive.record("native_timeout", json!({"response":self.responses}))?;
-                return Err("native harness response timed out".into());
+                if error.contains("timed out from inactivity") {
+                    archive.record("native_timeout", json!({"response":self.responses}))?;
+                }
+                return Err(error);
             }
         };
         for path in [&stdout, &stderr] {
@@ -421,10 +427,6 @@ impl Harness {
             Program::Codex => codex::response(&events),
             Program::Antigravity => antigravity::response(&events),
         }?;
-        self.history.extend([
-            json!({"role":"user","content":message}),
-            json!({"role":"assistant","content":answer}),
-        ]);
         archive.record("native_response", json!({"response":answer}))?;
         Ok(answer)
     }
