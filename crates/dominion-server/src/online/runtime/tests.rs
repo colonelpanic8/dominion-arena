@@ -203,6 +203,58 @@ fn no_human_seats_or_silently_ignored_counts() {
     assert_eq!(NewGame::default().rules(&catalog()).unwrap().0, 1);
 }
 #[test]
+fn player_joins_update_the_table_without_disconnecting() {
+    for is_player in [false, true] {
+        let (_directory, mut runtime) = runtime();
+        let joined = Message::PlayerJoined {
+            table_id: 10,
+            player: named(99),
+            is_player,
+        };
+        runtime.process(joined.clone()).unwrap();
+        runtime.process(joined).unwrap();
+        let table = runtime.table.as_ref().unwrap();
+        let members = if is_player {
+            &table.players
+        } else {
+            &table.spectators
+        };
+        assert_eq!(members.iter().filter(|p| p.id == 99).count(), 1);
+        assert_eq!(table.players[0].id, 42);
+        assert_eq!(table.ready.len(), table.players.len());
+        assert_eq!(runtime.update.reducer.names.get(&99), Some(&named(99).name));
+        assert!(runtime.safe_table().is_err());
+        runtime
+            .process(Message::PlayerLeft {
+                table_id: 10,
+                player_id: 99,
+            })
+            .unwrap();
+        let table = runtime.safe_table().unwrap();
+        assert_eq!(table.ready.len(), table.players.len());
+    }
+}
+
+#[test]
+fn table_updates_with_humans_do_not_disconnect() {
+    for joined in [false, true] {
+        let (_directory, mut runtime) = runtime();
+        let table = human_table(false);
+        let message = if joined {
+            Message::TableJoined {
+                table: table.clone(),
+                show: true,
+            }
+        } else {
+            Message::TableDetails(table.clone())
+        };
+        runtime.process(message).unwrap();
+        assert_eq!(runtime.table.as_ref().unwrap().players, table.players);
+        assert!(runtime.safe_table().is_err());
+    }
+}
+
+#[test]
 fn table_gate_rejects_humans_visitors_reconnecting_players_and_foreign_host() {
     let (_directory, mut runtime) = runtime();
     assert!(runtime.safe_table().is_ok());

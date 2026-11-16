@@ -53,7 +53,9 @@ must be a server bot: defaults are two players and one bot. It requests unrated
 play with spectators prohibited, verifies the returned rules and membership,
 and refuses settings it cannot honor. The upstream client does not implement
 the host-only admission serializer, so a table is **not proven unjoinable**;
-if a human joins, the adapter stops sending actions. Public human matchmaking is available through the server management page below;
+Joining players and spectators update table membership without disconnecting the
+client. Bot-game actions still require a table containing only this account and
+server bots. Public human matchmaking is available through the server management page below;
 joining arbitrary tables is not exposed.
 
 `online_reconnect` explicitly resumes only the in-memory session owned by this

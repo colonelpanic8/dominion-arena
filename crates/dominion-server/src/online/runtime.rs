@@ -622,18 +622,10 @@ impl Runtime {
                 for player in table.players.iter().chain(&table.bots) {
                     reducer.names.insert(player.id, player.name.clone());
                 }
-                if let Some(human) = &self.human {
-                    if reducer.running || self.needs_snapshot || self.update.searching {
-                        human.validate(&table, reducer.player_id)?;
-                    }
-                } else if table.players.iter().any(|p| p.id != reducer.player_id)
-                    || !table.spectators.is_empty()
-                    || !table.reconnecting.is_empty()
+                if let Some(human) = &self.human
+                    && (reducer.running || self.needs_snapshot || self.update.searching)
                 {
-                    return Err(
-                        "REFUSED: table includes another human, spectator or reconnecting seat"
-                            .into(),
-                    );
+                    human.validate(&table, reducer.player_id)?;
                 }
                 self.bots = table.bots.iter().map(|p| p.id).collect();
                 self.table = Some(table);
@@ -652,15 +644,25 @@ impl Runtime {
                 player,
                 is_player,
             } => {
-                if self.table.as_ref().is_some_and(|t| t.table_id == table_id) {
-                    if let Some(human) = &self.human {
-                        if is_player && !human.table.players.iter().any(|p| p.id == player.id) {
-                            return Err("REFUSED: unexpected player joined matched table".into());
-                        }
-                    } else if !is_player || player.id != reducer.player_id {
-                        return Err("REFUSED: a human joined the official table; no further actions will be sent".into());
+                if let Some(table) = &mut self.table
+                    && table.table_id == table_id
+                {
+                    if let Some(human) = &self.human
+                        && is_player
+                        && !human.table.players.iter().any(|p| p.id == player.id)
+                    {
+                        return Err("REFUSED: unexpected player joined matched table".into());
                     }
-                    reducer.names.insert(player.id, player.name);
+                    reducer.names.insert(player.id, player.name.clone());
+                    table.reconnecting.retain(|p| p.id != player.id);
+                    if is_player {
+                        if !table.players.iter().any(|p| p.id == player.id) {
+                            table.players.push(player);
+                            table.ready.push(false);
+                        }
+                    } else if !table.spectators.iter().any(|p| p.id == player.id) {
+                        table.spectators.push(player);
+                    }
                 }
             }
             Message::RoleChanged {
@@ -681,7 +683,14 @@ impl Runtime {
                 if let Some(table) = &mut self.table
                     && table.table_id == table_id
                 {
-                    table.players.retain(|p| p.id != player_id);
+                    if let Some(index) = table.players.iter().position(|p| p.id == player_id) {
+                        table.players.remove(index);
+                        if index < table.ready.len() {
+                            table.ready.remove(index);
+                        }
+                    }
+                    table.spectators.retain(|p| p.id != player_id);
+                    table.reconnecting.retain(|p| p.id != player_id);
                     table.bots.retain(|p| p.id != player_id);
                     self.bots.retain(|id| *id != player_id);
                 }
