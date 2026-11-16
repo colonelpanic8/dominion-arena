@@ -619,51 +619,86 @@ fn a_restored_table_plays_on_exactly_like_the_original() {
     }
 }
 
-/// The game and every seat's knowledge, which an undo must restore exactly.
+/// The game, and what every seat and someone watching know, which an undo must restore
+/// exactly.
 fn state_of(t: &Table) -> (Value, Value) {
+    let seats: Vec<Value> = (0..t.names().len())
+        .map(|p| {
+            let mut view = t.view(PlayerId(p as u8));
+            // An undo opens the decision again under a new id.
+            if let Some(d) = &mut view.decision {
+                d.id.clear();
+            }
+            serde_json::to_value(view).unwrap()
+        })
+        .collect();
     (
         serde_json::to_value(t.game()).unwrap(),
-        serde_json::to_value(t.knowledge()).unwrap(),
+        json!({"seats": seats, "watcher": t.watch_view(0)}),
     )
 }
 
 #[test]
-fn undo_takes_back_a_seats_answers_until_another_seat_answered() {
+fn undo_goes_back_to_any_earlier_answer() {
     for seed in 0..seeds(4) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let mut config = GameConfig::random(2, &released(), seed);
         config.turn_limit = Some(12);
         let mut table = Table::new(format!("g{seed}"), config, vec![]).unwrap();
-        // The states before each answer of the current run of one seat's answers.
-        let mut run: Vec<(PlayerId, (Value, Value))> = vec![];
+        // The state before each answer, and who gave it.
+        let mut before: Vec<(PlayerId, (Value, Value))> = vec![];
         let mut undos = 0;
-        while let Some(seat) = table.deciding() {
-            let other = PlayerId(1 - seat.0);
-            assert!(!table.can_undo(other) || run.last().is_some_and(|(s, _)| *s == other));
-            if run.last().is_some_and(|(s, _)| *s == seat) && rng.random_bool(0.3) {
-                let undone_id = table.decision_id().unwrap();
-                let (_, before) = run.pop().unwrap();
-                assert!(table.undo(seat));
+        loop {
+            assert_eq!(table.answers(), before.len());
+            let over = table.deciding().is_none();
+            if over && undos >= 6 {
+                break;
+            }
+            if !before.is_empty() && (over || (undos < 5 && rng.random_bool(0.05))) {
+                let by = PlayerId(rng.random_range(0..2));
+                let mine = table.last_answer(by);
+                let answer = if rng.random_bool(0.5) {
+                    mine
+                } else {
+                    Some(rng.random_range(0..before.len()))
+                };
+                let Some(answer) = answer else {
+                    assert!(!table.can_undo(by));
+                    assert_eq!(table.undo(by), Err(AnswerError::CannotUndo));
+                    continue;
+                };
+                let undone_id = table.decision_id();
+                // Saved and loaded, the table can still go back.
+                let json = serde_json::to_string(&table).unwrap();
+                let mut table2: Table = serde_json::from_str(&json).unwrap();
+                if Some(answer) == mine {
+                    table.undo(by).unwrap();
+                } else {
+                    table.rewind(by, answer).unwrap();
+                }
+                table2.rewind(by, answer).unwrap();
                 undos += 1;
+                let taken = before.len() - answer;
                 assert_eq!(table.undos(), undos);
-                assert_eq!(state_of(&table), before, "seed {seed}");
-                assert_ne!(table.decision_id().unwrap(), undone_id);
-                assert_eq!(table.can_undo(seat), !run.is_empty());
-                assert_eq!(table.undo_note(seat), None);
+                assert_eq!(state_of(&table), before[answer].1, "seed {seed}");
+                assert_eq!(state_of(&table2), before[answer].1, "seed {seed}");
+                assert_ne!(table.decision_id(), undone_id);
+                before.truncate(answer);
+                assert_eq!(table.undo_note(by), None);
+                let other = PlayerId(1 - by.0);
                 let note = table.undo_note(other).expect("the other seat is told");
-                assert!(note.contains(&format!("{seat} took back")), "{note}");
+                let undid = dominion_engine::amount(taken as i64, "answer", "answers");
+                assert!(note.contains(&format!("{by} undid {undid}")), "{note}");
                 continue;
             }
-            let before = state_of(&table);
+            let seat = table.deciding().unwrap();
+            let state = state_of(&table);
             let d = table.view(seat).decision.unwrap();
             table.answer(seat, &random_answer(&d, &mut rng)).unwrap();
-            if run.last().is_some_and(|(s, _)| *s != seat) {
-                run.clear();
-            }
-            run.push((seat, before));
+            before.push((seat, state));
             assert_eq!(table.undo_note(seat), None);
             assert!(table.can_undo(seat));
-            assert!(!table.undo(other));
+            assert_eq!(table.answered_by(before.len() - 1), Some(seat));
         }
         assert!(undos > 0, "seed {seed}");
     }
@@ -2127,6 +2162,8 @@ fn play_treasures_plays_only_what_was_offered_when_asked() {
     let (mut runs, mut drawn_left) = (0, 0);
     for seed in 0..10 {
         let mut t = table(&[Card::Figurine], seed, &[]);
+        // Each check replays the game: a few early ones are enough.
+        let mut undo_checks = 2;
         for _ in 0..1000 {
             let Some(seat) = t.deciding() else { break };
             let d = t.view(seat).decision.unwrap();
@@ -2147,9 +2184,12 @@ fn play_treasures_plays_only_what_was_offered_when_asked() {
                 let after = treasures_offered(&t, seat);
                 assert!(after.iter().all(|c| !before.contains(c)), "{after:?}");
                 drawn_left += after.len();
-                let mut back = t.clone();
-                assert!(back.undo(seat), "one undo takes the run back");
-                assert_eq!(treasures_offered(&back, seat), before);
+                if undo_checks > 0 {
+                    undo_checks -= 1;
+                    let mut back = t.clone();
+                    back.undo(seat).expect("one undo takes the run back");
+                    assert_eq!(treasures_offered(&back, seat), before);
+                }
                 continue;
             }
             let answer = if d.kind != "turn" {
@@ -2196,7 +2236,8 @@ fn a_resignation_ends_the_game_with_the_resigner_last() {
     assert_eq!(ranks, [(2, true), (1, false)]);
     assert!(text::render(&table.view(PlayerId(0))).contains("resigned"));
     assert_eq!(table.resign(PlayerId(1)), Err(AnswerError::GameOver));
-    assert!(!table.undo(PlayerId(0)) && !table.undo(PlayerId(1)));
+    assert!(!table.can_rewind() && !table.can_undo(PlayerId(1)));
+    assert_eq!(table.undo(PlayerId(1)), Err(AnswerError::CannotUndo));
     assert_eq!(
         table.answer(PlayerId(0), &Answer::indices(&d.id, vec![0])),
         Err(AnswerError::GameOver)

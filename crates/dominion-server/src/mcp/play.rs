@@ -242,6 +242,7 @@ impl Presentation {
             log: logs,
             undos,
             glossary,
+            note,
         } = observation;
         let undos = *undos;
         if self.seat.as_ref() != Some(seat) {
@@ -263,6 +264,7 @@ impl Presentation {
             self.undos = undos;
         }
         let full = full || self.previous.is_none();
+        let note = note.as_ref().map(|n| format!("{n}\n")).unwrap_or_default();
         let mut text_view = view.clone();
         text_view.since_last_decision.clear();
         // LOG and RESULT are appended below, where their sequence and ending are explicit.
@@ -270,7 +272,7 @@ impl Presentation {
         text_view.decision = None;
         let mut text = if full {
             format!(
-                "STATUS game {}, seat {} of {}, opponents: {} other seats\n{}",
+                "{note}STATUS game {}, seat {} of {}, opponents: {} other seats\n{}",
                 seat.game,
                 seat.seat.0,
                 view.opponents.len() + 1,
@@ -278,7 +280,7 @@ impl Presentation {
                 dominion_agent::text::render(&text_view)
             )
         } else {
-            delta(self.previous.as_ref().unwrap(), &text_view)
+            note + &delta(self.previous.as_ref().unwrap(), &text_view)
         };
         let unseen: Vec<_> = logs
             .iter()
@@ -367,6 +369,7 @@ mod tests {
                 log,
                 glossary,
                 undos: 0,
+                note: None,
             },
         )
     }

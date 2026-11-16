@@ -571,6 +571,9 @@ impl Arena {
         if start.spec.randomize_order {
             order.shuffle(&mut rand::rng());
         }
+        let is_agent: Vec<bool> = (order.iter())
+            .map(|&i| matches!(start.seats[i], Seat::Agent(_)))
+            .collect();
         let (names, owners): (Vec<String>, Vec<Option<String>>) = (order.iter())
             .map(|&i| match &start.seats[i] {
                 Seat::Player { user, .. } => {
@@ -598,7 +601,8 @@ impl Arena {
             rated: start.rated,
             watchable: start.spec.watchable,
             timed: start.spec.timed,
-            no_undo: !start.spec.undo,
+            undo: start.spec.undo,
+            agents: is_agent,
             table: Some(start.table.clone()),
             ..Meta::default()
         };

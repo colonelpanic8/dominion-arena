@@ -110,7 +110,7 @@ and `card` retain their original arguments and raw structured responses. `join_g
 with legacy `game_id` also retains its raw response and grouped reference. To assign
 house-agent profiles, use `create_game`'s explicit `agents` option with a registered
 account; a bot count is never silently converted into profiles. `resign`, `list_games`,
-and lobby tools `sign_in`, `find_match`, `cancel_match`, `list_tables`, `join_table`,
+`undo` (optional `log_seq`), `answer_undo` (`allow`), `cancel_undo`, and lobby tools `sign_in`, `find_match`, `cancel_match`, `list_tables`, `join_table`,
 `wait_for_game`, and `leave_table` remain available. Unknown arguments are refused.
 
 Legacy `join_game` with `game_id`, and joining through the lobby, also include a grouped reference of official
@@ -189,9 +189,12 @@ will) or 500.
 | `POST /api/games` | `create_game`'s arguments, including optional `agents` (profile name or `null` per seat) | 201, the game id and tokens for seats without agents |
 | `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
-| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo, meta}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the answers taken back: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat answered last. `meta`: `{source, rated, watchable, timed, users, connected, forfeitAt?, watchers, ended?, now}` (`now`: the server's clock, to read `forfeitAt` against) |
+| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo, undo, meta}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the undos done: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat may ask to take back its last answer now. `undo`: `{rule, request?, refusedBy?}`, the game's rule (`off`, `ask`, `free`), the undo waiting to be allowed (`{by, answers, waiting}`: the seat asking, how many answers it takes back, the seats yet to allow it), and the seat that refused the viewer's last request. `meta`: `{source, rated, watchable, timed, users, connected, forfeitAt?, watchers, ended?, now}` (`now`: the server's clock, to read `forfeitAt` against) |
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
-| `POST /api/games/{id}/undo` | | the same with the whole log, after taking back the seat's last answer (and the Way answers that came with it); 409 when another seat has answered since. A seat can keep undoing back to the last answer of another seat. The game, with its shuffles, is restored exactly, and decision ids are never reused. The server keeps nothing to undo across a restart. 403 in a lobby game, unless its table allows undo, and in any lobby game once it is over |
+| `POST /api/games/{id}/undo` | `{logSeq?}` (optional) | the same with the whole log, after asking to take back the seat's last answer, or with `logSeq` the answer that led to that log entry, with every answer after it, every seat's. Under the `free` rule, or when every other seat is played by the server's agents (which allow every undo), it happens at once; under `ask` it waits for the other seats to allow it, and the seat answering withdraws it. The game is replayed from its start to that point, shuffles and all, so it comes back exactly; decision ids are never reused. Every answer is saved with the game, so an undo works across a restart (a request waiting does not survive one). 409 when the seat has nothing to take back or another seat's request is waiting; 403 under `off`, after a resignation, and in any lobby game once it is over |
+| `POST /api/games/{id}/undo/allow` | | the same, after the seat allows the undo waiting for it; the undo happens once every seat asked has |
+| `POST /api/games/{id}/undo/refuse` | | the same, after the seat refuses the undo waiting for it; the asking seat sees `refusedBy` until it acts again |
+| `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
 | `GET /api/games/{id}/watch[?logFrom=N]` | | the same shape for someone watching (signed in; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, signed in, it is a watcher's |
@@ -253,7 +256,7 @@ played by token, by whoever holds it. The lobby makes games between accounts:
 
 - **Tables.** A host creates a table with its rules (`TableSpec`: what `POST /api/deal`
   takes, plus `colonies`, `shelters`, `turnLimit`, `randomizeOrder`, `respectBanned`,
-  `rated`, `watchable`, `timed`, `undo`) and its seats: open ones anyone signed in may take, and
+  `rated`, `watchable`, `timed`, `undo`: `off`, `ask` or `free`) and its seats: open ones anyone signed in may take, and
   token seats, which the host fills by handing out the seat's token once the game starts
   (a second player at the same screen, an agent without an account). The host changes
   the rules and the seats; changed rules make everyone unready. The game starts once no
@@ -266,7 +269,8 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   counts you accept, whether you want `humans`, `agents` (bots, and anyone connected over
   MCP) or `any`, and whether a rated game is welcome. Searches that fit each other are
   paired, closest in rating first, into a timed, watchable game with a random kingdom
-  that leaves out the cards on its players' Banned lists. A search ends when its player
+  that leaves out the cards on its players' Banned lists, where an undo needs the other
+  players to allow it. A search ends when its player
   disconnects.
 - **Ratings and records.** A game counts for ratings (Glicko-2, a game a rating period,
   a day unplayed another) when it says so and every seat is a different registered
@@ -301,7 +305,8 @@ seat them at a table, request one in Bot Game, or assign any seats through ordin
 `agents` has one entry per player; `null` creates a token seat. The creator receives
 only those token seats. A profile may play multiple seats. Existing game options
 configure the kingdom, landscapes, seed, Colonies/Shelters, and turn limit. These games
-are unrated, disallow undo, and are watchable through the server by default; an explicit
+are unrated, allow undo when the token seats' players allow it (the agents always do),
+and are watchable through the server by default; an explicit
 `watchable: false` makes one private. They appear in the normal lobby games listing.
 Each registered player fills `agent_seats_per_day` agent seats a day; the runner's
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.

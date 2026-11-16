@@ -89,9 +89,22 @@ pub async fn answer(game: &str, token: &str, answer: &Answer) -> Result<SeatView
     imp::post(&url, Some(token), answer).await
 }
 
-/// Takes back the seat's last answer; the view returned has the whole log.
+/// Asks to take back the seat's last answer; the view returned has the whole log.
 pub async fn undo(game: &str, token: &str) -> Result<SeatView> {
     let url = format!("/api/games/{}/undo", encode(game));
+    imp::send("POST", &url, Some(token), None::<&()>).await
+}
+
+/// Allows or refuses the undo waiting for the seat.
+pub async fn answer_undo(game: &str, token: &str, allow: bool) -> Result<SeatView> {
+    let verb = if allow { "allow" } else { "refuse" };
+    let url = format!("/api/games/{}/undo/{verb}", encode(game));
+    imp::send("POST", &url, Some(token), None::<&()>).await
+}
+
+/// Withdraws the seat's undo request.
+pub async fn cancel_undo(game: &str, token: &str) -> Result<SeatView> {
+    let url = format!("/api/games/{}/undo/cancel", encode(game));
     imp::send("POST", &url, Some(token), None::<&()>).await
 }
 

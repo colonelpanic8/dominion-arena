@@ -661,6 +661,7 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
     let error = st.error.clone();
     let answering = st.answering || run.read().is_some();
     let can_undo = st.can_undo;
+    let undo_title = super::undo_title(st.undo.rule);
     let log = st.log.clone();
     let names = st
         .view
@@ -759,6 +760,14 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
                         g.play_right - g.play_x - 22.0 * g.vh,
                     ),
                 }
+                super::UndoNotice {
+                    style: format!(
+                        "left:{:.1}px;top:{:.1}px;width:{:.1}px;",
+                        g.play_x,
+                        g.play_y + g.vh,
+                        g.play_right - g.play_x - 22.0 * g.vh,
+                    ),
+                }
             }
             if let Some((p, _)) = ctx.popup.read().clone() {
                 PopupView { popup: p, g: g.clone(), board: b.clone() }
@@ -769,7 +778,7 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
                     if can_undo {
                         button {
                             "data-action": "undo",
-                            title: "Take back your last answer (Ctrl+Z)",
+                            title: undo_title,
                             disabled: answering,
                             onclick: move |_| ctx.undo(),
                             "Undo"

@@ -9,7 +9,8 @@ use dominion_engine::{
 pub use dominion_protocol::api::{
     Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
 };
-use dominion_protocol::lobby::{GameMeta, MyGame, Source, UserRef};
+use dominion_protocol::api::{UndoRequest, UndoState};
+use dominion_protocol::lobby::{GameMeta, MyGame, Source, UndoRule, UserRef};
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,8 @@ pub enum HubError {
     BadToken(String),
     #[error("{0}")]
     Forbidden(String),
+    #[error("{0}")]
+    Conflict(String),
     /// The server is hosting as many games as it will.
     #[error("{0}")]
     Busy(String),
@@ -88,8 +91,10 @@ pub struct Meta {
     pub watchable: bool,
     /// The deciding seat forfeits when it is away or takes too long ([`Timing`]).
     pub timed: bool,
-    /// Answers can't be taken back: an undo shows a player what would have happened.
-    pub no_undo: bool,
+    /// Whether answers can be taken back: an undo shows a player what would have happened.
+    pub undo: UndoRule,
+    /// Per seat: played by one of the server's agents, which allow every undo.
+    pub agents: Vec<bool>,
     /// The lobby table that started it.
     pub table: Option<String>,
     /// Milliseconds since the Unix epoch.
@@ -133,6 +138,8 @@ pub(crate) struct PlayObservation {
     pub log: Vec<dominion_agent::LogEntry>,
     pub glossary: Vec<dominion_agent::GlossaryEntry>,
     pub undos: u64,
+    /// What the seat is told about undos.
+    pub note: Option<String>,
 }
 
 fn current_entry(
@@ -152,6 +159,41 @@ fn current_entry(
     entry
 }
 
+/// An undo a seat asked for, waiting for other seats to allow it.
+#[derive(Clone, Debug)]
+struct Request {
+    by: PlayerId,
+    /// It goes back to just before this answer.
+    answer: usize,
+    waiting: Vec<PlayerId>,
+}
+
+/// A game's undo requests. Not saved: a restart drops the one waiting.
+#[derive(Default)]
+struct Undoing {
+    request: Option<Request>,
+    /// Per seat: who refused its last request, until it acts again.
+    refused: Vec<Option<PlayerId>>,
+}
+
+impl Undoing {
+    /// `seat` acted (answered, asked again): its request and refusal are behind it.
+    fn acted(&mut self, seat: PlayerId) {
+        if self.request.as_ref().is_some_and(|r| r.by == seat) {
+            self.request = None;
+        }
+        if let Some(r) = self.refused.get_mut(seat.index()) {
+            *r = None;
+        }
+    }
+
+    fn waits_for(&self, seat: PlayerId) -> bool {
+        self.request
+            .as_ref()
+            .is_some_and(|r| r.waiting.contains(&seat))
+    }
+}
+
 /// A seat that only just became the deciding one is given this long to come back.
 const AWAY_GRACE_MS: u64 = 30_000;
 /// A seat counts as connected this long after its last call.
@@ -162,6 +204,8 @@ struct Hosted {
     tokens: Vec<String>,
     /// Locked after `table`, never before.
     meta: Mutex<Meta>,
+    /// Locked after `table` and with `meta` released.
+    undo: Mutex<Undoing>,
     /// Per seat: its token has been used since the server started.
     joined: Vec<AtomicBool>,
     /// Per seat: when its token was last used.
@@ -189,6 +233,10 @@ impl Hosted {
         Hosted {
             table: Mutex::new(table),
             meta: Mutex::new(meta),
+            undo: Mutex::new(Undoing {
+                request: None,
+                refused: vec![None; seats],
+            }),
             joined: (0..seats).map(|_| AtomicBool::new(false)).collect(),
             seen: (0..seats).map(|_| AtomicU64::new(now)).collect(),
             streams: (0..seats).map(|_| AtomicU32::new(0)).collect(),
@@ -251,7 +299,16 @@ struct Saved {
     table: Table,
     tokens: Vec<String>,
     #[serde(default)]
+    meta: SavedMeta,
+}
+
+#[derive(Default, Deserialize)]
+struct SavedMeta {
+    #[serde(flatten)]
     meta: Meta,
+    /// What a game saved before [`Meta::undo`] said instead.
+    #[serde(default)]
+    no_undo: bool,
 }
 
 /// What [`Hub::open`] found in its directory.
@@ -589,21 +646,28 @@ fn id_number(id: &str) -> Option<u64> {
     id.strip_prefix('g')?.parse().ok()
 }
 
-fn load(path: &Path, stem: &str) -> Result<Saved, String> {
+fn load(path: &Path, stem: &str) -> Result<(Table, Vec<String>, Meta), String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
-    let mut saved: Saved = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if saved.table.id() != stem {
-        return Err(format!("holds game {}, not {stem}", saved.table.id()));
+    let saved: Saved = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    let mut meta = saved.meta.meta;
+    if saved.meta.no_undo {
+        meta.undo = UndoRule::Off;
     }
-    let seats = saved.table.names().len();
-    if saved.tokens.len() != seats {
+    let saved = (saved.table, saved.tokens, meta);
+    let (table, tokens, mut meta) = saved;
+    if table.id() != stem {
+        return Err(format!("holds game {}, not {stem}", table.id()));
+    }
+    let seats = table.names().len();
+    if tokens.len() != seats {
         return Err(format!(
             "has {} seat tokens for {seats} seats",
-            saved.tokens.len(),
+            tokens.len()
         ));
     }
-    saved.meta.owners.resize(seats, None);
-    Ok(saved)
+    meta.owners.resize(seats, None);
+    meta.agents.resize(seats, false);
+    Ok((table, tokens, meta))
 }
 
 fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary {
@@ -656,7 +720,7 @@ impl Hub {
             };
             // An unreadable file keeps its id too, so no new game overwrites it.
             index.next = index.next.max(id_number(stem).unwrap_or(0));
-            let saved = match load(&path, stem) {
+            let (table, tokens, meta) = match load(&path, stem) {
                 Ok(saved) => saved,
                 Err(e) => {
                     loaded.unreadable.push((path, e));
@@ -667,16 +731,13 @@ impl Hub {
             let age = modified
                 .and_then(|t| SystemTime::now().duration_since(t).ok())
                 .unwrap_or_default();
-            if saved.table.is_over() && age >= keep_finished {
+            if table.is_over() && age >= keep_finished {
                 fs::remove_file(&path)?;
                 loaded.expired += 1;
                 continue;
             }
             let changed = now_ms().saturating_sub(age.as_millis() as u64);
-            index.insert(
-                stem,
-                Hosted::new(saved.table, saved.tokens, saved.meta, changed),
-            );
+            index.insert(stem, Hosted::new(table, tokens, meta, changed));
         }
         loaded.games = index.games.len();
         let hub = Hub {
@@ -780,6 +841,7 @@ impl Hub {
         let table = engine(|| Table::new(&id, config, names))?.map_err(|e| bad(e.to_string()))?;
         let seats = table.names().len();
         meta.owners.resize(seats, None);
+        meta.agents.resize(seats, false);
         meta.started = now_ms();
         let tokens: Vec<String> = (0..seats).map(|_| token()).collect();
         let created = Created {
@@ -928,15 +990,64 @@ impl Hub {
         Ok(lock(&self.game(id)?.meta).clone())
     }
 
-    /// `seat`'s view, its text rendering, and `Table::undo_note`, read together.
+    /// `seat`'s view, its text rendering, and what it is told about undos
+    /// ([`Hub::undo_note`]), read together.
     pub fn view(&self, seat: &Seat) -> Result<(AgentView, String, Option<String>), HubError> {
         let game = self.game(&seat.game)?;
         let table = lock(&game.table);
+        let note = self.undo_note(&game, &table, seat.seat);
         engine(|| {
             let view = table.view(seat.seat);
             let text = dominion_agent::text::render(&view);
-            (view, text, table.undo_note(seat.seat))
+            (view, text, note)
         })
+    }
+
+    /// What `seat` is told about undos: what others took back since it last answered
+    /// (`Table::undo_note`), and the request waiting, its own or one it must answer.
+    fn undo_note(&self, game: &Hosted, table: &Table, seat: PlayerId) -> Option<String> {
+        let undo = lock(&game.undo);
+        let name = |p: PlayerId| table.names()[p.index()].clone();
+        let mut lines: Vec<String> = table.undo_note(seat).into_iter().collect();
+        if let Some(r) = &undo.request {
+            let answers =
+                dominion_engine::amount((table.answers() - r.answer) as i64, "answer", "answers");
+            if r.by == seat {
+                let waiting: Vec<String> = r.waiting.iter().map(|&p| name(p)).collect();
+                lines.push(format!(
+                    "UNDO you asked to take back {answers}; waiting for {} to allow it \
+                     (cancel_undo withdraws it).",
+                    waiting.join(" and ")
+                ));
+            } else if r.waiting.contains(&seat) {
+                lines.push(format!(
+                    "UNDO {} asks to take back {answers}: call answer_undo with allow true \
+                     to let them, or false to refuse.",
+                    name(r.by)
+                ));
+            }
+        }
+        if let Some(Some(by)) = undo.refused.get(seat.index()) {
+            lines.push(format!("UNDO {} refused your undo.", name(*by)));
+        }
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
+    /// The undo rule and the request waiting, as `seat` (or someone watching) sees it.
+    fn undo_state(&self, game: &Hosted, table: &Table, seat: Option<PlayerId>) -> UndoState {
+        let rule = lock(&game.meta).undo;
+        let undo = lock(&game.undo);
+        UndoState {
+            rule,
+            request: undo.request.as_ref().map(|r| UndoRequest {
+                by: r.by.0,
+                answers: (table.answers() - r.answer) as u32,
+                waiting: r.waiting.iter().map(|p| p.0).collect(),
+            }),
+            refused_by: seat
+                .and_then(|s| undo.refused.get(s.index()).copied().flatten())
+                .map(|p| p.0),
+        }
     }
 
     /// The common MCP presentation reads the seat's actual view and complete visible
@@ -955,7 +1066,12 @@ impl Hub {
                 log: table.view_from(seat.seat, 0).since_last_decision,
                 glossary,
                 undos: table.undos(),
+                note: None,
             }
+        })
+        .map(|mut observation| {
+            observation.note = self.undo_note(&game, &table, seat.seat);
+            observation
         })
     }
 
@@ -1026,7 +1142,8 @@ impl Hub {
                 deciding: table.deciding().map(|p| p.0),
                 table: extras,
                 undos: table.undos(),
-                can_undo: table.can_undo(seat.seat) && self.may_undo(&game, &table),
+                can_undo: self.can_undo(&game, &table, seat.seat),
+                undo: self.undo_state(&game, &table, Some(seat.seat)),
                 meta,
             };
             (seat_view, owners)
@@ -1054,6 +1171,7 @@ impl Hub {
                 table: extras,
                 undos: table.undos(),
                 can_undo: false,
+                undo: self.undo_state(&game, &table, None),
                 meta,
             };
             (seat_view, owners)
@@ -1154,21 +1272,49 @@ impl Hub {
             let mut next = table.clone();
             let answered = engine(|| next.answer_with(seat.seat, answer, way))??;
             *table = next;
+            self.answered(&game, &table, seat.seat);
             (answered, self.changed(&game, &table))
         };
         self.ended(ended);
         Ok(answered)
     }
 
-    /// Whether answers can be taken back in `game`: where its rules allow it, and never
-    /// once a game between accounts is over, as it has been recorded.
+    /// Whether answers can be taken back in `game` now: where its rules allow it, never
+    /// once someone resigned, and never once a game between accounts is over, as it has
+    /// been recorded.
     fn may_undo(&self, game: &Hosted, table: &Table) -> bool {
         let meta = lock(&game.meta);
-        !meta.no_undo && !(table.is_over() && meta.source != Source::Direct)
+        meta.undo != UndoRule::Off
+            && table.can_rewind()
+            && !(table.is_over() && meta.source != Source::Direct)
     }
 
-    /// Takes back `seat`'s last answer (`Table::undo`).
-    pub fn undo(&self, seat: &Seat) -> Result<(), HubError> {
+    /// Whether `seat` may ask to take back its last answer now.
+    fn can_undo(&self, game: &Hosted, table: &Table, seat: PlayerId) -> bool {
+        self.may_undo(game, table)
+            && table.can_undo(seat)
+            && lock(&game.undo)
+                .request
+                .as_ref()
+                .is_none_or(|r| r.by == seat)
+    }
+
+    /// After `seat` answered: its own request is withdrawn, and one the game no longer
+    /// allows is dropped.
+    fn answered(&self, game: &Hosted, table: &Table, seat: PlayerId) {
+        let allowed = self.may_undo(game, table);
+        let mut undo = lock(&game.undo);
+        undo.acted(seat);
+        if !allowed {
+            undo.request = None;
+        }
+    }
+
+    /// Asks to take back `seat`'s last answer, or with `log_seq` the answer that led to
+    /// that log entry, with every answer after it. Where the game's rule is to ask, the
+    /// other seats (but the server's agents) must allow it first; otherwise it happens
+    /// now. Whether it happened.
+    pub fn undo(&self, seat: &Seat, log_seq: Option<usize>) -> Result<bool, HubError> {
         let game = self.game(&seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
@@ -1177,12 +1323,127 @@ impl Hub {
                     "answers can't be taken back in this game".into(),
                 ));
             }
-            if !table.undo(seat.seat) {
-                return Err(HubError::Answer(AnswerError::CannotUndo));
+            let answer = match log_seq {
+                None => table
+                    .last_answer(seat.seat)
+                    .ok_or(HubError::Answer(AnswerError::CannotUndo))?,
+                Some(seq) if seq >= table.game().log().len() => {
+                    return Err(bad(format!("there is no log entry {seq} yet")));
+                }
+                Some(seq) => table.answer_for_log(seq).ok_or_else(|| {
+                    bad(format!(
+                        "log entry {seq} came before the first answer: nothing before it \
+                         can be undone"
+                    ))
+                })?,
+            };
+            let (rule, agents) = {
+                let meta = lock(&game.meta);
+                (meta.undo, meta.agents.clone())
+            };
+            let waiting: Vec<PlayerId> = match rule {
+                UndoRule::Ask => (0..game.tokens.len())
+                    .map(|i| PlayerId(i as u8))
+                    .filter(|&p| p != seat.seat && !agents.get(p.index()).copied().unwrap_or(false))
+                    .collect(),
+                _ => vec![],
+            };
+            let mut undo = lock(&game.undo);
+            if let Some(r) = undo.request.as_ref().filter(|r| r.by != seat.seat) {
+                return Err(HubError::Conflict(format!(
+                    "{} has asked for an undo; it must be allowed, refused or withdrawn \
+                     before another",
+                    table.names()[r.by.index()]
+                )));
             }
-            self.changed(&game, &table)
+            undo.acted(seat.seat);
+            if !waiting.is_empty() {
+                undo.request = Some(Request {
+                    by: seat.seat,
+                    answer,
+                    waiting,
+                });
+                drop(undo);
+                game.version.send_modify(|v| *v += 1);
+                return Ok(false);
+            }
+            drop(undo);
+            self.rewind(&game, &mut table, seat.seat, answer)?
         };
         self.ended(ended);
+        Ok(true)
+    }
+
+    /// Takes the game in `table` back to just before `answer`, for `by`.
+    fn rewind(
+        &self,
+        game: &Hosted,
+        table: &mut Table,
+        by: PlayerId,
+        answer: usize,
+    ) -> Result<Option<Ended>, HubError> {
+        let mut next = table.clone();
+        engine(|| next.rewind(by, answer))??;
+        *table = next;
+        Ok(self.changed(game, table))
+    }
+
+    /// `seat` allows or refuses the undo waiting for it. Once every seat asked has
+    /// allowed it, it happens. Whether it happened.
+    pub fn answer_undo(&self, seat: &Seat, allow: bool) -> Result<bool, HubError> {
+        let game = self.game(&seat.game)?;
+        let ended = {
+            let mut table = lock(&game.table);
+            let allowed = self.may_undo(&game, &table);
+            let mut undo = lock(&game.undo);
+            if !undo.waits_for(seat.seat) {
+                return Err(HubError::Conflict(
+                    "no undo is waiting for you to allow it".into(),
+                ));
+            }
+            let mut request = undo.request.take().expect("a request waits");
+            if !allow {
+                if let Some(r) = undo.refused.get_mut(request.by.index()) {
+                    *r = Some(seat.seat);
+                }
+                drop(undo);
+                game.version.send_modify(|v| *v += 1);
+                return Ok(false);
+            }
+            if !allowed {
+                drop(undo);
+                game.version.send_modify(|v| *v += 1);
+                return Err(HubError::Forbidden(
+                    "answers can't be taken back in this game any more".into(),
+                ));
+            }
+            request.waiting.retain(|&p| p != seat.seat);
+            if !request.waiting.is_empty() {
+                undo.request = Some(request);
+                drop(undo);
+                game.version.send_modify(|v| *v += 1);
+                return Ok(false);
+            }
+            drop(undo);
+            self.rewind(&game, &mut table, request.by, request.answer)?
+        };
+        self.ended(ended);
+        Ok(true)
+    }
+
+    /// Withdraws `seat`'s undo request.
+    pub fn cancel_undo(&self, seat: &Seat) -> Result<(), HubError> {
+        let game = self.game(&seat.game)?;
+        let _table = lock(&game.table);
+        let mut undo = lock(&game.undo);
+        if !undo.request.as_ref().is_some_and(|r| r.by == seat.seat) {
+            return Err(HubError::Conflict(
+                "you have no undo request to withdraw".into(),
+            ));
+        }
+        undo.request = None;
+        drop(undo);
+        game.version.send_modify(|v| *v += 1);
         Ok(())
     }
 
@@ -1195,6 +1456,7 @@ impl Hub {
             let mut next = table.clone();
             let played = engine(|| next.play_treasures(seat.seat, decision))??;
             *table = next;
+            self.answered(&game, &table, seat.seat);
             (played, self.changed(&game, &table))
         };
         self.ended(ended);
@@ -1209,6 +1471,7 @@ impl Hub {
             let mut next = table.clone();
             engine(|| next.resign(seat.seat))??;
             *table = next;
+            lock(&game.undo).request = None;
             lock(&game.meta).ended = Some(cause.into());
             self.changed(&game, &table)
         };
@@ -1334,6 +1597,7 @@ impl Hub {
             || table.is_over() != runner.table.is_over()
         {
             *table = runner.table;
+            self.answered(&game, &table, seat.seat);
             self.changed(&game, &table)
         } else {
             None
@@ -1354,7 +1618,9 @@ impl Hub {
         let mut rx = game.version.subscribe();
         let ready = || {
             let table = lock(&game.table);
-            table.is_over() || table.deciding() == Some(seat.seat)
+            table.is_over()
+                || table.deciding() == Some(seat.seat)
+                || lock(&game.undo).waits_for(seat.seat)
         };
         let deadline = tokio::time::Instant::now() + timeout;
         loop {

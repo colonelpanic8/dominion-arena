@@ -23,8 +23,10 @@ pub struct GameState {
     pub log: Vec<LogEntry>,
     /// The server's count of undone answers the log was read under.
     pub undos: u64,
-    /// The seat may take back its last answer, as of `version`.
+    /// The seat may ask to take back its last answer, as of `version`.
     pub can_undo: bool,
+    /// The undo rule and the request waiting, as of `version`.
+    pub undo: dominion_protocol::api::UndoState,
     /// The message of the last failed call, until the next success.
     pub error: Option<String>,
     /// An answer is on its way.
@@ -96,6 +98,7 @@ impl GameState {
             self.deciding = sv.deciding;
             self.table = sv.table;
             self.can_undo = sv.can_undo;
+            self.undo = sv.undo;
             self.meta = sv.meta;
         }
         self.error = None;

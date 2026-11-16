@@ -281,6 +281,7 @@ fn seat_view(table: &Table, seat: PlayerId, log_from: Option<usize>, version: u6
         table: table.extras(seat),
         undos: table.undos(),
         can_undo: table.can_undo(seat),
+        undo: Default::default(),
         meta: Default::default(),
     }
 }
@@ -349,6 +350,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
                 table: table.watch_extras().unwrap(),
                 undos: table.undos(),
                 can_undo: false,
+                undo: Default::default(),
                 meta: Default::default(),
             }) {
                 Applied::Restart if from != 0 => from = 0,
@@ -383,7 +385,7 @@ fn the_log_is_the_whole_game_log_across_loads_refetches_and_answers() {
         }
         assert!(cl.state.can_undo);
         if rng.random_bool(0.2) {
-            assert!(table.undo(seat));
+            table.undo(seat).unwrap();
             version += 1;
             // The response to an undo has the whole log.
             let applied = cl.state.apply(seat_view(&table, seat, Some(0), version));
@@ -460,6 +462,7 @@ fn a_response_is_current_only_while_nothing_it_says_is_new() {
         table: table.extras(seat),
         undos: table.undos(),
         can_undo: table.can_undo(seat),
+        undo: Default::default(),
         meta: Default::default(),
     };
     let mut st = GameState::default();

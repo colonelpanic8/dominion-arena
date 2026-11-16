@@ -371,6 +371,7 @@ fn check_watched(table: &Table, deciding: PlayerId, cards: &CardDb) {
         table: extras,
         undos: 0,
         can_undo: false,
+        undo: Default::default(),
         meta: Default::default(),
     });
     assert!(state.watching() && state.decision().is_none());

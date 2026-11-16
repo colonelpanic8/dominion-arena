@@ -66,6 +66,7 @@ impl Session {
             view: view.clone(),
             glossary: cards,
             undos: update.reducer.epoch,
+            note: None,
         };
         let seat = crate::hub::Seat {
             game: view.game.id.clone().unwrap_or_default(),

@@ -306,7 +306,7 @@ impl Arena {
             rated: group.iter().all(|e| e.request.rated && !e.guest),
             watchable: true,
             timed: true,
-            no_undo: true,
+            undo: dominion_protocol::lobby::UndoRule::Ask,
             ..Meta::default()
         };
         Ok(self.hub.host(config, names, meta)?.game_id)

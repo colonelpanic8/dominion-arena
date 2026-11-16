@@ -49,8 +49,9 @@ crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection,
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
                           and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
-                          came from, the accounts playing it, rated / watchable / timed),
-                          who is connected, forfeits; calls back when a game ends
+                          came from, the accounts playing it, rated / watchable / timed /
+                          its undo rule), who is connected, forfeits, undo requests; calls
+                          back when a game ends
   src/arena/              who is playing (README "Accounts and the lobby"); its lock order
                           is in mod.rs
     mod.rs                `Arena`: state, the lobby snapshot, the sweep that runs every 5 s
@@ -99,6 +100,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           the deciding seat's time, how the game ended (pure)
   src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page
   src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
+  src/game/undo.rs        the undo request waiting: withdraw yours, allow or refuse another's
   src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
   src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
                           "Play Treasures" (`TreasureRun`)
@@ -524,6 +526,13 @@ them.
   with `Decision::plays`. No hint where something hidden decides whether a play follows
   (Jester replayed by Throne Room). A pre-answer applies to the card its answer started
   playing, found on the real game after the answer.
+- **Undo.** A `Table` keeps every answer it took (`Step`: the seat, the `Response` and
+  Way pre-answer, or an Autoplay Treasures run), saved with it. `Table::rewind` goes back
+  to before any answer by replaying the game from its config, which is exact because a
+  game is determined by its config and responses; each step checks the log length and
+  deciding seat, so a replay that went differently fails instead of diverging. Anything a
+  table answers must go through a recorded step. Who may undo and whose permission it
+  needs (`UndoRule`, requests waiting) is the hub's.
 
 ## Writing a set
 

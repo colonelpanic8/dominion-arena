@@ -58,6 +58,8 @@ pub fn OnlinePage() -> Element {
         deciding,
         submit: Callback::new(|_| {}),
         undo: Callback::new(|_| {}),
+        answer_undo: Callback::new(|_| {}),
+        cancel_undo: Callback::new(|_| {}),
         resign: Callback::new(|_| {}),
         resigning,
     });

@@ -1,9 +1,10 @@
 //! Accounts, the lobby and finished games' records, driven through the `Arena`.
 
 use dominion_agent::Answer;
+use dominion_engine::PlayerId;
 use dominion_protocol::lobby::{
     Credentials, MatchRequest, NewTable, Opponents, QueueState, SeatEdit, SeatKind, Source,
-    TableSpec, UserKind,
+    TableSpec, UndoRule, UserKind,
 };
 use dominion_server::arena::{Arena, Error, Ident, Settings};
 use dominion_server::hub::{Hub, Seat, Timing};
@@ -673,33 +674,35 @@ fn answers_are_taken_back_only_where_the_table_allows_it() {
     use dominion_server::hub::HubError;
     let arena = arena();
     let (ada, bo) = (register(&arena, "Ada"), register(&arena, "Bo"));
-    arena.search(&ada, &MatchRequest::default()).unwrap();
-    let matched = arena
-        .search(&bo, &MatchRequest::default())
-        .unwrap()
-        .game_id
-        .unwrap();
-    let seat = answer_first(&arena, &matched);
-    assert!(!arena.hub.seat_view(&seat, None).unwrap().can_undo);
-    assert!(matches!(arena.hub.undo(&seat), Err(HubError::Forbidden(_))));
+    let strict = TableSpec {
+        turn_limit: Some(1),
+        ..TableSpec::default()
+    };
+    let game = start_table(&arena, strict, &ada, &[&bo]);
+    let seat = answer_first(&arena, &game);
+    let view = arena.hub.seat_view(&seat, None).unwrap();
+    assert_eq!(view.undo.rule, UndoRule::Off);
+    assert!(!view.can_undo);
+    let refused = arena.hub.undo(&seat, None);
+    assert!(matches!(refused, Err(HubError::Forbidden(_))));
     arena
         .hub
-        .resign(&my_seat(&arena, &ada, &matched), "resigned")
+        .resign(&my_seat(&arena, &ada, &game), "resigned")
         .unwrap();
     arena
         .hub
-        .resign(&my_seat(&arena, &bo, &matched), "resigned")
+        .resign(&my_seat(&arena, &bo, &game), "resigned")
         .unwrap_err();
 
     let friendly = TableSpec {
-        undo: true,
+        undo: UndoRule::Free,
         turn_limit: Some(1),
         ..TableSpec::default()
     };
     let game = start_table(&arena, friendly, &ada, &[&bo]);
     let seat = answer_first(&arena, &game);
     assert!(arena.hub.seat_view(&seat, None).unwrap().can_undo);
-    arena.hub.undo(&seat).unwrap();
+    assert!(arena.hub.undo(&seat, None).unwrap(), "nobody is asked");
     // Once it is over it has been recorded: the last answer stands.
     let mut last = seat;
     for _ in 0..10_000 {
@@ -714,6 +717,72 @@ fn answers_are_taken_back_only_where_the_table_allows_it() {
         last = answer_first(&arena, &game);
     }
     assert!(!arena.hub.seat_view(&last, None).unwrap().can_undo);
-    assert!(matches!(arena.hub.undo(&last), Err(HubError::Forbidden(_))));
+    let refused = arena.hub.undo(&last, None);
+    assert!(matches!(refused, Err(HubError::Forbidden(_))));
     assert_eq!(arena.history(Some("Ada"), None, 10).unwrap().games.len(), 2);
+}
+
+#[test]
+fn an_automatch_undo_waits_for_the_opponent_to_allow_it() {
+    use dominion_server::hub::HubError;
+    let arena = arena();
+    let (ada, bo) = (register(&arena, "Ada"), register(&arena, "Bo"));
+    arena.search(&ada, &MatchRequest::default()).unwrap();
+    let game = arena
+        .search(&bo, &MatchRequest::default())
+        .unwrap()
+        .game_id
+        .unwrap();
+    let seat = answer_first(&arena, &game);
+    let other = Seat {
+        game: game.clone(),
+        seat: PlayerId(1 - seat.seat.0),
+    };
+    let view = |s: &Seat| arena.hub.seat_view(s, None).unwrap();
+    assert_eq!(view(&seat).undo.rule, UndoRule::Ask);
+    assert!(view(&seat).can_undo && !view(&other).can_undo);
+
+    assert!(!arena.hub.undo(&seat, None).unwrap(), "it waits");
+    let request = view(&other).undo.request.unwrap();
+    assert_eq!(request.by, seat.seat.0);
+    assert_eq!((request.answers, request.waiting), (1, vec![other.seat.0]));
+    let note = arena.hub.view(&other).unwrap().2.unwrap();
+    assert!(note.contains("asks to take back 1 answer"), "{note}");
+    assert!(matches!(
+        arena.hub.answer_undo(&seat, true),
+        Err(HubError::Conflict(_))
+    ));
+    assert!(!arena.hub.answer_undo(&other, false).unwrap());
+    let refused = view(&seat);
+    assert_eq!(refused.undo.request, None);
+    assert_eq!(refused.undo.refused_by, Some(other.seat.0));
+    assert_eq!(refused.undos, 0);
+
+    assert!(!arena.hub.undo(&seat, None).unwrap());
+    assert_eq!(view(&seat).undo.refused_by, None);
+    arena.hub.cancel_undo(&seat).unwrap();
+    assert_eq!(view(&other).undo.request, None);
+
+    assert!(!arena.hub.undo(&seat, None).unwrap());
+    let decision = view(&seat).view.decision;
+    assert!(arena.hub.answer_undo(&other, true).unwrap());
+    let undone = view(&seat);
+    assert_eq!((undone.undos, undone.undo.request), (1, None));
+    assert!(!undone.can_undo, "its only answer was taken back");
+    assert_ne!(undone.view.decision, decision);
+
+    // Answering withdraws the asking seat's request.
+    let seat = answer_first(&arena, &game);
+    assert!(!arena.hub.undo(&seat, None).unwrap());
+    if arena
+        .hub
+        .seat_view(&seat, None)
+        .unwrap()
+        .view
+        .decision
+        .is_some()
+    {
+        answer_first(&arena, &game);
+        assert_eq!(view(&seat).undo.request, None);
+    }
 }

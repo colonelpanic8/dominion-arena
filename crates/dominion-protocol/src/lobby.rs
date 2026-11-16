@@ -138,9 +138,58 @@ pub struct TableSpec {
     pub watchable: bool,
     /// A player who must decide and has left, or takes too long, forfeits.
     pub timed: bool,
-    /// Players may take back their own answers, which shows them what would have
-    /// happened: for a table of friends.
-    pub undo: bool,
+    /// Whether players may take back answers.
+    pub undo: UndoRule,
+}
+
+/// Whether players may take back answers, which shows them what would have happened.
+/// Games made directly (`POST /api/games`) let anyone undo.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UndoRule {
+    /// Answers can't be taken back.
+    Off,
+    /// Every other player must allow each undo (the server's agents always do).
+    Ask,
+    /// Anyone may undo without asking: for a table of friends.
+    #[default]
+    Free,
+}
+
+impl UndoRule {
+    pub const ALL: [UndoRule; 3] = [UndoRule::Off, UndoRule::Ask, UndoRule::Free];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            UndoRule::Off => "No undo",
+            UndoRule::Ask => "Undo with permission",
+            UndoRule::Free => "Undo without asking",
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UndoRule {
+    /// Also `true` (`free`) and `false` (`off`), as the rule once was.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<UndoRule, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Given {
+            Old(bool),
+            Rule(String),
+        }
+        match Given::deserialize(d)? {
+            Given::Old(true) => Ok(UndoRule::Free),
+            Given::Old(false) => Ok(UndoRule::Off),
+            Given::Rule(r) => match r.as_str() {
+                "off" => Ok(UndoRule::Off),
+                "ask" => Ok(UndoRule::Ask),
+                "free" => Ok(UndoRule::Free),
+                _ => Err(serde::de::Error::custom(format!(
+                    "{r:?} is no undo rule: off, ask or free"
+                ))),
+            },
+        }
+    }
 }
 
 impl Default for TableSpec {
@@ -159,7 +208,7 @@ impl Default for TableSpec {
             rated: true,
             watchable: true,
             timed: true,
-            undo: false,
+            undo: UndoRule::Off,
         }
     }
 }

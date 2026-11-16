@@ -1,7 +1,7 @@
 //! Request and response bodies of `dominion serve`'s HTTP API under `/api`. Game
 //! creation and listing share the MCP tools' snake_case types; the rest are camelCase.
 
-use crate::lobby::{GameMeta, Source, UserRef};
+use crate::lobby::{GameMeta, Source, UndoRule, UserRef};
 use crate::view::AgentView;
 use serde::{Deserialize, Serialize};
 
@@ -224,12 +224,48 @@ pub struct SeatView {
     /// held before at every sequence number.
     #[serde(default)]
     pub undos: u64,
-    /// The seat may take back its last answer (`POST /api/games/{id}/undo`).
+    /// The seat may ask to take back its last answer (`POST /api/games/{id}/undo`).
     #[serde(default)]
     pub can_undo: bool,
+    /// The game's undo rule and the undo waiting to be allowed, if any.
+    #[serde(default)]
+    pub undo: UndoState,
     /// Who plays, who is connected, and what kind of game it is.
     #[serde(default)]
     pub meta: GameMeta,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoState {
+    pub rule: UndoRule,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<UndoRequest>,
+    /// The seat that refused the viewer's last request, until the viewer acts again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused_by: Option<u8>,
+}
+
+/// An undo a seat asked for, waiting for the others to allow it
+/// (`POST /api/games/{id}/undo/allow`, `/refuse`; the asking seat may `/cancel`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoRequest {
+    pub by: u8,
+    /// The answers it takes back, every seat's, counting to the latest.
+    pub answers: u32,
+    /// The seats yet to allow it.
+    pub waiting: Vec<u8>,
+}
+
+/// What `POST /api/games/{id}/undo` asks for: by default, to take back the seat's last
+/// answer.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UndoAsk {
+    /// Go back to before the answer that led to this log entry instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_seq: Option<usize>,
 }
 
 /// Public facts the graphical table draws beside the view.

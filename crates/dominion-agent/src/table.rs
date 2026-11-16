@@ -7,7 +7,6 @@ use dominion_engine::{
 use dominion_protocol::api::{PlayerTable, TableExtras};
 use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -24,8 +23,11 @@ pub enum AnswerError {
     StaleDecision { given: String, open: String },
     #[error("{0}")]
     Invalid(String),
-    #[error("there is nothing to undo: another seat has answered since your last answer")]
+    #[error("there is nothing to undo: no answer of yours can be taken back")]
     CannotUndo,
+    /// The game no longer replays as it was played, so it can't go back.
+    #[error("the game can't be undone: {0}")]
+    Unreplayable(String),
 }
 
 /// An answer to the Way question ("play it as itself, or use a Way instead") given in
@@ -83,6 +85,25 @@ struct PendingWay {
     choice: WayChoice,
 }
 
+/// One answer as the table took it, enough to replay it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Step {
+    seat: PlayerId,
+    /// The log's length before it, so that a replay that goes differently is caught.
+    log: usize,
+    act: Act,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+enum Act {
+    Answer {
+        response: Response,
+        way: Option<WayChoice>,
+    },
+    /// Autoplay Treasures.
+    Treasures,
+}
+
 /// A hosted game: the engine game, what each seat and someone watching know, decision
 /// ids and each seat's log cursor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -98,16 +119,25 @@ pub struct Table {
     /// At most one per seat.
     #[serde(default)]
     ways: Vec<PendingWay>,
-    /// The seat that took back each answer undone, in order.
+    /// The seat that asked for each undo, in order.
     #[serde(default)]
     undone_by: Vec<PlayerId>,
-    /// Per seat: how many answers had been undone when they last answered.
+    /// How many answers each undo took back (missing for undos saved before it was
+    /// kept, which took back one).
+    #[serde(default)]
+    undone_answers: Vec<usize>,
+    /// Per seat: how many undos there had been when they last answered.
     #[serde(default)]
     undos_seen: Vec<usize>,
-    /// The seat that answered last and the table before that answer, while no other
-    /// seat has answered since. Not saved: a restarted server can't undo.
-    #[serde(skip)]
-    undo: Option<(PlayerId, Arc<Table>)>,
+    /// Every answer since the game began, to replay it to any earlier point.
+    #[serde(default)]
+    history: Vec<Step>,
+    /// `history` holds every answer: a table saved before it was kept can't go back.
+    #[serde(default)]
+    complete: bool,
+    /// Someone resigned: nothing before it can be undone.
+    #[serde(default)]
+    sealed: bool,
 }
 
 impl Table {
@@ -138,8 +168,11 @@ impl Table {
             log_from: vec![0; n],
             ways: vec![],
             undone_by: vec![],
+            undone_answers: vec![],
             undos_seen: vec![0; n],
-            undo: None,
+            history: vec![],
+            complete: true,
+            sealed: false,
         })
     }
 
@@ -165,15 +198,19 @@ impl Table {
         self.undone_by.len() as u64
     }
 
-    /// Tells `seat` which answers other seats took back since `seat` last answered, and
+    /// Tells `seat` which undos other seats asked for since `seat` last answered, and
     /// that the log it sees now replaces whatever it saw after them.
     pub fn undo_note(&self, seat: PlayerId) -> Option<String> {
         let seen = self.undos_seen.get(seat.index()).copied().unwrap_or(0);
         let mut counts: Vec<(PlayerId, usize)> = vec![];
-        for &p in self.undone_by.iter().skip(seen).filter(|&&p| p != seat) {
+        for (i, &p) in self.undone_by.iter().enumerate().skip(seen) {
+            if p == seat {
+                continue;
+            }
+            let n = self.undone_answers.get(i).copied().unwrap_or(1);
             match counts.iter_mut().find(|(q, _)| *q == p) {
-                Some((_, n)) => *n += 1,
-                None => counts.push((p, 1)),
+                Some((_, total)) => *total += n,
+                None => counts.push((p, n)),
             }
         }
         if counts.is_empty() {
@@ -182,12 +219,11 @@ impl Table {
         let who: Vec<String> = counts
             .iter()
             .map(|&(p, n)| {
-                let answers = if n == 1 {
-                    "their last answer".to_string()
-                } else {
-                    format!("their last {n} answers")
-                };
-                format!("{} took back {answers}", self.names[p.index()])
+                format!(
+                    "{} undid {}",
+                    self.names[p.index()],
+                    dominion_engine::amount(n as i64, "answer", "answers")
+                )
             })
             .collect();
         Some(format!(
@@ -198,29 +234,90 @@ impl Table {
         ))
     }
 
-    /// Whether `seat` may undo: it answered last, and no other seat has answered since.
-    pub fn can_undo(&self, seat: PlayerId) -> bool {
-        self.undo.as_ref().is_some_and(|(s, _)| *s == seat)
+    /// How many answers the game has had (every seat's), counting from its start.
+    pub fn answers(&self) -> usize {
+        self.history.len()
     }
 
-    /// Takes back `seat`'s last answer, with whatever followed it automatically. Its
-    /// earlier answers can be taken back in turn, back to the last answer of another
-    /// seat. False if `seat` can't undo.
-    pub fn undo(&mut self, seat: PlayerId) -> bool {
-        let Some((_, before)) = self.undo.take_if(|(s, _)| *s == seat) else {
-            return false;
-        };
-        let seq = self.seq;
-        let mut undone_by = std::mem::take(&mut self.undone_by);
-        undone_by.push(seat);
-        *self = Arc::unwrap_or_clone(before);
-        // A decision id is never reused, so an answer sent for the undone one is stale.
-        self.seq = seq + 1;
-        if let Some(seen) = self.undos_seen.get_mut(seat.index()) {
-            *seen = undone_by.len();
+    /// Whether the game can go back to an earlier point: it kept every answer, and
+    /// nobody resigned.
+    pub fn can_rewind(&self) -> bool {
+        self.complete && !self.sealed
+    }
+
+    /// The number of `seat`'s last answer, counting every seat's from 0.
+    pub fn last_answer(&self, seat: PlayerId) -> Option<usize> {
+        self.history.iter().rposition(|s| s.seat == seat)
+    }
+
+    /// The number of the answer that led to log entry `seq`: undoing it removes the
+    /// entry. None for entries from before the first answer.
+    pub fn answer_for_log(&self, seq: usize) -> Option<usize> {
+        self.history.iter().rposition(|s| s.log <= seq)
+    }
+
+    /// The seat that gave answer `answer`.
+    pub fn answered_by(&self, answer: usize) -> Option<PlayerId> {
+        self.history.get(answer).map(|s| s.seat)
+    }
+
+    /// Whether `seat` has an answer to take back.
+    pub fn can_undo(&self, seat: PlayerId) -> bool {
+        self.can_rewind() && self.last_answer(seat).is_some()
+    }
+
+    /// Takes back `seat`'s last answer, with every answer after it (other seats' too)
+    /// and whatever followed automatically.
+    pub fn undo(&mut self, seat: PlayerId) -> Result<(), AnswerError> {
+        let answer = self.last_answer(seat).ok_or(AnswerError::CannotUndo)?;
+        self.rewind(seat, answer)
+    }
+
+    /// Puts the game back as it was just before answer `answer`, replaying it from its
+    /// start, for `by`, who asked.
+    pub fn rewind(&mut self, by: PlayerId, answer: usize) -> Result<(), AnswerError> {
+        if !self.can_rewind() || answer >= self.history.len() {
+            return Err(AnswerError::CannotUndo);
         }
-        self.undone_by = undone_by;
-        true
+        let mut back = self.replayed(answer)?;
+        // A decision id is never reused, so an answer sent for an undone one is stale.
+        back.seq = self.seq + 1;
+        back.undone_by = std::mem::take(&mut self.undone_by);
+        back.undone_by.push(by);
+        back.undone_answers = std::mem::take(&mut self.undone_answers);
+        back.undone_answers.resize(back.undone_by.len() - 1, 1);
+        back.undone_answers.push(self.history.len() - answer);
+        back.undos_seen = std::mem::take(&mut self.undos_seen);
+        if let Some(seen) = back.undos_seen.get_mut(by.index()) {
+            *seen = back.undone_by.len();
+        }
+        *self = back;
+        Ok(())
+    }
+
+    /// The game replayed from its start up to just before answer `answers`.
+    fn replayed(&self, answers: usize) -> Result<Table, AnswerError> {
+        let fail = |why: String| AnswerError::Unreplayable(why);
+        let mut table = Table::new(
+            self.id.clone(),
+            self.game.config().clone(),
+            self.names.clone(),
+        )
+        .map_err(|e| fail(e.to_string()))?;
+        for (i, step) in self.history[..answers].iter().enumerate() {
+            if table.game.log().len() != step.log || table.deciding() != Some(step.seat) {
+                return Err(fail(format!("answer {i} doesn't replay as it was given")));
+            }
+            let replayed = match &step.act {
+                Act::Answer { response, way } => table
+                    .respond_with(step.seat, response.clone(), *way)
+                    .map(|_| ()),
+                Act::Treasures => table.run_treasures(step.seat).map(|_| ()),
+            };
+            replayed.map_err(|e| fail(format!("answer {i}: {e}")))?;
+            table.history.push(step.clone());
+        }
+        Ok(table)
     }
 
     pub fn is_over(&self) -> bool {
@@ -316,7 +413,7 @@ impl Table {
         }
         self.game.resign(seat);
         self.ways.clear();
-        self.undo = None;
+        self.sealed = true;
         Ok(())
     }
 
@@ -370,10 +467,22 @@ impl Table {
         way: Option<WayChoice>,
     ) -> Result<Answered, AnswerError> {
         let response = self.resolve(seat, answer)?;
-        let mut before = self.clone();
-        if !before.can_undo(seat) {
-            before.undo = None;
-        }
+        let log = self.game.log().len();
+        let answered = self.respond_with(seat, response.clone(), way)?;
+        self.history.push(Step {
+            seat,
+            log,
+            act: Act::Answer { response, way },
+        });
+        Ok(answered)
+    }
+
+    fn respond_with(
+        &mut self,
+        seat: PlayerId,
+        response: Response,
+        way: Option<WayChoice>,
+    ) -> Result<Answered, AnswerError> {
         if let Some(WayChoice::Way(w)) = way
             && !self.game.landscapes().contains(&w)
         {
@@ -397,11 +506,7 @@ impl Table {
             _ => self.game.way_card(),
         };
         self.game_respond(response)?;
-        self.log_from[seat.index()] = log_len;
-        let undos = self.undone_by.len();
-        if let Some(seen) = self.undos_seen.get_mut(seat.index()) {
-            *seen = undos;
-        }
+        self.answered(seat, log_len);
         if let Some(choice) = way {
             let card = played.or_else(|| {
                 (self.game.plays_in_progress())
@@ -412,9 +517,16 @@ impl Table {
             self.ways
                 .extend(card.map(|card| PendingWay { seat, card, choice }));
         }
-        let answered = self.answer_ways(seat)?;
-        self.undo = Some((seat, Arc::new(before)));
-        Ok(answered)
+        self.answer_ways(seat)
+    }
+
+    /// Notes that `seat` answered when the log was `log_len` long.
+    fn answered(&mut self, seat: PlayerId, log_len: usize) {
+        self.log_from[seat.index()] = log_len;
+        let undos = self.undone_by.len();
+        if let Some(seen) = self.undos_seen.get_mut(seat.index()) {
+            *seen = undos;
+        }
     }
 
     /// "Autoplay Treasures": plays, one after another, the Treasures `seat` could play in
@@ -439,16 +551,23 @@ impl Table {
                 open,
             });
         }
-        let mut left = self.treasure_plays(seat);
-        if left.is_empty() {
+        if self.treasure_plays(seat).is_empty() {
             return Err(AnswerError::Invalid(
                 "no Treasures to play: the decision is not a Buy phase move offering one".into(),
             ));
         }
-        let mut before = self.clone();
-        if !before.can_undo(seat) {
-            before.undo = None;
-        }
+        let log = self.game.log().len();
+        let played = self.run_treasures(seat)?;
+        self.history.push(Step {
+            seat,
+            log,
+            act: Act::Treasures,
+        });
+        Ok(played)
+    }
+
+    fn run_treasures(&mut self, seat: PlayerId) -> Result<u32, AnswerError> {
+        let mut left = self.treasure_plays(seat);
         let log_len = self.game.log().len();
         let mut played = 0;
         while let Some(card) = self
@@ -461,12 +580,7 @@ impl Table {
             self.answer_ways(seat)?;
             played += 1;
         }
-        self.log_from[seat.index()] = log_len;
-        let undos = self.undone_by.len();
-        if let Some(seen) = self.undos_seen.get_mut(seat.index()) {
-            *seen = undos;
-        }
-        self.undo = Some((seat, Arc::new(before)));
+        self.answered(seat, log_len);
         Ok(played)
     }
 

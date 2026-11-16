@@ -13,6 +13,7 @@ pub mod moves;
 pub mod plain;
 pub mod state;
 pub mod table;
+mod undo;
 pub mod wording;
 
 use crate::account::{Account, use_account};
@@ -39,8 +40,12 @@ pub struct GameCtx {
     pub deciding: Memo<Option<u8>>,
     /// Sends an answer for the shown seat.
     pub submit: Callback<Answer>,
-    /// Takes back the shown seat's last answer.
+    /// Asks to take back the shown seat's last answer.
     pub undo: Callback<()>,
+    /// Allows (true) or refuses the undo waiting for the shown seat.
+    pub answer_undo: Callback<bool>,
+    /// Withdraws the shown seat's undo request.
+    pub cancel_undo: Callback<()>,
     /// Resigns the shown seat.
     pub resign: Callback<()>,
     /// The question before resigning is open.
@@ -394,6 +399,23 @@ async fn send_undo(ctx: Live) {
     sent(ctx, Via::Seat(seat.token), result).await;
 }
 
+async fn send_answer_undo(ctx: Live, allow: Option<bool>) {
+    let Some(seat) = ctx.seat.peek().clone() else {
+        return;
+    };
+    let mut state = ctx.state;
+    if state.peek().answering {
+        return;
+    }
+    let game = ctx.game.peek().clone();
+    state.write().answering = true;
+    let result = match allow {
+        Some(allow) => api::answer_undo(&game, &seat.token, allow).await,
+        None => api::cancel_undo(&game, &seat.token).await,
+    };
+    sent(ctx, Via::Seat(seat.token), result).await;
+}
+
 /// The game as `/api/games` lists it, kept current while some seat hasn't joined.
 fn use_summary(game: Signal<String>) -> Signal<Option<GameSummary>> {
     let mut summary = use_signal(|| None::<GameSummary>);
@@ -427,6 +449,8 @@ pub fn waiting_for(g: &GameSummary, held: &[HeldSeat]) -> Option<(u8, String)> {
     }
     Some((d, g.names.get(usize::from(d)).cloned().unwrap_or_default()))
 }
+
+pub use undo::{UndoNotice, undo_title};
 
 /// Says the game is waiting for a seat nobody has joined, with what to give its agent
 /// when this browser handed the seat out.
@@ -499,6 +523,12 @@ pub fn GamePage(id: String) -> Element {
         }),
         undo: Callback::new(move |()| {
             spawn(send_undo(live));
+        }),
+        answer_undo: Callback::new(move |allow: bool| {
+            spawn(send_answer_undo(live, Some(allow)));
+        }),
+        cancel_undo: Callback::new(move |()| {
+            spawn(send_answer_undo(live, None));
         }),
         resign: Callback::new(move |()| {
             spawn(send_resign(live));

@@ -17,7 +17,7 @@ use axum::routing::{delete, get, post, put};
 use dominion_agent::{Answer, AnswerError};
 use dominion_engine::{Card, Kind, PlayerId};
 use dominion_protocol::api::{
-    ApiError, CardCost, CardInfo, Change, DealRequest, Dealt, NewGame, SeatInfo, SeatView,
+    ApiError, CardCost, CardInfo, Change, DealRequest, Dealt, NewGame, SeatInfo, SeatView, UndoAsk,
     ViewQuery, WebSettings,
 };
 use dominion_protocol::lobby::{
@@ -74,6 +74,9 @@ pub fn router(
         .route("/games/{id}/answer", post(answer))
         .route("/games/{id}/resign", post(resign))
         .route("/games/{id}/undo", post(undo))
+        .route("/games/{id}/undo/allow", post(allow_undo))
+        .route("/games/{id}/undo/refuse", post(refuse_undo))
+        .route("/games/{id}/undo/cancel", post(cancel_undo))
         .route("/games/{id}/events", get(events))
         .route(
             "/games/{id}/transcript",
@@ -308,6 +311,7 @@ impl From<HubError> for Error {
             HubError::UnknownGame(_) => StatusCode::NOT_FOUND,
             HubError::BadToken(_) => StatusCode::UNAUTHORIZED,
             HubError::Forbidden(_) => StatusCode::FORBIDDEN,
+            HubError::Conflict(_) => StatusCode::CONFLICT,
             HubError::Busy(_) => StatusCode::SERVICE_UNAVAILABLE,
             HubError::Answer(AnswerError::Invalid(_)) => StatusCode::UNPROCESSABLE_ENTITY,
             HubError::Answer(_) => StatusCode::CONFLICT,
@@ -674,16 +678,53 @@ async fn resign(
     Ok(axum::Json(api.hub.seat_view(&seat, None)?))
 }
 
-/// Takes back the seat's last answer; the view returned has the whole log.
+/// Asks to take back the seat's last answer (or, with `logSeq`, the answer that led to
+/// that log entry, and every answer after it). Where the game's rule is to ask, it waits
+/// for the other seats to allow it. The view returned has the whole log.
 async fn undo(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    seat_query: Queried<SeatQuery>,
+    req: Bytes,
+) -> Json<SeatView> {
+    let seat = api.seat(&id, &headers, None, query(seat_query)?.seat)?;
+    let ask: UndoAsk = body_or_default(&req)?;
+    api.hub.undo(&seat, ask.log_seq)?;
+    Ok(axum::Json(api.hub.seat_view(&seat, Some(0))?))
+}
+
+async fn allow_undo(
     State(api): State<Api>,
     Path(id): Path<String>,
     headers: HeaderMap,
     seat_query: Queried<SeatQuery>,
 ) -> Json<SeatView> {
     let seat = api.seat(&id, &headers, None, query(seat_query)?.seat)?;
-    api.hub.undo(&seat)?;
+    api.hub.answer_undo(&seat, true)?;
     Ok(axum::Json(api.hub.seat_view(&seat, Some(0))?))
+}
+
+async fn refuse_undo(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    seat_query: Queried<SeatQuery>,
+) -> Json<SeatView> {
+    let seat = api.seat(&id, &headers, None, query(seat_query)?.seat)?;
+    api.hub.answer_undo(&seat, false)?;
+    Ok(axum::Json(api.hub.seat_view(&seat, None)?))
+}
+
+async fn cancel_undo(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    seat_query: Queried<SeatQuery>,
+) -> Json<SeatView> {
+    let seat = api.seat(&id, &headers, None, query(seat_query)?.seat)?;
+    api.hub.cancel_undo(&seat)?;
+    Ok(axum::Json(api.hub.seat_view(&seat, None)?))
 }
 
 #[derive(Default, Deserialize)]

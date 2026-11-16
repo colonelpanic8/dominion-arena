@@ -1,4 +1,5 @@
 use dominion_agent::Answer;
+use dominion_protocol::lobby::UndoRule;
 use dominion_server::hub::{Hub, NewGame, Seat};
 use serde_json::Value;
 use std::path::Path;
@@ -193,4 +194,44 @@ fn a_directory_that_cannot_be_written_to_is_refused() {
     let opened = Hub::open(dir, KEEP).map(|_| ());
     set_mode(0o700);
     assert!(writable || opened.is_err());
+}
+
+#[test]
+fn undo_goes_back_after_a_restart_and_old_games_keep_their_rule() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("games");
+    let (tokens, before) = {
+        let (hub, _) = Hub::open(&dir, KEEP).unwrap();
+        let (tokens, seats) = create(&hub, None);
+        advance(&hub, &seats, 5);
+        let before = views(&hub, &seats);
+        advance(&hub, &seats, 20);
+        (tokens, before)
+    };
+    let (hub, _) = Hub::open(&dir, KEEP).unwrap();
+    let seats: Vec<Seat> = tokens.iter().map(|t| hub.find(t).unwrap()).collect();
+    // Back to before the 6th answer: whatever log entry it led to.
+    let path = dir.join("g1.json");
+    let saved: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let log = saved["table"]["history"][5]["log"].as_u64().unwrap() as usize;
+    assert!(hub.undo(&seats[0], Some(log)).unwrap());
+    let ids = |views: Vec<Value>| -> Vec<Value> {
+        views
+            .into_iter()
+            .map(|mut v| {
+                v["decision"]["id"] = Value::Null;
+                v["sinceLastDecision"] = Value::Null;
+                v
+            })
+            .collect()
+    };
+    assert_eq!(ids(views(&hub, &seats)), ids(before));
+    drop(hub);
+
+    let mut old = saved;
+    old["meta"]["no_undo"] = Value::Bool(true);
+    old["meta"].as_object_mut().unwrap().remove("undo");
+    std::fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+    let (hub, _) = Hub::open(&dir, KEEP).unwrap();
+    assert_eq!(hub.meta("g1").unwrap().undo, UndoRule::Off);
 }

@@ -111,6 +111,29 @@ pub struct TokenParams {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct UndoParams {
+    /// Your seat token (optional in an MCP session that has joined a seat).
+    pub token: Option<String>,
+    /// Go back to before the answer that led to this log entry (its seq), taking back
+    /// every answer after it too, instead of to before your last answer.
+    pub log_seq: Option<usize>,
+    #[serde(default)]
+    pub format: Format,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AnswerUndoParams {
+    /// Your seat token (optional in an MCP session that has joined a seat).
+    pub token: Option<String>,
+    /// True lets the undo happen; false refuses it.
+    pub allow: bool,
+    #[serde(default)]
+    pub format: Format,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SignInParams {
     /// A bot's API key (made on the web client's account page). Without one you play as
     /// a guest.
@@ -502,7 +525,7 @@ impl Session {
     }
 
     #[tool(
-        description = "dominion/play@1: wait without answering until your next decision, game end, or timeout_s (default 60, at most 600). Returns compact changes and full structured {view, glossary?}. WAITING means call wait again."
+        description = "dominion/play@1: wait without answering until your next decision, an undo another player asks you to allow (an UNDO line: answer_undo), game end, or timeout_s (default 60, at most 600). Returns compact changes and full structured {view, glossary?}. WAITING means call wait again."
     )]
     async fn wait(
         &self,
@@ -717,7 +740,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Wait until your seat must decide or the game ends (or the timeout passes), then return your view. Its `decision` is null if you don't have to decide yet."
+        description = "Wait until your seat must decide, another player's undo asks you to allow it, or the game ends (or the timeout passes), then return your view. Its `decision` is null if you don't have to decide yet."
     )]
     async fn wait_for_decision(
         &self,
@@ -813,6 +836,69 @@ impl Session {
             Err(e) => return Ok(failure(e.to_string())),
         };
         Ok(match self.hub.resign(&seat, "resigned") {
+            Ok(()) => self.view_of(&seat, p.format),
+            Err(e) => failure(format!("rejected: {e}")),
+        })
+    }
+
+    #[tool(
+        description = "Take back your last answer (or, with log_seq, the answer that led to that log entry), with every answer after it. In games where undos need permission, the other players must allow it first: you get your view with an UNDO line saying whom it waits for, and answering your decision withdraws it. Returns your view."
+    )]
+    async fn undo(
+        &self,
+        Parameters(p): Parameters<UndoParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        Ok(match self.hub.undo(&seat, p.log_seq) {
+            Ok(done) => {
+                let mut result = self.view_of(&seat, p.format);
+                if done {
+                    let note = "Undone: the game is back to before that answer.";
+                    result.content.insert(0, ContentBlock::text(note));
+                }
+                result
+            }
+            Err(e) => failure(format!("rejected: {e}")),
+        })
+    }
+
+    #[tool(
+        description = "Allow (allow: true) or refuse (allow: false) the undo another player asked for, when your view has an UNDO line asking you. Once everyone asked allows it, the game goes back. Returns your view."
+    )]
+    async fn answer_undo(
+        &self,
+        Parameters(p): Parameters<AnswerUndoParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        Ok(match self.hub.answer_undo(&seat, p.allow) {
+            Ok(done) => {
+                let mut result = self.view_of(&seat, p.format);
+                if done {
+                    let note = "Undone: the game is back to before the answers taken back.";
+                    result.content.insert(0, ContentBlock::text(note));
+                }
+                result
+            }
+            Err(e) => failure(format!("rejected: {e}")),
+        })
+    }
+
+    #[tool(description = "Withdraw the undo you asked for. Returns your view.")]
+    async fn cancel_undo(
+        &self,
+        Parameters(p): Parameters<TokenParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        Ok(match self.hub.cancel_undo(&seat) {
             Ok(()) => self.view_of(&seat, p.format),
             Err(e) => failure(format!("rejected: {e}")),
         })

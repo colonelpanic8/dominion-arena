@@ -1,5 +1,7 @@
+use dominion_agent::Answer;
 use dominion_engine::{Card, PlayerId};
-use dominion_server::hub::{self, Hub, HubError, NewGame, Seat};
+use dominion_protocol::lobby::UndoRule;
+use dominion_server::hub::{self, Hub, HubError, Meta, NewGame, Seat};
 
 fn two_players() -> NewGame {
     NewGame {
@@ -165,4 +167,22 @@ fn followers_are_told_when_someone_starts_or_stops_watching() {
     drop(watching);
     hub.notice_presence();
     assert_eq!(version(), start + 2);
+}
+
+#[test]
+fn the_servers_agents_allow_every_undo() {
+    let hub = Hub::default();
+    let meta = Meta {
+        undo: UndoRule::Ask,
+        agents: vec![false, true],
+        ..Meta::default()
+    };
+    let config = hub::config(&two_players()).unwrap();
+    let created = hub.host(config, strings(&["Ada", "Bot"]), meta).unwrap();
+    let ada = hub.find(&created.seats[0].token).unwrap();
+    let d = hub.view(&ada).unwrap().0.decision.unwrap();
+    hub.answer(&ada, &Answer::indices(&d.id, vec![d.options[0].index]))
+        .unwrap();
+    assert!(hub.undo(&ada, None).unwrap(), "nobody else is asked");
+    assert_eq!(hub.seat_view(&ada, None).unwrap().undos, 1);
 }

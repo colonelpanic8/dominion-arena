@@ -24,7 +24,7 @@ use crate::platform;
 use crate::session;
 use dioxus::prelude::*;
 use dominion_protocol::api::GameSummary;
-use dominion_protocol::lobby::{SeatEdit, SeatKind, TableInfo, TableSeat};
+use dominion_protocol::lobby::{SeatEdit, SeatKind, TableInfo, TableSeat, UndoRule};
 
 /// The table's game as `/api/games` lists it, asked again every few seconds while the
 /// game runs.
@@ -590,10 +590,23 @@ pub fn GameOptions() -> Element {
                 div { class: "lb-row-rule" }
                 Switch { on: r.timed, fixed: !host, onclick: move |_| ctx.edit(|r| r.timed = !r.timed) }
             }
-            div { class: "lb-row", "data-option": "undo", title: "Players may take back their own answers, which shows them what would have happened: for a table of friends",
-                div { class: "lb-row-label", "Undo allowed" }
+            div { class: "lb-row", "data-option": "undo", title: "Whether players may take back answers, which shows them what would have happened. With permission, every other player must allow each undo (the server's agents always do)",
+                div { class: "lb-row-label", "Undo" }
                 div { class: "lb-row-rule" }
-                Switch { on: r.undo, fixed: !host, onclick: move |_| ctx.edit(|r| r.undo = !r.undo) }
+                select {
+                    class: "lb-agent-select",
+                    "data-field": "undo",
+                    disabled: !host,
+                    onchange: move |e| {
+                        let rule = UndoRule::ALL.into_iter().find(|u| format!("{u:?}") == e.value());
+                        if let Some(rule) = rule {
+                            ctx.edit(move |r| r.undo = rule);
+                        }
+                    },
+                    for rule in UndoRule::ALL {
+                        option { key: "{rule:?}", value: "{rule:?}", selected: r.undo == rule, "{rule.label()}" }
+                    }
+                }
             }
         }
     }

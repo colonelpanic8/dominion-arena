@@ -23,7 +23,7 @@ pub fn cost_text(c: &Cost) -> String {
     s
 }
 
-fn player_name(view: &AgentView, seat: u8) -> String {
+pub(crate) fn player_name(view: &AgentView, seat: u8) -> String {
     view.you
         .iter()
         .chain(&view.opponents)
@@ -50,6 +50,7 @@ pub fn PlainGame() -> Element {
     let error = st.error.clone();
     let answering = st.answering;
     let can_undo = st.can_undo;
+    let undo_title = super::undo_title(st.undo.rule);
     let log = st.log.clone();
     let game_meta = st.meta.clone();
     drop(st);
@@ -89,12 +90,13 @@ pub fn PlainGame() -> Element {
                     if can_undo {
                         button {
                             "data-action": "undo",
-                            title: "Take back your last answer",
+                            title: undo_title,
                             disabled: answering,
                             onclick: move |_| ctx.undo.call(()),
                             "Undo"
                         }
                     }
+                    super::UndoNotice {}
                     if watching {
                         p { class: "muted", "data-watching": "1", "You are watching this game." }
                     }
