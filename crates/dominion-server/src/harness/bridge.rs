@@ -166,7 +166,13 @@ pub struct Bridge {
 }
 
 impl Bridge {
-    pub async fn start(server: &str, job: &Job) -> Result<Self, String> {
+    /// Joins the seat and serves its MCP endpoint: on `socket` if given (reached from
+    /// inside the sandbox through `sandbox::BRIDGE_PORT`), else on a loopback port.
+    pub async fn start(
+        server: &str,
+        job: &Job,
+        socket: Option<&std::path::Path>,
+    ) -> Result<Self, String> {
         let endpoint = super::endpoint(server, job)?;
         let client = Arc::new(
             Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
@@ -193,23 +199,41 @@ impl Bridge {
             journal,
             official: job.official,
         };
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|e| e.to_string())?;
         let path = format!("/seat/{:032x}/mcp", rand::random::<u128>());
-        let url = format!(
-            "http://{}{path}",
-            listener.local_addr().map_err(|e| e.to_string())?
-        );
         let service = StreamableHttpService::new(
             move || Ok(bridge.clone()),
             Arc::new(LocalSessionManager::default()),
             StreamableHttpServerConfig::default(),
         );
         let router = axum::Router::new().nest_service(&path, service);
-        let task = tokio::spawn(async move {
-            let _ = axum::serve(listener, router).await;
-        });
+        let (url, task) = match socket {
+            Some(socket) => {
+                let listener = tokio::net::UnixListener::bind(socket)
+                    .map_err(|e| format!("{}: {e}", socket.display()))?;
+                let url = format!("http://127.0.0.1:{}{path}", super::sandbox::BRIDGE_PORT);
+                (
+                    url,
+                    tokio::spawn(async move {
+                        let _ = axum::serve(listener, router).await;
+                    }),
+                )
+            }
+            None => {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let url = format!(
+                    "http://{}{path}",
+                    listener.local_addr().map_err(|e| e.to_string())?
+                );
+                (
+                    url,
+                    tokio::spawn(async move {
+                        let _ = axum::serve(listener, router).await;
+                    }),
+                )
+            }
+        };
         Ok(Self {
             url,
             records: Some(records),

@@ -17,15 +17,23 @@ from pathlib import Path
 assert not Path('/home/imalison').exists()
 assert not Path('/srv/dotfiles').exists()
 assert 'ANTHROPIC_API_KEY' not in os.environ
+import socket
+try:
+    socket.create_connection(('1.1.1.1', 53), timeout=2)
+    raise AssertionError('the sandbox reached the network')
+except OSError:
+    pass
+assert os.environ['HTTPS_PROXY'] == 'http://127.0.0.1:3128'
 prompt = sys.stdin.read()
 if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content"]
 assert 'test-credential' not in prompt
 assert '=== CARD & PILE REFERENCE ===' in prompt
 assert 'Village | Action | $3' in prompt
 if 'fixture:transient' in prompt:
-    failed = Path('/home/agent/.gemini/transient-failed')
-    if not failed.exists():
-        failed.touch()
+    # The token is the only file mounted from the host, so a mark on it outlives the attempt.
+    token = Path('/home/agent/.gemini/antigravity-cli/antigravity-oauth-token')
+    if 'failed' not in token.read_text():
+        token.write_text(token.read_text() + ' failed')
         print(json.dumps({'event':'result', 'result':{'status':'ERROR', 'response':'', 'error':'Provider temporarily unavailable'}}), flush=True)
         sys.exit(1)
 if 'fixture:streaming' in prompt:
@@ -90,7 +98,28 @@ if Path('/work/seat-mcp.json').exists():
 answer = json.dumps(action)
 print(json.dumps({'type':'reasoning', 'text':'r' * 120003}))
 print('native diagnostic', file=sys.stderr)
-if '--restricted' in sys.argv:
+if Path('/playbook').exists():
+    # A playbook seat starts in it, read-only, and may run its lookups.
+    assert os.getcwd() == '/playbook'
+    assert 'Rules here.' in Path('context/rules.md').read_text()
+    try:
+        Path('note').write_text('x')
+        raise AssertionError('the playbook is writable')
+    except OSError:
+        pass
+    import subprocess
+    out = subprocess.run([sys.executable, 'data/card-ratings.py', 'Village'], capture_output=True, text=True)
+    assert out.stdout.strip() == 'Village 1.0', out
+    assert 'Rules here.' not in prompt
+    assert 'Plan first.' not in prompt
+if '--setting-sources' in sys.argv and sys.argv[sys.argv.index('--setting-sources')+1] == 'project':
+    assert '--restricted' not in sys.argv
+    tools = sys.argv[sys.argv.index('--tools')+1].split(',')
+    assert tools == ['Bash','Read','Grep','Glob','Skill'], tools
+    print(json.dumps({'type':'system','subtype':'init','tools':tools+['mcp__dominion__step'], 'mcp_servers':[]}))
+    print(json.dumps({'type':'assistant','message':{'content':[{'type':'tool_use','name':'Bash','input':{'command':'python3 data/card-ratings.py Village'}}]}}))
+    print(json.dumps({'type':'result', 'is_error':False, 'result':answer}))
+elif '--restricted' in sys.argv:
     assert sys.argv[sys.argv.index('--tools')+1] == ''
     print(json.dumps({'type':'system','subtype':'init','tools':[], 'mcp_servers':[]}))
     print(json.dumps({'type':'result', 'is_error':False, 'result':answer}))
@@ -100,9 +129,14 @@ elif '--agent' in sys.argv:
     print(json.dumps({'event':'init','init':{'tools':[]}}))
     print(json.dumps({'event':'result', 'result':{'status':'SUCCESS','response':answer}}))
 else:
-    assert Path('/home/agent/.codex/AGENTS.md').read_text() == ''
+    assert Path('/home/agent/.codex/auth.json').read_text() == '{}'
+    assert sorted(os.listdir('/home/agent/.codex')) == ['auth.json']
     assert '--ignore-user-config' in sys.argv
     assert '--disable' in sys.argv
+    shell = sys.argv[sys.argv.index('--disable')+1] == 'shell_tool'
+    assert shell != Path('/playbook').exists()
+    if not shell:
+        print(json.dumps({'type':'item.completed','item':{'type':'command_execution','command':'python3 data/card-ratings.py Village'}}))
     print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':answer}}))
     print(json.dumps({'type':'turn.completed'}))
 "#;
@@ -114,6 +148,7 @@ struct Harness {
     token: String,
     jobs: tokio::sync::mpsc::UnboundedReceiver<ToRunner>,
     stop: CancellationToken,
+    sandbox: harness::Sandbox,
     _dir: tempfile::TempDir,
 }
 
@@ -174,6 +209,12 @@ async fn setup(program: &str) -> Harness {
     });
     let auth = dir.path().join("auth");
     std::fs::create_dir_all(auth.join("antigravity-cli")).unwrap();
+    std::fs::write(
+        auth.join("antigravity-cli/antigravity-oauth-token"),
+        "token",
+    )
+    .unwrap();
+    std::fs::write(auth.join("auth.json"), "{}").unwrap();
     std::fs::write(auth.join("guidance"), "host instructions").unwrap();
     std::os::unix::fs::symlink("guidance", auth.join("AGENTS.md")).unwrap();
     std::fs::write(
@@ -215,6 +256,7 @@ async fn setup(program: &str) -> Harness {
         token,
         jobs,
         stop,
+        sandbox: sandbox(),
         _dir: dir,
     }
 }
@@ -222,6 +264,14 @@ async fn setup(program: &str) -> Harness {
 impl Drop for Harness {
     fn drop(&mut self) {
         self.stop.cancel();
+    }
+}
+
+/// The sandbox the tests run seats in: this package's `dominion` forwards its ports.
+fn sandbox() -> harness::Sandbox {
+    harness::Sandbox {
+        forwarder: Some(env!("CARGO_BIN_EXE_dominion").into()),
+        ..Default::default()
     }
 }
 
@@ -254,9 +304,17 @@ async fn play(h: &mut Harness, jobs: Vec<Job>) -> (std::path::PathBuf, Vec<Resul
 
         let spec = h.config.agents.as_ref().unwrap()[0].clone();
         let server = h.config.server();
+        let sandbox = h.sandbox.clone();
         tasks.spawn(async move {
-            let result =
-                harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await;
+            let result = harness::play(
+                &spec,
+                &sandbox,
+                &job,
+                &server,
+                &mut archive,
+                CancellationToken::new(),
+            )
+            .await;
             if let Err(error) = &result {
                 eprintln!("Seat {} failed: {error}", job.seat);
                 for entry in std::fs::read_dir(&archive.dir).unwrap().flatten() {
@@ -281,6 +339,38 @@ fn records(path: &std::path::Path) -> Vec<Value> {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn playbook_seats_start_in_it_read_only_and_may_run_its_lookups() {
+    for program in ["claude", "codex"] {
+        let mut h = setup(program).await;
+        let playbook = h._dir.path().join("playbook");
+        for (path, text) in [
+            ("AGENTS.md", "Read @context/rules.md\n"),
+            ("context/rules.md", "Rules here."),
+            ("skills/play-game/SKILL.md", "Plan first."),
+            (
+                "data/card-ratings.py",
+                "import sys\nprint(sys.argv[1], '1.0')\n",
+            ),
+        ] {
+            let path = playbook.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        }
+        h.sandbox.playbook = Some(playbook);
+        let mut game = request();
+        game.turn_limit = Some(4);
+        h.arena.create_game(Some(&h.who), &game).unwrap();
+        let jobs = dispatched(&mut h.jobs);
+        let (_, results) =
+            tokio::time::timeout(std::time::Duration::from_secs(30), play(&mut h, jobs))
+                .await
+                .unwrap();
+        assert!(results.iter().all(Result::is_ok), "{program}: {results:?}");
+    }
 }
 
 #[tokio::test]
@@ -492,8 +582,10 @@ async fn runner_game(transient_failure: bool) {
     let listener_task = tokio::spawn(listening);
     let (mut changes, _) = h.arena.subscribe();
     let runner_stop = CancellationToken::new();
+    let mut settings = h.config.runner().unwrap();
+    settings.sandbox = sandbox();
     let runner = tokio::spawn(dominion_server::runner::run_until(
-        h.config.runner().unwrap(),
+        settings,
         runner_stop.clone(),
     ));
     tokio::time::timeout(std::time::Duration::from_secs(10), changes.changed())
@@ -554,8 +646,14 @@ async fn live_native_game() {
     spec.command = std::env::var("DOMINION_LIVE_COMMAND").ok();
     spec.response_seconds = Some(60);
     spec.model = std::env::var("DOMINION_LIVE_MODEL").ok();
-    spec.instructions = Some("This short integration game should finish quickly: end your Buy phase as soon as it is offered.".into());
+    spec.instructions = Some(std::env::var("DOMINION_LIVE_INSTRUCTIONS").unwrap_or_else(|_| "This short integration game should finish quickly: end your Buy phase as soon as it is offered.".into()));
+    h.sandbox.playbook = std::env::var_os("DOMINION_LIVE_PLAYBOOK").map(Into::into);
     let mut game = request();
+    if let Ok(seed) = std::env::var("DOMINION_LIVE_SEED") {
+        // A random kingdom from this seed, as an arena game deals it.
+        game.kingdom = vec![];
+        game.seed = Some(seed.parse().expect("DOMINION_LIVE_SEED"));
+    }
     if let Ok(limit) = std::env::var("DOMINION_LIVE_TURN_LIMIT") {
         game.turn_limit = Some(limit.parse().expect("DOMINION_LIVE_TURN_LIMIT"));
     }
@@ -600,9 +698,17 @@ async fn live_native_game() {
             .unwrap()
             .clone();
         let server = h.config.server();
+        let sandbox = h.sandbox.clone();
         tasks.spawn(async move {
-            let result =
-                harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await;
+            let result = harness::play(
+                &spec,
+                &sandbox,
+                &job,
+                &server,
+                &mut archive,
+                CancellationToken::new(),
+            )
+            .await;
             if let Err(error) = &result {
                 eprintln!("Seat {} failed: {error}", job.seat);
                 for entry in std::fs::read_dir(&archive.dir).unwrap().flatten() {
@@ -639,21 +745,26 @@ async fn live_native_game() {
                 .any(|r| r["kind"] == "result")
         );
     }
-    let trace = h
-        .arena
-        .transcript(&h.arena.hub.list()[0].game_id, 0)
-        .unwrap();
+    let game_id = h.arena.hub.list()[0].game_id.clone();
+    let (mut cursor, mut trace) = (0, vec![]);
+    loop {
+        let page = h.arena.transcript(&game_id, cursor).unwrap();
+        cursor = page.next;
+        trace.extend(page.entries);
+        if !page.more {
+            break;
+        }
+    }
+    use dominion_protocol::transcript::TranscriptKind;
     assert!(
         trace
-            .entries
             .iter()
-            .any(|e| e.activity.kind == dominion_protocol::transcript::TranscriptKind::Message)
+            .any(|e| e.activity.kind == TranscriptKind::Message)
     );
     assert!(
         trace
-            .entries
             .iter()
-            .any(|e| e.activity.kind == dominion_protocol::transcript::TranscriptKind::Action)
+            .any(|e| e.activity.kind == TranscriptKind::Action)
     );
     eprintln!("Completed native game: {}", root.display());
 }
@@ -767,10 +878,9 @@ async fn reasoning_reaches_the_server_before_the_native_response_finishes() {
     let spec = h.config.agents.as_ref().unwrap()[0].clone();
     let server = h.config.server();
     let mut archive = Archive::create(h._dir.path()).unwrap();
-    let task =
-        tokio::spawn(
-            async move { harness::play(&spec, &job, &server, &mut archive, cancelled).await },
-        );
+    let task = tokio::spawn(async move {
+        harness::play(&spec, &sandbox(), &job, &server, &mut archive, cancelled).await
+    });
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             let page = h.arena.transcript(&created.game_id, 0).unwrap();

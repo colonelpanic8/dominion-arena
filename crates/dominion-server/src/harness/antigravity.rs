@@ -6,7 +6,7 @@ use std::path::Path;
 pub fn settings(work: &Path) -> Result<(), String> {
     let agents = work.join(".agents/agents");
     std::fs::create_dir_all(&agents).map_err(|e| e.to_string())?;
-    std::fs::write(agents.join("dominion.md"), format!("---\nname: dominion\ndescription: Play a Dominion seat through structured replies\ntools: [finish]\nmainAgent: true\nsubagent: false\ncommandExecutionPolicy: off\nmcpServers: []\nskills: []\nplugins: []\n---\n{}\n", super::INSTRUCTIONS)).map_err(|e| e.to_string())?;
+    std::fs::write(agents.join("dominion.md"), format!("---\nname: dominion\ndescription: Play a Dominion seat through structured replies\ntools: [finish]\nmainAgent: true\nsubagent: false\ncommandExecutionPolicy: off\nmcpServers: []\nskills: []\nplugins: []\n---\n{}\n", super::instructions(false))).map_err(|e| e.to_string())?;
     std::fs::create_dir_all(work.join("config/agents")).map_err(|e| e.to_string())?;
     std::fs::copy(
         agents.join("dominion.md"),
@@ -22,20 +22,13 @@ pub fn settings(work: &Path) -> Result<(), String> {
     )
 }
 
-pub fn mounts(cmd: &mut tokio::process::Command, auth: &Path, work: &Path) {
+pub fn mounts(cmd: &mut tokio::process::Command, work: &Path) {
     let target = "/home/agent/.gemini";
     cmd.env("GEMINI_HOME", target)
         .env("AGY_ACP_FORCE_FILE_STORAGE", "1");
     cmd.arg("--bind")
         .arg(work.join("config"))
         .arg(format!("{target}/config"));
-    for directory in ["skills", "plugins", "agents"] {
-        if auth.join("antigravity-cli").join(directory).exists() {
-            cmd.arg("--ro-bind")
-                .arg(work.join("config"))
-                .arg(format!("{target}/antigravity-cli/{directory}"));
-        }
-    }
 }
 
 pub fn launch(spec: &AgentSpec) -> Launch {

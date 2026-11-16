@@ -127,6 +127,8 @@ pub struct Settings {
     /// Workspaces and durable archives.
     pub dir: PathBuf,
     pub t3code: Option<crate::t3::Settings>,
+    /// The playbook, tools and hosts native seats run with.
+    pub sandbox: crate::harness::Sandbox,
 }
 
 type Key = (String, u8);
@@ -282,6 +284,7 @@ fn reconcile(
             log,
             stop.clone(),
             settings.t3code.clone(),
+            settings.sandbox.clone(),
         ));
         playing.insert(key, Playing { job, stop, task });
     }
@@ -295,6 +298,7 @@ async fn keep_playing(
     logs: PathBuf,
     stop: CancellationToken,
     t3code: Option<crate::t3::Settings>,
+    sandbox: crate::harness::Sandbox,
 ) {
     let mut retry = RECONNECT;
     let mut failures = 0;
@@ -316,8 +320,15 @@ async fn keep_playing(
                             .await
                     }
                     _ => {
-                        crate::harness::play(&spec, &job, &server, &mut archive, cancelled.clone())
-                            .await
+                        crate::harness::play(
+                            &spec,
+                            &sandbox,
+                            &job,
+                            &server,
+                            &mut archive,
+                            cancelled.clone(),
+                        )
+                        .await
                     }
                 }
             };

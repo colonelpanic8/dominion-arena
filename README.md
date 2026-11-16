@@ -408,13 +408,28 @@ The runner sends one initial observation; subsequent observations arrive as MCP 
 results. It does not rebuild or resend a manual conversation history for each move.
 The provider CLI manages its conversation context and compaction.
 
-Shell, filesystem, browser, delegation, hooks, other MCP servers, and host instructions
-are disabled. On Linux, bubblewrap hides the host home and project files and clears
-the environment, exposing only the runtime, a per-seat workspace, and the provider's
-native login directory. Provider network access remains available. The runner fails
-if Linux user namespaces or bubblewrap are unavailable. Codex uses a sanitized model
-catalog without host tools; Claude and Antigravity expose only the Dominion MCP
-connection alongside their completion mechanism.
+Each seat runs under bubblewrap with a cleared environment and its own network
+namespace: only loopback, where `dominion sandbox-forward` exposes two unix sockets as
+ports. One is the seat bridge; the other an allowlisting HTTPS proxy to the provider
+(`api.anthropic.com` and its OAuth hosts for Claude, `chatgpt.com` and OpenAI's auth
+and API hosts for Codex, Google's Cloud Code and OAuth hosts for Antigravity, plus
+`network_allow`). Every host asked for is logged to the attempt's `network.jsonl`, so
+nothing else on the machine (the arena server included) or the internet is reachable.
+Of the provider's login only the credential file is mounted (`.credentials.json`,
+`auth.json`, or Antigravity's token), read-write so a refreshed token is kept: not the
+rest of its directory or `~/.claude.json`. Browser, delegation, hooks, other MCP servers
+and host instructions are off. The runner fails if Linux user namespaces or bubblewrap
+are unavailable.
+
+With `playbook_dir` set to a dominion-playbook checkout, Claude and Codex seats start
+in it, mounted read-only, and load it as their CLI loads a project: AGENTS.md (through
+CLAUDE.md for Claude), its skills, and the files the skills say to read. They may read
+it and run its lookup commands (`python3 data/card-ratings.py ...`): Claude with Bash,
+Read, Grep, Glob and Skill, Codex with its shell in its read-only sandbox. The brief
+tells them to make the plan before their first decision. `sandbox_path` lists
+directories put first on PATH there (a shell, python3, coreutils). Antigravity seats
+are sent the playbook in their first message instead. Without `playbook_dir`, seats
+have no shell or file tools and the profile's `instructions` carry the guidance.
 
 Every seat attempt gets a private directory under `agents_dir/archives`. Its
 `interactions.jsonl` records resolved game configuration, agent settings, every game
@@ -612,6 +627,9 @@ agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of
 agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day (0: no limit)
 agents_at_once = 2             # agents: seats the runner plays at once
 agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (default $XDG_STATE_HOME/dominion/agents)
+playbook_dir = "/srv/dominion-playbook"  # agents: a dominion-playbook checkout seats start in (read-only)
+sandbox_path = ["/run/current-system/sw/bin"]  # agents: put first on PATH in the seats' sandbox
+network_allow = []             # agents: hosts seats may reach beyond their provider's (`*.example.com` too)
 # agents: what the runner offers (default: Claude Opus, Claude Sonnet, Codex); `command`
 # (default claude, codex, or agy on PATH) and `about` (for the lobby) are optional too
 # [[agents]]
