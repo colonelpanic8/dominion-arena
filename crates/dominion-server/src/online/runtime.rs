@@ -186,12 +186,14 @@ impl Client {
             search: None,
             queue_status: None,
             outbox: Vec::new(),
+            pending_match: Vec::new(),
             socket: Some(socket),
             endpoint,
             session: None,
             needs_snapshot: false,
             request_game: false,
             leaving_finished: false,
+            completed_table: None,
             resuming: saved.is_some(),
             bots: saved
                 .as_ref()
@@ -406,6 +408,7 @@ struct Runtime {
     needs_snapshot: bool,
     request_game: bool,
     leaving_finished: bool,
+    completed_table: Option<i64>,
     resuming: bool,
     table: Option<TableDetails>,
     bots: Vec<i32>,
@@ -413,6 +416,7 @@ struct Runtime {
     search: Option<OnlineMatching>,
     queue_status: Option<bool>,
     outbox: Vec<Vec<u8>>,
+    pending_match: Vec<Message>,
     update: Update,
     store: Store,
 }
@@ -429,6 +433,7 @@ impl Runtime {
         self.leaving_finished = false;
         self.update.searching = false;
         self.search = None;
+        self.pending_match.clear();
         if let Some(mut socket) = self.socket.take() {
             let _ = socket.disconnect().await;
         }
@@ -486,11 +491,33 @@ impl Runtime {
         self.answer_forced().await
     }
     fn process(&mut self, message: Message) -> Result<bool, String> {
+        let awaiting_match = self.awaiting_match();
+        if awaiting_match
+            && matches!(
+                &message,
+                Message::Snapshot(_)
+                    | Message::Event(_)
+                    | Message::Question(_)
+                    | Message::Log(_)
+                    | Message::GameFinished { .. }
+                    | Message::Metagame { .. }
+            )
+        {
+            if self.pending_match.len() >= 256 {
+                return Err("REFUSED: too much gameplay before match confirmation".into());
+            }
+            self.pending_match.push(message);
+            return Ok(false);
+        }
+        let completed_table = self
+            .completed_table
+            .is_some_and(|id| self.table.as_ref().is_some_and(|t| t.table_id == id));
         let reducer = &mut self.update.reducer;
         match message {
             Message::Failed(f)
                 if f.reason == "COMMAND_REQUIRES_TABLE"
                     && self.leaving_finished
+                    && completed_table
                     && !reducer.running
                     && reducer.result.is_some() =>
             {
@@ -498,6 +525,7 @@ impl Runtime {
                 self.bots.clear();
                 self.human = None;
                 self.leaving_finished = false;
+                self.completed_table = None;
             }
             Message::Failed(f) => return Err(f.error().to_string()),
             Message::Login(login) => {
@@ -622,18 +650,10 @@ impl Runtime {
                 for player in table.players.iter().chain(&table.bots) {
                     reducer.names.insert(player.id, player.name.clone());
                 }
-                if let Some(human) = &self.human {
-                    if reducer.running || self.needs_snapshot || self.update.searching {
-                        human.validate(&table, reducer.player_id)?;
-                    }
-                } else if table.players.iter().any(|p| p.id != reducer.player_id)
-                    || !table.spectators.is_empty()
-                    || !table.reconnecting.is_empty()
+                if let Some(human) = &self.human
+                    && (reducer.running || self.needs_snapshot || self.update.searching)
                 {
-                    return Err(
-                        "REFUSED: table includes another human, spectator or reconnecting seat"
-                            .into(),
-                    );
+                    human.validate(&table, reducer.player_id)?;
                 }
                 self.bots = table.bots.iter().map(|p| p.id).collect();
                 self.table = Some(table);
@@ -652,15 +672,25 @@ impl Runtime {
                 player,
                 is_player,
             } => {
-                if self.table.as_ref().is_some_and(|t| t.table_id == table_id) {
-                    if let Some(human) = &self.human {
-                        if is_player && !human.table.players.iter().any(|p| p.id == player.id) {
-                            return Err("REFUSED: unexpected player joined matched table".into());
-                        }
-                    } else if !is_player || player.id != reducer.player_id {
-                        return Err("REFUSED: a human joined the official table; no further actions will be sent".into());
+                if let Some(table) = &mut self.table
+                    && table.table_id == table_id
+                {
+                    if let Some(human) = &self.human
+                        && is_player
+                        && !human.table.players.iter().any(|p| p.id == player.id)
+                    {
+                        return Err("REFUSED: unexpected player joined matched table".into());
                     }
-                    reducer.names.insert(player.id, player.name);
+                    reducer.names.insert(player.id, player.name.clone());
+                    table.reconnecting.retain(|p| p.id != player.id);
+                    if is_player {
+                        if !table.players.iter().any(|p| p.id == player.id) {
+                            table.players.push(player);
+                            table.ready.push(false);
+                        }
+                    } else if !table.spectators.iter().any(|p| p.id == player.id) {
+                        table.spectators.push(player);
+                    }
                 }
             }
             Message::RoleChanged {
@@ -668,8 +698,9 @@ impl Runtime {
                 is_player,
                 ..
             } => {
-                if (player_id == reducer.player_id && !is_player)
-                    || (self.human.is_none() && player_id != reducer.player_id)
+                if !awaiting_match
+                    && ((player_id == reducer.player_id && !is_player)
+                        || (self.human.is_none() && player_id != reducer.player_id))
                 {
                     return Err("REFUSED: official table role changed".into());
                 }
@@ -681,7 +712,14 @@ impl Runtime {
                 if let Some(table) = &mut self.table
                     && table.table_id == table_id
                 {
-                    table.players.retain(|p| p.id != player_id);
+                    if let Some(index) = table.players.iter().position(|p| p.id == player_id) {
+                        table.players.remove(index);
+                        if index < table.ready.len() {
+                            table.ready.remove(index);
+                        }
+                    }
+                    table.spectators.retain(|p| p.id != player_id);
+                    table.reconnecting.retain(|p| p.id != player_id);
                     table.bots.retain(|p| p.id != player_id);
                     self.bots.retain(|id| *id != player_id);
                 }
@@ -690,12 +728,16 @@ impl Runtime {
                 {
                     self.table = None;
                     self.bots.clear();
+                    self.completed_table = None;
                 }
             }
             Message::PlayerReplaced { .. } => {
-                return Err(
-                    "REFUSED: official table player replacement needs operator inspection".into(),
-                );
+                if !awaiting_match {
+                    return Err(
+                        "REFUSED: official table player replacement needs operator inspection"
+                            .into(),
+                    );
+                }
             }
             Message::RuleChanged { table_id, rule } => {
                 if let Some(table) = &mut self.table
@@ -743,6 +785,7 @@ impl Runtime {
                     reason: Some("official server result".into()),
                     players,
                 });
+                self.completed_table = Some(table.table_id);
                 self.table = Some(table);
             }
             Message::AnimationCompensation => return Ok(true),
@@ -808,6 +851,9 @@ impl Runtime {
                 self.human = Some(human);
                 self.needs_snapshot = true;
                 self.update.searching = true;
+                for message in std::mem::take(&mut self.pending_match) {
+                    self.process(message)?;
+                }
             }
             Message::Succeeded(6) if self.search.is_some() => {
                 self.queue_status = Some(false);
@@ -883,6 +929,9 @@ impl Runtime {
         Ok(())
     }
     fn safe_table(&self) -> Result<&TableDetails, String> {
+        if self.awaiting_match() {
+            return Err("REFUSED: waiting for match confirmation".into());
+        }
         let table = self
             .table
             .as_ref()
@@ -946,6 +995,7 @@ impl Runtime {
         let previous_game = self.update.reducer.game_id;
         self.leave_finished().await?;
         self.human = None;
+        self.completed_table = None;
         self.update.mode = OnlineMode::Bots;
         self.send(command::private_table(&rules).map_err(|e| e.to_string())?)
             .await?;
@@ -982,7 +1032,9 @@ impl Runtime {
     }
     async fn leave_finished(&mut self) -> Result<(), String> {
         if self.table.is_some() {
-            if self.update.reducer.result.is_none() {
+            if self.update.reducer.result.is_none()
+                || self.completed_table != self.table.as_ref().map(|t| t.table_id)
+            {
                 return Err("REFUSED: an unfinished official table already exists".into());
             }
             let table_id = self.table.as_ref().expect("table checked").table_id;

@@ -49,7 +49,7 @@ A `Game` can be cloned or serialized at any point, including mid-decision.
 backend supports an exclusive account playing server bots or public human
 matchmaking (rated or unrated).
 With `online_enabled` and `online_owner` configured, `dominion serve` shares the
-connection through `/mcp/online` and authenticated management and live watching at
+connection through `/mcp/online`, owner-only management and public live watching at
 `/online`. Select an agent, start/cancel searches, or pause/resume play there. Its
 account setup, cache, state, reconnect rules, and current limitations are in
 [the official-backend guide](crates/dominion-online/README.md). Arena's hosted

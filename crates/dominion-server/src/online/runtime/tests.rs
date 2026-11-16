@@ -59,6 +59,7 @@ fn runtime() -> (TempDir, Runtime) {
         needs_snapshot: false,
         request_game: false,
         leaving_finished: false,
+        completed_table: None,
         resuming: false,
         endpoint: Endpoint::Alpha,
         session: None,
@@ -68,6 +69,7 @@ fn runtime() -> (TempDir, Runtime) {
         search: None,
         queue_status: None,
         outbox: Vec::new(),
+        pending_match: Vec::new(),
         update: Update {
             reducer: Reducer::new(catalog(), 42),
             error: None,
@@ -202,6 +204,58 @@ fn no_human_seats_or_silently_ignored_counts() {
     }
     assert_eq!(NewGame::default().rules(&catalog()).unwrap().0, 1);
 }
+#[test]
+fn player_joins_update_the_table_without_disconnecting() {
+    for is_player in [false, true] {
+        let (_directory, mut runtime) = runtime();
+        let joined = Message::PlayerJoined {
+            table_id: 10,
+            player: named(99),
+            is_player,
+        };
+        runtime.process(joined.clone()).unwrap();
+        runtime.process(joined).unwrap();
+        let table = runtime.table.as_ref().unwrap();
+        let members = if is_player {
+            &table.players
+        } else {
+            &table.spectators
+        };
+        assert_eq!(members.iter().filter(|p| p.id == 99).count(), 1);
+        assert_eq!(table.players[0].id, 42);
+        assert_eq!(table.ready.len(), table.players.len());
+        assert_eq!(runtime.update.reducer.names.get(&99), Some(&named(99).name));
+        assert!(runtime.safe_table().is_err());
+        runtime
+            .process(Message::PlayerLeft {
+                table_id: 10,
+                player_id: 99,
+            })
+            .unwrap();
+        let table = runtime.safe_table().unwrap();
+        assert_eq!(table.ready.len(), table.players.len());
+    }
+}
+
+#[test]
+fn table_updates_with_humans_do_not_disconnect() {
+    for joined in [false, true] {
+        let (_directory, mut runtime) = runtime();
+        let table = human_table(false);
+        let message = if joined {
+            Message::TableJoined {
+                table: table.clone(),
+                show: true,
+            }
+        } else {
+            Message::TableDetails(table.clone())
+        };
+        runtime.process(message).unwrap();
+        assert_eq!(runtime.table.as_ref().unwrap().players, table.players);
+        assert!(runtime.safe_table().is_err());
+    }
+}
+
 #[test]
 fn table_gate_rejects_humans_visitors_reconnecting_players_and_foreign_host() {
     let (_directory, mut runtime) = runtime();
@@ -448,7 +502,7 @@ async fn resign_consumes_the_open_decision_even_if_transmission_fails() {
 }
 
 #[tokio::test]
-async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
+async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     use dominion_protocol::{api::OnlineObservation, lobby::Credentials};
     use futures_util::StreamExt;
     use std::net::{IpAddr, Ipv4Addr};
@@ -502,7 +556,7 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
             .unwrap()
     });
     let http = reqwest::Client::new();
-    for path in ["/api/online/view", "/api/online/events", "/mcp/online"] {
+    for path in ["/api/online/manage", "/mcp/online"] {
         assert_eq!(
             http.get(format!("{base}{path}"))
                 .send()
@@ -521,9 +575,41 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
             reqwest::StatusCode::FORBIDDEN
         );
     }
+    for token in [None, Some(&outsider)] {
+        for path in ["/api/online/view", "/api/online/events"] {
+            let mut request = http.get(format!("{base}{path}"));
+            if let Some(token) = token {
+                request = request.bearer_auth(token);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::OK);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
+        for (method, path) in [
+            (reqwest::Method::POST, "start"),
+            (reqwest::Method::POST, "agent"),
+            (reqwest::Method::DELETE, "agent"),
+            (reqwest::Method::DELETE, "matchmaking"),
+            (reqwest::Method::POST, "reconnect"),
+            (reqwest::Method::POST, "resign"),
+        ] {
+            let mut request = http.request(method, format!("{base}/api/online/{path}"));
+            if let Some(token) = token {
+                request = request.bearer_auth(token);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(
+                response.status(),
+                if token.is_some() {
+                    reqwest::StatusCode::FORBIDDEN
+                } else {
+                    reqwest::StatusCode::UNAUTHORIZED
+                }
+            );
+        }
+    }
     let response = http
         .get(format!("{base}/api/online/view"))
-        .bearer_auth(&bot.key)
         .send()
         .await
         .unwrap();
@@ -753,7 +839,6 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
     assert!(!assigned.token.is_empty());
     let response = http
         .get(format!("{base}/api/online/events"))
-        .header("cookie", format!("dominion_session={owner}"))
         .send()
         .await
         .unwrap();
@@ -789,7 +874,8 @@ async fn hosted_http_and_mcp_require_owner_and_stream_read_only_updates() {
         tokio::time::timeout(Duration::from_secs(2), stream.next())
             .await
             .unwrap()
-            .is_none()
+            .unwrap()
+            .is_ok()
     );
     let response = http
         .get(format!("{base}/api/online/events"))
@@ -959,9 +1045,169 @@ fn a_completed_table_already_left_by_the_server_does_not_block_the_next_game() {
     runtime.leaving_finished = false;
     assert!(runtime.process(failure()).is_err());
     runtime.leaving_finished = true;
+    assert!(runtime.process(failure()).is_err());
+    runtime.completed_table = Some(10);
     runtime.process(failure()).unwrap();
     assert!(runtime.table.is_none());
     assert!(runtime.bots.is_empty());
     assert!(!runtime.leaving_finished);
     assert!(runtime.update.reducer.result.is_some());
+}
+
+#[test]
+fn public_match_initialization_waits_for_confirmation_after_early_table_and_game_messages() {
+    for mode in [OnlineMode::Rated, OnlineMode::Unrated] {
+        let (_directory, mut runtime) = runtime();
+        runtime.table = None;
+        runtime.process(Message::Login(login(false))).unwrap();
+        runtime.search = Some(OnlineMatching::default());
+        runtime.update.mode = mode;
+        runtime.update.searching = true;
+        let matched = human_table(mode == OnlineMode::Rated);
+        let mut provisional = matched.clone();
+        provisional.players.truncate(1);
+        provisional.ready.truncate(1);
+        runtime
+            .process(Message::TableJoined {
+                table: provisional,
+                show: true,
+            })
+            .unwrap();
+        runtime
+            .process(Message::PlayerJoined {
+                table_id: matched.table_id,
+                player: named(99),
+                is_player: true,
+            })
+            .unwrap();
+        runtime
+            .process(Message::RoleChanged {
+                table_id: matched.table_id,
+                player_id: 99,
+                is_player: true,
+                ready: true,
+            })
+            .unwrap();
+        let mut snapshot = snapshot();
+        snapshot.state.players[1].player_id = 99;
+        runtime.process(Message::Snapshot(snapshot)).unwrap();
+        runtime.process(Message::Question(question(7))).unwrap();
+        assert!(runtime.update.view().unwrap().is_none());
+        assert!(
+            runtime
+                .safe_table()
+                .unwrap_err()
+                .contains("waiting for match confirmation")
+        );
+        runtime.process(match_found(matched)).unwrap();
+        let view = runtime.update.view().unwrap().unwrap();
+        assert!(view.game.running && view.decision.is_some());
+        assert!(runtime.safe_table().is_ok());
+        assert!(runtime.pending_match.is_empty());
+    }
+}
+#[tokio::test]
+async fn unconfirmed_gameplay_is_bounded_and_discarded_when_the_connection_closes() {
+    let (_directory, mut runtime) = runtime();
+    runtime.search = Some(OnlineMatching::default());
+    runtime.update.mode = OnlineMode::Rated;
+    for _ in 0..256 {
+        runtime.process(Message::Question(question(7))).unwrap();
+    }
+    assert!(
+        runtime
+            .process(Message::Question(question(7)))
+            .unwrap_err()
+            .contains("before match confirmation")
+    );
+    assert!(runtime.update.reducer.game_id.is_none());
+    runtime.close().await;
+    assert!(runtime.pending_match.is_empty());
+}
+
+#[tokio::test]
+async fn an_old_result_never_authorizes_leaving_a_new_provisional_table() {
+    for completed_table in [None, Some(9)] {
+        let (_directory, mut runtime) = active_runtime();
+        runtime.update.reducer.running = false;
+        runtime.update.reducer.result = Some(dominion_protocol::GameResult {
+            reason: None,
+            players: vec![],
+        });
+        runtime.completed_table = completed_table;
+        let error = runtime.new_game(NewGame::default()).await.unwrap_err();
+        assert!(error.contains("unfinished"), "{error}");
+        assert_eq!(runtime.table.as_ref().unwrap().table_id, 10);
+        assert!(runtime.update.error.is_none());
+    }
+}
+
+#[test]
+fn early_gameplay_does_not_bypass_rating_or_roster_confirmation() {
+    for wrong_rating in [true, false] {
+        let (_directory, mut runtime) = runtime();
+        runtime.process(Message::Login(login(false))).unwrap();
+        runtime.search = Some(OnlineMatching::default());
+        runtime.update.mode = OnlineMode::Rated;
+        let mut snapshot = snapshot();
+        snapshot.state.players[1].player_id = if wrong_rating { 99 } else { 101 };
+        runtime.process(Message::Snapshot(snapshot)).unwrap();
+        runtime.process(Message::Question(question(7))).unwrap();
+        assert!(runtime.update.view().unwrap().is_none());
+        assert!(
+            runtime
+                .process(match_found(human_table(!wrong_rating)))
+                .is_err()
+        );
+        assert!(runtime.update.reducer.game_id.is_none());
+        assert!(runtime.update.view().unwrap().is_none());
+    }
+}
+
+#[test]
+fn match_confirmation_can_arrive_at_each_initialization_boundary() {
+    for mode in [OnlineMode::Rated, OnlineMode::Unrated] {
+        for confirmation_at in 0..=5 {
+            let (_directory, mut runtime) = runtime();
+            runtime.table = None;
+            runtime.process(Message::Login(login(false))).unwrap();
+            runtime.search = Some(OnlineMatching::default());
+            runtime.update.mode = mode;
+            runtime.update.searching = true;
+            let matched = human_table(mode == OnlineMode::Rated);
+            let mut snapshot = snapshot();
+            snapshot.state.players[1].player_id = 99;
+            let mut messages = vec![
+                Message::TableJoined {
+                    table: matched.clone(),
+                    show: true,
+                },
+                Message::PlayerJoined {
+                    table_id: matched.table_id,
+                    player: named(99),
+                    is_player: true,
+                },
+                Message::RoleChanged {
+                    table_id: matched.table_id,
+                    player_id: 99,
+                    is_player: true,
+                    ready: true,
+                },
+                Message::Snapshot(snapshot),
+                Message::Question(question(7)),
+            ];
+            messages.insert(confirmation_at, match_found(matched));
+            for (index, message) in messages.into_iter().enumerate() {
+                runtime.process(message).unwrap();
+                if index < confirmation_at {
+                    assert!(runtime.update.view().unwrap().is_none());
+                }
+            }
+            let view = runtime.update.view().unwrap().unwrap();
+            assert!(view.game.running && view.decision.is_some());
+            assert!(runtime.safe_table().is_ok());
+            assert!(!runtime.update.searching);
+            assert!(runtime.pending_match.is_empty());
+        }
+    }
 }

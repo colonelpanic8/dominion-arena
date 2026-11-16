@@ -53,7 +53,9 @@ must be a server bot: defaults are two players and one bot. It requests unrated
 play with spectators prohibited, verifies the returned rules and membership,
 and refuses settings it cannot honor. The upstream client does not implement
 the host-only admission serializer, so a table is **not proven unjoinable**;
-if a human joins, the adapter stops sending actions. Public human matchmaking is available through the server management page below;
+Joining players and spectators update table membership without disconnecting the
+client. Bot-game actions still require a table containing only this account and
+server bots. Public human matchmaking is available through the server management page below;
 joining arbitrary tables is not exposed.
 
 `online_reconnect` explicitly resumes only the in-memory session owned by this
@@ -110,13 +112,18 @@ same account. The state-directory lock prevents two processes sharing it.
   refuses `new_game`, `resign` and `online_reconnect`; use management for those.
 - **`GET /api/online/view`** and **`GET /api/online/events`** provide the legal
   observation. Responses use `Cache-Control: no-store`, omit the current decision
-  and are restricted to the configured owner and its bot keys. The stream
-  rechecks authorization and closes on logout or shutdown.
+  and are public, including to signed-out viewers. Watching shows the playing
+  account's legal view, including its hand. The stream closes on shutdown.
+  Management and gameplay MCP access remain restricted to the owner and its bot keys.
 
 Human matches require an explicit search from this process. The adapter verifies
 `AutomatchFound`, the returned rating rule and the exact player roster, then
-checks snapshots and later table membership against that roster. It never joins
-or takes over an unrelated human table. Spectators can be present at public
+checks snapshots and later table membership against that roster. Table and player
+notifications may precede match confirmation; gameplay received in that interval
+is buffered with a fixed limit and cannot authorize agent actions. It is applied
+only after confirmation, including the snapshot roster check. A completed result
+authorizes leaving only its own table, never a subsequently assigned table. It
+never joins or takes over an unrelated human table. Spectators can be present at public
 matches, but the adapter uses only its own playing seat's legal view. Opponent
 undo requests are declined automatically. Reconnect invalidates old decisions;
 process restart leaves the agent paused until explicitly resumed from the page.
