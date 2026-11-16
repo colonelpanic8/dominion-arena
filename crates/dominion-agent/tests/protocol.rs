@@ -1053,11 +1053,14 @@ fn the_black_market_deck_is_a_face_down_pile_of_known_cards() {
     cards.sort();
     assert_eq!(listed, cards);
     let rendered = text::render(&view);
-    let line = rendered
-        .lines()
-        .find(|l| l.starts_with("NON-SUPPLY"))
-        .unwrap();
-    assert!(line.contains("Black Market (face down) x60"), "{line}");
+    let section = rendered.split_once("\nNON-SUPPLY\n").unwrap().1;
+    assert!(
+        section
+            .lines()
+            .take_while(|line| line.starts_with("  "))
+            .any(|line| line.contains("Black Market (face down) x60")),
+        "{section}"
+    );
 }
 
 /// The text names seats P1, P2, ... in its sections, so each player's header says which
