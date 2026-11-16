@@ -86,6 +86,7 @@ in {
       state_dir = lib.mkDefault "/var/lib/dominion/games";
       assets_dir = lib.mkDefault "/var/cache/dominion/assets";
       agent_socket = lib.mkIf cfg.agents.enable (lib.mkDefault "/run/dominion/agents.sock");
+      control_socket = lib.mkDefault "/run/dominion/control.sock";
       online_state_dir = lib.mkDefault "/var/lib/dominion/online";
       online_cache_dir = lib.mkDefault "/var/cache/dominion/online";
       online_password_file =
@@ -102,6 +103,13 @@ in {
       group = "dominion";
     };
     users.groups.dominion = {};
+
+    # `sudo dominion-games list` / `retire ID...`: the control socket is the server user's.
+    environment.systemPackages = [
+      (pkgs.writeShellScriptBin "dominion-games" ''
+        exec ${pkgs.util-linux}/bin/runuser -u dominion -- ${dominion} games "$@"
+      '')
+    ];
 
     systemd.services.dominion = {
       description = "Dominion game server";

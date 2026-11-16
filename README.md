@@ -609,6 +609,7 @@ away_minutes = 5               # serve: in a timed game, the deciding player for
 decision_minutes = 30          # serve: ... or after this long over one decision (0: never)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)
 agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
+control_socket = "/run/dominion/control.sock"  # serve, games: where `dominion games` reaches the server; owner only (default: none)
 agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day (0: no limit)
 agents_at_once = 2             # agents: seats the runner plays at once
 agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (default $XDG_STATE_HOME/dominion/agents)
@@ -639,6 +640,13 @@ default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`),
 as `user`, with that account's native CLI logins (and subscriptions): it sets
 `agent_socket` to `/run/dominion/agents.sock`, reachable by the `dominion` group, which
 the runner's service joins.
+
+`dominion games list` shows every game a running server hosts (finished or not, how long
+idle, where it came from, players), and `dominion games retire ID...` stops hosting games
+at once, moving their files to `expired/` as `keep_idle_days` would. It refuses an
+unfinished game of a lobby table or the server's agents, which ends by resigning. Both
+talk to `control_socket`, which only the server's user can reach; the NixOS module sets
+it and installs `dominion-games` for root: `sudo dominion-games list`.
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;

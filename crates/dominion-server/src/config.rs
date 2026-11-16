@@ -138,6 +138,9 @@ pub struct Config {
     /// The Unix socket where `dominion serve` takes a runner of its own agents and
     /// `dominion agents` connects (default: none, and no such agents).
     pub agent_socket: Option<PathBuf>,
+    /// The Unix socket where `dominion serve` answers `dominion games` (default: none).
+    /// Only its owner may connect.
+    pub control_socket: Option<PathBuf>,
     /// How many seats one registered player may fill with the server's agents a day
     /// (default 5; 0: no limit).
     pub agent_seats_per_day: Option<u32>,

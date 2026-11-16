@@ -106,6 +106,23 @@ pub struct Meta {
     pub recorded: bool,
 }
 
+/// A hosted game, for the operator ([`Hub::hosting`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Hosting {
+    pub id: String,
+    pub names: Vec<String>,
+    pub running: bool,
+    pub source: Source,
+    /// The lobby table that started it.
+    pub table: Option<String>,
+    /// The server's agents play a seat.
+    pub agents: bool,
+    /// Since it last changed or a seat last used its token.
+    pub idle_seconds: u64,
+    /// A call waits on it for a seat.
+    pub connected: bool,
+}
+
 /// A game that has just ended.
 #[derive(Clone, Debug)]
 pub struct Ended {
@@ -239,6 +256,20 @@ struct Hosted {
 }
 
 impl Hosted {
+    /// When the game last changed or a seat last used its token.
+    fn last_active(&self) -> u64 {
+        (self.seen.iter())
+            .map(|s| s.load(Ordering::Relaxed))
+            .chain([self.changed.load(Ordering::Relaxed)])
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Whether a call waits on the game for a seat.
+    fn waited_on(&self) -> bool {
+        self.streams.iter().any(|s| s.load(Ordering::Relaxed) > 0)
+    }
+
     fn new(table: Table, tokens: Vec<String>, meta: Meta, changed: u64) -> Hosted {
         let now = now_ms();
         let seats = tokens.len();
@@ -1639,24 +1670,69 @@ impl Hub {
         let mut expired = 0;
         for (id, game) in games {
             let over = lock(&game.table).is_over();
-            let last = (game.seen.iter())
-                .map(|s| s.load(Ordering::Relaxed))
-                .chain([game.changed.load(Ordering::Relaxed)])
-                .max()
-                .unwrap_or(0);
             let keep = if over { keep_finished } else { keep_idle };
-            let connected = game.streams.iter().any(|s| s.load(Ordering::Relaxed) > 0);
-            if (over || !connected) && u128::from(now.saturating_sub(last)) >= keep.as_millis() {
-                lock(&self.index).remove(&id);
-                if let Some(store) = &self.store
-                    && let Err(e) = store.retire(&id)
-                {
-                    eprintln!("dominion: moving game {id} to expired: {e}");
+            if (over || !game.waited_on())
+                && u128::from(now.saturating_sub(game.last_active())) >= keep.as_millis()
+            {
+                if let Err(e) = self.unhost(&id) {
+                    eprintln!("dominion: {e}");
                 }
                 expired += 1;
             }
         }
         expired
+    }
+
+    /// Every hosted game as the operator sees it ([`Hub::retire`]).
+    pub fn hosting(&self) -> Vec<Hosting> {
+        let games: Vec<Arc<Hosted>> = lock(&self.index).games.values().cloned().collect();
+        let now = now_ms();
+        let mut hosting: Vec<Hosting> = games
+            .iter()
+            .map(|g| {
+                let t = lock(&g.table);
+                let meta = lock(&g.meta);
+                Hosting {
+                    id: t.id().into(),
+                    names: t.names().to_vec(),
+                    running: !t.is_over(),
+                    source: meta.source,
+                    table: meta.table.clone(),
+                    agents: meta.agents.iter().any(|a| *a),
+                    idle_seconds: now.saturating_sub(g.last_active()) / 1000,
+                    connected: g.waited_on(),
+                }
+            })
+            .collect();
+        hosting.sort_by_key(|h| (h.id.len(), h.id.clone()));
+        hosting
+    }
+
+    /// Stops hosting game `id` now, moving its file to `expired/` as expiry does. An
+    /// unfinished game a lobby table started or the server's agents play is refused: it
+    /// ends by resigning, which tells the table, the agents and the records.
+    pub fn retire(&self, id: &str) -> Result<(), HubError> {
+        let game = self.game(id)?;
+        {
+            let table = lock(&game.table);
+            let meta = lock(&game.meta);
+            if !table.is_over() && (meta.table.is_some() || meta.agents.iter().any(|a| *a)) {
+                return Err(HubError::Conflict(format!(
+                    "{id} is in progress at a lobby table or with the server's agents: resign it"
+                )));
+            }
+        }
+        self.unhost(id).map_err(HubError::Conflict)
+    }
+
+    fn unhost(&self, id: &str) -> Result<(), String> {
+        lock(&self.index).remove(id);
+        match &self.store {
+            Some(store) => {
+                (store.retire(id)).map_err(|e| format!("moving game {id} to expired: {e}"))
+            }
+            None => Ok(()),
+        }
     }
 
     /// Plays `steps` for `seat` (see [`crate::steps`]) until one can't be done or the seat

@@ -59,6 +59,15 @@ enum Command {
     /// Play the server's own agents on this machine: connect to its `agent_socket` and
     /// run Claude Code, Codex or T3 Code for every seat they hold.
     Agents,
+    /// List or retire the games a running `dominion serve` hosts, through its
+    /// `control_socket`.
+    Games {
+        /// The server's control socket (default from the config file).
+        #[arg(long)]
+        socket: Option<PathBuf>,
+        #[command(subcommand)]
+        command: GamesCommand,
+    },
     /// Authorize the runner with T3 Code; print the access token to stdout for a credential manager.
     T3Login,
     /// Manage the local cache of dominion.games' images, fonts and sounds.
@@ -68,6 +77,18 @@ enum Command {
     },
     /// Play a deck out alone, in a game whose other seats sit idle.
     Solo(SoloArgs),
+}
+
+#[derive(Subcommand)]
+enum GamesCommand {
+    /// Every hosted game: id, finished or not, idle time, where it came from, players.
+    List,
+    /// Stop hosting these games now, moving their files to `expired/` as idle expiry
+    /// does. Unfinished games of a lobby table or the server's agents are refused.
+    Retire {
+        #[arg(required = true)]
+        games: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -241,6 +262,70 @@ fn solo(args: SoloArgs, config: &Config) -> Result<(), String> {
     }
 }
 
+async fn games(
+    socket: Option<PathBuf>,
+    command: GamesCommand,
+    config: &Config,
+) -> Result<(), String> {
+    use dominion_server::control::{Reply, Request, request};
+    let socket = (socket.or_else(|| config.control_socket.clone()))
+        .ok_or("no control socket: pass --socket, or set control_socket")?;
+    let asked = match command {
+        GamesCommand::List => Request::List,
+        GamesCommand::Retire { games } => Request::Retire { games },
+    };
+    match request(&socket, &asked).await? {
+        Reply::Games { games } => {
+            for g in games {
+                let mut notes = vec![];
+                notes.extend(g.table.map(|t| format!("table {t}")));
+                if g.agents {
+                    notes.push("agents".into());
+                }
+                if g.connected {
+                    notes.push("connected".into());
+                }
+                println!(
+                    "{:<6} {:<8} idle {:>7}  {:<7} {}{}",
+                    g.id,
+                    if g.running { "running" } else { "over" },
+                    idle(g.idle_seconds),
+                    format!("{:?}", g.source).to_lowercase(),
+                    g.names.join(" vs "),
+                    if notes.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  [{}]", notes.join(", "))
+                    },
+                );
+            }
+            Ok(())
+        }
+        Reply::Retired { retired, refused } => {
+            if !retired.is_empty() {
+                println!("retired {}", retired.join(" "));
+            }
+            for (id, why) in &refused {
+                eprintln!("{id}: {why}");
+            }
+            if refused.is_empty() {
+                Ok(())
+            } else {
+                Err(format!("{} not retired", refused.len()))
+            }
+        }
+        Reply::Error { message } => Err(message),
+    }
+}
+
+fn idle(seconds: u64) -> String {
+    match seconds {
+        s if s < 3600 => format!("{}m", s / 60),
+        s if s < 86_400 => format!("{}h{:02}m", s / 3600, s % 3600 / 60),
+        s => format!("{}d{:02}h", s / 86_400, s % 86_400 / 3600),
+    }
+}
+
 #[derive(Args)]
 #[command(group(ArgGroup::new("seat").required(true).args(["new", "game"])))]
 struct PlayArgs {
@@ -334,6 +419,7 @@ async fn serve(config: Config) -> Result<(), String> {
         public_url: config.public_url.clone(),
         trust_proxy: config.trust_proxy.unwrap_or(false),
         agent_socket: config.agent_socket.clone(),
+        control_socket: config.control_socket.clone(),
         official_server: dominion_server::official_host::Host::from_config(&config)?,
         online: if config.online_enabled.unwrap_or(false) {
             Some(dominion_server::online::Hosted::start(&config).await?)
@@ -427,6 +513,7 @@ async fn main() -> ExitCode {
             Ok(settings) => dominion_server::runner::run(settings).await,
             Err(e) => Err(e),
         },
+        Command::Games { socket, command } => games(socket, command, &config).await,
         Command::Solo(args) => solo(args, &config),
         Command::T3Login => match &config.t3code {
             None => Err("add [t3code] to the settings file".into()),

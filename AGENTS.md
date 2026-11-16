@@ -66,6 +66,7 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/rating.rs           Glicko-2 (pure)
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
+  src/control.rs          the control socket: `dominion games` lists and retires hosted games
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
   src/t3.rs               T3 MCP client bridge: per-seat conversations, game tool calls,

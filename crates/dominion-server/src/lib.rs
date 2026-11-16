@@ -6,6 +6,7 @@ pub mod arena;
 pub mod assets;
 pub mod client;
 pub mod config;
+pub mod control;
 pub mod harness;
 pub mod house;
 pub mod http;
@@ -57,6 +58,8 @@ pub struct Options {
     pub trust_proxy: bool,
     /// Where a runner of the server's own agents connects ([`house`]).
     pub agent_socket: Option<PathBuf>,
+    /// Where `dominion games` connects ([`control`]).
+    pub control_socket: Option<PathBuf>,
     pub online: Option<online::Hosted>,
     pub official_server: Option<Arc<official_host::Host>>,
 }
@@ -73,6 +76,7 @@ impl Default for Options {
             public_url: None,
             trust_proxy: false,
             agent_socket: None,
+            control_socket: None,
             online: None,
             official_server: None,
         }
@@ -109,6 +113,14 @@ pub async fn serve(
         tokio::spawn(async move {
             if let Err(e) = house::listen(arena, &path, stop).await {
                 eprintln!("dominion: agent socket {}: {e}", path.display());
+            }
+        });
+    }
+    if let Some(path) = &options.control_socket {
+        let (arena, path, stop) = (arena.clone(), path.clone(), stop.clone());
+        tokio::spawn(async move {
+            if let Err(e) = control::listen(arena, &path, stop).await {
+                eprintln!("dominion: control socket {}: {e}", path.display());
             }
         });
     }

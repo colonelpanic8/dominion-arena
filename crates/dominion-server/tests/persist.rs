@@ -1,6 +1,6 @@
 use dominion_agent::Answer;
 use dominion_protocol::lobby::UndoRule;
-use dominion_server::hub::{Hub, NewGame, Seat};
+use dominion_server::hub::{self, Hub, HubError, Meta, NewGame, Seat};
 use serde_json::Value;
 use std::path::Path;
 use std::time::Duration;
@@ -141,6 +141,29 @@ fn expired_games_keep_their_ids() {
     let (hub, _) = Hub::open(dir, KEEP).unwrap();
     assert_eq!(hub.create(&new_game(None)).unwrap().game_id, "g2");
     assert!(dir.join("expired/g1.json").exists());
+}
+
+#[test]
+fn retired_games_leave_at_once_unless_something_plays_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let (hub, _) = Hub::open(dir, KEEP).unwrap();
+    let (tokens, _) = create(&hub, None);
+    let agents = Meta {
+        agents: vec![false, true],
+        ..Meta::default()
+    };
+    let config = hub::config(&new_game(None)).unwrap();
+    let names = vec!["Ada".to_string(), "Bot".to_string()];
+    hub.host(config, names, agents).unwrap();
+
+    hub.retire("g1").unwrap();
+    assert!(dir.join("expired/g1.json").exists() && !dir.join("g1.json").exists());
+    assert!(hub.claim("g1", &tokens[0]).is_err());
+    assert!(matches!(hub.retire("g1"), Err(HubError::UnknownGame(_))));
+    assert!(matches!(hub.retire("g2"), Err(HubError::Conflict(_))));
+    let hosting: Vec<String> = hub.hosting().into_iter().map(|g| g.id).collect();
+    assert_eq!(hosting, ["g2"]);
 }
 
 #[test]

@@ -520,13 +520,7 @@ impl Arena {
         self.expire_sessions();
         let expired = (self.hub).expire(self.settings.keep_finished, self.settings.keep_idle);
         if expired > 0 {
-            let games: std::collections::HashSet<String> =
-                (self.hub.list().into_iter().map(|g| g.game_id)).collect();
-            lock(&self.state).chats.retain(|channel, _| {
-                channel
-                    .strip_prefix("game-")
-                    .is_none_or(|id| games.contains(id))
-            });
+            self.forget_chats();
         }
         let l = &self.limits;
         l.register.sweep();
@@ -537,6 +531,30 @@ impl Arena {
         l.deal.sweep();
         l.chat.sweep();
         l.lobby.sweep();
+    }
+
+    /// Stops hosting `games` now ([`Hub::retire`]): what became of each.
+    pub fn retire(&self, games: &[String]) -> Vec<(String, std::result::Result<(), String>)> {
+        let done: Vec<_> = (games.iter())
+            .map(|id| (id.clone(), self.hub.retire(id).map_err(|e| e.to_string())))
+            .collect();
+        if done.iter().any(|(_, r)| r.is_ok()) {
+            self.forget_chats();
+            self.bump();
+            self.dispatch();
+        }
+        done
+    }
+
+    /// Drops the chats of games no longer hosted.
+    fn forget_chats(&self) {
+        let games: std::collections::HashSet<String> =
+            (self.hub.list().into_iter().map(|g| g.game_id)).collect();
+        lock(&self.state).chats.retain(|channel, _| {
+            channel
+                .strip_prefix("game-")
+                .is_none_or(|id| games.contains(id))
+        });
     }
 
     /// Whether `ip` may create another game by hand now.
