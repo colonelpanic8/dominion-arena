@@ -9,7 +9,7 @@ YOU P2: Bo (3 VP)
 OPPONENT P1: Ada (3 VP)
   hand 4 (4 unknown)
   in play 1 (Militia)
-  deck 7 (7 unknown)
+  deck 7 (3 Copper; 4 unknown)
   discard 0
   deck+hand hold 11 of: 7 Copper, 3 Estate, Silver
   owns 7 Copper, 3 Estate, Militia, Silver

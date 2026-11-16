@@ -500,7 +500,11 @@ fn spectators_see_hands_and_private_looks_without_changing_seat_knowledge() {
         );
     }
     assert_eq!(t.view(PlayerId(0)), before);
-    assert_eq!(before.opponents[0].hand.unknown, 5);
+    assert_eq!(before.opponents[0].hand.unknown, 3);
+    assert_eq!(
+        before.opponents[0].hand.known,
+        CardCount::from([("Copper".into(), 2)])
+    );
     let asked = |_: PlayerId, d: &AgentDecision| d.source.as_deref() == Some("Navigator");
     assert_eq!(play_to(&mut t, "Navigator", asked), Some(PlayerId(0)));
     let before = t.view(PlayerId(1));
@@ -513,7 +517,7 @@ fn spectators_see_hands_and_private_looks_without_changing_seat_knowledge() {
     );
     assert!(text::render(&watch).contains("PLAYER P1: Ann"));
     assert_eq!(t.view(PlayerId(1)), before);
-    assert_eq!(before.opponents[0].other_zones["looking"].unknown, 5);
+    assert_eq!(before.opponents[0].other_zones["looking"].unknown, 3);
 }
 
 /// A table saved before tables kept what someone watching knows has no such knowledge:
@@ -1556,7 +1560,7 @@ fn a_card_returned_to_its_pile_is_logged_as_returned() {
 }
 
 /// Cards taken off a deck to be looked at are shown to the looker as what they are
-/// looking at, and to the others only as how many there are.
+/// looking at; others retain only what their earlier observations imply.
 #[test]
 fn cards_being_looked_at_are_the_lookers_and_counted_for_the_others() {
     let mut t = table(&[Card::Navigator], 1, &[]);
@@ -1568,8 +1572,9 @@ fn cards_being_looked_at_are_the_lookers_and_counted_for_the_others() {
     assert!(text::render(&looker).contains("\n  looking 5 ("));
     let other = t.view(PlayerId(1));
     let zone = &other.opponents[0].other_zones["looking"];
-    assert_eq!((zone.count, zone.unknown), (5, 5));
-    assert!(text::render(&other).contains("\n  looking 5 (5 unknown)"));
+    assert_eq!((zone.count, zone.unknown), (5, 3));
+    assert_eq!(zone.known, CardCount::from([("Copper".into(), 2)]));
+    assert!(text::render(&other).contains("\n  looking 5 (2 Copper; 3 unknown)"));
     let d = looker.decision.unwrap();
     let back = pick(&d, |o| o.label.starts_with("Put them back")).unwrap();
     t.answer(PlayerId(0), &back).unwrap();

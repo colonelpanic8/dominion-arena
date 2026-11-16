@@ -124,14 +124,14 @@ fn assert_truth(r: &Reducer, truth: &BTreeMap<i32, Vec<i32>>, seed: u64, step: u
             context()
         );
     }
-    for (owner, known) in &r.owned {
+    for (owner, (known, _)) in r.known.owned.iter().enumerate() {
         let mut actual = BTreeMap::<i32, u32>::new();
         for zone in r
             .state()
             .unwrap()
             .zones
             .iter()
-            .filter(|z| z.owner == *owner)
+            .filter(|z| z.owner == owner as i32)
         {
             for id in &truth[&zone.index] {
                 *actual.entry(r.raw_name(*id).unwrap()).or_default() += 1;

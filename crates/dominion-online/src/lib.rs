@@ -1,5 +1,6 @@
 //! Browser-free client for the version-pinned official Dominion server protocol.
 pub mod catalog;
+mod knowledge;
 pub mod model;
 pub mod questions;
 pub mod reducer;

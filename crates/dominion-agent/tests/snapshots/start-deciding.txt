@@ -7,8 +7,8 @@ YOU P1: Ada (3 VP)
   owns 7 Copper, 3 Estate
 
 OPPONENT P2: Bo (3 VP)
-  hand 5 (5 unknown)
-  deck 5 (5 unknown)
+  hand 5 (2 Copper; 3 unknown)
+  deck 5 (2 Copper; 3 unknown)
   discard 0
   deck+hand hold 10 of: 7 Copper, 3 Estate
   owns 7 Copper, 3 Estate

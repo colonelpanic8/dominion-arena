@@ -1293,6 +1293,7 @@ name = "dominion-engine"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "dominion-knowledge",
  "rand 0.9.5",
  "rand_chacha",
  "serde",
@@ -1301,9 +1302,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dominion-knowledge"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dominion-online"
 version = "0.1.0"
 dependencies = [
+ "dominion-knowledge",
  "dominion-protocol",
  "futures-util",
  "jsonschema",

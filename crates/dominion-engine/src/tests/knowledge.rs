@@ -1,7 +1,6 @@
 use super::prosperity::{next_turn, play_from};
 use super::*;
 use crate::game::{Mat, Zone};
-use std::collections::BTreeMap;
 use std::fmt::Write;
 
 fn start(mut g: Game) -> (Game, Knowledge) {
@@ -332,8 +331,8 @@ fn opponents_know_a_hand_only_as_part_of_the_starting_cards() {
         theirs.zone(Zone::Hand(P0)),
         ZoneKnowledge {
             count: 5,
-            known: BTreeMap::new(),
-            unknown: 5
+            known: count(&[(Card::Copper, 2)]),
+            unknown: 3
         }
     );
     assert_eq!(
@@ -437,7 +436,8 @@ fn cards_being_looked_at_are_off_the_deck_and_known_only_to_the_looker() {
     let mine = k.known(&g, P0).zone(Zone::Looking(P0));
     assert_eq!(mine.known, count(&[(Card::Gold, 2), (Card::Silver, 3)]));
     let theirs = k.known(&g, P1).zone(Zone::Looking(P0));
-    assert_eq!((theirs.count, theirs.unknown), (5, 5));
+    assert_eq!((theirs.count, theirs.unknown), (5, 1));
+    assert_eq!(theirs.known, count(&[(Card::Gold, 1), (Card::Silver, 3)]));
     let view = g.view(P1);
     assert_eq!(view.player(P0).looking_size(), 5);
     assert!(view.player(P0).looking().is_empty());
@@ -633,7 +633,7 @@ fn a_card_seen_leaving_a_hidden_hand_could_be_any_copy_of_it() {
     k.update(&mut g);
     assert_eq!(
         k.known(&g, P0).zone(Zone::Hand(P1)).known,
-        count(&[(Card::Estate, 1)])
+        count(&[(Card::Estate, 1), (Card::Copper, 1)])
     );
     play_from(&mut g, P1, Card::Cellar);
     k.update(&mut g);
@@ -733,7 +733,7 @@ fn cards_put_back_in_a_forced_order_are_mixed_too() {
     k.update(&mut g);
     assert_eq!(
         k.known(&g, P0).zone(Zone::Deck(P1)).known,
-        count(&[(Card::Estate, 1)])
+        count(&[(Card::Estate, 2), (Card::Copper, 1)])
     );
     play_from(&mut g, P1, Card::Navigator);
     k.update(&mut g);

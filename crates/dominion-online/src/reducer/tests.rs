@@ -473,3 +473,175 @@ fn upstream_placeholder_dialects_render_player_names_and_amounts_without_reparsi
 }
 
 mod campaign;
+
+fn inspect(r: &mut Reducer, zone: i32, cards: Vec<i32>) {
+    r.apply(model::Event::Inspection(model::Inspection {
+        player: 0,
+        cards,
+        from_zone: zone,
+        to_zone: -1,
+        is_public: true,
+        linked_to_question: false,
+    }))
+    .unwrap();
+}
+
+#[test]
+fn anonymous_draws_keep_correlations_and_a_reveal_deduces_the_remaining_card() {
+    let mut r = reducer();
+    inspect(&mut r, 1, vec![1, 2]);
+    r.apply(model::Event::Shuffle(model::Shuffle {
+        owner: 0,
+        include_discard: false,
+    }))
+    .unwrap();
+    r.apply(movement(1, 0, vec![-1], vec![-1])).unwrap();
+    let you = r.view().unwrap().you.unwrap();
+    assert_eq!(you.deck.unknown, 1);
+    assert_eq!(you.hand.unknown, 1);
+    assert_eq!(
+        you.uncertain,
+        vec![view::Uncertain {
+            zones: vec!["hand".into(), "deck".into()],
+            count: 2,
+            candidates: BTreeMap::from([("Village".into(), 1), ("Gold".into(), 1)]),
+            outside: 0,
+        }]
+    );
+    r.apply(movement(0, 3, vec![-1], vec![1])).unwrap();
+    let you = r.view().unwrap().you.unwrap();
+    assert_eq!(you.deck.known, BTreeMap::from([("Gold".into(), 1)]));
+    assert_eq!(you.deck.unknown, 0);
+    assert!(you.uncertain.is_empty());
+}
+
+#[test]
+fn opponents_get_the_same_deductions_without_their_hidden_allocation_names() {
+    let mut s = snapshot();
+    s.state
+        .zones
+        .iter_mut()
+        .find(|z| z.index == 11)
+        .unwrap()
+        .cards = vec![4, 5];
+    s.state
+        .zones
+        .iter_mut()
+        .find(|z| z.index == 10)
+        .unwrap()
+        .cards
+        .clear();
+    let mut r = Reducer::new(catalog(), 42);
+    r.replace(s).unwrap();
+    inspect(&mut r, 11, vec![4, 5]);
+    r.apply(model::Event::Shuffle(model::Shuffle {
+        owner: 1,
+        include_discard: false,
+    }))
+    .unwrap();
+    r.apply(movement(11, 10, vec![-1], vec![-1])).unwrap();
+    let opponent = &r.view().unwrap().opponents[0];
+    assert_eq!(opponent.hand.unknown, 1);
+    assert_eq!(opponent.uncertain[0].count, 2);
+    r.apply(movement(10, 13, vec![-1], vec![5])).unwrap();
+    assert_eq!(
+        r.view().unwrap().opponents[0].deck.known,
+        BTreeMap::from([("Gold".into(), 1)])
+    );
+}
+
+#[test]
+fn hidden_transfer_keeps_cross_player_candidates_without_assigning_ownership() {
+    let mut r = reducer();
+    inspect(&mut r, 1, vec![1, 2]);
+    r.apply(model::Event::Shuffle(model::Shuffle {
+        owner: 0,
+        include_discard: false,
+    }))
+    .unwrap();
+    r.apply(movement(1, 10, vec![-1], vec![-1])).unwrap();
+    let v = r.view().unwrap();
+    assert_eq!(v.uncertain.len(), 1);
+    assert_eq!(v.uncertain[0].count, 2);
+    assert_eq!(
+        v.uncertain[0].candidates,
+        BTreeMap::from([("Village".into(), 1), ("Gold".into(), 1)])
+    );
+    assert!(!v.you.unwrap().owned.known.contains_key("Gold"));
+    assert!(!v.opponents[0].owned.known.contains_key("Gold"));
+}
+
+#[test]
+fn repeated_inspections_do_not_count_the_same_copy_twice() {
+    let mut r = reducer();
+    inspect(&mut r, 1, vec![2]);
+    inspect(&mut r, 1, vec![2]);
+    assert_eq!(
+        r.view().unwrap().you.unwrap().deck.known,
+        BTreeMap::from([("Gold".into(), 1)])
+    );
+    r.apply(model::Event::Shuffle(model::Shuffle {
+        owner: 0,
+        include_discard: false,
+    }))
+    .unwrap();
+    inspect(&mut r, 1, vec![2]);
+    let you = r.view().unwrap().you.unwrap();
+    assert_eq!(you.deck.known, BTreeMap::from([("Gold".into(), 1)]));
+    assert_eq!(you.deck.unknown, 1);
+}
+
+#[test]
+fn snapshot_reset_discards_old_deductions_and_ignores_hidden_id_permutations() {
+    let mut a = reducer();
+    inspect(&mut a, 1, vec![1, 2]);
+    let mut s = snapshot();
+    s.state
+        .zones
+        .iter_mut()
+        .find(|z| z.index == 1)
+        .unwrap()
+        .cards
+        .reverse();
+    a.replace(s).unwrap();
+    assert_eq!(
+        a.view().unwrap().you.unwrap().deck,
+        reducer().view().unwrap().you.unwrap().deck
+    );
+    let mut a = reducer();
+    let mut b = reducer();
+    b.state.as_mut().unwrap().cards[4].card_name = 1;
+    b.state.as_mut().unwrap().cards[5].card_name = 3;
+    for r in [&mut a, &mut b] {
+        r.apply(movement(11, 10, vec![-1], vec![-1])).unwrap();
+    }
+    assert_eq!(a.view().unwrap(), b.view().unwrap());
+}
+
+#[test]
+fn contradictory_observation_rejects_the_event_without_corrupting_knowledge() {
+    let mut r = reducer();
+    let before = r.view().unwrap();
+    // The observed Copper in this hand cannot be a Gold without an identity change.
+    assert!(r.apply(movement(0, 3, vec![-1], vec![2])).is_err());
+    assert_eq!(r.view().unwrap().you, before.you);
+}
+
+#[test]
+fn count_correction_keeps_unaffected_visible_cards_and_never_invents_a_destination() {
+    let mut r = reducer();
+    inspect(&mut r, 1, vec![1, 2]);
+    r.apply(model::Event::PilesStatus(model::PilesStatus {
+        draw_index: 1,
+        draw_size: 1,
+        discard_index: 2,
+        discard_size: 1,
+        top_card_id: 3,
+    }))
+    .unwrap();
+    let you = r.view().unwrap().you.unwrap();
+    assert_eq!(you.deck.count, 1);
+    assert_eq!(you.deck.unknown, 1);
+    assert_eq!(you.discard.known, BTreeMap::from([("Copper".into(), 1)]));
+    assert_eq!(QuestionContext::card_name(&r, 0), Some("Copper".into()));
+}

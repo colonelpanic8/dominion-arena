@@ -142,12 +142,16 @@ changes are retained in the raw model but do not affect text gameplay. Upstream
 itself lacks serializers for a few table settings; this client rejects those
 rather than inventing undocumented server requests.
 
-Snapshot and event parsers cover all 21 event classes in 2.3.7. The reducer keeps
-conservative player knowledge: hidden snapshot allocation identities do not
-become visible cards; explicit observations and moves establish knowledge;
-shuffles revoke copy identities; snapshots replace knowledge and invalidate old
-decisions. It preserves guaranteed composition and unlocated owned cards, but
-does not claim perfect recall or complete cross-zone deduction. Duration timing is described only as precisely as the server state allows.
+Snapshot and event parsers cover all 21 event classes in 2.3.7. The reducer uses
+`dominion-knowledge`, the same inference core as Arena's local engine, through an
+adapter for legal server observations. It tracks known composition, ownership, and
+candidate groups spanning zones, so later reveals can determine previously unknown
+cards in the hand or deck. Hidden allocation identities are never observations;
+shuffles revoke copy associations. Partially unidentified groups remain conservative.
+Replacement snapshots reset knowledge, and unexpected count corrections discard
+correlations rather than invent missing movements. Neither reconstructs unobserved
+history. Deck order and hand probabilities are not tracked. Duration timing is
+described only as precisely as the server state allows.
 
 Questions support Choice, Number, Complex AND/OR, Delayed and Name, including
 position-versus-name ordinals, decline/default answers and top-first ordered

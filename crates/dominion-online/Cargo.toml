@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+dominion-knowledge = { path = "../dominion-knowledge" }
 dominion-protocol = { path = "../dominion-protocol" }
 serde.workspace = true
 serde_json.workspace = true

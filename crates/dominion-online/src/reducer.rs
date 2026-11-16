@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::{
     Error, Result,
     catalog::Catalog,
+    knowledge::{KnowledgeZone, Observations},
     model,
     questions::{LogArgument, Question, QuestionContext, Story},
 };
@@ -16,85 +17,6 @@ fn invalid(message: impl Into<String>) -> Error {
 }
 fn nonnegative(n: i32) -> Result<u32> {
     u32::try_from(n).map_err(|_| invalid("negative count"))
-}
-fn add(into: &mut BTreeMap<i32, u32>, from: &BTreeMap<i32, u32>) {
-    for (name, n) in from {
-        *into.entry(*name).or_default() += n;
-    }
-}
-fn dec(map: &mut BTreeMap<i32, u32>, name: i32, n: u32) {
-    if let Some(v) = map.get_mut(&name) {
-        *v = v.saturating_sub(n);
-        if *v == 0 {
-            map.remove(&name);
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-struct KnowledgeZone {
-    count: u32,
-    known: BTreeMap<i32, u32>,
-    exact: BTreeMap<i32, i32>,
-}
-impl KnowledgeZone {
-    fn remove(&mut self, id: i32, disclosed: Option<i32>) -> Result<Option<i32>> {
-        if self.count == 0 {
-            return Err(invalid("move from empty zone"));
-        }
-        let name = self.exact.remove(&id).or(disclosed).or_else(|| {
-            (self.known.len() == 1 && self.known.values().sum::<u32>() == self.count)
-                .then(|| *self.known.keys().next().unwrap())
-        });
-        if id < 0 {
-            self.exact.clear();
-        }
-        self.count -= 1;
-        if let Some(name) = name {
-            dec(&mut self.known, name, 1);
-        } else {
-            for count in self.known.values_mut() {
-                *count = count.saturating_sub(1);
-            }
-            self.known.retain(|_, n| *n > 0);
-            self.exact.clear();
-        }
-        self.observe_exact();
-        Ok(name)
-    }
-    fn observe_exact(&mut self) {
-        let mut observed = BTreeMap::new();
-        for name in self.exact.values() {
-            *observed.entry(*name).or_default() += 1;
-        }
-        for (name, count) in observed {
-            let known = self.known.entry(name).or_default();
-            *known = (*known).max(count);
-        }
-    }
-    fn insert(&mut self, id: i32, name: Option<i32>) {
-        self.count += 1;
-        if let Some(name) = name {
-            *self.known.entry(name).or_default() += 1;
-            if id >= 0 {
-                self.exact.insert(id, name);
-            }
-        }
-    }
-    fn reconcile(&mut self, count: u32) {
-        if self.count != count {
-            // A count correction is not evidence of which cards left.
-            let lost = self.count.saturating_sub(count);
-            for n in self.known.values_mut() {
-                *n = n.saturating_sub(lost);
-            }
-            self.known.retain(|_, n| *n > 0);
-            if lost > 0 {
-                self.exact.clear();
-            }
-            self.count = count;
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -109,7 +31,8 @@ pub struct Reducer {
     pub result: Option<view::GameResult>,
     state: Option<model::GameState>,
     zones: BTreeMap<i32, KnowledgeZone>,
-    owned: BTreeMap<i32, BTreeMap<i32, u32>>,
+    knowledge: Observations,
+    known: dominion_knowledge::KnownCards<i32, i32>,
     types: BTreeMap<i32, Vec<String>>,
     visible_ids: BTreeSet<i32>,
     question_visible: BTreeSet<i32>,
@@ -131,7 +54,8 @@ impl Reducer {
             result: None,
             state: None,
             zones: BTreeMap::new(),
-            owned: BTreeMap::new(),
+            knowledge: Observations::default(),
+            known: Default::default(),
             types: BTreeMap::new(),
             visible_ids: BTreeSet::new(),
             question_visible: BTreeSet::new(),
@@ -199,11 +123,6 @@ impl Reducer {
         }
         Ok(Some(name))
     }
-    fn zone_mut(&mut self, index: i32) -> Result<&mut KnowledgeZone> {
-        self.zones
-            .get_mut(&index)
-            .ok_or_else(|| invalid(format!("unknown knowledge zone {index}")))
-    }
     pub fn replace(&mut self, snapshot: model::Snapshot) -> Result<()> {
         self.invalidate();
         let mut next = self.clone();
@@ -218,7 +137,8 @@ impl Reducer {
         self.result = None;
         self.logs.clear();
         self.zones.clear();
-        self.owned.clear();
+        self.knowledge = Observations::default();
+        self.known = Default::default();
         self.types.clear();
         self.visible_ids.clear();
         self.state = Some(snapshot.state);
@@ -234,7 +154,7 @@ impl Reducer {
             if zone.owner < -1 || zone.owner >= state.players.len() as i32 {
                 return Err(invalid("zone owner outside players"));
             }
-            let mut knowledge = KnowledgeZone::default();
+            self.knowledge.create_zone(zone.index);
             let can_see = match zone.kind {
                 1 | 9 | 14..=19 | 30 | 33 => false,
                 0 | 11 | 24 | 26..=28 | 31 => {
@@ -247,16 +167,15 @@ impl Reducer {
             for id in &zone.cards {
                 // Even when a snapshot allocates the entire deck, it is not a reveal.
                 let name = if can_see { self.disclosed(*id)? } else { None };
-                knowledge.insert(if name.is_some() { *id } else { -1 }, name);
+                self.knowledge
+                    .insert(zone.index, if name.is_some() { *id } else { -1 }, name);
                 if name.is_some() && *id >= 0 {
                     self.visible_ids.insert(*id);
                 }
             }
-            if zone.owner >= 0 {
-                add(self.owned.entry(zone.owner).or_default(), &knowledge.known);
-            }
-            self.zones.insert(zone.index, knowledge);
+            self.zones.insert(zone.index, KnowledgeZone::default());
         }
+        self.refresh_knowledge();
         for e in &state.temporary_effects.renames {
             self.rename(e.id, e.card_name)?;
         }
@@ -270,6 +189,7 @@ impl Reducer {
         for event in snapshot.events {
             self.apply_inner(event)?;
         }
+        self.refresh_knowledge();
         self.validate()?;
         Ok(())
     }
@@ -303,19 +223,10 @@ impl Reducer {
                 } else {
                     None
                 };
-                let k = self.zone_mut(p.index)?;
                 if p.top_card_id < 0 {
-                    k.reconcile(0);
+                    self.knowledge.reconcile(p.index, 0);
                 } else if let Some(name) = name {
-                    if k.count == 0 {
-                        return Err(invalid("pile top on empty pile"));
-                    }
-                    k.known
-                        .entry(name)
-                        .and_modify(|n| *n = (*n).max(1))
-                        .or_insert(1);
-                    k.exact.insert(p.top_card_id, name);
-                    self.visible_ids.insert(p.top_card_id);
+                    self.knowledge.reveal(p.index, &[(p.top_card_id, name)])?;
                 }
                 let raw = self
                     .state
@@ -347,27 +258,19 @@ impl Reducer {
                     .find(|z| z.owner == s.owner && z.kind == 1)
                     .map(|z| z.index)
                     .ok_or_else(|| invalid("shuffle without draw pile"))?;
-                let forgotten: Vec<_> = self.zone_mut(deck)?.exact.keys().copied().collect();
-                for id in forgotten {
-                    self.visible_ids.remove(&id);
-                }
-                self.zone_mut(deck)?.exact.clear();
-                if s.include_discard {
-                    let discard = self
-                        .state()?
-                        .zones
-                        .iter()
-                        .find(|z| z.owner == s.owner && z.kind == 2)
-                        .map(|z| z.index)
-                        .ok_or_else(|| invalid("shuffle without discard"))?;
-                    let old = std::mem::take(self.zone_mut(discard)?);
-                    for id in old.exact.keys() {
-                        self.visible_ids.remove(id);
-                    }
-                    let target = self.zone_mut(deck)?;
-                    target.count += old.count;
-                    add(&mut target.known, &old.known);
-                }
+                let discard = if s.include_discard {
+                    Some(
+                        self.state()?
+                            .zones
+                            .iter()
+                            .find(|z| z.owner == s.owner && z.kind == 2)
+                            .map(|z| z.index)
+                            .ok_or_else(|| invalid("shuffle without discard"))?,
+                    )
+                } else {
+                    None
+                };
+                self.knowledge.shuffle(deck, discard);
             }
             Inspection(i) => {
                 let can_observe = i.is_public || self.can_see_private(i.player);
@@ -385,15 +288,16 @@ impl Reducer {
                         animation_class: 0,
                     })?;
                 } else if can_observe {
-                    let mut revealed = BTreeMap::new();
-                    for id in i.cards {
-                        if let Some(name) = self.disclosed(id)? {
-                            revealed.insert(id, name);
-                        }
-                    }
-                    let zone = self.zone_mut(i.from_zone)?;
-                    zone.exact.extend(revealed);
-                    zone.observe_exact();
+                    let revealed = i
+                        .cards
+                        .into_iter()
+                        .filter_map(|id| match self.disclosed(id) {
+                            Ok(Some(name)) => Some(Ok((id, name))),
+                            Ok(None) => None,
+                            Err(e) => Some(Err(e)),
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    self.knowledge.reveal(i.from_zone, &revealed)?;
                 }
             }
             CostReduction(c) => {
@@ -415,6 +319,9 @@ impl Reducer {
                 token.is_flipped = t.is_flipped;
             }
             ZoneCreated(z) => {
+                if z.owner < -1 || z.owner >= self.state()?.players.len() as i32 {
+                    return Err(invalid("zone owner outside players"));
+                }
                 if self.zones.contains_key(&z.index) || z.index < 0 {
                     return Err(invalid("zone already exists"));
                 }
@@ -432,6 +339,7 @@ impl Reducer {
                         attached_trait: 0,
                         is_visible: true,
                     });
+                self.knowledge.create_zone(z.index);
                 self.zones.insert(z.index, KnowledgeZone::default());
             }
             ZoneDestroyed(z) => {
@@ -442,6 +350,7 @@ impl Reducer {
                 if old.count > 0 {
                     return Err(invalid("destroying a nonempty zone"));
                 }
+                self.knowledge.destroy_zone(z.index);
                 self.state
                     .as_mut()
                     .unwrap()
@@ -469,22 +378,21 @@ impl Reducer {
                 changes.push(change);
             }
             PilesStatus(p) => {
-                self.zone_mut(p.draw_index)?
-                    .reconcile(nonnegative(p.draw_size)?);
-                self.zone_mut(p.discard_index)?
-                    .reconcile(nonnegative(p.discard_size)?);
+                if p.draw_size > 65536 || p.discard_size > 65536 {
+                    return Err(invalid("zone count exceeds protocol limit"));
+                }
+                self.zone(p.draw_index)?;
+                self.zone(p.discard_index)?;
+                self.knowledge
+                    .reconcile(p.draw_index, nonnegative(p.draw_size)?);
+                self.knowledge
+                    .reconcile(p.discard_index, nonnegative(p.discard_size)?);
                 if p.top_card_id >= 0
+                    && self.knowledge.count(p.discard_index) > 0
                     && let Some(name) = self.disclosed(p.top_card_id)?
                 {
-                    let k = self.zone_mut(p.discard_index)?;
-                    if k.count > 0 {
-                        k.known
-                            .entry(name)
-                            .and_modify(|n| *n = (*n).max(1))
-                            .or_insert(1);
-                        k.exact.insert(p.top_card_id, name);
-                        self.visible_ids.insert(p.top_card_id);
-                    }
+                    self.knowledge
+                        .reveal(p.discard_index, &[(p.top_card_id, name)])?;
                 }
             }
             RemindersChange(r) => {
@@ -507,11 +415,7 @@ impl Reducer {
             }
             CardStatus(s) => {
                 if s.properties.contains(&1) {
-                    for k in self.zones.values_mut() {
-                        if let Some(name) = k.exact.remove(&s.card) {
-                            dec(&mut k.known, name, 1);
-                        }
-                    }
+                    self.knowledge.forget(s.card);
                     self.visible_ids.remove(&s.card);
                 }
                 let state = self
@@ -550,8 +454,7 @@ impl Reducer {
                     0 | 11 | 24 | 26..=28 | 31 => self.can_see_private(zone.owner),
                     _ => true,
                 };
-                let mut observed = BTreeMap::new();
-                let mut exact = BTreeMap::new();
+                let mut revealed = vec![];
                 for id in &p.cards {
                     if *id < -1 {
                         return Err(invalid("invalid reorder identity"));
@@ -559,23 +462,13 @@ impl Reducer {
                     if *id >= 0 {
                         self.raw_name(*id)?;
                         if can_see && let Some(name) = self.disclosed(*id)? {
-                            *observed.entry(name).or_default() += 1;
-                            exact.insert(*id, name);
+                            revealed.push((*id, name));
                         }
                     }
                 }
-                let old_ids: Vec<_> = self.zone_mut(p.pile)?.exact.keys().copied().collect();
-                for id in old_ids {
-                    self.visible_ids.remove(&id);
-                }
-                self.visible_ids.extend(exact.keys().copied());
-                let knowledge = self.zone_mut(p.pile)?;
-                knowledge.reconcile(p.cards.len() as u32);
-                knowledge.exact = exact;
-                for (name, n) in observed {
-                    let count = knowledge.known.entry(name).or_default();
-                    *count = (*count).max(n);
-                }
+                self.knowledge.reconcile(p.pile, p.cards.len() as u32);
+                self.knowledge.shuffle(p.pile, None);
+                self.knowledge.reveal(p.pile, &revealed)?;
                 self.state
                     .as_mut()
                     .unwrap()
@@ -586,59 +479,28 @@ impl Reducer {
                     .cards = p.cards;
             }
         }
-        self.visible_ids = self
-            .zones
-            .values()
-            .flat_map(|k| k.exact.keys().copied())
-            .collect();
-        self.update_owned();
+        self.refresh_knowledge();
         Ok(())
     }
     fn move_cards(&mut self, m: model::CardMove) -> Result<()> {
         if m.before.len() != m.after.len() {
             return Err(invalid("movement parallel arrays"));
         }
-        let owner_from = self.zone(m.from_zone)?.owner;
-        let owner_to = self.zone(m.to_zone)?.owner;
-        for (before, after) in m.before.into_iter().zip(m.after) {
-            let visible_before = self.disclosed(before)?;
-            let visible_after = self.disclosed(after)?;
-            let remembered = self
-                .zone_mut(m.from_zone)?
-                .remove(before, visible_before.or(visible_after))?;
-            let name = visible_after.or(visible_before).or(remembered);
-            self.zone_mut(m.to_zone)?.insert(after, name);
-            if before >= 0 {
-                self.visible_ids.remove(&before);
-            }
-            if after >= 0 && name.is_some() {
-                self.visible_ids.insert(after);
-            }
-            if owner_from != owner_to {
-                if owner_from >= 0 {
-                    let known = self.owned.entry(owner_from).or_default();
-                    if let Some(name) = name {
-                        dec(known, name, 1);
-                    } else {
-                        for n in known.values_mut() {
-                            *n = n.saturating_sub(1);
-                        }
-                        known.retain(|_, n| *n > 0);
-                    }
-                }
-                if owner_to >= 0
-                    && let Some(name) = name
-                {
-                    *self
-                        .owned
-                        .entry(owner_to)
-                        .or_default()
-                        .entry(name)
-                        .or_default() += 1;
-                }
-            }
-        }
-        Ok(())
+        self.zone(m.from_zone)?;
+        self.zone(m.to_zone)?;
+        let cards = m
+            .before
+            .into_iter()
+            .zip(m.after)
+            .map(|(before, after)| {
+                Ok((
+                    before,
+                    after,
+                    self.disclosed(after)?.or(self.disclosed(before)?),
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.knowledge.move_cards(m.from_zone, m.to_zone, &cards)
     }
     fn rename(&mut self, id: i32, name: i32) -> Result<()> {
         self.catalog.card(name)?;
@@ -650,13 +512,7 @@ impl Reducer {
             .get_mut(id as usize)
             .ok_or_else(|| invalid("rename unknown card"))?;
         card.card_name = name;
-        for zone in self.zones.values_mut() {
-            if let Some(old) = zone.exact.get_mut(&id) {
-                dec(&mut zone.known, *old, 1);
-                *old = name;
-                *zone.known.entry(name).or_default() += 1;
-            }
-        }
+        self.knowledge.rename(id, name);
         Ok(())
     }
     fn change_types(&mut self, c: &model::ChangeCardTypes) -> Result<()> {
@@ -687,33 +543,23 @@ impl Reducer {
         }
         Ok(())
     }
-    fn update_owned(&mut self) {
+    fn refresh_knowledge(&mut self) {
         let Some(state) = &self.state else {
             return;
         };
-        for owner in 0..state.players.len() as i32 {
-            let mut located = BTreeMap::new();
-            let mut count = 0;
-            for zone in state.zones.iter().filter(|z| z.owner == owner) {
-                if let Some(k) = self.zones.get(&zone.index) {
-                    add(&mut located, &k.known);
-                    count += k.count;
-                }
-            }
-            let owned = self.owned.entry(owner).or_default();
-            for (name, n) in located {
-                let entry = owned.entry(name).or_default();
-                *entry = (*entry).max(n);
-            }
-            if owned.values().sum::<u32>() > count {
-                owned.clear();
-                for zone in state.zones.iter().filter(|z| z.owner == owner) {
-                    if let Some(k) = self.zones.get(&zone.index) {
-                        add(owned, &k.known);
-                    }
-                }
-            }
-        }
+        self.known = self.knowledge.summary(state.players.len(), |index| {
+            state
+                .zones
+                .iter()
+                .find(|z| z.index == index)
+                .and_then(|z| usize::try_from(z.owner).ok())
+        });
+        self.zones = self.knowledge.zones(&self.known);
+        self.visible_ids = self
+            .zones
+            .values()
+            .flat_map(|z| z.exact.keys().copied())
+            .collect();
     }
     fn validate(&self) -> Result<()> {
         for zone in self.zones.values() {
@@ -959,7 +805,44 @@ impl Reducer {
             non_supply,
             landscapes,
             trash,
-            uncertain: vec![],
+            uncertain: self
+                .known
+                .uncertain
+                .iter()
+                .filter(|u| {
+                    let owner = self.zone(u.zones[0].0).ok().map(|z| z.owner);
+                    u.outside == 0
+                        && !(owner.is_some_and(|p| p >= 0)
+                            && u.zones
+                                .iter()
+                                .all(|(z, _)| self.zone(*z).ok().map(|z| z.owner) == owner))
+                })
+                .map(|u| {
+                    Ok(view::SharedUncertain {
+                        zones: u
+                            .zones
+                            .iter()
+                            .map(|(z, n)| {
+                                let zone = self.zone(*z)?;
+                                Ok(view::ZoneRef {
+                                    player: u8::try_from(zone.owner).ok(),
+                                    pile: if zone.owner < 0
+                                        && matches!(zone.kind, 4..=7 | 13 | 20 | 22 | 32 | 34)
+                                    {
+                                        Some(self.catalog.card(zone.pile_name)?.name.clone())
+                                    } else {
+                                        None
+                                    },
+                                    zone: self.projected_zone(*z)?,
+                                    count: *n as u32,
+                                })
+                            })
+                            .collect::<Result<_>>()?,
+                        count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
+                        candidates: self.named_counts(&u.candidates)?,
+                    })
+                })
+                .collect::<Result<_>>()?,
             boons: None,
             hexes: None,
             artifacts: (0..state.players.len())
@@ -1130,6 +1013,18 @@ impl Reducer {
             })
             .collect()
     }
+    fn projected_zone(&self, index: i32) -> Result<String> {
+        let zone = self.zone(index)?;
+        Ok(match zone.kind {
+            0 => "hand".into(),
+            1 => "deck".into(),
+            2 => "discard".into(),
+            3 => "trash".into(),
+            4..=7 | 13 | 20 | 22 | 32 | 34 if zone.owner < 0 => "pile".into(),
+            8 => "inPlay".into(),
+            _ => format!("{}:{}", zone_label(zone.kind), zone.index),
+        })
+    }
     fn player(&self, index: u8) -> Result<view::PlayerView> {
         let state = self.state()?;
         let owner = i32::from(index);
@@ -1154,7 +1049,7 @@ impl Reducer {
                 other_zones.insert(format!("{}:{}", zone_label(zone.kind), zone.index), v);
             }
         }
-        let owned = self.named_counts(self.owned.get(&owner).unwrap_or(&BTreeMap::new()))?;
+        let owned = self.named_counts(&self.known.owned[index as usize].0)?;
         let unlocated = owned
             .iter()
             .filter_map(|(n, c)| {
@@ -1201,7 +1096,31 @@ impl Reducer {
                 unknown: total.saturating_sub(owned.values().sum()),
                 known: owned,
             },
-            uncertain: vec![],
+            uncertain: self
+                .known
+                .uncertain
+                .iter()
+                .filter(|u| {
+                    u.zones.iter().all(|(z, _)| {
+                        state
+                            .zones
+                            .iter()
+                            .any(|raw| raw.index == *z && raw.owner == owner)
+                    })
+                })
+                .map(|u| {
+                    Ok(view::Uncertain {
+                        zones: u
+                            .zones
+                            .iter()
+                            .map(|(z, _)| self.projected_zone(*z))
+                            .collect::<Result<_>>()?,
+                        count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
+                        candidates: self.named_counts(&u.candidates)?,
+                        outside: u.outside as u32,
+                    })
+                })
+                .collect::<Result<_>>()?,
             unlocated,
             tokens: view::Tokens {
                 coffers: count(5).max(0) as u32,
