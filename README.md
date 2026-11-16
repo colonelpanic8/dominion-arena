@@ -58,17 +58,49 @@ nix run . -- serve                 # or: cargo run -p dominion-server -- serve
 claude mcp add --transport http dominion http://127.0.0.1:7317/mcp
 ```
 
-Tools: `create_game` (returns one secret token per seat), `join_game`, `view`,
-`wait_for_decision`, `answer`, `resign`, `card`, `list_games`, and for the lobby `sign_in`,
-`find_match`, `cancel_match`, `list_tables`, `join_table`, `wait_for_game`, `leave_table`.
-A seat's token is the only way to see or act for it; pass it to each call. `join_game`
-binds a seat to the MCP session, so that later calls in it may leave the token out; the
-binding ends with the session (when the server restarts, or after `session_idle_minutes`
-without a call), so keep the token. Views come back as structured JSON plus their text
-rendering. Arguments a tool doesn't take are refused, as are `create_game` options that
-don't fit together.
+The common gameplay interface is `dominion/play@1`, specified in
+[Playbook's tool contract](https://github.com/colonelpanic8/dominion-playbook/blob/main/protocol/tools.md).
+Navigator uses the same gameplay loop for dominion.games; Arena hosts its own games and
+keeps its seat authentication and lobby separate.
 
-Joining a game (by token or through the lobby) also includes a grouped reference of official
+1. Call `state` to orient. To create a game, call `new_game` with optional `players`
+   (default 2), `kingdom`, `landscapes`, `sets`, `names`, `seed`, `turn_limit`,
+   `colonies`, `shelters`, and `watchable`. Required cards are included and the rest of
+   the kingdom is dealt randomly. Arena has no automatic bot opponents: `bots` defaults
+   to 0 and positive values are refused. The result joins you to seat 0 and returns
+   secret tokens for every seat; give the other tokens to their players.
+2. To play an existing seat, call `join_game` with `game` and `token`, or pass `token`
+   to `state`, `step`, and `wait`. A token is the authority to see and act for that seat.
+   A session binding ends on restart or after `session_idle_minutes` without a call;
+   keep your token. `new_game` never resigns or replaces a previous game.
+3. Read the returned view and call `step` with `decision` and `indices` (ordered: top
+   first), or `name` when `nameAny` is true. Give `expect` with each selected option's
+   label or card, in index order. Illegal, stale, and mismatched answers change nothing;
+   the error includes the open decision. `step` waits for your next decision. When
+   `decision` is null, call `wait`; continue until `view.game.running` is false.
+
+`state`, `new_game`, and common `join_game` return full text; `step` and `wait` return
+compact changes (full text on the session's first observation). They always carry the
+full structured `{view, glossary?}` envelope. Card text arrives once per session/game
+as `CARDS`, excluding basic Treasures, Victory cards, and Curse. Logs include sequence
+numbers; long text logs keep the newest 50 and explicitly point to `log` for the rest.
+`log` takes `after` (exclusive seq) and `limit` (default 50), returning oldest first.
+`cards` takes `names` and returns `{glossary}` with official text and current costs and
+types in the last observed seat's game (printed values before joining). `log` and
+`cards` use the last common observation's seat, or the joined seat. `timeout_s` defaults
+to 60 and is capped at 600 seconds and half the configured session lifetime; the default
+server accepts at least 300 seconds. The engine automatically resolves forced decisions.
+
+Compatibility tools remain available: `create_game` returns tokens without joining;
+`view`, `answer` (`decision_id`), `wait_for_decision` (`timeout_ms`), `play_treasures`,
+and `card` retain their original arguments and raw structured responses. `join_game`
+with legacy `game_id` also retains its raw response and grouped reference. To assign
+house-agent profiles, use `create_game`'s explicit `agents` option with a registered
+account; a bot count is never silently converted into profiles. `resign`, `list_games`,
+and lobby tools `sign_in`, `find_match`, `cancel_match`, `list_tables`, `join_table`,
+`wait_for_game`, and `leave_table` remain available. Unknown arguments are refused.
+
+Legacy `join_game` with `game_id`, and joining through the lobby, also include a grouped reference of official
 card text, types and printed costs in the response content. It covers the visible cards,
 related non-Supply piles, every member of split or mixed piles, and the Boons and Hexes
 used by the game. Pile structure and member text stay together; exclusive companions
@@ -261,8 +293,10 @@ are unrated, disallow undo, and are watchable through the server by default; an 
 Each registered player fills `agent_seats_per_day` agent seats a day; the runner's
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
 
-Each model plays through a private, seat-scoped MCP server exposing `view`, `card`,
-`answer`, `play_treasures`, and `wait_for_decision`. The bridge attaches its seat token;
+Each model plays through a private, seat-scoped MCP server exposing the common
+`state`, `step`, `wait`, `cards`, and `log` loop, plus compatibility `view`, `card`,
+`answer`, `play_treasures`, and `wait_for_decision`. The bridge binds the session and
+attaches its seat token;
 the model cannot override the seat or create, inspect, or control other games. Native
 tool calls and results drive the game; assistant prose is never parsed as an action.
 One native CLI process and conversation plays each seat through the entire game.

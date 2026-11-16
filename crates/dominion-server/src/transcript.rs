@@ -363,7 +363,18 @@ impl Normalizer {
                         "Look up {}",
                         args["name"].as_str().unwrap_or("card")
                     )),
-                    Some("answer") => {
+                    Some("cards") => Some(format!(
+                        "Look up {}",
+                        args["names"]
+                            .as_array()
+                            .map(|names| names
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join(", "))
+                            .unwrap_or_default()
+                    )),
+                    Some("answer" | "step") => {
                         let mut labels = vec![];
                         if let Some(indices) = args["indices"].as_array() {
                             for i in indices {
@@ -408,7 +419,7 @@ impl Normalizer {
                         false,
                         reply["text"].as_str().unwrap_or("Request rejected"),
                     );
-                } else if data["tool"] == "card" {
+                } else if matches!(data["tool"].as_str(), Some("card" | "cards" | "log")) {
                     self.emit(
                         &mut out,
                         time,
@@ -420,6 +431,7 @@ impl Normalizer {
                 }
                 if let Some(view) = reply
                     .get("json")
+                    .map(|v| v.get("view").unwrap_or(v))
                     .filter(|v| v["decision"].is_object() || v["game"].is_object())
                 {
                     if let Some(events) = view["sinceLastDecision"].as_array() {
@@ -504,6 +516,35 @@ mod tests {
         );
         assert_eq!(action[0].text, "Buy Silver ($3)");
         assert!(action[0].offset > full[1].offset);
+    }
+
+    #[test]
+    fn common_envelopes_keep_game_events_and_step_action_labels() {
+        let mut n = Normalizer::new("attempt".into());
+        let events = n.record(
+            "response",
+            &json!({"tool":"state","reply":{"ok":true,"json":{"view":{
+                "decision":{"options":[{"index":2,"label":"Buy Silver ($3)"}]},
+                "sinceLastDecision":[{"seq":7,"text":"Ada plays Copper"}]
+            }}}}),
+            1,
+        );
+        assert_eq!(events[0].kind, Kind::Game);
+        assert_eq!(events[0].text, "Ada plays Copper");
+        let action = n.record("request", &json!({"tool":"step","arguments":{"decision":"d1","indices":[2],"expect":["Buy Silver"]}}), 2);
+        assert_eq!(action[0].text, "Buy Silver ($3)");
+        let lookup = n.record(
+            "request",
+            &json!({"tool":"cards","arguments":{"names":["Silver","Village"]}}),
+            3,
+        );
+        assert_eq!(lookup[0].text, "Look up Silver, Village");
+        let reference = n.record(
+            "response",
+            &json!({"tool":"cards","reply":{"ok":true,"text":"Village | Action | $3"}}),
+            4,
+        );
+        assert_eq!(reference[0].kind, Kind::Result);
     }
 
     #[test]

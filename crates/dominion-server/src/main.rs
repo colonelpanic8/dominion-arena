@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-/// Play Dominion through the agent-view@2 protocol.
+/// Play Dominion through dominion/play@1 (agent-view@2).
 #[derive(Parser)]
 #[command(name = "dominion", version)]
 struct Cli {

@@ -1,5 +1,7 @@
 //! The MCP tools: one `Session` per MCP session, sharing the `Hub`.
 
+mod play;
+
 use crate::arena::{Arena, Ident};
 use crate::hub::{Hub, HubError, NewGame, Seat, panic_message};
 use axum::extract::ConnectInfo;
@@ -36,7 +38,10 @@ pub enum Format {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JoinParams {
-    pub game_id: String,
+    /// Game id for dominion/play@1; returns structured {view, glossary?}.
+    pub game: Option<String>,
+    /// Legacy spelling; returns the original raw structured view.
+    pub game_id: Option<String>,
     /// The seat token create_game returned.
     pub token: String,
 }
@@ -165,6 +170,7 @@ pub struct Session {
     peer: Arc<Mutex<Option<IpAddr>>>,
     trust_proxy: bool,
     max_wait: Duration,
+    presentation: Arc<Mutex<play::Presentation>>,
 }
 
 const NOT_SIGNED_IN: &str = "sign in first: call sign_in with a bot's `api_key`, or with \
@@ -202,6 +208,7 @@ impl Session {
             ident: Arc::new(Mutex::new(None)),
             peer: Arc::new(Mutex::new(None)),
             max_wait: max_wait.min(MAX_WAIT),
+            presentation: Arc::new(Mutex::new(play::Presentation::default())),
         }
     }
 
@@ -320,6 +327,59 @@ impl Session {
         }
     }
 
+    fn play_seat(&self, token: Option<&str>) -> Result<Seat, CallToolResult> {
+        if token.is_none() && self.joined().is_none() && self.hub.list().is_empty() {
+            return Err(failure("NO_GAME: no game is running; call new_game"));
+        }
+        self.seat(token)
+            .map_err(|e| failure(format!("NOT_SEATED: {e}; pass token or call join_game")))
+    }
+
+    fn reference_seat(&self) -> Option<Seat> {
+        self.presentation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .seat
+            .clone()
+            .or_else(|| self.joined().clone())
+    }
+
+    fn play_result(&self, seat: &Seat, full: bool) -> CallToolResult {
+        match self.hub.play_observation(seat) {
+            Ok(observation) => {
+                let (text, glossary) = self
+                    .presentation
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .render(seat, &observation, full);
+                let mut value = serde_json::json!({"view": observation.view});
+                if !glossary.is_empty() {
+                    value["glossary"] = serde_json::to_value(glossary).unwrap();
+                }
+                structured(value, text)
+            }
+            Err(e) => failure(format!("NO_GAME: {e}; call new_game")),
+        }
+    }
+
+    fn rejected_step(&self, seat: &Seat, message: impl std::fmt::Display) -> CallToolResult {
+        let decision = self
+            .hub
+            .view(seat)
+            .ok()
+            .map(|(_, text, _)| {
+                text.find("DECISION ")
+                    .map(|i| text[i..].to_string())
+                    .unwrap_or_else(|| "No decision is open for you; call wait.".into())
+            })
+            .unwrap_or_default();
+        failure(format!("REJECTED: {message}\n{decision}"))
+    }
+
+    fn play_timeout(&self, seconds: Option<u64>) -> Duration {
+        Duration::from_secs(seconds.unwrap_or(60)).min(self.max_wait)
+    }
+
     fn view_of(&self, seat: &Seat, format: Format) -> CallToolResult {
         self.view_with_cards(seat, format, false)
     }
@@ -352,6 +412,227 @@ impl Session {
 #[tool_router]
 impl Session {
     #[tool(
+        description = "dominion/play@1: full seat view and new card text in structured {view, glossary?}. Pass token or join_game first. With no games, tells you to call new_game."
+    )]
+    async fn state(
+        &self,
+        Parameters(p): Parameters<play::StateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if p.token.is_none() && self.joined().is_none() && self.hub.list().is_empty() {
+            return Ok(structured(
+                serde_json::json!({"status": "no-game"}),
+                "STATUS no game; call new_game (Arena has token seats, no automatic bots).".into(),
+            ));
+        }
+        Ok(match self.play_seat(p.token.as_deref()) {
+            Ok(seat) => self.play_result(&seat, true),
+            Err(e) => e,
+        })
+    }
+
+    #[tool(
+        description = "dominion/play@1: answer decision with indices or name (only for nameAny), then wait for your next decision or game end. Give expect with each selected option's label or card, in index order, to catch mistakes. Ordered indices are top first; [] chooses nothing. timeout_s defaults to 60, at most 600. Returns compact changes and full structured {view, glossary?}. Rejected/stale answers change nothing and include the open decision."
+    )]
+    async fn step(
+        &self,
+        Parameters(p): Parameters<play::StepParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.play_seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(e),
+        };
+        let (view, _, _) = match self.hub.view(&seat) {
+            Ok(view) => view,
+            Err(e) => return Ok(failure(format!("NO_GAME: {e}; call new_game"))),
+        };
+        let Some(d) = &view.decision else {
+            return Ok(self.rejected_step(&seat, "you are not deciding now; call wait"));
+        };
+        if d.id != p.decision {
+            return Ok(self.rejected_step(
+                &seat,
+                format!(
+                    "decision {} is not open; the open decision is {}",
+                    p.decision, d.id
+                ),
+            ));
+        }
+        if let Err(e) = play::validate_expect(d, &p) {
+            return Ok(self.rejected_step(&seat, e));
+        }
+        let indices = match p
+            .indices
+            .as_ref()
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|i| u32::try_from(*i))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()
+        {
+            Ok(indices) => indices,
+            Err(_) => {
+                return Ok(self.rejected_step(&seat, "indices must be nonnegative option numbers"));
+            }
+        };
+        let answer = Answer {
+            decision: p.decision.clone(),
+            indices,
+            name: p.name.clone(),
+        };
+        if let Err(e) = self.hub.answer_with(&seat, &answer, None) {
+            return Ok(self.rejected_step(&seat, e));
+        }
+        if let Err(e) = self.hub.wait(&seat, self.play_timeout(p.timeout_s)).await {
+            return Ok(failure(e.to_string()));
+        }
+        Ok(self.play_result(&seat, false))
+    }
+
+    #[tool(
+        description = "dominion/play@1: wait without answering until your next decision, game end, or timeout_s (default 60, at most 600). Returns compact changes and full structured {view, glossary?}. WAITING means call wait again."
+    )]
+    async fn wait(
+        &self,
+        Parameters(p): Parameters<play::WaitParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.play_seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(e),
+        };
+        if let Err(e) = self.hub.wait(&seat, self.play_timeout(p.timeout_s)).await {
+            return Ok(failure(format!("NO_GAME: {e}; call new_game")));
+        }
+        Ok(self.play_result(&seat, false))
+    }
+
+    #[tool(
+        description = "dominion/play@1: official glossary entries for names, with current costs/types in the last observed seat's game (printed values before joining). Does not expose another seat's information."
+    )]
+    async fn cards(
+        &self,
+        Parameters(p): Parameters<play::CardsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = self.reference_seat();
+        Ok(match self.hub.card_entries(seat.as_ref(), &p.names) {
+            Ok(entries) => structured(
+                serde_json::json!({"glossary": entries}),
+                play::glossary_text(&entries),
+            ),
+            Err(e) => failure(e.to_string()),
+        })
+    }
+
+    #[tool(
+        description = "dominion/play@1: reread the last observed seat's visible game log after seq `after`, retaining the newest `limit` entries (default 50), oldest first. Join a seat first; no other seat's private entries are returned."
+    )]
+    async fn log(
+        &self,
+        Parameters(p): Parameters<play::LogParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.reference_seat() {
+            Some(seat) => seat,
+            None => {
+                return Ok(failure(
+                    "NOT_SEATED: pass token to state, or call join_game first",
+                ));
+            }
+        };
+        Ok(match self.hub.play_observation(&seat) {
+            Ok(observation) => {
+                let mut entries: Vec<_> = observation
+                    .log
+                    .into_iter()
+                    .filter(|e| p.after.is_none_or(|seq| e.seq > seq))
+                    .collect();
+                entries.drain(..entries.len().saturating_sub(p.limit.unwrap_or(50)));
+                let text = format!(
+                    "LOG\n{}",
+                    entries
+                        .iter()
+                        .map(|e| format!("  {}: {}", e.seq, e.text))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                );
+                structured(serde_json::json!({"log": entries}), text)
+            }
+            Err(e) => failure(format!("NO_GAME: {e}; call new_game")),
+        })
+    }
+
+    #[tool(
+        description = "dominion/play@1: create a game, join seat 0, return its full view and all secret seat tokens. players defaults to 2. Arena has no automatic bot opponents: bots must be 0 (default); other seats need agents with their tokens. For explicit registered house-agent profiles use create_game instead. kingdom/landscapes are required inclusions, filled randomly. Extras: sets, names, seed, turn_limit, colonies, shelters, watchable. Never replaces or resigns your previous game."
+    )]
+    async fn new_game(
+        &self,
+        Parameters(p): Parameters<play::NewGameParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if p.bots.unwrap_or(0) != 0 {
+            return Ok(failure(
+                "REFUSED: Arena has no automatic bots; use bots: 0 and share the other seats' tokens, or use create_game with explicit registered house-agent profiles.",
+            ));
+        }
+        let dealt = match crate::hub::deal(&dominion_protocol::api::DealRequest {
+            players: p.players.unwrap_or(2),
+            kingdom: p.kingdom,
+            landscapes: p.landscapes,
+            sets: p.sets,
+            seed: p.seed,
+            ..Default::default()
+        }) {
+            Ok(dealt) => dealt,
+            Err(e) => return Ok(failure(format!("REFUSED: {e}"))),
+        };
+        let request = NewGame {
+            players: p.players.unwrap_or(2),
+            kingdom: dealt.kingdom,
+            landscapes: dealt.landscapes,
+            seed: Some(dealt.seed),
+            names: p.names,
+            turn_limit: p.turn_limit,
+            colonies: p.colonies,
+            shelters: p.shelters,
+            watchable: p.watchable,
+            ..Default::default()
+        };
+        let ident = self.ident().ok();
+        let created = match self.arena.create_game(ident.as_ref(), &request) {
+            Ok(created) => created,
+            Err(e) => return Ok(failure(format!("REFUSED: {e}"))),
+        };
+        let seat = self
+            .hub
+            .claim(&created.game_id, &created.seats[0].token)
+            .expect("new seat exists");
+        let connection = match self.hub.connect(&seat) {
+            Ok(connection) => connection,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        *self
+            .connection
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(connection);
+        *self.joined() = Some(seat.clone());
+        let mut result = self.play_result(&seat, true);
+        if let Some(value) = &mut result.structured_content {
+            value["game_id"] = serde_json::json!(created.game_id);
+            value["seats"] = serde_json::to_value(&created.seats).unwrap();
+        }
+        let tokens = created
+            .seats
+            .iter()
+            .map(|s| format!("seat {} ({}): token {}", s.seat, s.name, s.token))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if let Some(ContentBlock::Text(content)) = result.content.first_mut() {
+            let at = content.text.find('\n').unwrap_or(content.text.len());
+            content.text.insert_str(at, &format!("\nSEATS (secret; session joined to seat 0; share other tokens only with their players)\n{tokens}"));
+        }
+        Ok(result)
+    }
+
+    #[tool(
         description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`. `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents; agent games are watchable by default. Returns the game id and secret tokens only for seats without agents."
     )]
     async fn create_game(
@@ -375,13 +656,22 @@ impl Session {
     }
 
     #[tool(
-        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Returns that seat's view and a grouped reference of official card text, including related non-Supply and split-pile cards."
+        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Use game for the common structured {view, glossary?} and full text; legacy game_id returns the raw view and grouped card reference, including related non-Supply and split-pile cards."
     )]
     async fn join_game(
         &self,
         Parameters(p): Parameters<JoinParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        Ok(match self.hub.claim(&p.game_id, &p.token) {
+        let (game, common) = match (&p.game, &p.game_id) {
+            (Some(game), None) => (game, true),
+            (None, Some(game)) => (game, false),
+            _ => {
+                return Ok(failure(
+                    "give exactly one of game or legacy game_id, plus token",
+                ));
+            }
+        };
+        Ok(match self.hub.claim(game, &p.token) {
             Ok(seat) => {
                 let connection = match self.hub.connect(&seat) {
                     Ok(connection) => connection,
@@ -392,9 +682,13 @@ impl Session {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner) = Some(connection);
                 *self.joined() = Some(seat.clone());
-                self.view_with_cards(&seat, Format::Text, true)
+                if common {
+                    self.play_result(&seat, true)
+                } else {
+                    self.view_with_cards(&seat, Format::Text, true)
+                }
             }
-            Err(e) => failure(e.to_string()),
+            Err(e) => failure(format!("NOT_SEATED: {e}; check game and token")),
         })
     }
 
@@ -554,7 +848,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Automatch: search for a game against other players (after sign_in) and wait for it. When one is found this session is joined to your seat and you get its view; then loop wait_for_decision / answer as usual. If the wait times out you are still searching: call find_match again to keep waiting, or cancel_match. Lobby games are timed: a player who must decide and has gone away for some minutes forfeits."
+        description = "Automatch: search for a game against other players (after sign_in) and wait for it. When one is found this session is joined to your seat and you get its view; then loop state / step / wait. If the wait times out you are still searching: call find_match again to keep waiting, or cancel_match. Lobby games are timed: a player who must decide and has gone away for some minutes forfeits."
     )]
     async fn find_match(
         &self,
@@ -752,18 +1046,7 @@ impl Session {
 
 #[tool_handler(
     name = "dominion",
-    instructions = "Play Dominion. create_game returns a token per seat; a seat's \
-token is the only way to see or act for it. Pass `token` to view, wait_for_decision and \
-answer. (join_game binds a seat to this MCP session so later calls may leave the token \
-out, but only until the session ends: keep the token.) Loop: \
-wait_for_decision, read the view, then answer the decision with option indices (in order \
-when the decision is ordered, or `name` when it says any card may be named; `way` answers \
-a Way question in advance; play_treasures plays all your Treasures in one call). Views are \
-dominion/agent-view@2: the JSON is the structured content, the text rendering the text \
-content. To play other people instead of a game you create: sign_in (a bot's API key, \
-also accepted as this connection's bearer token, or as a guest), then find_match, or \
-list_tables and join_table; each returns your seat once a game starts. resign gives a \
-game up."
+    instructions = "Play Dominion through dominion/play@1 (agent-view@2). Call state to orient. Arena hosts secret token seats: new_game joins seat 0 and returns tokens for all seats; bots defaults to 0 because there are no automatic bot opponents. Share the other tokens with their players. To join an existing seat, call join_game with game and token (legacy game_id returns the original raw view), or pass token to state/step/wait. Keep your token: a binding lasts only for this MCP session. Loop: read the returned view, step with its decision, indices (ordered: top first) or name when nameAny; give expect with each chosen label/card. step waits for your next decision and returns compact changes plus structured {view, glossary?}. When decision is null call wait; finish when view.game.running is false. state refreshes the full view; cards looks up official text/current costs; log rereads entries by seq. Forced decisions are answered by the engine. Legacy view/answer/wait_for_decision/card/create_game remain available with their original wire formats; answer supports way and play_treasures batches Treasures. For lobby play: sign_in (bot API key, connection bearer token, or guest), then find_match or list_tables/join_table. Those bind your seat when a game starts. House agents require explicit profiles via create_game and registered-account authorization. resign gives up your seat."
 )]
 impl ServerHandler for Session {
     async fn call_tool(
@@ -833,7 +1116,8 @@ mod tests {
         let session = Session::new(arena, Duration::from_secs(60), false);
         let joined = session
             .join_game(Parameters(JoinParams {
-                game_id: game.game_id.clone(),
+                game: None,
+                game_id: Some(game.game_id.clone()),
                 token: game.seats[0].token.clone(),
             }))
             .await

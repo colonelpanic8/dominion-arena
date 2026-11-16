@@ -9,7 +9,12 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
-pub const TOOLS: [&str; 5] = [
+pub const TOOLS: [&str; 10] = [
+    "state",
+    "step",
+    "wait",
+    "cards",
+    "log",
     "view",
     "card",
     "answer",
@@ -81,7 +86,7 @@ impl ServerHandler for SeatBridge {
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.instructions = Some("Play your assigned Dominion seat through these tools. Seat credentials are supplied by the server.".into());
+        info.instructions = Some("Play your assigned Dominion seat through dominion/play@1: state, then step with decision/indices/expect, or wait when decision is null. Results carry {view, glossary?}; stop when view.game.running is false. cards and log provide references. Seat credentials are supplied by the server; do not create or join another game. Legacy gameplay tools remain available.".into());
         info
     }
 
@@ -113,7 +118,7 @@ impl ServerHandler for SeatBridge {
                 None,
             ));
         }
-        if tool != "card" {
+        if !matches!(tool, "card" | "cards" | "log") {
             args.insert("token".into(), json!(self.token));
         }
         self.record(
@@ -122,7 +127,7 @@ impl ServerHandler for SeatBridge {
         )
         .await?;
         let reply = match tokio::time::timeout(
-            std::time::Duration::from_secs(90),
+            crate::mcp::MAX_WAIT + std::time::Duration::from_secs(30),
             self.client.call(tool, Value::Object(args)),
         )
         .await
@@ -162,6 +167,13 @@ pub struct Bridge {
 impl Bridge {
     pub async fn start(server: &str, job: &Job) -> Result<Self, String> {
         let client = Arc::new(Client::connect(server).await?);
+        let joined = client
+            .call("join_game", json!({"game":job.game_id,"token":job.token}))
+            .await
+            .map_err(|e| e.to_string())?;
+        if !joined.ok {
+            return Err(joined.text);
+        }
         let (journal, records) = mpsc::channel(32);
         let bridge = SeatBridge {
             client,

@@ -44,9 +44,13 @@ if Path('/work/seat-mcp.json').exists():
     import urllib.request
     url = json.loads(Path('/work/seat-mcp.json').read_text())['url']
     headers = {'Content-Type':'application/json', 'Accept':'application/json, text/event-stream'}
+    next_identity = 0
     def rpc(method, params, identity=1):
+        global next_identity
         body = {'jsonrpc':'2.0','method':method,'params':params}
-        if identity is not None: body['id'] = identity
+        if identity is not None:
+            next_identity += 1
+            body['id'] = next_identity
         req = urllib.request.Request(url,json.dumps(body).encode(),headers)
         with urllib.request.urlopen(req,timeout=10) as response:
             if response.headers.get('Mcp-Session-Id'): headers['Mcp-Session-Id']=response.headers['Mcp-Session-Id']
@@ -58,7 +62,7 @@ if Path('/work/seat-mcp.json').exists():
     rpc('initialize',{'protocolVersion':'2025-03-26','capabilities':{},'clientInfo':{'name':'fixture','version':'1'}})
     rpc('notifications/initialized',{},None)
     tools = rpc('tools/list',{})['result']['tools']
-    assert sorted(t['name'] for t in tools)==['answer','card','play_treasures','view','wait_for_decision']
+    assert sorted(t['name'] for t in tools)==['answer','card','cards','log','play_treasures','state','step','view','wait','wait_for_decision']
     assert all('token' not in t['inputSchema'].get('properties',{}) for t in tools)
     assert 'error' in rpc('tools/call',{'name':'create_game','arguments':{'players':2}})
     assert 'error' in rpc('tools/call',{'name':'view','arguments':{'token':'another-seat'}})
@@ -66,12 +70,13 @@ if Path('/work/seat-mcp.json').exists():
         result = rpc('tools/call',{'name':tool,'arguments':args})['result']
         assert not result.get('isError',False), result
         return result.get('structuredContent')
-    call('card',{'name':'Village'})
-    view = call('view',{})
+    call('cards',{'names':['Village']})
+    call('log',{'limit':2})
+    view = call('state',{})['view']
     while view['game']['running']:
         d = view.get('decision')
         if d is None:
-            view = call('wait_for_decision',{'timeout_ms':2000})
+            view = call('wait',{'timeout_s':2})['view']
             continue
         if 'fixture:activity' in prompt:
             for _ in range(4):
@@ -79,7 +84,8 @@ if Path('/work/seat-mcp.json').exists():
                 time.sleep(.3)
         opts = d['options']
         index = next((o['index'] for o in opts if 'End your Buy phase' in o['label']), opts[0]['index'])
-        view = call('answer',{'decision_id':d['id'],'indices':[index]})
+        label = next(o['label'] for o in opts if o['index'] == index)
+        view = call('step',{'decision':d['id'],'indices':[index],'expect':[label],'timeout_s':2})['view']
     action = {'message':'Game completed through MCP'}
 answer = json.dumps(action)
 print(json.dumps({'type':'reasoning', 'text':'r' * 120003}))
@@ -343,7 +349,7 @@ async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
             assert!(
                 journal
                     .iter()
-                    .filter(|r| r["kind"] == "request" && r["data"]["tool"] == "answer")
+                    .filter(|r| r["kind"] == "request" && r["data"]["tool"] == "step")
                     .count()
                     >= 3
             );
@@ -367,7 +373,7 @@ async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
             assert!(
                 journal
                     .iter()
-                    .any(|r| r["kind"] == "request" && r["data"]["tool"] == "card")
+                    .any(|r| r["kind"] == "request" && r["data"]["tool"] == "cards")
             );
             assert!(
                 std::fs::read_to_string(path.join("response-000001.stderr"))
@@ -524,7 +530,7 @@ async fn runner_game(transient_failure: bool) {
                 assert!(
                     !records
                         .iter()
-                        .any(|r| r["kind"] == "request" && r["data"]["tool"] == "card")
+                        .any(|r| r["kind"] == "request" && r["data"]["tool"] == "cards")
                 );
                 failed += 1;
             } else {

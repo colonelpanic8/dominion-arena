@@ -120,6 +120,30 @@ impl Default for Timing {
     }
 }
 
+pub(crate) struct PlayObservation {
+    pub view: AgentView,
+    pub log: Vec<dominion_agent::LogEntry>,
+    pub glossary: Vec<dominion_agent::GlossaryEntry>,
+    pub undos: u64,
+}
+
+fn current_entry(
+    game: &Game,
+    mut entry: dominion_agent::GlossaryEntry,
+) -> dominion_agent::GlossaryEntry {
+    let card = Card::from_name(&entry.name).expect("glossary cards exist");
+    if entry.cost.is_some() {
+        let cost = game.cost(card);
+        entry.cost = Some(dominion_agent::Cost {
+            coins: cost.coins.into(),
+            potions: cost.potions.into(),
+            debt: cost.debt.into(),
+        });
+    }
+    entry.types = game.card_types(card).names().map(String::from).collect();
+    entry
+}
+
 /// A seat that only just became the deciding one is given this long to come back.
 const AWAY_GRACE_MS: u64 = 30_000;
 /// A seat counts as connected this long after its last call.
@@ -896,6 +920,49 @@ impl Hub {
             let view = table.view(seat.seat);
             let text = dominion_agent::text::render(&view);
             (view, text, table.undo_note(seat.seat))
+        })
+    }
+
+    /// The common MCP presentation reads the seat's actual view and complete visible
+    /// log together; its log cursor must not change `sinceLastDecision` in the view.
+    pub(crate) fn play_observation(&self, seat: &Seat) -> Result<PlayObservation, HubError> {
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        engine(|| {
+            let view = table.view(seat.seat);
+            let glossary = dominion_agent::glossary_for(&view)
+                .into_iter()
+                .map(|entry| current_entry(table.game(), entry))
+                .collect();
+            PlayObservation {
+                view,
+                log: table.view_from(seat.seat, 0).since_last_decision,
+                glossary,
+                undos: table.undos(),
+            }
+        })
+    }
+
+    pub(crate) fn card_entries(
+        &self,
+        seat: Option<&Seat>,
+        names: &[String],
+    ) -> Result<Vec<dominion_agent::GlossaryEntry>, HubError> {
+        let entries: Vec<_> = names
+            .iter()
+            .map(|name| {
+                dominion_agent::glossary(name)
+                    .ok_or_else(|| bad(format!("no card is named {name:?}")))
+            })
+            .collect::<Result<_, _>>()?;
+        let Some(seat) = seat else { return Ok(entries) };
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        engine(|| {
+            entries
+                .into_iter()
+                .map(|entry| current_entry(table.game(), entry))
+                .collect()
         })
     }
 
