@@ -12,6 +12,7 @@ pub mod http;
 pub mod hub;
 pub mod limits;
 pub mod mcp;
+pub mod online;
 pub mod rating;
 pub mod runner;
 pub mod store;

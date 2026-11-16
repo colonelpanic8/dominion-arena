@@ -1,0 +1,852 @@
+use crate::store::Store;
+use dominion_online::{
+    catalog::{Catalog, VERSION},
+    model,
+    reducer::Reducer,
+    transport::{
+        Endpoint, Group, Message, RequiredSlot, RuleValue, TableDetails, TableRule, Transport,
+        command,
+    },
+};
+use dominion_protocol::{AgentView, Answer, GlossaryEntry, LogEntry};
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{mpsc, oneshot, watch};
+
+#[derive(Clone, Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NewGame {
+    /// Two to six seats; every opponent must be an official server bot.
+    pub players: Option<u8>,
+    /// Must equal players minus one (default 1).
+    pub bots: Option<u8>,
+    #[serde(default)]
+    pub kingdom: Vec<String>,
+    #[serde(default)]
+    pub landscapes: Vec<String>,
+}
+impl NewGame {
+    fn rules(&self, catalog: &Catalog) -> Result<(u8, Vec<TableRule>), String> {
+        let players = self.players.unwrap_or(2);
+        let bots = self.bots.unwrap_or(1);
+        if !(2..=6).contains(&players) || bots != players - 1 {
+            return Err("REFUSED: official backend requires 2–6 players and bots = players - 1; human games are unsupported".into());
+        }
+        if self.kingdom.len() > 10 {
+            return Err("REJECTED: at most ten required Kingdom piles".into());
+        }
+        let mut required = Vec::new();
+        for (names, landscape) in [(&self.kingdom, false), (&self.landscapes, true)] {
+            for name in names {
+                let ordinal = catalog
+                    .ordinal(name)
+                    .ok_or_else(|| format!("REJECTED: unknown official card {name:?}"))?;
+                let card = catalog.card(ordinal).map_err(|e| e.to_string())?;
+                if if landscape {
+                    !card.types.iter().any(|t| {
+                        matches!(
+                            t.as_str(),
+                            "Event"
+                                | "Landmark"
+                                | "Project"
+                                | "Way"
+                                | "Ally"
+                                | "Trait"
+                                | "Prophecy"
+                        )
+                    })
+                } else {
+                    !card.kingdom
+                } {
+                    return Err(format!(
+                        "REJECTED: {name} is not a {}",
+                        if landscape {
+                            "landscape"
+                        } else {
+                            "Kingdom pile"
+                        }
+                    ));
+                }
+                if required.contains(&RequiredSlot::Card(ordinal)) {
+                    return Err(format!("REJECTED: duplicate required card {name}"));
+                }
+                required.push(RequiredSlot::Card(ordinal));
+            }
+        }
+        Ok((
+            bots,
+            vec![
+                TableRule {
+                    id: 2,
+                    value: RuleValue::Required(required),
+                },
+                TableRule {
+                    id: 9,
+                    value: RuleValue::Int(i32::from(players)),
+                },
+                TableRule {
+                    id: 10,
+                    value: RuleValue::Int(i32::from(players)),
+                },
+            ],
+        ))
+    }
+}
+#[derive(Clone)]
+pub(crate) struct Update {
+    pub reducer: Reducer,
+    pub error: Option<String>,
+    pub connected: bool,
+}
+impl Update {
+    pub fn view(&self) -> Result<Option<AgentView>, String> {
+        if let Some(error) = &self.error {
+            return Err(error.clone());
+        }
+        if !self.connected {
+            return Err("official connection is closed; call online_reconnect".into());
+        }
+        if self.reducer.game_id.is_none() {
+            return Ok(None);
+        }
+        self.reducer.view().map(Some).map_err(|e| e.to_string())
+    }
+}
+enum Request {
+    Answer(
+        Answer,
+        Option<Vec<String>>,
+        oneshot::Sender<Result<(), String>>,
+    ),
+    NewGame(NewGame, oneshot::Sender<Result<(), String>>),
+    Reconnect(oneshot::Sender<Result<(), String>>),
+    Resign(oneshot::Sender<Result<(), String>>),
+    Disconnect(oneshot::Sender<Result<(), String>>),
+}
+#[derive(Clone)]
+pub struct Client {
+    tx: mpsc::Sender<Request>,
+    pub(crate) updates: watch::Receiver<Update>,
+}
+impl Client {
+    pub async fn login(
+        catalog: Arc<Catalog>,
+        endpoint: Endpoint,
+        username: &str,
+        password: &str,
+        store: Store,
+        resume: bool,
+    ) -> Result<Self, String> {
+        let mut socket = Transport::connect(endpoint)
+            .await
+            .map_err(|e| e.to_string())?;
+        socket
+            .send(command::login(username, password, VERSION, 0))
+            .await
+            .map_err(|e| e.to_string())?;
+        let saved: Option<TableDetails> = if resume {
+            match std::fs::read(store.dir().join("own-table.json")) {
+                Ok(bytes) => {
+                    Some(serde_json::from_slice(&bytes).map_err(|_| "invalid own-table metadata")?)
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => return Err(e.to_string()),
+            }
+        } else {
+            None
+        };
+        let mut runtime = Runtime {
+            socket: Some(socket),
+            endpoint,
+            session: None,
+            needs_snapshot: false,
+            request_game: false,
+            resuming: saved.is_some(),
+            bots: saved
+                .as_ref()
+                .map_or_else(Vec::new, |t| t.bots.iter().map(|b| b.id).collect()),
+            table: saved,
+            update: Update {
+                reducer: {
+                    let mut reducer = Reducer::new(catalog, -1);
+                    reducer.epoch = rand::random::<u64>() >> 16;
+                    reducer
+                },
+                error: None,
+                connected: true,
+            },
+            store,
+        };
+        tokio::time::timeout(Duration::from_secs(20), async {
+            while runtime.session.is_none() {
+                runtime.receive().await?;
+            }
+            if runtime.needs_snapshot {
+                runtime.safe_table()?;
+                while runtime.needs_snapshot {
+                    runtime.receive().await?;
+                }
+            }
+            Ok::<_, String>(())
+        })
+        .await
+        .map_err(|_| "official login timed out")??;
+        let (tx, mut rx) = mpsc::channel(16);
+        let (publish, updates) = watch::channel(runtime.update.clone());
+        tokio::spawn(async move {
+            loop {
+                let request = if runtime.socket.is_some() {
+                    tokio::select! {
+                        request=rx.recv()=>request,
+                        received=runtime.receive()=>{
+                            if let Err(error)=received{runtime.fail(error).await;}
+                            publish.send_replace(runtime.update.clone());
+                            continue;
+                        }
+                    }
+                } else {
+                    rx.recv().await
+                };
+                let Some(request) = request else {
+                    runtime.close().await;
+                    break;
+                };
+                let (result, reply, stop) = match request {
+                    Request::Answer(answer, expect, reply) => {
+                        let result = runtime.answer(answer, expect).await;
+                        (result, reply, false)
+                    }
+                    Request::NewGame(options, reply) => {
+                        let result = match tokio::time::timeout(
+                            Duration::from_secs(60),
+                            runtime.new_game(options),
+                        )
+                        .await
+                        {
+                            Ok(result) => result,
+                            Err(_) => {
+                                let error = "official game startup timed out; reconnect explicitly"
+                                    .to_string();
+                                runtime.fail(error.clone()).await;
+                                Err(error)
+                            }
+                        };
+                        (result, reply, false)
+                    }
+                    Request::Reconnect(reply) => {
+                        let result = runtime.reconnect().await;
+                        (result, reply, false)
+                    }
+                    Request::Resign(reply) => {
+                        let result = runtime.resign().await;
+                        (result, reply, false)
+                    }
+                    Request::Disconnect(reply) => {
+                        runtime.close().await;
+                        (Ok(()), reply, true)
+                    }
+                };
+                publish.send_replace(runtime.update.clone());
+                let _ = reply.send(result);
+                if stop {
+                    break;
+                }
+            }
+        });
+        Ok(Self { tx, updates })
+    }
+    pub(crate) fn current(&self) -> Update {
+        self.updates.borrow().clone()
+    }
+    async fn call(
+        &self,
+        make: impl FnOnce(oneshot::Sender<Result<(), String>>) -> Request,
+    ) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(make(tx))
+            .await
+            .map_err(|_| "official client stopped")?;
+        rx.await
+            .map_err(|_| "official client stopped".to_string())?
+    }
+    pub async fn answer(&self, answer: Answer, expect: Option<Vec<String>>) -> Result<(), String> {
+        self.call(|r| Request::Answer(answer, expect, r)).await
+    }
+    pub async fn new_game(&self, options: NewGame) -> Result<(), String> {
+        self.call(|r| Request::NewGame(options, r)).await
+    }
+    pub async fn reconnect(&self) -> Result<(), String> {
+        self.call(Request::Reconnect).await
+    }
+    pub async fn resign(&self) -> Result<(), String> {
+        if self.current().view()?.is_none_or(|v| !v.game.running) {
+            return Err("NO_GAME: no running official game".into());
+        }
+        self.call(Request::Resign).await
+    }
+    pub async fn disconnect(&self) -> Result<(), String> {
+        self.call(Request::Disconnect).await
+    }
+    pub async fn idle_check(&self, duration: Duration) -> Result<(), String> {
+        let mut updates = self.updates.clone();
+        let deadline = tokio::time::Instant::now() + duration;
+        loop {
+            updates.borrow().view()?;
+            match tokio::time::timeout_at(deadline, updates.changed()).await {
+                Err(_) => return Ok(()),
+                Ok(Err(_)) => return Err("official client stopped".into()),
+                Ok(Ok(())) => {}
+            }
+        }
+    }
+    pub(crate) async fn wait(&self, seconds: u64) -> Result<Update, String> {
+        let mut updates = self.updates.clone();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(seconds.min(600));
+        loop {
+            let update = updates.borrow_and_update().clone();
+            match update.view()? {
+                None => return Ok(update),
+                Some(v) if !v.game.running || v.decision.is_some() => return Ok(update),
+                _ => {}
+            }
+            match tokio::time::timeout_at(deadline, updates.changed()).await {
+                Err(_) => return Ok(updates.borrow().clone()),
+                Ok(Err(_)) => return Err("official client stopped".into()),
+                Ok(Ok(())) => {}
+            }
+        }
+    }
+}
+struct SessionSecret {
+    player: i32,
+    token: String,
+}
+struct Runtime {
+    socket: Option<Transport>,
+    endpoint: Endpoint,
+    session: Option<SessionSecret>,
+    needs_snapshot: bool,
+    request_game: bool,
+    resuming: bool,
+    table: Option<TableDetails>,
+    bots: Vec<i32>,
+    update: Update,
+    store: Store,
+}
+impl Runtime {
+    async fn close(&mut self) {
+        self.update.reducer.invalidate();
+        self.update.connected = false;
+        if let Some(mut socket) = self.socket.take() {
+            let _ = socket.disconnect().await;
+        }
+    }
+    async fn fail(&mut self, error: String) {
+        self.close().await;
+        self.update.error = Some(error);
+    }
+    async fn send(&mut self, bytes: Vec<u8>) -> Result<(), String> {
+        let result = self
+            .socket
+            .as_mut()
+            .ok_or("official connection closed; call online_reconnect")?
+            .send(bytes)
+            .await
+            .map_err(|e| e.to_string());
+        if let Err(error) = &result {
+            self.fail(error.clone()).await;
+        }
+        result
+    }
+    async fn receive(&mut self) -> Result<(), String> {
+        let result = self.receive_inner().await;
+        if let Err(error) = &result {
+            self.fail(error.clone()).await;
+        }
+        result
+    }
+    async fn receive_inner(&mut self) -> Result<(), String> {
+        let messages = self
+            .socket
+            .as_mut()
+            .ok_or("official connection closed")?
+            .receive()
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut acknowledgements = 0;
+        // With no length prefix, the transport decodes the entire frame before returning it.
+        for message in messages {
+            if self.process(message)? {
+                acknowledgements += 1;
+            }
+        }
+        if self.request_game {
+            self.safe_table()?;
+            self.request_game = false;
+            self.send(command::reconnect_game()).await?;
+        }
+        for _ in 0..acknowledgements {
+            self.send(command::animation_ack()).await?;
+        }
+        self.answer_forced().await
+    }
+    fn process(&mut self, message: Message) -> Result<bool, String> {
+        let reducer = &mut self.update.reducer;
+        match message {
+            Message::Failed(f) => return Err(f.error().to_string()),
+            Message::Login(login) => {
+                let existing_game = login.reconnecting || login.previous_reconnects > 0;
+                if existing_game && self.session.is_none() && !self.resuming {
+                    return Err("REFUSED: login reports an existing game/session; no automatic takeover or reconnect was attempted".into());
+                }
+                if self.resuming
+                    && self
+                        .table
+                        .as_ref()
+                        .is_none_or(|t| t.host_id != login.player_id)
+                {
+                    return Err("REFUSED: saved bot table belongs to another account".into());
+                }
+                if existing_game {
+                    self.needs_snapshot = true;
+                    // isReconnecting means the server is already sending the game.
+                    self.request_game = !login.reconnecting;
+                } else if self.resuming {
+                    self.table = None;
+                    self.bots.clear();
+                    self.resuming = false;
+                }
+                reducer.player_id = login.player_id;
+                reducer
+                    .names
+                    .insert(login.player_id, login.username.clone());
+                self.session = Some(SessionSecret {
+                    player: login.player_id,
+                    token: login.session_id().to_string(),
+                });
+                self.store
+                    .save(
+                        "session",
+                        &serde_json::json!({
+                        "account":login.username,
+                        "clientVersion":VERSION,
+                        "endpoint":self.endpoint.url(),
+                        "authority":"memory-only"}
+                        ),
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+            Message::Snapshot(snapshot) => {
+                if self.session.is_none() {
+                    return Err("snapshot before login".into());
+                }
+                if snapshot
+                    .state
+                    .players
+                    .iter()
+                    .any(|p| p.player_id != reducer.player_id && !self.bots.contains(&p.player_id))
+                {
+                    return Err(
+                        "REFUSED: snapshot contains an opponent not verified as a server bot"
+                            .into(),
+                    );
+                }
+                reducer.replace(snapshot).map_err(|e| e.to_string())?;
+                self.needs_snapshot = false;
+            }
+            Message::Event(event) => reducer.apply(event).map_err(|e| e.to_string())?,
+            Message::Question(question) => {
+                if self.needs_snapshot {
+                    return Err("question arrived before reconnect snapshot".into());
+                }
+                reducer.ask(question).map_err(|e| e.to_string())?;
+            }
+            Message::Log(change) => {
+                let start =
+                    usize::try_from(change.start_index).map_err(|_| "negative log index")?;
+                if reducer.logs.iter().any(|e| e.seq >= start) {
+                    reducer.logs.retain(|e| e.seq < start);
+                }
+                for (offset, entry) in change.entries.into_iter().enumerate() {
+                    let (kind, player, text) = match entry {
+                        model::LogEntry::Named {
+                            name, arguments, ..
+                        } => {
+                            let template = reducer
+                                .catalog
+                                .label("LogEntryNames", name)
+                                .ok_or("unknown log entry name")?;
+                            let text = reducer
+                                .render_template(template, &arguments)
+                                .ok_or("unsupported log argument")?;
+                            ("official", None, text)
+                        }
+                        model::LogEntry::Decision {
+                            player, autoplayed, ..
+                        } => (
+                            "decision",
+                            u8::try_from(player).ok(),
+                            format!(
+                                "{} {}",
+                                reducer.player_name(player),
+                                if autoplayed {
+                                    "resolved a forced decision"
+                                } else {
+                                    "answered"
+                                }
+                            ),
+                        ),
+                    };
+                    reducer.logs.push(LogEntry {
+                        seq: start + offset,
+                        kind: kind.into(),
+                        player,
+                        card: None,
+                        text,
+                    });
+                }
+            }
+            Message::TableJoined { table, .. } | Message::TableDetails(table) => {
+                for player in table.players.iter().chain(&table.bots) {
+                    reducer.names.insert(player.id, player.name.clone());
+                }
+                if table.players.iter().any(|p| p.id != reducer.player_id)
+                    || !table.spectators.is_empty()
+                    || !table.reconnecting.is_empty()
+                {
+                    return Err(
+                        "REFUSED: table includes another human, spectator or reconnecting seat"
+                            .into(),
+                    );
+                }
+                self.bots = table.bots.iter().map(|p| p.id).collect();
+                self.table = Some(table);
+            }
+            Message::BotAdded { table_id, bot } => {
+                if let Some(table) = &mut self.table
+                    && table.table_id == table_id
+                {
+                    self.bots.push(bot.id);
+                    reducer.names.insert(bot.id, bot.name.clone());
+                    table.bots.push(bot);
+                }
+            }
+            Message::PlayerJoined {
+                table_id,
+                player,
+                is_player,
+            } => {
+                if self.table.as_ref().is_some_and(|t| t.table_id == table_id) {
+                    if !is_player || player.id != reducer.player_id {
+                        return Err("REFUSED: a human joined the official table; no further actions will be sent".into());
+                    }
+                    reducer.names.insert(player.id, player.name);
+                }
+            }
+            Message::RoleChanged {
+                player_id,
+                is_player,
+                ..
+            } => {
+                if player_id != reducer.player_id || !is_player {
+                    return Err("REFUSED: official table role changed".into());
+                }
+            }
+            Message::PlayerLeft {
+                table_id,
+                player_id,
+            } => {
+                if let Some(table) = &mut self.table
+                    && table.table_id == table_id
+                {
+                    table.players.retain(|p| p.id != player_id);
+                    table.bots.retain(|p| p.id != player_id);
+                    self.bots.retain(|id| *id != player_id);
+                }
+                if player_id == reducer.player_id
+                    && self.table.as_ref().is_some_and(|t| t.table_id == table_id)
+                {
+                    self.table = None;
+                    self.bots.clear();
+                }
+            }
+            Message::PlayerReplaced { .. } => {
+                return Err(
+                    "REFUSED: official table player replacement needs operator inspection".into(),
+                );
+            }
+            Message::RuleChanged { table_id, rule } => {
+                if let Some(table) = &mut self.table
+                    && table.table_id == table_id
+                {
+                    table.rules.retain(|(r, _)| r.id != rule.id);
+                    table.rules.push((rule, false));
+                }
+            }
+            Message::HostChanged { table_id, host } => {
+                if let Some(table) = &mut self.table
+                    && table.table_id == table_id
+                {
+                    table.host_id = host;
+                }
+            }
+            Message::GameFinished { table, result, .. } => {
+                if reducer.game_id != Some(result.game_id) {
+                    return Err("game result has unexpected id".into());
+                }
+                let mut players = Vec::new();
+                for p in result.players {
+                    let index = reducer
+                        .state()
+                        .map_err(|e| e.to_string())?
+                        .players
+                        .iter()
+                        .position(|s| s.player_id == p.player_id)
+                        .ok_or("result player not in snapshot")?;
+                    players.push(dominion_protocol::ResultPlayer {
+                        index: index as u8,
+                        name: reducer.player_name(index as i32),
+                        vp: p.score.total_points,
+                        rank: u32::try_from(p.rank).map_err(|_| "negative result rank")?,
+                        turns: u32::try_from(p.score.used_turns)
+                            .map_err(|_| "negative turn count")?,
+                        resigned: p.resignation_type.is_some(),
+                    });
+                }
+                reducer.invalidate();
+                reducer.running = false;
+                self.store.remove("own-table").map_err(|e| e.to_string())?;
+                reducer.result = Some(dominion_protocol::GameResult {
+                    reason: Some("official server result".into()),
+                    players,
+                });
+                self.table = Some(table);
+            }
+            Message::AnimationCompensation => return Ok(true),
+            Message::ReconnectInstruction(_) | Message::TimeoutInstruction => {
+                return Err("official server requested reconnect; pending answers invalidated; call online_reconnect".into());
+            }
+            Message::Metagame { .. } => {
+                reducer.invalidate();
+                return Err("official metagame request requires operator inspection".into());
+            }
+            Message::TableTerminated(id) => {
+                if self.table.as_ref().is_some_and(|t| t.table_id == id) {
+                    reducer.invalidate();
+                    self.table = None;
+                }
+            }
+            Message::Ancillary(_)
+            | Message::LobbyNotice
+            | Message::Chat { .. }
+            | Message::Tables(_)
+            | Message::PlayerStatus { .. }
+            | Message::GameStarted { .. }
+            | Message::TableRemoved
+            | Message::Succeeded(_)
+            | Message::Preferences(_)
+            | Message::Relationships(_)
+            | Message::AutomatchStatus(_)
+            | Message::PlayerDisconnected { .. }
+            | Message::PlayerReconnected { .. }
+            | Message::Ticker(_)
+            | Message::Pong
+            | Message::Timers(_)
+            | Message::ServerState(_)
+            | Message::Explanations { .. }
+            | Message::FormResult { .. } => {}
+        }
+        Ok(false)
+    }
+    async fn answer(&mut self, answer: Answer, expect: Option<Vec<String>>) -> Result<(), String> {
+        self.update.view()?;
+        self.safe_table()?;
+        if self.needs_snapshot {
+            return Err("REJECTED: waiting for a reconnect snapshot".into());
+        }
+        let (index, values) = self
+            .update
+            .reducer
+            .answer(&answer, expect.as_deref())
+            .map_err(|e| e.to_string())?;
+        self.send(command::answer(index, &values)).await
+    }
+    async fn answer_forced(&mut self) -> Result<(), String> {
+        let Some(view) = self.update.view()? else {
+            return Ok(());
+        };
+        let Some(decision) = view.decision else {
+            return Ok(());
+        };
+        if decision.groups.len() > 1 || decision.name_any {
+            return Ok(());
+        }
+        let indices = if decision.min == Some(1)
+            && decision.max == Some(1)
+            && decision.options.len() == 1
+        {
+            Some(vec![0])
+        } else if decision.min == Some(0) && decision.max == Some(0) && decision.options.is_empty()
+        {
+            Some(vec![])
+        } else {
+            None
+        };
+        if let Some(indices) = indices {
+            self.answer(Answer::indices(decision.id, indices), None)
+                .await?;
+        }
+        Ok(())
+    }
+    fn safe_table(&self) -> Result<&TableDetails, String> {
+        let table = self
+            .table
+            .as_ref()
+            .ok_or("official server has not returned a table")?;
+        let id = self.update.reducer.player_id;
+        if table.host_id != id
+            || table.players.len() != 1
+            || table.players[0].id != id
+            || !table.spectators.is_empty()
+            || !table.reconnecting.is_empty()
+        {
+            return Err(
+                "REFUSED: official table is not exclusively this account and server bots".into(),
+            );
+        }
+        if table.rules.iter().filter(|(r, _)| r.id == 5).count() != 1
+            || table.rules.iter().filter(|(r, _)| r.id == 19).count() != 1
+        {
+            return Err("REFUSED: missing or conflicting privacy/rating rules".into());
+        }
+        if !table
+            .rules
+            .iter()
+            .any(|(r, _)| r.id == 5 && r.value == RuleValue::Group(Group::Nobody))
+            || !table
+                .rules
+                .iter()
+                .any(|(r, _)| r.id == 19 && r.value == RuleValue::Boolean(false))
+        {
+            return Err(
+                "REFUSED: official server did not confirm spectator prohibition and unrated play"
+                    .into(),
+            );
+        }
+        Ok(table)
+    }
+    async fn resign(&mut self) -> Result<(), String> {
+        self.update.view()?;
+        self.safe_table()?;
+        if !self.update.reducer.running {
+            return Err("NO_GAME: no running official game".into());
+        }
+        self.update.reducer.invalidate();
+        self.send(command::resign()).await
+    }
+    async fn new_game(&mut self, options: NewGame) -> Result<(), String> {
+        self.update.view()?;
+        if self.update.reducer.running {
+            return Err(
+                "REFUSED: an official game is already running; new_game never resigns it".into(),
+            );
+        }
+        let (bots, rules) = options.rules(&self.update.reducer.catalog)?;
+        let previous_game = self.update.reducer.game_id;
+        if self.table.is_some() {
+            if self.update.reducer.result.is_none() {
+                return Err("REFUSED: an unfinished official table already exists".into());
+            }
+            let table_id = self.safe_table()?.table_id;
+            let bytes = dominion_online::transport::outgoing::Command::LeaveTable {
+                table: table_id,
+                player: self.update.reducer.player_id,
+            }
+            .encode()
+            .map_err(|e| e.to_string())?;
+            self.send(bytes).await?;
+            while self.table.is_some() {
+                self.receive().await?;
+            }
+        }
+        self.send(command::private_table(&rules).map_err(|e| e.to_string())?)
+            .await?;
+        while self.table.is_none() {
+            self.receive().await?;
+        }
+        for expected in 1..=bots {
+            let id = self.safe_table()?.table_id;
+            self.send(command::add_bot(id)).await?;
+            while self.safe_table()?.bots.len() < usize::from(expected) {
+                self.receive().await?;
+            }
+        }
+        let table = self.safe_table()?;
+        if table.bots.len() != usize::from(bots) {
+            return Err("REFUSED: server bot count differs from requested settings".into());
+        }
+        for requested in &rules {
+            if !table.rules.iter().any(|(rule, _)| rule == requested) {
+                return Err(format!(
+                    "REFUSED: server has not confirmed requested rule {}",
+                    requested.id
+                ));
+            }
+        }
+        self.store
+            .save("own-table", table)
+            .map_err(|e| e.to_string())?;
+        self.send(command::ready(table.table_id, true)).await?;
+        while self.update.reducer.game_id == previous_game {
+            self.receive().await?;
+        }
+        Ok(())
+    }
+    async fn reconnect(&mut self) -> Result<(), String> {
+        self.close().await;
+        let session = self
+            .session
+            .as_ref()
+            .ok_or("no session owned by this process; restart the client")?;
+        let bytes = command::reconnect_session(session.player, &session.token, VERSION);
+        let mut socket = Transport::connect(self.endpoint)
+            .await
+            .map_err(|e| e.to_string())?;
+        socket.send(bytes).await.map_err(|e| e.to_string())?;
+        self.socket = Some(socket);
+        self.update.error = None;
+        self.update.connected = true;
+        self.needs_snapshot = self.update.reducer.running;
+        self.request_game = false;
+        // RECONNECT_SESSION restores the socket, not the game snapshot.
+        if self.needs_snapshot {
+            self.send(command::reconnect_game()).await?;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn glossary(reducer: &Reducer, names: &[String]) -> Result<Vec<GlossaryEntry>, String> {
+    names
+        .iter()
+        .map(|name| {
+            let id = reducer
+                .catalog
+                .ordinal(name)
+                .ok_or_else(|| format!("unknown official card {name:?}"))?;
+            let info = reducer.catalog.card(id).map_err(|e| e.to_string())?;
+            let mut entry = dominion_agent::glossary(&info.name)
+                .ok_or_else(|| format!("official text unavailable locally for {}", info.name))?;
+            entry.cost = Some(if reducer.game_id.is_some() {
+                reducer.cost(None, id).map_err(|e| e.to_string())?
+            } else {
+                info.cost.clone()
+            });
+            entry.types = info.types.clone();
+            Ok(entry)
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests;

@@ -1,6 +1,6 @@
 //! The MCP tools: one `Session` per MCP session, sharing the `Hub`.
 
-mod play;
+pub(crate) mod play;
 
 use crate::arena::{Arena, Ident};
 use crate::hub::{Hub, HubError, NewGame, Seat, panic_message};

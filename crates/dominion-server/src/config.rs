@@ -22,6 +22,20 @@ pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Official-server account (separate from Arena's own accounts).
+    pub online_account: Option<String>,
+    /// Password-store entry; only its first line is read at runtime.
+    pub online_password_entry: Option<String>,
+    /// Operator assertion that this account is idle and exclusive to this client.
+    pub online_exclusive: Option<bool>,
+    /// Resume only a bot table previously created by this state directory.
+    pub online_resume: Option<bool>,
+    /// Official endpoint: auto (default), alpha, or beta.
+    pub online_endpoint: Option<String>,
+    /// Official-client process lock and non-secret session metadata.
+    pub online_state_dir: Option<PathBuf>,
+    /// Downloaded hash-pinned public protocol catalog bundle.
+    pub online_cache_dir: Option<PathBuf>,
     /// Address `dominion serve` listens on (default 127.0.0.1).
     pub listen: Option<IpAddr>,
     /// Port `dominion serve` listens on (default 7317).
@@ -120,6 +134,17 @@ fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
 }
 
 impl Config {
+    pub fn online_state_dir(&self) -> Option<PathBuf> {
+        self.online_state_dir
+            .clone()
+            .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/online")))
+    }
+
+    pub fn online_cache_dir(&self) -> Option<PathBuf> {
+        self.online_cache_dir
+            .clone()
+            .or_else(|| Some(xdg_dir("XDG_CACHE_HOME", ".cache")?.join("dominion/online")))
+    }
     pub fn default_path() -> Option<PathBuf> {
         Some(xdg_dir("XDG_CONFIG_HOME", ".config")?.join("dominion/config.toml"))
     }
