@@ -125,8 +125,9 @@ pub fn TranscriptPage(id: String) -> Element {
     let mut error = use_signal(|| None::<String>);
     let mut ready = use_signal(|| false);
     let mut selected = use_signal(|| None::<u8>);
-    let mut reasoning = use_signal(|| true);
-    let mut follow = use_signal(|| true);
+    let reasoning = use_signal(|| true);
+    let follow = use_signal(|| true);
+    let inputs = use_signal(|| true);
     let account = crate::account::use_account();
     use_resource(move || {
         let _ = account.name();
@@ -181,6 +182,7 @@ pub fn TranscriptPage(id: String) -> Element {
         .iter()
         .filter(|b| selected().is_none_or(|s| b.seat == s || b.kind == Kind::Game))
         .filter(|b| reasoning() || b.kind != Kind::Reasoning)
+        .filter(|b| inputs() || b.kind != Kind::Observation)
         .cloned()
         .collect();
     rsx! {
@@ -188,36 +190,81 @@ pub fn TranscriptPage(id: String) -> Element {
         document::Style { "{CSS}" }
         section { class:"agent-transcript",
             header { class:"transcript-heading",
-                div { p { class:"transcript-eyebrow", "GAME {game}" } h1 { "Agent transcript" } }
-                Link { class:"button",to:Route::Game {id:game()},"Back to game" }
-            }
-            p { class:"transcript-description", "Live model output and Dominion actions, in order. Transcripts may reveal hidden cards. Reasoning appears when the model provides it. Times are UTC." }
-            div { class:"transcript-controls", role:"group", "aria-label":"Transcript filters",
-                button { class:if selected().is_none(){"on"}else{""}, onclick:move |_|selected.set(None), "All seats" }
-                for (seat,name) in agents {
-                    button { key:"{seat}",class:if selected()==Some(seat){"on"}else{""},onclick:move |_|selected.set(Some(seat)), "P{seat+1} · {name}" }
+                div {
+                    p { class:"transcript-eyebrow", "Game {game}" }
+                    h1 { "Agent Transcript" }
+                    p { class:"transcript-description", "Live model output and Dominion actions, in order. Transcripts may reveal hidden cards. Reasoning appears when the model provides it. Times are UTC." }
                 }
-                label { input {r#type:"checkbox",checked:reasoning(),onchange:move |e|reasoning.set(e.checked())} "Reasoning" }
-                label { input {r#type:"checkbox",checked:follow(),onchange:move |e|follow.set(e.checked())} "Follow latest" }
+                Link { class:"button copper",to:Route::Game {id:game()},"Back to game" }
             }
-            if let Some(message)=error() { p {class:"transcript-error",role:"alert","{message}"} }
-            if !ready() && error().is_none() {p {role:"status","Loading transcript…"}}
-            if ready() && blocks.is_empty() {p {class:"transcript-empty",role:"status","Waiting for agent activity. New output will appear here automatically."}}
-            ol {class:"transcript-timeline", "aria-label":"Agent activity",
-                for block in blocks {
-                    li {key:"{block.sequence}",class:format!("trace-block trace-{:?}",block.kind).to_lowercase(),
-                        header {
-                            span {class:"trace-kind","{label(block.kind)}"}
-                            if block.kind!=Kind::Game {span {class:"trace-agent","P{block.seat+1} · {block.agent}"}}
-                            time {"{clock(block.time)}"}
+            div { class:"transcript-body",
+                aside { class:"transcript-side",
+                    section { class:"panel", role:"group", "aria-label":"Seats",
+                        h3 { "Seats" }
+                        div { class:"transcript-seats",
+                            button { class:if selected().is_none(){"toggle on"}else{"toggle"}, "aria-pressed":"{selected().is_none()}", onclick:move |_|selected.set(None), "All seats" }
+                            for (seat,name) in agents {
+                                button { key:"{seat}", class:if selected()==Some(seat){"toggle on"}else{"toggle"}, "aria-pressed":"{selected()==Some(seat)}", style:"--seat: var(--seat-{seat % 6})", onclick:move |_|selected.set(Some(seat)),
+                                    span { class:"seat-dot" } "P{seat+1} · {name}"
+                                }
+                            }
                         }
-                        if block.kind==Kind::Observation {
-                            details { summary {"Prompt and game observation"} pre {"{block.text}"} }
-                        } else { pre {"{block.text}"} }
+                    }
+                    section { class:"panel", role:"group", "aria-label":"Show",
+                        h3 { "Show" }
+                        Switch { label:"Reasoning", on:reasoning }
+                        Switch { label:"Model input", on:inputs }
+                        Switch { label:"Follow latest", on:follow }
                     }
                 }
+                section { class:"panel transcript-main",
+                    h3 { "Timeline" }
+                    if let Some(message)=error() { p {class:"transcript-error",role:"alert","{message}"} }
+                    if !ready() && error().is_none() {p {class:"transcript-empty",role:"status","Loading transcript…"}}
+                    if ready() && blocks.is_empty() {p {class:"transcript-empty",role:"status","Waiting for agent activity. New output will appear here automatically."}}
+                    ol {class:"transcript-timeline", "aria-label":"Agent activity",
+                        for block in blocks {
+                            li {key:"{block.sequence}",class:format!("trace-block trace-{:?}",block.kind).to_lowercase(), style:"--seat: var(--seat-{block.seat % 6})",
+                                time {"{clock(block.time)}"}
+                                div { class:"trace-content",
+                                    if block.kind==Kind::Game {
+                                        p { class:"trace-game-line", span {class:"trace-kind","Game"} "{block.text}" }
+                                    } else {
+                                        header {
+                                            span {class:"trace-kind","{label(block.kind)}"}
+                                            span {class:"trace-agent", span { class:"seat-dot" } "P{block.seat+1} · {block.agent}"}
+                                        }
+                                        if block.kind==Kind::Observation {
+                                            details { summary {"Prompt and game observation"} pre {"{block.text}"} }
+                                        } else { pre {"{block.text}"} }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    div {"data-trace-end":"", "aria-hidden":"true"}
+                }
             }
-            div {"data-trace-end":"", "aria-hidden":"true"}
+        }
+    }
+}
+
+/// A labelled on/off switch, the lobby's, over a rule.
+#[component]
+fn Switch(label: String, on: Signal<bool>) -> Element {
+    let mut on = on;
+    rsx! {
+        div { class:"transcript-switch-row",
+            span { "{label}" }
+            span { class:"transcript-rule" }
+            button {
+                class: if on() { "transcript-switch active" } else { "transcript-switch" },
+                role: "switch",
+                "aria-checked": "{on()}",
+                "aria-label": "{label}",
+                onclick: move |_| on.toggle(),
+                span { class:"transcript-knob" }
+            }
         }
     }
 }

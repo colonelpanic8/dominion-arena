@@ -26,6 +26,7 @@ pub fn GameMenu() -> Element {
             if open() {
                 if can_resign {
                     button {
+                        class: "copper",
                         "data-action": "resign",
                         onclick: move |e| {
                             e.stop_propagation();
@@ -73,6 +74,7 @@ pub fn ResignDialog() -> Element {
             p { "Are you sure you want to resign?" }
             div { class: "resign-buttons",
                 button {
+                    class: "copper",
                     "data-action": "resign-yes",
                     onclick: move |_| {
                         resigning.set(false);

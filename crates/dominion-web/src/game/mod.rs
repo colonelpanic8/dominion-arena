@@ -510,6 +510,7 @@ pub fn GamePage(id: String) -> Element {
         state,
         account: use_account(),
     };
+    let account = use_account();
     let summary = use_summary(game);
     use_context_provider(|| summary);
     use_context_provider(|| GameCtx {
@@ -612,7 +613,7 @@ pub fn GamePage(id: String) -> Element {
     let mut table_on = use_signal(table::table_mode);
     let seat_bar = rsx! {
         div { class: "seat-bar",
-            span { class: "mono", "Game {game}" }
+            span { class: "game-title", "Game {game}" }
             if held.len() > 1 {
                 span { class: "muted", "Seat:" }
                 for s in held.iter().cloned() {
@@ -693,7 +694,12 @@ pub fn GamePage(id: String) -> Element {
                     } else {
                         p { "This browser holds no seat in this game." }
                     }
-                    p { "Paste a seat token:" }
+                    if account.name().is_none() {
+                        div { class: "row",
+                            Link { class: "button primary", to: crate::app::Route::Lobby {}, "Log in" }
+                        }
+                    }
+                    p { "Or paste a seat token:" }
                     div { class: "row",
                         input {
                             class: "grow",
@@ -701,7 +707,7 @@ pub fn GamePage(id: String) -> Element {
                             value: "{paste}",
                             oninput: move |e| paste.set(e.value()),
                         }
-                        button { class: "primary", onclick: move |_| take_token(paste().trim().to_string()), "Join" }
+                        button { class: "copper", onclick: move |_| take_token(paste().trim().to_string()), "Join" }
                     }
                     if let Some(e) = join_error() {
                         p { class: "error", "{e}" }

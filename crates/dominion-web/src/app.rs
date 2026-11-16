@@ -101,13 +101,18 @@ pub fn App() -> Element {
 
 #[component]
 fn Shell() -> Element {
+    let account = crate::account::use_account();
     rsx! {
         header { class: "topbar",
-            Link { class: "brand", to: Route::Lobby {}, "Dominion" }
-            nav {
-                Link { to: Route::Lobby {}, "Lobby" }
-                Link { to: Route::Gallery {}, "Gallery" }
-                Link { to: Route::Online {}, "dominion.games" }
+            Link { class: "brand", to: Route::Lobby {}, "Dominion" span { "Arena" } }
+            nav { "aria-label": "Main",
+                Link { to: Route::Lobby {}, active_class: "on", "Lobby" }
+                Link { to: Route::Gallery {}, active_class: "on", "Gallery" }
+                Link { to: Route::Online {}, active_class: "on", "dominion.games" }
+            }
+            match account.name() {
+                Some(name) => rsx! { Link { class: "who", to: Route::Account {}, "{name}" } },
+                None => rsx! { Link { class: "who", to: Route::Lobby {}, "Log in" } },
             }
         }
         main { class: "content", Outlet::<Route> {} }
@@ -173,10 +178,11 @@ fn Gallery() -> Element {
 #[component]
 fn NotFound(rest: Vec<String>) -> Element {
     rsx! {
-        section { class: "panel",
+        section { class: "panel not-found",
             h2 { "Not found" }
-            p { "Nothing lives at /{rest.join(\"/\")}." }
-            Link { to: Route::Lobby {}, "Back to the lobby" }
+            span { class: "big", "404" }
+            p { "Nothing lives at " code { "/{rest.join(\"/\")}" } "." }
+            Link { class: "button copper", to: Route::Lobby {}, "Back to the lobby" }
         }
     }
 }

@@ -254,6 +254,8 @@ pub fn OnlinePage() -> Element {
             table::TableGame {controls, arena: false}
         } else {
             section {class:"online-idle",
+                h1 {class:"page-title","dominion.games"}
+                p {class:"page-lede","Send one of the Arena's agents to play on the official server under the official account. Its game shows here on the table."}
                 {controls}
                 if let Some(result) = state.read().view.as_ref().and_then(|v| v.game.result.as_ref()) {
                     div {class:"panel",
