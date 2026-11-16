@@ -46,7 +46,8 @@ crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; acco
                           lobby in `lobby`) and the asset manifest; engine-free, builds for wasm
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
-crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and terminal client
+crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
+                          and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
                           came from, the accounts playing it, rated / watchable / timed),
                           who is connected, forfeits; calls back when a game ends
@@ -66,6 +67,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum) and ter
   src/house.rs            the agent socket: the runner's messages and the server's end
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` playing each job's seat, its command line (pure)
+  src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle
+  src/steps.rs            named steps (`play A, B; treasures; buy C; next`) for solo and the
+                          MCP `steps` tool
   src/store.rs            the state directory: its lock, a JSON file per game written atomically
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
@@ -613,7 +617,8 @@ helpers in `tests/mod.rs` (`setup`, `hand`, `deck`, `play`, `choose_kinds`, `yes
   through its frame.
 - One way to play a card: `Frame::play`.
 - Rules code asks the game for types, costs and identity per card instance.
-- No bots or AI strategies in this repo. Tests may use throwaway responders.
+- No bots or AI strategies in this repo. Tests may use throwaway responders. The idle
+  seats of a solo game (`solo.rs`) do the least each decision allows and choose nothing.
 
 ## References
 

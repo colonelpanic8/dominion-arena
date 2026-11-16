@@ -1,5 +1,6 @@
 //! The games a server hosts, and the seat tokens that let a client act for a seat.
 
+use crate::steps::Runner;
 use crate::store::Store;
 use dominion_agent::{AgentView, Answer, AnswerError, Answered, Table, WayChoice};
 use dominion_engine::{
@@ -22,6 +23,13 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
+
+/// What [`Hub::steps`] did.
+#[derive(Clone, Debug)]
+pub struct Stepped {
+    pub log: Vec<String>,
+    pub stopped: Option<(String, String)>,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum HubError {
@@ -439,6 +447,14 @@ pub fn config(req: &NewGame) -> Result<GameConfig, HubError> {
     config.turn_limit = req.turn_limit;
     config.colonies = req.colonies;
     config.shelters = req.shelters;
+    for (by, chosen) in &req.setup {
+        let by = card(by, "card", |_| true)?;
+        let chosen = chosen
+            .iter()
+            .map(|n| card(n, "card", |_| true))
+            .collect::<Result<_, _>>()?;
+        config.setup_choices.insert(by, chosen);
+    }
     Ok(config)
 }
 
@@ -1298,6 +1314,36 @@ impl Hub {
             }
         }
         expired
+    }
+
+    /// Plays `steps` for `seat` (see [`crate::steps`]) until one can't be done or the seat
+    /// has nothing left to decide. Returns the log lines the steps produced and the step that
+    /// stopped them, with why.
+    pub fn steps(&self, seat: &Seat, steps: &str) -> Result<Stepped, HubError> {
+        let game = self.game(&seat.game)?;
+        let mut table = lock(&game.table);
+        let seen = table
+            .view(seat.seat)
+            .since_last_decision
+            .iter()
+            .map(|e| e.seq)
+            .max();
+        let mut runner = Runner::new(table.clone(), seat.seat, false, seen);
+        let stopped = engine(|| runner.run(steps))?.map_err(bad)?;
+        let ended = if table.decision_id() != runner.table.decision_id()
+            || table.is_over() != runner.table.is_over()
+        {
+            *table = runner.table;
+            self.changed(&game, &table)
+        } else {
+            None
+        };
+        drop(table);
+        self.ended(ended);
+        Ok(Stepped {
+            log: runner.log,
+            stopped,
+        })
     }
 
     /// Waits until `seat` must decide or the game is over, for at most `timeout`. Returns

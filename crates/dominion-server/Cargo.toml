@@ -1,6 +1,6 @@
 [package]
 name = "dominion-server"
-description = "MCP server and terminal client for playing Dominion through the agent-view@2 protocol"
+description = "MCP server, terminal client and solo games for playing Dominion through the agent-view@2 protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

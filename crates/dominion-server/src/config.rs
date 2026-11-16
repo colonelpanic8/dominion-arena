@@ -130,6 +130,8 @@ pub struct Config {
     /// Where `dominion agents` runs its agents and keeps their logs (default
     /// `$XDG_STATE_HOME/dominion/agents`).
     pub agents_dir: Option<PathBuf>,
+    /// Where `dominion solo` keeps its games (default `$XDG_STATE_HOME/dominion/solo`).
+    pub solo_dir: Option<PathBuf>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -163,6 +165,13 @@ impl Config {
         self.state_dir
             .clone()
             .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/games")))
+    }
+
+    /// The directory solo games are kept in.
+    pub fn solo_dir(&self) -> Option<PathBuf> {
+        self.solo_dir
+            .clone()
+            .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/solo")))
     }
 
     pub fn keep_finished(&self) -> Duration {

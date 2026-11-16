@@ -686,6 +686,7 @@ impl Reducer {
                         types: top_info.types.clone(),
                         kingdom: info.kingdom,
                         hidden: false,
+                        members: Vec::new(),
                         structure: None,
                         tokens: view::PileTokens {
                             embargo: state

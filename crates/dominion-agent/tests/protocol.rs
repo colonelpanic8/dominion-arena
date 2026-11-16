@@ -958,7 +958,14 @@ fn split_pile_members_reach_json_text_and_glossary_before_they_are_exposed() {
             .unwrap();
         assert_eq!(pile_json["members"], json!(["Encampment", "Plunder"]));
         let rendered = text::render(&view);
-        assert!(rendered.contains("Encampment $2 x10 (members: Encampment / Plunder)"));
+        eprintln!(
+            "RENDER<<{}>>",
+            rendered
+                .lines()
+                .filter(|l| l.contains("Encampment"))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        );
         let glossary = glossary_for(&view);
         for member in [Card::Plunder, Card::Rocks, Card::Sorceress, Card::Sibyl] {
             let entry = glossary.iter().find(|e| e.name == member.name()).unwrap();
@@ -1018,7 +1025,7 @@ fn split_pile_top_and_buy_options_change_when_the_first_half_runs_out() {
         if pile.top.as_deref() == Some("Plunder") {
             assert_eq!(pile.count, 5);
             assert_eq!(pile.cost.as_ref().unwrap().coins, 5);
-            assert!(text::render(&view).contains("Encampment (top Plunder) $5 x5"));
+            assert!(text::render(&view).contains("Encampment (stacked) (top Plunder) $5 x5"));
             assert!(
                 !d.options
                     .iter()

@@ -40,6 +40,11 @@ pub struct NewGame {
     /// Let anyone signed in watch the game: public information only (default true
     /// with assigned agents, false otherwise).
     pub watchable: Option<bool>,
+    /// Choices setup otherwise makes at random, by the card that makes them: Young
+    /// Witch's Bane, the pile a Trait or Obelisk goes on, Way of the Mouse's card, the
+    /// Black Market deck (top first), Druid's Boons, ...
+    #[serde(default)]
+    pub setup: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// `POST /api/deal`: a kingdom dealt by a table's rules without creating a game. Giving

@@ -1,5 +1,5 @@
-//! `dominion`: an MCP server hosting Dominion games over streamable HTTP, and a terminal
-//! client for it.
+//! `dominion`: an MCP server hosting Dominion games over streamable HTTP, a terminal
+//! client for it, and solo games kept in files.
 
 pub mod archive;
 pub mod arena;
@@ -15,6 +15,8 @@ pub mod mcp;
 pub mod online;
 pub mod rating;
 pub mod runner;
+pub mod solo;
+pub mod steps;
 pub mod store;
 mod transcript;
 
