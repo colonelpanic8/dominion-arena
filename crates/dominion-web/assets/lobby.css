@@ -680,7 +680,7 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-expansion-icon { width: 76%; height: 80%; object-fit: contain; }
 
 .lb-special-rules { display: flex; justify-content: center; align-items: center; width: 100%; padding: .2vmin; }
-.lb-selector-button { max-width: 8vw; height: 3vh; margin-right: 8vh; padding: 1vh; font-size: 1.8vh; }
+.lb-selector-button { max-width: max(8vw, 16vh); min-height: 3vh; margin-right: 8vh; padding: 1vh; font-size: 1.8vh; line-height: 1.15; }
 .lb-special {
   display: flex;
   flex-direction: column;
