@@ -3,7 +3,7 @@
 mod hosted;
 mod mcp;
 mod runtime;
-pub use hosted::Hosted;
+pub use hosted::{Hosted, router};
 
 use crate::{config::Config, store::Store};
 use dominion_online::{
@@ -14,6 +14,25 @@ use rmcp::ServiceExt;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 pub use runtime::{Client, NewGame};
+
+/// The id of the account the flat `online_*` settings configure.
+pub const LEGACY_ID: &str = "default";
+
+/// One official account, from the settings ([`Config::online_accounts`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Account {
+    pub id: String,
+    pub account: String,
+    pub owner: Option<String>,
+    pub password_entry: Option<String>,
+    pub password_file: Option<PathBuf>,
+    pub exclusive: bool,
+    pub resume: bool,
+    pub endpoint: Option<String>,
+    pub state_dir: PathBuf,
+    /// Kept by `dominion serve`.
+    pub serve: bool,
+}
 
 pub fn cache_file(config: &Config) -> Result<PathBuf, String> {
     Ok(config
@@ -55,8 +74,8 @@ fn catalog(config: &Config) -> Result<Arc<Catalog>, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn endpoint(config: &Config) -> Result<Endpoint, String> {
-    match config.online_endpoint.as_deref().unwrap_or("auto") {
+async fn endpoint(setting: Option<&str>) -> Result<Endpoint, String> {
+    match setting.unwrap_or("auto") {
         "alpha" => Ok(Endpoint::Alpha),
         "beta" => Ok(Endpoint::Beta),
         "auto" => {
@@ -110,20 +129,15 @@ pub async fn probe() -> Result<(), String> {
     }
     Ok(())
 }
-async fn start(config: &Config) -> Result<Client, String> {
-    if config.online_exclusive != Some(true) {
-        return Err("REFUSED: set online_exclusive = true only while the account is idle and exclusive to this client; existing sessions are never removed".into());
+async fn start(config: &Config, account: &Account) -> Result<Client, String> {
+    if !account.exclusive {
+        return Err("REFUSED: set online_exclusive = true (exclusive = true in online_accounts) only while the account is idle and exclusive to this client; existing sessions are never removed".into());
     }
-    let account = config.online_account.clone().ok_or("set online_account")?;
     let catalog = catalog(config)?;
-    let state = Store::open(
-        &config
-            .online_state_dir()
-            .ok_or("set online_state_dir or HOME")?,
-    )
-    .map_err(|e| format!("official client state lock: {e}"))?;
-    let endpoint = endpoint(config).await?;
-    let secret = match (&config.online_password_entry, &config.online_password_file) {
+    let state =
+        Store::open(&account.state_dir).map_err(|e| format!("official client state lock: {e}"))?;
+    let endpoint = endpoint(account.endpoint.as_deref()).await?;
+    let secret = match (&account.password_entry, &account.password_file) {
         (Some(entry), None) if !entry.is_empty() && !entry.starts_with('-') => {
             let output = tokio::process::Command::new("pass")
                 .args(["show", entry])
@@ -138,7 +152,7 @@ async fn start(config: &Config) -> Result<Client, String> {
         (None, Some(path)) => tokio::fs::read(path)
             .await
             .map_err(|e| format!("reading runtime password credential: {e}"))?,
-        _ => return Err("set exactly one of online_password_entry or online_password_file".into()),
+        _ => return Err("set exactly one password entry or password file".into()),
     };
     let password = std::str::from_utf8(&secret)
         .map_err(|_| "password credential is not UTF-8")?
@@ -149,18 +163,41 @@ async fn start(config: &Config) -> Result<Client, String> {
     let result = Client::login(
         catalog,
         endpoint,
-        &account,
+        &account.account,
         password,
         state,
-        config.online_resume.unwrap_or(false),
+        account.resume,
     )
     .await;
     drop(secret);
     result
 }
 
-pub async fn login_check(config: &Config) -> Result<(), String> {
-    let client = start(config).await?;
+/// Prints each configured account: id, official name, owner, served, state directory and
+/// where its password comes from (never the password).
+pub fn list(config: &Config) -> Result<(), String> {
+    for a in config.online_accounts()? {
+        let password = match (&a.password_entry, &a.password_file) {
+            (Some(entry), None) => format!("pass {entry}"),
+            (None, Some(file)) => format!("file {}", file.display()),
+            _ => "UNSET: set exactly one password entry or file".into(),
+        };
+        println!(
+            "{}\t{}\towner={}\tserve={}\texclusive={}\tresume={}\tstate={}\tpassword={password}",
+            a.id,
+            a.account,
+            a.owner.as_deref().unwrap_or("-"),
+            a.serve,
+            a.exclusive,
+            a.resume,
+            a.state_dir.display(),
+        );
+    }
+    Ok(())
+}
+
+pub async fn login_check(config: &Config, id: Option<&str>) -> Result<(), String> {
+    let client = start(config, &config.online_account(id)?).await?;
     eprintln!("dominion: authenticated; checking application heartbeat for 31 seconds");
     client.idle_check(Duration::from_secs(31)).await?;
     client.disconnect().await?;
@@ -168,8 +205,8 @@ pub async fn login_check(config: &Config) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn serve(config: &Config) -> Result<(), String> {
-    let client = start(config).await?;
+pub async fn serve(config: &Config, id: Option<&str>) -> Result<(), String> {
+    let client = start(config, &config.online_account(id)?).await?;
     let service = mcp::Session::new(client.clone())
         .serve(rmcp::transport::stdio())
         .await

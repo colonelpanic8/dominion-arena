@@ -510,7 +510,12 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     let (publish, updates) = watch::channel(runtime.update.clone());
     let (tx, mut requests) = mpsc::channel(16);
     let client = Client { tx, updates };
-    let hosted = crate::online::Hosted::new(client.clone(), "observer-owner".into());
+    let hosted = crate::online::Hosted::new(
+        client.clone(),
+        crate::online::LEGACY_ID.into(),
+        "fixture-42".into(),
+        "observer-owner".into(),
+    );
     let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
         .unwrap();
     let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -539,7 +544,13 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     let ident = arena.identify(&owner).unwrap();
     let bot = arena.new_bot(&ident, "observer-agent").unwrap();
     let stop = tokio_util::sync::CancellationToken::new();
-    let router = hosted.router(arena.clone(), vec!["127.0.0.1".into()], None, stop.clone());
+    let router = crate::online::router(
+        &[hosted],
+        arena.clone(),
+        vec!["127.0.0.1".into()],
+        None,
+        stop.clone(),
+    );
     let router = axum::Router::new()
         .nest_service(
             "/mcp",
@@ -689,7 +700,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let mut requests = backend.await.unwrap();
-    let first = arena.official_job().unwrap();
+    let first = arena.official_job(crate::online::LEGACY_ID).unwrap();
     assert!(first.official);
     assert!(!first.transcript);
     let crate::house::ToRunner::Jobs { jobs } = jobs.recv().await.unwrap() else {
@@ -728,7 +739,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert!(arena.official_job().is_none());
+    assert!(arena.official_job(crate::online::LEGACY_ID).is_none());
     let response = http
         .get(format!("{base}/mcp/online"))
         .bearer_auth(&first.token)
@@ -745,7 +756,10 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert_ne!(arena.official_job().unwrap().token, first.token);
+    assert_ne!(
+        arena.official_job(crate::online::LEGACY_ID).unwrap().token,
+        first.token
+    );
     http.delete(format!("{manager}/agent"))
         .bearer_auth(&owner)
         .send()
@@ -780,11 +794,17 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let mut requests = backend.await.unwrap();
-    assert!(arena.official_job().unwrap().game_id.is_empty());
+    assert!(
+        arena
+            .official_job(crate::online::LEGACY_ID)
+            .unwrap()
+            .game_id
+            .is_empty()
+    );
     // The reserved slot cannot be reused while waiting for the public opponent.
     assert!(
         arena
-            .reserve_official("observer-owner", "fixture-agent")
+            .reserve_official("observer-owner", crate::online::LEGACY_ID, "fixture-agent")
             .is_err()
     );
     let mut between = client.current();
@@ -792,7 +812,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     publish.send_replace(between);
     tokio::time::sleep(Duration::from_millis(20)).await;
     assert!(
-        arena.official_job().is_some(),
+        arena.official_job(crate::online::LEGACY_ID).is_some(),
         "queue-to-match notification gap must keep the reservation"
     );
     let status: serde_json::Value = http
@@ -831,7 +851,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     backend.await.unwrap();
-    let assigned = arena.official_job().unwrap();
+    let assigned = arena.official_job(crate::online::LEGACY_ID).unwrap();
     assert!(
         !assigned.game_id.is_empty(),
         "a cancellation race must assign the game instead of abandoning it"
@@ -896,6 +916,248 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
             .unwrap()
             .is_none()
     );
+    tokio::time::timeout(Duration::from_secs(2), serving)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn official_accounts_keep_their_own_owners_routes_and_agent_tokens() {
+    use dominion_protocol::{api::OnlineAccountInfo, lobby::Credentials};
+    use std::net::{IpAddr, Ipv4Addr};
+    let (_a_directory, a_runtime) = active_runtime();
+    let (_b_directory, b_runtime) = active_runtime();
+    let (_a_publish, a_updates) = watch::channel(a_runtime.update.clone());
+    let (_b_publish, b_updates) = watch::channel(b_runtime.update.clone());
+    let (a_tx, mut a_requests) = mpsc::channel(16);
+    let (b_tx, mut b_requests) = mpsc::channel(16);
+    let hosted = [
+        crate::online::Hosted::new(
+            Client {
+                tx: a_tx,
+                updates: a_updates,
+            },
+            crate::online::LEGACY_ID.into(),
+            "fixture-a".into(),
+            "owner-a".into(),
+        ),
+        crate::online::Hosted::new(
+            Client {
+                tx: b_tx,
+                updates: b_updates,
+            },
+            "sol".into(),
+            "fixture-sol".into(),
+            "owner-sol".into(),
+        ),
+    ];
+    let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
+        .unwrap();
+    let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
+    let register = |name: &str| {
+        let credentials = Credentials {
+            name: name.into(),
+            password: "fixture-password".into(),
+        };
+        arena.register(ip, &credentials, None).unwrap().1.unwrap()
+    };
+    let (owner_a, owner_sol) = (register("owner-a"), register("owner-sol"));
+    let (offering, mut jobs) = mpsc::unbounded_channel();
+    arena.runner_connected(
+        vec![crate::house::Offer {
+            name: "fixture-agent".into(),
+            about: "fixture".into(),
+        }],
+        2,
+        offering,
+    );
+    let stop = tokio_util::sync::CancellationToken::new();
+    let router = crate::online::router(
+        &hosted,
+        arena.clone(),
+        vec!["127.0.0.1".into()],
+        None,
+        stop.clone(),
+    );
+    // As in `serve`: Arena's MCP and API, with its fallback, beside the official routes.
+    let router = axum::Router::new()
+        .nest_service(
+            "/mcp",
+            axum::Router::new().fallback(|| async { axum::http::StatusCode::IM_A_TEAPOT }),
+        )
+        .nest(
+            "/api",
+            axum::Router::new()
+                .route("/settings", axum::routing::get(|| async { "" }))
+                .fallback(|| async { axum::http::StatusCode::IM_A_TEAPOT }),
+        )
+        .merge(router);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let stopped = stop.clone();
+    let serving = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(stopped.cancelled_owned())
+            .await
+            .unwrap()
+    });
+    let http = reqwest::Client::new();
+    let listed: Vec<OnlineAccountInfo> = http
+        .get(format!("{base}/api/online/accounts"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|a| (a.id.as_str(), a.account.as_str(), a.primary))
+            .collect::<Vec<_>>(),
+        [
+            ("default", "fixture-a", true),
+            ("sol", "fixture-sol", false)
+        ]
+    );
+    let status = |path: &'static str, token: Option<&String>| {
+        let mut request = http.get(format!("{base}{path}"));
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
+        async move { request.send().await.unwrap().status() }
+    };
+    use reqwest::StatusCode as S;
+    assert_eq!(status("/api/online/sol/view", None).await, S::OK);
+    assert_eq!(
+        status("/api/online/sol/manage", None).await,
+        S::UNAUTHORIZED
+    );
+    assert_eq!(
+        status("/api/online/sol/manage", Some(&owner_a)).await,
+        S::FORBIDDEN
+    );
+    assert_eq!(
+        status("/api/online/sol/manage", Some(&owner_sol)).await,
+        S::OK
+    );
+    assert_eq!(
+        status("/api/online/manage", Some(&owner_sol)).await,
+        S::FORBIDDEN
+    );
+    assert_eq!(status("/api/online/manage", Some(&owner_a)).await, S::OK);
+    assert_eq!(
+        status("/api/online/default/manage", Some(&owner_a)).await,
+        S::OK
+    );
+    assert_eq!(
+        status("/mcp/online/sol", Some(&owner_a)).await,
+        S::FORBIDDEN
+    );
+    let response = http
+        .post(format!("{base}/api/online/sol/start"))
+        .bearer_auth(&owner_a)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), S::FORBIDDEN);
+    let backend = tokio::spawn(async move {
+        match b_requests.recv().await.unwrap() {
+            Request::NewGame(_, reply) => reply.send(Ok(())).unwrap(),
+            _ => panic!("expected a bot game request"),
+        }
+        b_requests
+    });
+    let management: serde_json::Value = http
+        .post(format!("{base}/api/online/sol/start"))
+        .bearer_auth(&owner_sol)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(management["id"], "sol");
+    let mut b_requests = backend.await.unwrap();
+    assert!(
+        a_requests.try_recv().is_err(),
+        "the other account was driven"
+    );
+    assert!(arena.official_job(crate::online::LEGACY_ID).is_none());
+    let sol = arena.official_job("sol").unwrap();
+    assert_eq!(sol.official_account.as_deref(), Some("sol"));
+    assert_eq!(
+        crate::harness::endpoint("http://127.0.0.1:1/mcp", &sol).unwrap(),
+        "http://127.0.0.1:1/mcp/online/sol"
+    );
+    loop {
+        let crate::house::ToRunner::Jobs { jobs } =
+            tokio::time::timeout(Duration::from_secs(2), jobs.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("job dispatch")
+        };
+        if jobs.contains(&sol) {
+            break;
+        }
+    }
+    // One account's job token opens only that account's endpoint.
+    for path in ["/mcp/online", "/mcp/online/default"] {
+        assert_eq!(status(path, Some(&sol.token)).await, S::UNAUTHORIZED);
+    }
+    let agent = crate::client::Client::connect_authenticated(
+        &format!("{base}/mcp/online/sol"),
+        Some(sol.token.clone()),
+    )
+    .await
+    .unwrap();
+    assert!(agent.call("state", serde_json::json!({})).await.unwrap().ok);
+    agent.close().await;
+    // The other account takes its own agent alongside.
+    let backend = tokio::spawn(async move {
+        match a_requests.recv().await.unwrap() {
+            Request::NewGame(_, reply) => reply.send(Ok(())).unwrap(),
+            _ => panic!("expected a bot game request"),
+        }
+    });
+    http.post(format!("{base}/api/online/start"))
+        .bearer_auth(&owner_a)
+        .json(&serde_json::json!({"agent":"fixture-agent"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    backend.await.unwrap();
+    assert!(b_requests.try_recv().is_err());
+    let default = arena.official_job(crate::online::LEGACY_ID).unwrap();
+    assert_eq!(default.official_account.as_deref(), Some("default"));
+    assert_ne!(default.token, sol.token);
+    assert_eq!(arena.official_job("sol").unwrap(), sol);
+    assert_eq!(
+        status("/mcp/online/sol", Some(&default.token)).await,
+        S::UNAUTHORIZED
+    );
+    http.delete(format!("{base}/api/online/sol/agent"))
+        .bearer_auth(&owner_sol)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    assert!(arena.official_job("sol").is_none());
+    assert_eq!(
+        arena.official_job(crate::online::LEGACY_ID).unwrap(),
+        default
+    );
+    stop.cancel();
     tokio::time::timeout(Duration::from_secs(2), serving)
         .await
         .unwrap()

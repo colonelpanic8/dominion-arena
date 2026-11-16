@@ -5,7 +5,8 @@ use crate::{
 };
 use dioxus::prelude::*;
 use dominion_protocol::api::{
-    GameSummary, OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineStart,
+    GameSummary, OnlineAccountInfo, OnlineManagement, OnlineMatching, OnlineMode,
+    OnlineObservation, OnlineStart,
 };
 #[derive(Clone, Copy)]
 enum Action {
@@ -40,8 +41,16 @@ fn apply(mut state: Signal<GameState>, mut game: Signal<String>, update: OnlineO
     }
     st.view = update.view;
 }
+/// One official account's page: `account` none is the primary one's unprefixed routes.
 #[component]
-pub fn OnlinePage() -> Element {
+pub fn OnlinePage(account: Option<String>) -> Element {
+    let id = use_signal(|| account.clone());
+    let mut accounts = use_signal(Vec::<OnlineAccountInfo>::new);
+    use_future(move || async move {
+        if let Ok(list) = api::online_accounts().await {
+            accounts.set(list);
+        }
+    });
     let mut state = use_signal(GameState::default);
     let game = use_signal(String::new);
     let summary = use_signal(|| None::<GameSummary>);
@@ -65,10 +74,12 @@ pub fn OnlinePage() -> Element {
     });
     use_future(move || async move {
         loop {
-            match api::online_view().await {
+            let account = id.peek().clone();
+            match api::online_view(account.as_deref()).await {
                 Ok(view) => {
                     apply(state, game, view);
-                    api::follow_online(&mut |view| apply(state, game, view)).await;
+                    api::follow_online(account.as_deref(), &mut |view| apply(state, game, view))
+                        .await;
                 }
                 Err(e) => {
                     let mut current = state.write();
@@ -97,7 +108,7 @@ pub fn OnlinePage() -> Element {
     let mut confirming = use_signal(|| false);
     use_future(move || async move {
         loop {
-            match api::online_management().await {
+            match api::online_management(id.peek().as_deref()).await {
                 Ok(status) => {
                     if agent.peek().is_empty()
                         && let Some(first) = status.agents.first()
@@ -141,14 +152,16 @@ pub fn OnlinePage() -> Element {
             },
             bots: *bots.peek(),
         };
+        let account = id.peek().clone();
         spawn(async move {
+            let account = account.as_deref();
             let result = match action {
-                Action::Start => api::online_start(&request).await,
-                Action::Attach => api::online_attach(selected).await,
-                Action::Pause => api::online_manage_action("pause").await,
-                Action::Resign => api::online_manage_action("resign").await,
-                Action::Cancel => api::online_manage_action("cancel").await,
-                Action::Reconnect => api::online_manage_action("reconnect").await,
+                Action::Start => api::online_start(account, &request).await,
+                Action::Attach => api::online_attach(account, selected).await,
+                Action::Pause => api::online_manage_action(account, "pause").await,
+                Action::Resign => api::online_manage_action(account, "resign").await,
+                Action::Cancel => api::online_manage_action(account, "cancel").await,
+                Action::Reconnect => api::online_manage_action(account, "reconnect").await,
             };
             match result {
                 Ok(status) => management.set(Some(status)),
@@ -160,6 +173,18 @@ pub fn OnlinePage() -> Element {
     let controls = rsx! {
         div {class:"panel online-controls",
             strong {"dominion.games"}
+            if accounts.read().len() > 1 {
+                nav {class:"online-accounts",
+                    for a in accounts.read().iter() {
+                        Link {
+                            class: if id.read().as_deref().map_or(a.primary, |id| id == a.id) {"on"} else {""},
+                            to: if a.primary {crate::app::Route::Online{}} else {crate::app::Route::OnlineAccount{account:a.id.clone()}},
+                            "{a.account}"
+                            if a.running {" · playing"} else if !a.connected {" · disconnected"}
+                        }
+                    }
+                }
+            }
             Link {to:crate::app::Route::Account{},"Arena login / account"}
             if let Some(status)=management.read().as_ref() {
                 p {class:"muted",
@@ -243,7 +268,7 @@ pub fn OnlinePage() -> Element {
                 button {disabled:busy(),onclick:move|_|execute.call(Action::Reconnect),"Reconnect official account"}
                 if busy(){p {class:"muted","Updating…"}}
                 if let Some(error)=&status.error {p {class:"error","{error}"}}
-            } else {p {"Sign in as the configured Arena owner to manage official games."}}
+            } else {p {"Sign in as this official account’s Arena owner to manage its games."}}
             if let Some(error)=action_error(){p {class:"error","{error}"}}
             if let Some(error)=state.read().error.clone() {p {class:"error","{error}"}}
         }
@@ -255,7 +280,7 @@ pub fn OnlinePage() -> Element {
         } else {
             section {class:"online-idle",
                 h1 {class:"page-title","dominion.games"}
-                p {class:"page-lede","Send one of the Arena's agents to play on the official server under the official account. Its game shows here on the table."}
+                p {class:"page-lede","Send one of the Arena's agents to play on the official server under this official account. Its game shows here on the table."}
                 {controls}
                 if let Some(result) = state.read().view.as_ref().and_then(|v| v.game.result.as_ref()) {
                     div {class:"panel",

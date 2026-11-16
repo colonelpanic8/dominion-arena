@@ -363,9 +363,26 @@ pub struct OnlineObservation {
     pub view: Option<AgentView>,
 }
 
+/// An official account `dominion serve` keeps connected (`GET /api/online/accounts`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineAccountInfo {
+    /// Its id in routes: `/api/online/<id>/...`, `/mcp/online/<id>`.
+    pub id: String,
+    /// Its official-server name.
+    pub account: String,
+    /// Also served at the unprefixed `/api/online/...` and `/mcp/online`.
+    pub primary: bool,
+    pub connected: bool,
+    pub running: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineManagement {
+    /// The official account's id.
+    #[serde(default)]
+    pub id: String,
     pub connected: bool,
     pub error: Option<String>,
     pub account: Option<String>,

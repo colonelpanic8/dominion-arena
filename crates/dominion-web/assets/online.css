@@ -11,3 +11,5 @@
 .dt-below-log:has(.online-controls) { overflow-y: auto; }
 .dt-controls:has(.online-controls) { display: block; width: 100%; }
 .online-idle .online-controls > strong { display: none; }
+.online-accounts { display: flex; flex-wrap: wrap; gap: .4em .9em; }
+.online-accounts a.on { font-weight: 700; text-decoration: underline; }

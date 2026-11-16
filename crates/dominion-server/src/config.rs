@@ -60,6 +60,10 @@ pub struct Config {
     pub online_state_dir: Option<PathBuf>,
     /// Downloaded hash-pinned public protocol catalog bundle.
     pub online_cache_dir: Option<PathBuf>,
+    /// More official accounts, as `[[online_accounts]]` tables, each with its own owner,
+    /// credential and state directory. The `online_*` account above is the one with id
+    /// `default`.
+    pub online_accounts: Option<Vec<OnlineAccountSettings>>,
     /// Address `dominion serve` listens on (default 127.0.0.1).
     pub listen: Option<IpAddr>,
     /// Port `dominion serve` listens on (default 7317).
@@ -166,6 +170,27 @@ pub struct Config {
     pub t3code: Option<crate::t3::Settings>,
 }
 
+/// One `[[online_accounts]]` table.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct OnlineAccountSettings {
+    /// Lowercase letters, digits and `-`: names the account in routes.
+    pub id: String,
+    /// The official-server account name.
+    pub account: String,
+    /// Registered Arena account allowed to control it.
+    pub owner: Option<String>,
+    pub password_entry: Option<String>,
+    pub password_file: Option<PathBuf>,
+    pub exclusive: Option<bool>,
+    pub resume: Option<bool>,
+    pub endpoint: Option<String>,
+    /// Default `<online_state_dir>/accounts/<id>`.
+    pub state_dir: Option<PathBuf>,
+    /// Kept by `dominion serve` (default true).
+    pub enabled: Option<bool>,
+}
+
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
     std::env::var_os(var)
         .map(PathBuf::from)
@@ -178,6 +203,104 @@ impl Config {
         self.online_state_dir
             .clone()
             .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/online")))
+    }
+
+    /// Every configured official account: the `online_*` one first (id `default`), then
+    /// `online_accounts`.
+    pub fn online_accounts(&self) -> Result<Vec<crate::online::Account>, String> {
+        use crate::online::{Account, LEGACY_ID};
+        let state = || {
+            self.online_state_dir()
+                .ok_or_else(|| "set online_state_dir or HOME".to_string())
+        };
+        let mut all = Vec::new();
+        if self.online_account.is_some() || self.online_enabled == Some(true) {
+            all.push(Account {
+                id: LEGACY_ID.into(),
+                account: self.online_account.clone().ok_or("set online_account")?,
+                owner: self.online_owner.clone(),
+                password_entry: self.online_password_entry.clone(),
+                password_file: self.online_password_file.clone(),
+                exclusive: self.online_exclusive == Some(true),
+                resume: self.online_resume.unwrap_or(false),
+                endpoint: self.online_endpoint.clone(),
+                state_dir: state()?,
+                serve: self.online_enabled.unwrap_or(false),
+            });
+        }
+        for a in self.online_accounts.iter().flatten() {
+            if a.id.is_empty()
+                || a.id == LEGACY_ID
+                || !(a.id.bytes())
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            {
+                return Err(format!(
+                    "online_accounts id {:?}: use lowercase letters, digits and -, not {LEGACY_ID:?}",
+                    a.id
+                ));
+            }
+            if a.account.trim().is_empty() {
+                return Err(format!("online_accounts {}: set account", a.id));
+            }
+            all.push(Account {
+                id: a.id.clone(),
+                account: a.account.clone(),
+                owner: a.owner.clone(),
+                password_entry: a.password_entry.clone(),
+                password_file: a.password_file.clone(),
+                exclusive: a.exclusive == Some(true),
+                resume: a.resume.unwrap_or(false),
+                endpoint: a.endpoint.clone(),
+                state_dir: match &a.state_dir {
+                    Some(dir) => dir.clone(),
+                    None => state()?.join("accounts").join(&a.id),
+                },
+                serve: a.enabled.unwrap_or(true),
+            });
+        }
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[..i] {
+                if a.id == b.id {
+                    return Err(format!("duplicate online account id {:?}", a.id));
+                }
+                if a.account.eq_ignore_ascii_case(&b.account) {
+                    return Err(format!(
+                        "official account {:?} is configured twice ({} and {})",
+                        a.account, b.id, a.id
+                    ));
+                }
+                if a.state_dir == b.state_dir {
+                    return Err(format!(
+                        "online accounts {} and {} share the state directory {}",
+                        b.id,
+                        a.id,
+                        a.state_dir.display()
+                    ));
+                }
+            }
+        }
+        Ok(all)
+    }
+
+    /// The account `id` names, or by default the `online_*` one (else the only one).
+    pub fn online_account(&self, id: Option<&str>) -> Result<crate::online::Account, String> {
+        let mut all = self.online_accounts()?;
+        let index = match id {
+            Some(id) => all.iter().position(|a| a.id == id),
+            None if all.len() == 1 => Some(0),
+            None => all.iter().position(|a| a.id == crate::online::LEGACY_ID),
+        };
+        match index {
+            Some(i) => Ok(all.swap_remove(i)),
+            None if all.is_empty() => Err("no official account: set online_account".into()),
+            None => Err(format!(
+                "choose an account with --account: {}",
+                all.iter()
+                    .map(|a| a.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        }
     }
 
     pub fn online_cache_dir(&self) -> Option<PathBuf> {
@@ -407,6 +530,93 @@ mod tests {
             crate::official_host::Host::from_config(&config)
                 .unwrap_err()
                 .contains("hash")
+        );
+    }
+
+    #[test]
+    fn official_accounts_keep_the_legacy_one_and_isolate_the_rest() {
+        let config: Config = toml::from_str(
+            r#"
+            online_state_dir = "/state/online"
+            online_enabled = true
+            online_owner = "Arena Matches"
+            online_account = "colonelpanic8"
+            online_exclusive = true
+            online_password_file = "/run/credentials/dominion.service/online-password"
+
+            [[online_accounts]]
+            id = "sol"
+            account = "SolDominion"
+            owner = "Arena Matches"
+            password_file = "/run/credentials/dominion.service/online-password-sol"
+            exclusive = true
+            resume = true
+
+            [[online_accounts]]
+            id = "spare"
+            account = "Spare"
+            password_entry = "dominion.games/Spare"
+            state_dir = "/elsewhere"
+            enabled = false
+            "#,
+        )
+        .unwrap();
+        let all = config.online_accounts().unwrap();
+        let summary: Vec<_> = (all.iter())
+            .map(|a| {
+                (
+                    a.id.as_str(),
+                    a.account.as_str(),
+                    a.state_dir.to_str().unwrap(),
+                    a.serve,
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("default", "colonelpanic8", "/state/online", true),
+                ("sol", "SolDominion", "/state/online/accounts/sol", true),
+                ("spare", "Spare", "/elsewhere", false),
+            ]
+        );
+        let sol = config.online_account(Some("sol")).unwrap();
+        assert!(sol.exclusive && sol.resume);
+        assert_eq!(sol.owner.as_deref(), Some("Arena Matches"));
+        assert_eq!(config.online_account(None).unwrap().id, "default");
+        assert!(config.online_account(Some("nobody")).is_err());
+
+        let only: Config = toml::from_str(
+            "[[online_accounts]]\nid = \"sol\"\naccount = \"SolDominion\"\nstate_dir = \"/s\"",
+        )
+        .unwrap();
+        assert_eq!(only.online_account(None).unwrap().id, "sol");
+        assert!(Config::default().online_accounts().unwrap().is_empty());
+
+        let error = |extra: &str| {
+            toml::from_str::<Config>(&format!(
+                "online_account = \"a\"\nonline_state_dir = \"/s\"\n{extra}"
+            ))
+            .unwrap()
+            .online_accounts()
+            .unwrap_err()
+        };
+        let entry = |id: &str, account: &str, dir: &str| {
+            format!(
+                "[[online_accounts]]\nid = \"{id}\"\naccount = \"{account}\"\nstate_dir = \"{dir}\"\n"
+            )
+        };
+        assert!(error(&entry("Sol", "b", "/t")).contains("lowercase"));
+        assert!(error(&entry("default", "b", "/t")).contains("lowercase"));
+        assert!(error(&entry("../x", "b", "/t")).contains("lowercase"));
+        assert!(error(&entry("b", "A", "/t")).contains("configured twice"));
+        assert!(error(&entry("b", "b", "/s")).contains("state directory"));
+        assert!(error(&(entry("b", "b", "/t") + &entry("b", "c", "/u"))).contains("duplicate"));
+        assert!(
+            toml::from_str::<Config>(
+                "[[online_accounts]]\nid = \"x\"\naccount = \"x\"\npassword = \"p\""
+            )
+            .is_err()
         );
     }
 

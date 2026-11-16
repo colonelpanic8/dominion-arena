@@ -9,7 +9,7 @@ use super::{Arena, Error, Login, Result, State, User, conflict};
 use crate::house::{Job, Offer, ToRunner};
 use crate::hub::{lock, now_ms};
 use dominion_protocol::lobby::{self, HouseAgent, UserKind};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -24,7 +24,8 @@ pub(super) struct House {
     next_runner: RunnerId,
     /// Agent seats of games being set up, not yet among the jobs.
     reserved: u32,
-    official: Option<Job>,
+    /// The official-server job of each official account, by its id.
+    official: BTreeMap<String, Job>,
     /// When each account filled its agent seats, over the last day (ms).
     filled: HashMap<String, VecDeque<u64>>,
 }
@@ -182,13 +183,14 @@ impl Arena {
     }
 
     /// The jobs: every seat the runner's agents hold in a running game.
-    fn jobs(&self, agents: &[Agent], official: Option<&Job>) -> Vec<Job> {
+    fn jobs(&self, agents: &[Agent], official: &BTreeMap<String, Job>) -> Vec<Job> {
         let mut jobs: Vec<Job> = (agents.iter())
             .flat_map(|agent| {
                 (self.hub.seats_of(&agent.user, Duration::ZERO).into_iter())
                     .filter(|g| g.running)
                     .map(|g| Job {
                         official: false,
+                        official_account: None,
                         transcript: self.hub.meta(&g.game_id).is_ok_and(|m| !m.rated),
                         configuration: self.hub.configuration(&g.game_id),
                         agent: agent.name.clone(),
@@ -199,9 +201,7 @@ impl Arena {
                     })
             })
             .collect();
-        if let Some(job) = official {
-            jobs.push(job.clone());
-        }
+        jobs.extend(official.values().cloned());
         jobs.sort_by(|a, b| (&a.game_id, a.seat).cmp(&(&b.game_id, b.seat)));
         jobs
     }
@@ -214,7 +214,7 @@ impl Arena {
             return;
         };
         let jobs: Vec<_> = self
-            .jobs(&runner.agents, official.as_ref())
+            .jobs(&runner.agents, &official)
             .into_iter()
             .filter(|j| !j.official || !j.game_id.is_empty())
             .collect();
@@ -312,10 +312,8 @@ impl Arena {
         let Some(runner) = &state.house.runner else {
             return conflict("the server's agents aren't available now");
         };
-        let busy = self
-            .jobs(&runner.agents, state.house.official.as_ref())
-            .len() as u32
-            + state.house.reserved;
+        let busy =
+            self.jobs(&runner.agents, &state.house.official).len() as u32 + state.house.reserved;
         let capacity = runner.capacity;
         if busy + seats > capacity {
             return conflict(format!(
@@ -348,7 +346,7 @@ impl Arena {
                 ..lobby::House::default()
             };
         };
-        let jobs = self.jobs(&runner.agents, state.house.official.as_ref());
+        let jobs = self.jobs(&runner.agents, &state.house.official);
         let busy = jobs.len() as u32 + state.house.reserved;
         lobby::House {
             agents: (runner.agents.iter())
@@ -375,7 +373,13 @@ impl Arena {
             .map(|a| a.name.clone())
             .collect()
     }
-    pub(crate) fn reserve_official(&self, owner: &str, agent: &str) -> Result<Reservation<'_>> {
+    /// Keeps a runner slot for official account `account`'s next game.
+    pub(crate) fn reserve_official(
+        &self,
+        owner: &str,
+        account: &str,
+        agent: &str,
+    ) -> Result<Reservation<'_>> {
         let mut state = lock(&self.state);
         let Some(runner) = &state.house.runner else {
             return conflict("the agent runner is disconnected");
@@ -383,13 +387,11 @@ impl Arena {
         if state.house.agent_named(agent).is_none() {
             return conflict("selected agent is unavailable");
         }
-        if state.house.official.is_some() {
-            return conflict("an official agent is already assigned");
+        if state.house.official.contains_key(account) {
+            return conflict("an agent is already assigned to this official account");
         }
-        let busy = self
-            .jobs(&runner.agents, state.house.official.as_ref())
-            .len() as u32
-            + state.house.reserved;
+        let busy =
+            self.jobs(&runner.agents, &state.house.official).len() as u32 + state.house.reserved;
         if busy >= runner.capacity {
             return conflict("the agent runner is at capacity");
         }
@@ -401,11 +403,24 @@ impl Arena {
             kept: false,
         })
     }
-    pub(crate) fn official_job(&self) -> Option<Job> {
-        lock(&self.state).house.official.clone()
+    pub(crate) fn official_job(&self, account: &str) -> Option<Job> {
+        lock(&self.state).house.official.get(account).cloned()
     }
-    pub(crate) fn set_official_job(&self, job: Option<Job>) {
-        lock(&self.state).house.official = job;
+    /// Sets official account `account`'s job; the job is marked as that account's.
+    pub(crate) fn set_official_job(&self, account: &str, job: Option<Job>) {
+        {
+            let official = &mut lock(&self.state).house.official;
+            match job {
+                Some(mut job) => {
+                    job.official = true;
+                    job.official_account = Some(account.into());
+                    official.insert(account.into(), job);
+                }
+                None => {
+                    official.remove(account);
+                }
+            }
+        }
         self.dispatch();
         self.bump();
     }

@@ -106,10 +106,20 @@ enum OnlineCommand {
     Sync,
     /// Query the official server states without authentication.
     Probe,
+    /// List the configured official accounts without connecting.
+    Accounts,
     /// Check password login and 31 seconds of application heartbeat, then disconnect.
-    Login,
+    Login {
+        /// The account's id (default: the `online_*` one, else the only one).
+        #[arg(long)]
+        account: Option<String>,
+    },
     /// Serve dominion/play@1 over stdio for the configured exclusive account.
-    Mcp,
+    Mcp {
+        /// The account's id (default: the `online_*` one, else the only one).
+        #[arg(long)]
+        account: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -430,11 +440,7 @@ async fn serve(config: Config) -> Result<(), String> {
         agent_socket: config.agent_socket.clone(),
         control_socket: config.control_socket.clone(),
         official_server: dominion_server::official_host::Host::from_config(&config)?,
-        online: if config.online_enabled.unwrap_or(false) {
-            Some(dominion_server::online::Hosted::start(&config).await?)
-        } else {
-            None
-        },
+        online: dominion_server::online::Hosted::start_all(&config).await?,
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
         .await
@@ -505,8 +511,13 @@ async fn main() -> ExitCode {
         Command::Online { command } => match command {
             OnlineCommand::Sync => dominion_server::online::sync(&config).await,
             OnlineCommand::Probe => dominion_server::online::probe().await,
-            OnlineCommand::Login => dominion_server::online::login_check(&config).await,
-            OnlineCommand::Mcp => dominion_server::online::serve(&config).await,
+            OnlineCommand::Accounts => dominion_server::online::list(&config),
+            OnlineCommand::Login { account } => {
+                dominion_server::online::login_check(&config, account.as_deref()).await
+            }
+            OnlineCommand::Mcp { account } => {
+                dominion_server::online::serve(&config, account.as_deref()).await
+            }
         },
         Command::Serve {
             listen,

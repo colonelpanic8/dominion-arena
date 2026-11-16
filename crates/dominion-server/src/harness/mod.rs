@@ -205,7 +205,17 @@ pub fn endpoint(server: &str, job: &Job) -> Result<String, String> {
         .trim_end_matches('/')
         .strip_suffix("/mcp")
         .ok_or("agent server must end in /mcp")?;
-    Ok(format!("{root}/mcp/online"))
+    match job.official_account.as_deref() {
+        None => Ok(format!("{root}/mcp/online")),
+        Some(id)
+            if !id.is_empty()
+                && (id.bytes())
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') =>
+        {
+            Ok(format!("{root}/mcp/online/{id}"))
+        }
+        Some(id) => Err(format!("invalid official account id {id:?}")),
+    }
 }
 fn game_state(value: &serde_json::Value) -> &serde_json::Value {
     value.get("view").unwrap_or(value)
@@ -270,6 +280,7 @@ mod tests {
         revoked.store(true, Ordering::SeqCst);
         let job = Job {
             official: true,
+            official_account: None,
             transcript: false,
             configuration: None,
             agent: "a".into(),

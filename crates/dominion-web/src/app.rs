@@ -35,6 +35,8 @@ pub enum Route {
     Game { id: String },
     #[route("/online")]
     Online {},
+    #[route("/online/:account")]
+    OnlineAccount { account: String },
     #[route("/gallery")]
     Gallery {},
     #[route("/:..rest")]
@@ -189,5 +191,10 @@ fn NotFound(rest: Vec<String>) -> Element {
 
 #[component]
 fn Online() -> Element {
-    rsx! {crate::online::OnlinePage {}}
+    rsx! {crate::online::OnlinePage {account: None}}
+}
+
+#[component]
+fn OnlineAccount(account: String) -> Element {
+    rsx! {crate::online::OnlinePage {key: "{account}", account: Some(account.clone())}}
 }

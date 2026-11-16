@@ -69,7 +69,8 @@ kick, session-removal or kick-and-resign recovery path.
 
 ## Server-managed play and watching
 
-`dominion serve` can keep one official connection alongside Arena's hosted games.
+`dominion serve` can keep official connections alongside Arena's hosted games
+(one per account; see "Several official accounts" below).
 First register the Arena account that should own the connection. Then add these
 settings to the normal flat TOML configuration, alongside the online account,
 password-store entry, cache/state paths and exclusivity assertion above:
@@ -97,7 +98,7 @@ same account. The state-directory lock prevents two processes sharing it.
   reconnect, or explicitly resign. Pausing leaves the game running. A search
   that wins a cancellation race is kept and assigned to its selected agent.
 - A runner slot is reserved before searching or creating a game. Only one
-  official game/search can be assigned at a time. Agents receive rotating,
+  official game/search can be assigned to an account at a time. Agents receive rotating,
   revocable capabilities, and only gameplay tools; lifecycle actions go through
   the authenticated management API. Agent archives stay private on the runner.
 - **`GET /api/online/manage`**, **`POST /api/online/start`**,
@@ -128,11 +129,67 @@ matches, but the adapter uses only its own playing seat's legal view. Opponent
 undo requests are declined automatically. Reconnect invalidates old decisions;
 process restart leaves the agent paused until explicitly resumed from the page.
 
+### Several official accounts
+
+`dominion serve` can keep several official accounts connected at once, each with
+its own owner, credential, state directory and agent. The `online_*` settings
+above are the account with id `default`; add others as tables:
+
+```toml
+[[online_accounts]]
+id = "sol"                    # lowercase letters, digits and -; not "default"
+account = "SolDominion"       # the official-server account
+owner = "Arena Matches"       # registered Arena account that manages it
+password_file = "/run/credentials/dominion.service/online-password-sol"
+# password_entry = "dominion.games/SolDominion"   # instead of password_file
+exclusive = true              # the same operator assertion as online_exclusive
+resume = true                 # optional, default false
+# endpoint = "auto"           # optional
+# state_dir = "..."           # default <online_state_dir>/accounts/<id>
+# enabled = false             # leave it configured but not kept by serve
+```
+
+Ids, official account names and state directories must all differ. Each account's
+routes are `/online/<id>` (web), `/api/online/<id>/{view,events,manage,start,agent,matchmaking,reconnect,resign}`
+and `/mcp/online/<id>`. The `default` account (or, without one, the first
+configured) also keeps the unprefixed `/online`, `/api/online/...` and
+`/mcp/online`. **`GET /api/online/accounts`** lists the served accounts (id,
+official name, whether it is the unprefixed one, connected, playing) to anyone.
+
+Only an account's own owner (or that owner's bot keys) can manage it or use its
+MCP endpoint; watching stays public. Each account has at most one assigned agent,
+and the runner's job for it carries the account id, so its revocable capability
+opens only that account's `/mcp/online/<id>`. The runner's capacity is shared.
+At startup a settings error stops the server, but an account that fails to log in
+is reported and left out while the others are served (unless none logs in).
+
+`dominion online accounts` prints the configured accounts and where each password
+comes from without connecting. `dominion online login --account sol` and
+`dominion online mcp --account sol` pick an account; without `--account` they use
+`default`, or the only account configured.
+
 With the NixOS module, set `services.dominion.onlinePasswordCredential` to an
 on-host systemd-creds encrypted password path. The module loads it into the
 service's runtime credential directory and configures `online_password_file`;
 it also gives official state/cache their own directories and syncs the pinned
 catalog before startup. No plaintext credential enters the Nix store.
+
+Further accounts go in `services.dominion.onlineAccounts.<id>`, which writes their
+`[[online_accounts]]` tables. Each password becomes the service credential
+`online-password-<id>`, from `passwordFile` (a root-readable runtime file such as
+an agenix secret, loaded with `LoadCredential`) or `encryptedCredential`
+(systemd-creds, with embedded name `online-password-<id>`):
+
+```nix
+services.dominion.onlineAccounts.sol = {
+  account = "SolDominion";
+  owner = "Arena Matches";
+  exclusive = true;
+  encryptedCredential = "/var/lib/private/dominion-online-sol-password.cred";
+  # or: passwordFile = config.age.secrets.dominion-online-sol.path;
+  settings.resume = true;
+};
+```
 
 This observes games played by this headless connection. It does not import an
 active browser session or attach to arbitrary matches. `/mcp` and `/game/:id`

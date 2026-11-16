@@ -61,7 +61,8 @@ pub struct Options {
     pub agent_socket: Option<PathBuf>,
     /// Where `dominion games` connects ([`control`]).
     pub control_socket: Option<PathBuf>,
-    pub online: Option<online::Hosted>,
+    /// The official accounts kept connected.
+    pub online: Vec<online::Hosted>,
     pub official_server: Option<Arc<official_host::Host>>,
 }
 
@@ -78,7 +79,7 @@ impl Default for Options {
             trust_proxy: false,
             agent_socket: None,
             control_socket: None,
-            online: None,
+            online: Vec::new(),
             official_server: None,
         }
     }
@@ -98,15 +99,18 @@ pub async fn serve(
         .collect();
     hosts.extend(options.allowed_hosts.iter().cloned());
     let arena = arena::Arena::open(hub, options.arena.clone())?;
-    if let Some(online) = &options.online
-        && !arena
+    if let Some(online) = options.online.iter().find(|online| {
+        !arena
             .profile(&online.owner)
             .is_ok_and(|p| p.user.kind == dominion_protocol::lobby::UserKind::Registered)
-    {
-        let _ = online.client.disconnect().await;
-        return Err(std::io::Error::other(
-            "online_owner must name an existing registered Arena account",
-        ));
+    }) {
+        let id = online.id.clone();
+        for online in &options.online {
+            let _ = online.client.disconnect().await;
+        }
+        return Err(std::io::Error::other(format!(
+            "the owner of official account {id} must name an existing registered Arena account"
+        )));
     }
     let site = http::router(arena.clone(), &options, hosts.clone(), stop.clone());
     if let Some(path) = &options.agent_socket {
@@ -146,8 +150,9 @@ pub async fn serve(
     // A call in progress doesn't keep its session alive, so no wait may outlast it.
     let max_wait = options.session_idle.map_or(mcp::MAX_WAIT, |idle| idle / 2);
     let trust_proxy = options.trust_proxy;
-    let online = options.online.as_ref().map(|online| {
-        online.router(
+    let online = (!options.online.is_empty()).then(|| {
+        online::router(
+            &options.online,
             arena.clone(),
             hosts.clone(),
             options.session_idle,
@@ -171,7 +176,7 @@ pub async fn serve(
     let result = axum::serve(listener, service)
         .with_graceful_shutdown(async move { stop.cancelled_owned().await })
         .await;
-    if let Some(online) = options.online {
+    for online in options.online {
         let _ = online.client.disconnect().await;
     }
     result

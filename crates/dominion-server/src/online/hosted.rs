@@ -12,7 +12,7 @@ use axum::{
     routing::{get, post},
 };
 use dominion_protocol::api::{
-    OnlineAttach, OnlineManagement, OnlineMode, OnlineObservation, OnlineStart,
+    OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMode, OnlineObservation, OnlineStart,
 };
 use dominion_protocol::lobby::UserKind;
 use rmcp::transport::streamable_http_server::{
@@ -21,35 +21,140 @@ use rmcp::transport::streamable_http_server::{
 use std::{convert::Infallible, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
+/// One official account kept connected by `dominion serve`.
 #[derive(Clone)]
 pub struct Hosted {
     pub client: Client,
+    /// The account's id in routes ([`super::Account::id`]).
+    pub id: String,
+    /// Its official-server name, as configured.
+    pub account: String,
+    /// The registered Arena account that controls it.
     pub owner: String,
     control: Arc<tokio::sync::Mutex<()>>,
 }
+
+/// The routes of every hosted account. Each has `/api/online/<id>/...` and
+/// `/mcp/online/<id>`; the `online_*` account (else the first) also has the unprefixed
+/// `/api/online/...` and `/mcp/online`. `GET /api/online/accounts` lists them.
+pub fn router(
+    hosted: &[Hosted],
+    arena: Arc<Arena>,
+    hosts: Vec<String>,
+    idle: Option<Duration>,
+    stop: CancellationToken,
+) -> Router {
+    let primary = hosted
+        .iter()
+        .position(|h| h.id == super::LEGACY_ID)
+        .unwrap_or(0);
+    let list: Vec<Hosted> = hosted.to_vec();
+    let mut router = Router::new()
+        .route(
+            "/api/online/accounts",
+            get(move || {
+                let list = list.clone();
+                async move {
+                    axum::Json(
+                        list.iter()
+                            .enumerate()
+                            .map(|(i, h)| h.info(i == primary))
+                            .collect::<Vec<_>>(),
+                    )
+                }
+            }),
+        )
+        .layer(middleware::from_fn(no_cache))
+        .layer(middleware::from_fn_with_state(
+            Arc::new(hosts.clone()),
+            crate::http::check_host,
+        ));
+    for (i, h) in hosted.iter().enumerate() {
+        router = router.merge(h.router(
+            arena.clone(),
+            hosts.clone(),
+            idle,
+            stop.clone(),
+            i == primary,
+        ));
+    }
+    router
+}
+
 impl Hosted {
-    pub(crate) fn new(client: Client, owner: String) -> Self {
+    pub(crate) fn new(client: Client, id: String, account: String, owner: String) -> Self {
         Self {
             client,
+            id,
+            account,
             owner,
             control: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
-    pub async fn start(config: &Config) -> Result<Self, String> {
-        let owner = config
-            .online_owner
-            .as_ref()
-            .filter(|s| !s.trim().is_empty())
-            .ok_or("online_enabled requires online_owner (a registered Arena account name)")?
-            .clone();
-        Ok(Self::new(super::start(config).await?, owner))
+
+    /// Logs in every account `dominion serve` keeps. An account that fails to log in is
+    /// reported and left out, unless none succeeds; a settings error stops them all.
+    pub async fn start_all(config: &Config) -> Result<Vec<Self>, String> {
+        let accounts: Vec<_> = config
+            .online_accounts()?
+            .into_iter()
+            .filter(|a| a.serve)
+            .collect();
+        let mut owners = Vec::new();
+        for account in &accounts {
+            let owner = account
+                .owner
+                .clone()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "official account {} needs its owner (a registered Arena account name: online_owner, or owner in online_accounts)",
+                        account.id
+                    )
+                })?;
+            if !account.exclusive {
+                return Err(format!(
+                    "REFUSED: official account {}: set exclusive only while the account is idle and exclusive to this client",
+                    account.id
+                ));
+            }
+            owners.push(owner);
+        }
+        let mut hosted = Vec::new();
+        let mut errors = Vec::new();
+        for (account, owner) in accounts.into_iter().zip(owners) {
+            match super::start(config, &account).await {
+                Ok(client) => hosted.push(Self::new(client, account.id, account.account, owner)),
+                Err(e) => {
+                    eprintln!("dominion: official account {}: {e}", account.id);
+                    errors.push(format!("{}: {e}", account.id));
+                }
+            }
+        }
+        if hosted.is_empty() && !errors.is_empty() {
+            return Err(errors.join("; "));
+        }
+        Ok(hosted)
     }
-    pub(crate) fn router(
+
+    fn info(&self, primary: bool) -> OnlineAccountInfo {
+        let update = self.client.current();
+        OnlineAccountInfo {
+            id: self.id.clone(),
+            account: self.account.clone(),
+            primary,
+            connected: update.connected,
+            running: update.reducer.running,
+        }
+    }
+
+    fn router(
         &self,
         arena: Arc<Arena>,
         hosts: Vec<String>,
         idle: Option<Duration>,
         stop: CancellationToken,
+        primary: bool,
     ) -> Router {
         let client = self.client.clone();
         let mut sessions = LocalSessionManager::default();
@@ -64,57 +169,62 @@ impl Hosted {
         let auth = Access {
             arena,
             owner: self.owner.clone(),
+            id: self.id.clone(),
         };
         let lifecycle_web = Web {
             hosted: self.clone(),
             access: auth.clone(),
             stop: stop.clone(),
         };
-        let lifecycle_arena = auth.arena.clone();
         let mut updates = self.client.updates.clone();
         let lifecycle_stop = stop.clone();
         tokio::spawn(async move {
+            let web = lifecycle_web;
             loop {
                 tokio::select! {_=lifecycle_stop.cancelled()=>break,changed=updates.changed()=>if changed.is_err(){break;}}
-                let _guard = lifecycle_web.hosted.control.lock().await;
+                let _guard = web.hosted.control.lock().await;
                 let update = updates.borrow_and_update().clone();
                 if update.error.is_some() || !update.connected {
-                    lifecycle_arena.set_official_job(None);
+                    web.set_job(None);
                 } else if update.reducer.running {
-                    if let Some(job) = lifecycle_arena.official_job()
+                    if let Some(job) = web.job()
                         && job.game_id.is_empty()
-                        && let Err(e) = assign(&lifecycle_web, job.agent)
+                        && let Err(e) = assign(&web, job.agent)
                     {
-                        eprintln!("dominion: assigning matched game: {e}");
+                        eprintln!(
+                            "dominion: official account {}: assigning matched game: {e}",
+                            web.hosted.id
+                        );
                     }
-                } else if !update.searching
-                    && lifecycle_arena
-                        .official_job()
-                        .is_some_and(|j| !j.game_id.is_empty())
-                {
-                    lifecycle_arena.set_official_job(None);
+                } else if !update.searching && web.job().is_some_and(|j| !j.game_id.is_empty()) {
+                    web.set_job(None);
                 }
             }
-            lifecycle_arena.set_official_job(None);
+            web.set_job(None);
         });
-        Router::new()
-            .route("/api/online/view", get(snapshot))
-            .route("/api/online/events", get(events))
-            .route("/api/online/manage", get(manage))
-            .route("/api/online/start", post(start_game))
-            .route("/api/online/agent", post(attach_agent).delete(pause_agent))
-            .route(
-                "/api/online/matchmaking",
-                axum::routing::delete(cancel_matchmaking),
-            )
-            .route("/api/online/reconnect", post(reconnect))
-            .route("/api/online/resign", post(resign))
+        let api = Router::new()
+            .route("/view", get(snapshot))
+            .route("/events", get(events))
+            .route("/manage", get(manage))
+            .route("/start", post(start_game))
+            .route("/agent", post(attach_agent).delete(pause_agent))
+            .route("/matchmaking", axum::routing::delete(cancel_matchmaking))
+            .route("/reconnect", post(reconnect))
+            .route("/resign", post(resign))
             .with_state(Web {
                 hosted: self.clone(),
                 access: auth.clone(),
                 stop,
-            })
-            .nest_service("/mcp/online", service)
+            });
+        let mut router = Router::new()
+            .nest(&format!("/api/online/{}", self.id), api.clone())
+            .route_service(&format!("/mcp/online/{}", self.id), service.clone());
+        if primary {
+            router = router
+                .nest("/api/online", api)
+                .route_service("/mcp/online", service);
+        }
+        router
             .layer(middleware::from_fn_with_state(auth, authorize))
             .layer(middleware::from_fn(no_cache))
             .layer(middleware::from_fn_with_state(
@@ -127,6 +237,8 @@ impl Hosted {
 struct Access {
     arena: Arc<Arena>,
     owner: String,
+    /// The official account these routes serve.
+    id: String,
 }
 impl Access {
     fn allowed(&self, headers: &HeaderMap) -> Result<(), StatusCode> {
@@ -148,16 +260,16 @@ impl Access {
     }
 }
 async fn authorize(State(access): State<Access>, request: Request, next: Next) -> Response {
+    let path = request.uri().path();
     let watching = request.method() == axum::http::Method::GET
-        && matches!(
-            request.uri().path(),
-            "/api/online/view" | "/api/online/events"
-        );
-    let runner = request.uri().path().starts_with("/mcp/online")
+        && path.starts_with("/api/online/")
+        && (path.ends_with("/view") || path.ends_with("/events"));
+    // Only this account's job token opens this account's MCP endpoint.
+    let runner = path.starts_with("/mcp/online")
         && crate::http::bearer(request.headers()).is_some_and(|token| {
             access
                 .arena
-                .official_job()
+                .official_job(&access.id)
                 .is_some_and(|job| !job.token.is_empty() && job.token == token)
         });
     if !watching
@@ -252,9 +364,19 @@ async fn events(
     );
     Sse::new(stream).keep_alive(KeepAlive::new())
 }
+impl Web {
+    fn job(&self) -> Option<crate::house::Job> {
+        self.access.arena.official_job(&self.hosted.id)
+    }
+    fn set_job(&self, job: Option<crate::house::Job>) {
+        self.access.arena.set_official_job(&self.hosted.id, job);
+    }
+}
 impl std::fmt::Debug for Hosted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Hosted")
+            .field("id", &self.id)
+            .field("account", &self.account)
             .field("owner", &self.owner)
             .finish_non_exhaustive()
     }
@@ -266,16 +388,12 @@ fn management(web: &Web) -> OnlineManagement {
     OnlineManagement {
         connected: update.connected,
         error: update.error,
+        id: web.hosted.id.clone(),
         account: update.reducer.names.get(&update.reducer.player_id).cloned(),
         agents: web.access.arena.official_agents(),
-        agent: web.access.arena.official_job().map(|j| j.agent),
+        agent: web.job().map(|j| j.agent),
         running: view.is_some_and(|v| v.game.running),
-        searching: update.searching
-            || web
-                .access
-                .arena
-                .official_job()
-                .is_some_and(|j| j.game_id.is_empty()),
+        searching: update.searching || web.job().is_some_and(|j| j.game_id.is_empty()),
         queue_feedback: update.queue_feedback,
         mode: update.mode,
     }
@@ -302,8 +420,9 @@ fn assign(web: &Web, agent: String) -> Result<(), String> {
     if !view.game.running {
         return Err("no running official game".into());
     }
-    web.access.arena.set_official_job(Some(crate::house::Job {
+    web.set_job(Some(crate::house::Job {
         official: true,
+        official_account: Some(web.hosted.id.clone()),
         transcript: false,
         configuration: None,
         agent,
@@ -326,14 +445,15 @@ async fn start_game(
     if start.mode == OnlineMode::Bots && !(1..=5).contains(&start.bots) {
         return refused("choose 1–5 server bots");
     }
-    let reservation = match web
-        .access
-        .arena
-        .reserve_official(&web.hosted.owner, &start.agent)
-    {
-        Ok(r) => r,
-        Err(e) => return refused(e),
-    };
+    let reservation =
+        match web
+            .access
+            .arena
+            .reserve_official(&web.hosted.owner, &web.hosted.id, &start.agent)
+        {
+            Ok(r) => r,
+            Err(e) => return refused(e),
+        };
     if start.mode != OnlineMode::Bots {
         if !start.kingdom.is_empty() || !start.landscapes.is_empty() {
             return refused("public matchmaking does not accept required cards");
@@ -352,8 +472,9 @@ async fn start_game(
                 return refused(e);
             }
         } else if update.searching {
-            web.access.arena.set_official_job(Some(crate::house::Job {
+            web.set_job(Some(crate::house::Job {
                 official: true,
+                official_account: Some(web.hosted.id.clone()),
                 transcript: false,
                 configuration: None,
                 agent: start.agent,
@@ -386,14 +507,15 @@ async fn attach_agent(
     axum::Json(body): axum::Json<OnlineAttach>,
 ) -> Response {
     let _guard = web.hosted.control.lock().await;
-    let reservation = match web
-        .access
-        .arena
-        .reserve_official(&web.hosted.owner, &body.agent)
-    {
-        Ok(r) => r,
-        Err(e) => return refused(e),
-    };
+    let reservation =
+        match web
+            .access
+            .arena
+            .reserve_official(&web.hosted.owner, &web.hosted.id, &body.agent)
+        {
+            Ok(r) => r,
+            Err(e) => return refused(e),
+        };
     if let Err(e) = assign(&web, body.agent) {
         return refused(e);
     }
@@ -405,7 +527,7 @@ async fn pause_agent(State(web): State<Web>) -> Response {
     if management(&web).searching {
         return refused("cancel matchmaking before pausing the assigned agent");
     }
-    web.access.arena.set_official_job(None);
+    web.set_job(None);
     axum::Json(management(&web)).into_response()
 }
 async fn reconnect(State(web): State<Web>) -> Response {
@@ -413,7 +535,7 @@ async fn reconnect(State(web): State<Web>) -> Response {
     if management(&web).searching {
         return refused("cancel matchmaking before reconnecting");
     }
-    web.access.arena.set_official_job(None);
+    web.set_job(None);
     match web.hosted.client.reconnect().await {
         Ok(()) => axum::Json(management(&web)).into_response(),
         Err(e) => refused(e),
@@ -423,7 +545,7 @@ async fn resign(State(web): State<Web>) -> Response {
     let _guard = web.hosted.control.lock().await;
     match web.hosted.client.resign().await {
         Ok(()) => {
-            web.access.arena.set_official_job(None);
+            web.set_job(None);
             axum::Json(management(&web)).into_response()
         }
         Err(e) => refused(e),
@@ -436,14 +558,14 @@ async fn cancel_matchmaking(State(web): State<Web>) -> Response {
         Ok(()) => {
             let update = web.hosted.client.current();
             if update.reducer.running {
-                if let Some(job) = web.access.arena.official_job()
+                if let Some(job) = web.job()
                     && job.game_id.is_empty()
                     && let Err(e) = assign(&web, job.agent)
                 {
                     return refused(e);
                 }
             } else if !update.searching {
-                web.access.arena.set_official_job(None);
+                web.set_job(None);
             }
             axum::Json(management(&web)).into_response()
         }

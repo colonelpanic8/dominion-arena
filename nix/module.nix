@@ -11,6 +11,21 @@ self: {
   configFile = toml.generate "dominion-config.toml" cfg.settings;
   dominion = "${lib.getExe cfg.package} --config ${configFile}";
   agentsFile = toml.generate "dominion-agents.toml" cfg.agents.settings;
+  credentials = "/run/credentials/dominion.service";
+  accountCredentials = encrypted:
+    lib.mapAttrsToList (id: a: "online-password-${id}:${
+      if encrypted
+      then a.encryptedCredential
+      else a.passwordFile
+    }")
+    (lib.filterAttrs (_: a:
+      (
+        if encrypted
+        then a.encryptedCredential
+        else a.passwordFile
+      )
+      != null)
+    cfg.onlineAccounts);
   clis =
     cfg.agents.path
     ++ lib.filter (p: p != null) [cfg.agents.claude cfg.agents.codex cfg.agents.antigravity];
@@ -41,6 +56,60 @@ in {
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = "Path to a systemd-creds encrypted password on the host, loaded only at runtime.";
+    };
+    onlineAccounts = lib.mkOption {
+      default = {};
+      example = lib.literalExpression ''
+        {
+          sol = {
+            account = "SolDominion";
+            owner = "Arena Matches";
+            exclusive = true;
+            passwordFile = config.age.secrets.dominion-online-sol.path;
+            settings.resume = true;
+          };
+        }
+      '';
+      description = ''
+        More official dominion.games accounts kept by the server, by id (lowercase letters,
+        digits and `-`; routes `/online/<id>`, `/api/online/<id>/...`, `/mcp/online/<id>`).
+        Each becomes an `[[online_accounts]]` table whose password is the service credential
+        `online-password-<id>`, loaded from `passwordFile` (a root-readable runtime file,
+        such as an agenix secret) or `encryptedCredential` (systemd-creds, whose embedded
+        name must be `online-password-<id>`). Neither enters the Nix store.
+      '';
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          account = lib.mkOption {
+            type = lib.types.str;
+            description = "The official-server account name.";
+          };
+          owner = lib.mkOption {
+            type = lib.types.str;
+            description = "The registered Arena account that manages it.";
+          };
+          exclusive = lib.mkOption {
+            type = lib.types.bool;
+            description = "Your assertion that the account is idle and used only by this server; it must be true.";
+          };
+          passwordFile = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Runtime file whose first line is the password (loaded with `LoadCredential`).";
+          };
+          encryptedCredential = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "systemd-creds encrypted password (loaded with `LoadCredentialEncrypted`).";
+          };
+          settings = lib.mkOption {
+            type = toml.type;
+            default = {};
+            example = {resume = true;};
+            description = "Other keys of its `[[online_accounts]]` table: `resume`, `endpoint`, `state_dir`, `enabled`.";
+          };
+        };
+      });
     };
     agents = {
       enable = lib.mkEnableOption ''
@@ -120,6 +189,17 @@ in {
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = lib.flatten (lib.mapAttrsToList (id: a: [
+        {
+          assertion = builtins.match "[a-z0-9-]+" id != null && id != "default";
+          message = "services.dominion.onlineAccounts.${id}: use lowercase letters, digits and -, not default";
+        }
+        {
+          assertion = (a.passwordFile == null) != (a.encryptedCredential == null);
+          message = "services.dominion.onlineAccounts.${id}: set exactly one of passwordFile or encryptedCredential";
+        }
+      ])
+      cfg.onlineAccounts);
     services.dominion.settings = {
       state_dir = lib.mkDefault "/var/lib/dominion/games";
       assets_dir = lib.mkDefault "/var/cache/dominion/assets";
@@ -129,7 +209,15 @@ in {
       online_cache_dir = lib.mkDefault "/var/cache/dominion/online";
       online_password_file =
         lib.mkIf (cfg.onlinePasswordCredential != null)
-        (lib.mkDefault "/run/credentials/dominion.service/online-password");
+        (lib.mkDefault "${credentials}/online-password");
+      online_accounts = lib.mkIf (cfg.onlineAccounts != {}) (lib.mapAttrsToList (id: a:
+        {
+          inherit id;
+          inherit (a) account owner exclusive;
+          password_file = "${credentials}/online-password-${id}";
+        }
+        // a.settings)
+      cfg.onlineAccounts);
     };
     services.dominion.agents.settings = lib.mkIf cfg.agents.enable ({
         agent_socket = lib.mkDefault cfg.settings.agent_socket;
@@ -170,10 +258,14 @@ in {
       after = ["network.target"];
       serviceConfig = {
         ExecStart = "${dominion} serve";
-        ExecStartPre = lib.optional (cfg.settings.online_enabled or false) "${dominion} online sync";
+        ExecStartPre =
+          lib.optional ((cfg.settings.online_enabled or false) || (cfg.settings.online_accounts or []) != [])
+          "${dominion} online sync";
         LoadCredentialEncrypted =
           lib.optional (cfg.onlinePasswordCredential != null)
-          "online-password:${cfg.onlinePasswordCredential}";
+          "online-password:${cfg.onlinePasswordCredential}"
+          ++ accountCredentials true;
+        LoadCredential = accountCredentials false;
         User = "dominion";
         Group = "dominion";
         StateDirectory = "dominion";

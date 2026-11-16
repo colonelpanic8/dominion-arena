@@ -42,6 +42,10 @@ pub enum ToRunner {
 pub struct Job {
     #[serde(default)]
     pub official: bool,
+    /// The official account an official job plays as; its MCP endpoint is
+    /// `/mcp/online/<id>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official_account: Option<String>,
     #[serde(default)]
     pub transcript: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -485,11 +485,26 @@ pub async fn watch_transcript(game: &str, token: Option<&str>, on_change: impl F
     follow(&url, on_change).await
 }
 
-pub async fn online_view() -> Result<dominion_protocol::api::OnlineObservation> {
-    imp::get("/api/online/view", None).await
+/// An official account's API path: the primary one's unprefixed when `account` is none.
+fn online_path(account: Option<&str>, rest: &str) -> String {
+    match account {
+        Some(id) => format!("/api/online/{}/{rest}", encode(id)),
+        None => format!("/api/online/{rest}"),
+    }
 }
-pub async fn follow_online(on_change: &mut dyn FnMut(dominion_protocol::api::OnlineObservation)) {
-    let _ = imp::follow("/api/online/events", &mut |data| {
+pub async fn online_accounts() -> Result<Vec<dominion_protocol::api::OnlineAccountInfo>> {
+    imp::get("/api/online/accounts", None).await
+}
+pub async fn online_view(
+    account: Option<&str>,
+) -> Result<dominion_protocol::api::OnlineObservation> {
+    imp::get(&online_path(account, "view"), None).await
+}
+pub async fn follow_online(
+    account: Option<&str>,
+    on_change: &mut dyn FnMut(dominion_protocol::api::OnlineObservation),
+) {
+    let _ = imp::follow(&online_path(account, "events"), &mut |data| {
         if let Ok(view) = serde_json::from_str(data) {
             on_change(view)
         }
@@ -497,30 +512,38 @@ pub async fn follow_online(on_change: &mut dyn FnMut(dominion_protocol::api::Onl
     .await;
 }
 
-pub async fn online_management() -> Result<dominion_protocol::api::OnlineManagement> {
-    imp::get("/api/online/manage", None).await
+pub async fn online_management(
+    account: Option<&str>,
+) -> Result<dominion_protocol::api::OnlineManagement> {
+    imp::get(&online_path(account, "manage"), None).await
 }
 pub async fn online_start(
+    account: Option<&str>,
     request: &dominion_protocol::api::OnlineStart,
 ) -> Result<dominion_protocol::api::OnlineManagement> {
-    imp::post("/api/online/start", None, request).await
+    imp::post(&online_path(account, "start"), None, request).await
 }
-pub async fn online_attach(agent: String) -> Result<dominion_protocol::api::OnlineManagement> {
+pub async fn online_attach(
+    account: Option<&str>,
+    agent: String,
+) -> Result<dominion_protocol::api::OnlineManagement> {
     imp::post(
-        "/api/online/agent",
+        &online_path(account, "agent"),
         None,
         &dominion_protocol::api::OnlineAttach { agent },
     )
     .await
 }
 pub async fn online_manage_action(
+    account: Option<&str>,
     action: &str,
 ) -> Result<dominion_protocol::api::OnlineManagement> {
+    let path = |rest| online_path(account, rest);
     match action {
-        "cancel" => imp::send("DELETE", "/api/online/matchmaking", None, None::<&()>).await,
-        "pause" => imp::send("DELETE", "/api/online/agent", None, None::<&()>).await,
-        "resign" => imp::post("/api/online/resign", None, &()).await,
-        "reconnect" => imp::post("/api/online/reconnect", None, &()).await,
+        "cancel" => imp::send("DELETE", &path("matchmaking"), None, None::<&()>).await,
+        "pause" => imp::send("DELETE", &path("agent"), None, None::<&()>).await,
+        "resign" => imp::post(&path("resign"), None, &()).await,
+        "reconnect" => imp::post(&path("reconnect"), None, &()).await,
         _ => Err(ApiError {
             status: 400,
             message: "unknown official game action".into(),
