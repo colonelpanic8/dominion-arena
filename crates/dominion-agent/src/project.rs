@@ -189,6 +189,14 @@ fn view_of(game: &Game, known: &KnownCards, seat: Option<PlayerId>, cx: &Context
             top: top
                 .filter(|&t| t != pile.card())
                 .map(|t| t.name().to_string()),
+            members: {
+                let members = pile.card().pile_members();
+                if members.len() > 1 {
+                    names(&members)
+                } else {
+                    vec![]
+                }
+            },
             cost: pile_cost.map(cost),
             types,
             kingdom: pile.kingdom(),

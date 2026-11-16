@@ -298,6 +298,10 @@ pub struct PileView {
     pub count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top: Option<String>,
+    /// Possible card names from the pile's public definition, including depleted members.
+    /// This gives neither remaining counts nor current order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
     pub types: Vec<String>,

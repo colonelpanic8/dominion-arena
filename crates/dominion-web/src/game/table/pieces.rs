@@ -214,6 +214,7 @@ pub fn TableCard(
     /// A pile holding different cards: a back peeking out from under it.
     #[props(default)]
     split: bool,
+    #[props(default)] inspect_pile: bool,
     /// Upside down, as an opponent's cards across the table.
     #[props(default)]
     inverted: bool,
@@ -231,6 +232,7 @@ pub fn TableCard(
         tone,
     } = mark;
     let n_menu = name.clone();
+    let n_inspect = name.clone();
     let clickable = target.is_some() || opens.is_some();
     let size_class = match size {
         CardSize::Full => "dt-full",
@@ -336,6 +338,19 @@ pub fn TableCard(
                 div { class: "dt-split-back", CardBack { size } }
             }
             div { class: "dt-face", {face(whole_picked)} }
+            if inspect_pile {
+                button {
+                    class: "dt-inspect-pile",
+                    r#type: "button",
+                    title: "Inspect pile",
+                    "aria-label": "Inspect {name} pile",
+                    onclick: move |e| {
+                        e.stop_propagation();
+                        ctx.study(&n_inspect);
+                    },
+                    "Pile"
+                }
+            }
             if splits {
                 div {
                     class: if split_off { "dt-picked-copy dt-on" } else { "dt-picked-copy" },
@@ -406,7 +421,7 @@ pub fn TableCard(
 }
 
 /// The study view: the card large in the middle of the screen over a dim backdrop, and
-/// beside it the other cards of its pile. The next click closes it.
+/// beside it the other cards of its pile, which can be selected to read in full.
 #[component]
 pub fn StudyLayer() -> Element {
     let ctx = use_table();
@@ -424,18 +439,12 @@ pub fn StudyLayer() -> Element {
     let w = h / ratio;
     let x = vw * 0.5 - w / 2.0;
     let y = vh * 0.5 - h / 2.0;
-    // The pile's other cards, for split and mixed piles.
-    let pile_of = cards.get(&name).and_then(|c| c.pile.clone());
-    let mut members: Vec<String> = match &pile_of {
-        Some(p) => cards
-            .all()
-            .iter()
-            .filter(|c| c.pile.as_deref() == Some(p.as_str()) && c.name != name)
-            .map(|c| c.name.clone())
-            .collect(),
-        None => vec![],
-    };
-    members.truncate(12);
+    let members: Vec<String> = cards
+        .pile_members(&name)
+        .iter()
+        .filter(|c| c.name != name)
+        .map(|c| c.name.clone())
+        .collect();
     let mh = 0.25 * vh;
     let mw = mh / super::layout::FULL;
     let room = (x - 0.04 * vh).max(mw);
@@ -453,10 +462,20 @@ pub fn StudyLayer() -> Element {
                 ctx.unstudy();
             },
             for (i, m) in members.iter().enumerate() {
-                div {
+                button {
                     key: "{m}",
                     class: "dt-study-member",
+                    r#type: "button",
+                    "aria-label": "Read {m}",
                     style: "left:{0.02 * vh + i as f64 * step:.0}px;top:{vh * 0.5 - mh / 2.0:.0}px;width:{mw:.0}px;",
+                    onmousedown: move |e| e.stop_propagation(),
+                    onclick: {
+                        let member = m.clone();
+                        move |e| {
+                            e.stop_propagation();
+                            ctx.study(&member);
+                        }
+                    },
                     CardView { name: m.clone(), size: CardSize::Full }
                 }
             }
