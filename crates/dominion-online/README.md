@@ -265,3 +265,34 @@ and 64 reducer streams of 96 transitions each. Larger ranges and single-seed
 reproduction are documented with the tooling. These offline traces do not run
 local Dominion rules and do not add live expansion coverage or prove official
 server acceptance of every generated tree.
+
+### Managed live validation (2026-11-16)
+
+The deployed server's Terra agent completed two unrated official-server bot games
+through the managed runner and common MCP tools. The Base kingdom listed above
+finished 31–25 to Lord Rattington (15 turns for the bot, 14 for the agent), with
+an explicit socket reconnect and agent resume during the game.
+
+A Nocturne kingdom finished 46–42 for the agent after 18 turns each. Required
+piles were Necromancer, Druid, Cemetery, Secret Cave, Shepherd, Monastery,
+Devil's Workshop, Exorcist, Cobbler and Crypt, with Way of the Turtle and
+Innovation. This run survived both an explicit socket reconnect and a full
+server-process restart at turn 5: the same game was restored with a new decision
+epoch, and the selected agent was reattached through management. Observed
+interactive sources included Cemetery, Cobbler, Devil's Workshop and Shepherd;
+Way of the Turtle's set-aside/replay choice was also used. A card's presence in
+the kingdom alone is not evidence that its abilities were exercised: Druid's
+Boons and Innovation's effect were not verified by this run.
+
+The deployed browser flow verified all three game-type selectors, bot creation,
+live table rendering, pause/resume, explicit resign, result display and reconnect.
+A subsequent game after a completed-game reconnect exposed stale table
+membership; the client now handles the server's already-left-table response
+only while leaving a verified completed table. Browser checks also exposed a
+cached generated-script URL and a missing shared-table context; both have
+regression fixes. Native Arena chat and native rating/clock headers are omitted
+from the official table; its active game mode comes from official management.
+
+Public human matchmaking criteria, verified-roster/rating gates, queue capacity,
+notification gaps and cancellation races have synthetic coverage. No public
+human match was started during this live validation.

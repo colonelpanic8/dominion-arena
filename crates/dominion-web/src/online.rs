@@ -165,6 +165,13 @@ pub fn OnlinePage() -> Element {
                     if let Some(account)=&status.account {" · {account}"}
                     " · Your account’s view"
                 }
+                if status.running || status.searching {
+                    p {class:"muted",match status.mode {
+                        OnlineMode::Bots=>"Unrated server bots",
+                        OnlineMode::Unrated=>"Unrated public humans",
+                        OnlineMode::Rated=>"Rated public humans",
+                    }}
+                }
                 label {"Agent"
                     select {value:"{agent}",disabled:busy(),onchange:move|e|agent.set(e.value()),
                         for name in &status.agents {option {value:"{name}","{name}"}}
@@ -242,7 +249,7 @@ pub fn OnlinePage() -> Element {
     rsx! {
         style { {include_str!("../assets/online.css")} }
         if state.read().view.as_ref().is_some_and(|v| v.game.running) {
-            table::TableGame {controls}
+            table::TableGame {controls, arena: false}
         } else {
             section {class:"online-idle",
                 {controls}
