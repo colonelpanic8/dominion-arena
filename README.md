@@ -421,15 +421,17 @@ rest of its directory or `~/.claude.json`. Browser, delegation, hooks, other MCP
 and host instructions are off. The runner fails if Linux user namespaces or bubblewrap
 are unavailable.
 
-With `playbook_dir` set to a dominion-playbook checkout, Claude and Codex seats start
-in it, mounted read-only, and load it as their CLI loads a project: AGENTS.md (through
-CLAUDE.md for Claude), its skills, and the files the skills say to read. They may read
-it and run its lookup commands (`python3 data/card-ratings.py ...`): Claude with Bash,
-Read, Grep, Glob and Skill, Codex with its shell in its read-only sandbox. The brief
-tells them to make the plan before their first decision. `sandbox_path` lists
-directories put first on PATH there (a shell, python3, coreutils). Antigravity seats
-are sent the playbook in their first message instead. Without `playbook_dir`, seats
-have no shell or file tools and the profile's `instructions` carry the guidance.
+With `playbook_dir` set to a dominion-playbook checkout, seats start in it, mounted
+read-only, and load it as their CLI loads a project: AGENTS.md (through CLAUDE.md for
+Claude, as a workspace rule for Antigravity), its skills (`.agents/skills` for Codex and
+Antigravity), and the files the skills say to read. They may read it and run its lookup
+commands (`python3 data/card-ratings.py ...`): Claude with Bash, Read, Grep, Glob and
+Skill, Codex with its shell in its read-only sandbox, Antigravity with `read_file` and
+`run_command`, whose permissions allow reading the playbook and running only that
+command (Antigravity refuses anything else, which stops the seat). The brief tells them
+to make the plan before their first decision. `sandbox_path` lists directories put
+first on PATH there (a shell, python3, coreutils). Without `playbook_dir`, seats have
+no shell or file tools and the profile's `instructions` carry the guidance.
 
 Every seat attempt gets a private directory under `agents_dir/archives`. Its
 `interactions.jsonl` records resolved game configuration, agent settings, every game

@@ -1,4 +1,4 @@
-//! Network isolation for Claude and Codex seats. The CLI runs in its own network
+//! Network isolation for native seats. The CLI runs in its own network
 //! namespace with nothing but loopback; `dominion sandbox-forward` (run inside it)
 //! exposes two unix sockets there as loopback ports: an allowlisting CONNECT proxy to
 //! the provider's API, and the seat bridge. Nothing else on the host or the network,

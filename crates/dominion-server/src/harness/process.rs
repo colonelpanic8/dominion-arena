@@ -36,9 +36,8 @@ pub struct Harness {
     responses: u32,
     records: Option<tokio::sync::mpsc::Receiver<super::bridge::Record>>,
     sandbox: Sandbox,
-    /// The seat starts in the playbook and loads it itself (Claude and Codex), rather than
-    /// being sent it in its first message.
-    native_playbook: bool,
+    /// The seat starts in the playbook and loads it itself.
+    playbook: bool,
     forwarder: PathBuf,
     sockets: sandbox::Sockets,
     _proxy: sandbox::Proxy,
@@ -115,12 +114,11 @@ impl Harness {
         let auth = auth
             .canonicalize()
             .map_err(|e| format!("provider credentials {}: {e}", auth.display()))?;
-        let native_playbook =
-            settings.playbook.is_some() && matches!(spec.program, Program::Claude | Program::Codex);
+        let playbook = settings.playbook.is_some();
         write(&work.join("empty"), b"")?;
         write(
             &work.join("instructions.txt"),
-            instructions(native_playbook).as_bytes(),
+            instructions(playbook).as_bytes(),
         )?;
         let sockets = sandbox::Sockets::new()?;
         let hosts = (sandbox::default_hosts(spec.program).iter())
@@ -129,15 +127,15 @@ impl Harness {
             .collect();
         let proxy = sandbox::Proxy::start(&sockets.proxy(), hosts, archive.join("network.jsonl"))?;
         let mut launch = match spec.program {
-            Program::Claude => claude::launch(spec, native_playbook),
+            Program::Claude => claude::launch(spec, playbook),
             Program::Codex => {
-                let model = codex::catalog(&auth, &work, spec.model.as_deref(), native_playbook)?;
+                let model = codex::catalog(&auth, &work, spec.model.as_deref(), playbook)?;
                 let mut resolved = spec.clone();
                 resolved.model = Some(model);
-                codex::launch(&resolved, native_playbook)
+                codex::launch(&resolved, playbook)
             }
             Program::Antigravity => {
-                antigravity::settings(&work)?;
+                antigravity::settings(&work, playbook)?;
                 antigravity::launch(spec)
             }
             Program::T3Code | Program::OpenAi => {
@@ -157,7 +155,7 @@ impl Harness {
             responses: 0,
             records: None,
             sandbox: settings.clone(),
-            native_playbook,
+            playbook,
             forwarder,
             sockets,
             _proxy: proxy,
@@ -206,29 +204,11 @@ impl Harness {
                 self.launch
                     .args
                     .extend(["--allowedTools".into(), "mcp__dominion__*".into()]);
-                if self.native_playbook {
+                if self.playbook {
                     (self.launch.args).extend(claude::PLAYBOOK_TOOLS.map(String::from));
                 }
             }
-            Program::Antigravity => {
-                write_json(
-                    &self.work.join("config/mcp_config.json"),
-                    &json!({"mcpServers":{"dominion":{"serverUrl":url,"disabled":false,"tools":super::bridge::TOOLS.iter().map(|name| (name.to_string(),json!({"eager":true}))).collect::<serde_json::Map<String,Value>>()}}}),
-                )?;
-                for path in [".agents/agents/dominion.md", "config/agents/dominion.md"] {
-                    let path = self.work.join(path);
-                    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-                    write(
-                        &path,
-                        text.replace("mcpServers: []", "mcpServers: []\ninheritMcp: true")
-                            .as_bytes(),
-                    )?;
-                }
-                write_json(
-                    &self.work.join("settings.json"),
-                    &json!({"permissions":{"deny":["read_file(*)","write_file(*)","command(*)","read_url(*)","execute_url(*)"],"allow":["mcp(dominion/*)"],"ask":[]},"toolPermission":"request-review"}),
-                )?;
-            }
+            Program::Antigravity => antigravity::enable_mcp(&self.work, url, self.playbook)?,
             Program::T3Code | Program::OpenAi => {
                 unreachable!("only CLI agents have a native harness")
             }
@@ -322,7 +302,7 @@ impl Harness {
             antigravity::mounts(&mut cmd, &self.work);
         }
         let workdir = match &self.sandbox.playbook {
-            Some(playbook) if self.native_playbook => {
+            Some(playbook) => {
                 cmd.arg("--ro-bind").arg(playbook).arg("/playbook");
                 "/playbook"
             }
@@ -376,13 +356,8 @@ impl Harness {
         archive: &mut Archive,
     ) -> Result<String, String> {
         self.responses += 1;
-        let brief = instructions(self.native_playbook);
-        let mut player = spec.instructions.clone().unwrap_or_default();
-        if !self.native_playbook
-            && let Some(playbook) = &self.sandbox.playbook
-        {
-            player = format!("{}\n\n{player}", super::inline_playbook(playbook)?);
-        }
+        let brief = instructions(self.playbook);
+        let player = spec.instructions.clone().unwrap_or_default();
         let prompt = if player.trim().is_empty() {
             format!("{brief}\n\n{message}")
         } else {
@@ -469,12 +444,12 @@ impl Harness {
                     && event["subtype"] == "init"
                     && event["tools"].as_array().is_some_and(|v| {
                         v.iter()
-                            .any(|t| !allowed_tool(t.as_str().unwrap_or(""), self.native_playbook))
+                            .any(|t| !allowed_tool(t.as_str().unwrap_or(""), self.playbook))
                     })
                 {
                     return Err("native harness exposed forbidden tools; see its archive".into());
                 }
-                if tool_event(&event, self.native_playbook) {
+                if tool_event(&event, self.playbook) {
                     return Err("native harness attempted a forbidden tool; see its archive".into());
                 }
                 events.push(event);
@@ -546,19 +521,28 @@ fn private_file(path: &Path) -> Result<File, String> {
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// A tool a seat may use: the game's, and in the playbook Claude's tools for reading it and
-/// running its lookups.
+/// A tool a seat may use: the game's, and in the playbook Claude's or Antigravity's tools
+/// for reading it and running its lookups.
 fn allowed_tool(name: &str, playbook: bool) -> bool {
     name.strip_prefix("mcp__dominion__")
         .or_else(|| name.strip_prefix("mcp_dominion_"))
         .is_some_and(|tool| super::bridge::TOOLS.contains(&tool))
         || name == "call_mcp_tool"
         || name == "finish"
-        || (playbook && claude::PLAYBOOK_TOOLS.contains(&name))
+        || (playbook
+            && (claude::PLAYBOOK_TOOLS.contains(&name)
+                || antigravity::PLAYBOOK_TOOLS.contains(&name)))
 }
 
 /// Whether an event shows a seat using a tool it may not.
 fn tool_event(event: &Value, playbook: bool) -> bool {
+    // Antigravity refused something its permissions don't allow, and ended the turn.
+    if event["result"]["denied_actions"]
+        .as_array()
+        .is_some_and(|denied| !denied.is_empty())
+    {
+        return true;
+    }
     if matches!(event["type"].as_str(), Some("tool_use" | "tool_result")) {
         return !allowed_tool(event["name"].as_str().unwrap_or(""), playbook);
     }
@@ -598,4 +582,26 @@ fn tool_event(event: &Value, playbook: bool) -> bool {
                 .unwrap_or(""),
             playbook,
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tool_event;
+    use serde_json::json;
+
+    #[test]
+    fn antigravity_playbook_tools_and_refusals() {
+        let step = |tool: &str| json!({"event":"step_update","step_update":{"state":"ACTIVE","step_type":"tool","tool_name":tool,"tool_info":{"name":tool}}});
+        for tool in ["read_file", "run_command", "manage_task"] {
+            assert!(!tool_event(&step(tool), true), "{tool}");
+            assert!(tool_event(&step(tool), false), "{tool}");
+        }
+        assert!(tool_event(&step("write_to_file"), true));
+        let result = |denied| json!({"event":"result","result":{"status":"SUCCESS","response":"","denied_actions":denied}});
+        assert!(!tool_event(&result(json!([])), true));
+        assert!(tool_event(
+            &result(json!([{"action":"command","display_name":"RunCommand"}])),
+            true
+        ));
+    }
 }
