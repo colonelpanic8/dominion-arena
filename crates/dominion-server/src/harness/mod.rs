@@ -26,14 +26,18 @@ pub async fn play(
     spec.validate()?;
     archive.publish(server, job)?;
     archive.record("seat", json!({"agent":spec,"job":job,"server":server}))?;
-    let client = match Client::connect(server).await {
-        Ok(client) => client,
-        Err(error) => {
-            archive.record("seat_finished", json!({"result":{"Err":error}}))?;
-            archive.finish_publish().await;
-            return Err(error);
-        }
-    };
+    let endpoint = endpoint(server, job)?;
+    let client =
+        match Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
+            .await
+        {
+            Ok(client) => client,
+            Err(error) => {
+                archive.record("seat_finished", json!({"result":{"Err":error}}))?;
+                archive.finish_publish().await;
+                return Err(error);
+            }
+        };
     let result = async {
         let mut harness = process::Harness::new(spec, &archive.dir)?;
         tokio::select! {
@@ -47,13 +51,17 @@ pub async fn play(
         &client,
         archive,
         "dominion",
-        "view",
-        json!({"token":job.token}),
+        if job.official { "state" } else { "view" },
+        if job.official {
+            json!({})
+        } else {
+            json!({"token":job.token})
+        },
     )
     .await;
     if let Ok(view) = final_view
         && let Some(state) = view.json
-        && state["game"]["running"] == false
+        && game_state(&state)["game"]["running"] == false
     {
         archive.record("result", state)?;
     }
@@ -75,8 +83,12 @@ async fn play_inner(
         client,
         archive,
         "dominion",
-        "join_game",
-        json!({"game_id":job.game_id,"token":job.token}),
+        if job.official { "state" } else { "join_game" },
+        if job.official {
+            json!({})
+        } else {
+            json!({"game_id":job.game_id,"token":job.token})
+        },
     )
     .await?;
     if !view.ok {
@@ -89,7 +101,7 @@ async fn play_inner(
         bridge.records.take().expect("new bridge"),
     )?;
     let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
-    if state["game"]["running"] == false {
+    if game_state(state)["game"]["running"] == false {
         return Ok(());
     }
     let message = format!("Initial view and card reference:\n{}", view.text);
@@ -98,8 +110,12 @@ async fn play_inner(
         client,
         archive,
         "dominion",
-        "view",
-        json!({"token":job.token}),
+        if job.official { "state" } else { "view" },
+        if job.official {
+            json!({})
+        } else {
+            json!({"token":job.token})
+        },
     )
     .await?;
     if !view.ok {
@@ -108,10 +124,24 @@ async fn play_inner(
     if view
         .json
         .as_ref()
-        .is_some_and(|v| v["game"]["running"] == false)
+        .is_some_and(|v| game_state(v)["game"]["running"] == false)
     {
         Ok(())
     } else {
         Err("agent session ended before the game finished".into())
     }
+}
+
+pub(super) fn endpoint(server: &str, job: &Job) -> Result<String, String> {
+    if !job.official {
+        return Ok(server.into());
+    }
+    let root = server
+        .trim_end_matches('/')
+        .strip_suffix("/mcp")
+        .ok_or("agent server must end in /mcp")?;
+    Ok(format!("{root}/mcp/online"))
+}
+fn game_state(value: &serde_json::Value) -> &serde_json::Value {
+    value.get("view").unwrap_or(value)
 }

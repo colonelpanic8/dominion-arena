@@ -8,7 +8,12 @@ use dominion_online::{
         command,
     },
 };
-use dominion_protocol::{AgentView, Answer, GlossaryEntry, LogEntry};
+use dominion_protocol::{
+    AgentView, Answer, GlossaryEntry, LogEntry,
+    api::{OnlineMatching, OnlineMode},
+};
+mod matching;
+use matching::HumanTable;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -96,6 +101,9 @@ pub(crate) struct Update {
     pub reducer: Reducer,
     pub error: Option<String>,
     pub connected: bool,
+    pub searching: bool,
+    pub queue_feedback: Vec<String>,
+    pub mode: OnlineMode,
 }
 impl Update {
     pub fn view(&self) -> Result<Option<AgentView>, String> {
@@ -118,6 +126,12 @@ enum Request {
         oneshot::Sender<Result<(), String>>,
     ),
     NewGame(NewGame, oneshot::Sender<Result<(), String>>),
+    Match(
+        OnlineMode,
+        OnlineMatching,
+        oneshot::Sender<Result<(), String>>,
+    ),
+    CancelMatch(oneshot::Sender<Result<(), String>>),
     Reconnect(oneshot::Sender<Result<(), String>>),
     Resign(oneshot::Sender<Result<(), String>>),
     Disconnect(oneshot::Sender<Result<(), String>>),
@@ -154,7 +168,24 @@ impl Client {
         } else {
             None
         };
+        let human: Option<HumanTable> = if resume {
+            match std::fs::read(store.dir().join("own-match.json")) {
+                Ok(bytes) => {
+                    Some(serde_json::from_slice(&bytes).map_err(|_| "invalid own-match metadata")?)
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => return Err(e.to_string()),
+            }
+        } else {
+            None
+        };
+        let saved = human.as_ref().map(|h| h.table.clone()).or(saved);
+        let mode = human.as_ref().map_or(OnlineMode::Bots, |h| h.mode);
         let mut runtime = Runtime {
+            human,
+            search: None,
+            queue_status: None,
+            outbox: Vec::new(),
             socket: Some(socket),
             endpoint,
             session: None,
@@ -173,6 +204,9 @@ impl Client {
                 },
                 error: None,
                 connected: true,
+                searching: false,
+                queue_feedback: Vec::new(),
+                mode,
             },
             store,
         };
@@ -232,6 +266,39 @@ impl Client {
                         };
                         (result, reply, false)
                     }
+                    Request::Match(mode, options, reply) => {
+                        let result = tokio::time::timeout(
+                            Duration::from_secs(20),
+                            runtime.start_match(mode, options),
+                        )
+                        .await;
+                        let result = match result {
+                            Ok(r) => r,
+                            Err(_) => {
+                                let e =
+                                    "matchmaking acknowledgement timed out; reconnect explicitly"
+                                        .to_string();
+                                runtime.fail(e.clone()).await;
+                                Err(e)
+                            }
+                        };
+                        (result, reply, false)
+                    }
+                    Request::CancelMatch(reply) => {
+                        let result =
+                            tokio::time::timeout(Duration::from_secs(20), runtime.cancel_match())
+                                .await;
+                        let result = match result {
+                            Ok(r) => r,
+                            Err(_) => {
+                                let e = "matchmaking cancellation timed out; reconnect explicitly"
+                                    .to_string();
+                                runtime.fail(e.clone()).await;
+                                Err(e)
+                            }
+                        };
+                        (result, reply, false)
+                    }
                     Request::Reconnect(reply) => {
                         let result = runtime.reconnect().await;
                         (result, reply, false)
@@ -274,6 +341,16 @@ impl Client {
     }
     pub async fn new_game(&self, options: NewGame) -> Result<(), String> {
         self.call(|r| Request::NewGame(options, r)).await
+    }
+    pub async fn matchmaking(
+        &self,
+        mode: OnlineMode,
+        options: OnlineMatching,
+    ) -> Result<(), String> {
+        self.call(|r| Request::Match(mode, options, r)).await
+    }
+    pub async fn cancel_matchmaking(&self) -> Result<(), String> {
+        self.call(Request::CancelMatch).await
     }
     pub async fn reconnect(&self) -> Result<(), String> {
         self.call(Request::Reconnect).await
@@ -330,13 +407,25 @@ struct Runtime {
     resuming: bool,
     table: Option<TableDetails>,
     bots: Vec<i32>,
+    human: Option<HumanTable>,
+    search: Option<OnlineMatching>,
+    queue_status: Option<bool>,
+    outbox: Vec<Vec<u8>>,
     update: Update,
     store: Store,
 }
 impl Runtime {
     async fn close(&mut self) {
+        if let Some(options) = &self.search
+            && let Ok(bytes) = matching::criteria(self.update.mode, options, false)
+            && let Some(socket) = &mut self.socket
+        {
+            let _ = socket.send(bytes).await;
+        }
         self.update.reducer.invalidate();
         self.update.connected = false;
+        self.update.searching = false;
+        self.search = None;
         if let Some(mut socket) = self.socket.take() {
             let _ = socket.disconnect().await;
         }
@@ -385,6 +474,9 @@ impl Runtime {
             self.request_game = false;
             self.send(command::reconnect_game()).await?;
         }
+        for bytes in std::mem::take(&mut self.outbox) {
+            self.send(bytes).await?;
+        }
         for _ in 0..acknowledgements {
             self.send(command::animation_ack()).await?;
         }
@@ -400,12 +492,14 @@ impl Runtime {
                     return Err("REFUSED: login reports an existing game/session; no automatic takeover or reconnect was attempted".into());
                 }
                 if self.resuming
-                    && self
-                        .table
-                        .as_ref()
-                        .is_none_or(|t| t.host_id != login.player_id)
+                    && self.table.as_ref().is_none_or(|t| {
+                        !t.players
+                            .iter()
+                            .chain(&t.reconnecting)
+                            .any(|p| p.id == login.player_id)
+                    })
                 {
-                    return Err("REFUSED: saved bot table belongs to another account".into());
+                    return Err("REFUSED: saved table belongs to another account".into());
                 }
                 if existing_game {
                     self.needs_snapshot = true;
@@ -415,6 +509,8 @@ impl Runtime {
                     self.table = None;
                     self.bots.clear();
                     self.resuming = false;
+                    self.human = None;
+                    self.update.mode = OnlineMode::Bots;
                 }
                 reducer.player_id = login.player_id;
                 reducer
@@ -440,11 +536,12 @@ impl Runtime {
                 if self.session.is_none() {
                     return Err("snapshot before login".into());
                 }
-                if snapshot
-                    .state
-                    .players
+                let players: Vec<_> = snapshot.state.players.iter().map(|p| p.player_id).collect();
+                if let Some(human) = &self.human {
+                    human.validate_players(&players, reducer.player_id)?;
+                } else if players
                     .iter()
-                    .any(|p| p.player_id != reducer.player_id && !self.bots.contains(&p.player_id))
+                    .any(|p| *p != reducer.player_id && !self.bots.contains(p))
                 {
                     return Err(
                         "REFUSED: snapshot contains an opponent not verified as a server bot"
@@ -453,6 +550,7 @@ impl Runtime {
                 }
                 reducer.replace(snapshot).map_err(|e| e.to_string())?;
                 self.needs_snapshot = false;
+                self.update.searching = false;
             }
             Message::Event(event) => reducer.apply(event).map_err(|e| e.to_string())?,
             Message::Question(question) => {
@@ -510,7 +608,11 @@ impl Runtime {
                 for player in table.players.iter().chain(&table.bots) {
                     reducer.names.insert(player.id, player.name.clone());
                 }
-                if table.players.iter().any(|p| p.id != reducer.player_id)
+                if let Some(human) = &self.human {
+                    if reducer.running || self.needs_snapshot || self.update.searching {
+                        human.validate(&table, reducer.player_id)?;
+                    }
+                } else if table.players.iter().any(|p| p.id != reducer.player_id)
                     || !table.spectators.is_empty()
                     || !table.reconnecting.is_empty()
                 {
@@ -537,7 +639,11 @@ impl Runtime {
                 is_player,
             } => {
                 if self.table.as_ref().is_some_and(|t| t.table_id == table_id) {
-                    if !is_player || player.id != reducer.player_id {
+                    if let Some(human) = &self.human {
+                        if is_player && !human.table.players.iter().any(|p| p.id == player.id) {
+                            return Err("REFUSED: unexpected player joined matched table".into());
+                        }
+                    } else if !is_player || player.id != reducer.player_id {
                         return Err("REFUSED: a human joined the official table; no further actions will be sent".into());
                     }
                     reducer.names.insert(player.id, player.name);
@@ -548,7 +654,9 @@ impl Runtime {
                 is_player,
                 ..
             } => {
-                if player_id != reducer.player_id || !is_player {
+                if (player_id == reducer.player_id && !is_player)
+                    || (self.human.is_none() && player_id != reducer.player_id)
+                {
                     return Err("REFUSED: official table role changed".into());
                 }
             }
@@ -616,6 +724,7 @@ impl Runtime {
                 reducer.invalidate();
                 reducer.running = false;
                 self.store.remove("own-table").map_err(|e| e.to_string())?;
+                self.store.remove("own-match").map_err(|e| e.to_string())?;
                 reducer.result = Some(dominion_protocol::GameResult {
                     reason: Some("official server result".into()),
                     players,
@@ -626,6 +735,22 @@ impl Runtime {
             Message::ReconnectInstruction(_) | Message::TimeoutInstruction => {
                 return Err("official server requested reconnect; pending answers invalidated; call online_reconnect".into());
             }
+            Message::Metagame {
+                kind,
+                player,
+                decision,
+            } if self.human.is_some() => {
+                if kind == 0 {
+                    self.outbox.push(
+                        dominion_online::transport::outgoing::Command::UndoRequestDenied {
+                            player,
+                            decision,
+                        }
+                        .encode()
+                        .map_err(|e| e.to_string())?,
+                    );
+                }
+            }
             Message::Metagame { .. } => {
                 reducer.invalidate();
                 return Err("official metagame request requires operator inspection".into());
@@ -634,6 +759,52 @@ impl Runtime {
                 if self.table.as_ref().is_some_and(|t| t.table_id == id) {
                     reducer.invalidate();
                     self.table = None;
+                }
+            }
+            Message::Ancillary(
+                dominion_online::transport::ancillary::Message::AutomatchFound {
+                    table,
+                    is_bot_game,
+                },
+            ) => {
+                let options = self
+                    .search
+                    .take()
+                    .ok_or("REFUSED: unsolicited automatch result")?;
+                if is_bot_game || self.update.mode == OnlineMode::Bots {
+                    return Err("REFUSED: unexpected bot match".into());
+                }
+                let human = HumanTable {
+                    mode: self.update.mode,
+                    owner: reducer.player_id,
+                    table: table.clone(),
+                };
+                if table.players.len() != usize::from(options.players) {
+                    return Err("REFUSED: matched player count differs".into());
+                }
+                human.validate(&table, reducer.player_id)?;
+                for p in &table.players {
+                    reducer.names.insert(p.id, p.name.clone());
+                }
+                self.store
+                    .save("own-match", &human)
+                    .map_err(|e| e.to_string())?;
+                self.table = Some(table);
+                self.bots.clear();
+                self.human = Some(human);
+                self.needs_snapshot = true;
+                self.update.searching = true;
+            }
+            Message::Succeeded(6) if self.search.is_some() => {
+                self.queue_status = Some(false);
+                self.update.searching = false;
+            }
+            Message::AutomatchStatus(status) => {
+                if self.search.is_some() {
+                    self.queue_status = Some(status.searching);
+                    self.update.searching = status.searching;
+                    self.update.queue_feedback =
+                        status.feedback.into_iter().map(|f| f.name).collect();
                 }
             }
             Message::Ancillary(_)
@@ -646,7 +817,6 @@ impl Runtime {
             | Message::Succeeded(_)
             | Message::Preferences(_)
             | Message::Relationships(_)
-            | Message::AutomatchStatus(_)
             | Message::PlayerDisconnected { .. }
             | Message::PlayerReconnected { .. }
             | Message::Ticker(_)
@@ -704,6 +874,10 @@ impl Runtime {
             .as_ref()
             .ok_or("official server has not returned a table")?;
         let id = self.update.reducer.player_id;
+        if let Some(human) = &self.human {
+            human.validate(table, id)?;
+            return Ok(table);
+        }
         if table.host_id != id
             || table.players.len() != 1
             || table.players[0].id != id
@@ -751,24 +925,14 @@ impl Runtime {
                 "REFUSED: an official game is already running; new_game never resigns it".into(),
             );
         }
+        if self.update.searching {
+            return Err("REFUSED: cancel matchmaking before starting a bot game".into());
+        }
         let (bots, rules) = options.rules(&self.update.reducer.catalog)?;
         let previous_game = self.update.reducer.game_id;
-        if self.table.is_some() {
-            if self.update.reducer.result.is_none() {
-                return Err("REFUSED: an unfinished official table already exists".into());
-            }
-            let table_id = self.safe_table()?.table_id;
-            let bytes = dominion_online::transport::outgoing::Command::LeaveTable {
-                table: table_id,
-                player: self.update.reducer.player_id,
-            }
-            .encode()
-            .map_err(|e| e.to_string())?;
-            self.send(bytes).await?;
-            while self.table.is_some() {
-                self.receive().await?;
-            }
-        }
+        self.leave_finished().await?;
+        self.human = None;
+        self.update.mode = OnlineMode::Bots;
         self.send(command::private_table(&rules).map_err(|e| e.to_string())?)
             .await?;
         while self.table.is_none() {
@@ -799,6 +963,25 @@ impl Runtime {
         self.send(command::ready(table.table_id, true)).await?;
         while self.update.reducer.game_id == previous_game {
             self.receive().await?;
+        }
+        Ok(())
+    }
+    async fn leave_finished(&mut self) -> Result<(), String> {
+        if self.table.is_some() {
+            if self.update.reducer.result.is_none() {
+                return Err("REFUSED: an unfinished official table already exists".into());
+            }
+            let table_id = self.table.as_ref().expect("table checked").table_id;
+            let bytes = dominion_online::transport::outgoing::Command::LeaveTable {
+                table: table_id,
+                player: self.update.reducer.player_id,
+            }
+            .encode()
+            .map_err(|e| e.to_string())?;
+            self.send(bytes).await?;
+            while self.table.is_some() {
+                self.receive().await?;
+            }
         }
         Ok(())
     }

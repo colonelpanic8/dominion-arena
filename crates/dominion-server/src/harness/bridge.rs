@@ -49,6 +49,7 @@ struct SeatBridge {
     client: Arc<Client>,
     token: String,
     journal: mpsc::Sender<Record>,
+    official: bool,
 }
 
 impl SeatBridge {
@@ -65,9 +66,10 @@ impl SeatBridge {
     }
 }
 
-fn tools() -> Vec<Tool> {
+fn tools(official: bool) -> Vec<Tool> {
     TOOLS
         .iter()
+        .filter(|name| !official || ["state", "step", "wait", "cards", "log"].contains(name))
         .map(|name| {
             let mut tool = crate::mcp::tool_definition(name).expect("game tool");
             let schema = Arc::make_mut(&mut tool.input_schema);
@@ -96,7 +98,7 @@ impl ServerHandler for SeatBridge {
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
-            tools: tools(),
+            tools: tools(self.official),
             ..Default::default()
         })
     }
@@ -111,6 +113,12 @@ impl ServerHandler for SeatBridge {
             .copied()
             .find(|name| *name == request.name)
             .ok_or_else(|| ErrorData::invalid_params("tool unavailable for this seat", None))?;
+        if self.official && !["state", "step", "wait", "cards", "log"].contains(&tool) {
+            return Err(ErrorData::invalid_params(
+                "tool unavailable for official game",
+                None,
+            ));
+        }
         let mut args = request.arguments.unwrap_or_default();
         if args.contains_key("token") || args.contains_key("game_id") {
             return Err(ErrorData::invalid_params(
@@ -118,7 +126,7 @@ impl ServerHandler for SeatBridge {
                 None,
             ));
         }
-        if !matches!(tool, "card" | "cards" | "log") {
+        if !self.official && !matches!(tool, "card" | "cards" | "log") {
             args.insert("token".into(), json!(self.token));
         }
         self.record(
@@ -166,9 +174,20 @@ pub struct Bridge {
 
 impl Bridge {
     pub async fn start(server: &str, job: &Job) -> Result<Self, String> {
-        let client = Arc::new(Client::connect(server).await?);
+        let endpoint = super::endpoint(server, job)?;
+        let client = Arc::new(
+            Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
+                .await?,
+        );
         let joined = client
-            .call("join_game", json!({"game":job.game_id,"token":job.token}))
+            .call(
+                if job.official { "state" } else { "join_game" },
+                if job.official {
+                    json!({})
+                } else {
+                    json!({"game":job.game_id,"token":job.token})
+                },
+            )
             .await
             .map_err(|e| e.to_string())?;
         if !joined.ok {
@@ -179,6 +198,7 @@ impl Bridge {
             client,
             token: job.token.clone(),
             journal,
+            official: job.official,
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await

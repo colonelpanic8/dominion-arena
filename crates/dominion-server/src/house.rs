@@ -41,6 +41,8 @@ pub enum ToRunner {
 #[serde(rename_all = "camelCase")]
 pub struct Job {
     #[serde(default)]
+    pub official: bool,
+    #[serde(default)]
     pub transcript: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<dominion_engine::GameConfig>,

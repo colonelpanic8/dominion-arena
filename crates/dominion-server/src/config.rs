@@ -30,6 +30,8 @@ pub struct Config {
     pub online_owner: Option<String>,
     /// Password-store entry; only its first line is read at runtime.
     pub online_password_entry: Option<String>,
+    /// Runtime credential file; mutually exclusive with online_password_entry.
+    pub online_password_file: Option<PathBuf>,
     /// Operator assertion that this account is idle and exclusive to this client.
     pub online_exclusive: Option<bool>,
     /// Resume only a bot table previously created by this state directory.

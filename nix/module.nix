@@ -34,6 +34,11 @@ in {
         `/var/cache`.
       '';
     };
+    onlinePasswordCredential = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Path to a systemd-creds encrypted password on the host, loaded only at runtime.";
+    };
     agents = {
       enable = lib.mkEnableOption ''
         the server's own agents: `dominion agents` runs as `user`, with that account's
@@ -81,6 +86,11 @@ in {
       state_dir = lib.mkDefault "/var/lib/dominion/games";
       assets_dir = lib.mkDefault "/var/cache/dominion/assets";
       agent_socket = lib.mkIf cfg.agents.enable (lib.mkDefault "/run/dominion/agents.sock");
+      online_state_dir = lib.mkDefault "/var/lib/dominion/online";
+      online_cache_dir = lib.mkDefault "/var/cache/dominion/online";
+      online_password_file =
+        lib.mkIf (cfg.onlinePasswordCredential != null)
+        (lib.mkDefault "/run/credentials/dominion.service/online-password");
     };
     services.dominion.agents.settings = lib.mkIf cfg.agents.enable {
       agent_socket = lib.mkDefault cfg.settings.agent_socket;
@@ -99,6 +109,10 @@ in {
       after = ["network.target"];
       serviceConfig = {
         ExecStart = "${dominion} serve";
+        ExecStartPre = lib.optional (cfg.settings.online_enabled or false) "${dominion} online sync";
+        LoadCredentialEncrypted =
+          lib.optional (cfg.onlinePasswordCredential != null)
+          "online-password:${cfg.onlinePasswordCredential}";
         User = "dominion";
         Group = "dominion";
         StateDirectory = "dominion";
