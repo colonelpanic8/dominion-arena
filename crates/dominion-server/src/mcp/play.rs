@@ -1,5 +1,6 @@
 //! Presentation and arguments for dominion/play@1; legacy tools keep their wire format.
 
+use dominion_agent::turns::{self, TurnSpan, TurnSummary};
 use dominion_agent::{AgentDecision, AgentView, GlossaryEntry};
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -43,6 +44,69 @@ pub struct LogParams {
     pub after: Option<usize>,
     /// Keep the newest entries after `after` (default 50), returned oldest first.
     pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TurnsParams {
+    /// Only this player's turns: their seat index, as in the view (0 is P1).
+    pub player: Option<u8>,
+    /// The first turn number to include: each player's own count, extra turns included.
+    pub from: Option<u32>,
+    /// The last turn number to include.
+    pub to: Option<u32>,
+    /// With neither from nor to: how many of the newest turns (default 6).
+    pub last: Option<usize>,
+    /// Also return each turn's log entries.
+    #[serde(default)]
+    pub detail: bool,
+}
+
+/// The turns `p` asks for, oldest first, with their summaries. The last turn of a
+/// `running` game is the one in progress.
+pub fn turns<'a>(
+    log: &'a [dominion_agent::LogEntry],
+    names: &[String],
+    running: bool,
+    p: &TurnsParams,
+) -> Vec<(TurnSpan<'a>, TurnSummary)> {
+    let all = turns::split(log);
+    let current = all.last().map(|t| (t.player, t.number)).filter(|_| running);
+    let mut spans: Vec<_> = all
+        .into_iter()
+        .filter(|t| p.player.is_none_or(|q| t.player == q))
+        .filter(|t| p.from.is_none_or(|n| t.number >= n))
+        .filter(|t| p.to.is_none_or(|n| t.number <= n))
+        .collect();
+    if p.from.is_none() && p.to.is_none() {
+        spans.drain(..spans.len().saturating_sub(p.last.unwrap_or(6)));
+    }
+    spans
+        .into_iter()
+        .map(|t| {
+            let ongoing = current == Some((t.player, t.number));
+            (t, turns::summarize(t, names, ongoing))
+        })
+        .collect()
+}
+
+pub fn turns_text(turns: &[(TurnSpan<'_>, TurnSummary)], detail: bool) -> String {
+    let mut text = String::from("TURNS");
+    if turns.is_empty() {
+        text.push_str("\n  none");
+    }
+    for (span, summary) in turns {
+        text.push_str(&format!(
+            "\n  [{}-{}] {}",
+            summary.first_seq, summary.last_seq, summary.summary
+        ));
+        if detail {
+            for e in span.entries {
+                text.push_str(&format!("\n    {}: {}", e.seq, e.text));
+            }
+        }
+    }
+    text
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -287,7 +351,28 @@ impl Presentation {
             .filter(|e| full || self.last_log.is_none_or(|seq| e.seq > seq))
             .collect();
         if unseen.len() > 50 {
-            text.push_str("\nLOG truncated: older entries omitted; call log to reread them.");
+            let (lo, hi) = (unseen[0].seq, unseen[unseen.len() - 51].seq);
+            text.push_str(&format!(
+                "\nLOG truncated: entries {lo}-{hi} omitted; call log or turns (detail) to reread them."
+            ));
+            let names = turns::names(view);
+            let earlier: Vec<_> = turns::split(logs)
+                .into_iter()
+                .filter_map(|t| {
+                    let continues = t.entries.last().is_some_and(|e| e.seq > hi);
+                    let part = t.within(|e| (lo..=hi).contains(&e.seq))?;
+                    Some(turns::summarize(part, &names, continues))
+                })
+                .collect();
+            if !earlier.is_empty() {
+                text.push_str("\nOMITTED, BY TURN");
+                for t in earlier {
+                    text.push_str(&format!(
+                        "\n  [{}-{}] {}",
+                        t.first_seq, t.last_seq, t.summary
+                    ));
+                }
+            }
         }
         if !unseen.is_empty() {
             text.push_str("\nLOG");
@@ -409,16 +494,21 @@ mod tests {
         observation.log = (0..80)
             .map(|seq| LogEntry {
                 seq,
-                kind: "played".into(),
+                kind: if seq == 0 { "turn-start" } else { "played" }.into(),
                 player: Some(0),
                 card: Some("Village".into()),
-                text: format!("entry {seq}"),
+                text: if seq == 0 {
+                    "Ada starts turn 4".into()
+                } else {
+                    format!("entry {seq}")
+                },
             })
             .collect();
         let mut presentation = Presentation::default();
         let (full, _) = presentation.render(&seat, &observation, false);
         assert!(
-            full.contains("call log")
+            full.contains("entries 0-29 omitted")
+                && full.contains("[0-29] Ada T4: played Village x29 (so far)")
                 && full.contains("30: entry 30")
                 && full.contains("79: entry 79")
         );
@@ -428,8 +518,46 @@ mod tests {
         observation.log.truncate(2);
         observation.undos += 1;
         let (reset, cards) = presentation.render(&seat, &observation, false);
-        assert!(reset.starts_with("STATUS game") && reset.contains("0: entry 0"));
+        assert!(reset.starts_with("STATUS game") && reset.contains("1: entry 1"));
         assert!(cards.is_empty());
+    }
+
+    #[test]
+    fn turns_are_picked_by_player_and_number_or_newest_first() {
+        let log: Vec<LogEntry> = (0..6)
+            .map(|seq| LogEntry {
+                seq,
+                kind: "turn-start".into(),
+                player: Some((seq % 2) as u8),
+                card: None,
+                text: format!("X starts turn {}", seq / 2 + 1),
+            })
+            .collect();
+        let names = ["Ada".to_string(), "Bo".to_string()];
+        let pick = |p: TurnsParams| -> Vec<(u8, u32)> {
+            turns(&log, &names, false, &p)
+                .into_iter()
+                .map(|(t, _)| (t.player, t.number))
+                .collect()
+        };
+        let all = || TurnsParams {
+            player: None,
+            from: None,
+            to: None,
+            last: None,
+            detail: false,
+        };
+        let bo_from_2 = TurnsParams {
+            player: Some(1),
+            from: Some(2),
+            ..all()
+        };
+        assert_eq!(pick(bo_from_2), vec![(1, 2), (1, 3)]);
+        let newest = TurnsParams {
+            last: Some(2),
+            ..all()
+        };
+        assert_eq!(pick(newest), vec![(0, 3), (1, 3)]);
     }
 
     #[test]

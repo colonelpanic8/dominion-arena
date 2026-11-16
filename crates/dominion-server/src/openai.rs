@@ -326,6 +326,9 @@ fn description(tool: &str) -> &'static str {
         }
         "cards" => "Card text and current costs, by name.",
         "log" => "Reread log entries after a sequence number.",
+        "turns" => {
+            "What each turn did (played, bought, gained, trashed, ...), by player and turn number; detail adds its log entries."
+        }
         "play_treasures" => {
             "In a Buy phase, play every Treasure the decision offers, one after another."
         }
@@ -587,7 +590,7 @@ async fn play_inner(
                 }
                 _ => match crate::harness::GAME_TOOLS.iter().find(|t| **t == name) {
                     Some(tool) => {
-                        let args = if matches!(*tool, "cards" | "log") {
+                        let args = if matches!(*tool, "cards" | "log" | "turns") {
                             args
                         } else {
                             token(job, args)
