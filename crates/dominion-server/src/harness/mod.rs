@@ -39,36 +39,6 @@ pub struct Sandbox {
     pub forwarder: Option<std::path::PathBuf>,
 }
 
-/// The playbook as one text, for a CLI that can't start in it: its AGENTS.md, then every
-/// context file and skill, which an agent started in the playbook reads as it needs them.
-pub fn inline_playbook(dir: &std::path::Path) -> Result<String, String> {
-    let read = |path: &std::path::Path| {
-        std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))
-    };
-    let files = |sub: &str, file: Option<&str>| -> Result<Vec<String>, String> {
-        let root = dir.join(sub);
-        let mut names: Vec<String> = std::fs::read_dir(&root)
-            .map_err(|e| format!("{}: {e}", root.display()))?
-            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-            .map(|name| match file {
-                Some(file) => format!("{sub}/{name}/{file}"),
-                None => format!("{sub}/{name}"),
-            })
-            .filter(|path| path.ends_with(".md") && dir.join(path).is_file())
-            .collect();
-        names.sort();
-        Ok(names)
-    };
-    let mut paths = vec!["AGENTS.md".to_string()];
-    paths.extend(files("context", None)?);
-    paths.extend(files("skills", Some("SKILL.md"))?);
-    let mut text = vec![];
-    for path in paths {
-        text.push(format!("# {path}\n{}", read(&dir.join(&path))?));
-    }
-    Ok(text.join("\n\n"))
-}
-
 /// The game brief: the seat's system prompt.
 pub fn instructions(playbook: bool) -> String {
     format!(
@@ -332,31 +302,5 @@ mod tests {
         assert_eq!(kinds(&archive), ["\"final_view_unavailable\""]);
         assert!(session_end(&client, &mut archive, &job).await.is_err());
         client.close().await;
-    }
-    #[test]
-    fn the_inlined_playbook_is_agents_md_then_context_then_skills() {
-        let dir = tempfile::tempdir().unwrap();
-        for (path, text) in [
-            ("AGENTS.md", "always"),
-            ("context/strategy.md", "strategy"),
-            ("context/combos.md", "combos"),
-            ("skills/play-game/SKILL.md", "plan"),
-            ("data/card-ratings.py", "print()"),
-        ] {
-            let path = dir.path().join(path);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, text).unwrap();
-        }
-        let text = super::inline_playbook(dir.path()).unwrap();
-        let headings: Vec<&str> = text.lines().filter(|l| l.starts_with("# ")).collect();
-        assert_eq!(
-            headings,
-            [
-                "# AGENTS.md",
-                "# context/combos.md",
-                "# context/strategy.md",
-                "# skills/play-game/SKILL.md"
-            ]
-        );
     }
 }

@@ -124,9 +124,20 @@ elif '--restricted' in sys.argv:
     print(json.dumps({'type':'system','subtype':'init','tools':[], 'mcp_servers':[]}))
     print(json.dumps({'type':'result', 'is_error':False, 'result':answer}))
 elif '--agent' in sys.argv:
-    assert 'tools: [finish]' in Path('/work/.agents/agents/dominion.md').read_text()
-    assert 'command(*)' in Path('/work/settings.json').read_text()
+    agent = Path('/home/agent/.gemini/config/agents/dominion.md').read_text()
+    permissions = json.loads(Path('/work/settings.json').read_text())['permissions']
     print(json.dumps({'event':'init','init':{'tools':[]}}))
+    if Path('/playbook').exists():
+        assert 'tools: [read_file, run_command, finish]' in agent
+        assert 'read_file(/playbook)' in permissions['allow']
+        assert 'command(python3 data/card-ratings.py)' in permissions['allow']
+        assert not any(r.startswith(('read_file', 'command')) for r in permissions['deny'])
+        for tool, args in [('read_file', {'Path':'/playbook/context/rules.md'}), ('run_command', {'CommandLine':'python3 data/card-ratings.py Village'})]:
+            for state in ['ACTIVE', 'DONE']:
+                print(json.dumps({'event':'step_update','step_update':{'state':state,'step_type':'tool','tool_name':tool,'tool_info':{'name':tool,'parameters':args}}}))
+    else:
+        assert 'tools: [finish]' in agent
+        assert 'command(*)' in permissions['deny']
     print(json.dumps({'event':'result', 'result':{'status':'SUCCESS','response':answer}}))
 else:
     assert Path('/home/agent/.codex/auth.json').read_text() == '{}'
@@ -344,7 +355,7 @@ fn records(path: &std::path::Path) -> Vec<Value> {
 #[tokio::test]
 #[ignore = "requires bubblewrap and Linux user namespaces"]
 async fn playbook_seats_start_in_it_read_only_and_may_run_its_lookups() {
-    for program in ["claude", "codex"] {
+    for program in ["claude", "codex", "antigravity"] {
         let mut h = setup(program).await;
         let playbook = h._dir.path().join("playbook");
         for (path, text) in [
