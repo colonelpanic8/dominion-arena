@@ -186,7 +186,7 @@ will) or 500.
 | `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume, bannedCards, registration, guests}`; `bannedCards` is the asker's own list once they have set one |
 | `PUT /api/settings/banned-cards` | `["Witch", ...]` | the settings, after replacing the asker's Banned cards list (signed in) |
 | `GET /api/games` | | the games, as `list_games` gives them, with `joined` (per seat, whether its token has been used since the server started), `source` (`direct`, `table`, `automatch`), `rated`, `watchable` and `users` (per seat, the account playing it) |
-| `POST /api/games` | `create_game`'s arguments | 201, the game id and seat tokens |
+| `POST /api/games` | `create_game`'s arguments, including optional `agents` (profile name or `null` per seat) | 201, the game id and tokens for seats without agents |
 | `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
 | `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo, meta}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the answers taken back: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat answered last. `meta`: `{source, rated, watchable, timed, users, connected, forfeitAt?, watchers, ended?, now}` (`now`: the server's clock, to read `forfeitAt` against) |
@@ -375,6 +375,97 @@ MCP bridge and writes evidence under `/tmp/dominion-native-live`.
 profiles together, set `DOMINION_LIVE_OPPONENT` to an `AgentSpec` JSON object with
 its own `name`, `program`, `model`, and optional `command` / `auth_dir`. The check
 has a three-minute deadline and asserts one native process per seat.
+
+#### T3 Code agent profiles
+
+The runner can also use T3 Code's MCP server. T3 owns the provider accounts, models,
+model options and persistent conversations; Dominion supplies each seat's legal view
+and relays its answers and card lookups. Each seat gets its own T3 thread. A dedicated
+T3 project lets you choose the environment in which these agents run: T3 profiles run
+there, not under the runner's bubblewrap isolation, and play only Arena's own games
+(not official dominion.games seats).
+
+Configure profiles in the runner's usual settings file:
+
+```toml
+agent_socket = "/run/dominion/agents.sock"
+server = "http://127.0.0.1:7317/mcp"
+agents_at_once = 2
+agents_dir = "/srv/dominion/agents"
+
+[t3code]
+url = "http://127.0.0.1:3773/mcp"
+project_id = "YOUR_T3_PROJECT_ID"
+token_env = "T3CODE_MCP_TOKEN"
+# environment_id = "LINKED_ENVIRONMENT_ID" # project and providers on a linked machine
+# response_seconds = 600                  # maximum time for one agent response
+
+[[agents]]
+name = "Codex High"
+program = "t3code"
+provider_instance = "codex"
+model = "gpt-6.1-sol"
+instructions = "Play to win."
+[agents.options]
+reasoningEffort = "high"
+
+[[agents]]
+name = "Claude High"
+program = "t3code"
+provider_instance = "claudeAgent"
+model = "claude-opus-5-5"
+[agents.options]
+effort = "high"
+```
+
+Use the provider instance IDs, models and options advertised by your T3 environment's
+`orchestrator_capabilities`; the runner validates them before offering profiles.
+Different profiles can use the same provider/model with different options or instructions.
+`agents_at_once` limits occupied agent seats, so a two-agent game needs two available slots.
+
+Authorize the runner once with `dominion --config /path/to/config.toml t3-login`.
+It prints a sign-in URL to stderr; open it on the runner's machine and approve **Full
+access**. Only the access token goes to stdout, so send it straight to your credential
+manager, for example:
+
+```sh
+dominion --config /path/to/config.toml t3-login | pass insert -m dominion/t3code
+export T3CODE_MCP_TOKEN="$(pass show dominion/t3code)"
+dominion --config /path/to/config.toml agents
+```
+
+No credentials are written by the login command. Alternatively `t3code.token_file`
+can point to a runtime secret supplied by your service manager; set it instead of
+`token_env`. T3 access tokens expire: repeat sign-in when one expires.
+
+Use ordinary game creation (`create_game` or `POST /api/games`), signed in as a
+registered account, to assign the profiles to seats:
+
+```json
+{
+  "players": 2,
+  "agents": ["Codex High", "Claude High"],
+  "sets": ["Base", "Intrigue"],
+  "seed": 42,
+  "turn_limit": 200
+}
+```
+
+The usual game options apply. A `null` entry leaves that seat for a person or external
+agent, with its token returned to the creator. Assigned agent tokens go only to the
+runner. The same profile may occupy several seats. Agent assignments use the existing
+daily allowance and runner capacity; these direct games are unrated, timed and have
+undo disabled. They are watchable by default at `/game/<game_id>`; `watchable: false`
+explicitly makes one private. Profiles are also available in ordinary lobby tables.
+
+Every T3 seat run writes an append-only `interactions.jsonl` under
+`agents_dir/archives/<run>/`, with the resolved kingdom and seed, profile settings,
+prompts, game-tool requests/results, T3 thread/run IDs, and T3's activity history
+(including any reasoning it exposes). Long history entries and multiple pages are
+read in full. Seat tokens are removed from the archive and never sent to T3.
+Archives do not expire automatically, and a failed archive write stops further play.
+The runner prints each archive path and T3 thread link. The server's normal retention
+settings still govern how long the game remains hosted and watchable.
 
 What one address or account may do is limited: accounts registered and guests made per
 hour, sign-in attempts, games created by hand, kingdoms dealt, table changes, messages.

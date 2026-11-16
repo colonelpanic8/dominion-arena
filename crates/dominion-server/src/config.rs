@@ -132,6 +132,8 @@ pub struct Config {
     pub agents_dir: Option<PathBuf>,
     /// Where `dominion solo` keeps its games (default `$XDG_STATE_HOME/dominion/solo`).
     pub solo_dir: Option<PathBuf>,
+    /// Connection and workspace used by T3 Code agents.
+    pub t3code: Option<crate::t3::Settings>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -263,6 +265,7 @@ impl Config {
             agents,
             capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),
             dir,
+            t3code: self.t3code.clone(),
         })
     }
 

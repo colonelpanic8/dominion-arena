@@ -18,6 +18,7 @@ pub mod runner;
 pub mod solo;
 pub mod steps;
 pub mod store;
+pub mod t3;
 mod transcript;
 
 use dominion_agent::GlossaryEntry;

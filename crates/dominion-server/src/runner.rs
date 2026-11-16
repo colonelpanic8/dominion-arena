@@ -3,7 +3,7 @@
 
 use crate::house::{FromRunner, Job, Offer, ToRunner};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -21,6 +21,8 @@ pub enum Program {
     Codex,
     #[serde(alias = "gemini")]
     Antigravity,
+    /// T3 Code's MCP server, with one persistent conversation per seat.
+    T3Code,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -40,6 +42,11 @@ pub struct AgentSpec {
     pub history_turns: Option<usize>,
     /// Provider's native credential/config directory (default its standard location).
     pub auth_dir: Option<PathBuf>,
+    /// T3 Code's provider instance (account), when program is t3code.
+    pub provider_instance: Option<String>,
+    /// Options T3 Code advertises for this model, when program is t3code.
+    #[serde(default)]
+    pub options: BTreeMap<String, crate::t3::OptionValue>,
 }
 
 impl AgentSpec {
@@ -61,6 +68,14 @@ impl AgentSpec {
         if self.response_seconds == Some(0) {
             return Err("response_seconds must be positive".into());
         }
+        if self.program != Program::T3Code
+            && (!self.options.is_empty() || self.provider_instance.is_some())
+        {
+            return Err(format!(
+                "{}: options and provider_instance require program = \"t3code\"",
+                self.name
+            ));
+        }
         if let Some(effort) = &self.effort {
             let allowed = match self.program {
                 Program::Claude => &["low", "medium", "high", "max"][..],
@@ -68,6 +83,7 @@ impl AgentSpec {
                     &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"][..]
                 }
                 Program::Antigravity => &["low", "medium", "high", "xhigh", "max"][..],
+                Program::T3Code => &[][..],
             };
             if !allowed.contains(&effort.as_str()) {
                 return Err(format!("unsupported {:?} effort {effort:?}", self.program));
@@ -95,6 +111,8 @@ pub fn default_agents() -> Vec<AgentSpec> {
         response_seconds: None,
         history_turns: None,
         auth_dir: None,
+        provider_instance: None,
+        options: BTreeMap::new(),
     })
     .collect()
 }
@@ -108,6 +126,7 @@ pub struct Settings {
     pub capacity: u32,
     /// Workspaces and durable archives.
     pub dir: PathBuf,
+    pub t3code: Option<crate::t3::Settings>,
 }
 
 type Key = (String, u8);
@@ -135,6 +154,18 @@ pub async fn run(settings: Settings) -> Result<(), String> {
 pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<(), String> {
     let logs = settings.dir.join("archives");
     std::fs::create_dir_all(&logs).map_err(|e| format!("{}: {e}", logs.display()))?;
+    if settings.agents.iter().any(|a| a.program == Program::T3Code) {
+        let t3 = settings
+            .t3code
+            .as_ref()
+            .ok_or("a t3code agent needs [t3code] settings")?;
+        let mut archive = crate::archive::Archive::create(&logs)?;
+        let client = t3.connect().await?;
+        for spec in (settings.agents.iter()).filter(|a| a.program == Program::T3Code) {
+            crate::t3::validate(t3, &client, spec, &mut archive).await?;
+        }
+        client.close().await;
+    }
     let hello = FromRunner::Hello {
         agents: (settings.agents.iter())
             .map(|a| Offer {
@@ -147,6 +178,7 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
     let mut hello = serde_json::to_string(&hello).expect("serializable");
     hello.push('\n');
     let mut playing: HashMap<Key, Playing> = HashMap::new();
+    let mut stopping: Vec<JoinHandle<()>> = vec![];
     let mut said_unreachable = false;
     let connected = async {
         loop {
@@ -177,7 +209,10 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
             let mut lines = BufReader::new(read).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 match serde_json::from_str::<ToRunner>(&line) {
-                    Ok(ToRunner::Jobs { jobs }) => reconcile(&settings, &mut playing, jobs, &logs),
+                    Ok(ToRunner::Jobs { jobs }) => {
+                        stopping.retain(|task| !task.is_finished());
+                        stopping.extend(reconcile(&settings, &mut playing, jobs, &logs));
+                    }
                     Ok(ToRunner::Refused { agent, reason }) => {
                         eprintln!("dominion agents: the server refused {agent}: {reason}");
                     }
@@ -195,28 +230,34 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
     for p in playing.values() {
         p.stop.cancel();
     }
-    for (_, p) in playing {
-        let _ = p.task.await;
+    for task in playing.into_values().map(|p| p.task).chain(stopping) {
+        let _ = task.await;
     }
     Ok(())
 }
 
+/// Starts and stops seats to match `jobs`; returns the tasks of the seats it stopped,
+/// which may still be finishing.
 fn reconcile(
     settings: &Settings,
     playing: &mut HashMap<Key, Playing>,
     jobs: Vec<Job>,
     logs: &Path,
-) {
+) -> Vec<JoinHandle<()>> {
     let wanted: HashMap<Key, Job> = (jobs.into_iter())
         .map(|j| ((j.game_id.clone(), j.seat), j))
         .collect();
-    playing.retain(|key, p| {
-        let keep = wanted.get(key) == Some(&p.job) && !p.stop.is_cancelled();
-        if !keep {
+    let stopped: Vec<Key> = (playing.iter())
+        .filter(|(key, p)| wanted.get(*key) != Some(&p.job) || p.stop.is_cancelled())
+        .map(|(key, _)| key.clone())
+        .collect();
+    let stopped: Vec<JoinHandle<()>> = (stopped.iter())
+        .filter_map(|key| playing.remove(key))
+        .map(|p| {
             p.stop.cancel();
-        }
-        keep
-    });
+            p.task
+        })
+        .collect();
     for (key, job) in wanted {
         if playing.contains_key(&key) {
             continue;
@@ -240,9 +281,11 @@ fn reconcile(
             settings.server.clone(),
             log,
             stop.clone(),
+            settings.t3code.clone(),
         ));
         playing.insert(key, Playing { job, stop, task });
     }
+    stopped
 }
 
 async fn keep_playing(
@@ -251,6 +294,7 @@ async fn keep_playing(
     server: String,
     logs: PathBuf,
     stop: CancellationToken,
+    t3code: Option<crate::t3::Settings>,
 ) {
     let mut retry = RECONNECT;
     let mut failures = 0;
@@ -264,7 +308,19 @@ async fn keep_playing(
                 archive.dir.display()
             );
             let cancelled = CancellationToken::new();
-            let play = crate::harness::play(&spec, &job, &server, &mut archive, cancelled.clone());
+            let play = async {
+                match (spec.program, &t3code) {
+                    (Program::T3Code, None) => Err("a t3code agent needs [t3code] settings".into()),
+                    (Program::T3Code, Some(t3)) => {
+                        crate::t3::play(t3, &spec, &job, &server, &mut archive, cancelled.clone())
+                            .await
+                    }
+                    _ => {
+                        crate::harness::play(&spec, &job, &server, &mut archive, cancelled.clone())
+                            .await
+                    }
+                }
+            };
             tokio::pin!(play);
             tokio::select! {
                 result = &mut play => result,
