@@ -9,18 +9,9 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
-pub const TOOLS: [&str; 10] = [
-    "state",
-    "step",
-    "wait",
-    "cards",
-    "log",
-    "view",
-    "card",
-    "answer",
-    "play_treasures",
-    "wait_for_decision",
-];
+/// The dominion/play@1 tools a seat is offered. The legacy ones (view, answer, ...) return
+/// the raw JSON view as their text, so they're left out.
+pub const TOOLS: [&str; 6] = ["state", "step", "wait", "cards", "log", "play_treasures"];
 
 pub struct Record {
     kind: &'static str,
@@ -72,6 +63,7 @@ fn tools(official: bool) -> Vec<Tool> {
         .filter(|name| !official || ["state", "step", "wait", "cards", "log"].contains(name))
         .map(|name| {
             let mut tool = crate::mcp::tool_definition(name).expect("game tool");
+            tool.output_schema = None;
             let schema = Arc::make_mut(&mut tool.input_schema);
             if let Some(Value::Object(properties)) = schema.get_mut("properties") {
                 properties.remove("token");
@@ -88,7 +80,7 @@ impl ServerHandler for SeatBridge {
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.instructions = Some("Play your assigned Dominion seat through dominion/play@1: state, then step with decision/indices/expect, or wait when decision is null. Results carry {view, glossary?}; stop when view.game.running is false. cards and log provide references. Seat credentials are supplied by the server; do not create or join another game. Legacy gameplay tools remain available.".into());
+        info.instructions = Some("Play your assigned Dominion seat through dominion/play@1: state, then step with decision/indices/expect, or wait when decision is null. Results are text: what changed since your last decision, new card text, then your next decision; state shows the whole game. Stop at GAME OVER. cards and log provide references. Seat credentials are supplied by the server; do not create or join another game.".into());
         info
     }
 
@@ -159,8 +151,9 @@ impl ServerHandler for SeatBridge {
             json!({"source":"dominion", "tool":tool, "reply":reply}),
         )
         .await?;
+        // Only the text reaches the model: the structured view repeats the whole game at
+        // every step, about ten times the text's size. The archive above keeps both.
         let mut result = CallToolResult::success(vec![ContentBlock::text(reply.text)]);
-        result.structured_content = reply.json;
         result.is_error = Some(!reply.ok);
         Ok(result.into())
     }
