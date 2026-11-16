@@ -25,7 +25,7 @@ const PRUNE_BATCH: usize = 20;
 /// Times the model may stop calling tools while the game still runs.
 const MAX_NUDGES: u32 = 3;
 
-const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
+const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries; play_treasures plays every Treasure offered in one call. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
 const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills.";
 
 enum Auth {
@@ -277,21 +277,10 @@ fn parse_stream(text: &str) -> Result<(Vec<Value>, Value), String> {
     Ok((items, usage))
 }
 
-/// Game tools an official dominion.games seat has: its server has no play_treasures.
-const OFFICIAL_TOOLS: [&str; 5] = ["state", "step", "wait", "cards", "log"];
-
-fn game_tool(official: bool, name: &str) -> Option<&'static str> {
-    crate::harness::GAME_TOOLS
-        .iter()
-        .copied()
-        .find(|t| *t == name && (!official || OFFICIAL_TOOLS.contains(t)))
-}
-
 /// The function tools the model gets: the game's, and the playbook's when there is one.
-fn tools(official: bool, playbook: bool) -> Vec<Value> {
+fn tools(playbook: bool) -> Vec<Value> {
     let mut tools: Vec<Value> = crate::harness::GAME_TOOLS
         .iter()
-        .filter(|name| game_tool(official, name).is_some())
         .map(|name| {
             let definition = crate::mcp::tool_definition(name).expect("game tool");
             let mut parameters = Value::Object((*definition.input_schema).clone());
@@ -515,7 +504,7 @@ async fn play_inner(
     ));
     let mut input = vec![json!({"type": "message", "role": "user",
         "content": [{"type": "input_text", "text": first}]})];
-    let tools = tools(job.official, playbook.is_some());
+    let tools = tools(playbook.is_some());
     let keep = spec.context_results.unwrap_or(DEFAULT_KEEP_RESULTS);
     let mut game_results: Vec<usize> = vec![];
     let mut nudges = 0;
@@ -606,9 +595,9 @@ async fn play_inner(
                     let result = card_ratings(sandbox, dir, &args).await;
                     playbook_call(archive, name, &args, result)?
                 }
-                _ => match game_tool(job.official, name) {
+                _ => match crate::harness::GAME_TOOLS.iter().find(|t| **t == name) {
                     Some(tool) => {
-                        let args = if matches!(tool, "cards" | "log") {
+                        let args = if matches!(*tool, "cards" | "log") {
                             args
                         } else {
                             token(job, args)
@@ -707,19 +696,6 @@ mod tests {
             list_files(dir.path(), &json!({})).unwrap(),
             "AGENTS.md\nskills/a/SKILL.md"
         );
-    }
-
-    #[test]
-    fn official_seats_are_offered_only_the_official_servers_tools() {
-        let names = |official| -> Vec<String> {
-            tools(official, false)
-                .iter()
-                .map(|t| t["name"].as_str().unwrap().to_string())
-                .collect()
-        };
-        assert!(names(false).contains(&"play_treasures".to_string()));
-        assert_eq!(names(true), OFFICIAL_TOOLS);
-        assert_eq!(game_tool(true, "play_treasures"), None);
     }
 
     #[test]

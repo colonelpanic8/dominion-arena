@@ -29,6 +29,19 @@ impl Session {
             ..Self::new(client)
         }
     }
+    fn treasure_plays(
+        &self,
+        update: &Update,
+        d: &dominion_protocol::AgentDecision,
+    ) -> Vec<(u32, String)> {
+        let names: Vec<String> = d.options.iter().filter_map(|o| o.card.clone()).collect();
+        let cards = glossary(&update.reducer, &names).unwrap_or_default();
+        treasure_plays(d, |name| {
+            cards
+                .iter()
+                .any(|e| e.name == name && e.types.iter().any(|t| t == "Treasure"))
+        })
+    }
     fn failure(&self, message: String) -> CallToolResult {
         let mut text = message;
         if let Ok(Some(view)) = self.client.current().view() {
@@ -80,6 +93,23 @@ impl Session {
         structured(serde_json::json!({"view":view,"glossary":cards}), text)
     }
 }
+/// The Treasures a Buy phase move offers to play, as (option index, card name). The
+/// official view has no phase: a decision offering buys is a Buy phase move.
+fn treasure_plays(
+    d: &dominion_protocol::AgentDecision,
+    is_treasure: impl Fn(&str) -> bool,
+) -> Vec<(u32, String)> {
+    if !d.options.iter().any(|o| o.action == "buy") {
+        return vec![];
+    }
+    d.options
+        .iter()
+        .filter(|o| o.action == "play")
+        .filter_map(|o| Some((o.index, o.card.clone()?)))
+        .filter(|(_, card)| is_treasure(card))
+        .collect()
+}
+
 fn structured(value: serde_json::Value, text: String) -> CallToolResult {
     let mut result = CallToolResult::structured(value);
     result.content = vec![ContentBlock::text(text)];
@@ -150,6 +180,73 @@ impl Session {
             Ok(update) => self.observation(update, true),
             Err(e) => self.failure(e),
         }
+    }
+    #[tool(
+        description = "Autoplay Treasures: in a Buy phase move, play the Treasures it offers one after another, instead of answering once per Treasure. Plays only the Treasures offered when called, and stops early when you are asked anything else (a Treasure's own question). Returns your next view. Token is ignored."
+    )]
+    async fn play_treasures(
+        &self,
+        Parameters(p): Parameters<crate::mcp::PlayTreasuresParams>,
+    ) -> CallToolResult {
+        let mut update = self.client.current();
+        let mut left = match update.view() {
+            Ok(Some(view)) => match view.decision.as_ref() {
+                Some(d) if d.id == p.decision_id => self.treasure_plays(&update, d),
+                Some(d) => {
+                    return self.failure(format!(
+                        "REJECTED: decision {} is not open; the open one is {}",
+                        p.decision_id, d.id
+                    ));
+                }
+                None => return self.failure("REJECTED: no decision is open for you".into()),
+            },
+            Ok(None) => return self.failure("REJECTED: no game".into()),
+            Err(e) => return self.failure(e),
+        };
+        if left.is_empty() {
+            return self.failure(
+                "REJECTED: no Treasures to play: the decision is not a Buy phase move offering one"
+                    .into(),
+            );
+        }
+        let mut played = 0;
+        while let Ok(Some(view)) = update.view() {
+            let Some(d) = view.decision.as_ref() else {
+                break;
+            };
+            let Some((index, card)) = self
+                .treasure_plays(&update, d)
+                .into_iter()
+                .find(|(_, card)| left.iter().any(|(_, c)| c == card))
+            else {
+                break;
+            };
+            let at = left
+                .iter()
+                .position(|(_, c)| *c == card)
+                .expect("found above");
+            left.remove(at);
+            let answer = Answer {
+                decision: d.id.clone(),
+                indices: Some(vec![index]),
+                name: None,
+            };
+            if let Err(e) = self.client.answer(answer, Some(vec![card])).await {
+                return self.failure(e);
+            }
+            update = match self.client.wait(30).await {
+                Ok(update) => update,
+                Err(e) => return self.failure(e),
+            };
+            played += 1;
+        }
+        let mut result = self.observation(update, false);
+        let note = format!(
+            "Played {}.",
+            dominion_engine::amount(played, "Treasure", "Treasures")
+        );
+        result.content.insert(0, ContentBlock::text(note));
+        result
     }
     #[tool(description = "Official card text and current costs for named cards.")]
     async fn cards(&self, Parameters(p): Parameters<CardsParams>) -> CallToolResult {
@@ -227,3 +324,60 @@ impl Session {
     instructions = "Play through dominion/play@1: state, new_game, then step with decision and indices (top first) or name where nameAny; give expect with each selected label/card. When decision is null call wait. Results carry full {view,glossary?}; step/wait text shows changes. Stop at game.running=false. This is the official dominion.games backend, not Arena's hosted engine. It supports only this account versus server bots, unrated, spectators prohibited. Lifecycle authentication is configured by the operator before this MCP starts. No seat token is needed. Unsupported official protocol features fail clearly; never retry a sent answer after reconnect. online_reconnect only resumes this process's own session and replaces the snapshot. cards and log provide references."
 )]
 impl ServerHandler for Session {}
+
+#[cfg(test)]
+mod tests {
+    use dominion_protocol::{AgentDecision, AgentOption};
+
+    fn option(index: u32, action: &str, card: &str) -> AgentOption {
+        AgentOption {
+            index,
+            group: 0,
+            action: action.into(),
+            label: format!("{action} {card}"),
+            card: Some(card.into()),
+            zone: None,
+            cost: None,
+            value: None,
+            player: None,
+        }
+    }
+
+    fn decision(options: Vec<AgentOption>) -> AgentDecision {
+        AgentDecision {
+            id: "d1".into(),
+            player: None,
+            prompt: String::new(),
+            kind: "choose".into(),
+            purpose: String::new(),
+            source: None,
+            phase: None,
+            ordered: false,
+            name_any: false,
+            min: None,
+            max: None,
+            groups: vec![],
+            options,
+        }
+    }
+
+    #[test]
+    fn treasures_are_played_only_from_a_buy_phase_move() {
+        let treasure = |c: &str| matches!(c, "Copper" | "Silver" | "Crown");
+        let buy = decision(vec![
+            option(0, "play", "Copper"),
+            option(1, "play", "Silver"),
+            option(2, "buy", "Province"),
+        ]);
+        assert_eq!(
+            super::treasure_plays(&buy, treasure),
+            [(0, "Copper".to_string()), (1, "Silver".to_string())]
+        );
+        // An Action phase move playing Crown, an Action-Treasure, offers no buys.
+        let action = decision(vec![
+            option(0, "play", "Crown"),
+            option(1, "play", "Village"),
+        ]);
+        assert!(super::treasure_plays(&action, treasure).is_empty());
+    }
+}

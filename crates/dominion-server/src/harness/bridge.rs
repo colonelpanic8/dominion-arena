@@ -57,10 +57,9 @@ impl SeatBridge {
     }
 }
 
-fn tools(official: bool) -> Vec<Tool> {
+fn tools() -> Vec<Tool> {
     TOOLS
         .iter()
-        .filter(|name| !official || ["state", "step", "wait", "cards", "log"].contains(name))
         .map(|name| {
             let mut tool = crate::mcp::tool_definition(name).expect("game tool");
             tool.output_schema = None;
@@ -90,7 +89,7 @@ impl ServerHandler for SeatBridge {
         _: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         Ok(ListToolsResult {
-            tools: tools(self.official),
+            tools: tools(),
             ..Default::default()
         })
     }
@@ -105,12 +104,6 @@ impl ServerHandler for SeatBridge {
             .copied()
             .find(|name| *name == request.name)
             .ok_or_else(|| ErrorData::invalid_params("tool unavailable for this seat", None))?;
-        if self.official && !["state", "step", "wait", "cards", "log"].contains(&tool) {
-            return Err(ErrorData::invalid_params(
-                "tool unavailable for official game",
-                None,
-            ));
-        }
         let mut args = request.arguments.unwrap_or_default();
         if args.contains_key("token") || args.contains_key("game_id") {
             return Err(ErrorData::invalid_params(
