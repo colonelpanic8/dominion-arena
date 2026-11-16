@@ -989,3 +989,38 @@ fn deck_composition_keeps_private_set_aside_cards_unknown() {
     assert_eq!(aside.zone.unknown, 2);
     assert!(aside.zone.known.is_empty());
 }
+
+#[test]
+fn counted_tokens_sit_on_their_pile_or_landscape_as_tokens() {
+    let cards = card_db();
+    let mut c = config(&["Village", "Smithy"], 2, 1);
+    c.landscapes = vec![Card::SinisterPlot];
+    let table = Table::new("g", c, vec!["Ada".into(), "Bo".into()]).unwrap();
+    let mut view = table.view(PlayerId(0));
+    let note = |source: &str, player, pile: Option<&str>, count| dominion_protocol::NoteView {
+        source: source.into(),
+        player,
+        pile: pile.map(Into::into),
+        card: None,
+        count,
+        setup: None,
+    };
+    view.notes
+        .push(note("Family of Inventors", None, Some("Smithy"), 2));
+    view.notes.push(note("Sinister Plot", Some(1), None, 3));
+    let b = board(&view, None, &table.extras(PlayerId(0)), &cards);
+    let smithy = b
+        .supply
+        .kingdom
+        .iter()
+        .flatten()
+        .find(|p| p.name == "Smithy");
+    let favors = &smithy.unwrap().badges[0];
+    assert_eq!((favors.kind.as_str(), favors.count), ("favors", Some(2)));
+    let plot = b.landscapes.iter().find(|l| l.card == "Sinister Plot");
+    let plot = &plot.unwrap().badges[0];
+    assert_eq!(
+        (plot.kind.as_str(), plot.count, plot.player),
+        ("sinister-plot", Some(3), Some(1))
+    );
+}
