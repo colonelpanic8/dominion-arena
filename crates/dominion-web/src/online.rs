@@ -154,7 +154,7 @@ pub fn OnlinePage() -> Element {
         });
     });
     let controls = rsx! {
-        div {class:"panel",
+        div {class:"panel online-controls",
             strong {"dominion.games"}
             Link {to:crate::app::Route::Account{},"Arena login / account"}
             if let Some(status)=management.read().as_ref() {
@@ -237,9 +237,12 @@ pub fn OnlinePage() -> Element {
             if let Some(error)=state.read().error.clone() {p {class:"error","{error}"}}
         }
     };
-    if state.read().view.is_some() {
-        rsx! {table::TableGame {controls}}
-    } else {
-        rsx! {section {class:"panel",{controls}}}
+    rsx! {
+        style { {include_str!("../assets/online.css")} }
+        if state.read().view.is_some() {
+            table::TableGame {controls}
+        } else {
+            section {class:"online-idle",{controls}}
+        }
     }
 }
