@@ -310,3 +310,14 @@ pub struct CardCost {
     pub potions: u32,
     pub debt: u32,
 }
+
+/// The authorized observer's current official-server game, without action controls.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineObservation {
+    pub connected: bool,
+    pub error: Option<String>,
+    pub version: u64,
+    pub epoch: u64,
+    pub view: Option<AgentView>,
+}

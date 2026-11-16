@@ -63,6 +63,43 @@ eligible, and its account and opponent identities are checked again. An
 unrecognized existing game or `ALREADY_LOGGED_IN` stops the client. There is no
 kick, session-removal or kick-and-resign recovery path.
 
+## Server-managed play and watching
+
+`dominion serve` can keep one official connection alongside Arena's hosted games.
+First register the Arena account that should own the connection. Then add these
+settings to the normal flat TOML configuration, alongside the online account,
+password-store entry, cache/state paths and exclusivity assertion above:
+
+```toml
+online_enabled = true
+online_owner = "your-registered-arena-account"
+```
+
+Start `dominion serve` with that configuration and the packaged web client.
+The server authenticates once and shares that connection between agents and the
+live observer. It disconnects on shutdown; do not also run `online mcp` for the
+same account. The state-directory lock prevents two processes sharing it.
+
+- Agents use the streamable HTTP MCP endpoint **`/mcp/online`** with an Arena
+  session's bearer token or an API key for a bot owned by `online_owner`. The
+  common `state`, `new_game`, `step`, `wait`, `cards` and `log` tools stay the same.
+- Sign in to Arena as `online_owner`, then open **`/online`** (the dominion.games
+  navigation link). It renders the existing graphical table and updates over SSE.
+- **`GET /api/online/view`** and **`GET /api/online/events`** provide the same
+  authorized observation to other clients. Responses use `Cache-Control: no-store`.
+
+The page is read only and shows the connected account's legal view, including
+its hand. It is therefore restricted to that registered Arena owner and its bot
+keys; guests and unrelated accounts cannot subscribe. The SSE stream rechecks
+authorization before sending updates and closes on logout or server shutdown.
+The page has no seat token or answer controls, and observer payloads omit the
+current decision. Agent MCP calls still have access to the real decision.
+
+This observes games played by this headless connection. It does not import an
+active browser session or attach to arbitrary matches; the existing bot-only
+policy remains in effect. `/mcp` and `/game/:id` continue to serve Arena's own
+hosted games.
+
 ## Coverage and limits
 
 The codec checks lengths, counts, UTF-8, booleans, safe integer longs, counters

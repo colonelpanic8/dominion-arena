@@ -472,6 +472,18 @@ pub async fn watch_transcript(game: &str, token: Option<&str>, on_change: impl F
     follow(&url, on_change).await
 }
 
+pub async fn online_view() -> Result<dominion_protocol::api::OnlineObservation> {
+    imp::get("/api/online/view", None).await
+}
+pub async fn follow_online(on_change: &mut dyn FnMut(dominion_protocol::api::OnlineObservation)) {
+    let _ = imp::follow("/api/online/events", &mut |data| {
+        if let Ok(view) = serde_json::from_str(data) {
+            on_change(view)
+        }
+    })
+    .await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

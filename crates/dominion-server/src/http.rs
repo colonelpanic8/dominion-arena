@@ -188,7 +188,11 @@ fn host_of(req: &Request) -> Option<Authority> {
     }
 }
 
-async fn check_host(State(allowed): State<Arc<Vec<String>>>, req: Request, next: Next) -> Response {
+pub(crate) async fn check_host(
+    State(allowed): State<Arc<Vec<String>>>,
+    req: Request,
+    next: Next,
+) -> Response {
     match host_of(&req) {
         None => {
             Error::new(StatusCode::BAD_REQUEST, "missing or invalid Host header").into_response()
@@ -355,13 +359,13 @@ fn body_or_default<T: DeserializeOwned + Default>(bytes: &[u8]) -> Result<T> {
     body(bytes)
 }
 
-fn bearer(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let (scheme, token) = value.split_once(' ')?;
     (scheme.eq_ignore_ascii_case("bearer") && !token.trim().is_empty()).then(|| token.trim())
 }
 
-fn cookie(headers: &HeaderMap) -> Option<&str> {
+pub(crate) fn cookie(headers: &HeaderMap) -> Option<&str> {
     let cookies = headers.get_all(header::COOKIE).into_iter();
     cookies
         .filter_map(|c| c.to_str().ok())

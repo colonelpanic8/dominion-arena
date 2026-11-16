@@ -24,6 +24,10 @@ pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 pub struct Config {
     /// Official-server account (separate from Arena's own accounts).
     pub online_account: Option<String>,
+    /// Keep one official connection in `dominion serve`.
+    pub online_enabled: Option<bool>,
+    /// Registered Arena account allowed to observe/control the official connection.
+    pub online_owner: Option<String>,
     /// Password-store entry; only its first line is read at runtime.
     pub online_password_entry: Option<String>,
     /// Operator assertion that this account is idle and exclusive to this client.

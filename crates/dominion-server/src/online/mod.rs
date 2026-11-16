@@ -1,7 +1,9 @@
 //! The official-server backend has its own connection lifecycle and account.
 //! Hosted Arena games continue to use `serve` and the local engine.
+mod hosted;
 mod mcp;
 mod runtime;
+pub use hosted::Hosted;
 
 use crate::{config::Config, store::Store};
 use dominion_online::{
