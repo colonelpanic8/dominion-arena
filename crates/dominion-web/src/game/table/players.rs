@@ -9,7 +9,7 @@ use super::supply::{Badges, Tab};
 use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::{Board, PlayerEntry, Stack, Zone};
+use crate::game::board::{Badge, Board, PlayerEntry, Stack, Zone};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -248,6 +248,29 @@ pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
             count: pa.cards.count - shown,
         });
     }
+    // Tokens on a lasting effect's card (Garrison's), one effect to each copy in play.
+    let mut tokens: Vec<_> = board
+        .lasting
+        .iter()
+        .filter(|l| l.owner.seat == who.seat)
+        .filter_map(|l| Some((l.card.as_str(), l.count.filter(|&n| n > 0)?)))
+        .collect();
+    let slot_badges: Vec<Vec<Badge>> = slots
+        .iter()
+        .map(|s| {
+            let Some(i) = tokens.iter().position(|(card, _)| *card == s.card) else {
+                return vec![];
+            };
+            let (_, n) = tokens.remove(i);
+            vec![Badge {
+                kind: "tokens".into(),
+                text: format!("{n} token(s) on {}", s.card),
+                count: Some(n),
+                player: None,
+                card: None,
+            }]
+        })
+        .collect();
     let mut marked: Vec<String> = vec![];
     let row = g.play_row(slots.len());
     let area = Rect::new(
@@ -280,6 +303,7 @@ pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                             back: s.card.is_empty(),
                             count: (s.count > 1).then_some(s.count),
                             mark,
+                            badges: slot_badges[i].clone(),
                             at,
                             z: 100 + 6 * i as i32,
                             class: "dt-slot",

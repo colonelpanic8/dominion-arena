@@ -687,18 +687,65 @@ fn kingdom_rows(mut piles: Vec<PileEntry>) -> Vec<Vec<PileEntry>> {
     rows
 }
 
-/// Puts a note where it belongs: on the pile it names (the Bane, Obelisk's pile), or a
-/// card it names on the pile or landscape it comes from (Druid's Boons, Way of the
-/// Mouse's card). Every note is also listed with the other effects.
+/// Puts a note where it belongs: tokens it counts on the pile or landscape they sit on
+/// (Family of Inventors' Favors, Sinister Plot's), the pile it names (the Bane,
+/// Obelisk's pile), or a card it names on the pile or landscape it comes from (Druid's
+/// Boons, Way of the Mouse's card). Every note is also listed with the other effects.
 fn note_badge(
     n: &dominion_protocol::NoteView,
+    names: &Names<'_>,
     basic: &mut [PileEntry],
     kingdom: &mut [PileEntry],
     non_supply: &mut [PileEntry],
     landscapes: &mut [LandscapeEntry],
 ) {
-    if n.player.is_some() || n.pile.as_ref() == Some(&n.source) {
+    let Some((on, b)) = note_tokens(n, names).or_else(|| note_card_badge(n)) else {
         return;
+    };
+    if let Some(p) = basic
+        .iter_mut()
+        .chain(kingdom.iter_mut())
+        .chain(non_supply.iter_mut())
+        .find(|p| p.name == on)
+    {
+        p.badges.push(b);
+    } else if let Some(l) = landscapes.iter_mut().find(|l| l.card == on) {
+        l.badges.push(b);
+    }
+}
+
+/// A note that counts tokens on a pile or landscape, as those tokens.
+fn note_tokens<'a>(
+    n: &'a dominion_protocol::NoteView,
+    names: &Names<'_>,
+) -> Option<(&'a str, Badge)> {
+    match (n.source.as_str(), &n.pile, n.player) {
+        ("Family of Inventors", Some(pile), None) => Some((
+            pile.as_str(),
+            badge(
+                "favors",
+                format!("{} Favor token(s) from Family of Inventors", n.count),
+                Some(n.count),
+            ),
+        )),
+        ("Sinister Plot", None, Some(p)) => Some((
+            n.source.as_str(),
+            Badge {
+                kind: "sinister-plot".into(),
+                text: format!("{}'s Sinister Plot: {} token(s)", names.name(p), n.count),
+                count: Some(n.count),
+                player: Some(p),
+                card: None,
+            },
+        )),
+        _ => None,
+    }
+}
+
+/// A note shown as the card it names, and where it goes.
+fn note_card_badge(n: &dominion_protocol::NoteView) -> Option<(&str, Badge)> {
+    if n.player.is_some() || n.pile.as_ref() == Some(&n.source) {
+        return None;
     }
     let (on, kind, card) = match (&n.pile, &n.card) {
         (Some(pile), None) => (
@@ -711,7 +758,7 @@ fn note_badge(
             n.source.clone(),
         ),
         (None, Some(card)) => (n.source.as_str(), "note", card.clone()),
-        _ => return,
+        _ => return None,
     };
     let b = Badge {
         kind: kind.into(),
@@ -723,16 +770,7 @@ fn note_badge(
         player: None,
         card: Some(card),
     };
-    if let Some(p) = basic
-        .iter_mut()
-        .chain(kingdom.iter_mut())
-        .chain(non_supply.iter_mut())
-        .find(|p| p.name == on)
-    {
-        p.badges.push(b);
-    } else if let Some(l) = landscapes.iter_mut().find(|l| l.card == on) {
-        l.badges.push(b);
-    }
+    Some((on, b))
 }
 
 fn until_text(l: &dominion_protocol::LastingView, names: &Names<'_>) -> String {
@@ -846,6 +884,7 @@ pub fn board(
     for n in &view.notes {
         note_badge(
             n,
+            &names,
             &mut basic,
             &mut kingdom,
             &mut non_supply,
