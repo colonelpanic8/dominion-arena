@@ -22,6 +22,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Browser-free official dominion.games backend (separate from hosted Arena games).
+    Online {
+        #[command(subcommand)]
+        command: OnlineCommand,
+    },
     /// Host games as an MCP server (streamable HTTP at /mcp), with an HTTP API at /api
     /// for the web client.
     Serve {
@@ -57,6 +62,18 @@ enum Command {
         #[command(subcommand)]
         command: AssetsCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum OnlineCommand {
+    /// Download and verify the supported public client catalog.
+    Sync,
+    /// Query the official server states without authentication.
+    Probe,
+    /// Check password login and 31 seconds of application heartbeat, then disconnect.
+    Login,
+    /// Serve dominion/play@1 over stdio for the configured exclusive account.
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -211,6 +228,12 @@ async fn main() -> ExitCode {
         }
     };
     let result = match cli.command {
+        Command::Online { command } => match command {
+            OnlineCommand::Sync => dominion_server::online::sync(&config).await,
+            OnlineCommand::Probe => dominion_server::online::probe().await,
+            OnlineCommand::Login => dominion_server::online::login_check(&config).await,
+            OnlineCommand::Mcp => dominion_server::online::serve(&config).await,
+        },
         Command::Serve {
             listen,
             port,

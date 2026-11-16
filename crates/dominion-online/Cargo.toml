@@ -1,0 +1,25 @@
+[package]
+name = "dominion-online"
+description = "Browser-free, version-pinned dominion.games protocol client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+dominion-protocol = { path = "../dominion-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2 = "0.10"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
+futures-util = { version = "0.3", features = ["sink"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots", "connect"] }
+
+[dev-dependencies]
+jsonschema = { version = "0.61.1", default-features = false }
+tokio = { version = "1.54.1", features = ["test-util"] }
+tempfile = "3.27.0"
+
+[lints]
+workspace = true
