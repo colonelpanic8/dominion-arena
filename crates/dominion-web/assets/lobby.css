@@ -601,6 +601,8 @@ a.lb-user-name:hover { text-decoration: underline; }
 
 .lb-lselector { overflow: visible; background: none; border-color: transparent; z-index: 0; transition: z-index .3s; }
 .lb-lselector.hovered { z-index: 5; }
+.lb-lselector-body { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transition: top .3s ease; }
+.lb-lselector.hovered .lb-lselector-body { top: -100%; }
 .lb-lselector-part-box {
   position: relative;
   width: 100%;
@@ -609,7 +611,6 @@ a.lb-user-name:hover { text-decoration: underline; }
   overflow: hidden;
   transition: height .3s ease;
 }
-.lb-lselector.hovered { top: -100%; }
 .lb-lselector.hovered .lb-lselector-part-box { height: 100%; }
 .lb-lselector-part {
   position: absolute;
@@ -625,14 +626,14 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-lselector-text {
   position: absolute;
   left: 2%;
-  bottom: 8%;
+  bottom: 6%;
   width: 96%;
   color: #000;
-  font: calc(1.35 * var(--lu)) var(--title);
+  font: calc(1.35 * var(--lu)) / 1 var(--title);
   text-align: center;
   transition: .3s bottom ease;
 }
-.lb-lselector.hovered .lb-lselector-text { bottom: 10%; font-size: calc(5.5 * var(--lu)); }
+.lb-lselector.hovered .lb-lselector-text { bottom: 7%; font-size: calc(2 * var(--lu)); }
 .lb-lselector-none, .lb-lselector-remove {
   position: absolute;
   top: 0;
@@ -768,8 +769,8 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-order-up::before { content: "▲"; }
 .lb-order-down::before { content: "▼"; }
 .lb-icon {
-  height: 4vh;
-  width: 4vh;
+  width: min(4vh, 100%);
+  aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;

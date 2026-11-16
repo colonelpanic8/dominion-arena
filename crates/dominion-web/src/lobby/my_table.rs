@@ -420,33 +420,35 @@ fn LandscapeSelector(index: usize, slot: LandscapeSlot) -> Element {
             "data-slot": "{index}",
             onmouseenter: move |e| { hovered.set(true); show_tooltip(tip, describe.clone(), &e); },
             onmouseleave: move |_| { hovered.set(false); tip.set(None); },
-            div {
-                class: "lb-lselector-remove",
-                title: "Remove",
-                onclick: move |e: MouseEvent| {
-                    e.stop_propagation();
-                    tip.set(None);
-                    ctx.edit(move |r| { if index < r.slots.len() { r.slots.remove(index); } });
-                },
-            }
-            for (i, kind) in SLOT_KINDS.iter().enumerate() {
-                div { key: "{kind}", class: "lb-lselector-part-box",
-                    div {
-                        class: if slot.takes(i) { "lb-lselector-part active" } else { "lb-lselector-part" },
-                        "data-kind": "{kind}",
-                        style: match assets.file_url(&format!("images/cards/templates/{}-selector.webp", kind.to_lowercase())) {
-                            Some(u) => format!("background-image: url('{u}')"),
-                            None => String::new(),
-                        },
-                        onclick: move |e: MouseEvent| { e.stop_propagation(); toggle(Some(i)); },
-                        div { class: "lb-lselector-text", "{kind}" }
+            div { class: "lb-lselector-body",
+                div {
+                    class: "lb-lselector-remove",
+                    title: "Remove",
+                    onclick: move |e: MouseEvent| {
+                        e.stop_propagation();
+                        tip.set(None);
+                        ctx.edit(move |r| { if index < r.slots.len() { r.slots.remove(index); } });
+                    },
+                }
+                for (i, kind) in SLOT_KINDS.iter().enumerate() {
+                    div { key: "{kind}", class: "lb-lselector-part-box",
+                        div {
+                            class: if slot.takes(i) { "lb-lselector-part active" } else { "lb-lselector-part" },
+                            "data-kind": "{kind}",
+                            style: match assets.file_url(&format!("images/cards/templates/{}-selector.webp", kind.to_lowercase())) {
+                                Some(u) => format!("background-image: url('{u}')"),
+                                None => String::new(),
+                            },
+                            onclick: move |e: MouseEvent| { e.stop_propagation(); toggle(Some(i)); },
+                            div { class: "lb-lselector-text", "{kind}" }
+                        }
                     }
                 }
-            }
-            div {
-                class: if slot.empty { "lb-lselector-none" } else { "lb-lselector-none inactive" },
-                title: "May stay empty",
-                onclick: move |e: MouseEvent| { e.stop_propagation(); toggle(None); },
+                div {
+                    class: if slot.empty { "lb-lselector-none" } else { "lb-lselector-none inactive" },
+                    title: "May stay empty",
+                    onclick: move |e: MouseEvent| { e.stop_propagation(); toggle(None); },
+                }
             }
         }
     }
