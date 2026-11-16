@@ -544,7 +544,7 @@ fn shape(
 
 /// The game page's table. `controls` (seat switching, the view toggle) go under the log.
 #[component]
-pub fn TableGame(controls: Element) -> Element {
+pub fn TableGame(controls: Element, #[props(default = true)] chat: bool) -> Element {
     let game = use_game();
     let cards = use_context::<Cards>().0;
     let settings = use_context::<Settings>().0;
@@ -778,7 +778,7 @@ pub fn TableGame(controls: Element) -> Element {
                     sound::MuteToggle { muted }
                 }
                 side::More { board: b.clone() }
-                super::chat::Chat {}
+                if chat { super::chat::Chat {} }
             }
             if b.result.is_some() {
                 side::GameOver { board: b.clone() }

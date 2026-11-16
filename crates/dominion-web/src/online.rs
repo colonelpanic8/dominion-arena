@@ -242,7 +242,7 @@ pub fn OnlinePage() -> Element {
     rsx! {
         style { {include_str!("../assets/online.css")} }
         if state.read().view.as_ref().is_some_and(|v| v.game.running) {
-            table::TableGame {controls}
+            table::TableGame {controls, chat: false}
         } else {
             section {class:"online-idle",
                 {controls}
