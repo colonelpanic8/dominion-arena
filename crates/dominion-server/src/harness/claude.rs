@@ -25,6 +25,10 @@ pub fn launch(spec: &AgentSpec) -> Launch {
         // The API omits the thinking text unless asked; summarized is all it returns.
         "--thinking-display",
         "summarized",
+        // The game brief replaces Claude Code's software-engineering system prompt, as
+        // `model_instructions_file` does for Codex.
+        "--system-prompt-file",
+        "/work/instructions.txt",
     ]
     .map(String::from)
     .to_vec();
