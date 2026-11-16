@@ -349,6 +349,30 @@ fn deck_popup(p: &PlayerEntry) -> Popup {
     }
 }
 
+/// The cards of a zone as tiles, most copies first, and its unknown cards as one back.
+#[component]
+fn CompositionCards(zone: Zone) -> Element {
+    let mut known = zone.known.clone();
+    known.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.card.cmp(&b.card)));
+    rsx! {
+        for s in known {
+            div { key: "{s.card}", class: "dt-composition-tile",
+                TableCard {
+                    name: s.card.clone(),
+                    size: CardSize::Full,
+                    count: (s.count > 1).then_some(s.count),
+                }
+            }
+        }
+        if zone.unknown > 0 {
+            div { class: "dt-composition-tile",
+                TableCard { name: "", size: CardSize::Full, back: true, count: Some(zone.unknown) }
+                div { class: "dt-composition-name", "Unknown" }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
     let ctx = use_table();
@@ -356,48 +380,70 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
         return rsx! {};
     };
     let sections = p.composition();
+    let uncertain: Vec<_> = p
+        .uncertain
+        .iter()
+        .chain(&board.uncertain)
+        .cloned()
+        .collect();
     rsx! {
         div {
-            class: "dt-window dt-composition",
+            class: "dt-composition",
             role: "dialog",
             "aria-label": "{p.name}'s deck composition",
             onclick: move |e| e.stop_propagation(),
-            div { class: "dt-window-title", "{p.name}'s deck composition" }
-            button { class: "dt-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+            div { class: "dt-composition-head",
+                span { "{p.name}'s deck composition" }
+                button { class: "dt-composition-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+            }
             div { class: "dt-composition-body",
-                p { class: "dt-composition-note", "Known cards by location; deck order is not shown." }
-                div { class: "dt-composition-zones",
-                    for section in sections {
-                        section { key: "{section.key}", "data-zone": "{section.key}",
-                            h3 { "{section.label}" span { "{section.zone.count}" } }
-                            ul {
-                                for s in &section.zone.known {
-                                    li { key: "{s.card}",
-                                        CardName { name: s.card.clone() }
-                                        span { "{s.count}" }
+                for section in sections {
+                    section { key: "{section.key}", class: "dt-composition-section", "data-zone": "{section.key}",
+                        h3 { "{section.label} ({section.count})" }
+                        div { class: "dt-composition-grid",
+                            if section.count == 0 {
+                                p { class: "dt-composition-empty", "Empty." }
+                            } else if let [g] = &section.groups[..]
+                                && g.label == section.label
+                            {
+                                CompositionCards { zone: g.zone.clone() }
+                            } else {
+                                for g in section.groups.iter() {
+                                    div { key: "{g.key}", class: "dt-composition-group", "data-zone": "{g.key}",
+                                        div { class: "dt-composition-group-label", "{g.label} ({g.zone.count})" }
+                                        div { class: "dt-composition-grid",
+                                            CompositionCards { zone: g.zone.clone() }
+                                        }
                                     }
                                 }
-                                if section.zone.unknown > 0 {
-                                    li { class: "dt-composition-unknown", "Unknown" span { "{section.zone.unknown}" } }
-                                }
-                                if section.zone.count == 0 { li { "Empty" } }
                             }
                         }
                     }
                 }
-                if !p.unlocated.is_empty() {
-                    h3 { "Known cards with uncertain locations" }
-                    for s in &p.unlocated {
-                        p { CardName { name: s.card.clone() } " × {s.count}" }
-                    }
-                }
-                for (i, u) in p.uncertain.iter().chain(&board.uncertain).enumerate() {
-                    p { key: "uncertain{i}", class: "dt-composition-note",
-                        "{u.count} of "
-                        for s in &u.candidates {
-                            span { CardName { name: s.card.clone() } " × {s.count}; " }
+                if !p.unlocated.is_empty() || !uncertain.is_empty() {
+                    section { class: "dt-composition-section",
+                        h3 { "Uncertain locations" }
+                        if !p.unlocated.is_empty() {
+                            p { class: "dt-composition-note",
+                                "Known to be owned, location unknown: "
+                                for (i, s) in p.unlocated.iter().enumerate() {
+                                    if i > 0 { "; " }
+                                    CardName { name: s.card.clone() }
+                                    " × {s.count}"
+                                }
+                            }
                         }
-                        "are among {u.text}. Their exact locations are unknown."
+                        for (i, u) in uncertain.iter().enumerate() {
+                            p { key: "uncertain{i}", class: "dt-composition-note",
+                                "{u.count} of "
+                                for (j, s) in u.candidates.iter().enumerate() {
+                                    if j > 0 { "; " }
+                                    CardName { name: s.card.clone() }
+                                    " × {s.count}"
+                                }
+                                " are among {u.text}."
+                            }
+                        }
                     }
                 }
             }

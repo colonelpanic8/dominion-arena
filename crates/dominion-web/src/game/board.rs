@@ -253,25 +253,54 @@ pub struct PlayerEntry {
 }
 
 impl PlayerEntry {
-    /// Zone summaries from the viewer's knowledge, without assigning uncertain cards
-    /// to a particular location.
-    pub fn composition(&self) -> Vec<NamedZone> {
-        let mut sections: Vec<_> = [
-            ("owned", "All owned cards", &self.owned),
-            ("deck", "Remaining deck", &self.deck),
-            ("hand", "Hand", &self.hand),
-            ("discard", "Discard pile", &self.discard),
-            ("inPlay", "In play", &self.in_play),
-        ]
-        .into_iter()
-        .map(|(key, label, zone)| NamedZone {
+    /// The deck breakdown from the viewer's knowledge, without assigning uncertain
+    /// cards to a particular location: the draw pile, the discard pile, every other
+    /// zone holding cards, and all owned cards.
+    pub fn composition(&self) -> Vec<Section> {
+        let named = |key: &str, label: &str, zone: &Zone| NamedZone {
             key: key.into(),
             label: label.into(),
             zone: zone.clone(),
-        })
+        };
+        let elsewhere: Vec<_> = [
+            named("hand", "Hand", &self.hand),
+            named("inPlay", "In play", &self.in_play),
+        ]
+        .into_iter()
+        .chain(self.zones.iter().cloned())
+        .filter(|z| z.zone.count > 0)
         .collect();
-        sections.extend(self.zones.iter().cloned());
-        sections
+        vec![
+            Section::one(named("deck", "Draw pile", &self.deck)),
+            Section::one(named("discard", "Discard pile", &self.discard)),
+            Section {
+                key: "excluded".into(),
+                label: "Excluded from active deck".into(),
+                count: elsewhere.iter().map(|z| z.zone.count).sum(),
+                groups: elsewhere,
+            },
+            Section::one(named("owned", "Entire deck", &self.owned)),
+        ]
+    }
+}
+
+/// A part of the deck breakdown: one zone, or several shown together.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Section {
+    pub key: String,
+    pub label: String,
+    pub count: u32,
+    pub groups: Vec<NamedZone>,
+}
+
+impl Section {
+    fn one(z: NamedZone) -> Self {
+        Section {
+            key: z.key.clone(),
+            label: z.label.clone(),
+            count: z.zone.count,
+            groups: vec![z],
+        }
     }
 }
 

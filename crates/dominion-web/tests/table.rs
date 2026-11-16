@@ -10,7 +10,7 @@ use dominion_protocol::api::SeatView;
 use dominion_protocol::lobby::{GameMeta, UserKind, UserRef};
 use dominion_protocol::{AgentDecision, AgentView, PlayerView, Tokens};
 use dominion_web::cards::CardDb;
-use dominion_web::game::board::{Board, PileAt, PileEntry, PlayerEntry, Zone, board};
+use dominion_web::game::board::{Board, NamedZone, PileAt, PileEntry, PlayerEntry, Zone, board};
 use dominion_web::game::interaction::{Interaction, Place, Target, TreasureRun, interaction};
 use dominion_web::game::logfmt::{Span, log_lines};
 use dominion_web::game::state::{GameState, Selection};
@@ -923,8 +923,8 @@ fn deck_composition_preserves_deductions_and_uncertainty() {
         &t.extras(PlayerId(0)),
         &cards,
     );
-    let own = b.you.as_ref().unwrap().composition();
-    let other = b.opponents[0].composition();
+    let own = composition_zones(b.you.as_ref().unwrap());
+    let other = composition_zones(&b.opponents[0]);
     let own_deck = &own.iter().find(|z| z.key == "deck").unwrap().zone;
     let other_deck = &other.iter().find(|z| z.key == "deck").unwrap().zone;
     assert_eq!(own_deck.count, 5);
@@ -958,10 +958,18 @@ fn deck_composition_preserves_deductions_and_uncertainty() {
     );
     for p in b.players() {
         for section in p.composition() {
-            assert_eq!(section.zone.unknown, 0);
-            assert_eq!(zone_sum(&section.zone), section.zone.count);
+            let counts: u32 = section.groups.iter().map(|g| g.zone.count).sum();
+            assert_eq!(counts, section.count);
+            for g in &section.groups {
+                assert_eq!(g.zone.unknown, 0);
+                assert_eq!(zone_sum(&g.zone), g.zone.count);
+            }
         }
     }
+}
+
+fn composition_zones(p: &PlayerEntry) -> Vec<NamedZone> {
+    p.composition().into_iter().flat_map(|s| s.groups).collect()
 }
 
 #[test]
@@ -983,7 +991,7 @@ fn deck_composition_keeps_private_set_aside_cards_unknown() {
         &t.extras(PlayerId(0)),
         &cards,
     );
-    let sections = b.opponents[0].composition();
+    let sections = composition_zones(&b.opponents[0]);
     let aside = sections.iter().find(|z| z.key == "setAside").unwrap();
     assert_eq!(aside.label, "Set aside");
     assert_eq!(aside.zone.count, 2);
