@@ -678,10 +678,27 @@ On NixOS the flake's `nixosModules.default` runs it as a service: `services.domi
 with `services.dominion.settings` holding the settings above (`state_dir` and `assets_dir`
 default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`),
 `services.dominion.syncAssets` to fill the asset cache at boot, and
-`services.dominion.agents` (`enable`, `user`, `settings`) to run the server's own agents
-as `user`, with that account's native CLI logins (and subscriptions): it sets
-`agent_socket` to `/run/dominion/agents.sock`, reachable by the `dominion` group, which
-the runner's service joins.
+`services.dominion.agents` to run the server's own agents as `user`, with that account's
+logins (and subscriptions): it sets `agent_socket` to `/run/dominion/agents.sock`,
+reachable by the `dominion` group, which the runner's service joins. The agent setup
+lives here, so a host's configuration only needs to choose:
+
+```nix
+services.dominion.agents = {
+  enable = true;
+  user = "alice";
+  claude = pkgs.claude-code;      # for claude agents; default: the user's PATH
+  codex = pkgs.codex;             # for codex agents (openai agents need only its login)
+  antigravity = pkgs.antigravity-cli;
+  atOnce = 4;                     # agents_at_once
+};
+```
+
+`profiles` defaults to `nix/agents.nix` (Opus and Sonnet on Claude Code, Sol and Terra
+on the direct OpenAI agent, Argon on Antigravity); `playbook` defaults to the flake's
+`dominion-playbook` input, which the agents start in. The runner's PATH gets the given
+CLIs and bubblewrap, and the agents' sandbox a shell, coreutils, grep, sed, find and
+python3 (`sandbox_path`). `settings` still sets any runner setting directly.
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;

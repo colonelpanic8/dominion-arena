@@ -8,6 +8,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+    # What the server's agents read: they start in it (`playbook_dir`).
+    dominion-playbook = {
+      url = "github:colonelpanic8/dominion-playbook";
+      flake = false;
+    };
   };
 
   outputs = {
@@ -15,6 +20,7 @@
     nixpkgs,
     fenix,
     flake-utils,
+    dominion-playbook,
   }:
     {
       nixosModules.default = import ./nix/module.nix self;
@@ -51,6 +57,8 @@
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [pkgs.makeWrapper];
         nativeCheckInputs = [pkgs.python3 pkgs.which];
+        # tests/ratings.rs looks every dealable card up in the playbook's ratings.
+        DOMINION_PLAYBOOK = dominion-playbook;
         postInstall = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
           wrapProgram $out/bin/dominion --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.bubblewrap]}
         '';
@@ -119,6 +127,7 @@
           ]
           ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [pkgs.bubblewrap];
         RUST_BACKTRACE = 1;
+        DOMINION_PLAYBOOK = dominion-playbook;
       };
 
       formatter = pkgs.alejandra;
