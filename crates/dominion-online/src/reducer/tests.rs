@@ -471,3 +471,5 @@ fn upstream_placeholder_dialects_render_player_names_and_amounts_without_reparsi
         "Pass to PLAYER1; 3 3; $4, 0 Potions, 0 Debt; 3."
     );
 }
+
+mod campaign;

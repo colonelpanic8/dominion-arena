@@ -46,6 +46,9 @@ impl KnowledgeZone {
             (self.known.len() == 1 && self.known.values().sum::<u32>() == self.count)
                 .then(|| *self.known.keys().next().unwrap())
         });
+        if id < 0 {
+            self.exact.clear();
+        }
         self.count -= 1;
         if let Some(name) = name {
             dec(&mut self.known, name, 1);
@@ -56,7 +59,18 @@ impl KnowledgeZone {
             self.known.retain(|_, n| *n > 0);
             self.exact.clear();
         }
+        self.observe_exact();
         Ok(name)
+    }
+    fn observe_exact(&mut self) {
+        let mut observed = BTreeMap::new();
+        for name in self.exact.values() {
+            *observed.entry(*name).or_default() += 1;
+        }
+        for (name, count) in observed {
+            let known = self.known.entry(name).or_default();
+            *known = (*known).max(count);
+        }
     }
     fn insert(&mut self, id: i32, name: Option<i32>) {
         self.count += 1;
@@ -323,6 +337,7 @@ impl Reducer {
                     .turn = t;
                 self.question = None;
                 self.open_id = None;
+                self.question_visible.clear();
             }
             Shuffle(s) => {
                 let deck = self
@@ -373,15 +388,12 @@ impl Reducer {
                     let mut revealed = BTreeMap::new();
                     for id in i.cards {
                         if let Some(name) = self.disclosed(id)? {
-                            *revealed.entry(name).or_default() += 1;
-                            self.visible_ids.insert(id);
+                            revealed.insert(id, name);
                         }
                     }
                     let zone = self.zone_mut(i.from_zone)?;
-                    for (name, n) in revealed {
-                        let count = zone.known.entry(name).or_default();
-                        *count = (*count).max(n);
-                    }
+                    zone.exact.extend(revealed);
+                    zone.observe_exact();
                 }
             }
             CostReduction(c) => {
@@ -574,6 +586,11 @@ impl Reducer {
                     .cards = p.cards;
             }
         }
+        self.visible_ids = self
+            .zones
+            .values()
+            .flat_map(|k| k.exact.keys().copied())
+            .collect();
         self.update_owned();
         Ok(())
     }
