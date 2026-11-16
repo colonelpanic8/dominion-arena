@@ -56,9 +56,8 @@
         inherit src;
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [pkgs.makeWrapper];
-        nativeCheckInputs = [pkgs.python3 pkgs.which];
-        # tests/ratings.rs looks every dealable card up in the playbook's ratings.
-        DOMINION_PLAYBOOK = dominion-playbook;
+        # The tests run in `just check`.
+        doCheck = false;
         postInstall = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
           wrapProgram $out/bin/dominion --prefix PATH : ${pkgs.lib.makeBinPath [pkgs.bubblewrap]}
         '';

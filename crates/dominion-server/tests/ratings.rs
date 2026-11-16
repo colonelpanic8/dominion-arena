@@ -1,7 +1,7 @@
 //! Every card and landscape a game can deal has a rating in the playbook the agents read,
 //! so their ratings lookup never comes back empty for a card on their board. Runs when
-//! `DOMINION_PLAYBOOK` names a dominion-playbook checkout (the dev shell and the Nix build
-//! set it to the flake's input).
+//! `DOMINION_PLAYBOOK` names a dominion-playbook checkout (the dev shell sets it to the
+//! flake's input).
 
 use serde_json::Value;
 use std::path::Path;

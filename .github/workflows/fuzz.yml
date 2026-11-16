@@ -1,0 +1,38 @@
+name: Fuzz
+
+# The fuzz families with many more games than CI's, from seeds no earlier night used.
+# Reproduce a failure with FUZZ_ONLY=<seed> and the test's name.
+on:
+  schedule:
+    - cron: "23 10 * * *"
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: Games per family
+        default: "60"
+      start:
+        description: First seed (default from the date)
+        default: ""
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Put the dev shell's toolchain on PATH
+        run: nix develop --command bash -c 'dirname "$(command -v cargo)"' >> "$GITHUB_PATH"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci
+          save-if: false
+      - name: Fuzz
+        env:
+          FUZZ_SEEDS: ${{ inputs.seeds || '60' }}
+          START: ${{ inputs.start }}
+        run: |
+          export FUZZ_START="${START:-$(( $(date +%s) / 86400 * 100 ))}"
+          echo "FUZZ_START=$FUZZ_START FUZZ_SEEDS=$FUZZ_SEEDS"
+          nix develop --command cargo test -p dominion-engine --lib tests::fuzz::

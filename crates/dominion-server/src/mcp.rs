@@ -1254,19 +1254,12 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(joined.is_error, Some(true));
-        tokio::time::sleep(Duration::from_secs(21)).await;
-        assert!(
-            hub.seat_view(
-                &Seat {
-                    game: game.game_id.clone(),
-                    seat: PlayerId(0)
-                },
-                None
-            )
-            .unwrap()
-            .meta
-            .connected[0]
-        );
+        let seat = Seat {
+            game: game.game_id.clone(),
+            seat: PlayerId(0),
+        };
+        hub.forget_last_call(&seat);
+        assert!(hub.seat_view(&seat, None).unwrap().meta.connected[0]);
         let connection = Arc::downgrade(&session.connection);
         assert!(session.connection.lock().unwrap().is_some());
         let clone = session.clone();
@@ -1274,19 +1267,8 @@ mod tests {
         assert!(connection.upgrade().is_some());
         drop(clone);
         assert!(connection.upgrade().is_none());
-        tokio::time::sleep(Duration::from_secs(21)).await;
-        assert!(
-            !hub.seat_view(
-                &Seat {
-                    game: game.game_id.clone(),
-                    seat: PlayerId(0)
-                },
-                None
-            )
-            .unwrap()
-            .meta
-            .connected[0]
-        );
+        hub.forget_last_call(&seat);
+        assert!(!hub.seat_view(&seat, None).unwrap().meta.connected[0]);
     }
 
     #[tokio::test]
