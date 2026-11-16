@@ -408,13 +408,28 @@ The runner sends one initial observation; subsequent observations arrive as MCP 
 results. It does not rebuild or resend a manual conversation history for each move.
 The provider CLI manages its conversation context and compaction.
 
-Shell, filesystem, browser, delegation, hooks, other MCP servers, and host instructions
-are disabled. On Linux, bubblewrap hides the host home and project files and clears
-the environment, exposing only the runtime, a per-seat workspace, and the provider's
-native login directory. Provider network access remains available. The runner fails
-if Linux user namespaces or bubblewrap are unavailable. Codex uses a sanitized model
-catalog without host tools; Claude and Antigravity expose only the Dominion MCP
-connection alongside their completion mechanism.
+Each seat runs under bubblewrap with a cleared environment and its own network
+namespace: only loopback, where `dominion sandbox-forward` exposes two unix sockets as
+ports. One is the seat bridge; the other an allowlisting HTTPS proxy to the provider
+(`api.anthropic.com` and its OAuth hosts for Claude, `chatgpt.com` and OpenAI's auth
+and API hosts for Codex, Google's Cloud Code and OAuth hosts for Antigravity, plus
+`network_allow`). Every host asked for is logged to the attempt's `network.jsonl`, so
+nothing else on the machine (the arena server included) or the internet is reachable.
+Of the provider's login only the credential file is mounted (`.credentials.json`,
+`auth.json`, or Antigravity's token), read-write so a refreshed token is kept: not the
+rest of its directory or `~/.claude.json`. Browser, delegation, hooks, other MCP servers
+and host instructions are off. The runner fails if Linux user namespaces or bubblewrap
+are unavailable.
+
+With `playbook_dir` set to a dominion-playbook checkout, Claude and Codex seats start
+in it, mounted read-only, and load it as their CLI loads a project: AGENTS.md (through
+CLAUDE.md for Claude), its skills, and the files the skills say to read. They may read
+it and run its lookup commands (`python3 data/card-ratings.py ...`): Claude with Bash,
+Read, Grep, Glob and Skill, Codex with its shell in its read-only sandbox. The brief
+tells them to make the plan before their first decision. `sandbox_path` lists
+directories put first on PATH there (a shell, python3, coreutils). Antigravity seats
+are sent the playbook in their first message instead. Without `playbook_dir`, seats
+have no shell or file tools and the profile's `instructions` carry the guidance.
 
 Every seat attempt gets a private directory under `agents_dir/archives`. Its
 `interactions.jsonl` records resolved game configuration, agent settings, every game
@@ -462,14 +477,39 @@ login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and res
 `models_cache.json`, populated by starting Codex once after sign-in.
 
 For an opt-in native subscription check, set `DOMINION_LIVE_AGENT` to `claude`, `codex`,
-or `antigravity` and run `cargo test -p dominion-server --test native live_native_game
+or `antigravity` (an opponent may also be `openai`) and run `cargo test -p dominion-server --test native live_native_game
 -- --ignored --nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL`
 select the executable and model. This runs a short game through the same isolated
 MCP bridge and writes evidence under `/tmp/dominion-native-live`.
 `DOMINION_LIVE_TURN_LIMIT` caps the game (default 2). To verify two different
 profiles together, set `DOMINION_LIVE_OPPONENT` to an `AgentSpec` JSON object with
-its own `name`, `program`, `model`, and optional `command` / `auth_dir`. The check
-has a three-minute deadline and asserts one native process per seat.
+its own `name`, `program`, `model`, and optional `command` / `auth_dir`.
+`DOMINION_LIVE_SEED` deals a random kingdom from that seed instead of the test's,
+`DOMINION_LIVE_PLAYBOOK` sets `playbook_dir`, and `DOMINION_LIVE_INSTRUCTIONS` replaces
+the profiles' instructions. The check has a three-minute deadline and asserts one
+native process per CLI seat.
+
+#### Direct OpenAI agents
+
+`program = "openai"` plays a seat by calling OpenAI's Responses API itself, with no CLI.
+It signs in with Codex's ChatGPT login (`auth.json` in `auth_dir`, default
+`$CODEX_HOME` or `~/.codex`), refreshing it when the API says it has expired and
+writing the new tokens back for Codex, or with an API key named by `api_key_env`
+(`api.openai.com`). Its system prompt is the game brief plus, with `playbook_dir`, the
+playbook's AGENTS.md; its only tools are the game's and, with a playbook, `read_file`,
+`list_files` and `card_ratings` (the playbook's ratings lookup, run by the runner), so
+it needs no sandbox. Game results reach it as text; it keeps the newest
+`context_results` of them (default 60) and replaces older ones with a note, 20 at a
+time. Its reasoning summaries and replies are archived as `native_event`s, so they
+appear in the agent transcript, and each request's token usage as `direct_usage`.
+
+```toml
+[[agents]]
+name = "Sol High"
+program = "openai"
+model = "gpt-6.1-sol"
+effort = "high"
+```
 
 #### T3 Code agent profiles
 
@@ -613,11 +653,14 @@ control_socket = "/run/dominion/control.sock"  # serve, games: where `dominion g
 agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day (0: no limit)
 agents_at_once = 2             # agents: seats the runner plays at once
 agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (default $XDG_STATE_HOME/dominion/agents)
+playbook_dir = "/srv/dominion-playbook"  # agents: a dominion-playbook checkout seats start in (read-only)
+sandbox_path = ["/run/current-system/sw/bin"]  # agents: put first on PATH in the seats' sandbox
+network_allow = []             # agents: hosts seats may reach beyond their provider's (`*.example.com` too)
 # agents: what the runner offers (default: Claude Opus, Claude Sonnet, Codex); `command`
 # (default claude, codex, or agy on PATH) and `about` (for the lobby) are optional too
 # [[agents]]
 # name = "Claude Opus"
-# program = "claude"           # claude, codex, or antigravity
+# program = "claude"           # claude, codex, antigravity, openai (direct API) or t3code
 # model = "opus"
 # effort = "high"
 # instructions = "Prefer engine strategies when the kingdom supports them."
@@ -636,10 +679,27 @@ On NixOS the flake's `nixosModules.default` runs it as a service: `services.domi
 with `services.dominion.settings` holding the settings above (`state_dir` and `assets_dir`
 default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`),
 `services.dominion.syncAssets` to fill the asset cache at boot, and
-`services.dominion.agents` (`enable`, `user`, `settings`) to run the server's own agents
-as `user`, with that account's native CLI logins (and subscriptions): it sets
-`agent_socket` to `/run/dominion/agents.sock`, reachable by the `dominion` group, which
-the runner's service joins.
+`services.dominion.agents` to run the server's own agents as `user`, with that account's
+logins (and subscriptions): it sets `agent_socket` to `/run/dominion/agents.sock`,
+reachable by the `dominion` group, which the runner's service joins. The agent setup
+lives here, so a host's configuration only needs to choose:
+
+```nix
+services.dominion.agents = {
+  enable = true;
+  user = "alice";
+  claude = pkgs.claude-code;      # for claude agents; default: the user's PATH
+  codex = pkgs.codex;             # for codex agents (openai agents need only its login)
+  antigravity = pkgs.antigravity-cli;
+  atOnce = 4;                     # agents_at_once
+};
+```
+
+`profiles` defaults to `nix/agents.nix` (Opus and Sonnet on Claude Code, Sol and Terra
+on the direct OpenAI agent, Argon on Antigravity); `playbook` defaults to the flake's
+`dominion-playbook` input, which the agents start in. The runner's PATH gets the given
+CLIs and bubblewrap, and the agents' sandbox a shell, coreutils, grep, sed, find and
+python3 (`sandbox_path`). `settings` still sets any runner setting directly.
 
 `dominion games list` shows every game a running server hosts (finished or not, how long
 idle, where it came from, players), and `dominion games retire ID...` stops hosting games

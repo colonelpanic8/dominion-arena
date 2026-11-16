@@ -11,6 +11,9 @@ self: {
   configFile = toml.generate "dominion-config.toml" cfg.settings;
   dominion = "${lib.getExe cfg.package} --config ${configFile}";
   agentsFile = toml.generate "dominion-agents.toml" cfg.agents.settings;
+  clis =
+    cfg.agents.path
+    ++ lib.filter (p: p != null) [cfg.agents.claude cfg.agents.codex cfg.agents.antigravity];
 in {
   options.services.dominion = {
     enable = lib.mkEnableOption "the Dominion game server (`dominion serve`)";
@@ -74,6 +77,41 @@ in {
         default = [];
         description = "Packages put on the runner's PATH ahead of `user`'s profile, where native CLIs are looked for.";
       };
+      claude = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = null;
+        example = lib.literalExpression "pkgs.claude-code";
+        description = "Claude Code, for `claude` agents (default: `claude` on `user`'s PATH).";
+      };
+      codex = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = null;
+        example = lib.literalExpression "pkgs.codex";
+        description = "Codex, for `codex` agents (default: `codex` on `user`'s PATH). `openai` agents need no CLI: they use Codex's ChatGPT login in `~/.codex`.";
+      };
+      antigravity = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = null;
+        example = lib.literalExpression "pkgs.antigravity-cli";
+        description = "The Antigravity CLI (`agy`), for `antigravity` agents (default: `agy` on `user`'s PATH).";
+      };
+      playbook = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = self.inputs.dominion-playbook;
+        defaultText = lib.literalExpression "dominion-arena.inputs.dominion-playbook";
+        description = "The dominion-playbook the agents start in (`playbook_dir`); null sends them none.";
+      };
+      profiles = lib.mkOption {
+        type = lib.types.listOf toml.type;
+        default = import ./agents.nix;
+        defaultText = lib.literalExpression "import ./nix/agents.nix";
+        description = "The agent profiles offered to players: the runner's `[[agents]]`.";
+      };
+      atOnce = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 2;
+        description = "Agent seats played at once (`agents_at_once`).";
+      };
     };
     syncAssets = lib.mkEnableOption ''
       downloading dominion.games' card art, fonts and sounds into `assets_dir` before the
@@ -93,10 +131,25 @@ in {
         lib.mkIf (cfg.onlinePasswordCredential != null)
         (lib.mkDefault "/run/credentials/dominion.service/online-password");
     };
-    services.dominion.agents.settings = lib.mkIf cfg.agents.enable {
-      agent_socket = lib.mkDefault cfg.settings.agent_socket;
-      server = lib.mkDefault "http://127.0.0.1:${toString (cfg.settings.port or 7317)}/mcp";
-    };
+    services.dominion.agents.settings = lib.mkIf cfg.agents.enable ({
+        agent_socket = lib.mkDefault cfg.settings.agent_socket;
+        server = lib.mkDefault "http://127.0.0.1:${toString (cfg.settings.port or 7317)}/mcp";
+        agents = lib.mkDefault cfg.agents.profiles;
+        agents_at_once = lib.mkDefault cfg.agents.atOnce;
+        # What the agents' sandbox has on PATH: a shell for their lookups, and python3
+        # for the playbook's ratings script.
+        sandbox_path = lib.mkDefault (map (p: "${lib.getBin p}/bin") (with pkgs; [
+          bashNonInteractive
+          coreutils
+          findutils
+          gnugrep
+          gnused
+          python3
+        ]));
+      }
+      // lib.optionalAttrs (cfg.agents.playbook != null) {
+        playbook_dir = lib.mkDefault "${cfg.agents.playbook}";
+      });
 
     users.users.dominion = {
       isSystemUser = true;
@@ -155,7 +208,7 @@ in {
       after = ["dominion.service" "network-online.target"];
       wants = ["network-online.target"];
       environment.PATH = lib.mkForce (lib.concatStringsSep ":" (
-        lib.optional (cfg.agents.path != []) (lib.makeBinPath cfg.agents.path)
+        lib.optional (clis != []) (lib.makeBinPath clis)
         ++ [
           (lib.makeBinPath [pkgs.bubblewrap])
           "/etc/profiles/per-user/${cfg.agents.user}/bin"

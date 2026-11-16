@@ -153,6 +153,13 @@ pub struct Config {
     /// Where `dominion agents` runs its agents and keeps their logs (default
     /// `$XDG_STATE_HOME/dominion/agents`).
     pub agents_dir: Option<PathBuf>,
+    /// A dominion-playbook checkout. Claude and Codex seats start in it, read-only, and
+    /// load it natively; Antigravity seats are sent it in their first message.
+    pub playbook_dir: Option<PathBuf>,
+    /// Directories put first on PATH in the agents' sandbox (a shell, python3, coreutils).
+    pub sandbox_path: Option<Vec<PathBuf>>,
+    /// Hosts agents may reach beyond their provider's API (`*.example.com` allowed).
+    pub network_allow: Option<Vec<String>>,
     /// Where `dominion solo` keeps its games (default `$XDG_STATE_HOME/dominion/solo`).
     pub solo_dir: Option<PathBuf>,
     /// Connection and workspace used by T3 Code agents.
@@ -289,6 +296,12 @@ impl Config {
             capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),
             dir,
             t3code: self.t3code.clone(),
+            sandbox: crate::harness::Sandbox {
+                playbook: self.playbook_dir.clone(),
+                path: self.sandbox_path.clone().unwrap_or_default(),
+                allow_hosts: self.network_allow.clone().unwrap_or_default(),
+                forwarder: None,
+            },
         })
     }
 

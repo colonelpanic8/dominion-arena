@@ -5,7 +5,13 @@ use std::path::Path;
 
 /// Use the installed provider's catalog, retaining model access and context limits
 /// while removing the native capabilities that expose local tools.
-pub fn catalog(auth: &Path, work: &Path, requested: Option<&str>) -> Result<String, String> {
+/// With `shell`, models keep their shell (a playbook seat runs its lookups with it).
+pub fn catalog(
+    auth: &Path,
+    work: &Path,
+    requested: Option<&str>,
+    shell: bool,
+) -> Result<String, String> {
     let path = auth.join("models_cache.json");
     let cached = std::fs::read_to_string(&path).map_err(|e| {
         format!(
@@ -28,7 +34,9 @@ pub fn catalog(auth: &Path, work: &Path, requested: Option<&str>) -> Result<Stri
     .ok_or("Codex model is absent from its local catalog; start Codex to refresh it")?
     .to_string();
     for model in models {
-        model["shell_type"] = json!("disabled");
+        if !shell {
+            model["shell_type"] = json!("disabled");
+        }
         model["apply_patch_tool_type"] = Value::Null;
         model["experimental_supported_tools"] = json!([]);
         model["tool_mode"] = json!("direct");
@@ -45,7 +53,7 @@ pub fn catalog(auth: &Path, work: &Path, requested: Option<&str>) -> Result<Stri
     Ok(selected)
 }
 
-pub fn launch(spec: &AgentSpec) -> Launch {
+pub fn launch(spec: &AgentSpec, playbook: bool) -> Launch {
     let mut launch = Launch::new(spec, "codex");
     launch.args = [
         "exec",
@@ -74,8 +82,14 @@ pub fn launch(spec: &AgentSpec) -> Launch {
     ] {
         launch.args.extend(["-c".into(), config.into()]);
     }
+    // A playbook seat keeps the shell to run the playbook's lookups; Codex's read-only
+    // sandbox and bwrap confine it.
+    if !playbook {
+        launch
+            .args
+            .extend(["--disable".into(), "shell_tool".into()]);
+    }
     for feature in [
-        "shell_tool",
         "apps",
         "plugins",
         "hooks",
@@ -152,8 +166,11 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        assert!(catalog(auth.path(), work.path(), Some("unknown")).is_err());
-        assert_eq!(catalog(auth.path(), work.path(), None).unwrap(), "fixture");
+        assert!(catalog(auth.path(), work.path(), Some("unknown"), false).is_err());
+        assert_eq!(
+            catalog(auth.path(), work.path(), None, false).unwrap(),
+            "fixture"
+        );
         let sanitized: Value =
             serde_json::from_slice(&std::fs::read(work.path().join("models.json")).unwrap())
                 .unwrap();

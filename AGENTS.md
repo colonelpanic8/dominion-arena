@@ -69,6 +69,10 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/control.rs          the control socket: `dominion games` lists and retires hosted games
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
+  src/harness/            native CLI agents (Claude Code, Codex, Antigravity): one process per
+                          seat under bubblewrap; `sandbox.rs` is its network namespace, the
+                          allowlisting proxy and `dominion sandbox-forward`
+  src/openai.rs           the direct OpenAI agent: the Responses API, game and playbook tools
   src/t3.rs               T3 MCP client bridge: per-seat conversations, game tool calls,
                           OAuth sign-in
   src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle
@@ -174,7 +178,9 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
                           Tables listing
-nix/module.nix            `nixosModules.default`: `services.dominion`, the server as a system service
+nix/module.nix            `nixosModules.default`: `services.dominion`, the server and its agents as
+                          system services
+nix/agents.nix            the agent profiles the module offers by default
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
 

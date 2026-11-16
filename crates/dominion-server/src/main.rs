@@ -70,6 +70,15 @@ enum Command {
     },
     /// Authorize the runner with T3 Code; print the access token to stdout for a credential manager.
     T3Login,
+    /// Inside an agent's sandbox: serve each `PORT=SOCKET` on loopback, passing connections
+    /// to the unix socket, and run the command. The runner starts this itself.
+    #[command(hide = true)]
+    SandboxForward {
+        #[arg(long = "port", value_name = "PORT=SOCKET")]
+        ports: Vec<String>,
+        #[arg(last = true, required = true)]
+        command: Vec<String>,
+    },
     /// Manage the local cache of dominion.games' images, fonts and sounds.
     Assets {
         #[command(subcommand)]
@@ -456,9 +465,35 @@ async fn assets(command: AssetsCommand, mut config: Config) -> Result<(), String
     }
 }
 
+async fn sandbox_forward(ports: Vec<String>, command: Vec<String>) -> ExitCode {
+    let ports: Result<Vec<(u16, PathBuf)>, String> = (ports.iter())
+        .map(|p| {
+            let (port, socket) = p.split_once('=').ok_or(format!("{p}: want PORT=SOCKET"))?;
+            let port = port.parse().map_err(|e| format!("{p}: {e}"))?;
+            Ok((port, PathBuf::from(socket)))
+        })
+        .collect();
+    match ports.map(|ports| dominion_server::harness::sandbox::forward(ports, command)) {
+        Ok(run) => match run.await {
+            Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+            Err(e) => {
+                eprintln!("dominion sandbox-forward: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Err(e) => {
+            eprintln!("dominion sandbox-forward: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Command::SandboxForward { ports, command } = cli.command {
+        return sandbox_forward(ports, command).await;
+    }
     let mut config = match Config::load(cli.config.as_deref()) {
         Ok(c) => c,
         Err(e) => {
@@ -515,6 +550,7 @@ async fn main() -> ExitCode {
         },
         Command::Games { socket, command } => games(socket, command, &config).await,
         Command::Solo(args) => solo(args, &config),
+        Command::SandboxForward { .. } => unreachable!("handled before the settings load"),
         Command::T3Login => match &config.t3code {
             None => Err("add [t3code] to the settings file".into()),
             Some(settings) => dominion_server::t3::login(&settings.url, |url| {
