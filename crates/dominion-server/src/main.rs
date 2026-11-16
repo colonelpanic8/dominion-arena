@@ -305,7 +305,7 @@ async fn serve(config: Config) -> Result<(), String> {
                 eprintln!("dominion: skipping {}: {e}", path.display());
             }
             eprintln!(
-                "dominion: {} saved games in {} ({} finished games expired)",
+                "dominion: {} saved games in {} ({} finished games moved to expired/)",
                 loaded.games,
                 dir.display(),
                 loaded.expired

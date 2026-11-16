@@ -22,6 +22,9 @@ pub fn launch(spec: &AgentSpec) -> Launch {
         "stream-json",
         "--verbose",
         "--include-partial-messages",
+        // The API omits the thinking text unless asked; summarized is all it returns.
+        "--thinking-display",
+        "summarized",
     ]
     .map(String::from)
     .to_vec();

@@ -711,12 +711,24 @@ fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary 
 
 impl Hub {
     /// A hub that keeps its games in `dir` and resumes the ones saved there. Finished
-    /// games whose last change is older than `keep_finished` are deleted. Fails if `dir`
-    /// can't be written to or another server has it open.
+    /// games whose last change is older than `keep_finished` are moved to `expired/`.
+    /// Fails if `dir` can't be written to or another server has it open.
     pub fn open(dir: &Path, keep_finished: Duration) -> io::Result<(Hub, Loaded)> {
         let store = Store::open(dir)?;
         let mut loaded = Loaded::default();
         let mut index = Index::default();
+        // An expired game keeps its id, so no new game is saved over its file.
+        match fs::read_dir(store.expired_dir()) {
+            Ok(entries) => {
+                for entry in entries {
+                    let path = entry?.path();
+                    let stem = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+                    index.next = index.next.max(id_number(stem).unwrap_or(0));
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
         for entry in fs::read_dir(dir)? {
             let path = entry?.path();
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -744,7 +756,7 @@ impl Hub {
                 .and_then(|t| SystemTime::now().duration_since(t).ok())
                 .unwrap_or_default();
             if table.is_over() && age >= keep_finished {
-                fs::remove_file(&path)?;
+                store.retire(stem)?;
                 loaded.expired += 1;
                 continue;
             }
@@ -1614,8 +1626,9 @@ impl Hub {
         }
     }
 
-    /// Deletes the finished games that last changed more than `keep_finished` ago, and
-    /// the unfinished ones nobody has touched for `keep_idle`. How many.
+    /// Stops hosting the finished games that last changed more than `keep_finished` ago,
+    /// and the unfinished ones nobody has touched for `keep_idle`, moving their files to
+    /// `expired/`. How many.
     pub fn expire(&self, keep_finished: Duration, keep_idle: Duration) -> usize {
         let games: Vec<(String, Arc<Hosted>)> = {
             let index = lock(&self.index);
@@ -1636,9 +1649,9 @@ impl Hub {
             if (over || !connected) && u128::from(now.saturating_sub(last)) >= keep.as_millis() {
                 lock(&self.index).remove(&id);
                 if let Some(store) = &self.store
-                    && let Err(e) = store.remove(&id)
+                    && let Err(e) = store.retire(&id)
                 {
-                    eprintln!("dominion: deleting game {id}: {e}");
+                    eprintln!("dominion: moving game {id} to expired: {e}");
                 }
                 expired += 1;
             }

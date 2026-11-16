@@ -67,6 +67,10 @@ pub fn launch(spec: &AgentSpec) -> Launch {
         "log_dir=\"/work/logs\"",
         "model_catalog_json=\"/work/models.json\"",
         "model_instructions_file=\"/work/instructions.txt\"",
+        // Keep the reasoning in the archive: the provider's raw reasoning where it gives
+        // it, else its most detailed summary.
+        "model_reasoning_summary=\"detailed\"",
+        "show_raw_agent_reasoning=true",
     ] {
         launch.args.extend(["-c".into(), config.into()]);
     }

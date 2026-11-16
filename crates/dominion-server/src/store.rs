@@ -1,10 +1,14 @@
 //! The state directory: one `<game id>.json` per game, rewritten whole and atomically
-//! after every change. The accounts' database lies beside them (`arena::db`).
+//! after every change. The accounts' database lies beside them (`arena::db`). Games the
+//! server stops hosting are moved to `expired/`, never deleted.
 
 use serde::Serialize;
 use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
+
+/// The subdirectory of the state directory holding games no longer hosted.
+pub const EXPIRED: &str = "expired";
 
 pub struct Store {
     dir: PathBuf,
@@ -61,8 +65,29 @@ impl Store {
         fs::rename(&tmp, self.dir.join(format!("{key}.json")))
     }
 
+    /// Deletes `<key>.json`. Never used for a game: see [`Store::retire`].
     pub fn remove(&self, key: &str) -> io::Result<()> {
         match fs::remove_file(self.dir.join(format!("{key}.json"))) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    }
+
+    /// Where games the server no longer hosts are kept.
+    pub fn expired_dir(&self) -> PathBuf {
+        self.dir.join(EXPIRED)
+    }
+
+    /// Moves `<key>.json` into `expired/`, replacing an older copy there.
+    pub fn retire(&self, key: &str) -> io::Result<()> {
+        let expired = self.expired_dir();
+        let mut builder = fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(&expired)?;
+        let name = format!("{key}.json");
+        match fs::rename(self.dir.join(&name), expired.join(&name)) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
             _ => Ok(()),
         }
