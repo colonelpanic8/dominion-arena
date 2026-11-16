@@ -26,7 +26,9 @@ online_resume = false
 ```
 
 The password is read from the first line of the configured `pass` entry at
-runtime. No password or session token is written to disk. Session authority is
+runtime. Alternatively set `online_password_file` (instead of `online_password_entry`) to a
+runtime credential file, such as a systemd credential. Neither password nor
+session token is written to persistent client state. Session authority is
 held only in memory; state contains a process lock, non-secret connection
 metadata and metadata identifying a bot table this client created. The default
 state/cache locations are `$XDG_STATE_HOME/dominion/online` and
@@ -51,14 +53,14 @@ must be a server bot: defaults are two players and one bot. It requests unrated
 play with spectators prohibited, verifies the returned rules and membership,
 and refuses settings it cannot honor. The upstream client does not implement
 the host-only admission serializer, so a table is **not proven unjoinable**;
-if a human joins, the adapter stops sending actions. Human matchmaking and
-joining arbitrary tables are not exposed.
+if a human joins, the adapter stops sending actions. Public human matchmaking is available through the server management page below;
+joining arbitrary tables is not exposed.
 
 `online_reconnect` explicitly resumes only the in-memory session owned by this
 process. It invalidates previous decisions and waits for a replacement snapshot.
 Answers are consumed before transmission and are never automatically retried,
 even when a send fails. To resume after restarting the process, opt into
-`online_resume = true`: only a bot table recorded in this state directory is
+`online_resume = true`: only a table recorded in this state directory is
 eligible, and its account and opponent identities are checked again. An
 unrecognized existing game or `ALREADY_LOGGED_IN` stops the client. There is no
 kick, session-removal or kick-and-resign recovery path.
@@ -80,25 +82,54 @@ The server authenticates once and shares that connection between agents and the
 live observer. It disconnects on shutdown; do not also run `online mcp` for the
 same account. The state-directory lock prevents two processes sharing it.
 
-- Agents use the streamable HTTP MCP endpoint **`/mcp/online`** with an Arena
-  session's bearer token or an API key for a bot owned by `online_owner`. The
-  common `state`, `new_game`, `step`, `wait`, `cards` and `log` tools stay the same.
 - Sign in to Arena as `online_owner`, then open **`/online`** (the dominion.games
-  navigation link). It renders the existing graphical table and updates over SSE.
-- **`GET /api/online/view`** and **`GET /api/online/events`** provide the same
-  authorized observation to other clients. Responses use `Cache-Control: no-store`.
+  navigation link). Choose a runner agent and a game type: unrated server bots,
+  unrated public humans, or rated public humans. Human searches support two or
+  three players, a relative rating range and one standard timer preset. The
+  default timer is Patient. Starting one search never repeats it after a game.
+- Bot games accept required kingdom piles and landscapes. Public matches use the
+  server's matchmaking kingdom and preferences, with previews and extra new
+  expansion games disabled.
+- The page shows connection status, search status, the assigned agent, and the
+  connected account's live table. Cancel a search, pause/resume an agent,
+  reconnect, or explicitly resign. Pausing leaves the game running. A search
+  that wins a cancellation race is kept and assigned to its selected agent.
+- A runner slot is reserved before searching or creating a game. Only one
+  official game/search can be assigned at a time. Agents receive rotating,
+  revocable capabilities, and only gameplay tools; lifecycle actions go through
+  the authenticated management API. Agent archives stay private on the runner.
+- **`GET /api/online/manage`**, **`POST /api/online/start`**,
+  **`POST/DELETE /api/online/agent`**, **`DELETE /api/online/matchmaking`**,
+  **`POST /api/online/reconnect`** and **`POST /api/online/resign`** provide the
+  same management operations. `start` accepts `agent`, `mode` (`bots`, `unrated`,
+  `rated`), and `matching` (`players`, `minRating`, `maxRating`, `timer` ordinal
+  0 Reckless / 1 Hasty / 2 Friendly / 3 Patient). Bot settings are `bots`,
+  `kingdom` and `landscapes`.
+- Agents play through **`/mcp/online`** using `state`, `step`, `wait`, `cards`
+  and `log`. An Arena owner session or its bot API key also works. Hosted MCP
+  refuses `new_game`, `resign` and `online_reconnect`; use management for those.
+- **`GET /api/online/view`** and **`GET /api/online/events`** provide the legal
+  observation. Responses use `Cache-Control: no-store`, omit the current decision
+  and are restricted to the configured owner and its bot keys. The stream
+  rechecks authorization and closes on logout or shutdown.
 
-The page is read only and shows the connected account's legal view, including
-its hand. It is therefore restricted to that registered Arena owner and its bot
-keys; guests and unrelated accounts cannot subscribe. The SSE stream rechecks
-authorization before sending updates and closes on logout or server shutdown.
-The page has no seat token or answer controls, and observer payloads omit the
-current decision. Agent MCP calls still have access to the real decision.
+Human matches require an explicit search from this process. The adapter verifies
+`AutomatchFound`, the returned rating rule and the exact player roster, then
+checks snapshots and later table membership against that roster. It never joins
+or takes over an unrelated human table. Spectators can be present at public
+matches, but the adapter uses only its own playing seat's legal view. Opponent
+undo requests are declined automatically. Reconnect invalidates old decisions;
+process restart leaves the agent paused until explicitly resumed from the page.
+
+With the NixOS module, set `services.dominion.onlinePasswordCredential` to an
+on-host systemd-creds encrypted password path. The module loads it into the
+service's runtime credential directory and configures `online_password_file`;
+it also gives official state/cache their own directories and syncs the pinned
+catalog before startup. No plaintext credential enters the Nix store.
 
 This observes games played by this headless connection. It does not import an
-active browser session or attach to arbitrary matches; the existing bot-only
-policy remains in effect. `/mcp` and `/game/:id` continue to serve Arena's own
-hosted games.
+active browser session or attach to arbitrary matches. `/mcp` and `/game/:id`
+continue to serve Arena's own games.
 
 ## Coverage and limits
 

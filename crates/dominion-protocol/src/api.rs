@@ -321,3 +321,81 @@ pub struct OnlineObservation {
     pub epoch: u64,
     pub view: Option<AgentView>,
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineManagement {
+    pub connected: bool,
+    pub error: Option<String>,
+    pub account: Option<String>,
+    pub agents: Vec<String>,
+    pub agent: Option<String>,
+    pub running: bool,
+    pub searching: bool,
+    pub queue_feedback: Vec<String>,
+    pub mode: OnlineMode,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OnlineStart {
+    pub agent: String,
+    #[serde(default)]
+    pub mode: OnlineMode,
+    #[serde(default)]
+    pub matching: OnlineMatching,
+    #[serde(default)]
+    pub kingdom: Vec<String>,
+    #[serde(default)]
+    pub landscapes: Vec<String>,
+    #[serde(default = "one_bot")]
+    pub bots: u8,
+}
+fn one_bot() -> u8 {
+    1
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnlineAttach {
+    pub agent: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OnlineMode {
+    #[default]
+    Bots,
+    Unrated,
+    Rated,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct OnlineMatching {
+    pub players: u8,
+    pub min_rating: i32,
+    pub max_rating: i32,
+    /// Upstream timer preset: 0 Reckless, 1 Hasty, 2 Friendly, 3 Patient.
+    pub timer: u8,
+}
+impl Default for OnlineMatching {
+    fn default() -> Self {
+        Self {
+            players: 2,
+            min_rating: -10,
+            max_rating: 10,
+            timer: 3,
+        }
+    }
+}
+
+impl Default for OnlineStart {
+    fn default() -> Self {
+        Self {
+            agent: String::new(),
+            mode: OnlineMode::Bots,
+            matching: OnlineMatching::default(),
+            bots: 1,
+            kingdom: vec![],
+            landscapes: vec![],
+        }
+    }
+}

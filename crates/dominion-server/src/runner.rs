@@ -113,6 +113,7 @@ pub struct Settings {
 type Key = (String, u8);
 
 struct Playing {
+    job: Job,
     stop: CancellationToken,
     task: JoinHandle<()>,
 }
@@ -210,11 +211,11 @@ fn reconcile(
         .map(|j| ((j.game_id.clone(), j.seat), j))
         .collect();
     playing.retain(|key, p| {
-        let keep = wanted.contains_key(key);
+        let keep = wanted.get(key) == Some(&p.job) && !p.stop.is_cancelled();
         if !keep {
             p.stop.cancel();
         }
-        keep || !p.task.is_finished()
+        keep
     });
     for (key, job) in wanted {
         if playing.contains_key(&key) {
@@ -235,12 +236,12 @@ fn reconcile(
         let log = logs.to_path_buf();
         let task = tokio::spawn(keep_playing(
             spec.clone(),
-            job,
+            job.clone(),
             settings.server.clone(),
             log,
             stop.clone(),
         ));
-        playing.insert(key, Playing { stop, task });
+        playing.insert(key, Playing { job, stop, task });
     }
 }
 
