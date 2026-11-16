@@ -520,6 +520,7 @@ enum Target {
     Name(i32),
     Accept,
     KeepOrder,
+    Empty,
 }
 struct Indexed<'a> {
     decision: AgentDecision,
@@ -641,12 +642,12 @@ fn element_options(
             .iter()
             .map(|&id| {
                 let action = match id {
-                    0 => "autoplay-treasures",
+                    0 => "select",
                     1 => "spend-villager",
-                    2 | 3 => "spend-favor",
+                    2 | 3 => "select",
                     4 => "spend-coffers",
                     5 => "pay-debt",
-                    6 => "select-all",
+                    6 => "select",
                     7 => "end-phase",
                     _ => return Err(protocol(format!("unknown game button {id}"))),
                 };
@@ -751,11 +752,7 @@ fn bounds(q: &Question) -> (u32, u32) {
             min, max, elements, ..
         } => {
             let count = elements.len() as u32;
-            if q.ordered() {
-                (count, count)
-            } else {
-                ((*min as u32).min(count), (*max as u32).min(count))
-            }
+            ((*min as u32).min(count), (*max as u32).min(count))
         }
         _ => (1, 1),
     }
@@ -965,10 +962,16 @@ impl Question {
                 for (position, o) in element_options(self, c, elements)?.into_iter().enumerate() {
                     add(o, Target::Select(position as i32));
                 }
-                if self.ordered() && valid_permutation(defaults, elements.len()) {
+                if self.ordered() && self.validate_selection(c, defaults).is_ok() {
                     add(
-                        option("keep-order", "Keep the current order".into(), None, None),
+                        option("select", "Keep the current order".into(), None, None),
                         Target::KeepOrder,
+                    );
+                }
+                if !path.is_empty() && self.validate_selection(c, &[]).is_ok() {
+                    add(
+                        option("decline", "Select none".into(), None, None),
+                        Target::Empty,
                     );
                 }
                 *decline
@@ -1129,17 +1132,7 @@ impl Question {
                         _ => unreachable!(),
                     })
                     .collect();
-                if let QuestionKind::Choice {
-                    elements: QuestionElements::Cleanup(items),
-                    ..
-                } = &q.kind
-                    && items
-                        .iter()
-                        .enumerate()
-                        .any(|(i, item)| !item.is_optional && !values.contains(&(i as i32)))
-                {
-                    return Err(rejected("mandatory cleanup items must be selected"));
-                }
+                q.validate_selection(c, &values)?;
                 if matches!(q.description.question_type, 8 | 33) {
                     values.reverse();
                 }
@@ -1160,6 +1153,10 @@ impl Question {
                     }
                     Target::Number(v) | Target::Name(v) => vec![*v],
                     Target::Accept => vec![1],
+                    Target::Empty => {
+                        q.validate_selection(c, &[])?;
+                        vec![]
+                    }
                     Target::KeepOrder => match &q.kind {
                         QuestionKind::Choice { defaults, .. } => defaults.clone(),
                         _ => unreachable!(),
@@ -1169,7 +1166,7 @@ impl Question {
             };
             answers.insert(path.clone(), values);
         }
-        let (values, active) = self.compose(&answers, &mut vec![])?;
+        let (values, active) = self.compose(c, &answers, &mut vec![])?;
         if !active {
             return Err(rejected("answer does not select a question"));
         }
@@ -1177,6 +1174,7 @@ impl Question {
     }
     fn compose(
         &self,
+        c: &impl QuestionContext,
         answers: &BTreeMap<Vec<usize>, Vec<i32>>,
         path: &mut Vec<usize>,
     ) -> Result<(Vec<i32>, bool)> {
@@ -1197,7 +1195,7 @@ impl Question {
                 }
                 let i = active[0];
                 path.push(i);
-                let result = children[i].compose(answers, path);
+                let result = children[i].compose(c, answers, path);
                 path.pop();
                 let (values, _) = result?;
                 let mut out = vec![i as i32];
@@ -1207,7 +1205,7 @@ impl Question {
             let mut results = vec![];
             for (i, child) in children.iter().enumerate() {
                 path.push(i);
-                results.push(child.compose(answers, path));
+                results.push(child.compose(c, answers, path));
                 path.pop();
             }
             let mut out = vec![];
@@ -1221,42 +1219,72 @@ impl Question {
             return Ok((out, active));
         }
         let values = match &self.kind {
-            QuestionKind::Choice {
-                min,
-                max,
-                defaults,
-                elements,
-                ..
-            } => {
-                if defaults.len() < *min as usize
-                    || defaults.len() > *max as usize
-                    || defaults
-                        .iter()
-                        .any(|v| *v < 0 || *v as usize >= elements.len())
-                    || defaults.iter().collect::<BTreeSet<_>>().len() != defaults.len()
-                {
-                    return Err(rejected(format!("{} requires an answer", self.type_name())));
+            QuestionKind::Choice { defaults, min, .. } => {
+                // Upstream getAnswer leaves an untouched AND sibling empty even
+                // when its minimum applies to an explicit selection.
+                if defaults.len() < *min as usize {
+                    vec![]
+                } else {
+                    self.validate_selection(c, defaults)?;
+                    defaults.clone()
                 }
-                if let QuestionElements::Cleanup(items) = elements
-                    && items
-                        .iter()
-                        .enumerate()
-                        .any(|(i, item)| !item.is_optional && !defaults.contains(&(i as i32)))
-                {
-                    return Err(rejected("mandatory cleanup items require an answer"));
-                }
-                defaults.clone()
             }
             QuestionKind::Number { default, .. } => vec![*default],
-            _ => return Err(rejected(format!("{} requires an answer", self.type_name()))),
+            QuestionKind::Name | QuestionKind::Delayed { .. } => vec![],
+            QuestionKind::Complex(_) => unreachable!(),
         };
         Ok((values, false))
     }
-}
-fn valid_permutation(values: &[i32], count: usize) -> bool {
-    values.len() == count
-        && values.iter().all(|v| *v >= 0 && (*v as usize) < count)
-        && values.iter().collect::<BTreeSet<_>>().len() == count
+
+    fn validate_selection(&self, c: &impl QuestionContext, values: &[i32]) -> Result<()> {
+        let QuestionKind::Choice { elements, .. } = &self.kind else {
+            return Err(protocol("selection for non-choice question"));
+        };
+        let (min, max) = bounds(self);
+        if values.len() < min as usize
+            || values.len() > max as usize
+            || values
+                .iter()
+                .any(|v| *v < 0 || *v as usize >= elements.len())
+            || values.iter().collect::<BTreeSet<_>>().len() != values.len()
+        {
+            return Err(rejected(format!(
+                "{} requires a valid selection",
+                self.type_name()
+            )));
+        }
+        if let QuestionElements::Cleanup(items) = elements
+            && items
+                .iter()
+                .enumerate()
+                .any(|(i, item)| !item.is_optional && !values.contains(&(i as i32)))
+        {
+            return Err(rejected("mandatory cleanup items must be selected"));
+        }
+        if matches!(self.description.question_type, 4 | 42) {
+            let QuestionElements::Cards(cards) = elements else {
+                return Err(protocol("name-constrained selection without card elements"));
+            };
+            let names = values
+                .iter()
+                .map(|v| {
+                    required(
+                        c.card_name(cards[*v as usize]),
+                        "name-constrained card is not visible",
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let distinct = names.iter().collect::<BTreeSet<_>>().len();
+            if (self.description.question_type == 4 && distinct != names.len())
+                || (self.description.question_type == 42 && distinct > 1)
+            {
+                return Err(rejected(
+                    "selection violates the question's card-name constraint",
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 fn normalized(value: &str) -> String {
     value
@@ -1288,14 +1316,17 @@ fn matches_expect(option: &AgentOption, expect: &str) -> bool {
 }
 
 #[cfg(test)]
+mod campaign;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::wire::Writer;
-    struct Context;
+    pub(super) struct Context;
     impl QuestionContext for Context {
         fn card_name(&self, id: i32) -> Option<String> {
             match id {
-                7 => Some("Copper".into()),
+                7 | 11 => Some("Copper".into()),
                 9 => Some("Village".into()),
                 _ => None,
             }
@@ -1436,10 +1467,7 @@ mod tests {
             q.encode_answer(&Context, "d", &Answer::indices("d", vec![1, 2, 4]), None)
                 .is_err()
         );
-        assert!(
-            q.encode_answer(&Context, "d", &Answer::indices("d", vec![5]), None)
-                .is_err()
-        );
+        assert_eq!(encode(&q, vec![5]), [0, 2, 1, 9]);
         let defaulted = parse(&root(2, |w| {
             description(w, 19);
             w.int(2);

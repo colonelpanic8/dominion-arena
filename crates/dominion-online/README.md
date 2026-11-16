@@ -176,3 +176,20 @@ A separate live lifecycle check verified two consecutive games in one MCP
 process: resigning returns the server's finished result, `new_game` leaves only
 the completed table and waits for a different game snapshot, and the second
 game can also be resigned cleanly.
+
+### Offline adversarial validation (2026-11-16)
+
+The [semantic campaign](../../tools/protocol-proof/README.md#adversarial-semantic-campaign)
+compares nested answers with actual pinned upstream methods and checks reducer
+knowledge against independent synthetic card-location traces. It found and fixed
+partial/optional ordering, empty complex branches, untouched AND siblings,
+card-name selection constraints, schema-invalid action values, and inspection
+copy identities surviving shuffles or anonymous departures. Separately observed
+copies now contribute to guaranteed composition without counting repeated reveals
+twice. Turn changes also retire question-only visibility.
+
+The default tests retain 20 focused upstream cases plus 128 deterministic seeds,
+and 64 reducer streams of 96 transitions each. Larger ranges and single-seed
+reproduction are documented with the tooling. These offline traces do not run
+local Dominion rules and do not add live expansion coverage or prove official
+server acceptance of every generated tree.
