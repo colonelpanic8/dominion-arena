@@ -344,6 +344,7 @@ async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
         .get(&format!("{path}/watch"), None)
         .await
         .error(StatusCode::UNAUTHORIZED);
+    let before: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
     let watched: SeatView = server.get(&format!("{path}/watch"), Some(&cy)).await.json();
     assert!(watched.view.spectating && watched.view.seat.is_none());
     assert!(watched.view.you.is_none() && watched.view.decision.is_none());
@@ -360,7 +361,8 @@ async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
         .error(StatusCode::FORBIDDEN);
     let seated: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
     assert!(!seated.view.spectating);
-    assert_eq!(seated.view.opponents[0].hand.unknown, 5);
+    assert_eq!(seated.view.opponents[0].hand, before.view.opponents[0].hand);
+    assert!(seated.view.opponents[0].hand.unknown > 0);
     assert!(watched.deciding.is_some());
     // While the onlooker's feed is open, the players see that someone watches.
     let mut feed = server
