@@ -13,6 +13,7 @@ pub struct Archive {
     pub dir: PathBuf,
     file: File,
     live: Option<crate::transcript::Live>,
+    result: bool,
 }
 
 impl Archive {
@@ -38,6 +39,7 @@ impl Archive {
             dir: dir.into(),
             file,
             live: None,
+            result: false,
         })
     }
 
@@ -57,8 +59,20 @@ impl Archive {
         }
     }
 
+    /// Whether a `result` record holds the finished game.
+    pub fn has_result(&self) -> bool {
+        self.result
+    }
+
+    /// Appends a record. The first game reply that shows the game over is also recorded
+    /// as its `result`: an official seat's access ends with its game, so a later fetch
+    /// may be refused.
     pub fn record(&mut self, kind: &str, mut data: Value) -> Result<(), String> {
         redact(&mut data);
+        let finished = (kind == "response" && !self.result)
+            .then(|| finished_game(&data).cloned())
+            .flatten();
+        self.result |= kind == "result";
         let time = now_ms();
         let line = json!({"time": time, "kind": kind, "data": data});
         serde_json::to_writer(&mut self.file, &line).map_err(|e| e.to_string())?;
@@ -69,8 +83,20 @@ impl Archive {
         if let Some(live) = &mut self.live {
             live.record(kind, &line["data"], time)?;
         }
+        if let Some(state) = finished {
+            self.record("result", state)?;
+        }
         Ok(())
     }
+}
+
+/// The structured reply (`{view, glossary?}`, or a bare view) of a game tool's `response`
+/// record, if it shows the game over.
+fn finished_game(data: &Value) -> Option<&Value> {
+    let state = data["reply"]
+        .get("json")
+        .filter(|_| data["source"] == "dominion")?;
+    (state.get("view").unwrap_or(state)["game"]["running"] == false).then_some(state)
 }
 
 fn private_dir(dir: &Path) -> Result<(), String> {
@@ -134,5 +160,49 @@ pub async fn call(
             )?;
             Err(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn records(archive: &Archive) -> Vec<Value> {
+        std::fs::read_to_string(archive.dir.join("interactions.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn the_first_game_over_reply_is_the_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut archive = Archive::open(dir.path()).unwrap();
+        let reply = |source: &str, running: bool, vp: u32| {
+            json!({"source": source, "tool": "step", "reply": {"ok": true, "text": "",
+                "json": {"view": {"game": {"running": running, "vp": vp}}, "glossary": {}}}})
+        };
+        archive
+            .record("response", reply("dominion", true, 1))
+            .unwrap();
+        archive.record("response", reply("t3", false, 2)).unwrap();
+        assert!(!archive.has_result());
+        archive
+            .record("response", reply("dominion", false, 3))
+            .unwrap();
+        archive
+            .record("response", reply("dominion", false, 4))
+            .unwrap();
+        assert!(archive.has_result());
+        let results: Vec<Value> = records(&archive)
+            .into_iter()
+            .filter(|r| r["kind"] == "result")
+            .map(|r| r["data"].clone())
+            .collect();
+        assert_eq!(
+            results,
+            [json!({"view": {"game": {"running": false, "vp": 3}}, "glossary": {}})]
+        );
     }
 }

@@ -445,23 +445,22 @@ pub async fn play(
         result = play_inner(&mut chat, &dominion, spec, job, archive) => result,
     };
     let cleanup = chat.stop(archive).await;
-    let final_view = call(
-        &dominion,
-        archive,
-        "dominion",
-        "view",
-        json!({"token":job.token}),
-    )
-    .await;
-    if let Ok(view) = &final_view
-        && let Some(state) = &view.json
-        && state["game"]["running"] == false
-    {
-        archive.record("result", state.clone())?;
-    }
+    let final_view = if archive.has_result() {
+        Ok(())
+    } else {
+        call(
+            &dominion,
+            archive,
+            "dominion",
+            "view",
+            json!({"token":job.token}),
+        )
+        .await
+        .map(drop)
+    };
     archive.record(
         "seat_finished",
-        json!({"result": result, "cleanup": cleanup, "final_view_error": final_view.as_ref().err()}),
+        json!({"result": result, "cleanup": cleanup, "final_view_error": final_view.err()}),
     )?;
     archive.finish_publish().await;
     result.and(cleanup)
@@ -489,7 +488,6 @@ async fn play_inner(
     loop {
         let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
         if state["game"]["running"] == false {
-            archive.record("result", state.clone())?;
             return Ok(());
         }
         if state["decision"].is_null() {
