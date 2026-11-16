@@ -591,25 +591,12 @@ impl SetRules for Rules {
     }
 
     fn ensure(g: &mut Game, _s: &mut Setup) {
-        let lines = [
-            (
-                Card::Page,
-                [
-                    Card::TreasureHunter,
-                    Card::Warrior,
-                    Card::Hero,
-                    Card::Champion,
-                ],
-            ),
-            (
-                Card::Peasant,
-                [Card::Soldier, Card::Fugitive, Card::Disciple, Card::Teacher],
-            ),
-        ];
-        for (start, line) in lines {
-            if setup::in_game(g, |c| c == start) && g.pile_of(line[0]).is_none() {
-                for card in line {
-                    add_pile(g, card, 5, false);
+        for start in Card::in_set(crate::Set::Adventures) {
+            if setup::in_game(g, |c| c == start) {
+                for &card in start.related().piles {
+                    if g.pile_of(card).is_none() {
+                        add_pile(g, card, 5, false);
+                    }
                 }
             }
         }

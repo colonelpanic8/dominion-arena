@@ -1,4 +1,4 @@
-use dominion_agent::{AgentView, Table, glossary_for, text};
+use dominion_agent::{AgentView, NoteView, SetupRole, Table, glossary_entry, glossary_for, text};
 use dominion_engine::{Card, GameConfig, Kind, PlayerId};
 
 fn view(config: GameConfig) -> AgentView {
@@ -96,6 +96,97 @@ fn exclusive_companions_and_pile_members_stay_with_their_source() {
 }
 
 #[test]
+fn extra_piles_with_one_source_stay_with_that_source() {
+    let v = view(GameConfig::new(
+        2,
+        vec![Card::Hermit, Card::Vampire, Card::Village],
+        11,
+    ));
+    let r = reference(&v);
+    let hermit = section(&r, "--- Hermit Pile", "--- Vampire Pile");
+    assert!(hermit.contains("Madman | Action"));
+    let vampire = section(&r, "--- Vampire Pile", "Village |");
+    assert!(vampire.contains("Bat | Night"));
+}
+
+#[test]
+fn prize_and_reward_summaries_use_initial_counts_after_piles_empty() {
+    for players in [2, 3] {
+        let mut v = view(GameConfig::new(
+            players,
+            vec![Card::Tournament, Card::Joust],
+            11,
+        ));
+        for pile in &mut v.non_supply {
+            pile.count = 0;
+        }
+        let r = reference(&v);
+        assert!(r.contains("5 non-Supply Prize piles (1 copy each)"));
+        let copies = if players == 2 { "1 copy" } else { "2 copies" };
+        assert!(r.contains(&format!("6 non-Supply Reward piles ({copies} each)")));
+    }
+}
+
+#[test]
+fn setup_deck_contents_are_grouped_without_exposing_order() {
+    let mut config = GameConfig::new(2, vec![Card::BlackMarket], 11);
+    config
+        .setup_choices
+        .insert(Card::BlackMarket, vec![Card::Village, Card::Moat]);
+    let v = view(config);
+    let contents: Vec<_> = v
+        .notes
+        .iter()
+        .filter(|note| note.source == "Black Market")
+        .collect();
+    assert_eq!(contents.len(), 2);
+    assert!(
+        contents
+            .iter()
+            .all(|note| note.setup == Some(SetupRole::Deck))
+    );
+    let r = reference(&v);
+    let deck = r
+        .split_once("--- Black Market Deck Cards (unordered) ---")
+        .unwrap()
+        .1;
+    assert!(deck.contains("Village |"));
+    assert!(deck.contains("Moat |"));
+    assert!(deck.find("Moat |").unwrap() < deck.find("Village |").unwrap());
+}
+
+#[test]
+fn reference_definitions_do_not_introduce_component_sources() {
+    let v = view(GameConfig::new(2, vec![Card::Tormentor], 11));
+    let mut entries = glossary_for(&v);
+    entries.push(glossary_entry(Card::Exorcist));
+    let r = text::reference(&v, &entries);
+    assert!(r.contains("--- Imp (used by Tormentor) ---"));
+    assert!(!r.contains("used by Exorcist"));
+}
+
+#[test]
+fn only_setup_notes_attach_cards_to_their_source() {
+    let mut v = view(GameConfig::new(2, vec![Card::Village, Card::Peasant], 11));
+    v.notes.push(NoteView {
+        source: "Village".into(),
+        player: Some(0),
+        card: Some("Peasant".into()),
+        pile: None,
+        count: 0,
+        setup: None,
+    });
+    let r = reference(&v);
+    assert!(!r.contains("--- Village Pile"));
+    v.notes.last_mut().unwrap().setup = Some(SetupRole::SetAside);
+    let r = reference(&v);
+    let village = section(&r, "--- Village Pile", "--- Peasant Pile");
+    for name in ["Peasant", "Soldier", "Fugitive", "Disciple", "Teacher"] {
+        assert!(village.contains(&format!("{name} |")), "{name}: {village}");
+    }
+}
+
+#[test]
 fn shared_components_list_all_sources_and_are_defined_once() {
     let mut config = GameConfig::new(
         2,
@@ -147,6 +238,39 @@ fn shared_components_list_all_sources_and_are_defined_once() {
 }
 
 #[test]
+fn shared_pile_sources_follow_dependencies_instead_of_mentions_in_text() {
+    let v = view(GameConfig::new(
+        2,
+        vec![
+            Card::HorseTraders,
+            Card::Sleigh,
+            Card::SecretCave,
+            Card::Cemetery,
+        ],
+        11,
+    ));
+    let r = reference(&v);
+    let horse = r
+        .lines()
+        .find(|line| line.starts_with("--- Horse (used by"))
+        .unwrap();
+    assert!(horse.contains("Sleigh"));
+    assert!(!horse.contains("Horse Traders"));
+    for (pile, sources) in [
+        ("Wish", ["Secret Cave", "Magic Lamp"]),
+        ("Ghost", ["Cemetery", "Haunted Mirror"]),
+    ] {
+        let header = r
+            .lines()
+            .find(|line| line.starts_with(&format!("--- {pile} (used by")))
+            .unwrap();
+        for source in sources {
+            assert!(header.contains(source), "{header}");
+        }
+    }
+}
+
+#[test]
 fn randomized_setup_cards_and_landmark_state_stay_with_their_rules() {
     let mut config = GameConfig::new(
         2,
@@ -177,6 +301,23 @@ fn randomized_setup_cards_and_landmark_state_stay_with_their_rules() {
         (Card::Obelisk, vec![Card::Augurs]),
     ]);
     let v = view(config);
+    for (source, role) in [
+        ("Druid", SetupRole::SetAside),
+        ("Riverboat", SetupRole::SetAside),
+        ("Way of the Mouse", SetupRole::SetAside),
+        ("Young Witch", SetupRole::Bane),
+        ("Ferryman", SetupRole::ExtraPile),
+        ("Obelisk", SetupRole::ChosenPile),
+    ] {
+        let note = v.notes.iter().find(|note| note.source == source).unwrap();
+        assert_eq!(note.setup, Some(role), "{source}");
+        let mut legacy = serde_json::to_value(note).unwrap();
+        legacy.as_object_mut().unwrap().remove("setup");
+        assert_eq!(
+            serde_json::from_value::<NoteView>(legacy).unwrap().setup,
+            None
+        );
+    }
     let r = reference(&v);
     let druid = section(&r, "--- Druid Pile", "--- Riverboat Pile");
     for boon in [Card::TheSeasGift, Card::TheWindsGift, Card::TheFieldsGift] {
@@ -190,15 +331,16 @@ fn randomized_setup_cards_and_landmark_state_stay_with_their_rules() {
         3
     );
     assert!(!r.contains("=== BOONS"));
+    assert!(r.contains("--- Will-o'-Wisp (used by Druid) ---"));
     let riverboat = section(&r, "--- Riverboat Pile", "--- Young Witch Pile");
-    assert!(riverboat.contains("set-aside card: Market"));
+    assert!(riverboat.contains("set-aside cards: Market"));
     assert!(riverboat.contains("Market |"));
     let ferryman = section(&r, "--- Ferryman Pile", "--- Augurs Pile");
     assert!(ferryman.contains("Catapult: stacked; initially top to bottom: 5 Catapult, 5 Rocks."));
     assert!(ferryman.contains("Catapult |"));
     assert!(ferryman.contains("Rocks |"));
     let mouse = section(&r, "Way of the Mouse |", "Labyrinth |");
-    assert!(mouse.contains("set-aside card is Village"));
+    assert!(mouse.contains("set-aside cards: Village"));
     assert!(mouse.contains("Village |"));
     let labyrinth = section(&r, "Labyrinth |", "Obelisk |");
     assert!(
@@ -206,7 +348,7 @@ fn randomized_setup_cards_and_landmark_state_stay_with_their_rules() {
             .contains("When you gain a second card in one of your turns, take 2 VP from here.")
     );
     assert!(labyrinth.contains("Current: 12 VP remaining"));
-    assert!(r.contains("chosen pile is Augurs"));
+    assert!(r.contains("chosen pile: Augurs"));
     let live = text::render(&v);
     assert!(live.contains("\nSUPPLY\n  Copper"));
     assert!(live.contains("\nLANDSCAPES\n  Way of the Mouse"));

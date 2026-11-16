@@ -420,6 +420,10 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         for _ in coppers_dealt..7 * n {
             g.create(Card::Copper, Zone::Pile(copper));
         }
+        g.piles[copper.index()].structure = Some(PileStructure::new(
+            PileKind::Stacked,
+            &vec![Card::Copper; g.pile(copper).cards.len()],
+        ));
     }
     Ok(g)
 }
@@ -687,6 +691,7 @@ pub(crate) fn add_pile(g: &mut Game, card: Card, size: usize, in_supply: bool) -
     for _ in 0..size {
         g.create(card, Zone::Pile(id));
     }
+    g.piles[id.index()].structure = Some(PileStructure::new(PileKind::Stacked, &vec![card; size]));
     id
 }
 

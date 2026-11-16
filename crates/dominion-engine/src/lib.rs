@@ -26,8 +26,10 @@ mod words;
 #[cfg(test)]
 mod tests;
 
-pub use agent::{Agent, CardDeckView, Note, PileView, PlayError, PlayerView, View, play};
-pub use card::{Card, CardDef, Cost, Kind, Plus, Set, TYPE_NAMES, Types};
+pub use agent::{
+    Agent, CardDeckView, Note, PileView, PlayError, PlayerView, SetupRole, View, play,
+};
+pub use card::{Card, CardDef, CardRelations, Cost, Kind, Plus, Set, TYPE_NAMES, Types};
 pub use decision::{Decision, DecisionKind, Move, Opt, Purpose, Response, ResponseError};
 pub use event::{Counter, Dest, Event, Marker};
 pub use game::{

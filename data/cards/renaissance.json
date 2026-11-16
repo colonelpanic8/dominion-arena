@@ -2,7 +2,7 @@
   {"name": "Academy", "set": "renaissance", "types": ["Project"], "cost": {"coins": 5}, "text": "When you gain an Action card, +1 Villager.", "kingdom": false},
   {"name": "Acting Troupe", "set": "renaissance", "types": ["Action"], "cost": {"coins": 3}, "plus": {"villagers": 4}, "text": "+4 Villagers\nTrash this.", "kingdom": true},
   {"name": "Barracks", "set": "renaissance", "types": ["Project"], "cost": {"coins": 6}, "text": "At the start of your turn, +1 Action.", "kingdom": false},
-  {"name": "Border Guard", "set": "renaissance", "types": ["Action"], "cost": {"coins": 2}, "plus": {"actions": 1}, "text": "+1 Action\nReveal the top 2 cards of your deck. Put one into your hand and discard the other. If both were Actions, take the Lantern or Horn.", "kingdom": true},
+  {"name": "Border Guard", "set": "renaissance", "types": ["Action"], "cost": {"coins": 2}, "plus": {"actions": 1}, "text": "+1 Action\nReveal the top 2 cards of your deck. Put one into your hand and discard the other. If both were Actions, take the Lantern or Horn.", "kingdom": true, "related": {"artifacts": ["Lantern", "Horn"]}},
   {"name": "Canal", "set": "renaissance", "types": ["Project"], "cost": {"coins": 7}, "text": "During your turns, cards cost $1 less.", "kingdom": false},
   {"name": "Capitalism", "set": "renaissance", "types": ["Project"], "cost": {"coins": 5}, "text": "During your turns, Actions with +$ amounts in their text are also Treasures.", "kingdom": false},
   {"name": "Cargo Ship", "set": "renaissance", "types": ["Action", "Duration"], "cost": {"coins": 3}, "plus": {"coins": 2}, "text": "+$2\nOnce this turn, when you gain a card, you may set it aside face up (on this). At the start of your next turn, put it into your hand.", "kingdom": true},
@@ -15,7 +15,7 @@
   {"name": "Exploration", "set": "renaissance", "types": ["Project"], "cost": {"coins": 4}, "text": "At the end of your Buy phase, if you didn't gain any cards during it, +1 Coffers and +1 Villager.", "kingdom": false},
   {"name": "Fair", "set": "renaissance", "types": ["Project"], "cost": {"coins": 4}, "text": "At the start of your turn, +1 Buy.", "kingdom": false},
   {"name": "Flag", "set": "renaissance", "types": ["Artifact"], "text": "When drawing your hand, +1 Card.", "kingdom": false},
-  {"name": "Flag Bearer", "set": "renaissance", "types": ["Action"], "cost": {"coins": 4}, "plus": {"coins": 2}, "text": "+$2\n---\nWhen you gain or trash this, take the Flag.", "kingdom": true},
+  {"name": "Flag Bearer", "set": "renaissance", "types": ["Action"], "cost": {"coins": 4}, "plus": {"coins": 2}, "text": "+$2\n---\nWhen you gain or trash this, take the Flag.", "kingdom": true, "related": {"artifacts": ["Flag"]}},
   {"name": "Fleet", "set": "renaissance", "types": ["Project"], "cost": {"coins": 5}, "text": "After the game ends, there's an extra round of turns just for players with this.", "kingdom": false},
   {"name": "Guildhall", "set": "renaissance", "types": ["Project"], "cost": {"coins": 5}, "text": "When you gain a Treasure, +1 Coffers.", "kingdom": false},
   {"name": "Hideout", "set": "renaissance", "types": ["Action"], "cost": {"coins": 4}, "plus": {"cards": 1, "actions": 2}, "text": "+1 Card\n+2 Actions\nTrash a card from your hand. If it's a Victory card, gain a Curse.", "kingdom": true},
@@ -45,8 +45,8 @@
   {"name": "Sinister Plot", "set": "renaissance", "types": ["Project"], "cost": {"coins": 4}, "text": "At the start of your turn, add a token here, or remove your tokens here for +1 Card each.", "kingdom": false},
   {"name": "Spices", "set": "renaissance", "types": ["Treasure"], "cost": {"coins": 5}, "plus": {"buys": 1}, "coins": 2, "text": "$2\n+1 Buy\n---\nWhen you gain this, +2 Coffers.", "kingdom": true},
   {"name": "Star Chart", "set": "renaissance", "types": ["Project"], "cost": {"coins": 3}, "text": "When you shuffle, you may pick one of the cards to go on top.", "kingdom": false},
-  {"name": "Swashbuckler", "set": "renaissance", "types": ["Action"], "cost": {"coins": 5}, "plus": {"cards": 3}, "text": "+3 Cards\nIf your discard pile has any cards in it: +1 Coffers, then if you have at least 4 Coffers tokens, take the Treasure Chest.", "kingdom": true},
+  {"name": "Swashbuckler", "set": "renaissance", "types": ["Action"], "cost": {"coins": 5}, "plus": {"cards": 3}, "text": "+3 Cards\nIf your discard pile has any cards in it: +1 Coffers, then if you have at least 4 Coffers tokens, take the Treasure Chest.", "kingdom": true, "related": {"artifacts": ["Treasure Chest"]}},
   {"name": "Treasure Chest", "set": "renaissance", "types": ["Artifact"], "text": "At the start of your Buy phase, gain a Gold.", "kingdom": false},
-  {"name": "Treasurer", "set": "renaissance", "types": ["Action"], "cost": {"coins": 5}, "plus": {"coins": 3}, "text": "+$3\nChoose one: Trash a Treasure from your hand; or gain a Treasure from the trash to your hand; or take the Key.", "kingdom": true},
+  {"name": "Treasurer", "set": "renaissance", "types": ["Action"], "cost": {"coins": 5}, "plus": {"coins": 3}, "text": "+$3\nChoose one: Trash a Treasure from your hand; or gain a Treasure from the trash to your hand; or take the Key.", "kingdom": true, "related": {"artifacts": ["Key"]}},
   {"name": "Villain", "set": "renaissance", "types": ["Action", "Attack"], "cost": {"coins": 5}, "plus": {"coffers": 2}, "text": "+2 Coffers\nEach other player with 5 or more cards in hand discards one costing $2 or more (or reveals they can't).", "kingdom": true}
 ]

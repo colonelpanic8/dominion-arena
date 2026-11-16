@@ -84,19 +84,6 @@ pub(crate) const HEXES: [Card; 12] = [
     Card::War,
 ];
 
-/// Each Kingdom card with an Heirloom, and its Heirloom.
-const HEIRLOOMS: [(Card, Card); 7] = [
-    (Card::Cemetery, Card::HauntedMirror),
-    (Card::Fool, Card::LuckyCoin),
-    (Card::Pixie, Card::Goat),
-    (Card::Pooka, Card::CursedGold),
-    (Card::SecretCave, Card::MagicLamp),
-    (Card::Shepherd, Card::Pasture),
-    (Card::Tracker, Card::Pouch),
-];
-
-const SPIRITS: [Card; 3] = [Card::WillOWisp, Card::Imp, Card::Ghost];
-
 fn gains_to_hand(card: Card) -> bool {
     matches!(
         card,
@@ -123,7 +110,11 @@ impl SetRules for Rules {
 
     fn notes(g: &Game, out: &mut Vec<Note>) {
         for &boon in &g.ext.nocturne.druid {
-            out.push(Note::new(Card::Druid).card(boon));
+            out.push(
+                Note::new(Card::Druid)
+                    .card(boon)
+                    .setup(crate::SetupRole::SetAside),
+            );
         }
     }
 
@@ -467,35 +458,29 @@ impl SetRules for Rules {
             g.shuffle(&mut hexes);
             g.hexes.draw = hexes;
         }
-        let extra: [(Card, usize, bool); 5] = [
-            (Card::WillOWisp, 12, fate || uses(g, &[Card::Exorcist])),
-            (
-                Card::Imp,
-                13,
-                uses(g, &[Card::DevilsWorkshop, Card::Tormentor, Card::Exorcist]),
-            ),
-            (Card::Ghost, 6, uses(g, &[Card::Exorcist, Card::Cemetery])),
-            (
-                Card::Wish,
-                12,
-                uses(g, &[Card::Leprechaun, Card::SecretCave]),
-            ),
-            (Card::Bat, 10, uses(g, &[Card::Vampire])),
-        ];
-        for (card, size, needed) in extra {
-            if needed && g.pile_of(card).is_none() {
+        for (card, size) in [
+            (Card::WillOWisp, 12),
+            (Card::Imp, 13),
+            (Card::Ghost, 6),
+            (Card::Wish, 12),
+            (Card::Bat, 10),
+        ] {
+            if setup::in_game(g, |c| c.uses_pile(card)) && g.pile_of(card).is_none() {
                 add_pile(g, card, size, false);
             }
         }
         if uses(g, &[Card::Necromancer]) && !uses(g, &[Card::ZombieApprentice]) {
-            for z in [Card::ZombieApprentice, Card::ZombieMason, Card::ZombieSpy] {
+            for &z in Card::Necromancer.related().trash {
                 g.create(z, Zone::Trash);
             }
         }
     }
 
     fn modify_starting_deck(g: &Game, _p: PlayerId, deck: &mut Vec<Card>) {
-        for (kingdom, heirloom) in HEIRLOOMS {
+        for (kingdom, heirloom) in Card::ALL
+            .iter()
+            .filter_map(|&c| c.related().heirloom.map(|h| (c, h)))
+        {
             if setup::in_game(g, |c| c == kingdom)
                 && let Some(i) = deck.iter().position(|&c| c == Card::Copper)
             {
@@ -1490,7 +1475,9 @@ fn exorcist(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let limit = g.cost_of(f.s.pick.expect("set in step 1"));
-            let piles: Vec<PileId> = SPIRITS
+            let piles: Vec<PileId> = Card::Exorcist
+                .related()
+                .piles
                 .iter()
                 .filter_map(|&s| g.pile_of(s))
                 .filter(|&pile| {

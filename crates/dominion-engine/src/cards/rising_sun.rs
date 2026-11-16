@@ -61,7 +61,11 @@ impl SetRules for Rules {
 
     fn notes(g: &Game, out: &mut Vec<Note>) {
         if let Some(c) = g.ext.rising_sun.riverboat {
-            out.push(Note::new(Card::Riverboat).card(g.card(c)));
+            out.push(
+                Note::new(Card::Riverboat)
+                    .card(g.card(c))
+                    .setup(crate::SetupRole::SetAside),
+            );
         }
     }
 

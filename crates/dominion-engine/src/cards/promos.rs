@@ -46,7 +46,7 @@ impl SetRules for Rules {
             cards.sort_by_key(|c| c.name());
             for chunk in cards.chunk_by(|a, b| a == b) {
                 let note = Note::new(Card::BlackMarket).pile(pile).card(chunk[0]);
-                out.push(note.count(chunk.len() as i32));
+                out.push(note.count(chunk.len() as i32).setup(crate::SetupRole::Deck));
             }
         }
     }

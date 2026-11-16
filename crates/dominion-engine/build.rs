@@ -1,7 +1,7 @@
 //! Generates the card table from `data/cards/*.json`.
 
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 use std::path::PathBuf;
 
@@ -101,6 +101,23 @@ fn main() {
             serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path:?}: {e}"));
         for card in list {
             cards.push((set.to_string(), card));
+        }
+    }
+
+    let by_name: BTreeMap<_, _> = cards
+        .iter()
+        .map(|(_, card)| (card["name"].as_str().unwrap(), card))
+        .collect();
+    for &name in by_name.keys() {
+        let mut seen = BTreeSet::from([name]);
+        let mut current = name;
+        while let Some(next) = by_name[current]["related"]["heirloom"].as_str() {
+            assert!(
+                by_name.contains_key(next),
+                "{current}: unknown Heirloom {next}"
+            );
+            assert!(seen.insert(next), "{name}: cyclic Heirloom relationship");
+            current = next;
         }
     }
 
@@ -210,11 +227,34 @@ fn main() {
             Some(p) => format!("Some(Card::{})", ident(p)),
             None => "None".to_string(),
         };
+        let related = &c["related"];
+        let card_ref = |name: &str| {
+            let id = ident(name);
+            assert!(idents.contains(&id), "{name}: unknown related card");
+            format!("Card::{id}")
+        };
+        let mut relations = String::from("CardRelations {");
+        let heirloom = related["heirloom"]
+            .as_str()
+            .map(|name| format!("Some({})", card_ref(name)))
+            .unwrap_or_else(|| "None".into());
+        write!(relations, "heirloom: {heirloom},").unwrap();
+        for key in ["piles", "artifacts", "trash", "states"] {
+            let values = related[key]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|name| card_ref(name.as_str().expect("related card name")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(relations, "{key}: &[{values}],").unwrap();
+        }
+        relations.push('}');
         writeln!(
             out,
             "    CardDef {{ name: {name:?}, set: Set::{set}, cost: {cost}, variable_cost: {}, overpay: {}, types: {types_expr}, \
              plus: Plus {{ cards: {}, actions: {}, buys: {}, coins: {}, villagers: {}, coffers: {}, favors: {} }}, \
-             coins: {}, potions: {}, vp: {}, kingdom: {}, unimplemented: {}, basic: {}, removed: {}, pile: {pile}, text: {:?} }},",
+             coins: {}, potions: {}, vp: {}, kingdom: {}, unimplemented: {}, basic: {}, removed: {}, pile: {pile}, related: {relations}, text: {:?} }},",
             flag(&cost_flags, "variable"),
             flag(&cost_flags, "overpay"),
             num(&plus, "cards"),

@@ -368,6 +368,13 @@ fn view_of(game: &Game, known: &KnownCards, seat: Option<PlayerId>, cx: &Context
                 pile: pile_card(n.pile),
                 card: n.card.map(|c| c.name().to_string()),
                 count: n.count,
+                setup: n.setup.map(|role| match role {
+                    dominion_engine::SetupRole::SetAside => SetupRole::SetAside,
+                    dominion_engine::SetupRole::Bane => SetupRole::Bane,
+                    dominion_engine::SetupRole::ExtraPile => SetupRole::ExtraPile,
+                    dominion_engine::SetupRole::ChosenPile => SetupRole::ChosenPile,
+                    dominion_engine::SetupRole::Deck => SetupRole::Deck,
+                }),
             })
             .collect(),
         counters: BTreeMap::new(),
@@ -1292,14 +1299,20 @@ fn counter_text(
 fn note_text(game: &Game, note: &Note, cx: &Context<'_>) -> String {
     let source = note.source;
     let pile = note.pile.map(|p| game.pile(p).card);
-    match (source, pile, note.card) {
-        (Card::YoungWitch, Some(pile), _) => format!("The {pile} pile is the Bane"),
-        (Card::Ferryman, Some(pile), _) => format!("The {pile} pile is set aside for Ferryman"),
-        (Card::BlackMarket, _, Some(card)) if note.count > 1 => {
-            format!("The Black Market deck holds {card} ({})", note.count)
+    match (note.setup, pile, note.card) {
+        (Some(dominion_engine::SetupRole::Bane), Some(pile), _) => {
+            format!("The {pile} pile is the Bane")
         }
-        (Card::BlackMarket, _, Some(card)) => format!("The Black Market deck holds {card}"),
-        (Card::Riverboat | Card::Druid | Card::WayOfTheMouse, None, Some(card)) => {
+        (Some(dominion_engine::SetupRole::ExtraPile), Some(pile), _) => {
+            format!("The {pile} pile is set aside for {source}")
+        }
+        (Some(dominion_engine::SetupRole::Deck), _, Some(card)) if note.count > 1 => {
+            format!("The {source} deck holds {card} ({})", note.count)
+        }
+        (Some(dominion_engine::SetupRole::Deck), _, Some(card)) => {
+            format!("The {source} deck holds {card}")
+        }
+        (Some(dominion_engine::SetupRole::SetAside), _, Some(card)) => {
             format!("{card} is set aside for {source}")
         }
         _ => {

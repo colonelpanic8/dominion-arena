@@ -48,20 +48,6 @@ const TASKMASTER_ARM: u8 = 9;
 const TRAIT: u8 = 10;
 const INHERIT: u8 = 11;
 
-const LOOT_GAINERS: &[Card] = &[
-    Card::JewelledEgg,
-    Card::Search,
-    Card::Pickaxe,
-    Card::WealthyVillage,
-    Card::Cutthroat,
-    Card::SackOfLoot,
-    Card::Peril,
-    Card::Foray,
-    Card::Looting,
-    Card::Invasion,
-    Card::Prosper,
-];
-
 /// Cards whose lastings resolve at the start of their owner's turn.
 fn has_start(card: Card) -> bool {
     matches!(
@@ -504,8 +490,7 @@ impl SetRules for Rules {
     }
 
     fn ensure(g: &mut Game, _s: &mut Setup) {
-        let gainer = setup::in_game(g, |c| LOOT_GAINERS.contains(&c))
-            || g.landscapes.contains(&Card::Cursed);
+        let gainer = setup::in_game(g, |c| c.uses_pile(Card::Loot));
         if gainer {
             add_loot_pile(g);
         }

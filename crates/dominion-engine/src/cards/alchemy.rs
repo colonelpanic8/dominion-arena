@@ -10,7 +10,7 @@ use crate::frame::{Flow, Frame, Input};
 use crate::game::{Scratch, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
-use crate::{Card, CardId, Cost, Game, Kind, PlayerId, Types};
+use crate::{Card, CardId, Cost, Game, PlayerId, Types};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ fn treasures_leaving_play(g: &Game, p: PlayerId) -> Vec<CardId> {
 
 impl SetRules for Rules {
     fn ensure(g: &mut Game, _s: &mut Setup) {
-        let potions = |c: Card| c.kind() == Kind::Card && c.cost().is_some_and(|c| c.potions > 0);
+        let potions = |c: Card| c.uses_pile(Card::Potion);
         if setup::in_game(g, potions) && g.supply_pile(Card::Potion).is_none() {
             setup::add_pile(g, Card::Potion, 16, true);
         }

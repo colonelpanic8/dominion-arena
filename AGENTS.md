@@ -178,7 +178,17 @@ the dividing line), and as applicable `cost` (`coins`, `potions`, `debt`, `varia
 `overpay`), `plus` (leading vanilla bonuses: `cards`, `actions`, `buys`, `coins`,
 `villagers`, `coffers`, `favors`), `coins` (a Treasure's value), `potions`, `vp`,
 `kingdom`, `unimplemented`, `basic`, `removed`, and `pile` (the randomizer or top card
-of its mixed or split pile). A Kingdom randomizer's `cost` is the one printed on it: what
+of its mixed or split pile). `related` holds engine-owned card relationships:
+`heirloom`, `piles` (extra piles, not ordinary Supply gains), `artifacts`, `trash` (setup
+cards), and `states`. Setup and reference renderers use `Card::related`, `uses_pile`,
+and `pile_sources`, never their own lists or searches of printed text. Card behavior
+such as Traveller exchange targets stays in the card scripts; Prize and Reward
+categories use the cards' types. Game-specific choices still
+come from public setup notes, tagged with `SetupRole` (set-aside cards, a Bane, an
+extra pile, a chosen pile, or public deck contents). Live-state notes have no setup
+role. Every pile records its initial public recipe, including ordinary single-card
+piles; rendering reads those counts rather than inferring them from remaining cards.
+A Kingdom randomizer's `cost` is the one printed on it: what
 its pile costs for a setup choice (a Bane, Ferryman's pile). A randomizer is no card
 (`Kind::Randomizer`), so nothing gains, buys or names one, and its cards cost their own. `build.rs` turns it into `Card` (one variant per entry, named by
 CamelCasing the name), `Types` and the `CardDef` table. Arcana is unreleased: its entries are names and types only, none are Kingdom cards yet, and it has no behavior; re-import it once its cards are public.

@@ -15,7 +15,7 @@ pub use dominion_protocol::view::*;
 pub use project::WAY_HINT;
 pub use table::{AnswerError, Answered, Table, WayChoice};
 
-use dominion_engine::{Card, Kind, Types};
+use dominion_engine::{Card, Kind};
 
 /// The vendored JSON Schema of agent-view@2.
 pub const JSON_SCHEMA: &str = include_str!("../protocol/agent-view.schema.json");
@@ -51,11 +51,62 @@ pub fn glossary(name: &str) -> Option<GlossaryEntry> {
     Card::from_name(name).map(glossary_entry)
 }
 
-fn is_hex_state(card: Card) -> bool {
-    card.kind() == Kind::State
-        && Card::ALL
-            .iter()
-            .any(|hex| hex.kind() == Kind::Hex && hex.text().contains(card.name()))
+/// Publicly present components, excluding cards included only as possible references.
+pub(crate) fn component_sources(view: &AgentView) -> std::collections::BTreeSet<Card> {
+    let mut names = Vec::new();
+    for pile in view.supply.iter().chain(&view.non_supply) {
+        names.push(pile.card.as_str());
+        names.extend(pile.top.as_deref());
+        names.extend(pile.traits.iter().map(String::as_str));
+    }
+    names.extend(view.landscapes.iter().map(|l| l.card.as_str()));
+    names.extend(view.artifacts.iter().map(|a| a.card.as_str()));
+    for note in &view.notes {
+        names.push(note.source.as_str());
+        names.extend(note.card.as_deref());
+    }
+    for player in view.you.iter().chain(&view.opponents) {
+        for zone in [&player.hand, &player.in_play, &player.discard]
+            .into_iter()
+            .chain(player.other_zones.values())
+        {
+            names.extend(zone.known.keys().map(String::as_str));
+        }
+        names.extend(player.deck.known.keys().map(String::as_str));
+        names.extend(player.owned.known.keys().map(String::as_str));
+        names.extend(
+            player
+                .projects
+                .iter()
+                .chain(&player.states)
+                .chain(&player.boons)
+                .chain(&player.artifacts)
+                .map(String::as_str),
+        );
+    }
+    names.extend(view.trash.known.keys().map(String::as_str));
+    let mut sources: std::collections::BTreeSet<Card> =
+        names.into_iter().filter_map(Card::from_name).collect();
+    for pile in view.supply.iter().chain(&view.non_supply) {
+        if let Some(structure) = &pile.structure {
+            if structure.sample_size.is_none() {
+                sources.extend(
+                    structure
+                        .cards
+                        .iter()
+                        .filter_map(|group| Card::from_name(&group.card)),
+                );
+            }
+        } else if let Some(card) = Card::from_name(&pile.card) {
+            sources.extend(card.pile_members());
+        }
+    }
+    let heirlooms: Vec<_> = sources
+        .iter()
+        .filter_map(|card| card.related().heirloom)
+        .collect();
+    sources.extend(heirlooms);
+    sources
 }
 
 /// Official entries for visible cards, including every possible member of their piles.
@@ -110,15 +161,12 @@ pub fn glossary_for(view: &AgentView) -> Vec<GlossaryEntry> {
         names.insert(note.source.clone());
         names.extend(note.card.clone());
     }
-    let receives_boons = !names.contains("Druid")
-        || names.contains("Lost in the Woods")
-        || names
-            .iter()
-            .filter_map(|name| Card::from_name(name))
-            .any(|card| card != Card::Druid && card.is(Types::FATE));
+    let receives_boons = component_sources(view)
+        .iter()
+        .any(|card| card.receives_boons());
     for &card in Card::ALL {
         if (view.boons.is_some() && receives_boons && card.kind() == Kind::Boon)
-            || (view.hexes.is_some() && (card.kind() == Kind::Hex || is_hex_state(card)))
+            || (view.hexes.is_some() && (card.kind() == Kind::Hex || card.is_hex_state()))
         {
             names.insert(card.name().to_string());
         }

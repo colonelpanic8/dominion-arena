@@ -34,22 +34,6 @@ const MERCHANT_GUILD_COFFERS: u8 = 0;
 const HORSE_TRADERS_SET_ASIDE: u8 = 0;
 const HORSE_TRADERS_RETURN: u8 = 1;
 
-const REWARDS: [Card; 6] = [
-    Card::Coronet,
-    Card::Courser,
-    Card::Demesne,
-    Card::Housecarl,
-    Card::HugeTurnip,
-    Card::Renown,
-];
-const PRIZES: [Card; 5] = [
-    Card::BagOfGold,
-    Card::Diadem,
-    Card::Followers,
-    Card::Princess,
-    Card::TrustySteed,
-];
-
 /// Overpaying happens on buying; the overpay abilities happen when the card is gained.
 const OVERPAY_CARDS: [Card; 6] = [
     Card::Farrier,
@@ -68,10 +52,18 @@ impl SetRules for Rules {
     fn notes(g: &Game, out: &mut Vec<Note>) {
         let s = &g.ext.cornucopia_guilds;
         if let Some(pile) = s.bane {
-            out.push(Note::new(Card::YoungWitch).pile(pile));
+            out.push(
+                Note::new(Card::YoungWitch)
+                    .pile(pile)
+                    .setup(crate::SetupRole::Bane),
+            );
         }
         if let Some(pile) = s.ferryman {
-            out.push(Note::new(Card::Ferryman).pile(pile));
+            out.push(
+                Note::new(Card::Ferryman)
+                    .pile(pile)
+                    .setup(crate::SetupRole::ExtraPile),
+            );
         }
     }
 
@@ -391,14 +383,18 @@ impl SetRules for Rules {
             g.piles[pile.index()].in_supply = false;
             g.ext.cornucopia_guilds.ferryman = Some(pile);
         }
-        if setup::in_game(g, |c| c == Card::Tournament) && g.pile_of(PRIZES[0]).is_none() {
-            for prize in PRIZES {
+        if setup::in_game(g, |c| c == Card::Tournament)
+            && g.pile_of(Card::Tournament.related().piles[0]).is_none()
+        {
+            for &prize in Card::Tournament.related().piles {
                 add_pile(g, prize, 1, false);
             }
         }
-        if setup::in_game(g, |c| c == Card::Joust) && g.pile_of(REWARDS[0]).is_none() {
+        if setup::in_game(g, |c| c == Card::Joust)
+            && g.pile_of(Card::Joust.related().piles[0]).is_none()
+        {
             let n = if g.num_players() == 2 { 1 } else { 2 };
-            for reward in REWARDS {
+            for &reward in Card::Joust.related().piles {
                 add_pile(g, reward, n, false);
             }
         }
@@ -1061,7 +1057,9 @@ fn joust(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 ..Scratch::default()
             };
             g.add_lasting(Card::Joust, f.player, f.this, vec![], Until::Removed, data);
-            let piles: Vec<PileId> = REWARDS
+            let piles: Vec<PileId> = Card::Joust
+                .related()
+                .piles
                 .iter()
                 .filter_map(|&r| g.pile_of(r))
                 .filter(|&p| !g.pile(p).cards.is_empty())
@@ -1699,7 +1697,9 @@ fn tournament(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             Flow::Call(Frame::discard(f.player, vec![c]))
         }
         3 => {
-            let mut piles: Vec<PileId> = PRIZES
+            let mut piles: Vec<PileId> = Card::Tournament
+                .related()
+                .piles
                 .iter()
                 .filter_map(|&r| g.pile_of(r))
                 .filter(|&p| !g.pile(p).cards.is_empty())

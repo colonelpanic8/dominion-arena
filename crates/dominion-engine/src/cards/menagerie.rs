@@ -71,22 +71,6 @@ const FROG_TOPDECK: u8 = 0;
 const SEAL_TOPDECK: u8 = 0;
 const SQUIRREL_DRAW: u8 = 0;
 
-/// Cards and Events that gain Horses.
-const HORSE_USERS: &[Card] = &[
-    Card::Sleigh,
-    Card::Supplies,
-    Card::Scrap,
-    Card::Cavalry,
-    Card::Groom,
-    Card::Hostelry,
-    Card::Livery,
-    Card::Paddock,
-    Card::Ride,
-    Card::Bargain,
-    Card::Demand,
-    Card::Stampede,
-];
-
 /// Lasting effects of the set that a `START` trigger resolves.
 const STARTS: &[Card] = &[
     Card::Barge,
@@ -102,7 +86,11 @@ impl SetRules for Rules {
     fn notes(g: &Game, out: &mut Vec<Note>) {
         let s = &g.ext.menagerie;
         if let Some(c) = s.mouse {
-            out.push(Note::new(Card::WayOfTheMouse).card(g.card(c)));
+            out.push(
+                Note::new(Card::WayOfTheMouse)
+                    .card(g.card(c))
+                    .setup(crate::SetupRole::SetAside),
+            );
         }
         for &c in &s.invested {
             if let Zone::Mat(p, Mat::Exile) = g.zone(c) {
@@ -577,7 +565,7 @@ impl SetRules for Rules {
                 g.ext.menagerie.mouse = g.pile_top(pile);
             }
         }
-        if setup::in_game(g, |c| HORSE_USERS.contains(&c)) && g.pile_of(Card::Horse).is_none() {
+        if setup::in_game(g, |c| c.uses_pile(Card::Horse)) && g.pile_of(Card::Horse).is_none() {
             setup::add_pile(g, Card::Horse, 30, false);
         }
     }

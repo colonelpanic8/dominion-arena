@@ -362,7 +362,11 @@
         "player": { "$ref": "#/$defs/seat" },
         "pile": { "$ref": "#/$defs/cardName" },
         "card": { "$ref": "#/$defs/cardName" },
-        "count": { "type": "integer" }
+        "count": { "type": "integer" },
+        "setup": {
+          "description": "The setup relationship of the source to the named card or pile. Absent for ordinary live state. Deck entries describe public unordered contents, never deck order.",
+          "enum": ["set-aside", "bane", "extra-pile", "chosen-pile", "deck"]
+        }
       },
       "required": ["source", "count"],
       "additionalProperties": false

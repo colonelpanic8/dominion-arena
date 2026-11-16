@@ -227,7 +227,7 @@ impl SetRules for Rules {
     }
 
     fn ensure(g: &mut Game, _s: &mut Setup) {
-        if setup::in_game(g, |c| c.is(Types::LOOTER)) && g.pile_of(Card::Ruins).is_none() {
+        if setup::in_game(g, |c| c.uses_pile(Card::Ruins)) && g.pile_of(Card::Ruins).is_none() {
             let ruins: Vec<Card> = Card::Ruins
                 .pile_members()
                 .into_iter()
@@ -235,17 +235,12 @@ impl SetRules for Rules {
                 .collect();
             add_shuffled_pile(g, Card::Ruins, ruins, 10 * (g.num_players() - 1), true);
         }
-        let extra = [
-            (
-                Card::Spoils,
-                15,
-                &[Card::BanditCamp, Card::Marauder, Card::Pillage][..],
-            ),
-            (Card::Madman, 10, &[Card::Hermit][..]),
-            (Card::Mercenary, 10, &[Card::Urchin][..]),
-        ];
-        for (card, size, users) in extra {
-            if setup::in_game(g, |c| users.contains(&c)) && g.pile_of(card).is_none() {
+        for (card, size) in [
+            (Card::Spoils, 15),
+            (Card::Madman, 10),
+            (Card::Mercenary, 10),
+        ] {
+            if setup::in_game(g, |c| c.uses_pile(card)) && g.pile_of(card).is_none() {
                 add_pile(g, card, size, false);
             }
         }

@@ -573,6 +573,20 @@ pub struct Note {
     pub card: Option<Card>,
     /// Tokens or VP, where it keeps some.
     pub count: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<SetupRole>,
+}
+
+/// A public setup relationship, distinct from a card's live state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SetupRole {
+    SetAside,
+    Bane,
+    ExtraPile,
+    ChosenPile,
+    /// Public unordered contents, never the deck's order.
+    Deck,
 }
 
 impl Note {
@@ -583,6 +597,7 @@ impl Note {
             pile: None,
             card: None,
             count: 0,
+            setup: None,
         }
     }
 
@@ -603,6 +618,11 @@ impl Note {
 
     pub(crate) fn count(mut self, n: i32) -> Note {
         self.count = n;
+        self
+    }
+
+    pub(crate) fn setup(mut self, role: SetupRole) -> Note {
+        self.setup = Some(role);
         self
     }
 }

@@ -141,6 +141,21 @@ impl Plus {
     }
 }
 
+/// Relationships used by setup, card abilities and reference consumers.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CardRelations {
+    /// Replaces a starting Copper in games using this card.
+    pub heirloom: Option<Card>,
+    /// Additional piles used by this card (not ordinary Supply gains).
+    pub piles: &'static [Card],
+    /// Artifacts brought into the game by this card.
+    pub artifacts: &'static [Card],
+    /// Cards placed in the trash at setup.
+    pub trash: &'static [Card],
+    /// States this card can give players.
+    pub states: &'static [Card],
+}
+
 /// Static facts about a card, as printed.
 #[derive(Clone, Copy, Debug)]
 pub struct CardDef {
@@ -171,11 +186,50 @@ pub struct CardDef {
     pub removed: bool,
     /// The randomizer or top card of the mixed or split pile this card belongs to.
     pub pile: Option<Card>,
+    pub related: CardRelations,
     /// Official text. Lines are separated by `\n`; a line `---` is the dividing line.
     pub text: &'static str,
 }
 
 impl Card {
+    /// A basic Supply card rather than a pile randomizer.
+    pub fn is_basic(self) -> bool {
+        self.def().basic && self.kind() == Kind::Card
+    }
+
+    pub fn related(self) -> &'static CardRelations {
+        &self.def().related
+    }
+
+    /// Cards that require this pile in setup, including through their Heirlooms.
+    pub fn pile_sources(self) -> impl Iterator<Item = Card> {
+        Self::ALL.iter().copied().filter(move |c| c.uses_pile(self))
+    }
+
+    /// Whether games using this card require an additional pile, including dependencies
+    /// of its Heirloom. Druid requires Will-o'-Wisps even without the Swamp's Gift.
+    pub fn uses_pile(self, pile: Card) -> bool {
+        self.related().piles.contains(&pile)
+            || self.related().heirloom.is_some_and(|c| c.uses_pile(pile))
+            || (pile == Card::WillOWisp && self.is(Types::FATE))
+            || (pile == Card::Ruins && self.is(Types::LOOTER))
+            || (pile == Card::Potion
+                && self.kind() == Kind::Card
+                && self.cost().is_some_and(|cost| cost.potions > 0))
+    }
+
+    /// Can receive Boons from the deck, rather than only a setup selection.
+    pub fn receives_boons(self) -> bool {
+        (self.is(Types::FATE) && self != Card::Druid) || self == Card::LostInTheWoods
+    }
+
+    pub fn is_hex_state(self) -> bool {
+        self.kind() == Kind::State
+            && Self::ALL
+                .iter()
+                .any(|hex| hex.kind() == Kind::Hex && hex.related().states.contains(&self))
+    }
+
     pub fn def(self) -> &'static CardDef {
         &DEFS[self as usize]
     }

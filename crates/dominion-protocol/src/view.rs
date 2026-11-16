@@ -377,6 +377,19 @@ pub struct NoteView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub card: Option<String>,
     pub count: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<SetupRole>,
+}
+
+/// The source's public relationship to a card or pile chosen in setup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SetupRole {
+    SetAside,
+    Bane,
+    ExtraPile,
+    ChosenPile,
+    Deck,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

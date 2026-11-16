@@ -46,15 +46,6 @@ const CARGO_SET_ASIDE: u8 = 3;
 const IMPROVE_TRASH: u8 = 3;
 const PRIEST_COINS: u8 = 3;
 
-/// Each Artifact and the Kingdom card that brings it into the game.
-const ARTIFACTS: [(Card, Card); 5] = [
-    (Card::Lantern, Card::BorderGuard),
-    (Card::Horn, Card::BorderGuard),
-    (Card::Flag, Card::FlagBearer),
-    (Card::TreasureChest, Card::Swashbuckler),
-    (Card::Key, Card::Treasurer),
-];
-
 impl SetRules for Rules {
     fn notes(g: &Game, out: &mut Vec<Note>) {
         for (i, &n) in g.ext.renaissance.plot.iter().enumerate() {
@@ -279,7 +270,10 @@ impl SetRules for Rules {
 
     fn ensure(g: &mut Game, _s: &mut Setup) {
         g.ext.renaissance.plot.resize(g.num_players(), 0);
-        for (artifact, card) in ARTIFACTS {
+        for (artifact, card) in Card::ALL
+            .iter()
+            .flat_map(|&c| c.related().artifacts.iter().map(move |&a| (a, c)))
+        {
             if setup::in_game(g, |c| c == card) && !g.artifacts.iter().any(|(a, _)| *a == artifact)
             {
                 g.artifacts.push((artifact, None));

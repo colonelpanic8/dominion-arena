@@ -2008,6 +2008,7 @@ fn inheritance_sets_an_action_aside_and_makes_estates_play_it() {
     assert_eq!(g.view(P1).card(village), Some(Card::Village));
     assert!(g.view(P1).notes().contains(&Note {
         source: Card::Inheritance,
+        setup: None,
         player: Some(P0),
         pile: None,
         card: Some(Card::Village),

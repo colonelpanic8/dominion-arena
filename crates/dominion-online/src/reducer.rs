@@ -919,6 +919,7 @@ impl Reducer {
         for marker in &state.pile_markers {
             let zone = self.zone(marker.zone_index)?;
             notes.push(view::NoteView {
+                    setup: None,
                 source: ["Bane", "Obelisk", "Split pile", "Mixed pile", "Ferryman"]
                     .get(marker.kind as usize)
                     .unwrap_or(&"Pile marker")
@@ -932,6 +933,7 @@ impl Reducer {
         for (player, p) in state.players.iter().enumerate() {
             for reminder in &p.reminders {
                 notes.push(view::NoteView {
+                    setup: None,
                     source: if reminder.blinking {
                         "Active reminder"
                     } else {
@@ -948,6 +950,7 @@ impl Reducer {
         for change in &state.temporary_effects.behaviour_changes {
             if let Some(card) = self.card_name(change.id) {
                 notes.push(view::NoteView {
+                    setup: None,
                     source: format!(
                         "Uses {} abilities",
                         self.catalog.card(change.card_name)?.name
@@ -964,6 +967,7 @@ impl Reducer {
                 for linked in &association.linked_cards {
                     if let Some(name) = self.card_name(*linked) {
                         notes.push(view::NoteView {
+                    setup: None,
                             source: format!("Associated with {name}"),
                             player: None,
                             pile: None,

@@ -102,7 +102,11 @@ impl SetRules for Rules {
             out.push(Note::new(card).count(vp));
         }
         if let Some(pile) = s.obelisk {
-            out.push(Note::new(Card::Obelisk).pile(pile));
+            out.push(
+                Note::new(Card::Obelisk)
+                    .pile(pile)
+                    .setup(crate::SetupRole::ChosenPile),
+            );
         }
     }
 

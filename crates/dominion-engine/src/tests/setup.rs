@@ -26,6 +26,78 @@ fn black_market(g: &Game) -> Vec<Card> {
 }
 
 #[test]
+fn card_relationships_match_the_components_added_by_setup() {
+    for &source in Card::ALL {
+        let related = source.related();
+        if (!source.def().kingdom && !source.kind().is_landscape())
+            || (related.heirloom.is_none()
+                && related.piles.is_empty()
+                && related.artifacts.is_empty()
+                && related.trash.is_empty())
+        {
+            continue;
+        }
+        let g = if source.kind().is_landscape() {
+            game(&[Card::Village], &[source], &[])
+        } else {
+            game(&[source], &[], &[])
+        };
+        for &pile in Card::ALL.iter().filter(|&&c| source.uses_pile(c)) {
+            assert!(g.pile_of(pile).is_some(), "{source} requires {pile}");
+        }
+        for &artifact in related.artifacts {
+            assert!(
+                g.artifacts.contains(&(artifact, None)),
+                "{source}: {artifact}"
+            );
+        }
+        for &card in related.trash {
+            assert!(
+                g.trash.iter().any(|&c| g.card(c) == card),
+                "{source}: {card}"
+            );
+        }
+        if let Some(heirloom) = related.heirloom {
+            for p in [P0, P1] {
+                assert_eq!(g.count_owned(p, heirloom), 1, "{source}: {heirloom}");
+            }
+        }
+    }
+}
+
+#[test]
+fn ordinary_pile_recipes_record_setup_counts_and_survive_depletion() {
+    for players in 2..=6 {
+        let mut config = config(
+            &[Card::Pixie, Card::Tracker, Card::Tournament, Card::Joust],
+            &[],
+            &[],
+        );
+        config.players = players;
+        let mut g = setup_with(config);
+        for pile in g.piles() {
+            let recipe = pile.structure.as_ref().expect("a public setup recipe");
+            assert_eq!(recipe.cards.len(), 1);
+            assert_eq!(
+                recipe.cards[0].count as usize,
+                pile.cards.len(),
+                "{}",
+                pile.card
+            );
+        }
+        let copper = g.supply_pile(Card::Copper).unwrap();
+        let recipe = g.pile(copper).structure.clone();
+        for card in g.pile(copper).cards.clone() {
+            g.move_card(card, Zone::Trash, crate::game::Pos::Top);
+        }
+        assert_eq!(g.pile(copper).structure, recipe);
+        add_kingdom_piles(&mut g, &[Card::Port]);
+        let port = g.pile(g.pile_of(Card::Port).unwrap());
+        assert_eq!(port.structure.as_ref().unwrap().cards[0].count, 12);
+    }
+}
+
+#[test]
 fn pile_setup_recipes_match_stacked_and_rotating_piles_for_each_player_count() {
     for players in 2..=6 {
         for card in [
