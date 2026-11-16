@@ -596,6 +596,45 @@ impl Session {
     }
 
     #[tool(
+        description = "dominion/play@1: the last observed seat's game by turn: one line per turn saying what each player played, bought, gained, trashed, discarded, ... in it, with its log seqs. Turn numbers are each player's own count (`from`, `to`; `player` is a seat index, 0 is P1); with neither from nor to, the newest `last` turns (default 6). `detail` adds each turn's log entries. Join a seat first."
+    )]
+    async fn turns(
+        &self,
+        Parameters(p): Parameters<play::TurnsParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.reference_seat() {
+            Some(seat) => seat,
+            None => {
+                return Ok(failure(
+                    "NOT_SEATED: pass token to state, or call join_game first",
+                ));
+            }
+        };
+        Ok(match self.hub.play_observation(&seat) {
+            Ok(observation) => {
+                let names = dominion_agent::turns::names(&observation.view);
+                let running = observation.view.game.running;
+                let turns = play::turns(&observation.log, &names, running, &p);
+                let json: Vec<_> = turns
+                    .iter()
+                    .map(|(span, summary)| {
+                        let mut v = serde_json::to_value(summary).unwrap_or_default();
+                        if p.detail {
+                            v["entries"] = serde_json::json!(span.entries);
+                        }
+                        v
+                    })
+                    .collect();
+                structured(
+                    serde_json::json!({"turns": json}),
+                    play::turns_text(&turns, p.detail),
+                )
+            }
+            Err(e) => failure(format!("NO_GAME: {e}; call new_game")),
+        })
+    }
+
+    #[tool(
         description = "dominion/play@1: create a game, join seat 0, return its full view and all secret seat tokens. players defaults to 2. Arena has no automatic bot opponents: bots must be 0 (default); other seats need agents with their tokens. For explicit registered house-agent profiles use create_game instead. kingdom/landscapes are required inclusions, filled randomly. Extras: sets, names, seed, turn_limit, colonies, shelters, watchable. Never replaces or resigns your previous game."
     )]
     async fn new_game(

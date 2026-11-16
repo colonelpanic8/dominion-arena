@@ -11,7 +11,15 @@ use tokio::sync::{mpsc, oneshot};
 
 /// The dominion/play@1 tools a seat is offered. The legacy ones (view, answer, ...) return
 /// the raw JSON view as their text, so they're left out.
-pub const TOOLS: [&str; 6] = ["state", "step", "wait", "cards", "log", "play_treasures"];
+pub const TOOLS: [&str; 7] = [
+    "state",
+    "step",
+    "wait",
+    "cards",
+    "log",
+    "turns",
+    "play_treasures",
+];
 
 pub struct Record {
     kind: &'static str,
@@ -80,7 +88,7 @@ impl ServerHandler for SeatBridge {
     fn get_info(&self) -> ServerConfig {
         let mut info = ServerConfig::default();
         info.capabilities = ServerCapabilities::builder().enable_tools().build();
-        info.instructions = Some("Play your assigned Dominion seat through dominion/play@1: state, then step with decision/indices/expect, or wait when decision is null. Results are text: what changed since your last decision, new card text, then your next decision; state shows the whole game. Stop at GAME OVER. cards and log provide references. Seat credentials are supplied by the server; do not create or join another game.".into());
+        info.instructions = Some("Play your assigned Dominion seat through dominion/play@1: state, then step with decision/indices/expect, or wait when decision is null. Results are text: what changed since your last decision, new card text, then your next decision; state shows the whole game. Stop at GAME OVER. cards, log and turns (what each turn did, by turn number) provide references. Seat credentials are supplied by the server; do not create or join another game.".into());
         info
     }
 
@@ -118,7 +126,7 @@ impl ServerHandler for SeatBridge {
                 None,
             ));
         }
-        if !self.official && !matches!(tool, "card" | "cards" | "log") {
+        if !self.official && !matches!(tool, "card" | "cards" | "log" | "turns") {
             args.insert("token".into(), json!(self.token));
         }
         self.record(

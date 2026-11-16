@@ -181,11 +181,15 @@ keeps its seat authentication and lobby separate.
 compact changes (full text on the session's first observation). They always carry the
 full structured `{view, glossary?}` envelope. Card text arrives once per session/game
 as `CARDS`, excluding basic Treasures, Victory cards, and Curse. Logs include sequence
-numbers; long text logs keep the newest 50 and explicitly point to `log` for the rest.
-`log` takes `after` (exclusive seq) and `limit` (default 50), returning oldest first.
+numbers; long text logs keep the newest 50, summarize the omitted entries by turn, and
+point to `log` for the rest. `log` takes `after` (exclusive seq) and `limit` (default
+50), returning oldest first. `turns` gives one line per turn (what each player played,
+bought, gained, trashed, discarded, ... in it, with its seqs): `player` (seat index),
+`from` and `to` (each player's own turn numbers) or the newest `last` (default 6), and
+`detail` for each turn's entries.
 `cards` takes `names` and returns `{glossary}` with official text and current costs and
-types in the last observed seat's game (printed values before joining). `log` and
-`cards` use the last common observation's seat, or the joined seat. `timeout_s` defaults
+types in the last observed seat's game (printed values before joining). `log`, `turns`
+and `cards` use the last common observation's seat, or the joined seat. `timeout_s` defaults
 to 60 and is capped at 600 seconds and half the configured session lifetime; the default
 server accepts at least 300 seconds. The engine automatically resolves forced decisions.
 
@@ -397,7 +401,7 @@ Each registered player fills `agent_seats_per_day` agent seats a day (0: no limi
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
 
 Each model plays through a private, seat-scoped MCP server exposing the common
-`state`, `step`, `wait`, `cards`, and `log` loop, plus `play_treasures`. Results reach
+`state`, `step`, `wait`, `cards`, `log`, and `turns` loop, plus `play_treasures`. Results reach
 the model as text only (changes since its last decision, new card text, the next
 decision); the structured view, ten times the size, is kept in the archive but not
 sent. The bridge binds the session and attaches its seat token;

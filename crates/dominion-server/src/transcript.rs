@@ -419,7 +419,10 @@ impl Normalizer {
                         false,
                         reply["text"].as_str().unwrap_or("Request rejected"),
                     );
-                } else if matches!(data["tool"].as_str(), Some("card" | "cards" | "log")) {
+                } else if matches!(
+                    data["tool"].as_str(),
+                    Some("card" | "cards" | "log" | "turns")
+                ) {
                     self.emit(
                         &mut out,
                         time,
