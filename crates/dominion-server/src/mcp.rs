@@ -155,6 +155,7 @@ pub struct Session {
     arena: Arc<Arena>,
     hub: Arc<Hub>,
     joined: Arc<Mutex<Option<Seat>>>,
+    connection: Arc<Mutex<Option<crate::hub::Connection>>>,
     /// The account the session signed in to.
     ident: Arc<Mutex<Option<Ident>>>,
     /// Where its last request came from.
@@ -194,6 +195,7 @@ impl Session {
             hub: arena.hub.clone(),
             arena,
             joined: Arc::new(Mutex::new(None)),
+            connection: Arc::new(Mutex::new(None)),
             ident: Arc::new(Mutex::new(None)),
             peer: Arc::new(Mutex::new(None)),
             max_wait: max_wait.min(MAX_WAIT),
@@ -363,6 +365,14 @@ impl Session {
     ) -> Result<CallToolResult, ErrorData> {
         Ok(match self.hub.claim(&p.game_id, &p.token) {
             Ok(seat) => {
+                let connection = match self.hub.connect(&seat) {
+                    Ok(connection) => connection,
+                    Err(error) => return Ok(failure(error.to_string())),
+                };
+                *self
+                    .connection
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner) = Some(connection);
                 *self.joined() = Some(seat.clone());
                 self.view_of(&seat, Format::Text)
             }
@@ -787,6 +797,60 @@ mod tests {
         assert!(
             way["description"].as_str().unwrap().contains("\"none\""),
             "{way}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_join_holds_presence_until_the_session_is_dropped() {
+        let hub = Arc::new(Hub::default());
+        let game = hub
+            .create(&crate::hub::NewGame {
+                players: 2,
+                ..Default::default()
+            })
+            .unwrap();
+        let arena = Arena::open(hub.clone(), Default::default()).unwrap();
+        let session = Session::new(arena, Duration::from_secs(60), false);
+        let joined = session
+            .join_game(Parameters(JoinParams {
+                game_id: game.game_id.clone(),
+                token: game.seats[0].token.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_ne!(joined.is_error, Some(true));
+        tokio::time::sleep(Duration::from_secs(21)).await;
+        assert!(
+            hub.seat_view(
+                &Seat {
+                    game: game.game_id.clone(),
+                    seat: PlayerId(0)
+                },
+                None
+            )
+            .unwrap()
+            .meta
+            .connected[0]
+        );
+        let connection = Arc::downgrade(&session.connection);
+        assert!(session.connection.lock().unwrap().is_some());
+        let clone = session.clone();
+        drop(session);
+        assert!(connection.upgrade().is_some());
+        drop(clone);
+        assert!(connection.upgrade().is_none());
+        tokio::time::sleep(Duration::from_secs(21)).await;
+        assert!(
+            !hub.seat_view(
+                &Seat {
+                    game: game.game_id.clone(),
+                    seat: PlayerId(0)
+                },
+                None
+            )
+            .unwrap()
+            .meta
+            .connected[0]
         );
     }
 
