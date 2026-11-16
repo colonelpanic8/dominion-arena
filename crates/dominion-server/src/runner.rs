@@ -252,6 +252,7 @@ async fn keep_playing(
     stop: CancellationToken,
 ) {
     let mut retry = RECONNECT;
+    let mut failures = 0;
     while !stop.is_cancelled() {
         let result = async {
             let mut archive = crate::archive::Archive::create(&logs)?;
@@ -275,6 +276,18 @@ async fn keep_playing(
         .await;
         let Err(error) = result else { return };
         if stop.is_cancelled() {
+            return;
+        }
+        failures += 1;
+        if failures >= 3
+            || error.contains("agent finished without submitting a move")
+            || error.contains("native harness attempted a forbidden tool")
+            || error.contains("native harness exposed forbidden tools")
+        {
+            eprintln!(
+                "dominion agents: {} in {}: {error}; stopped",
+                spec.name, job.game_id
+            );
             return;
         }
         eprintln!(

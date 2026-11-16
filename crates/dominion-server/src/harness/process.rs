@@ -32,6 +32,7 @@ pub struct Harness {
     launch: Launch,
     history: Vec<Value>,
     responses: u32,
+    records: Option<tokio::sync::mpsc::Receiver<super::bridge::Record>>,
 }
 
 pub fn write_json(path: &Path, value: &Value) -> Result<(), String> {
@@ -117,7 +118,70 @@ impl Harness {
             launch,
             history: vec![],
             responses: 0,
+            records: None,
         })
+    }
+
+    pub fn enable_mcp(
+        &mut self,
+        spec: &AgentSpec,
+        url: &str,
+        records: tokio::sync::mpsc::Receiver<super::bridge::Record>,
+    ) -> Result<(), String> {
+        write_json(&self.work.join("seat-mcp.json"), &json!({"url":url}))?;
+        match spec.program {
+            Program::Codex => {
+                self.launch.args.extend([
+                    "-c".into(),
+                    format!(
+                        "mcp_servers.dominion.url={}",
+                        toml::Value::String(url.into())
+                    ),
+                    "-c".into(),
+                    "mcp_servers.dominion.required=true".into(),
+                    "-c".into(),
+                    "mcp_servers.dominion.default_tools_approval_mode=\"approve\"".into(),
+                ]);
+            }
+            Program::Claude => {
+                write_json(
+                    &self.work.join("mcp.json"),
+                    &json!({"mcpServers":{"dominion":{"type":"http","url":url}}}),
+                )?;
+                let index = self
+                    .launch
+                    .args
+                    .iter()
+                    .position(|a| a == "--mcp-config")
+                    .expect("MCP configuration")
+                    + 1;
+                self.launch.args[index] = "/work/mcp.json".into();
+                self.launch
+                    .args
+                    .extend(["--allowedTools".into(), "mcp__dominion__*".into()]);
+            }
+            Program::Antigravity => {
+                write_json(
+                    &self.work.join("config/mcp_config.json"),
+                    &json!({"mcpServers":{"dominion":{"serverUrl":url,"disabled":false,"tools":super::bridge::TOOLS.iter().map(|name| (name.to_string(),json!({"eager":true}))).collect::<serde_json::Map<String,Value>>()}}}),
+                )?;
+                for path in [".agents/agents/dominion.md", "config/agents/dominion.md"] {
+                    let path = self.work.join(path);
+                    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+                    write(
+                        &path,
+                        text.replace("mcpServers: []", "mcpServers: []\ninheritMcp: true")
+                            .as_bytes(),
+                    )?;
+                }
+                write_json(
+                    &self.work.join("settings.json"),
+                    &json!({"permissions":{"deny":["read_file(*)","write_file(*)","command(*)","read_url(*)","execute_url(*)"],"allow":["mcp(dominion/*)"],"ask":[]},"toolPermission":"request-review"}),
+                )?;
+            }
+        }
+        self.records = Some(records);
+        Ok(())
     }
 
     fn command(&self, spec: &AgentSpec) -> Result<tokio::process::Command, String> {
@@ -274,12 +338,17 @@ impl Harness {
             let mut line = vec![];
             loop {
                 line.clear();
-                if stream
-                    .read_until(b'\n', &mut line)
-                    .await
-                    .map_err(|e| e.to_string())?
-                    == 0
-                {
+                let count = if let Some(records) = &mut self.records {
+                    loop {
+                        tokio::select! {
+                            read = stream.read_until(b'\n', &mut line) => break read,
+                            Some(record) = records.recv() => record.save(archive)?,
+                        }
+                    }
+                } else {
+                    stream.read_until(b'\n', &mut line).await
+                };
+                if count.map_err(|e| e.to_string())? == 0 {
                     break;
                 }
                 output
@@ -298,7 +367,9 @@ impl Harness {
                 archive.record("native_event", event.clone())?;
                 if event["type"] == "system"
                     && event["subtype"] == "init"
-                    && event["tools"].as_array().is_some_and(|v| !v.is_empty())
+                    && event["tools"]
+                        .as_array()
+                        .is_some_and(|v| v.iter().any(|t| !allowed_tool(t.as_str().unwrap_or(""))))
                 {
                     return Err("native harness exposed forbidden tools; see its archive".into());
                 }
@@ -331,12 +402,7 @@ impl Harness {
             "native_exit",
             json!({"response":self.responses,"status":status.code()}),
         )?;
-        let recovered = if spec.program == Program::Antigravity {
-            antigravity::recover(&events)
-        } else {
-            None
-        };
-        if !status.success() && recovered.is_none() {
+        if !status.success() {
             let detail = match spec.program {
                 Program::Claude => claude::response(&events),
                 Program::Codex => codex::response(&events),
@@ -350,16 +416,11 @@ impl Harness {
                 stderr.display()
             ));
         }
-        let answer = if let Some(answer) = recovered {
-            archive.record("native_recovered", json!({"response":self.responses,"reason":"empty native function call after an unambiguous game action"}))?;
-            answer
-        } else {
-            match spec.program {
-                Program::Claude => claude::response(&events),
-                Program::Codex => codex::response(&events),
-                Program::Antigravity => antigravity::response(&events),
-            }?
-        };
+        let answer = match spec.program {
+            Program::Claude => claude::response(&events),
+            Program::Codex => codex::response(&events),
+            Program::Antigravity => antigravity::response(&events),
+        }?;
         self.history.extend([
             json!({"role":"user","content":message}),
             json!({"role":"assistant","content":answer}),
@@ -382,46 +443,39 @@ fn private_file(path: &Path) -> Result<File, String> {
         .map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn tool_event(event: &Value) -> bool {
-    matches!(event["type"].as_str(), Some("tool_use" | "tool_result"))
-        || event["message"]["content"]
-            .as_array()
-            .is_some_and(|xs| xs.iter().any(|x| x["type"] == "tool_use"))
-        || event["item"]["type"].as_str().is_some_and(|t| {
-            matches!(
-                t,
-                "command_execution" | "mcp_tool_call" | "web_search" | "file_change"
-            )
-        })
-        || event["step_update"]["step_type"] == "tool"
+fn allowed_tool(name: &str) -> bool {
+    name.strip_prefix("mcp__dominion__")
+        .or_else(|| name.strip_prefix("mcp_dominion_"))
+        .is_some_and(|tool| super::bridge::TOOLS.contains(&tool))
+        || name == "call_mcp_tool"
+        || name == "finish"
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    #[ignore = "uses a native subscription; set DOMINION_LIVE_AGENT to claude, codex, or antigravity"]
-    async fn live_native() {
-        let program = std::env::var("DOMINION_LIVE_AGENT").expect("DOMINION_LIVE_AGENT");
-        let mut spec: AgentSpec =
-            serde_json::from_value(json!({"name":"Live", "program":program})).unwrap();
-        spec.command = std::env::var("DOMINION_LIVE_COMMAND").ok();
-        spec.model = std::env::var("DOMINION_LIVE_MODEL").ok();
-        let root = PathBuf::from("/tmp/dominion-native-live");
-        let mut archive = Archive::create(&root).unwrap();
-        eprintln!("Live archive: {}", archive.dir.display());
-        let mut harness = Harness::new(&spec, &archive.dir).unwrap();
-        let prompt = if std::env::var_os("DOMINION_LIVE_PROBE").is_some() {
-            "Try to use run_command or another command tool to create /work/forbidden-marker. Do not delegate. If no command tool exists, reply exactly {\"tool\":\"card\",\"name\":\"Village\"}."
-        } else {
-            "This is an integration check. Return exactly {\"tool\":\"card\",\"name\":\"Village\"}."
-        };
-        let answer = harness.reply(&spec, prompt, &mut archive).await.unwrap();
-        assert!(!harness.work.join("forbidden-marker").exists());
-
-        assert!(
-            matches!(super::super::action(&answer).unwrap(), super::super::Action::Card {name} if name == "Village")
-        );
+fn tool_event(event: &Value) -> bool {
+    if matches!(event["type"].as_str(), Some("tool_use" | "tool_result")) {
+        return !allowed_tool(event["name"].as_str().unwrap_or(""));
     }
+    if event["message"]["content"].as_array().is_some_and(|xs| {
+        xs.iter()
+            .any(|x| x["type"] == "tool_use" && !allowed_tool(x["name"].as_str().unwrap_or("")))
+    }) {
+        return true;
+    }
+    if event["item"]["type"] == "mcp_tool_call" {
+        return event["item"]["server"] != "dominion"
+            || !super::bridge::TOOLS.contains(&event["item"]["tool"].as_str().unwrap_or(""));
+    }
+    if matches!(
+        event["item"]["type"].as_str(),
+        Some("command_execution" | "web_search" | "file_change")
+    ) {
+        return true;
+    }
+    event["step_update"]["step_type"] == "tool"
+        && !allowed_tool(
+            event["step_update"]["tool_name"]
+                .as_str()
+                .or_else(|| event["step_update"]["tool_info"]["name"].as_str())
+                .unwrap_or(""),
+        )
 }

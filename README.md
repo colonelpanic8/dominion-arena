@@ -230,19 +230,19 @@ are unrated, disallow undo, and are watchable through the server by default; an 
 Each registered player fills `agent_seats_per_day` agent seats a day; the runner's
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
 
-Each model receives its player's legal observations and returns one structured game
-action. The Dominion bridge holds the seat token and executes only `answer`,
-`play_treasures`, and `card`. Native computer tools, MCP connections, hooks, and user
-instructions are disabled. On Linux, bubblewrap also hides the host home and project
-files and clears the environment, exposing only the runtime, a per-seat workspace,
-and that provider's native login directory. Provider network access remains available.
-The runner requires Linux user namespaces and bubblewrap and fails if isolation cannot
-start. Claude uses restricted mode and an empty tool list; Codex uses an adjusted local
-model catalog without shell, patch, or other tool capabilities; Antigravity uses a
-completion-only custom agent and deny rules. Its init event lists the global registry,
-including tools excluded by the selected custom agent. Use current compatible CLI versions
-(tested with Claude 2.1.319, Codex 0.167.0, and Antigravity 1.5.10; Antigravity
-requires the session `--settings` option).
+Each model plays through a private, seat-scoped MCP server exposing `view`, `card`,
+`answer`, `play_treasures`, and `wait_for_decision`. The bridge attaches its seat token;
+the model cannot override the seat or create, inspect, or control other games. Native
+tool calls and results drive the game; assistant prose is never parsed as an action.
+Each invocation submits a move through MCP before returning to the runner.
+
+Shell, filesystem, browser, delegation, hooks, other MCP servers, and host instructions
+are disabled. On Linux, bubblewrap hides the host home and project files and clears
+the environment, exposing only the runtime, a per-seat workspace, and the provider's
+native login directory. Provider network access remains available. The runner fails
+if Linux user namespaces or bubblewrap are unavailable. Codex uses a sanitized model
+catalog without host tools; Claude and Antigravity expose only the Dominion MCP
+connection alongside their completion mechanism.
 
 Every seat attempt gets a private directory under `agents_dir/archives`. Its
 `interactions.jsonl` records resolved game configuration, agent settings, every game
@@ -253,12 +253,10 @@ journal and never sent in model prompts. Archives are never automatically pruned
 are independent of the server's game retention. `history_turns` only limits the
 observations passed to the model, not the archive. A runner restart starts a fresh
 archived attempt for each seat still running.
-Failed seat attempts are retried automatically with a fresh archive after 5 seconds,
-doubling the delay after each failure up to 60 seconds. The same model rejoins its
-existing game, preserving its successful moves.
-Antigravity's empty-function-call error is recoverable when its response contains
-only one valid game action or identical copies of that action. Ambiguous or partial
-responses are rejected; the original output and recovery are both archived.
+Transient seat failures retry after 5 seconds, then 10 seconds, with at most three
+failed attempts. A forbidden tool attempt or repeated failure to submit a move stops
+the seat immediately. Each attempt has a separate archive; completed moves remain
+in the game.
 
 Unrated agent games also have a live transcript at `/game/<id>/agents`, opened in a
 new tab from **Game menu → Agent transcript**. It combines streamed reasoning and
@@ -286,11 +284,10 @@ login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and res
 `models_cache.json`, populated by starting Codex once after sign-in.
 
 For an opt-in native subscription check, set `DOMINION_LIVE_AGENT` to `claude`, `codex`,
-or `antigravity` and run `cargo test -p dominion-server --lib live_native -- --ignored
---nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL` select the
-executable and model. `DOMINION_LIVE_PROBE=1` also checks that a request to run a
-command cannot create a marker file. This uses the same sandbox and writes evidence under
-`/tmp/dominion-native-live`.
+or `antigravity` and run `cargo test -p dominion-server --test native live_native_game
+-- --ignored --nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL`
+select the executable and model. This runs a short game through the same isolated
+MCP bridge and writes evidence under `/tmp/dominion-native-live`.
 
 What one address or account may do is limited: accounts registered and guests made per
 hour, sign-in attempts, games created by hand, kingdoms dealt, table changes, messages.

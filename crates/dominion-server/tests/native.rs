@@ -53,6 +53,32 @@ else:
     opts = d['options']
     index = next((o['index'] for o in opts if 'End your Buy phase' in o['label']), opts[0]['index'])
     action = {'tool':'answer', 'decision_id':d['id'], 'indices':[index]}
+if Path('/work/seat-mcp.json').exists():
+    import urllib.request
+    url = json.loads(Path('/work/seat-mcp.json').read_text())['url']
+    headers = {'Content-Type':'application/json', 'Accept':'application/json, text/event-stream'}
+    def rpc(method, params, identity=1):
+        body = {'jsonrpc':'2.0','method':method,'params':params}
+        if identity is not None: body['id'] = identity
+        req = urllib.request.Request(url,json.dumps(body).encode(),headers)
+        with urllib.request.urlopen(req,timeout=10) as response:
+            if response.headers.get('Mcp-Session-Id'): headers['Mcp-Session-Id']=response.headers['Mcp-Session-Id']
+            if identity is None: return None
+            if 'text/event-stream' in response.headers.get('Content-Type',''):
+                for line in response:
+                    if line.startswith(b'data:') and line[5:].strip(): return json.loads(line[5:])
+            return json.load(response)
+    rpc('initialize',{'protocolVersion':'2025-03-26','capabilities':{},'clientInfo':{'name':'fixture','version':'1'}})
+    rpc('notifications/initialized',{},None)
+    tools = rpc('tools/list',{})['result']['tools']
+    assert sorted(t['name'] for t in tools)==['answer','card','play_treasures','view','wait_for_decision']
+    assert all('token' not in t['inputSchema'].get('properties',{}) for t in tools)
+    assert 'error' in rpc('tools/call',{'name':'create_game','arguments':{'players':2}})
+    assert 'error' in rpc('tools/call',{'name':'view','arguments':{'token':'another-seat'}})
+    requested = dict(action); tool = requested.pop('tool')
+    result = rpc('tools/call',{'name':tool,'arguments':requested})['result']
+    assert not result.get('isError',False), result
+    action = {'message':'Move submitted through MCP'}
 answer = json.dumps(action)
 print(json.dumps({'type':'reasoning', 'text':'r' * 120003}))
 print('native diagnostic', file=sys.stderr)
@@ -64,9 +90,6 @@ elif '--agent' in sys.argv:
     assert 'tools: [finish]' in Path('/work/.agents/agents/dominion.md').read_text()
     assert 'command(*)' in Path('/work/settings.json').read_text()
     print(json.dumps({'event':'init','init':{'tools':[]}}))
-    if 'fixture:malformed-finish' in prompt:
-        print(json.dumps({'event':'result', 'result':{'status':'ERROR', 'response':answer+'\n'+answer, 'error':'Malformed function call: Failed to parse function call: Function call is empty - no input to parse.'}}))
-        sys.exit(1)
     print(json.dumps({'event':'result', 'result':{'status':'SUCCESS','response':answer}}))
 else:
     assert Path('/home/agent/.codex/AGENTS.md').read_text() == ''
@@ -224,7 +247,17 @@ async fn play(h: &mut Harness, jobs: Vec<Job>) -> (std::path::PathBuf, Vec<Resul
         let spec = h.config.agents.as_ref().unwrap()[0].clone();
         let server = h.config.server();
         tasks.spawn(async move {
-            harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await
+            let result =
+                harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await;
+            if let Err(error) = &result {
+                eprintln!("Seat {} failed: {error}", job.seat);
+                for entry in std::fs::read_dir(&archive.dir).unwrap().flatten() {
+                    if entry.path().extension().is_some_and(|x| x == "stderr") {
+                        eprintln!("{}", std::fs::read_to_string(entry.path()).unwrap());
+                    }
+                }
+            }
+            result
         });
     }
     let mut results = vec![];
@@ -371,29 +404,6 @@ async fn runner_recovers_a_failed_native_turn_without_abandoning_the_seat() {
     runner_game(true).await;
 }
 
-#[tokio::test]
-#[ignore = "requires bubblewrap and Linux user namespaces"]
-async fn antigravity_empty_function_calls_recover_without_replaying_actions() {
-    let mut h = setup("antigravity").await;
-    h.config.agents.as_mut().unwrap()[0].instructions = Some("fixture:malformed-finish".into());
-    h.arena.create_game(Some(&h.who), &request()).unwrap();
-    let jobs = dispatched(&mut h.jobs);
-    let (root, results) = play(&mut h, jobs).await;
-    assert!(results.iter().all(Result::is_ok), "{results:?}");
-    assert!(!h.arena.hub.list()[0].running);
-    for seat in 0..2 {
-        let journal = records(&root.join(format!("seat-{seat}")));
-        assert!(journal.iter().any(|r| r["kind"] == "native_recovered"));
-        assert_eq!(
-            journal
-                .iter()
-                .filter(|r| r["kind"] == "request" && r["data"]["tool"] == "card")
-                .count(),
-            1
-        );
-    }
-}
-
 async fn runner_game(transient_failure: bool) {
     let mut h = setup(if transient_failure {
         "antigravity"
@@ -477,6 +487,7 @@ async fn live_native_game() {
     let mut spec: dominion_server::runner::AgentSpec =
         serde_json::from_value(serde_json::json!({"name":"Test","program":program})).unwrap();
     spec.command = std::env::var("DOMINION_LIVE_COMMAND").ok();
+    spec.response_seconds = Some(60);
     spec.model = std::env::var("DOMINION_LIVE_MODEL").ok();
     spec.instructions = Some("This short integration game should finish quickly: end your Buy phase as soon as it is offered.".into());
     h.config.agents = Some(vec![spec]);
@@ -491,7 +502,17 @@ async fn live_native_game() {
         let spec = h.config.agents.as_ref().unwrap()[0].clone();
         let server = h.config.server();
         tasks.spawn(async move {
-            harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await
+            let result =
+                harness::play(&spec, &job, &server, &mut archive, CancellationToken::new()).await;
+            if let Err(error) = &result {
+                eprintln!("Seat {} failed: {error}", job.seat);
+                for entry in std::fs::read_dir(&archive.dir).unwrap().flatten() {
+                    if entry.path().extension().is_some_and(|x| x == "stderr") {
+                        eprintln!("{}", std::fs::read_to_string(entry.path()).unwrap());
+                    }
+                }
+            }
+            result
         });
     }
     while let Some(result) = tasks.join_next().await {
@@ -541,7 +562,7 @@ async fn forbidden_actions_tools_and_timeouts_preserve_failure_logs_without_resi
         let error = results[0].as_ref().unwrap_err();
         assert!(
             error.contains(match mode {
-                "unsupported" => "game-tool JSON",
+                "unsupported" => "without submitting a move",
                 "native-tool" => "forbidden tool",
                 _ => "timed out",
             }),

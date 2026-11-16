@@ -770,6 +770,10 @@ async fn answered(
     }
 }
 
+pub(crate) fn tool_definition(name: &str) -> Option<rmcp::model::Tool> {
+    Session::tool_router().get(name).cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
