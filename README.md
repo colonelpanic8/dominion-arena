@@ -423,8 +423,7 @@ any reasoning or usage events it exposes. Claude is asked for its thinking summa
 (`--thinking-display summarized`; the API never returns raw thinking) and Codex for its
 most detailed reasoning summaries, or raw reasoning where the provider gives it. Both
 take the game brief as their system prompt (Claude Code's own is replaced), with the
-profile's `instructions` and the first view in the first message; the brief has them
-write a kingdom analysis and game plan before their first decision.
+profile's `instructions` and the first view in the first message.
 Credentials are redacted from the game journal and never sent in model prompts. Archives are never automatically pruned and
 are independent of the server's game retention. `history_turns` is accepted for
 compatibility but no longer affects native sessions. A runner restart starts a fresh
