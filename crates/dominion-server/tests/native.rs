@@ -547,8 +547,34 @@ async fn live_native_game() {
     spec.response_seconds = Some(60);
     spec.model = std::env::var("DOMINION_LIVE_MODEL").ok();
     spec.instructions = Some("This short integration game should finish quickly: end your Buy phase as soon as it is offered.".into());
-    h.config.agents = Some(vec![spec]);
-    h.arena.create_game(Some(&h.who), &request()).unwrap();
+    let mut game = request();
+    if let Ok(limit) = std::env::var("DOMINION_LIVE_TURN_LIMIT") {
+        game.turn_limit = Some(limit.parse().expect("DOMINION_LIVE_TURN_LIMIT"));
+    }
+    let mut agents = vec![spec];
+    if let Ok(opponent) = std::env::var("DOMINION_LIVE_OPPONENT") {
+        let mut opponent: dominion_server::runner::AgentSpec =
+            serde_json::from_str(&opponent).expect("DOMINION_LIVE_OPPONENT agent profile");
+        opponent.instructions = agents[0].instructions.clone();
+        opponent.response_seconds = Some(60);
+        game.agents[1] = Some(opponent.name.clone());
+        agents.push(opponent);
+        let (send, receive) = tokio::sync::mpsc::unbounded_channel();
+        h.arena.runner_connected(
+            agents
+                .iter()
+                .map(|a| Offer {
+                    name: a.name.clone(),
+                    about: "Bounded native verification".into(),
+                })
+                .collect(),
+            2,
+            send,
+        );
+        h.jobs = receive;
+    }
+    h.config.agents = Some(agents);
+    h.arena.create_game(Some(&h.who), &game).unwrap();
     let jobs = dispatched(&mut h.jobs);
     let root = Archive::create(std::path::Path::new("/tmp/dominion-native-live"))
         .unwrap()
@@ -556,7 +582,15 @@ async fn live_native_game() {
     let mut tasks = tokio::task::JoinSet::new();
     for job in jobs {
         let mut archive = Archive::open(&root.join(format!("seat-{}", job.seat))).unwrap();
-        let spec = h.config.agents.as_ref().unwrap()[0].clone();
+        let spec = h
+            .config
+            .agents
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|a| a.name == job.agent)
+            .unwrap()
+            .clone();
         let server = h.config.server();
         tasks.spawn(async move {
             let result =
@@ -572,10 +606,15 @@ async fn live_native_game() {
             result
         });
     }
-    while let Some(result) = tasks.join_next().await {
-        let result = result.unwrap();
-        assert!(result.is_ok(), "{result:?}");
-    }
+    eprintln!("Live archive: {}", root.display());
+    tokio::time::timeout(std::time::Duration::from_secs(180), async {
+        while let Some(result) = tasks.join_next().await {
+            let result = result.unwrap();
+            assert!(result.is_ok(), "{result:?}");
+        }
+    })
+    .await
+    .expect("native verification exceeded three minutes");
     assert!(!h.arena.hub.list()[0].running);
     assert!(h.arena.hub.list()[0].watchable);
     for seat in 0..2 {

@@ -293,6 +293,10 @@ or `antigravity` and run `cargo test -p dominion-server --test native live_nativ
 -- --ignored --nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL`
 select the executable and model. This runs a short game through the same isolated
 MCP bridge and writes evidence under `/tmp/dominion-native-live`.
+`DOMINION_LIVE_TURN_LIMIT` caps the game (default 2). To verify two different
+profiles together, set `DOMINION_LIVE_OPPONENT` to an `AgentSpec` JSON object with
+its own `name`, `program`, `model`, and optional `command` / `auth_dir`. The check
+has a three-minute deadline and asserts one native process per seat.
 
 What one address or account may do is limited: accounts registered and guests made per
 hour, sign-in attempts, games created by hand, kingdoms dealt, table changes, messages.
