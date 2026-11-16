@@ -1,0 +1,8 @@
+.online-idle { max-width: 40rem; margin-inline: auto; }
+.online-controls { width: 100%; display: grid; gap: .65em; }
+.online-controls p { margin: 0; }
+.online-controls label { display: grid; gap: .25em; }
+.online-controls :is(input, select, textarea) { width: 100%; min-width: 0; }
+.online-controls textarea { font: inherit; color: inherit; background: var(--bg); min-height: 5em; resize: vertical; }
+.dt-below-log:has(.online-controls) { overflow-y: auto; }
+.dt-controls:has(.online-controls) { display: block; width: 100%; }

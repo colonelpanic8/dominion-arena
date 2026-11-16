@@ -676,6 +676,18 @@ async fn assets_and_the_client_are_served_from_their_directories() {
         let page = server.get(path, None).await;
         assert_eq!(page.status, StatusCode::OK, "{path}");
         assert_eq!(page.text, "<html>client</html>", "{path}");
+        assert_eq!(page.headers["cache-control"], "no-store");
+        assert!(page.headers.get("last-modified").is_none());
+        let conditional = server
+            .http
+            .get(format!("{}{path}", server.base))
+            .header("if-modified-since", "Thu, 01 Jan 2099 00:00:00 GMT")
+            .header("if-none-match", "*")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(conditional.status(), StatusCode::OK);
+        assert_eq!(conditional.text().await.unwrap(), "<html>client</html>");
     }
     assert_eq!(server.get("/app.js", None).await.text, "main()");
     let api = server.get("/api/nope", None).await;

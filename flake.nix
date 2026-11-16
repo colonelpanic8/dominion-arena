@@ -65,6 +65,7 @@
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [
           pkgs.dioxus-cli
+          pkgs.python3
           pkgs.wasm-bindgen-cli_0_2_130
           pkgs.binaryen
         ];
@@ -72,6 +73,7 @@
           runHook preBuild
           export HOME=$TMPDIR
           (cd crates/dominion-web && dx build --release --platform web --package dominion-web --features web)
+          python3 tools/finalize_web.py target/dx/dominion-web/release/web/public
           runHook postBuild
         '';
         installPhase = ''

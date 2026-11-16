@@ -128,14 +128,31 @@ pub fn router(
         .nest("/api", api)
         .nest_service("/assets", assets);
     let site = match &options.web_dir {
-        Some(dir) => site
-            .fallback_service(ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html")))),
+        Some(dir) => site.fallback_service(
+            Router::new()
+                .fallback_service(
+                    ServeDir::new(dir).fallback(ServeFile::new(dir.join("index.html"))),
+                )
+                .layer(middleware::from_fn(fresh_client)),
+        ),
         None => site.route("/", get(no_client)),
     };
     site.layer(middleware::from_fn_with_state(
         Arc::new(allowed_hosts),
         check_host,
     ))
+}
+
+async fn fresh_client(mut request: Request, next: Next) -> Response {
+    request.headers_mut().remove(header::IF_MODIFIED_SINCE);
+    request.headers_mut().remove(header::IF_NONE_MATCH);
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response.headers_mut().remove(header::LAST_MODIFIED);
+    response.headers_mut().remove(header::ETAG);
+    response
 }
 
 async fn no_client() -> &'static str {

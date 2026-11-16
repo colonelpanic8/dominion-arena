@@ -38,6 +38,7 @@ web-build:
     set -euo pipefail
     rm -rf target/dx/dominion-web/release/web/public
     (cd crates/dominion-web && dx build --release --platform web --package dominion-web --features web)
+    python3 tools/finalize_web.py target/dx/dominion-web/release/web/public
     rm -rf {{web_out}}
     cp -r target/dx/dominion-web/release/web/public {{web_out}}
     echo "web client: {{web_out}}"
