@@ -48,7 +48,7 @@ pub struct ViewParams {
     pub token: Option<String>,
     #[serde(default)]
     pub format: Format,
-    /// Include the game's flat card reference in the response content, as on joining.
+    /// Include the game's grouped card reference in the response content, as on joining.
     #[serde(default)]
     pub include_cards: bool,
 }
@@ -375,7 +375,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Returns that seat's view and a flat reference of official card text, including related non-Supply and split-pile cards."
+        description = "Bind this MCP session to the seat a token claims, so later calls in it may omit the token. The binding ends with the session (a server restart, or a long idle spell); then join again or pass the token. Returns that seat's view and a grouped reference of official card text, including related non-Supply and split-pile cards."
     )]
     async fn join_game(
         &self,
@@ -399,7 +399,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Your seat's current view of the game (agent-view@2). Set include_cards to retrieve the flat card reference again, including cards introduced during play. The reference is additional response content; the structured view is unchanged."
+        description = "Your seat's current view of the game (agent-view@2). Set include_cards to retrieve the grouped card reference again, including cards introduced during play. The reference is additional response content; the structured view is unchanged."
     )]
     async fn view(
         &self,

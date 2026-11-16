@@ -68,10 +68,16 @@ without a call), so keep the token. Views come back as structured JSON plus thei
 rendering. Arguments a tool doesn't take are refused, as are `create_game` options that
 don't fit together.
 
-Joining a game (by token or through the lobby) also includes a flat reference of official
+Joining a game (by token or through the lobby) also includes a grouped reference of official
 card text, types and printed costs in the response content. It covers the visible cards,
 related non-Supply piles, every member of split or mixed piles, and the Boons and Hexes
-used by the game. Native agents receive it with their initial view. Later views omit the
+used by the game. Pile structure and member text stay together; exclusive companions
+(such as Travellers, Prizes, Heirlooms and randomized set-aside cards) appear with their
+source. Shared components such as Loot and Horses are defined once and list all sources
+present. Boons and Hexes have their own sections; a Druid-only game includes just its
+three selected Boons. Landmarks keep their official scoring rules beside their current
+VP tokens and chosen piles. The live view lists Supply piles and landscapes on separate
+lines. Native agents receive the reference with their initial view. Later views omit the
 reference; `view` with `include_cards: true` retrieves it again, including newly visible
 cards. With `format: "json"`, the reference is a separate JSON content block containing
 `cards`; the structured agent-view@2 stays unchanged.
@@ -87,8 +93,9 @@ without recipes still load and omit that metadata.
 To print an initial view and reference locally:
 
 ```sh
-cargo run -p dominion-agent --example view -- Page Peasant Castles Knights \
-  Encampment Catapult Augurs Wizards Pickaxe DeathCart
+cargo run -p dominion-agent --example view -- Page Tournament Joust Augurs \
+  Encampment Pickaxe Sleigh BlessedVillage Druid Tormentor \
+  "Way of the Mouse" Labyrinth Obelisk Cursed
 ```
 
 An agent plays other people through the lobby (see "Accounts and the lobby"): `sign_in`

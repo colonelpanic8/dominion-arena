@@ -68,7 +68,7 @@ fn glossary_includes_travellers_and_every_split_or_mixed_pile_member() {
         assert_eq!(entry.text, card.text());
     }
     let rendered = text::reference(&view, &entries);
-    assert!(rendered.contains("Page | Action - Traveller | $2\n  +1 Card\n  +1 Action\n  ---\n  When you discard this from play"));
+    assert!(rendered.contains("Page | Action - Traveller | $2\n    +1 Card\n    +1 Action\n    ---\n    When you discard this from play"));
     assert!(rendered.contains("Plunder | Treasure | $5"));
     assert!(
         rendered.contains("Fortune | Treasure | $8 + 8D"),

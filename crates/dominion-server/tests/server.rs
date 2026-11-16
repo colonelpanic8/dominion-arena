@@ -484,15 +484,18 @@ async fn joining_includes_card_reference_and_views_can_request_it_again() {
     assert!(joined.ok, "{}", joined.text);
     for name in ["Page", "Champion", "King's Castle", "Plunder"] {
         assert!(
-            joined.text.contains(&format!("\n{name} |")),
+            joined
+                .text
+                .lines()
+                .any(|line| line.trim_start().starts_with(&format!("{name} |"))),
             "{name}: {}",
             joined.text
         );
     }
     let view = call(&client, "view", json!({})).await;
-    assert!(!view.text.contains("CARDS ("));
+    assert!(!view.text.contains("=== CARD & PILE REFERENCE ==="));
     let reference = call(&client, "view", json!({"include_cards": true})).await;
-    assert!(reference.text.contains("CARDS (printed text and costs)"));
+    assert!(reference.text.contains("=== CARD & PILE REFERENCE ==="));
     assert_eq!(view.json, reference.json);
     let reference = call(
         &client,
@@ -518,7 +521,7 @@ async fn joining_includes_card_reference_and_views_can_request_it_again() {
         json!({"game_id": created["game_id"], "token": created["seats"][0]["token"]}),
     )
     .await;
-    assert!(joined_again.text.contains("CARDS (printed text and costs)"));
+    assert!(joined_again.text.contains("=== CARD & PILE REFERENCE ==="));
     client.close().await;
     stop.cancel();
 }
@@ -568,7 +571,7 @@ async fn two_agents_sign_in_and_are_matched() {
         "{}",
         found.text
     );
-    assert!(found.text.contains("CARDS (printed text and costs)"));
+    assert!(found.text.contains("=== CARD & PILE REFERENCE ==="));
     let seat = found.json.unwrap()["seat"].as_u64().unwrap();
     let mine = call(&a, "find_match", json!({ "timeout_ms": 5000 })).await;
     assert!(
@@ -576,7 +579,7 @@ async fn two_agents_sign_in_and_are_matched() {
         "{}",
         mine.text
     );
-    assert!(mine.text.contains("CARDS (printed text and costs)"));
+    assert!(mine.text.contains("=== CARD & PILE REFERENCE ==="));
     assert_eq!(mine.json.unwrap()["seat"], json!(1 - seat));
 
     // The sessions are joined to their seats: no token needed.

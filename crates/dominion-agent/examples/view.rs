@@ -10,15 +10,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    let cards = args
-        .iter()
-        .map(|name| Card::from_name(name).ok_or_else(|| format!("Unknown card: {name}")))
-        .collect::<Result<Vec<_>, _>>()?;
-    let table = Table::new(
-        "example",
-        GameConfig::new(2, cards, 11),
-        vec!["Ada".into(), "Bo".into()],
-    )?;
+    let mut kingdom = Vec::new();
+    let mut landscapes = Vec::new();
+    for name in &args {
+        let card = Card::from_name(name).ok_or_else(|| format!("Unknown card: {name}"))?;
+        if card.kind().is_landscape() {
+            landscapes.push(card);
+        } else {
+            kingdom.push(card);
+        }
+    }
+    let mut config = GameConfig::new(2, kingdom, 11);
+    config.landscapes = landscapes;
+    let table = Table::new("example", config, vec!["Ada".into(), "Bo".into()])?;
     let view = table.view(PlayerId(0));
     println!(
         "{}\n\n{}",

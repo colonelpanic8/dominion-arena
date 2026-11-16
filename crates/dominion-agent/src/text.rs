@@ -1,72 +1,800 @@
 //! Text renderings of agent views and their official card references.
 
 use crate::project::cost_text;
+use dominion_engine::{Card, Kind, Types};
 use dominion_protocol::view::*;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
-/// A flat reference, preserving official wording and dividing lines.
-pub fn reference(view: &AgentView, entries: &[GlossaryEntry]) -> String {
-    let mut out = String::new();
-    let mut rotating = false;
+const TRAVELLER_LINES: [(Card, [Card; 4]); 2] = [
+    (
+        Card::Page,
+        [
+            Card::TreasureHunter,
+            Card::Warrior,
+            Card::Hero,
+            Card::Champion,
+        ],
+    ),
+    (
+        Card::Peasant,
+        [Card::Soldier, Card::Fugitive, Card::Disciple, Card::Teacher],
+    ),
+];
+
+const PRIZES: [Card; 5] = [
+    Card::BagOfGold,
+    Card::Diadem,
+    Card::Followers,
+    Card::Princess,
+    Card::TrustySteed,
+];
+
+const REWARDS: [Card; 6] = [
+    Card::Coronet,
+    Card::Courser,
+    Card::Demesne,
+    Card::Housecarl,
+    Card::HugeTurnip,
+    Card::Renown,
+];
+
+const HEIRLOOMS: [(Card, Card); 7] = [
+    (Card::Cemetery, Card::HauntedMirror),
+    (Card::Fool, Card::LuckyCoin),
+    (Card::Pixie, Card::Goat),
+    (Card::Pooka, Card::CursedGold),
+    (Card::SecretCave, Card::MagicLamp),
+    (Card::Shepherd, Card::Pasture),
+    (Card::Tracker, Card::Pouch),
+];
+
+const ARTIFACT_SOURCES: [(Card, Card); 5] = [
+    (Card::Lantern, Card::BorderGuard),
+    (Card::Horn, Card::BorderGuard),
+    (Card::Flag, Card::FlagBearer),
+    (Card::TreasureChest, Card::Swashbuckler),
+    (Card::Key, Card::Treasurer),
+];
+
+const ZOMBIES: [Card; 3] = [Card::ZombieApprentice, Card::ZombieMason, Card::ZombieSpy];
+
+fn write_entry(out: &mut String, entry: &GlossaryEntry, indent: &str) {
+    let _ = write!(
+        out,
+        "\n\n{indent}{} | {}",
+        entry.name,
+        entry.types.join(" - ")
+    );
+    if let Some(cost) = &entry.cost {
+        let _ = write!(out, " | {}", cost_text(cost));
+    }
+    for line in entry.text.lines() {
+        let _ = write!(out, "\n{indent}  {line}");
+    }
+}
+
+fn describe_structure(pile: &PileView) -> Option<String> {
+    let structure = pile.structure.as_ref()?;
+    let groups = structure
+        .cards
+        .iter()
+        .map(|group| format!("{} {}", group.count, group.card))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut s = match structure.kind {
+        PileKind::Stacked => format!("stacked; initially top to bottom: {groups}."),
+        PileKind::Rotating => format!(
+            "rotating; initially top to bottom: {groups}. Rotation happens only when an effect says so: move the top card and consecutive copies directly under it to the bottom."
+        ),
+        PileKind::Shuffled => {
+            let mut text = if let Some(size) = structure.sample_size {
+                format!(
+                    "shuffled; random sample of {size} cards without replacement from: {groups}. Exact selected counts are not revealed."
+                )
+            } else {
+                format!("shuffled; initial contents: {groups}.")
+            };
+            text.push_str(if pile.hidden {
+                " Order is hidden."
+            } else {
+                " Only the current top is exposed; order below it is hidden."
+            });
+            text
+        }
+    };
+    if pile.hidden {
+        s.push_str(" Face down, including the top card.");
+    }
+    Some(s)
+}
+
+/// Active cards and landscapes in the game that can introduce peripheral components.
+fn active_cards(view: &AgentView, entries: &[GlossaryEntry]) -> BTreeSet<Card> {
+    let mut set = BTreeSet::new();
     for pile in view.supply.iter().chain(&view.non_supply) {
-        let Some(structure) = &pile.structure else {
+        if let Some(c) = Card::from_name(&pile.card) {
+            set.insert(c);
+        }
+        if let Some(structure) = &pile.structure {
+            for g in &structure.cards {
+                if let Some(c) = Card::from_name(&g.card) {
+                    set.insert(c);
+                }
+            }
+        }
+        for t in &pile.traits {
+            if let Some(c) = Card::from_name(t) {
+                set.insert(c);
+            }
+        }
+    }
+    for l in &view.landscapes {
+        if let Some(c) = Card::from_name(&l.card) {
+            set.insert(c);
+        }
+    }
+    for n in &view.notes {
+        if let Some(c) = Card::from_name(&n.source) {
+            set.insert(c);
+        }
+        if let Some(card) = &n.card
+            && let Some(c) = Card::from_name(card)
+        {
+            set.insert(c);
+        }
+    }
+    for e in entries {
+        if let Some(c) = Card::from_name(&e.name)
+            && !matches!(c.kind(), Kind::Hex | Kind::State)
+            && c.def().pile != Some(Card::Loot)
+            && c.def().pile != Some(Card::Ruins)
+        {
+            set.insert(c);
+        }
+    }
+    set
+}
+
+fn present_names(active: &BTreeSet<Card>, pred: impl Fn(Card) -> bool) -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = active
+        .iter()
+        .copied()
+        .filter(|&c| pred(c))
+        .map(Card::name)
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
+fn pile_triggers(card: Card, view: &AgentView, active: &BTreeSet<Card>) -> Vec<String> {
+    let mut notes = vec![];
+    for n in &view.notes {
+        if n.pile.as_deref() == Some(card.name()) {
+            match n.source.as_str() {
+                "Young Witch" => notes.push("Bane pile for Young Witch".into()),
+                "Ferryman" => notes.push("non-Supply Kingdom pile added by Ferryman".into()),
+                "Obelisk" => notes.push("chosen pile for Obelisk (+2 VP per card)".into()),
+                _ => {}
+            }
+        }
+    }
+    if let Some(pile) = view
+        .supply
+        .iter()
+        .chain(&view.non_supply)
+        .find(|p| p.card == card.name())
+    {
+        for t in &pile.traits {
+            notes.push(format!("has Trait: {t}"));
+        }
+    }
+    match card {
+        Card::Potion => {
+            let users = present_names(active, |c| {
+                c != Card::Potion
+                    && c.kind() == Kind::Card
+                    && c.cost().is_some_and(|cost| cost.potions > 0)
+            });
+            if !users.is_empty() {
+                notes.push(format!("added for {}", users.join(", ")));
+            }
+        }
+        Card::Ruins => {
+            let users = present_names(active, |c| c.is(Types::LOOTER));
+            if !users.is_empty() {
+                notes.push(format!("used by Looter: {}", users.join(", ")));
+            }
+        }
+        Card::Spoils => {
+            let users = present_names(active, |c| {
+                matches!(c, Card::BanditCamp | Card::Marauder | Card::Pillage)
+            });
+            if !users.is_empty() {
+                notes.push(format!("used by {}", users.join(", ")));
+            }
+        }
+        Card::Madman => {
+            if active.contains(&Card::Hermit) {
+                notes.push("used by Hermit".into());
+            }
+        }
+        Card::Mercenary => {
+            if active.contains(&Card::Urchin) {
+                notes.push("used by Urchin".into());
+            }
+        }
+        Card::Horse | Card::Loot => {
+            let users = present_names(active, |source| {
+                source != card && source.text().contains(card.name())
+            });
+            if !users.is_empty() {
+                notes.push(format!("used by {}", users.join(", ")));
+            }
+        }
+        Card::WillOWisp => {
+            let mut users = present_names(active, |c| {
+                c == Card::Exorcist
+                    || (c.is(Types::FATE) && c != Card::Druid)
+                    || (c == Card::Druid
+                        && view.notes.iter().any(|note| {
+                            note.source == "Druid"
+                                && note.card.as_deref() == Some("The Swamp's Gift")
+                        }))
+            });
+            if active.contains(&Card::TheSwampsGift) {
+                users.push("The Swamp's Gift (Boon)");
+            }
+            if !users.is_empty() {
+                notes.push(format!("used by {}", users.join(", ")));
+            }
+        }
+        Card::Imp => {
+            let users = present_names(active, |c| {
+                matches!(c, Card::DevilsWorkshop | Card::Tormentor | Card::Exorcist)
+            });
+            if !users.is_empty() {
+                notes.push(format!("used by {}", users.join(", ")));
+            }
+        }
+        Card::Ghost => {
+            let mut users = present_names(active, |c| matches!(c, Card::Cemetery | Card::Exorcist));
+            if active.contains(&Card::HauntedMirror) && !users.contains(&"Haunted Mirror") {
+                users.push("Haunted Mirror");
+            }
+            if !users.is_empty() {
+                notes.push(format!("used by {}", users.join(", ")));
+            }
+        }
+        Card::Wish => {
+            let users = present_names(active, |c| matches!(c, Card::Leprechaun | Card::SecretCave));
+            if !users.is_empty() {
+                notes.push(format!("used by {}", users.join(", ")));
+            }
+        }
+        Card::Bat if active.contains(&Card::Vampire) => {
+            notes.push("used by Vampire".into());
+        }
+        _ => {}
+    }
+    if card == Card::Tournament {
+        notes.push("adds 5 non-Supply Prize cards (1 copy each)".into());
+    }
+    if card == Card::Joust {
+        notes.push("adds 6 kinds of non-Supply Rewards".into());
+    }
+    if let Some((_, heirloom)) = HEIRLOOMS.iter().find(|(k, _)| *k == card) {
+        notes.push(format!(
+            "replaces 1 starting Copper with Heirloom: {}",
+            heirloom.name()
+        ));
+    }
+    let artifacts: Vec<&'static str> = ARTIFACT_SOURCES
+        .iter()
+        .filter(|(_, src)| *src == card)
+        .map(|(art, _)| art.name())
+        .collect();
+    if !artifacts.is_empty() {
+        notes.push(format!("uses Artifact: {}", artifacts.join(", ")));
+    }
+    if card == Card::Necromancer {
+        notes.push(
+            "puts Zombie Apprentice, Zombie Mason, and Zombie Spy into the trash at setup".into(),
+        );
+    }
+    if card == Card::Druid {
+        let boons: Vec<&str> = view
+            .notes
+            .iter()
+            .filter(|n| n.source == "Druid")
+            .filter_map(|n| n.card.as_deref())
+            .collect();
+        if !boons.is_empty() {
+            notes.push(format!("set-aside Boons: {}", boons.join(", ")));
+        }
+    }
+    if card == Card::Riverboat
+        && let Some(c) = view
+            .notes
+            .iter()
+            .find(|n| n.source == "Riverboat")
+            .and_then(|n| n.card.as_deref())
+    {
+        notes.push(format!("set-aside card: {c}"));
+    }
+    if card == Card::YoungWitch
+        && let Some(p) = view
+            .notes
+            .iter()
+            .find(|n| n.source == "Young Witch")
+            .and_then(|n| n.pile.as_deref())
+    {
+        notes.push(format!("Bane pile: {p}"));
+    }
+    if card == Card::Ferryman
+        && let Some(p) = view
+            .notes
+            .iter()
+            .find(|n| n.source == "Ferryman")
+            .and_then(|n| n.pile.as_deref())
+    {
+        notes.push(format!("extra non-Supply pile: {p}"));
+    }
+    if card == Card::BlackMarket {
+        let deck: Vec<&str> = view
+            .notes
+            .iter()
+            .filter(|n| n.source == "Black Market")
+            .filter_map(|n| n.card.as_deref())
+            .collect();
+        if !deck.is_empty() {
+            notes.push(format!("Black Market deck contains: {}", deck.join(", ")));
+        }
+    }
+    notes
+}
+
+fn pile_member_cards(pile: &PileView, card: Card) -> Vec<Card> {
+    let mut members = Vec::new();
+    let mut push = |c: Card| {
+        if !members.contains(&c) {
+            members.push(c);
+        }
+    };
+    if card.kind() == Kind::Randomizer {
+        push(card);
+    }
+    if let Some(structure) = &pile.structure {
+        for group in &structure.cards {
+            if let Some(c) = Card::from_name(&group.card) {
+                push(c);
+            }
+        }
+    } else {
+        for c in card.pile_members() {
+            push(c);
+        }
+    }
+    if members.is_empty() {
+        members.push(card);
+    }
+    members
+}
+
+fn take_entry<'a>(
+    entries: &BTreeMap<&str, &'a GlossaryEntry>,
+    shown: &mut BTreeSet<&'a str>,
+    name: &str,
+) -> Option<&'a GlossaryEntry> {
+    let entry = entries.get(name).copied()?;
+    shown.insert(entry.name.as_str()).then_some(entry)
+}
+
+fn direct_companions(card: Card, view: &AgentView) -> Vec<Card> {
+    let mut related = Vec::new();
+    if let Some((_, line)) = TRAVELLER_LINES.iter().find(|(start, _)| *start == card) {
+        for &step in line {
+            related.push(step);
+        }
+    }
+    if card == Card::Tournament {
+        for prize in PRIZES {
+            related.push(prize);
+        }
+    }
+    if card == Card::Joust {
+        for reward in REWARDS {
+            related.push(reward);
+        }
+    }
+    if let Some((_, heirloom)) = HEIRLOOMS.iter().find(|(k, _)| *k == card) {
+        related.push(*heirloom);
+    }
+    if card == Card::Necromancer {
+        for z in ZOMBIES {
+            related.push(z);
+        }
+    }
+    if card == Card::Druid {
+        for note in view.notes.iter().filter(|note| note.source == "Druid") {
+            if let Some(boon) = note.card.as_deref().and_then(Card::from_name) {
+                related.push(boon);
+            }
+        }
+    }
+    for &(artifact, source) in &ARTIFACT_SOURCES {
+        if source == card {
+            related.push(artifact);
+        }
+    }
+    if matches!(card, Card::Riverboat | Card::WayOfTheMouse)
+        && let Some(c_name) = view
+            .notes
+            .iter()
+            .find(|n| n.source == card.name())
+            .and_then(|n| n.card.as_deref())
+        && let Some(c) = Card::from_name(c_name)
+    {
+        related.push(c);
+    }
+    related
+}
+
+fn exclusive_companions(card: Card, view: &AgentView) -> Vec<Card> {
+    let mut related = direct_companions(card, view);
+    let mut index = 0;
+    while index < related.len() {
+        for child in direct_companions(related[index], view) {
+            if child != card && !related.contains(&child) {
+                related.push(child);
+            }
+        }
+        index += 1;
+    }
+    related
+}
+
+/// A structured reference, grouping cards under their piles and mechanics while
+/// preserving official wording and dividing lines.
+pub fn reference(view: &AgentView, entries: &[GlossaryEntry]) -> String {
+    let by_name: BTreeMap<&str, &GlossaryEntry> =
+        entries.iter().map(|e| (e.name.as_str(), e)).collect();
+    let active = active_cards(view, entries);
+    let mut shown: BTreeSet<&str> = BTreeSet::new();
+    let mut out = String::new();
+
+    out.push_str(
+        "=== CARD & PILE REFERENCE ===\n\
+         Printed text and costs (initial pile composition, not remaining counts).\n\
+         Only the top card of a Supply pile can be bought or gained; use the current view for availability and current costs.",
+    );
+
+    let basic_piles: Vec<&PileView> = view
+        .supply
+        .iter()
+        .filter(|p| Card::from_name(&p.card).is_some_and(|c| c.def().basic && c != Card::Ruins))
+        .collect();
+    let shelters: Vec<&GlossaryEntry> = [Card::Hovel, Card::Necropolis, Card::OvergrownEstate]
+        .into_iter()
+        .filter_map(|c| by_name.get(c.name()).copied())
+        .collect();
+    if !basic_piles.is_empty() || !shelters.is_empty() {
+        out.push_str("\n\n=== BASIC SUPPLY ===");
+        for pile in basic_piles {
+            if let Some(card) = Card::from_name(&pile.card) {
+                let triggers = pile_triggers(card, view, &active);
+                if let Some(entry) = take_entry(&by_name, &mut shown, &pile.card) {
+                    write_entry(&mut out, entry, "");
+                    if !triggers.is_empty() {
+                        let _ = write!(out, "\n  [Setup: {}]", triggers.join("; "));
+                    }
+                }
+            }
+        }
+        if !shelters.is_empty() {
+            out.push_str("\n\n--- Shelters (replace starting Estates) ---");
+            for s in shelters {
+                if let Some(entry) = take_entry(&by_name, &mut shown, &s.name) {
+                    write_entry(&mut out, entry, "  ");
+                }
+            }
+        }
+    }
+
+    let supply_piles: Vec<&PileView> = view
+        .supply
+        .iter()
+        .filter(|p| !Card::from_name(&p.card).is_some_and(|c| c.def().basic && c != Card::Ruins))
+        .collect();
+    if !supply_piles.is_empty() {
+        out.push_str("\n\n=== KINGDOM & SUPPLY PILES ===");
+        for pile in supply_piles {
+            let Some(card) = Card::from_name(&pile.card) else {
+                continue;
+            };
+            let structure_desc = describe_structure(pile);
+            let triggers = pile_triggers(card, view, &active);
+            let members = pile_member_cards(pile, card);
+
+            let mut companions = exclusive_companions(card, view);
+            companions.extend(pile.traits.iter().filter_map(|name| Card::from_name(name)));
+            let companion_piles: Vec<&PileView> = view
+                .notes
+                .iter()
+                .filter(|note| note.source == pile.card)
+                .filter_map(|note| note.pile.as_deref())
+                .filter_map(|name| view.non_supply.iter().find(|pile| pile.card == name))
+                .collect();
+            for related in &companion_piles {
+                if let Some(card) = Card::from_name(&related.card) {
+                    for member in pile_member_cards(related, card) {
+                        companions.push(member);
+                        companions.extend(exclusive_companions(member, view));
+                    }
+                }
+            }
+            let is_group = structure_desc.is_some()
+                || members.len() > 1
+                || !companions.is_empty()
+                || !triggers.is_empty();
+            if is_group {
+                let mut header = format!("\n\n--- {} Pile", pile.card);
+                if !triggers.is_empty() {
+                    let _ = write!(header, " ({})", triggers.join("; "));
+                }
+                header.push_str(" ---");
+                out.push_str(&header);
+                if let Some(desc) = structure_desc {
+                    let _ = write!(out, "\n{}: {desc}", pile.card);
+                }
+                for m in members {
+                    if let Some(entry) = take_entry(&by_name, &mut shown, m.name()) {
+                        write_entry(&mut out, entry, "  ");
+                    }
+                }
+                for related in companion_piles {
+                    let _ = write!(out, "\n\n  Related non-Supply pile: {}", related.card);
+                    if let Some(description) = describe_structure(related) {
+                        let _ = write!(out, "\n  {}: {description}", related.card);
+                    }
+                }
+                for comp in companions {
+                    if let Some(entry) = take_entry(&by_name, &mut shown, comp.name()) {
+                        write_entry(&mut out, entry, "  ");
+                    }
+                }
+            } else if let Some(entry) = take_entry(&by_name, &mut shown, card.name()) {
+                write_entry(&mut out, entry, "");
+            }
+        }
+    }
+
+    let mut landscapes_and_artifacts = Vec::new();
+    for l in &view.landscapes {
+        if by_name.contains_key(l.card.as_str()) && !shown.contains(l.card.as_str()) {
+            landscapes_and_artifacts.push(l.card.as_str());
+        }
+    }
+    for a in &view.artifacts {
+        if by_name.contains_key(a.card.as_str()) && !shown.contains(a.card.as_str()) {
+            landscapes_and_artifacts.push(a.card.as_str());
+        }
+    }
+    if !landscapes_and_artifacts.is_empty() {
+        out.push_str("\n\n=== LANDSCAPES & ARTIFACTS ===");
+        for name in landscapes_and_artifacts {
+            let Some(entry) = take_entry(&by_name, &mut shown, name) else {
+                continue;
+            };
+            write_entry(&mut out, entry, "");
+            if let Some(vp) = view
+                .landscapes
+                .iter()
+                .find(|landscape| landscape.card == name)
+                .and_then(|landscape| landscape.vp)
+            {
+                let _ = write!(out, "\n  Current: {vp} VP remaining");
+            }
+            if let Some(card) = Card::from_name(name) {
+                match card.kind() {
+                    Kind::Ally => {
+                        let liaisons = present_names(&active, |c| c.is(Types::LIAISON));
+                        if !liaisons.is_empty() {
+                            let _ = write!(
+                                out,
+                                "\n  [Setup: added for Liaison: {}]",
+                                liaisons.join(", ")
+                            );
+                        }
+                    }
+                    Kind::Prophecy => {
+                        let omens = present_names(&active, |c| c.is(Types::OMEN));
+                        if !omens.is_empty() {
+                            let _ =
+                                write!(out, "\n  [Setup: added for Omen: {}]", omens.join(", "));
+                        }
+                    }
+                    Kind::Artifact => {
+                        let srcs: Vec<&'static str> = ARTIFACT_SOURCES
+                            .iter()
+                            .filter(|(art, src)| *art == card && active.contains(src))
+                            .map(|(_, src)| src.name())
+                            .collect();
+                        if !srcs.is_empty() {
+                            let _ = write!(out, "\n  [Setup: used by {}]", srcs.join(", "));
+                        }
+                    }
+                    Kind::Landmark => {
+                        if let Some(pile) = view
+                            .notes
+                            .iter()
+                            .find(|n| n.source == name)
+                            .and_then(|n| n.pile.as_deref())
+                        {
+                            let _ = write!(out, "\n  [Setup: chosen pile is {pile}]");
+                        }
+                    }
+                    Kind::Trait => {
+                        let piles: Vec<&str> = view
+                            .supply
+                            .iter()
+                            .filter(|p| p.traits.iter().any(|t| t == name))
+                            .map(|p| p.card.as_str())
+                            .collect();
+                        if !piles.is_empty() {
+                            let _ = write!(out, "\n  [Setup: on {} pile]", piles.join(", "));
+                        }
+                    }
+                    _ => {}
+                }
+                if card == Card::WayOfTheMouse
+                    && let Some(mouse_card) = view
+                        .notes
+                        .iter()
+                        .find(|n| n.source == "Way of the Mouse")
+                        .and_then(|n| n.card.as_deref())
+                {
+                    let _ = write!(out, "\n  [Setup: set-aside card is {mouse_card}]");
+                    for companion in exclusive_companions(Card::WayOfTheMouse, view) {
+                        if let Some(entry) = take_entry(&by_name, &mut shown, companion.name()) {
+                            write_entry(&mut out, entry, "  ");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut non_supply_unshown = Vec::new();
+    for pile in &view.non_supply {
+        let Some(card) = Card::from_name(&pile.card) else {
             continue;
         };
-        if out.is_empty() {
-            out.push_str("PILE SETUP (initial composition, not remaining counts)\nOnly the top card of a Supply pile can be bought or gained.");
-        }
-        let _ = write!(out, "\n{}: ", pile.card);
-        let groups = structure
-            .cards
+        let members = pile_member_cards(pile, card);
+        if members
             .iter()
-            .map(|group| format!("{} {}", group.count, group.card))
-            .collect::<Vec<_>>()
-            .join(", ");
-        match structure.kind {
-            PileKind::Stacked => {
-                let _ = write!(out, "stacked; initially top to bottom: {groups}.");
-            }
-            PileKind::Rotating => {
-                rotating = true;
-                let _ = write!(out, "rotating; initially top to bottom: {groups}.");
-            }
-            PileKind::Shuffled => {
-                if let Some(size) = structure.sample_size {
-                    let _ = write!(
-                        out,
-                        "shuffled; random sample of {size} cards without replacement from: {groups}. Exact selected counts are not revealed."
-                    );
-                } else {
-                    let _ = write!(out, "shuffled; initial contents: {groups}.");
+            .any(|m| by_name.contains_key(m.name()) && !shown.contains(m.name()))
+        {
+            non_supply_unshown.push((pile, card, members));
+        }
+    }
+    if !non_supply_unshown.is_empty() {
+        out.push_str("\n\n=== NON-SUPPLY PILES ===");
+        for (pile, card, members) in non_supply_unshown {
+            let structure_desc = describe_structure(pile);
+            let triggers = pile_triggers(card, view, &active);
+            let is_group = structure_desc.is_some() || members.len() > 1 || !triggers.is_empty();
+            if is_group {
+                let mut header = format!("\n\n--- {}", pile.card);
+                if !triggers.is_empty() {
+                    let _ = write!(header, " ({})", triggers.join("; "));
                 }
-                out.push_str(if pile.hidden {
-                    " Order is hidden."
-                } else {
-                    " Only the current top is exposed; order below it is hidden."
-                });
+                header.push_str(" ---");
+                out.push_str(&header);
+                if let Some(desc) = structure_desc {
+                    let _ = write!(out, "\n{}: {desc}", pile.card);
+                }
+                for m in members {
+                    if let Some(entry) = take_entry(&by_name, &mut shown, m.name()) {
+                        write_entry(&mut out, entry, "  ");
+                    }
+                }
+            } else if let Some(entry) = take_entry(&by_name, &mut shown, card.name()) {
+                write_entry(&mut out, entry, "");
             }
         }
-        if pile.hidden {
-            out.push_str(" Face down, including the top card.");
+    }
+
+    let bm_cards: Vec<&str> = view
+        .notes
+        .iter()
+        .filter(|n| n.source == "Black Market")
+        .filter_map(|n| n.card.as_deref())
+        .filter(|name| by_name.contains_key(name) && !shown.contains(name))
+        .collect();
+    if !bm_cards.is_empty() {
+        out.push_str(
+            "\n\n--- Black Market Deck Cards (unordered; 3 revealed at a time when played) ---",
+        );
+        for name in bm_cards {
+            if let Some(entry) = take_entry(&by_name, &mut shown, name) {
+                write_entry(&mut out, entry, "  ");
+            }
         }
     }
-    if rotating {
-        out.push_str("\nRotation happens only when an effect says so: move the top card and consecutive copies directly under it to the bottom.");
-    }
-    if !out.is_empty() {
-        out.push_str("\n\n");
-    }
-    out.push_str("CARDS (printed text and costs)");
-    out.push_str("\nEntries include related possibilities; use the current view for availability and current costs.");
-    for entry in entries {
-        let _ = write!(out, "\n\n{} | {}", entry.name, entry.types.join(" - "));
-        if let Some(cost) = &entry.cost {
-            let _ = write!(out, " | {}", cost_text(cost));
+
+    let boons: Vec<&GlossaryEntry> = entries
+        .iter()
+        .filter(|e| {
+            !shown.contains(e.name.as_str())
+                && Card::from_name(&e.name).is_some_and(|c| c.kind() == Kind::Boon)
+        })
+        .collect();
+    if !boons.is_empty() {
+        let fate = present_names(&active, |c| c.is(Types::FATE) && c != Card::Druid);
+        let druid_boons: Vec<&str> = view
+            .notes
+            .iter()
+            .filter(|n| n.source == "Druid")
+            .filter_map(|n| n.card.as_deref())
+            .collect();
+        let mut header = String::from("\n\n=== BOONS");
+        let mut details = Vec::new();
+        if !fate.is_empty() {
+            details.push(format!("used by Fate: {}", fate.join(", ")));
         }
-        for line in entry.text.lines() {
-            let _ = write!(out, "\n  {line}");
+        if !druid_boons.is_empty() {
+            details.push(format!("Druid set aside: {}", druid_boons.join(", ")));
+        }
+        if !details.is_empty() {
+            let _ = write!(header, " ({})", details.join("; "));
+        }
+        header.push_str(" ===");
+        out.push_str(&header);
+        for b in boons {
+            if let Some(entry) = take_entry(&by_name, &mut shown, &b.name) {
+                write_entry(&mut out, entry, "");
+            }
         }
     }
+
+    let hexes_and_states: Vec<&GlossaryEntry> = entries
+        .iter()
+        .filter(|e| {
+            !shown.contains(e.name.as_str())
+                && Card::from_name(&e.name)
+                    .is_some_and(|c| c.kind() == Kind::Hex || crate::is_hex_state(c))
+        })
+        .collect();
+    if !hexes_and_states.is_empty() {
+        let doom = present_names(&active, |c| c.is(Types::DOOM));
+        let mut header = String::from("\n\n=== HEXES & STATES");
+        if !doom.is_empty() {
+            let _ = write!(header, " (used by Doom: {})", doom.join(", "));
+        }
+        header.push_str(" ===");
+        out.push_str(&header);
+        for h in hexes_and_states {
+            if let Some(entry) = take_entry(&by_name, &mut shown, &h.name) {
+                write_entry(&mut out, entry, "");
+            }
+        }
+    }
+
+    let remaining: Vec<&GlossaryEntry> = entries
+        .iter()
+        .filter(|e| !shown.contains(e.name.as_str()))
+        .collect();
+    if !remaining.is_empty() {
+        out.push_str("\n\n=== OTHER CARDS ===");
+        for r in remaining {
+            if let Some(entry) = take_entry(&by_name, &mut shown, &r.name) {
+                write_entry(&mut out, entry, "");
+            }
+        }
+    }
+
     out
 }
 
@@ -342,17 +1070,21 @@ pub fn render(v: &AgentView) -> String {
         out.push(format!("RESULT{reason}: {}", players.join(", ")));
     }
     if let Some(you) = &v.you {
+        out.push(String::new());
         player(&mut out, "YOU", you);
     }
     let other = if v.spectating { "PLAYER" } else { "OPPONENT" };
     for o in &v.opponents {
+        out.push(String::new());
         player(&mut out, other, o);
     }
     let supply: Vec<String> = v.supply.iter().map(pile).collect();
-    out.push(format!("SUPPLY {}", supply.join(", ")));
+    out.push("\nSUPPLY".into());
+    out.extend(supply.iter().map(|pile| format!("  {pile}")));
     if !v.non_supply.is_empty() {
         let piles: Vec<String> = v.non_supply.iter().map(pile).collect();
-        out.push(format!("NON-SUPPLY {}", piles.join(", ")));
+        out.push("\nNON-SUPPLY".into());
+        out.extend(piles.iter().map(|pile| format!("  {pile}")));
     }
     if !v.landscapes.is_empty() {
         let ls: Vec<String> = v
@@ -380,7 +1112,8 @@ pub fn render(v: &AgentView) -> String {
                 s
             })
             .collect();
-        out.push(format!("LANDSCAPES {}", ls.join(", ")));
+        out.push("\nLANDSCAPES".into());
+        out.extend(ls.iter().map(|landscape| format!("  {landscape}")));
     }
     let trash = cards(&v.trash.known);
     let unknown = if v.trash.unknown > 0 {
@@ -499,10 +1232,11 @@ pub fn render(v: &AgentView) -> String {
                 s
             })
             .collect();
-        out.push(format!("NOTES {}", list.join("; ")));
+        out.push("\nNOTES".into());
+        out.extend(list.iter().map(|note| format!("  {note}")));
     }
     if !v.since_last_decision.is_empty() {
-        out.push("LOG".into());
+        out.push("\nLOG".into());
         out.extend(
             v.since_last_decision
                 .iter()
@@ -510,6 +1244,7 @@ pub fn render(v: &AgentView) -> String {
         );
     }
     if let Some(d) = &v.decision {
+        out.push(String::new());
         decision(&mut out, d);
     }
     out.join("\n")

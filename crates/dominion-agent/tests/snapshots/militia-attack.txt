@@ -1,9 +1,11 @@
 GAME snap: turn 3, Ada's turn, action phase, actions 0, buys 1, coins 2
+
 YOU P2: Bo (3 VP)
   hand 5 (3 Copper, Estate, Militia)
   deck 7 (4 Copper, 2 Estate, Silver)
   discard 0
   owns 7 Copper, 3 Estate, Militia, Silver
+
 OPPONENT P1: Ada (3 VP)
   hand 4 (4 unknown)
   in play 1 (Militia)
@@ -11,8 +13,27 @@ OPPONENT P1: Ada (3 VP)
   discard 0
   deck+hand hold 11 of: 7 Copper, 3 Estate, Silver
   owns 7 Copper, 3 Estate, Militia, Silver
-SUPPLY Copper $0 x46, Silver $3 x38, Gold $6 x30, Estate $2 x8, Duchy $5 x8, Province $8 x8, Curse $0 x10, Cellar $2 x10, Market $5 x10, Militia $4 x8, Mine $5 x10, Moat $2 x10, Remodel $4 x10, Smithy $4 x10, Village $3 x10, Workshop $3 x10, Witch $5 x10
+
+SUPPLY
+  Copper $0 x46
+  Silver $3 x38
+  Gold $6 x30
+  Estate $2 x8
+  Duchy $5 x8
+  Province $8 x8
+  Curse $0 x10
+  Cellar $2 x10
+  Market $5 x10
+  Militia $4 x8
+  Mine $5 x10
+  Moat $2 x10
+  Remodel $4 x10
+  Smithy $4 x10
+  Village $3 x10
+  Workshop $3 x10
+  Witch $5 x10
 TRASH empty
+
 LOG
   Bo buys Silver
   Bo gains Silver
@@ -20,6 +41,7 @@ LOG
   Bo draws 5 cards
   Ada starts turn 3
   Ada plays Militia
+
 DECISION d20: Militia: choose 2 cards to discard
   choose 2
     0: Copper
