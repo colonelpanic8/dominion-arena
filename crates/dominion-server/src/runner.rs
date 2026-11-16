@@ -251,27 +251,42 @@ async fn keep_playing(
     logs: PathBuf,
     stop: CancellationToken,
 ) {
-    let result = async {
-        let mut archive = crate::archive::Archive::create(&logs)?;
-        eprintln!(
-            "dominion agents: {} in {}: archive {}",
-            spec.name,
-            job.game_id,
-            archive.dir.display()
-        );
-        let cancelled = CancellationToken::new();
-        let play = crate::harness::play(&spec, &job, &server, &mut archive, cancelled.clone());
-        tokio::pin!(play);
-        tokio::select! {
-            result = &mut play => result,
-            _ = stop.cancelled() => match tokio::time::timeout(GRACE, &mut play).await {
-                Ok(result) => result,
-                Err(_) => { cancelled.cancel(); play.await }
+    let mut retry = RECONNECT;
+    while !stop.is_cancelled() {
+        let result = async {
+            let mut archive = crate::archive::Archive::create(&logs)?;
+            eprintln!(
+                "dominion agents: {} in {}: archive {}",
+                spec.name,
+                job.game_id,
+                archive.dir.display()
+            );
+            let cancelled = CancellationToken::new();
+            let play = crate::harness::play(&spec, &job, &server, &mut archive, cancelled.clone());
+            tokio::pin!(play);
+            tokio::select! {
+                result = &mut play => result,
+                _ = stop.cancelled() => match tokio::time::timeout(GRACE, &mut play).await {
+                    Ok(result) => result,
+                    Err(_) => { cancelled.cancel(); play.await }
+                }
             }
         }
-    }
-    .await;
-    if let Err(error) = result {
-        eprintln!("dominion agents: {} in {}: {error}", spec.name, job.game_id);
+        .await;
+        let Err(error) = result else { return };
+        if stop.is_cancelled() {
+            return;
+        }
+        eprintln!(
+            "dominion agents: {} in {}: {error}; retrying in {} seconds",
+            spec.name,
+            job.game_id,
+            retry.as_secs()
+        );
+        tokio::select! {
+            _ = stop.cancelled() => return,
+            () = tokio::time::sleep(retry) => {},
+        }
+        retry = (retry * 2).min(Duration::from_secs(60));
     }
 }

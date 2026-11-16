@@ -20,6 +20,12 @@ assert 'ANTHROPIC_API_KEY' not in os.environ
 prompt = sys.stdin.read()
 if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content"]
 assert 'test-credential' not in prompt
+if 'fixture:transient' in prompt:
+    failed = Path('/home/agent/.gemini/transient-failed')
+    if not failed.exists():
+        failed.touch()
+        print(json.dumps({'event':'result', 'result':{'status':'ERROR', 'response':'', 'error':'Provider temporarily unavailable'}}), flush=True)
+        sys.exit(1)
 if 'fixture:streaming' in prompt:
     print(json.dumps({'type':'reasoning','text':'streaming reasoning'}), flush=True)
     time.sleep(2)
@@ -58,6 +64,9 @@ elif '--agent' in sys.argv:
     assert 'tools: [finish]' in Path('/work/.agents/agents/dominion.md').read_text()
     assert 'command(*)' in Path('/work/settings.json').read_text()
     print(json.dumps({'event':'init','init':{'tools':[]}}))
+    if 'fixture:malformed-finish' in prompt:
+        print(json.dumps({'event':'result', 'result':{'status':'ERROR', 'response':answer+'\n'+answer, 'error':'Malformed function call: Failed to parse function call: Function call is empty - no input to parse.'}}))
+        sys.exit(1)
     print(json.dumps({'event':'result', 'result':{'status':'SUCCESS','response':answer}}))
 else:
     assert Path('/home/agent/.codex/AGENTS.md').read_text() == ''
@@ -353,7 +362,48 @@ async fn creation_checks_permissions_capacity_and_seat_assignments() {
 #[tokio::test]
 #[ignore = "requires bubblewrap and Linux user namespaces"]
 async fn the_existing_runner_dispatches_native_seats_and_archives_game_completion() {
-    let mut h = setup("claude").await;
+    runner_game(false).await;
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn runner_recovers_a_failed_native_turn_without_abandoning_the_seat() {
+    runner_game(true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn antigravity_empty_function_calls_recover_without_replaying_actions() {
+    let mut h = setup("antigravity").await;
+    h.config.agents.as_mut().unwrap()[0].instructions = Some("fixture:malformed-finish".into());
+    h.arena.create_game(Some(&h.who), &request()).unwrap();
+    let jobs = dispatched(&mut h.jobs);
+    let (root, results) = play(&mut h, jobs).await;
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    assert!(!h.arena.hub.list()[0].running);
+    for seat in 0..2 {
+        let journal = records(&root.join(format!("seat-{seat}")));
+        assert!(journal.iter().any(|r| r["kind"] == "native_recovered"));
+        assert_eq!(
+            journal
+                .iter()
+                .filter(|r| r["kind"] == "request" && r["data"]["tool"] == "card")
+                .count(),
+            1
+        );
+    }
+}
+
+async fn runner_game(transient_failure: bool) {
+    let mut h = setup(if transient_failure {
+        "antigravity"
+    } else {
+        "claude"
+    })
+    .await;
+    if transient_failure {
+        h.config.agents.as_mut().unwrap()[0].instructions = Some("fixture:transient".into());
+    }
     let socket = h._dir.path().join("agents.sock");
     h.config.agent_socket = Some(socket.clone());
     let arena = h.arena.clone();
@@ -378,7 +428,7 @@ async fn the_existing_runner_dispatches_native_seats_and_archives_game_completio
     let created = h.arena.create_game(Some(&h.who), &request()).unwrap();
     let hub = h.arena.hub.clone();
     let mut game_changes = hub.subscribe(&created.game_id).unwrap().version;
-    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
         while hub.list()[0].running {
             game_changes.changed().await.unwrap();
         }
@@ -393,15 +443,29 @@ async fn the_existing_runner_dispatches_native_seats_and_archives_game_completio
         .unwrap();
     let root = h.config.agents_dir.as_ref().unwrap().join("archives");
     let mut finished = 0;
+    let mut failed = 0;
     for entry in std::fs::read_dir(root).unwrap() {
         let records = records(&entry.unwrap().path());
         if records.iter().any(|r| r["kind"] == "seat") {
-            assert!(records.iter().any(|r| r["kind"] == "result"));
             assert!(records.iter().any(|r| r["kind"] == "seat_finished"));
-            finished += 1;
+            if records
+                .iter()
+                .any(|r| r["kind"] == "seat_finished" && !r["data"]["result"]["Err"].is_null())
+            {
+                assert!(
+                    !records
+                        .iter()
+                        .any(|r| r["kind"] == "request" && r["data"]["tool"] == "card")
+                );
+                failed += 1;
+            } else {
+                assert!(records.iter().any(|r| r["kind"] == "result"));
+                finished += 1;
+            }
         }
     }
     assert_eq!(finished, 2);
+    assert_eq!(failed, usize::from(transient_failure));
     listener_task.abort();
 }
 

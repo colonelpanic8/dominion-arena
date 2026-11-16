@@ -253,6 +253,12 @@ journal and never sent in model prompts. Archives are never automatically pruned
 are independent of the server's game retention. `history_turns` only limits the
 observations passed to the model, not the archive. A runner restart starts a fresh
 archived attempt for each seat still running.
+Failed seat attempts are retried automatically with a fresh archive after 5 seconds,
+doubling the delay after each failure up to 60 seconds. The same model rejoins its
+existing game, preserving its successful moves.
+Antigravity's empty-function-call error is recoverable when its response contains
+only one valid game action or identical copies of that action. Ambiguous or partial
+responses are rejected; the original output and recovery are both archived.
 
 Unrated agent games also have a live transcript at `/game/<id>/agents`, opened in a
 new tab from **Game menu → Agent transcript**. It combines streamed reasoning and

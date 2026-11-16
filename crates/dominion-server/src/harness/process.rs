@@ -331,7 +331,12 @@ impl Harness {
             "native_exit",
             json!({"response":self.responses,"status":status.code()}),
         )?;
-        if !status.success() {
+        let recovered = if spec.program == Program::Antigravity {
+            antigravity::recover(&events)
+        } else {
+            None
+        };
+        if !status.success() && recovered.is_none() {
             let detail = match spec.program {
                 Program::Claude => claude::response(&events),
                 Program::Codex => codex::response(&events),
@@ -345,11 +350,16 @@ impl Harness {
                 stderr.display()
             ));
         }
-        let answer = match spec.program {
-            Program::Claude => claude::response(&events),
-            Program::Codex => codex::response(&events),
-            Program::Antigravity => antigravity::response(&events),
-        }?;
+        let answer = if let Some(answer) = recovered {
+            archive.record("native_recovered", json!({"response":self.responses,"reason":"empty native function call after an unambiguous game action"}))?;
+            answer
+        } else {
+            match spec.program {
+                Program::Claude => claude::response(&events),
+                Program::Codex => codex::response(&events),
+                Program::Antigravity => antigravity::response(&events),
+            }?
+        };
         self.history.extend([
             json!({"role":"user","content":message}),
             json!({"role":"assistant","content":answer}),
