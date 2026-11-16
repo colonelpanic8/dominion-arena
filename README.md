@@ -419,8 +419,10 @@ Every seat attempt gets a private directory under `agents_dir/archives`. Its
 `interactions.jsonl` records resolved game configuration, agent settings, every game
 request/response, complete prompts, native events, failures, and the final view.
 `response-*.stdout.jsonl` and `.stderr` preserve the CLI's complete output, including
-any reasoning or usage events it exposes. Credentials are redacted from the game
-journal and never sent in model prompts. Archives are never automatically pruned and
+any reasoning or usage events it exposes. Claude is asked for its thinking summaries
+(`--thinking-display summarized`; the API never returns raw thinking) and Codex for its
+most detailed reasoning summaries, or raw reasoning where the provider gives it.
+Credentials are redacted from the game journal and never sent in model prompts. Archives are never automatically pruned and
 are independent of the server's game retention. `history_turns` is accepted for
 compatibility but no longer affects native sessions. A runner restart starts a fresh
 archived attempt for each seat still running. `response_seconds` limits model inactivity
@@ -562,8 +564,10 @@ hour, sign-in attempts, games created by hand, kingdoms dealt, table changes, me
 Behind a reverse proxy set `trust_proxy` so the limits see the client's address, and
 `public_url` so the session cookie is HTTPS-only. A request that changes something and
 names another site as its `Origin` is refused. The server hosts at most `max_games`
-unfinished games; finished ones are deleted after `keep_finished_days`, unfinished ones
-nobody has touched after `keep_idle_days`.
+unfinished games. It stops hosting finished games after `keep_finished_days` and
+unfinished ones nobody has touched after `keep_idle_days` (0: never), moving their files
+to `state_dir/expired/`; no game file is ever deleted, and an expired game's id is never
+reused.
 
 Accounts, sessions and finished games' records are kept in a SQLite database beside the
 games, `dominion.sqlite` under `state_dir` (in memory with `--ephemeral`): a game's
@@ -581,7 +585,7 @@ port = 7317                    # serve: port
 allowed_hosts = []             # serve: extra Host header values to accept
 persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
-keep_finished_days = 7         # serve: delete finished games this old
+keep_finished_days = 7         # serve: move finished games this old to state_dir/expired (0: never)
 assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
 web_animations = true          # serve: the web client shows cards moving
@@ -597,7 +601,7 @@ trust_proxy = false            # serve: take clients' addresses from X-Forwarded
 registration = true            # serve: new accounts can be registered
 guests = true                  # serve: people can play without an account
 max_games = 1000               # serve: the most unfinished games at once
-keep_idle_days = 30            # serve: delete unfinished games nobody has touched for this long
+keep_idle_days = 30            # serve: ... and unfinished games nobody has touched for this long (0: never)
 away_minutes = 5               # serve: in a timed game, the deciding player forfeits after this long disconnected (0: never)
 decision_minutes = 30          # serve: ... or after this long over one decision (0: never)
 session_idle_minutes = 1440    # serve: close an MCP session after this long without a call (0: never)

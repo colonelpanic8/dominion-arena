@@ -116,6 +116,7 @@ fn finished_games_expire_and_unreadable_files_are_left_alone() {
     let (hub, loaded) = Hub::open(dir, Duration::ZERO).unwrap();
     assert_eq!((loaded.games, loaded.expired), (1, 1));
     assert!(!dir.join("g1.json").exists());
+    assert!(dir.join("expired/g1.json").exists());
     assert!(dir.join("g9.json").exists());
     assert_eq!(hub.list()[0].game_id, "g2");
     // Not g3: ids run on from the highest file, so g9.json is never written over.
@@ -124,6 +125,22 @@ fn finished_games_expire_and_unreadable_files_are_left_alone() {
         std::fs::read_to_string(dir.join("g9.json")).unwrap(),
         "not a game"
     );
+}
+
+#[test]
+fn expired_games_keep_their_ids() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    {
+        let (hub, _) = Hub::open(dir, KEEP).unwrap();
+        let (_, finished) = create(&hub, Some(2));
+        advance(&hub, &finished, 10_000);
+    }
+    let (_, loaded) = Hub::open(dir, Duration::ZERO).unwrap();
+    assert_eq!(loaded.expired, 1);
+    let (hub, _) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!(hub.create(&new_game(None)).unwrap().game_id, "g2");
+    assert!(dir.join("expired/g1.json").exists());
 }
 
 #[test]

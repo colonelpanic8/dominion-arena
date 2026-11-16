@@ -19,6 +19,14 @@ pub const DEFAULT_AGENTS_AT_ONCE: u32 = 2;
 /// The environment variable naming the web client to serve when `web_dir` is unset.
 pub const WEB_DIR_ENV: &str = "DOMINION_WEB_DIR";
 
+/// How long a game is hosted, from a number of days: 0 is for as long as the server runs.
+fn keep_days(days: u32) -> Duration {
+    match days {
+        0 => Duration::MAX,
+        days => Duration::from_secs(u64::from(days) * 24 * 60 * 60),
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -74,7 +82,8 @@ pub struct Config {
     pub persist: Option<bool>,
     /// Where saved games live (default `$XDG_STATE_HOME/dominion/games`).
     pub state_dir: Option<PathBuf>,
-    /// Days a finished game is kept before it is deleted, checked at startup (default 7).
+    /// Days a finished game is hosted before it is moved to `expired/` (default 7; 0: no
+    /// limit).
     pub keep_finished_days: Option<u32>,
     /// Where `dominion assets sync` keeps dominion.games' images, fonts and sounds, and
     /// `dominion serve` serves them from (default `$XDG_CACHE_HOME/dominion/assets`).
@@ -117,7 +126,8 @@ pub struct Config {
     pub guests: Option<bool>,
     /// The most games in progress at once (default 1000).
     pub max_games: Option<usize>,
-    /// Days an unfinished game nobody plays is kept before it is deleted (default 30).
+    /// Days an unfinished game nobody plays is hosted before it is moved to `expired/`
+    /// (default 30; 0: no limit).
     pub keep_idle_days: Option<u32>,
     /// In a lobby game, minutes the player who must decide may be disconnected before
     /// they forfeit (default 5; 0 never).
@@ -187,10 +197,10 @@ impl Config {
     }
 
     pub fn keep_finished(&self) -> Duration {
-        let days = self
-            .keep_finished_days
-            .unwrap_or(DEFAULT_KEEP_FINISHED_DAYS);
-        Duration::from_secs(u64::from(days) * 24 * 60 * 60)
+        keep_days(
+            self.keep_finished_days
+                .unwrap_or(DEFAULT_KEEP_FINISHED_DAYS),
+        )
     }
 
     /// The asset cache directory.
@@ -242,7 +252,7 @@ impl Config {
             },
             max_games: self.max_games.unwrap_or(crate::hub::DEFAULT_MAX_GAMES),
             keep_finished: self.keep_finished(),
-            keep_idle: minutes(self.keep_idle_days.unwrap_or(DEFAULT_KEEP_IDLE_DAYS) * 24 * 60),
+            keep_idle: keep_days(self.keep_idle_days.unwrap_or(DEFAULT_KEEP_IDLE_DAYS)),
             agent_seats_per_day: self
                 .agent_seats_per_day
                 .unwrap_or(DEFAULT_AGENT_SEATS_PER_DAY),
