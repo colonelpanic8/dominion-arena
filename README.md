@@ -397,9 +397,10 @@ Each registered player fills `agent_seats_per_day` agent seats a day (0: no limi
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
 
 Each model plays through a private, seat-scoped MCP server exposing the common
-`state`, `step`, `wait`, `cards`, and `log` loop, plus compatibility `view`, `card`,
-`answer`, `play_treasures`, and `wait_for_decision`. The bridge binds the session and
-attaches its seat token;
+`state`, `step`, `wait`, `cards`, and `log` loop, plus `play_treasures`. Results reach
+the model as text only (changes since its last decision, new card text, the next
+decision); the structured view, ten times the size, is kept in the archive but not
+sent. The bridge binds the session and attaches its seat token;
 the model cannot override the seat or create, inspect, or control other games. Native
 tool calls and results drive the game; assistant prose is never parsed as an action.
 One native CLI process and conversation plays each seat through the entire game.

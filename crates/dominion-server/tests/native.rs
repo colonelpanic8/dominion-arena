@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 const FIXTURE: &str = r#"
-import json, sys, os, time
+import json, sys, os, re, time
 from pathlib import Path
 assert not Path('/home/imalison').exists()
 assert not Path('/srv/dotfiles').exists()
@@ -62,30 +62,30 @@ if Path('/work/seat-mcp.json').exists():
     rpc('initialize',{'protocolVersion':'2025-03-26','capabilities':{},'clientInfo':{'name':'fixture','version':'1'}})
     rpc('notifications/initialized',{},None)
     tools = rpc('tools/list',{})['result']['tools']
-    assert sorted(t['name'] for t in tools)==['answer','card','cards','log','play_treasures','state','step','view','wait','wait_for_decision']
+    assert sorted(t['name'] for t in tools)==['cards','log','play_treasures','state','step','wait']
     assert all('token' not in t['inputSchema'].get('properties',{}) for t in tools)
     assert 'error' in rpc('tools/call',{'name':'create_game','arguments':{'players':2}})
     assert 'error' in rpc('tools/call',{'name':'view','arguments':{'token':'another-seat'}})
     def call(tool, args):
         result = rpc('tools/call',{'name':tool,'arguments':args})['result']
         assert not result.get('isError',False), result
-        return result.get('structuredContent')
+        assert 'structuredContent' not in result, result
+        return result['content'][0]['text']
     call('cards',{'names':['Village']})
     call('log',{'limit':2})
-    view = call('state',{})['view']
-    while view['game']['running']:
-        d = view.get('decision')
+    text = call('state',{})
+    while 'GAME OVER' not in text:
+        d = re.search(r'^DECISION (d\d+):', text, re.M)
         if d is None:
-            view = call('wait',{'timeout_s':2})['view']
+            text = call('wait',{'timeout_s':2})
             continue
         if 'fixture:activity' in prompt:
             for _ in range(4):
                 print(json.dumps({'type':'reasoning','text':'considering move'}),flush=True)
                 time.sleep(.3)
-        opts = d['options']
-        index = next((o['index'] for o in opts if 'End your Buy phase' in o['label']), opts[0]['index'])
-        label = next(o['label'] for o in opts if o['index'] == index)
-        view = call('step',{'decision':d['id'],'indices':[index],'expect':[label],'timeout_s':2})['view']
+        opts = re.findall(r'^ +(\d+): (.+)$', text[d.start():], re.M)
+        index, label = next((o for o in opts if 'End your Buy phase' in o[1]), opts[0])
+        text = call('step',{'decision':d.group(1),'indices':[int(index)],'expect':[label],'timeout_s':2})
     action = {'message':'Game completed through MCP'}
 answer = json.dumps(action)
 print(json.dumps({'type':'reasoning', 'text':'r' * 120003}))
