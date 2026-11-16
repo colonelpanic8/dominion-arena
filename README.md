@@ -477,14 +477,39 @@ login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and res
 `models_cache.json`, populated by starting Codex once after sign-in.
 
 For an opt-in native subscription check, set `DOMINION_LIVE_AGENT` to `claude`, `codex`,
-or `antigravity` and run `cargo test -p dominion-server --test native live_native_game
+or `antigravity` (an opponent may also be `openai`) and run `cargo test -p dominion-server --test native live_native_game
 -- --ignored --nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL`
 select the executable and model. This runs a short game through the same isolated
 MCP bridge and writes evidence under `/tmp/dominion-native-live`.
 `DOMINION_LIVE_TURN_LIMIT` caps the game (default 2). To verify two different
 profiles together, set `DOMINION_LIVE_OPPONENT` to an `AgentSpec` JSON object with
-its own `name`, `program`, `model`, and optional `command` / `auth_dir`. The check
-has a three-minute deadline and asserts one native process per seat.
+its own `name`, `program`, `model`, and optional `command` / `auth_dir`.
+`DOMINION_LIVE_SEED` deals a random kingdom from that seed instead of the test's,
+`DOMINION_LIVE_PLAYBOOK` sets `playbook_dir`, and `DOMINION_LIVE_INSTRUCTIONS` replaces
+the profiles' instructions. The check has a three-minute deadline and asserts one
+native process per CLI seat.
+
+#### Direct OpenAI agents
+
+`program = "openai"` plays a seat by calling OpenAI's Responses API itself, with no CLI.
+It signs in with Codex's ChatGPT login (`auth.json` in `auth_dir`, default
+`$CODEX_HOME` or `~/.codex`), refreshing it when the API says it has expired and
+writing the new tokens back for Codex, or with an API key named by `api_key_env`
+(`api.openai.com`). Its system prompt is the game brief plus, with `playbook_dir`, the
+playbook's AGENTS.md; its only tools are the game's and, with a playbook, `read_file`,
+`list_files` and `card_ratings` (the playbook's ratings lookup, run by the runner), so
+it needs no sandbox. Game results reach it as text; it keeps the newest
+`context_results` of them (default 60) and replaces older ones with a note, 20 at a
+time. Its reasoning summaries and replies are archived as `native_event`s, so they
+appear in the agent transcript, and each request's token usage as `direct_usage`.
+
+```toml
+[[agents]]
+name = "Sol High"
+program = "openai"
+model = "gpt-6.1-sol"
+effort = "high"
+```
 
 #### T3 Code agent profiles
 
@@ -634,7 +659,7 @@ network_allow = []             # agents: hosts seats may reach beyond their prov
 # (default claude, codex, or agy on PATH) and `about` (for the lobby) are optional too
 # [[agents]]
 # name = "Claude Opus"
-# program = "claude"           # claude, codex, or antigravity
+# program = "claude"           # claude, codex, antigravity, openai (direct API) or t3code
 # model = "opus"
 # effort = "high"
 # instructions = "Prefer engine strategies when the kingdom supports them."
@@ -653,10 +678,27 @@ On NixOS the flake's `nixosModules.default` runs it as a service: `services.domi
 with `services.dominion.settings` holding the settings above (`state_dir` and `assets_dir`
 default to `/var/lib/dominion/games` and `/var/cache/dominion/assets`),
 `services.dominion.syncAssets` to fill the asset cache at boot, and
-`services.dominion.agents` (`enable`, `user`, `settings`) to run the server's own agents
-as `user`, with that account's native CLI logins (and subscriptions): it sets
-`agent_socket` to `/run/dominion/agents.sock`, reachable by the `dominion` group, which
-the runner's service joins.
+`services.dominion.agents` to run the server's own agents as `user`, with that account's
+logins (and subscriptions): it sets `agent_socket` to `/run/dominion/agents.sock`,
+reachable by the `dominion` group, which the runner's service joins. The agent setup
+lives here, so a host's configuration only needs to choose:
+
+```nix
+services.dominion.agents = {
+  enable = true;
+  user = "alice";
+  claude = pkgs.claude-code;      # for claude agents; default: the user's PATH
+  codex = pkgs.codex;             # for codex agents (openai agents need only its login)
+  antigravity = pkgs.antigravity-cli;
+  atOnce = 4;                     # agents_at_once
+};
+```
+
+`profiles` defaults to `nix/agents.nix` (Opus and Sonnet on Claude Code, Sol and Terra
+on the direct OpenAI agent, Argon on Antigravity); `playbook` defaults to the flake's
+`dominion-playbook` input, which the agents start in. The runner's PATH gets the given
+CLIs and bubblewrap, and the agents' sandbox a shell, coreutils, grep, sed, find and
+python3 (`sandbox_path`). `settings` still sets any runner setting directly.
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;

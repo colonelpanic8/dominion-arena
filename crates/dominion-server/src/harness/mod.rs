@@ -8,6 +8,9 @@ mod codex;
 mod process;
 pub mod sandbox;
 
+pub use bridge::TOOLS as GAME_TOOLS;
+pub use process::write_private;
+
 use crate::archive::{Archive, call};
 use crate::client::Client;
 use crate::house::Job;
@@ -191,7 +194,7 @@ async fn play_inner(
     }
 }
 
-pub(super) fn endpoint(server: &str, job: &Job) -> Result<String, String> {
+pub fn endpoint(server: &str, job: &Job) -> Result<String, String> {
     if !job.official {
         return Ok(server.into());
     }

@@ -33,7 +33,7 @@ pub fn default_hosts(program: crate::runner::Program) -> &'static [&'static str]
             "oauth2.googleapis.com",
             "www.googleapis.com",
         ],
-        Program::T3Code => &[],
+        Program::T3Code | Program::OpenAi => &[],
     }
 }
 
