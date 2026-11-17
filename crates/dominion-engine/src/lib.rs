@@ -38,7 +38,10 @@ pub use game::{
     PileGroup, PileKind, PileStructure, Player, Scratch, Token, Turn, Until, Zone,
 };
 pub use ids::{CardId, PileId, PlayerId};
-pub use journal::{EffectEnd, EffectState, Gauge, Step, TurnKind, TurnLimits, Verb};
+pub use journal::{
+    EffectEnd, EffectState, Gauge, PileProps, Spot, Step, TokenAt, TokenKind, TurnKind, TurnLimits,
+    Verb, table_note,
+};
 pub use knowledge::{CardCount, GroupView, Knowledge, KnownCards, UncertainCards, ZoneKnowledge};
 pub use setup::{
     ANY_SLOT_KIND, DEFAULT_SLOTS, DealRules, GameConfig, KINGDOM_PILES, LandscapeSlot, SLOT_KINDS,

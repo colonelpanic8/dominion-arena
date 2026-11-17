@@ -689,17 +689,26 @@ pub(crate) fn add_kingdom_pile(g: &mut Game, card: Card) -> PileId {
 
 /// Adds a pile of `size` copies of `card`.
 pub(crate) fn add_pile(g: &mut Game, card: Card, size: usize, in_supply: bool) -> PileId {
-    let id = g.add_pile(Pile::new(card, in_supply));
-    for _ in 0..size {
-        g.create(card, Zone::Pile(id));
-    }
-    g.piles[id.index()].structure = Some(PileStructure::new(PileKind::Stacked, &vec![card; size]));
-    id
+    let structure = PileStructure::new(PileKind::Stacked, &vec![card; size]);
+    add_pile_of(g, card, &vec![card; size], in_supply, Some(structure))
 }
 
 /// Adds a pile named `name` holding `cards`, listed top first.
 pub(crate) fn add_mixed_pile(g: &mut Game, name: Card, cards: &[Card], in_supply: bool) -> PileId {
-    let id = g.add_pile(Pile::new(name, in_supply));
+    add_pile_of(g, name, cards, in_supply, None)
+}
+
+/// The pile has its recipe before its cards come into the game.
+fn add_pile_of(
+    g: &mut Game,
+    name: Card,
+    cards: &[Card],
+    in_supply: bool,
+    structure: Option<PileStructure>,
+) -> PileId {
+    let mut pile = Pile::new(name, in_supply);
+    pile.structure = structure;
+    let id = g.add_pile(pile);
     for &card in cards.iter().rev() {
         g.create(card, Zone::Pile(id));
     }
@@ -713,9 +722,8 @@ pub(crate) fn add_stacked_pile(
     cards: &[Card],
     in_supply: bool,
 ) -> PileId {
-    let id = add_mixed_pile(g, name, cards, in_supply);
-    g.piles[id.index()].structure = Some(PileStructure::new(PileKind::Stacked, cards));
-    id
+    let structure = PileStructure::new(PileKind::Stacked, cards);
+    add_pile_of(g, name, cards, in_supply, Some(structure))
 }
 
 pub(crate) fn add_rotating_pile(
@@ -724,9 +732,8 @@ pub(crate) fn add_rotating_pile(
     cards: &[Card],
     in_supply: bool,
 ) -> PileId {
-    let id = add_stacked_pile(g, name, cards, in_supply);
-    g.piles[id.index()].structure.as_mut().unwrap().kind = PileKind::Rotating;
-    id
+    let structure = PileStructure::new(PileKind::Rotating, cards);
+    add_pile_of(g, name, cards, in_supply, Some(structure))
 }
 
 /// Shuffles a public pool, optionally taking only a random sample of it.
@@ -741,7 +748,5 @@ pub(crate) fn add_shuffled_pile(
     structure.sample_size = (size < pool.len()).then_some(size as u32);
     g.shuffle(&mut pool);
     pool.truncate(size);
-    let id = add_mixed_pile(g, name, &pool, in_supply);
-    g.piles[id.index()].structure = Some(structure);
-    id
+    add_pile_of(g, name, &pool, in_supply, Some(structure))
 }

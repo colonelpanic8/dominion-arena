@@ -1845,24 +1845,48 @@ impl Game {
         self.lasting.iter_mut().find(|l| l.id == id)
     }
 
-    /// Draws a Boon or Hex from its deck, reshuffling its discards if needed.
-    pub(crate) fn draw_from(&mut self, hexes: bool) -> Option<Card> {
-        let mut deck = std::mem::take(if hexes {
-            &mut self.hexes
-        } else {
-            &mut self.boons
-        });
+    /// Draws a Boon or Hex from its deck for `p`, reshuffling its discards if needed.
+    pub(crate) fn draw_from(&mut self, p: PlayerId, hexes: bool) -> Option<Card> {
+        let mut deck = std::mem::take(self.fates(hexes));
+        let shuffled = deck.draw.is_empty() && !deck.discard.is_empty();
         if deck.draw.is_empty() {
             deck.draw = std::mem::take(&mut deck.discard);
             deck.draw.shuffle(&mut self.rng);
         }
-        let card = deck.draw.pop();
-        *(if hexes {
+        *self.fates(hexes) = deck;
+        if shuffled {
+            self.journal_fate_shuffled(hexes);
+        }
+        let card = self.fates(hexes).draw.pop()?;
+        self.journal_fate(card, crate::journal::Spot::Player(p));
+        Some(card)
+    }
+
+    fn fates(&mut self, hexes: bool) -> &mut CardDeck {
+        if hexes {
             &mut self.hexes
         } else {
             &mut self.boons
-        }) = deck;
-        card
+        }
+    }
+
+    /// Puts the Boon or Hex `card` on its discard pile.
+    pub(crate) fn discard_fate(&mut self, card: Card) {
+        self.fates(card.kind() == Kind::Hex).discard.push(card);
+        self.journal_fate(card, crate::journal::Spot::Discard);
+    }
+
+    /// `p` takes the Boon or Hex `card` back from its discard pile or deck, if it is there.
+    pub(crate) fn retake_fate(&mut self, p: PlayerId, card: Card) {
+        let deck = self.fates(card.kind() == Kind::Hex);
+        if let Some(i) = deck.discard.iter().rposition(|&b| b == card) {
+            deck.discard.remove(i);
+        } else if let Some(i) = deck.draw.iter().position(|&b| b == card) {
+            deck.draw.remove(i);
+        } else {
+            return;
+        }
+        self.journal_fate(card, crate::journal::Spot::Player(p));
     }
 
     pub(crate) fn game_over_reason(&self) -> Option<EndReason> {

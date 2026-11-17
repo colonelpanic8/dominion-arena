@@ -42,7 +42,13 @@ pub enum Viewer {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CardRef {
     Hidden,
-    Seen { name: String, handle: u32 },
+    Seen {
+        name: String,
+        handle: u32,
+    },
+    /// A card that is no physical card and the only one of its name: a Boon or Hex,
+    /// written by its name alone.
+    Named(String),
 }
 
 impl CardRef {
@@ -56,14 +62,14 @@ impl CardRef {
     pub fn name(&self) -> Option<&str> {
         match self {
             CardRef::Hidden => None,
-            CardRef::Seen { name, .. } => Some(name),
+            CardRef::Seen { name, .. } | CardRef::Named(name) => Some(name),
         }
     }
 
     pub fn handle(&self) -> Option<u32> {
         match self {
-            CardRef::Hidden => None,
             CardRef::Seen { handle, .. } => Some(*handle),
+            CardRef::Hidden | CardRef::Named(_) => None,
         }
     }
 }
@@ -73,6 +79,7 @@ impl fmt::Display for CardRef {
         match self {
             CardRef::Hidden => f.write_str("?"),
             CardRef::Seen { name, handle } => write!(f, "{name}#{handle}"),
+            CardRef::Named(name) => f.write_str(name),
         }
     }
 }
@@ -84,8 +91,13 @@ impl FromStr for CardRef {
         if s == "?" {
             return Ok(CardRef::Hidden);
         }
-        let bad = || format!("{s:?} is neither \"?\" nor \"Name#handle\"");
-        let (name, handle) = s.rsplit_once('#').ok_or_else(bad)?;
+        let bad = || format!("{s:?} is neither \"?\", \"Name#handle\" nor \"Name\"");
+        let Some((name, handle)) = s.rsplit_once('#') else {
+            return match s.is_empty() {
+                true => Err(bad()),
+                false => Ok(CardRef::Named(s.to_string())),
+            };
+        };
         if name.is_empty() {
             return Err(bad());
         }
@@ -111,10 +123,14 @@ pub enum SeatZone {
     Island,
     NativeVillage,
     Exile,
+    /// Boons the player took, is receiving or keeps.
+    Boons,
+    /// A Hex the player turned over, while it is received.
+    Hexes,
 }
 
 impl SeatZone {
-    pub const ALL: [SeatZone; 10] = [
+    pub const ALL: [SeatZone; 12] = [
         SeatZone::Deck,
         SeatZone::Hand,
         SeatZone::Discard,
@@ -125,6 +141,8 @@ impl SeatZone {
         SeatZone::Island,
         SeatZone::NativeVillage,
         SeatZone::Exile,
+        SeatZone::Boons,
+        SeatZone::Hexes,
     ];
 
     pub fn name(self) -> &'static str {
@@ -139,11 +157,33 @@ impl SeatZone {
             SeatZone::Island => "island",
             SeatZone::NativeVillage => "native-village",
             SeatZone::Exile => "exile",
+            SeatZone::Boons => "boons",
+            SeatZone::Hexes => "hexes",
         }
     }
 }
 
-/// Where cards are: `<seat>/<zone>`, `pile/<card>`, `aside/<card>` or `trash`.
+/// Part of the Boons' or the Hexes' table.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Pack {
+    Deck,
+    Discard,
+    /// Druid's three Boons, set aside for the game.
+    Druid,
+}
+
+impl Pack {
+    pub fn name(self) -> &'static str {
+        match self {
+            Pack::Deck => "deck",
+            Pack::Discard => "discard",
+            Pack::Druid => "druid",
+        }
+    }
+}
+
+/// Where cards are: `<seat>/<zone>`, `pile/<card>`, `aside/<card>`, `trash`,
+/// `boons/<pack>` or `hexes/<pack>`.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Zone {
     Seat(u8, SeatZone),
@@ -153,6 +193,8 @@ pub enum Zone {
     /// card.
     Aside(String),
     Trash,
+    Boons(Pack),
+    Hexes(Pack),
 }
 
 impl Zone {
@@ -165,13 +207,18 @@ impl Zone {
                 | Zone::Pile(_)
                 | Zone::Aside(_)
                 | Zone::Trash
+                | Zone::Boons(_)
+                | Zone::Hexes(_)
         )
     }
 
-    /// Whether it is there in every game, empty or not: a seat's zones and the trash. A
-    /// pile exists once the game has it.
+    /// Whether it is there in every game, empty or not: a seat's zones, the trash, and
+    /// the Boons' and Hexes'. A pile exists once the game has it.
     fn standing(&self) -> bool {
-        matches!(self, Zone::Seat(..) | Zone::Trash)
+        matches!(
+            self,
+            Zone::Seat(..) | Zone::Trash | Zone::Boons(_) | Zone::Hexes(_)
+        )
     }
 }
 
@@ -182,6 +229,8 @@ impl fmt::Display for Zone {
             Zone::Pile(card) => write!(f, "pile/{card}"),
             Zone::Aside(card) => write!(f, "aside/{card}"),
             Zone::Trash => f.write_str("trash"),
+            Zone::Boons(pack) => write!(f, "boons/{}", pack.name()),
+            Zone::Hexes(pack) => write!(f, "hexes/{}", pack.name()),
         }
     }
 }
@@ -195,6 +244,17 @@ impl FromStr for Zone {
             return Ok(Zone::Trash);
         }
         let (owner, rest) = s.split_once('/').ok_or_else(bad)?;
+        if owner == "boons" || owner == "hexes" {
+            let pack = [Pack::Deck, Pack::Discard, Pack::Druid]
+                .into_iter()
+                .find(|p| p.name() == rest)
+                .ok_or_else(bad)?;
+            return match (owner, pack) {
+                ("boons", pack) => Ok(Zone::Boons(pack)),
+                (_, Pack::Druid) => Err(bad()),
+                (_, pack) => Ok(Zone::Hexes(pack)),
+            };
+        }
         if owner == "pile" || owner == "aside" {
             if rest.is_empty() {
                 return Err(bad());
@@ -230,7 +290,7 @@ macro_rules! serde_as_string {
     )*};
 }
 
-serde_as_string!(CardRef, Zone);
+serde_as_string!(CardRef, Zone, CounterKey, TokenAt);
 
 /// Where cards arrive in an ordered zone.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -327,6 +387,7 @@ pub enum Verb {
     Pass,
     Shuffle,
     Rotate,
+    Take,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -494,18 +555,380 @@ pub struct Ending {
     pub final_round: Vec<u8>,
 }
 
+/// Whose a counter is.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CounterOf {
+    /// The turn in progress.
+    Turn,
+    /// The game's own.
+    Game,
+    Seat(u8),
+    /// Tokens on a pile.
+    Pile(Zone),
+    /// Tokens on a landscape.
+    Landscape(String),
+}
+
+/// Which counter of its owner's a counter is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CounterName {
+    Actions,
+    Buys,
+    Coins,
+    Potions,
+    TradeRouteMat,
+    Sun,
+    Coffers,
+    Villagers,
+    Favors,
+    Debt,
+    VpTokens,
+    PirateShip,
+    /// VP tokens on a pile or landscape.
+    Vp,
+    Embargo,
+    TradeRoute,
+    /// A player's tokens on Sinister Plot.
+    SinisterPlot,
+    NextHand,
+    Bought,
+    HandPlays,
+    SkipTurns,
+    TurnsSkipped,
+}
+
+impl CounterName {
+    const ALL: [CounterName; 21] = [
+        CounterName::Actions,
+        CounterName::Buys,
+        CounterName::Coins,
+        CounterName::Potions,
+        CounterName::TradeRouteMat,
+        CounterName::Sun,
+        CounterName::Coffers,
+        CounterName::Villagers,
+        CounterName::Favors,
+        CounterName::Debt,
+        CounterName::VpTokens,
+        CounterName::PirateShip,
+        CounterName::Vp,
+        CounterName::Embargo,
+        CounterName::TradeRoute,
+        CounterName::SinisterPlot,
+        CounterName::NextHand,
+        CounterName::Bought,
+        CounterName::HandPlays,
+        CounterName::SkipTurns,
+        CounterName::TurnsSkipped,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            CounterName::Actions => "actions",
+            CounterName::Buys => "buys",
+            CounterName::Coins => "coins",
+            CounterName::Potions => "potions",
+            CounterName::TradeRouteMat => "trade-route-mat",
+            CounterName::Sun => "sun",
+            CounterName::Coffers => "coffers",
+            CounterName::Villagers => "villagers",
+            CounterName::Favors => "favors",
+            CounterName::Debt => "debt",
+            CounterName::VpTokens => "vp-tokens",
+            CounterName::PirateShip => "pirate-ship",
+            CounterName::Vp => "vp",
+            CounterName::Embargo => "embargo",
+            CounterName::TradeRoute => "trade-route",
+            CounterName::SinisterPlot => "sinister-plot",
+            CounterName::NextHand => "next-hand",
+            CounterName::Bought => "bought",
+            CounterName::HandPlays => "hand-plays",
+            CounterName::SkipTurns => "skip-turns",
+            CounterName::TurnsSkipped => "turns-skipped",
+        }
+    }
+
+    fn of_turn(self) -> bool {
+        matches!(
+            self,
+            CounterName::Actions
+                | CounterName::Buys
+                | CounterName::Coins
+                | CounterName::Potions
+                | CounterName::NextHand
+                | CounterName::Bought
+                | CounterName::HandPlays
+        )
+    }
+}
+
+/// A counter: whose it is and which of theirs. Written as text: the turn's and the
+/// game's by name (`actions`, `sun`), a seat's as `<seat>/<name>` (`0/coffers`), a
+/// pile's as `<pile>/<name>` (`pile/Village/vp`), a landscape's as
+/// `landscape/<card>/<name>` (`landscape/Arena/vp`).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CounterKey {
+    pub of: CounterOf,
+    pub name: CounterName,
+}
+
+impl CounterKey {
+    pub fn new(of: CounterOf, name: CounterName) -> CounterKey {
+        CounterKey { of, name }
+    }
+
+    /// The turn's or the game's counter `name`.
+    pub fn global(name: CounterName) -> CounterKey {
+        let of = match name.of_turn() {
+            true => CounterOf::Turn,
+            false => CounterOf::Game,
+        };
+        CounterKey { of, name }
+    }
+
+    pub fn seat(seat: u8, name: CounterName) -> CounterKey {
+        CounterKey::new(CounterOf::Seat(seat), name)
+    }
+}
+
+impl fmt::Display for CounterKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = self.name.name();
+        match &self.of {
+            CounterOf::Turn | CounterOf::Game => f.write_str(name),
+            CounterOf::Seat(seat) => write!(f, "{seat}/{name}"),
+            CounterOf::Pile(zone) => write!(f, "{zone}/{name}"),
+            CounterOf::Landscape(card) => write!(f, "landscape/{card}/{name}"),
+        }
+    }
+}
+
+impl FromStr for CounterKey {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<CounterKey, String> {
+        let bad = || format!("{s:?} is no counter");
+        let (owner, name) = match s.rsplit_once('/') {
+            Some((owner, name)) => (Some(owner), name),
+            None => (None, s),
+        };
+        let name = (CounterName::ALL.into_iter())
+            .find(|n| n.name() == name)
+            .ok_or_else(bad)?;
+        let of = match owner {
+            None => return Ok(CounterKey::global(name)),
+            Some(owner) => match owner.strip_prefix("landscape/") {
+                Some("") => return Err(bad()),
+                Some(card) => CounterOf::Landscape(card.to_string()),
+                None => match (owner.parse::<u8>(), owner.parse::<Zone>()) {
+                    (Ok(seat), _) => CounterOf::Seat(seat),
+                    (_, Ok(zone @ (Zone::Pile(_) | Zone::Aside(_)))) => CounterOf::Pile(zone),
+                    _ => return Err(bad()),
+                },
+            },
+        };
+        Ok(CounterKey { of, name })
+    }
+}
+
 /// A counter changing by `delta` to `value`.
-///
-/// `counter` names it: the turn's and the game's by name (`actions`, `buys`, `coins`,
-/// `potions`, `trade-route-mat`, `sun`), a seat's as `<seat>/<name>` (`coffers`,
-/// `villagers`, `favors`, `debt`, `vp-tokens`, `pirate-ship`), a pile's as
-/// `pile/<card>/<name>` (`vp`, `debt`, `embargo`, `trade-route`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CounterChange {
-    pub counter: String,
+    pub counter: CounterKey,
     pub delta: i64,
     pub value: i64,
+}
+
+/// A player's token: an Adventures token, the -1 Card or -$1 token, or the Journey token.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TokenKind {
+    PlusCard,
+    PlusAction,
+    PlusBuy,
+    PlusCoin,
+    MinusCost,
+    Trashing,
+    Estate,
+    MinusCard,
+    MinusCoin,
+    Journey,
+}
+
+/// Where a token is, when the table lists it. Written as text: a pile's zone, `player`
+/// or `face-down`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TokenAt {
+    /// On that pile.
+    Pile(Zone),
+    /// With its player and on no pile: the -1 Card token on their deck, the -$1 token in
+    /// front of them, the Estate token on Inheritance's card, an Adventures token whose
+    /// pile left the game.
+    Player,
+    /// The Journey token, turned face down.
+    FaceDown,
+}
+
+impl fmt::Display for TokenAt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenAt::Pile(zone) => zone.fmt(f),
+            TokenAt::Player => f.write_str("player"),
+            TokenAt::FaceDown => f.write_str("face-down"),
+        }
+    }
+}
+
+impl FromStr for TokenAt {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<TokenAt, String> {
+        match s {
+            "player" => Ok(TokenAt::Player),
+            "face-down" => Ok(TokenAt::FaceDown),
+            _ => match s.parse()? {
+                zone @ Zone::Pile(_) => Ok(TokenAt::Pile(zone)),
+                _ => Err(format!("{s:?} is nowhere a token can be")),
+            },
+        }
+    }
+}
+
+/// A token the table lists: one that is out. A token it doesn't list is not placed (an
+/// Adventures token), not had (the -1 Card and -$1 tokens), or face up (Journey).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenState {
+    pub player: u8,
+    pub token: TokenKind,
+    pub at: TokenAt,
+}
+
+/// What setup made a pile for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Role {
+    /// Young Witch's Bane.
+    Bane,
+    /// A pile the card adds to the game (Ferryman's).
+    ExtraPile,
+    /// A pile the card chose (Obelisk's).
+    ChosenPile,
+    /// A card set aside for the game (Riverboat's, Way of the Mouse's).
+    SetAside,
+    /// A deck the card uses, whose contents are public and order is not (the Black
+    /// Market deck).
+    Deck,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PileRole {
+    /// The card or landscape it is for.
+    pub card: String,
+    pub role: Role,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecipeKind {
+    /// Groups of cards one on another, in the order listed.
+    Stacked,
+    /// Groups whose top cards go to the bottom (the Augurs, ...).
+    Rotating,
+    /// The cards shuffled together.
+    Shuffled,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecipeGroup {
+    pub card: String,
+    pub count: u32,
+}
+
+/// What a pile was made of in setup: never its contents now.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Recipe {
+    pub kind: RecipeKind,
+    /// Top first, or a pool for a shuffled pile.
+    pub cards: Vec<RecipeGroup>,
+    /// How many of the pool it took, when it took only some.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample: Option<u32>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
+/// A pile's properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PileState {
+    /// The card or randomizer it is named after.
+    pub card: String,
+    /// In the Supply.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub supply: bool,
+    /// Face down: not even its top card is public.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hidden: bool,
+    /// Out of the game (Divine Wind): it is no card's pile any more, though its cards and
+    /// Traits are still its own.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub removed: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<PileRole>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub traits: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe: Option<Recipe>,
+}
+
+/// Public state a card or landscape keeps that the table has no other place for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Note {
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pile: Option<Zone>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<String>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub count: i32,
+}
+
+fn is_zero(n: &i32) -> bool {
+    *n == 0
+}
+
+fn is_zero_u32(n: &u32) -> bool {
+    *n == 0
+}
+
+/// What a card costs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Cost {
+    pub coins: u32,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub potions: u32,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub debt: u32,
+}
+
+/// A pile's properties are now `state`. A pile that wasn't there now is, empty.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PileChange {
+    pub pile: Zone,
+    #[serde(flatten)]
+    pub state: PileState,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -655,6 +1078,50 @@ pub enum What {
         player: u8,
     },
     GameEnding(Ending),
+    /// A Boon or Hex off its deck, or out of its discard pile, to the player taking or
+    /// receiving it.
+    Take(Move),
+    /// `player` receives `card`: a Boon or Hex (its instructions are followed), a State
+    /// or Artifact (they take it), the Prophecy (it comes into effect).
+    Receive {
+        player: u8,
+        card: String,
+    },
+    /// `player`'s `token` is now `at`; without `at`, the table no longer lists it.
+    Token {
+        player: u8,
+        token: TokenKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<TokenAt>,
+    },
+    /// A Project cube, Artifact or State changes hands: `from` no longer holds `card`,
+    /// `to` does.
+    Holding {
+        card: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to: Option<u8>,
+    },
+    Pile(PileChange),
+    /// A landscape or Artifact joins the game; `prophecy` when it is the game's Prophecy.
+    Landscape {
+        card: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        prophecy: bool,
+    },
+    /// The table's notes are now `notes`.
+    Notes {
+        notes: Vec<Note>,
+    },
+    /// What the rules derive changed: what cards cost now, and their types where they are
+    /// not the printed ones (`null`: printed again).
+    Derived {
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        costs: BTreeMap<String, Cost>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        types: BTreeMap<String, Option<Vec<String>>>,
+    },
 }
 
 impl What {
@@ -677,6 +1144,7 @@ impl What {
             Verb::Pass => What::Pass(m),
             Verb::Shuffle => What::Shuffle(m),
             Verb::Rotate => What::Rotate(m),
+            Verb::Take => What::Take(m),
         }
     }
 
@@ -698,7 +1166,8 @@ impl What {
             | What::Exchange(m)
             | What::Pass(m)
             | What::Shuffle(m)
-            | What::Rotate(m) => Some(m),
+            | What::Rotate(m)
+            | What::Take(m) => Some(m),
             _ => None,
         }
     }
@@ -723,6 +1192,7 @@ impl What {
             What::Pass(m) => (Verb::Pass, m),
             What::Shuffle(m) => (Verb::Shuffle, m),
             What::Rotate(m) => (Verb::Rotate, m),
+            What::Take(m) => (Verb::Take, m),
             _ => return None,
         })
     }
@@ -761,9 +1231,9 @@ pub struct Table {
     /// Every zone that exists, empty piles included. An ordered zone's cards are top
     /// first; another's are in the order they arrived.
     pub zones: BTreeMap<Zone, Vec<CardRef>>,
-    /// Counters that are not zero, by the name [`CounterChange::counter`] gives them.
+    /// Counters that are not zero.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub counters: BTreeMap<String, i64>,
+    pub counters: BTreeMap<CounterKey, i64>,
     /// The turn in progress: none before the first and between turns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<TurnState>,
@@ -781,17 +1251,40 @@ pub struct Table {
     /// Set once the end condition is met.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ending: Option<Ending>,
+    /// Every pile's properties, by its zone.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub piles: BTreeMap<Zone, PileState>,
+    /// Every landscape and Artifact in the game, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub landscapes: Vec<String>,
+    /// The game's Prophecy: in effect while the `sun` counter is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prophecy: Option<String>,
+    /// Who holds each Project (a cube), Artifact and State that someone holds, by seat.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub holdings: BTreeMap<String, Vec<u8>>,
+    /// Tokens that are out, by player and token.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tokens: Vec<TokenState>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Note>,
+    /// Derived: what each card in the game costs now, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub costs: BTreeMap<String, Cost>,
+    /// Derived: the types of the cards whose types are not the printed ones now, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub types: BTreeMap<String, Vec<String>>,
 }
 
 /// The turn's counters: set as a turn begins, gone when it ends.
-const TURN_COUNTERS: [(&str, i64); 7] = [
-    ("actions", 1),
-    ("buys", 1),
-    ("coins", 0),
-    ("potions", 0),
-    ("next-hand", 5),
-    ("bought", 0),
-    ("hand-plays", 0),
+const TURN_COUNTERS: [(CounterName, i64); 7] = [
+    (CounterName::Actions, 1),
+    (CounterName::Buys, 1),
+    (CounterName::Coins, 0),
+    (CounterName::Potions, 0),
+    (CounterName::NextHand, 5),
+    (CounterName::Bought, 0),
+    (CounterName::HandPlays, 0),
 ];
 
 /// Why an event doesn't apply to a table: the stream is not one game's.
@@ -814,8 +1307,8 @@ impl Table {
         self.zones.get(zone).map_or(&[], Vec::as_slice)
     }
 
-    pub fn counter(&self, name: &str) -> i64 {
-        self.counters.get(name).copied().unwrap_or(0)
+    pub fn counter(&self, key: &CounterKey) -> i64 {
+        self.counters.get(key).copied().unwrap_or(0)
     }
 
     /// How many cards lie over the card with `handle` in `zone`.
@@ -878,7 +1371,7 @@ impl Table {
                     limits: t.limits,
                 });
                 for (name, value) in TURN_COUNTERS {
-                    self.set_counter(name, value);
+                    self.set_counter(&CounterKey::global(name), value);
                 }
             }
             What::Phase { phase } => match &mut self.turn {
@@ -950,10 +1443,75 @@ impl Table {
                 }
                 self.turn = None;
                 for (name, _) in TURN_COUNTERS {
-                    self.set_counter(name, 0);
+                    self.set_counter(&CounterKey::global(name), 0);
                 }
             }
             What::GameEnding(ending) => self.ending = Some(ending.clone()),
+            What::Receive { .. } => {}
+            What::Token { player, token, at } => {
+                self.tokens
+                    .retain(|t| (t.player, t.token) != (*player, *token));
+                if let Some(at) = at {
+                    if let TokenAt::Pile(pile) = at
+                        && !self.piles.contains_key(pile)
+                    {
+                        return Err(fail(format!("there is no pile {pile}")));
+                    }
+                    let i = (self.tokens.iter())
+                        .position(|t| (t.player, t.token) > (*player, *token))
+                        .unwrap_or(self.tokens.len());
+                    let state = TokenState {
+                        player: *player,
+                        token: *token,
+                        at: at.clone(),
+                    };
+                    self.tokens.insert(i, state);
+                }
+            }
+            What::Holding { card, from, to } => {
+                let holders = self.holdings.entry(card.clone()).or_default();
+                if let Some(from) = from {
+                    let i = (holders.iter().position(|h| h == from))
+                        .ok_or_else(|| fail(format!("{from} doesn't hold {card}")))?;
+                    holders.remove(i);
+                }
+                if let Some(to) = to {
+                    match holders.binary_search(to) {
+                        Ok(_) => return Err(fail(format!("{to} already holds {card}"))),
+                        Err(i) => holders.insert(i, *to),
+                    }
+                }
+                if from.is_none() && to.is_none() {
+                    return Err(fail(format!("{card} goes from nobody to nobody")));
+                }
+                if holders.is_empty() {
+                    self.holdings.remove(card);
+                }
+            }
+            What::Pile(change) => {
+                self.zones.entry(change.pile.clone()).or_default();
+                self.piles.insert(change.pile.clone(), change.state.clone());
+            }
+            What::Landscape { card, prophecy } => {
+                if let Err(i) = self.landscapes.binary_search(card) {
+                    self.landscapes.insert(i, card.clone());
+                }
+                if *prophecy {
+                    self.prophecy = Some(card.clone());
+                }
+            }
+            What::Notes { notes } => self.notes = notes.clone(),
+            What::Derived { costs, types } => {
+                for (card, cost) in costs {
+                    self.costs.insert(card.clone(), *cost);
+                }
+                for (card, now) in types {
+                    match now {
+                        Some(types) => self.types.insert(card.clone(), types.clone()),
+                        None => self.types.remove(card),
+                    };
+                }
+            }
             _ => unreachable!("moves are applied above"),
         }
         Ok(())
@@ -984,11 +1542,11 @@ impl Table {
         }
     }
 
-    fn set_counter(&mut self, name: &str, value: i64) {
+    fn set_counter(&mut self, key: &CounterKey, value: i64) {
         if value == 0 {
-            self.counters.remove(name);
+            self.counters.remove(key);
         } else {
-            self.counters.insert(name.to_string(), value);
+            self.counters.insert(key.clone(), value);
         }
     }
 
@@ -1041,9 +1599,10 @@ impl Table {
             .zones
             .get_mut(zone)
             .ok_or_else(|| format!("there is no zone {zone}"))?;
-        let found = match card.handle() {
-            Some(h) => cards.iter().position(|c| c.handle() == Some(h)),
-            None => None,
+        let found = match card {
+            CardRef::Seen { handle, .. } => cards.iter().position(|c| c.handle() == Some(*handle)),
+            CardRef::Named(_) => cards.iter().position(|c| c == card),
+            CardRef::Hidden => None,
         };
         let index = match (found, said) {
             (Some(i), Some(p)) if ordered && i != p as usize => {
@@ -1119,7 +1678,7 @@ mod tests {
 
     #[test]
     fn cards_and_zones_are_written_as_text() {
-        for text in ["?", "Copper#12", "King's Court#0"] {
+        for text in ["?", "Copper#12", "King's Court#0", "The Sea's Gift"] {
             assert_eq!(text.parse::<CardRef>().unwrap().to_string(), text);
         }
         for text in [
@@ -1128,14 +1687,37 @@ mod tests {
             "pile/Village",
             "aside/Black Market",
             "trash",
+            "boons/druid",
+            "hexes/discard",
+            "1/hexes",
         ] {
             assert_eq!(text.parse::<Zone>().unwrap().to_string(), text);
         }
-        for text in ["Copper", "#3", "Copper#x"] {
+        for text in [
+            "coins",
+            "sun",
+            "2/vp-tokens",
+            "pile/Village (2)/embargo",
+            "landscape/Arena/vp",
+            "0/sinister-plot",
+        ] {
+            assert_eq!(text.parse::<CounterKey>().unwrap().to_string(), text);
+        }
+        assert_eq!(
+            "pile/Village/vp".parse::<CounterKey>().unwrap(),
+            CounterKey::new(
+                CounterOf::Pile(Zone::Pile("Village".into())),
+                CounterName::Vp
+            )
+        );
+        for text in ["", "#3", "Copper#x"] {
             assert!(text.parse::<CardRef>().is_err(), "{text}");
         }
-        for text in ["hand", "0/lap", "pile/", "x/hand"] {
+        for text in ["hand", "0/lap", "pile/", "x/hand", "hexes/druid", "boons/"] {
             assert!(text.parse::<Zone>().is_err(), "{text}");
+        }
+        for text in ["0/lap", "trash/vp", "landscape//vp", "x/coins"] {
+            assert!(text.parse::<CounterKey>().is_err(), "{text}");
         }
     }
 
@@ -1284,10 +1866,16 @@ mod tests {
             t.apply(&event(seq as u64, json)).unwrap();
         }
         assert!(t.ending.as_ref().unwrap().final_round.is_empty());
-        assert_eq!(t.counter("next-hand"), 5);
+        assert_eq!(t.counter(&CounterKey::global(CounterName::NextHand)), 5);
         t.apply(&event(3, r#"{"type":"turn-end","player":2}"#))
             .unwrap();
-        assert_eq!((t.turn.as_ref(), t.counter("actions")), (None, 0));
+        assert_eq!(
+            (
+                t.turn.as_ref(),
+                t.counter(&CounterKey::global(CounterName::Actions))
+            ),
+            (None, 0)
+        );
     }
 
     #[test]
@@ -1310,7 +1898,7 @@ mod tests {
     #[test]
     fn a_turn_starts_with_one_action_and_one_buy() {
         let mut t = table(&[]);
-        t.counters.insert("coins".into(), 5);
+        t.counters.insert(CounterKey::global(CounterName::Coins), 5);
         t.apply(&event(
             1,
             r#"{"type":"turn","player":1,"number":4,"extra":"Outpost"}"#,
@@ -1329,9 +1917,63 @@ mod tests {
             (1, 4, Phase::Action)
         );
         assert_eq!(turn.extra.as_deref(), Some("Outpost"));
+        let counter = |name| t.counter(&CounterKey::global(name));
         assert_eq!(
-            (t.counter("actions"), t.counter("buys"), t.counter("coins")),
+            (
+                counter(CounterName::Actions),
+                counter(CounterName::Buys),
+                counter(CounterName::Coins)
+            ),
             (3, 1, 0)
         );
+    }
+
+    #[test]
+    fn holdings_tokens_and_derived_values_fold() {
+        let mut t = table(&[("pile/Village", &[])]);
+        t.piles
+            .insert("pile/Village".parse().unwrap(), PileState::default());
+        for (seq, json) in [
+            r#"{"type":"holding","card":"Flag","to":0}"#,
+            r#"{"type":"holding","card":"Flag","from":0,"to":1}"#,
+            r#"{"type":"holding","card":"Deluded","to":1}"#,
+            r#"{"type":"holding","card":"Deluded","to":0}"#,
+            r#"{"type":"token","player":0,"token":"plus-card","at":"pile/Village"}"#,
+            r#"{"type":"token","player":0,"token":"journey","at":"face-down"}"#,
+            r#"{"type":"token","player":0,"token":"journey"}"#,
+            r#"{"type":"derived","costs":{"Village":{"coins":2}},"types":{"Copper":["Treasure","Action"]}}"#,
+            r#"{"type":"derived","types":{"Copper":null}}"#,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.apply(&event(seq as u64, json)).unwrap();
+        }
+        assert_eq!(t.holdings["Flag"], [1]);
+        assert_eq!(t.holdings["Deluded"], [0, 1]);
+        assert_eq!(t.tokens.len(), 1);
+        assert_eq!(
+            t.tokens[0].at,
+            TokenAt::Pile("pile/Village".parse().unwrap())
+        );
+        assert_eq!(t.costs["Village"].coins, 2);
+        assert!(t.types.is_empty());
+        for (json, why) in [
+            (
+                r#"{"type":"holding","card":"Flag","from":0}"#,
+                "0 doesn't hold Flag",
+            ),
+            (
+                r#"{"type":"holding","card":"Deluded","to":0}"#,
+                "already holds",
+            ),
+            (
+                r#"{"type":"token","player":1,"token":"plus-buy","at":"pile/Smithy"}"#,
+                "no pile pile/Smithy",
+            ),
+        ] {
+            let err = t.clone().apply(&event(9, json)).unwrap_err();
+            assert!(err.why.contains(why), "{}", err.why);
+        }
     }
 }
