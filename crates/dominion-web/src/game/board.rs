@@ -361,6 +361,8 @@ pub struct Note {
 pub struct Uncertain {
     pub count: u32,
     pub candidates: Vec<Stack>,
+    /// Further candidates the viewer can't name.
+    pub unknown: u32,
     /// Where they are, in words.
     pub text: String,
 }
@@ -720,6 +722,7 @@ fn player_entry(
                 Uncertain {
                     count: u.count,
                     candidates: stacks(&u.candidates, cards),
+                    unknown: u.unknown,
                     text: format!(
                         "{} {} in {}",
                         u.count,
@@ -1040,6 +1043,7 @@ pub fn board(
                 Uncertain {
                     count: u.count,
                     candidates: stacks(&u.candidates, cards),
+                    unknown: u.unknown,
                     text: zones.join(", "),
                 }
             })

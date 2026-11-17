@@ -942,6 +942,7 @@ impl Reducer {
                             .collect::<Result<_>>()?,
                         count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
                         candidates: self.named_counts(&u.candidates)?,
+                        unknown: u.unknown as u32,
                     })
                 })
                 .collect::<Result<_>>()?,
@@ -1255,6 +1256,7 @@ impl Reducer {
                         count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
                         candidates: self.named_counts(&u.candidates)?,
                         outside: u.outside as u32,
+                        unknown: u.unknown as u32,
                     })
                 })
                 .collect::<Result<_>>()?,

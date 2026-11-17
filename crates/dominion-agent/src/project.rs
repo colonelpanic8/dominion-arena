@@ -334,6 +334,7 @@ fn view_of(game: &Game, known: &KnownCards, seat: Option<PlayerId>, cx: &Context
                 .collect(),
             count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
             candidates: count(&u.candidates),
+            unknown: u.unknown as u32,
         });
     }
     AgentView {
@@ -482,6 +483,7 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
             count: u.zones.iter().map(|(_, n)| *n as u32).sum(),
             candidates: count(&u.candidates),
             outside: u.outside as u32,
+            unknown: u.unknown as u32,
         })
         .collect();
     let mut counters = BTreeMap::new();

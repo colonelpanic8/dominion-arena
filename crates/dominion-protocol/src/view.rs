@@ -134,6 +134,9 @@ pub struct Uncertain {
     pub count: u32,
     pub candidates: CardCount,
     pub outside: u32,
+    /// Further candidates the viewer can't name.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub unknown: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -142,6 +145,8 @@ pub struct SharedUncertain {
     pub zones: Vec<ZoneRef>,
     pub count: u32,
     pub candidates: CardCount,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub unknown: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

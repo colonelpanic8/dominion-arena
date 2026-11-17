@@ -595,6 +595,14 @@ fn cards(count: &CardCount) -> String {
         .join(", ")
 }
 
+/// An uncertain group's candidates, with those the viewer can't name.
+fn candidates(known: &CardCount, unknown: u32) -> String {
+    match unknown {
+        0 => cards(known),
+        n => format!("{}, {n} unknown", cards(known)),
+    }
+}
+
 fn zone(count: u32, known: &CardCount, unknown: u32) -> String {
     let mut parts = vec![];
     if !known.is_empty() {
@@ -651,7 +659,7 @@ fn player(out: &mut Vec<String>, label: &str, p: &PlayerView) {
             "  {} hold {} of: {}{outside}",
             u.zones.join("+"),
             u.count,
-            cards(&u.candidates)
+            candidates(&u.candidates, u.unknown)
         ));
     }
     if !p.unlocated.is_empty() {
@@ -931,7 +939,7 @@ pub fn render(v: &AgentView) -> String {
             "UNCERTAIN {} hold {} of: {}",
             zones.join("+"),
             u.count,
-            cards(&u.candidates)
+            candidates(&u.candidates, u.unknown)
         ));
     }
     for (label, deck) in [("BOONS", &v.boons), ("HEXES", &v.hexes)] {
