@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 const INSTRUCTIONS: &str = "You play one assigned seat of Dominion. Play to win using only the dominion MCP tools. Follow dominion/play@1: read your observation, then call step with decision and indices (ordered: top first) or name only when nameAny is true. Give expect with each chosen option's label or card, in index order. step answers and waits for your next decision. When there is no decision for you (WAITING), call wait and continue. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. Finish only at GAME OVER. The initial observation includes the full view and official card reference; use cards with names for more text/current costs or log to reread log entries by seq. state shows the whole game again when needed. Do not refresh after a tool already returned the current view. play_treasures plays every Treasure offered in one call. Keep playing this seat for the entire game in this conversation. Never print a JSON action in place of calling a tool. The server supplies your secret seat credentials and binds the bridge to this seat; do not override them or create another game. When a tool rejects a request, correct it using the returned error and open decision.";
 const NO_PLAYBOOK: &str =
     "Do not inspect files, run commands, delegate, resign, or ask a person for help.";
-const PLAYBOOK: &str = "Your working directory is the Dominion playbook, read-only. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board with its command, run its kingdom analysis, and write the plan out in your reply; then play by its skills. Read its files and run its lookup commands as it says, and run nothing else. Do not delegate, resign, or ask a person for help.";
+const PLAYBOOK: &str = "Your working directory is the Dominion playbook, read-only. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board with its command, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves. Read its files and run its lookup commands as it says, and run nothing else. Do not delegate, resign, or ask a person for help.";
 
 /// What a native seat runs with beyond its profile: the playbook it starts in, the tools
 /// on its PATH and the hosts it may reach.
@@ -80,6 +80,13 @@ pub async fn play(
     }
     .await;
     record_final_result(&client, archive, job).await?;
+    let result = match result {
+        Ok(answer) => {
+            debrief(&client, archive, job, answer).await;
+            Ok(())
+        }
+        Err(e) => Err(e),
+    };
     archive.record("seat_finished", json!({"result":result}))?;
     client.close().await;
     archive.finish_publish().await;
@@ -93,7 +100,7 @@ async fn play_inner(
     job: &Job,
     server: &str,
     archive: &mut Archive,
-) -> Result<(), String> {
+) -> Result<Result<String, String>, String> {
     let view = call(
         client,
         archive,
@@ -117,11 +124,79 @@ async fn play_inner(
     )?;
     let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
     if game_state(state)["game"]["running"] == false {
-        return Ok(());
+        return Ok(Err(JOINED_OVER.into()));
     }
-    let message = format!("Initial view and card reference:\n{}", view.text);
-    harness.reply(spec, &message, archive).await?;
-    session_end(client, archive, job).await
+    let message = format!(
+        "{}Initial view and card reference:\n{}",
+        opening(job, true),
+        view.text
+    );
+    let answer = harness.reply(spec, &message, archive).await?;
+    session_end(client, archive, job).await?;
+    Ok(Ok(answer))
+}
+
+/// Why a seat has no debrief when it joined a game already over.
+pub const JOINED_OVER: &str = "the seat's agent started after the game was over";
+
+/// What a seat's first message starts with: its brief, and the debrief it will owe.
+/// `final_reply`: the debrief is the agent's last reply, not an answer to a later message.
+pub fn opening(job: &Job, final_reply: bool) -> String {
+    let mut text = String::new();
+    if let Some(brief) = &job.brief {
+        text.push_str(&format!(
+            "BRIEF from the game's creator. It comes before your own planning: where it sets a plan, play that plan, and keep where you would have played differently for your debrief.\n{}\n\n",
+            brief.trim()
+        ));
+    }
+    if let Some(question) = &job.debrief {
+        let when = if final_reply {
+            "Once the game is over, your final reply is your debrief for the game's creator, in prose, answering"
+        } else {
+            "Once the game is over you will be asked for a debrief for the game's creator, answering"
+        };
+        text.push_str(&format!("DEBRIEF. {when}:\n{}\n\n", question.trim()));
+    }
+    text
+}
+
+/// The question a seat that plays reply by reply is asked once the game is over.
+pub fn debrief_request(job: &Job) -> Option<String> {
+    job.debrief.as_ref().map(|question| {
+        format!(
+            "The game is over. Reply now in prose (no tool call, no JSON) with your debrief for the game's creator, answering:\n{}",
+            question.trim()
+        )
+    })
+}
+
+/// Records the seat's debrief, or why it has none, if its game asked for one: a server
+/// agent's job lasts until it has.
+pub async fn debrief(
+    client: &Client,
+    archive: &mut Archive,
+    job: &Job,
+    answer: Result<String, String>,
+) {
+    if job.official || job.debrief.is_none() {
+        return;
+    }
+    let text = match answer {
+        Ok(text) if !text.trim().is_empty() => text,
+        Ok(_) => "No debrief: the agent's last reply was empty.".into(),
+        Err(why) => format!("No debrief: {why}."),
+    };
+    let sent = call(
+        client,
+        archive,
+        "dominion",
+        "debrief",
+        json!({"token": job.token, "text": text}),
+    )
+    .await;
+    if let Err(e) = sent.and_then(|r| if r.ok { Ok(()) } else { Err(r.text) }) {
+        let _ = archive.record("debrief_unsent", json!({"error": e}));
+    }
 }
 
 /// Whether the game is over once the CLI has finished: shown by a reply during play, else
@@ -217,7 +292,7 @@ pub fn endpoint(server: &str, job: &Job) -> Result<String, String> {
         Some(id) => Err(format!("invalid official account id {id:?}")),
     }
 }
-fn game_state(value: &serde_json::Value) -> &serde_json::Value {
+pub(crate) fn game_state(value: &serde_json::Value) -> &serde_json::Value {
     value.get("view").unwrap_or(value)
 }
 
@@ -284,6 +359,8 @@ mod tests {
             transcript: false,
             configuration: None,
             agent: "a".into(),
+            brief: None,
+            debrief: None,
             game_id: "dominion.games:1".into(),
             seat: 0,
             name: "a".into(),

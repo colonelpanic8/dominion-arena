@@ -1,6 +1,7 @@
 //! The MCP tools: one `Session` per MCP session, sharing the `Hub`.
 
 pub(crate) mod play;
+mod report;
 use play::{Play, PlaySeat, failure, structured};
 
 use crate::arena::{Arena, Ident};
@@ -180,6 +181,28 @@ pub struct StepsParams {
     /// `villagers N`, `end` (the phase), `next` (end the turn), `pick A, B` or `pick none`
     /// (answer any question by card name, option text or option number), `name CARD`.
     pub steps: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DebriefParams {
+    /// Your seat token (optional in an MCP session that has joined a seat).
+    pub token: Option<String>,
+    /// Your debrief: what you would tell the game's creator about how it went.
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReportParams {
+    /// The game's id.
+    pub game: String,
+    /// Wait up to this many seconds (at most 600) for the game to be over and its server
+    /// agents' debriefs to be in; the report says whether they are (`settled`).
+    pub wait_s: Option<u64>,
+    /// Also give each turn's log entries.
+    #[serde(default)]
+    pub detail: bool,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -628,7 +651,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents; agent games are watchable by default. Returns the game id and secret tokens only for seats without agents."
+        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents; agent games are watchable by default. `briefs` gives each seat's player text to read before the game (null for none): a plan to play, notes from earlier games; a server agent gets it with its first view, a token seat on joining. `debrief` is a question every server agent answers once the game is over, before it leaves; game_report collects the answers. Returns the game id and secret tokens only for seats without agents."
     )]
     async fn create_game(
         &self,
@@ -677,11 +700,23 @@ impl Session {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner) = Some(connection);
                 *self.joined() = Some(seat.clone());
-                if common {
+                let mut result = if common {
                     self.play_result(&seat, true)
                 } else {
                     self.view_with_cards(&seat, Format::Text, true)
+                };
+                if let Some(brief) = self.hub.brief(&seat) {
+                    if let Some(ContentBlock::Text(content)) = result.content.first_mut() {
+                        content.text = format!(
+                            "BRIEF (from the game's creator: read it before your first decision)\n{brief}\n\n{}",
+                            content.text
+                        );
+                    }
+                    if common && let Some(value) = &mut result.structured_content {
+                        value["brief"] = serde_json::json!(brief);
+                    }
                 }
+                result
             }
             Err(e) => failure(format!("NOT_SEATED: {e}; check game and token")),
         })
@@ -1109,6 +1144,76 @@ impl Session {
         })
     }
 
+    #[tool(
+        description = "Once your game is over: record your debrief for the game's creator (answering its debrief question, if it set one), in place of any you gave before. game_report shows it."
+    )]
+    async fn debrief(
+        &self,
+        Parameters(p): Parameters<DebriefParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let seat = match self.seat(p.token.as_deref()) {
+            Ok(seat) => seat,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        if let Err(e) = self.hub.submit_debrief(&seat, &p.text) {
+            return Ok(failure(e.to_string()));
+        }
+        // A server agent's job ends with its debrief.
+        self.arena.dispatch();
+        Ok(structured(
+            serde_json::json!({"game": seat.game, "seat": seat.seat.0}),
+            format!(
+                "Debrief recorded for seat {} of game {}.",
+                seat.seat.0, seat.game
+            ),
+        ))
+    }
+
+    #[tool(
+        description = "A game as a record, for running and comparing games: its setup (kingdom, landscapes, seed: pass them to create_game to deal the same kingdom and starting cards again; swap the agents and briefs to swap the seats), its seats with their accounts and results, a summary line per turn (detail adds the log entries) and, once it is over, every player's final deck, the briefs, the debrief question and each seat's debrief. wait_s waits for the game to end and the server agents' debriefs to arrive (settled). For a watchable game, one you created, or one you play."
+    )]
+    async fn game_report(
+        &self,
+        Parameters(p): Parameters<ReportParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let meta = match self.hub.meta(&p.game) {
+            Ok(meta) => meta,
+            Err(e) => return Ok(failure(e.to_string())),
+        };
+        let user = self.ident().ok().map(|i| i.user);
+        let mine = user.as_deref().is_some_and(|u| {
+            meta.host.as_deref() == Some(u) || meta.owners.iter().any(|o| o.as_deref() == Some(u))
+        });
+        let seated = self.joined().as_ref().is_some_and(|s| s.game == p.game);
+        if !(meta.watchable || mine || seated) {
+            return Ok(failure(format!(
+                "game {} isn't watchable, and you neither created nor play it",
+                p.game
+            )));
+        }
+        let wait = Duration::from_secs(p.wait_s.unwrap_or(0)).min(MAX_WAIT);
+        let deadline = tokio::time::Instant::now() + wait;
+        let report = loop {
+            let version = match self.hub.version(&p.game) {
+                Ok(version) => version,
+                Err(e) => return Ok(failure(e.to_string())),
+            };
+            let report = match self.hub.report(&p.game) {
+                Ok(report) => report,
+                Err(e) => return Ok(failure(e.to_string())),
+            };
+            let now = tokio::time::Instant::now();
+            if report.settled || now >= deadline {
+                break report;
+            }
+            // Debriefs stop being waited for at a deadline no change marks: look again.
+            let next = (deadline - now).min(Duration::from_secs(10));
+            self.hub.changed_or(&p.game, version, next).await;
+        };
+        let (value, text) = report::render(&report, p.detail);
+        Ok(structured(value, text))
+    }
+
     #[tool(description = "The games on this server (no tokens).")]
     async fn list_games(
         &self,
@@ -1142,7 +1247,7 @@ impl Session {
 
 #[tool_handler(
     name = "dominion",
-    instructions = "Play Dominion through dominion/play@1 (agent-view@2). Call state to orient. Arena hosts secret token seats: new_game joins seat 0 and returns tokens for all seats; bots defaults to 0 because there are no automatic bot opponents. Share the other tokens with their players. To join an existing seat, call join_game with game and token (legacy game_id returns the original raw view), or pass token to state/step/wait. Keep your token: a binding lasts only for this MCP session. Loop: read the returned view, step with its decision, indices (ordered: top first) or name when nameAny; give expect with each chosen label/card. step waits for your next decision and returns compact changes plus structured {view, glossary?}. When decision is null call wait; finish when view.game.running is false. state refreshes the full view; cards looks up official text/current costs; log rereads entries by seq. Forced decisions are answered by the engine. Legacy view/answer/wait_for_decision/card/create_game remain available with their original wire formats; answer supports way and play_treasures batches Treasures. For lobby play: sign_in (bot API key, connection bearer token, or guest), then find_match or list_tables/join_table. Those bind your seat when a game starts. House agents require explicit profiles via create_game and registered-account authorization. resign gives up your seat."
+    instructions = "Play Dominion through dominion/play@1 (agent-view@2). Call state to orient. Arena hosts secret token seats: new_game joins seat 0 and returns tokens for all seats; bots defaults to 0 because there are no automatic bot opponents. Share the other tokens with their players. To join an existing seat, call join_game with game and token (legacy game_id returns the original raw view), or pass token to state/step/wait. Keep your token: a binding lasts only for this MCP session. Loop: read the returned view, step with its decision, indices (ordered: top first) or name when nameAny; give expect with each chosen label/card. step waits for your next decision and returns compact changes plus structured {view, glossary?}. When decision is null call wait; finish when view.game.running is false. state refreshes the full view; cards looks up official text/current costs; log rereads entries by seq. Forced decisions are answered by the engine. Legacy view/answer/wait_for_decision/card/create_game remain available with their original wire formats; answer supports way and play_treasures batches Treasures. For lobby play: sign_in (bot API key, connection bearer token, or guest), then find_match or list_tables/join_table. Those bind your seat when a game starts. House agents require explicit profiles via create_game and registered-account authorization; its briefs and debrief give them plans and collect what they learned, and game_report gives any game you may see as a record. resign gives up your seat."
 )]
 impl ServerHandler for Session {
     async fn call_tool(

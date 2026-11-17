@@ -47,6 +47,15 @@ pub struct NewGame {
     /// Black Market deck (top first), Druid's Boons, ...
     #[serde(default)]
     pub setup: std::collections::BTreeMap<String, Vec<String>>,
+    /// Per seat: what its player is told before the game (a plan to play, notes from
+    /// earlier games), or null. When supplied, one entry per player. A server agent gets
+    /// its brief with its first view, a token seat when it joins; nobody else sees a
+    /// brief before the game is over.
+    #[serde(default)]
+    pub briefs: Vec<Option<String>>,
+    /// A question each server agent answers once the game is over (its debrief), before
+    /// it leaves the game. Token seats may answer it with the `debrief` tool.
+    pub debrief: Option<String>,
 }
 
 /// `POST /api/deal`: a kingdom dealt by a table's rules without creating a game. Giving

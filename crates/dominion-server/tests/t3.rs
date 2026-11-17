@@ -67,7 +67,9 @@ impl FakeT3 {
                 thread.runs += 1;
                 let run = format!("run-{}", thread.runs);
                 let decision = &thread.view["decision"];
-                let response = if self.unsupported {
+                let response = if message.starts_with("The game is over. Reply now in prose") {
+                    json!(format!("Debrief of {id}: the brief's plan held up."))
+                } else if self.unsupported {
                     json!({"tool":"resign"})
                 } else if !thread.lookup {
                     thread.lookup = true;
@@ -90,7 +92,12 @@ impl FakeT3 {
                             "Choose a legal move".into()
                         },
                     ),
-                    ("assistant_message", response.to_string()),
+                    (
+                        "assistant_message",
+                        response
+                            .as_str()
+                            .map_or_else(|| response.to_string(), String::from),
+                    ),
                 ] {
                     let position = thread.items.len();
                     thread.items.push(json!({"position":position,"itemId":format!("item-{position}"),
@@ -634,4 +641,166 @@ async fn login_uses_oauth_pkce_and_returns_the_token_without_a_credential_file()
     .unwrap();
     assert_eq!(token, "authorized-test-token");
     task.abort();
+}
+
+#[tokio::test]
+async fn briefed_agents_debrief_before_they_leave_and_the_report_collects_it() {
+    let fake = FakeT3::default();
+    let calls = fake.calls.clone();
+    let mut h = setup(fake).await;
+    let socket = h._dir.path().join("agents.sock");
+    h.config.agent_socket = Some(socket.clone());
+    let (arena, server_stop) = (h.arena.clone(), h.stop.clone());
+    let listener =
+        tokio::spawn(
+            async move { dominion_server::house::listen(arena, &socket, server_stop).await },
+        );
+    let (mut changes, _) = h.arena.subscribe();
+    let runner_stop = CancellationToken::new();
+    let runner = tokio::spawn(dominion_server::runner::run_until(
+        h.config.runner().unwrap(),
+        runner_stop.clone(),
+    ));
+    tokio::time::timeout(std::time::Duration::from_secs(10), changes.changed())
+        .await
+        .unwrap()
+        .unwrap();
+    let client = Client::connect_authenticated(&h.config.server(), Some(h.token.clone()))
+        .await
+        .unwrap();
+    let mut game = request();
+    game.briefs = vec![Some("Play Villages.".into()), None];
+    game.debrief = Some("What decided the game?".into());
+    let created = client
+        .call("create_game", serde_json::to_value(&game).unwrap())
+        .await
+        .unwrap();
+    assert!(created.ok, "{}", created.text);
+    let id = created.json.unwrap()["game_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let report = client
+        .call("game_report", json!({"game": id, "wait_s": 30}))
+        .await
+        .unwrap();
+    assert!(report.ok, "{}", report.text);
+    let value = report.json.unwrap();
+    assert_eq!(value["settled"], true, "{}", report.text);
+    assert_eq!(value["seats"][0]["brief"], "Play Villages.");
+    assert_eq!(value["seats"][1]["brief"], Value::Null);
+    assert_eq!(value["debrief_question"], "What decided the game?");
+    for seat in 0..2 {
+        let debrief = value["seats"][seat]["debrief"].as_str().unwrap();
+        assert!(debrief.contains("the brief's plan held up"), "{debrief}");
+    }
+    assert!(value["seats"][0]["deck"]["Copper"].as_u64().unwrap() >= 7);
+    assert!(!value["turns"].as_array().unwrap().is_empty());
+    assert!(report.text.contains("DEBRIEF seat 1 (Test (2))"));
+    // Each agent read its own brief and nobody else's.
+    let launches: Vec<String> = (calls.lock().unwrap().iter())
+        .filter(|(tool, _)| tool == "t3_thread_launch")
+        .map(|(_, args)| args["message"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(launches.len(), 2);
+    let briefed: Vec<&String> = (launches.iter())
+        .filter(|m| m.contains("Play Villages."))
+        .collect();
+    assert_eq!(briefed.len(), 1);
+    assert!(briefed[0].contains("You are Test (1) (seat 0)"));
+    assert!(
+        launches
+            .iter()
+            .all(|m| m.contains("What decided the game?"))
+    );
+    // Their jobs ended with their debriefs.
+    h.arena.sweep();
+    assert!(dispatched(&mut h.jobs).is_empty());
+    client.close().await;
+    runner_stop.cancel();
+    tokio::time::timeout(std::time::Duration::from_secs(10), runner)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    listener.abort();
+}
+
+#[tokio::test]
+async fn a_token_seat_reads_its_brief_on_joining_and_debriefs_once_the_game_is_over() {
+    let h = setup(FakeT3::default()).await;
+    let client = Client::connect_authenticated(&h.config.server(), Some(h.token.clone()))
+        .await
+        .unwrap();
+    let game = NewGame {
+        agents: vec![],
+        briefs: vec![Some("Open Silver/Silver.".into()), None],
+        debrief: Some("What decided it?".into()),
+        watchable: Some(false),
+        ..request()
+    };
+    let created = client
+        .call("create_game", serde_json::to_value(&game).unwrap())
+        .await
+        .unwrap();
+    assert!(created.ok, "{}", created.text);
+    let created = created.json.unwrap();
+    let id = created["game_id"].as_str().unwrap().to_string();
+    let token = |s: usize| created["seats"][s]["token"].as_str().unwrap().to_string();
+
+    let player = Client::connect(&h.config.server()).await.unwrap();
+    let joined = player
+        .call("join_game", json!({"game": id, "token": token(0)}))
+        .await
+        .unwrap();
+    assert!(joined.text.starts_with("BRIEF"), "{}", joined.text);
+    assert_eq!(joined.json.unwrap()["brief"], "Open Silver/Silver.");
+    let other = player
+        .call("join_game", json!({"game": id, "token": token(1)}))
+        .await
+        .unwrap();
+    assert!(!other.text.contains("BRIEF"));
+    let early = player
+        .call("debrief", json!({"token": token(0), "text": "x"}))
+        .await
+        .unwrap();
+    assert!(!early.ok);
+    // The game isn't watchable: only its creator and players may read its report.
+    let stranger = Client::connect(&h.config.server()).await.unwrap();
+    let refused = stranger
+        .call("game_report", json!({"game": id}))
+        .await
+        .unwrap();
+    assert!(!refused.ok);
+    let running = client
+        .call("game_report", json!({"game": id}))
+        .await
+        .unwrap();
+    assert!(running.ok, "{}", running.text);
+    assert!(!running.text.contains("Open Silver/Silver."));
+
+    let resigned = player
+        .call("resign", json!({"token": token(1)}))
+        .await
+        .unwrap();
+    assert!(resigned.ok, "{}", resigned.text);
+    let given = player
+        .call(
+            "debrief",
+            json!({"token": token(0), "text": "They resigned."}),
+        )
+        .await
+        .unwrap();
+    assert!(given.ok, "{}", given.text);
+    let report = client
+        .call("game_report", json!({"game": id}))
+        .await
+        .unwrap();
+    let value = report.json.unwrap();
+    assert_eq!(value["settled"], true);
+    assert_eq!(value["seats"][0]["debrief"], "They resigned.");
+    assert_eq!(value["seats"][0]["brief"], "Open Silver/Silver.");
+    for c in [client, player, stranger] {
+        c.close().await;
+    }
 }

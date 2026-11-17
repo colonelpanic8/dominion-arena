@@ -275,8 +275,9 @@ impl Conversation<'_> {
                 "modelSelection": self.selection,
                 "runtimeMode": "full-access", "interactionMode": "default",
                 "workspaceStrategy": {"type": "root"},
-                "message": format!("{INSTRUCTIONS}\n\n{}\n\nYou are {} (seat {}) in game {}.\n\n{message}",
-                    spec.instructions.as_deref().unwrap_or(""), job.name, job.seat, job.game_id),
+                "message": format!("{INSTRUCTIONS}\n\n{}\n\nYou are {} (seat {}) in game {}.\n\n{}{message}",
+                    spec.instructions.as_deref().unwrap_or(""), job.name, job.seat, job.game_id,
+                    crate::harness::opening(job, false)),
                 "clientRequestId": format!("dominion-{:016x}", rand::random::<u64>())
             })).await?;
             let id = started["threadId"]
@@ -444,6 +445,22 @@ pub async fn play(
         _ = stop.cancelled() => Err("seat runner cancelled".into()),
         result = play_inner(&mut chat, &dominion, spec, job, archive) => result,
     };
+    let result = match result {
+        Ok(played) => {
+            let answer = match (played, crate::harness::debrief_request(job)) {
+                (false, _) => Err(crate::harness::JOINED_OVER.to_string()),
+                (true, None) => Ok(String::new()),
+                (true, Some(request)) => tokio::select! {
+                    biased;
+                    _ = stop.cancelled() => Err("the seat runner stopped".into()),
+                    reply = chat.reply(spec, job, request, archive) => reply,
+                },
+            };
+            crate::harness::debrief(&dominion, archive, job, answer).await;
+            Ok(())
+        }
+        Err(e) => Err(e),
+    };
     let cleanup = chat.stop(archive).await;
     let final_view = if archive.has_result() {
         Ok(())
@@ -472,7 +489,7 @@ async fn play_inner(
     spec: &AgentSpec,
     job: &Job,
     archive: &mut Archive,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let mut view = call(
         dominion,
         archive,
@@ -488,7 +505,7 @@ async fn play_inner(
     loop {
         let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
         if state["game"]["running"] == false {
-            return Ok(());
+            return Ok(chat.thread.is_some());
         }
         if state["decision"].is_null() {
             view = call(

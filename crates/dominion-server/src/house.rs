@@ -71,6 +71,12 @@ pub struct Job {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<dominion_engine::GameConfig>,
     pub agent: String,
+    /// What the game's creator tells this seat's player before the game.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<String>,
+    /// The question the agent answers once the game is over; its job lasts until it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debrief: Option<String>,
     pub game_id: String,
     pub seat: u8,
     /// The seat's name in the game.

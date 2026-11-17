@@ -176,7 +176,18 @@ impl Arena {
         }
         let count = req.agents.iter().filter(|a| a.is_some()).count();
         if count == 0 {
-            return Ok(self.hub.create(req)?);
+            let mut req = req.clone();
+            req.agents.clear();
+            let config = crate::hub::config(&req)?;
+            let names = crate::hub::names(&req)?;
+            let mut meta = crate::hub::Meta {
+                watchable: req.watchable.unwrap_or(false),
+                clock: req.clock.map(crate::hub::ClockState::new),
+                host: who.map(|w| w.user.clone()),
+                ..Default::default()
+            };
+            crate::hub::brief(&req, &mut meta)?;
+            return Ok(self.hub.host(config, names, meta)?);
         }
         let who =
             who.ok_or_else(|| Error::Unauthorized("sign in to seat the server's agents".into()))?;
@@ -227,7 +238,8 @@ impl Arena {
             .iter()
             .map(|a| a.as_ref().map(|a| a.user.clone()))
             .collect();
-        let meta = crate::hub::Meta {
+        let mut meta = crate::hub::Meta {
+            host: Some(who.user.clone()),
             owners: owners.clone(),
             watchable: req.watchable.unwrap_or(true),
             timed: true,
@@ -236,6 +248,7 @@ impl Arena {
             agents: agents.iter().map(Option::is_some).collect(),
             ..Default::default()
         };
+        crate::hub::brief(&req, &mut meta)?;
         let reservation = self.reserve(&who.user, count as u32)?;
         let mut created = self.hub.host(config, names, meta)?;
         // Agent credentials go only to the runner; the creator gets token seats.
@@ -246,23 +259,32 @@ impl Arena {
         Ok(created)
     }
 
-    /// The jobs: every seat the runner's agents hold in a running game.
+    /// The jobs: every seat the runner's agents hold in a running game, or in a finished
+    /// one whose debrief they still owe.
     fn jobs(&self, agents: &[Agent], official: &BTreeMap<String, Job>) -> Vec<Job> {
         let mut jobs: Vec<Job> = (agents.iter())
             .flat_map(|agent| {
-                (self.hub.seats_of(&agent.user, Duration::ZERO).into_iter())
-                    .filter(|g| g.running)
-                    .map(|g| Job {
+                (self
+                    .hub
+                    .seats_of(&agent.user, crate::hub::DEBRIEF_WAIT)
+                    .into_iter())
+                .filter(|g| g.running || self.hub.debrief_pending(&g.game_id, g.seat))
+                .map(|g| {
+                    let meta = self.hub.meta(&g.game_id).unwrap_or_default();
+                    Job {
                         official: false,
                         official_account: None,
-                        transcript: self.hub.meta(&g.game_id).is_ok_and(|m| !m.rated),
+                        transcript: !meta.rated,
                         configuration: self.hub.configuration(&g.game_id),
                         agent: agent.name.clone(),
+                        brief: meta.briefs.get(usize::from(g.seat)).cloned().flatten(),
+                        debrief: meta.debrief,
                         game_id: g.game_id,
                         seat: g.seat,
                         name: g.name,
                         token: g.token,
-                    })
+                    }
+                })
             })
             .collect();
         jobs.extend(official.values().cloned());
@@ -271,7 +293,7 @@ impl Arena {
     }
 
     /// Tells the runner its jobs, if they changed since it was told last.
-    pub(super) fn dispatch(&self) {
+    pub(crate) fn dispatch(&self) {
         let mut state = lock(&self.state);
         let official = state.house.official.clone();
         let Some(runner) = &mut state.house.runner else {
