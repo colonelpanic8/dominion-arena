@@ -666,7 +666,5 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-composition-tile { width: calc(13 * var(--vh)); display: grid; justify-items: center; gap: calc(0.6 * var(--vh)); }
 .dt-composition-tile > .dt-c { width: 100%; }
 .dt-composition-name { font-size: calc(1.7 * var(--vh)); font-weight: 650; }
-.dt-composition-group { display: flex; flex-direction: column; gap: calc(0.8 * var(--vh)); }
-.dt-composition-group-label { font-size: calc(1.7 * var(--vh)); color: rgba(245, 241, 232, 0.8); }
 .dt-composition-empty, .dt-composition-note { margin: 0; color: rgba(245, 241, 232, 0.72); font-size: calc(1.7 * var(--vh)); }
 .dt-composition-note + .dt-composition-note { margin-top: calc(0.6 * var(--vh)); }

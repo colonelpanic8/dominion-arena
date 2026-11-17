@@ -9,7 +9,7 @@ use super::supply::{Badges, Tab};
 use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::{Badge, Board, PlayerEntry, Section, Stack, Zone};
+use crate::game::board::{Badge, Board, PlayerEntry, Stack, Zone};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -377,6 +377,20 @@ fn EmptyPile(at: Rect, anchor: String, opens: Popup, class: &'static str) -> Ele
     }
 }
 
+/// A zone's cards as a grid, or that it is empty.
+#[component]
+fn ZoneCards(zone: Zone) -> Element {
+    rsx! {
+        div { class: "dt-composition-grid",
+            if zone.count == 0 {
+                p { class: "dt-composition-empty", "Empty." }
+            } else {
+                CompositionCards { zone }
+            }
+        }
+    }
+}
+
 /// The cards of a zone as tiles, most copies first, and its unknown cards as one back.
 #[component]
 fn CompositionCards(zone: Zone) -> Element {
@@ -401,33 +415,8 @@ fn CompositionCards(zone: Zone) -> Element {
     }
 }
 
-/// A breakdown section's cards: its one zone, or each of its zones under its own label.
-#[component]
-fn SectionCards(section: Section) -> Element {
-    rsx! {
-        div { class: "dt-composition-grid",
-            if section.count == 0 {
-                p { class: "dt-composition-empty", "Empty." }
-            } else if let [g] = &section.groups[..]
-                && g.label == section.label
-            {
-                CompositionCards { zone: g.zone.clone() }
-            } else {
-                for g in section.groups.iter() {
-                    div { key: "{g.key}", class: "dt-composition-group", "data-zone": "{g.key}",
-                        div { class: "dt-composition-group-label", "{g.label} ({g.zone.count})" }
-                        div { class: "dt-composition-grid",
-                            CompositionCards { zone: g.zone.clone() }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Everything the player owns, then the draw pile, discard pile and the rest one at a
-/// time: hovering, focusing or clicking a tab shows its part.
+/// Everything the player owns, then each part of it one at a time: hovering, focusing
+/// or clicking a tab shows that part.
 #[component]
 pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
     let ctx = use_table();
@@ -462,8 +451,8 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
             div { class: "dt-composition-body",
                 if let Some(whole) = whole {
                     section { class: "dt-composition-section", "data-zone": "{whole.key}",
-                        h3 { "{whole.label} ({whole.count})" }
-                        SectionCards { section: whole.clone() }
+                        h3 { "{whole.label} ({whole.zone.count})" }
+                        ZoneCards { zone: whole.zone.clone() }
                     }
                 }
                 if let Some(shown) = shown {
@@ -483,14 +472,14 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
                                             onmouseenter: move |_| open.set(k1.clone()),
                                             onfocus: move |_| open.set(k2.clone()),
                                             onclick: move |_| open.set(key.clone()),
-                                            "{s.label} ({s.count})"
+                                            "{s.label} ({s.zone.count})"
                                         }
                                     }
                                 }
                             }
                         }
                         div { class: "dt-composition-panel", role: "tabpanel", "data-zone": "{shown.key}",
-                            SectionCards { section: shown.clone() }
+                            ZoneCards { zone: shown.zone.clone() }
                         }
                     }
                 }
