@@ -102,6 +102,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           `mcp.rs` its MCP session
 crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
                           only on dominion-protocol (engine crates are dev-dependencies)
+  build.rs                the commit and its time that the Account tab's About box shows:
+                          from git, or from the flake (its source has no .git)
   src/api.rs              typed client for /api and the SSE change feed
   src/session.rs          seat tokens held in localStorage
   src/cards.rs            /api/cards data by name (provided as `app::Cards` context)

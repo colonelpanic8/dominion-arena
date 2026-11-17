@@ -88,6 +88,9 @@
           cp -r target/dx/dominion-web/release/web/public $out
           runHook postInstall
         '';
+        # The commit the About box shows: the source has no .git.
+        DOMINION_COMMIT = self.rev or self.dirtyRev or "";
+        DOMINION_COMMIT_TIME = self.lastModifiedDate or "";
         doCheck = false;
       };
       # `dominion` serving the packaged client when no web_dir is configured.
