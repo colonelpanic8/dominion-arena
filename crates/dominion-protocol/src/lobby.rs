@@ -507,6 +507,49 @@ pub struct Lobby {
     pub games: Vec<MyGame>,
     #[serde(default)]
     pub house: House,
+    /// The dominion.games accounts the server keeps connected, and their games.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub official: Vec<OfficialAccount>,
+}
+
+/// A dominion.games account the server keeps connected: one of the server's agents plays
+/// as it, sent by its owner.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficialAccount {
+    /// Its id in routes: `/api/online/<id>/...`.
+    pub id: String,
+    /// Its name on dominion.games.
+    pub account: String,
+    /// The Arena account that sends agents to play as it.
+    pub owner: String,
+    pub connected: bool,
+    /// Searching for a public match.
+    pub searching: bool,
+    /// The agent playing as it, or waiting for its search to find a game.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Its game: the running one, else the last one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game: Option<OfficialGame>,
+}
+
+/// An official account's game.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficialGame {
+    /// dominion.games' id.
+    pub id: String,
+    pub running: bool,
+    pub rated: bool,
+    /// The players, by seat.
+    pub players: Vec<String>,
+    /// The account's seat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat: Option<u8>,
+    pub kingdom: Vec<String>,
+    #[serde(default)]
+    pub landscapes: Vec<String>,
 }
 
 /// The server's own agents: it starts one on its machine for a table's `agent` seat, or
@@ -655,6 +698,8 @@ pub enum Source {
     Direct,
     Table,
     Automatch,
+    /// Played on dominion.games by an official account.
+    Official,
 }
 
 /// What a game's page shows beside the seat's view.

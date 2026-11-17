@@ -49,8 +49,12 @@ A `Game` can be cloned or serialized at any point, including mid-decision.
 backend supports an exclusive account playing server bots or public human
 matchmaking (rated or unrated).
 With `online_enabled` and `online_owner` configured, `dominion serve` shares the
-connection through `/mcp/online`, owner-only management and public live watching at
-`/online`. Select an agent, start/cancel searches, or pause/resume play there. Its
+connection through `/mcp/online` and the lobby. The owner manages it from the lobby's
+Automatch tab (select an agent, start/cancel searches, pause/resume play, resign) and
+sees its dominion.games rating on the Account tab; anyone can watch its running game
+from the Tables tab (`/online/<id>`), and each finished game is recorded in Arena's
+history for the agent that played it (else the owner), without changing anyone's
+rating or tallies here. Its
 account setup, cache, state, reconnect rules, and current limitations are in
 [the official-backend guide](crates/dominion-online/README.md). Arena's hosted
 engine and existing APIs remain available through `dominion serve`.
@@ -306,7 +310,7 @@ will) or 500.
 | `POST /api/me/bots` | `{name}` | 201, `{bot, key}`: a bot and its API key, shown this once |
 | `POST /api/me/bots/{name}/key` | | a new key for the bot; the old one stops working |
 | `DELETE /api/me/bots/{name}` | | 204 |
-| `GET /api/lobby` | | `{version, you, online, searching, tables, table, queue, games}`: the lobby as the asker sees it |
+| `GET /api/lobby` | | `{version, you, online, searching, tables, table, queue, games, house, official?}`: the lobby as the asker sees it; `official` lists the dominion.games accounts the server keeps connected and their games |
 | `GET /api/lobby/events` | | server-sent `change` events with `{version, chat}`; while it is open the account counts as connected |
 | `POST /api/tables` | `{spec?, seats?}` | 201, the new table, hosted by the asker |
 | `GET /api/tables/{id}` | | the table: `{id, host, spec, seats, game?, lastGame?}` |
@@ -374,7 +378,9 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   a day unplayed another) when it says so and every seat is a different registered
   account or bot; a bot against its owner, or two bots of one owner, play for nothing,
   and so does any game with a guest or a token seat. Every finished lobby game leaves a
-  record (`GET /api/history`), which stays when the game itself is deleted.
+  record (`GET /api/history`), which stays when the game itself is deleted, and so does
+  every finished game of an official account (`source: official`, id
+  `dominion.games-<id>`), which counts for no rating or tally here.
 - **dominion.games' scale.** `[[official_skill_anchors]]` names players also rated on
   dominion.games, each with its skill there (mu, not the level, which also folds in how
   sure it is): agents that play enough rated games on both. Once two or more anchors have
@@ -851,10 +857,13 @@ to it; when the game waits on a token seat nobody has joined, the table and the 
 page say so, with the line to give that seat's agent. The last rules you hosted are remembered in the browser for your next table.
 **Automatch** searches for a game (player counts; anyone, people or agents; rated or
 not) and goes to it when one is found; Bot Game is the same search for agents only, and
-says which of the server's own agents a 1 Bot game may get (any, or the one picked). It
-also has the lobby's chat, Create Table, and joining a seat by its token. **Tables**
-lists the lobby's tables (Join where a slot is empty) and the games played without one
-(Play where this browser holds a seat, Watch where watching is allowed); **Cardlists**
+says which of the server's own agents a 1 Bot game may get (any, or the one picked). For
+the owner of a dominion.games account the server keeps connected, it also sends one of
+the server's agents to play there as that account. It also has the lobby's chat, Create
+Table, and joining a seat by its token. **Tables** lists the lobby's tables (Join where
+a slot is empty), the games played without one (Play where this browser holds a seat,
+Watch where watching is allowed) and the official accounts' running dominion.games
+games (Watch); **Cardlists**
 edits your account's Banned cards list; **Leaderboard** ranks the rated players, each
 name leading to that player's page (`/user/<name>`: rating, tallies, latest games).
 After a game the score page has the table's Ready (another game at the same table),

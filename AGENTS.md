@@ -66,6 +66,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
     accounts.rs           accounts, passwords, sessions, bots and their API keys
     tables.rs matching.rs lobby tables; the automatch queue
     chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard
+    official.rs           the official accounts as the lobby lists them; their finished
+                          games' records (no rating or tally)
     house.rs              the server's own agents: their accounts, the runner connected,
                           its jobs (every seat they hold in a running game, sent when they
                           change), each player's agent seats a day
@@ -115,8 +117,10 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     measure.rs            text widths: canvas in the browser, an estimate natively
   assets/cards.css        card styles (cqw units; images through --dc-* variables)
   src/gallery.rs          /gallery: every card through the renderer, with filters
-  src/online.rs           /online: an official account's game on the same table through
-                          the same `GameState`, with its management panel and rating
+  src/online.rs           an official account's game watched at /online/<id> on the same
+                          table through the same `GameState`; its owner's panel (the
+                          Automatch tab's dominion.games box, under the log) and rating
+                          (Account tab)
   src/game/state.rs       the game page's model (view, version, log, `meta`, chat),
                           selection -> Answer; `apply` for Arena's views, `apply_whole`
                           for an official account's
@@ -200,8 +204,9 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     home.rs               Automatch: the search, Bot Game (a search for agents, with the
                           server's agent to play when none answers), Create
                           Table, Join a Seat, the lobby's chat
-    tables.rs             Tables: `listing` (pure) of the lobby's tables and the games
-                          without one, with Join / Open / Play / Watch
+    tables.rs             Tables: `listing` (pure) of the lobby's tables, the games
+                          without one and the official accounts' running games, with
+                          Join / Open / Play / Watch
     leaderboard.rs        the Leaderboard tab and a player's page (`/user/:name`)
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
