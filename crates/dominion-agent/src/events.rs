@@ -1,10 +1,11 @@
 //! A game's `dominion/events@1` stream, written from the engine's journal.
 
 use dominion_engine::{
-    Card, CardId, EndReason, Game, Gauge, Mat, Phase, PileId, PlayerId, Step, Trace, Verb, Zone,
+    Card, CardId, EndReason, Game, Gauge, Mat, Occasion, Phase, PileId, PlayerId, Step, Trace,
+    Verb, Zone,
 };
 use dominion_protocol::events::{
-    self, At, CardRef, Choice, CounterChange, Event, FoldError, GameEnd, Move, Play, Rules,
+    self, At, CardRef, Choice, CounterChange, Event, FoldError, GameEnd, Moment, Move, Play, Rules,
     SeatResult, SeatZone, Setup, Table, TurnStart, What,
 };
 
@@ -23,6 +24,12 @@ pub struct Recorder {
     ended: bool,
     /// Whose turn it is: who moves a card that goes between zones nobody owns.
     turn: u8,
+    /// The event each of the journal's occurrences became, by its number.
+    occurrences: Vec<Option<u64>>,
+    /// The occurrence the journal's steps happen inside now.
+    within: Option<u32>,
+    /// Whether the last step that was no marker wrote an event.
+    wrote: bool,
 }
 
 impl Recorder {
@@ -67,6 +74,22 @@ impl Recorder {
             }
         }
         while let Some(step) = steps.next() {
+            match step {
+                Step::Occurred(n) => {
+                    let event = self.wrote.then(|| self.seq - 1);
+                    let n = n as usize;
+                    if self.occurrences.len() <= n {
+                        self.occurrences.resize(n + 1, None);
+                    }
+                    self.occurrences[n] = event;
+                    continue;
+                }
+                Step::Within(occ) => {
+                    self.within = occ;
+                    continue;
+                }
+                _ => self.wrote = false,
+            }
             let what = match step {
                 Step::Trace {
                     entry: Trace::Created { card, is, zone },
@@ -204,8 +227,15 @@ impl Recorder {
                     Some(what) => what,
                     None => continue,
                 },
+                Step::Resolve {
+                    player,
+                    card,
+                    occasion,
+                    origin,
+                } => self.resolve(player, card, occasion, origin),
                 // Who saw what is not in the full stream.
                 Step::Trace { .. } => continue,
+                Step::Occurred(_) | Step::Within(_) => unreachable!("handled above"),
             };
             self.push(&mut out, what)?;
         }
@@ -230,6 +260,7 @@ impl Recorder {
                 EndReason::TurnLimit => "turn-limit",
                 EndReason::Resigned => "resigned",
             };
+            self.within = None;
             self.push(
                 &mut out,
                 What::GameEnd(GameEnd {
@@ -329,12 +360,14 @@ impl Recorder {
     fn push(&mut self, out: &mut Vec<Event>, what: What) -> Result<(), FoldError> {
         let event = Event {
             seq: self.seq,
-            by: None,
+            by: self.event_of(self.within),
             what,
         };
         self.table.apply(&event)?;
-        // Cards moving the same way one after the other are one event.
+        self.wrote = true;
+        // Cards moving the same way one after the other, for the same cause, are one event.
         if let (Some(last), Some((verb, m))) = (out.last_mut(), event.what.as_move())
+            && last.by == event.by
             && let Some((v, _)) = last.what.as_move()
             && v == verb
             && verb != events::Verb::Shuffle
@@ -355,6 +388,50 @@ impl Recorder {
         self.seq += 1;
         out.push(event);
         Ok(())
+    }
+
+    /// The event occurrence `occ` became.
+    fn event_of(&self, occ: Option<u32>) -> Option<u64> {
+        occ.and_then(|n| self.occurrences.get(n as usize).copied().flatten())
+    }
+
+    fn resolve(
+        &mut self,
+        player: PlayerId,
+        card: Card,
+        occasion: Occasion,
+        origin: Option<u32>,
+    ) -> What {
+        let (when, about, target) = match occasion {
+            Occasion::GameStart => (Moment::GameStart, None, None),
+            Occasion::StartTurn { .. } => (Moment::StartTurn, None, None),
+            Occasion::StartBuyPhase { .. } => (Moment::StartBuyPhase, None, None),
+            Occasion::EndBuyPhase { .. } => (Moment::EndBuyPhase, None, None),
+            Occasion::StartNight { .. } => (Moment::StartNight, None, None),
+            Occasion::StartCleanup { .. } => (Moment::StartCleanup, None, None),
+            Occasion::DiscardFromPlay { .. } => (Moment::DiscardFromPlay, None, None),
+            Occasion::EndTurn { .. } => (Moment::EndTurn, None, None),
+            Occasion::Play { .. } => (Moment::Play, None, None),
+            Occasion::AfterPlay { .. } => (Moment::AfterPlay, None, None),
+            Occasion::Attack { target, .. } => (Moment::Attack, None, Some(target.0)),
+            Occasion::Buy { card, .. } => (Moment::Buy, Some(card), None),
+            Occasion::BuyLandscape { .. } => (Moment::Buy, None, None),
+            Occasion::WouldGain { card, .. } => (Moment::WouldGain, Some(card), None),
+            Occasion::Gain { card, .. } => (Moment::Gain, Some(card), None),
+            Occasion::Trash { card, .. } => (Moment::Trash, Some(card), None),
+            Occasion::LeaveSupply { card, .. } => (Moment::LeaveSupply, Some(card), None),
+            Occasion::Discard { card, .. } => (Moment::Discard, Some(card), None),
+            Occasion::WouldShuffle { .. } => (Moment::WouldShuffle, None, None),
+            Occasion::Shuffled { .. } => (Moment::Shuffle, None, None),
+        };
+        What::Resolve {
+            player: player.0,
+            card: card.name().to_string(),
+            when,
+            about: about.map(|id| self.card(id)),
+            target,
+            origin: self.event_of(origin),
+        }
     }
 
     fn name(&mut self, id: CardId, is: Card) {
@@ -460,10 +537,6 @@ fn occurrence(event: &dominion_engine::Event) -> Option<What> {
     let name = |c: &Card| c.name().to_string();
     Some(match event {
         E::Bought { player, card } | E::BoughtLandscape { player, card } => What::Buy {
-            player: player.0,
-            card: name(card),
-        },
-        E::Resolved { player, card } | E::ResolvedFor { player, card } => What::Resolve {
             player: player.0,
             card: name(card),
         },

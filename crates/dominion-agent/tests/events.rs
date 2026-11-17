@@ -2,7 +2,7 @@
 
 use dominion_agent::events::Recorder;
 use dominion_engine::{Card, CardId, DecisionKind, Game, GameConfig, Mat, PlayerId, Response, Set};
-use dominion_protocol::events::{CardRef, Event, Phase, SeatZone, Table, Zone};
+use dominion_protocol::events::{CardRef, Event, Moment, Phase, SeatZone, Table, What, Zone};
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -203,6 +203,190 @@ fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str)
     );
 }
 
+/// Whether `e` is an occurrence: something other events can happen inside.
+fn occurrence(e: &What) -> bool {
+    matches!(
+        e,
+        What::Turn(_)
+            | What::Phase { .. }
+            | What::Play(_)
+            | What::Buy { .. }
+            | What::Resolve { .. }
+            | What::Gain(_)
+            | What::Trash(_)
+            | What::Discard(_)
+            | What::Shuffle(_)
+    )
+}
+
+fn phase_of(e: &What) -> Option<Phase> {
+    match e {
+        What::Phase { phase } => Some(*phase),
+        _ => None,
+    }
+}
+
+/// Holds what each event says caused it to what the stream shows happened.
+fn check_causes(events: &[Event], what: &str) {
+    let at = |seq: u64| &events[seq as usize].what;
+    let mut turn = None;
+    // How many cards each seat could draw from, as each play began.
+    let mut table = Table::default();
+    let mut drawable = vec![];
+    for e in events {
+        let seq = e.seq;
+        let fail = |why: &str| {
+            let json = serde_json::to_string(e).unwrap();
+            let cause =
+                e.by.map(|by| serde_json::to_string(&events[by as usize]).unwrap());
+            panic!("{what}: event {seq}: {why}\n{json}\nby {cause:?}")
+        };
+        if let Some(by) = e.by
+            && !occurrence(at(by))
+        {
+            fail("caused by something that is no occurrence");
+        }
+        if let What::Turn(_) = e.what {
+            turn = Some(seq);
+        }
+        // Everything in a turn happens inside it; between turns, only the game's own.
+        let mut root = seq;
+        while let Some(by) = events[root as usize].by {
+            root = by;
+        }
+        match (&e.what, e.by) {
+            (
+                What::Turn(_) | What::TurnSkipped { .. } | What::GameEnd(_) | What::Choose(_),
+                None,
+            ) => {}
+            (What::Resolve { when, .. }, None) if turn.is_none() && *when == Moment::GameStart => {}
+            (_, None) if turn.is_none() => {}
+            (_, None) => fail("nothing caused it"),
+            _ if Some(root) != turn && turn.is_some() => fail("not inside the turn in progress"),
+            _ => {}
+        }
+        let by = e.by.map(at);
+        let by_phase = by.and_then(phase_of);
+        match &e.what {
+            What::Resolve {
+                when,
+                about,
+                target,
+                origin,
+                ..
+            } => {
+                let holds = |event: Option<&What>, card: &CardRef| {
+                    event
+                        .and_then(What::as_move)
+                        .is_some_and(|(_, m)| m.cards.contains(card))
+                };
+                let right = match when {
+                    Moment::GameStart => by.is_none(),
+                    Moment::StartTurn => matches!(by, Some(What::Turn(_))),
+                    Moment::StartBuyPhase => by_phase == Some(Phase::Buy),
+                    Moment::StartNight => by_phase == Some(Phase::Night),
+                    Moment::StartCleanup => by_phase == Some(Phase::Cleanup),
+                    Moment::EndTurn => by_phase == Some(Phase::Cleanup),
+                    Moment::DiscardFromPlay | Moment::EndBuyPhase => {
+                        by_phase.is_none_or(|p| p == Phase::Cleanup || p == Phase::Buy)
+                    }
+                    Moment::Play | Moment::AfterPlay => matches!(by, Some(What::Play(_))),
+                    Moment::Attack => match by {
+                        Some(What::Play(play)) => target.is_some_and(|t| t != play.player),
+                        _ => false,
+                    },
+                    Moment::Buy => matches!(by, Some(What::Buy { .. })),
+                    Moment::Gain => {
+                        matches!(by, Some(What::Gain(_))) && holds(by, about.as_ref().unwrap())
+                    }
+                    Moment::Trash => {
+                        matches!(by, Some(What::Trash(_))) && holds(by, about.as_ref().unwrap())
+                    }
+                    Moment::Discard => {
+                        matches!(by, Some(What::Discard(_))) && holds(by, about.as_ref().unwrap())
+                    }
+                    Moment::Shuffle => matches!(by, Some(What::Shuffle(_))),
+                    Moment::WouldGain | Moment::LeaveSupply => about.is_some(),
+                    Moment::WouldShuffle => true,
+                };
+                if !right {
+                    fail(&format!("a resolve {when:?} with the wrong cause"));
+                }
+                if let Some(origin) = origin
+                    && !matches!(
+                        at(*origin),
+                        What::Play(_) | What::Resolve { .. } | What::Buy { .. }
+                    )
+                {
+                    fail("an origin that makes no lasting effect");
+                }
+            }
+            What::Play(play) => {
+                match (by_phase, &play.from) {
+                    (Some(Phase::Action), Some(_)) => {
+                        // The Action it costs.
+                        let next = events.get(seq as usize + 1).map(|e| (&e.what, e.by));
+                        if !matches!(next, Some((What::Counter(c), Some(b))) if b == seq && c.counter == "actions" && c.delta == -1)
+                        {
+                            fail("a play from the Action phase doesn't spend an Action");
+                        }
+                    }
+                    (Some(Phase::Buy | Phase::Night), Some(_)) => {}
+                    (None, _) if !matches!(by, Some(What::Turn(_))) => {}
+                    _ => fail("a play the phase can't make"),
+                }
+                if let Some(c) = play.card.name().and_then(dominion_engine::Card::from_name) {
+                    let seat = play.player;
+                    let cards = table.zone(&Zone::Seat(seat, SeatZone::Deck)).len()
+                        + table.zone(&Zone::Seat(seat, SeatZone::Discard)).len();
+                    if c.def().plus.cards >= 2 && cards > 0 {
+                        drawable.push(seq);
+                    }
+                }
+            }
+            What::Buy { .. } if by_phase.is_some() => {
+                let next = events.get(seq as usize + 1).map(|e| (&e.what, e.by));
+                if !matches!(next, Some((What::Counter(c), Some(b))) if b == seq && (c.counter == "buys" || c.counter == "actions") && c.delta == -1)
+                {
+                    fail("a buy doesn't spend a Buy");
+                }
+            }
+            What::Draw(_) | What::Discard(_) | What::Shuffle(_)
+                if by_phase.is_some_and(|p| p != Phase::Cleanup) =>
+            {
+                fail("moved by a phase other than Clean-up");
+            }
+            _ if matches!(by, Some(What::Turn(_)))
+                && !matches!(e.what, What::Phase { .. } | What::Resolve { .. }) =>
+            {
+                fail("only phases and start-of-turn abilities happen at the start of a turn");
+            }
+            _ => {}
+        }
+        table.apply(e).unwrap();
+    }
+    // A card's +Cards are drawn by its play, unless something changed what the play does.
+    for play in drawable {
+        let changed = events[play as usize..].iter().any(|e| {
+            e.by == Some(play)
+                && matches!(
+                    e.what,
+                    What::Way { .. }
+                        | What::Resolve {
+                            when: Moment::Play,
+                            ..
+                        }
+                )
+        });
+        let drew = (events[play as usize..].iter())
+            .any(|e| e.by == Some(play) && matches!(e.what, What::Draw(_)));
+        if !changed && !drew {
+            let json = serde_json::to_string(&events[play as usize]).unwrap();
+            panic!("{what}: event {play} draws nothing of its own\n{json}");
+        }
+    }
+}
+
 #[test]
 fn the_fold_of_the_full_stream_is_the_engines_table() {
     let sets = released();
@@ -243,5 +427,6 @@ fn the_fold_of_the_full_stream_is_the_engines_table() {
             answers += 1;
         }
         assert!(recorder.table().ended.is_some(), "seed {seed}");
+        check_causes(&events, &format!("seed {seed}"));
     }
 }

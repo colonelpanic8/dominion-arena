@@ -313,6 +313,42 @@ pub enum Verb {
     Rotate,
 }
 
+/// The moment a triggered ability answers: what its `resolve` event's `by` names, or (for
+/// a moment before the thing it answers happens) the cause of that thing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Moment {
+    /// Before the first turn.
+    GameStart,
+    StartTurn,
+    StartBuyPhase,
+    /// As the Buy phase ends, before the next phase.
+    EndBuyPhase,
+    StartNight,
+    StartCleanup,
+    /// Before cards are discarded from play.
+    DiscardFromPlay,
+    /// After Clean-up's draw.
+    EndTurn,
+    /// A card is played, before its instructions are followed.
+    Play,
+    /// Its instructions have been followed.
+    AfterPlay,
+    /// An Attack is played against `target`.
+    Attack,
+    Buy,
+    /// A card is about to be gained.
+    WouldGain,
+    Gain,
+    Trash,
+    /// A card left a Supply pile other than by being gained or trashed.
+    LeaveSupply,
+    Discard,
+    /// A discard pile is about to be shuffled.
+    WouldShuffle,
+    Shuffle,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Phase {
@@ -402,10 +438,22 @@ pub enum What {
         player: u8,
         card: String,
     },
-    /// An ability of `card` begins to resolve for `player`.
+    /// An ability of `card` begins to resolve for `player`, answering the moment `when`.
     Resolve {
         player: u8,
         card: String,
+        when: Moment,
+        /// The card the moment is about, where it is about one: the card gained, trashed,
+        /// discarded, bought or about to be gained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        about: Option<CardRef>,
+        /// For an Attack: the player it is played against.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<u8>,
+        /// The event that made the lasting effect the ability belongs to (a Duration's
+        /// play, turns ago).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<u64>,
     },
     /// `player` names a card.
     Name {
@@ -552,7 +600,9 @@ impl What {
 pub struct Event {
     /// Its position in the stream, from 0.
     pub seq: u64,
-    /// The event that caused it.
+    /// The event that caused it: the occurrence (a `turn`, `phase`, `play`, `buy`,
+    /// `resolve`, `gain`, `trash`, `discard` or `shuffle`) it happened inside. Always
+    /// earlier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<u64>,
     #[serde(flatten)]
@@ -624,6 +674,15 @@ impl Table {
             seq: event.seq,
             why,
         };
+        let origin = match event.what {
+            What::Resolve { origin, .. } => origin,
+            _ => None,
+        };
+        for cause in [event.by, origin].into_iter().flatten() {
+            if cause >= event.seq {
+                return Err(fail(format!("event {cause} is not earlier")));
+            }
+        }
         if let Some((verb, m)) = event.what.as_move() {
             return self.apply_move(verb, m).map_err(fail);
         }

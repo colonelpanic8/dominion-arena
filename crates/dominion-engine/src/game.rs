@@ -1377,6 +1377,7 @@ impl Game {
                 Flow::Done(value) => {
                     self.release_holds();
                     self.end_discard_searches();
+                    self.journal_close(self.stack.len());
                     input = Input::Return(value);
                 }
                 Flow::Continue => {
@@ -1746,7 +1747,9 @@ impl Game {
         let play = self.plays.last().filter(|st| Some(st.card) == source);
         let tracker = play.and_then(|st| st.tracker);
         let play = play.map(|st| st.index);
-        self.push_lasting(card, owner, source, (tracker, play), keeps, until, data)
+        let id = self.push_lasting(card, owner, source, (tracker, play), keeps, until, data);
+        self.journal_lasting(id, None);
+        id
     }
 
     /// Adds a later part of the effect `from` began (a card set aside by its "once this
@@ -1758,7 +1761,7 @@ impl Game {
         until: Until,
         data: Scratch,
     ) -> u32 {
-        self.push_lasting(
+        let id = self.push_lasting(
             from.card,
             from.owner,
             from.source,
@@ -1766,7 +1769,9 @@ impl Game {
             keeps,
             until,
             data,
-        )
+        );
+        self.journal_lasting(id, Some(from.id));
+        id
     }
 
     #[allow(clippy::too_many_arguments)]

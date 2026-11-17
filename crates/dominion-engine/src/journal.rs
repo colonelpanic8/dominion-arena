@@ -5,9 +5,16 @@
 //! rules' word for each move, the log entries in their place among them, and every
 //! counter as it changes: counters are read whenever something is recorded, so a change
 //! lies between the same two card moves it happened between.
+//!
+//! It also says what caused what. An occurrence (a turn, a phase, a play, a buy, an
+//! ability resolving, a gain, trash, discard or shuffle) is marked [`Step::Occurred`] right
+//! after the step recording it, and stays open for as long as the frame it belongs to on
+//! the effect stack; [`Step::Within`] says which open occurrence the steps after it happen
+//! inside. Counters are read whenever one opens or closes, so a change is put inside the
+//! occurrence it happened in.
 
 use crate::game::{Phase, Pos};
-use crate::{Card, CardId, Game, PileId, PlayerId, Trace, Zone};
+use crate::{Card, CardId, Game, Occasion, PileId, PlayerId, Trace, Zone};
 use serde::{Deserialize, Serialize};
 
 /// What kind of move a card made: the rules' word for it.
@@ -89,6 +96,19 @@ pub enum Step {
         was: i64,
         now: i64,
     },
+    /// The step before this one is occurrence `n` (numbered from 0 in the order marked).
+    Occurred(u32),
+    /// The steps from here on happen inside occurrence `n`, or inside none: before the
+    /// first turn, between turns.
+    Within(Option<u32>),
+    /// A triggered ability of `card` begins to resolve for `player`, answering
+    /// `occasion`. `origin` is the occurrence that made the lasting effect it comes from.
+    Resolve {
+        player: PlayerId,
+        card: Card,
+        occasion: Occasion,
+        origin: Option<u32>,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +117,53 @@ pub(crate) struct Journal {
     /// What the gauges read when last recorded, in [`Game::gauges`]' order.
     readings: Vec<(Gauge, i64)>,
     phase: Phase,
+    /// Occurrences marked so far.
+    #[serde(default)]
+    occurrences: u32,
+    /// The occurrences open, innermost last.
+    #[serde(default)]
+    open: Vec<Open>,
+    /// What the last [`Step::Within`] said.
+    #[serde(default)]
+    within: Option<u32>,
+    /// The Turn frame's depth on the stack and the turn's occurrence.
+    #[serde(default)]
+    turn: Option<(usize, u32)>,
+    /// Each lasting effect, by id, with the occurrence that made it.
+    #[serde(default)]
+    lastings: Vec<(u32, u32)>,
+}
+
+/// An occurrence open while the frame at `depth` on the stack is.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Open {
+    depth: usize,
+    occ: u32,
+    /// The card it is about, for occurrences that happen together (cards trashed at once).
+    card: Option<CardId>,
+}
+
+impl Journal {
+    fn innermost(&self) -> Option<u32> {
+        self.open.last().map(|o| o.occ)
+    }
+
+    /// Pushes `step`, which happens inside `cause`.
+    fn push(&mut self, step: Step, cause: Option<u32>) {
+        if cause != self.within {
+            self.within = cause;
+            self.steps.push(Step::Within(cause));
+        }
+        self.steps.push(step);
+    }
+
+    /// Marks the step just pushed as an occurrence.
+    fn occur(&mut self) -> u32 {
+        let n = self.occurrences;
+        self.occurrences += 1;
+        self.steps.push(Step::Occurred(n));
+        n
+    }
 }
 
 impl Game {
@@ -104,8 +171,15 @@ impl Game {
     /// in it.
     pub fn new_journaled(config: crate::GameConfig) -> Result<Game, crate::SetupError> {
         let mut game = crate::setup::build(config)?;
-        game.enable_trace();
-        let steps = (game.trace().unwrap_or_default().iter().cloned())
+        game.enable_journal();
+        game.start();
+        Ok(game)
+    }
+
+    /// Starts journaling a game not yet started, beginning with every card in it.
+    pub(crate) fn enable_journal(&mut self) {
+        self.enable_trace();
+        let steps = (self.trace().unwrap_or_default().iter().cloned())
             .map(|entry| Step::Trace { entry, verb: None })
             .collect();
         // What setup gave (starting Favors, tokens on piles) is journaled after the cards.
@@ -115,16 +189,15 @@ impl Game {
                 Gauge::Actions | Gauge::Buys | Gauge::Coins | Gauge::Potions
             )
         };
-        game.journal = Some(Journal {
+        self.journal = Some(Journal {
             steps,
-            readings: (game.gauges().into_iter())
+            readings: (self.gauges().into_iter())
                 .filter(|(g, _)| turn(g))
                 .collect(),
-            phase: game.turn.phase,
+            phase: self.turn.phase,
+            ..Journal::default()
         });
-        game.sync_journal();
-        game.start();
-        Ok(game)
+        self.sync_journal();
     }
 
     /// Takes the journal recorded so far, leaving it empty (and still recording).
@@ -200,9 +273,12 @@ impl Game {
         }
     }
 
+    /// Journals `player` playing `card`, an occurrence open until its frame finishes.
     pub(crate) fn journal_played(&mut self, player: PlayerId, card: CardId) {
         if self.journal.is_some() {
+            self.sync_journal();
             self.journal_push(Step::Played { player, card });
+            self.journal_opens(Some(card));
         }
     }
 
@@ -213,17 +289,30 @@ impl Game {
         }
     }
 
-    /// Records the turn [`Game::turn`] was just made.
+    /// Records the turn [`Game::turn`] was just made, for the Turn frame about to be
+    /// called.
     pub(crate) fn journal_turn(&mut self) {
+        let depth = self.stack.len() + 1;
         let Some(journal) = &mut self.journal else {
             return;
         };
         let p = self.turn.player;
-        journal.steps.push(Step::Turn {
-            player: p,
-            number: self.players[p.index()].turns_taken + 1,
-            extra: (self.turn.extra).or(self.ending.is_some().then_some(Card::Fleet)),
+        let cause = journal.innermost();
+        journal.push(
+            Step::Turn {
+                player: p,
+                number: self.players[p.index()].turns_taken + 1,
+                extra: (self.turn.extra).or(self.ending.is_some().then_some(Card::Fleet)),
+            },
+            cause,
+        );
+        let occ = journal.occur();
+        journal.open.push(Open {
+            depth,
+            occ,
+            card: None,
         });
+        journal.turn = Some((depth, occ));
         journal.phase = Phase::Start;
         for (gauge, value) in &mut journal.readings {
             match gauge {
@@ -244,18 +333,34 @@ impl Game {
         let journal = self.journal.as_mut().expect("checked above");
         if journal.phase != phase {
             journal.phase = phase;
-            journal.steps.push(Step::Phase(phase));
+            // A phase the turn moves on to is the turn's; one an effect returns to
+            // (Villa) is that effect's.
+            let cause = match (journal.turn, journal.open.last()) {
+                (Some((depth, turn)), Some(o)) if o.depth == depth => Some(turn),
+                _ => journal.innermost(),
+            };
+            journal.push(Step::Phase(phase), cause);
+            let occ = journal.occur();
+            if let Some((depth, _)) = journal.turn
+                && let Some(o) = journal.open.iter_mut().find(|o| o.depth == depth)
+            {
+                o.occ = occ;
+            }
         }
+        let cause = journal.innermost();
         for &(gauge, value) in &now {
             let was = (journal.readings.iter())
                 .find(|(g, _)| *g == gauge)
                 .map_or(0, |&(_, v)| v);
             if was != value {
-                journal.steps.push(Step::Gauge {
-                    gauge,
-                    was,
-                    now: value,
-                });
+                journal.push(
+                    Step::Gauge {
+                        gauge,
+                        was,
+                        now: value,
+                    },
+                    cause,
+                );
             }
         }
         journal.readings = now;
@@ -263,7 +368,113 @@ impl Game {
 
     fn journal_push(&mut self, step: Step) {
         if let Some(journal) = &mut self.journal {
-            journal.steps.push(step);
+            let cause = journal.innermost();
+            journal.push(step, cause);
+        }
+    }
+
+    /// Moves the turn on to `phase`.
+    pub(crate) fn set_phase(&mut self, phase: Phase) {
+        self.sync_journal();
+        self.turn.phase = phase;
+        self.sync_journal();
+    }
+
+    /// Marks the step just journaled as an occurrence, returning its number.
+    pub(crate) fn journal_occurred(&mut self) -> Option<u32> {
+        self.journal.as_mut().map(Journal::occur)
+    }
+
+    /// Opens occurrence `occ`, about `card`, for the frame running now.
+    pub(crate) fn journal_open(&mut self, occ: Option<u32>, card: Option<CardId>) {
+        let depth = self.stack.len();
+        if let (Some(journal), Some(occ)) = (&mut self.journal, occ) {
+            journal.open.push(Open { depth, occ, card });
+        }
+    }
+
+    /// Marks the step just journaled as an occurrence and opens it for the frame running
+    /// now.
+    pub(crate) fn journal_opens(&mut self, card: Option<CardId>) {
+        let occ = self.journal_occurred();
+        self.journal_open(occ, card);
+    }
+
+    /// Closes the occurrences of the frames at `depth` and above: the frame there has
+    /// finished, or (for a window) the ability it ran has.
+    pub(crate) fn journal_close(&mut self, depth: usize) {
+        let open = |g: &Game| {
+            (g.journal.as_ref()).is_some_and(|j| j.open.last().is_some_and(|o| o.depth >= depth))
+        };
+        if !open(self) {
+            return;
+        }
+        // What changed was done inside them.
+        self.sync_journal();
+        let journal = self.journal.as_mut().expect("checked above");
+        journal.open.retain(|o| o.depth < depth);
+        if journal.turn.is_some_and(|(d, _)| d >= depth) {
+            journal.turn = None;
+        }
+    }
+
+    /// Journals a triggered ability beginning to resolve for the window running now, open
+    /// until [`Game::journal_close`] is called for that window.
+    pub(crate) fn journal_resolve(
+        &mut self,
+        player: PlayerId,
+        card: Card,
+        occasion: &Occasion,
+        lasting: Option<u32>,
+    ) {
+        if self.journal.is_none() {
+            return;
+        }
+        self.sync_journal();
+        let journal = self.journal.as_mut().expect("checked above");
+        // Of cards trashed or discarded together, the one it answers.
+        let subject = match *occasion {
+            Occasion::Trash { card, .. } | Occasion::Discard { card, .. } => Some(card),
+            _ => None,
+        };
+        let depth = journal.open.last().map(|o| o.depth);
+        let cause = (journal.open.iter().rev())
+            .take_while(|o| Some(o.depth) == depth)
+            .find(|o| subject.is_some() && o.card == subject)
+            .map(|o| o.occ)
+            .or(journal.innermost());
+        let origin = lasting.and_then(|id| {
+            (journal.lastings.iter())
+                .find(|&&(l, _)| l == id)
+                .map(|&(_, occ)| occ)
+        });
+        journal.push(
+            Step::Resolve {
+                player,
+                card,
+                occasion: occasion.clone(),
+                origin,
+            },
+            cause,
+        );
+        self.journal_opens(None);
+    }
+
+    /// Records the occurrence lasting effect `id` comes from: the one `from` comes from,
+    /// for a later part of it, else the one it was made inside.
+    pub(crate) fn journal_lasting(&mut self, id: u32, from: Option<u32>) {
+        let Some(journal) = &mut self.journal else {
+            return;
+        };
+        let origin = from
+            .and_then(|from| {
+                (journal.lastings.iter())
+                    .find(|&&(l, _)| l == from)
+                    .map(|&(_, occ)| occ)
+            })
+            .or(journal.innermost());
+        if let Some(occ) = origin {
+            journal.lastings.push((id, occ));
         }
     }
 

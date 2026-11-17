@@ -561,7 +561,17 @@ them.
   or by its destination a top-deck, return, set-aside, look or exile), and code that
   rearranges cards without `move_card` (a shuffle in place, a pile rotated, cards ordered
   at the bottom of a deck) journals it with `journal_within`. A counter the stream
-  should carry is a `Gauge`.
+  should carry is a `Gauge`. Each event names its cause (`by`) from the effect stack: an
+  occurrence (turn, phase, play, buy, triggered ability, gain, trash, discard, shuffle)
+  is marked `Step::Occurred` right after its step and stays open for as long as the frame
+  it belongs to (`journal_opens` in that frame; `run` closes it when the frame finishes,
+  a window when its ability has); `Step::Within` says which open occurrence the steps
+  after it happen inside. Counters are synced at every open and close, so a change made
+  inside an occurrence must not wait to be read until after it has closed. The turn's
+  phase changes through `g.set_phase`, never by writing `turn.phase`. A new occurrence
+  opens with `journal_opens` (several together: `journal_occurred` for each, then
+  `journal_open`); a lasting effect made outside `add_lasting` / `continue_lasting`
+  records its origin with `journal_lasting`.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The
