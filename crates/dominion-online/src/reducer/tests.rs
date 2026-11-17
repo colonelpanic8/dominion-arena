@@ -701,6 +701,78 @@ fn a_reshuffle_keeps_the_discard_pile_known_through_cards_never_seen_and_pile_up
     assert_eq!(opponent.owned.known, BTreeMap::from([("Copper".into(), 1)]));
 }
 
+fn starts_with(player: i32, name: i32, frequency: i32) -> model::LogEntry {
+    model::LogEntry::Named {
+        name: 0,
+        depth: 0,
+        arguments: vec![
+            LogArgument::Player(player),
+            LogArgument::CardNames(vec![crate::questions::CardFrequency { name, frequency }]),
+        ],
+    }
+}
+
+#[test]
+fn the_cards_players_are_said_to_start_with_are_known_before_they_are_seen() {
+    let mut s = snapshot();
+    s.state.turn.turn_number = 0;
+    let mut r = Reducer::new(catalog(), 42);
+    Arc::make_mut(&mut r.catalog)
+        .enums
+        .insert("LogEntryNames".into(), vec!["STARTS_WITH".into()]);
+    r.replace(s).unwrap();
+    r.log(&model::LogChange {
+        start_index: 0,
+        entries: vec![
+            starts_with(0, 1, 2),
+            starts_with(0, 2, 1),
+            starts_with(0, 3, 1),
+            starts_with(1, 1, 1),
+            starts_with(1, 2, 1),
+            starts_with(1, 3, 1),
+        ],
+    })
+    .unwrap();
+    let view = r.view().unwrap();
+    assert_eq!(
+        view.you.unwrap().deck.known,
+        BTreeMap::from([("Village".into(), 1), ("Gold".into(), 1)])
+    );
+    let opponent = &view.opponents[0];
+    assert_eq!(opponent.owned.unknown, 0);
+    assert_eq!(
+        opponent.uncertain,
+        vec![view::Uncertain {
+            zones: vec!["hand".into(), "deck".into()],
+            count: 2,
+            candidates: BTreeMap::from([("Village".into(), 1), ("Gold".into(), 1)]),
+            outside: 0,
+            unknown: 0,
+        }]
+    );
+    r.apply(movement(10, 13, vec![-1], vec![4])).unwrap();
+    assert_eq!(
+        r.view().unwrap().opponents[0].deck.known,
+        BTreeMap::from([("Village".into(), 1)])
+    );
+}
+
+#[test]
+fn what_players_started_with_says_nothing_once_turns_have_begun() {
+    let mut r = reducer();
+    Arc::make_mut(&mut r.catalog)
+        .enums
+        .insert("LogEntryNames".into(), vec!["STARTS_WITH".into()]);
+    let before = r.view().unwrap().opponents[0].owned.clone();
+    r.log(&model::LogChange {
+        start_index: 0,
+        entries: vec![starts_with(1, 3, 1)],
+    })
+    .unwrap();
+    assert_eq!(r.view().unwrap().opponents[0].owned, before);
+    assert_eq!(r.logs.len(), 1);
+}
+
 #[test]
 fn hidden_transfer_keeps_cross_player_candidates_without_assigning_ownership() {
     let mut r = reducer();
@@ -743,9 +815,11 @@ fn repeated_inspections_do_not_count_the_same_copy_twice() {
 }
 
 #[test]
-fn snapshot_reset_discards_old_deductions_and_ignores_hidden_id_permutations() {
+fn a_snapshot_keeps_old_deductions_only_of_the_same_position() {
     let mut a = reducer();
     inspect(&mut a, 1, vec![1, 2]);
+    let known = a.view().unwrap().you.unwrap().deck;
+    assert_eq!(known.unknown, 0);
     let mut s = snapshot();
     s.state
         .zones
@@ -755,10 +829,45 @@ fn snapshot_reset_discards_old_deductions_and_ignores_hidden_id_permutations() {
         .cards
         .reverse();
     a.replace(s).unwrap();
-    assert_eq!(
-        a.view().unwrap().you.unwrap().deck,
-        reducer().view().unwrap().you.unwrap().deck
-    );
+    assert_eq!(a.view().unwrap().you.unwrap().deck, known);
+    let mut s = snapshot();
+    s.state.turn.turn_number = 2;
+    a.replace(s).unwrap();
+    let mut fresh = reducer().view().unwrap().you.unwrap().deck;
+    assert_eq!(fresh.unknown, 2);
+    fresh.count = 2;
+    assert_eq!(a.view().unwrap().you.unwrap().deck, fresh);
+}
+
+#[test]
+fn a_snapshot_that_contradicts_old_deductions_discards_them() {
+    let mut a = reducer();
+    inspect(&mut a, 1, vec![1, 2]);
+    let mut s = snapshot();
+    // The same counts, with another card in hand than the Copper that was there.
+    s.state.zones[0].cards = vec![7];
+    s.state.zones[8].cards = vec![0];
+    a.replace(s).unwrap();
+    assert_eq!(a.view().unwrap().you.unwrap().deck.unknown, 2);
+}
+
+#[test]
+fn a_snapshot_corrects_a_pile_without_discarding_old_deductions() {
+    let mut a = reducer();
+    inspect(&mut a, 1, vec![1, 2]);
+    a.apply(model::Event::PileUpdate(model::PileUpdate {
+        index: 20,
+        top_card_id: -1,
+    }))
+    .unwrap();
+    a.replace(snapshot()).unwrap();
+    let view = a.view().unwrap();
+    assert_eq!(view.you.unwrap().deck.unknown, 0);
+    assert_eq!(view.supply[0].count, 1);
+}
+
+#[test]
+fn hidden_id_permutations_are_ignored() {
     let mut a = reducer();
     let mut b = reducer();
     b.state.as_mut().unwrap().cards[4].card_name = 1;

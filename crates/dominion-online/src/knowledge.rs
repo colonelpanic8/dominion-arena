@@ -200,6 +200,30 @@ impl Observations {
         self.finish();
     }
 
+    /// `zone` holds `cards` and what was known of it is wrong: the cards it was thought to
+    /// hold are in no zone.
+    pub fn restock(&mut self, zone: i32, cards: &[(i32, Option<i32>)]) {
+        for slot in std::mem::take(self.members.entry(zone).or_default()) {
+            self.locations[slot] = NOWHERE;
+            self.observed.retain(|_, s| *s != slot);
+        }
+        for &(id, name) in cards {
+            self.insert(zone, id, name);
+        }
+        self.finish();
+    }
+
+    /// `count` of the cards in `zones` are `name`, whichever of them those are.
+    pub fn declare(&mut self, zones: &[i32], name: i32, count: u32) {
+        let slots: Vec<usize> = zones
+            .iter()
+            .flat_map(|zone| self.members.get(zone).into_iter().flatten().copied())
+            .collect();
+        self.mind.settle();
+        self.mind.learn(&slots, name, count);
+        self.finish();
+    }
+
     pub fn rename(&mut self, id: i32, name: i32) {
         if let Some(&slot) = self.observed.get(&id)
             && let Some(old) = self.mind.identity(slot)
@@ -327,6 +351,35 @@ mod tests {
             known.owned[0],
             (BTreeMap::from([(COPPER, 3), (SILVER, 2)]), 1)
         );
+    }
+
+    #[test]
+    fn cards_a_player_is_said_to_have_are_followed_from_the_opening_shuffle() {
+        let mut t = Observations::default();
+        for zone in [HAND, DECK, DISCARD] {
+            t.create_zone(zone);
+        }
+        for _ in 0..5 {
+            t.insert(HAND, -1, None);
+        }
+        t.declare(&[HAND, DECK, DISCARD], COPPER, 3);
+        t.declare(&[HAND, DECK, DISCARD], SILVER, 2);
+        t.move_cards(HAND, DECK, &[(-1, -1, None); 5]).unwrap();
+        t.shuffle(DECK, None);
+        t.move_cards(DECK, HAND, &[(-1, -1, None); 3]).unwrap();
+        t.move_cards(
+            HAND,
+            DISCARD,
+            &[(-1, 7, Some(SILVER)), (-1, 8, Some(SILVER))],
+        )
+        .unwrap();
+        let known = t.summary(1, owner);
+        assert_eq!(known.zone(HAND).known, BTreeMap::from([(COPPER, 1)]));
+        assert_eq!(known.zone(DECK).known, BTreeMap::from([(COPPER, 2)]));
+        // Saying it again, or of more cards than are unknown, changes nothing.
+        t.declare(&[HAND, DECK, DISCARD], COPPER, 3);
+        t.declare(&[HAND, DECK, DISCARD], SILVER, 4);
+        assert_eq!(t.summary(1, owner), known);
     }
 
     #[test]
