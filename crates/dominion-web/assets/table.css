@@ -289,6 +289,7 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-peek { z-index: 980; }
 .dt-own-pile { z-index: 60; }
 .dt-anchor-box { position: absolute; pointer-events: none; }
+.dt-anchor-box.dt-click { pointer-events: auto; }
 .dt-play { position: absolute; z-index: 100; pointer-events: none; }
 .dt-play > .dt-c { pointer-events: auto; }
 .dt-hand { position: absolute; z-index: 2000; }
@@ -588,8 +589,8 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-composition {
   position: absolute;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 5%;
+  transform: translateX(-50%);
   width: min(calc(120 * var(--vh)), 94%);
   max-height: 90%;
   display: flex;
@@ -631,6 +632,30 @@ body:has(.dt-root) .topbar { display: none; }
   padding-top: calc(1.6 * var(--vh));
   border-top: 1px solid rgba(211, 185, 119, 0.35);
 }
+.dt-composition-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.8 * var(--vh));
+  margin-bottom: calc(1.4 * var(--vh));
+}
+.dt-composition-tab {
+  padding: calc(0.6 * var(--vh)) calc(1.4 * var(--vh));
+  border: 1px solid rgba(211, 185, 119, 0.45);
+  border-radius: calc(0.5 * var(--vh));
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(245, 241, 232, 0.78);
+  font: inherit;
+  font-size: calc(1.8 * var(--vh));
+  font-weight: 650;
+  cursor: pointer;
+}
+.dt-composition-tab:hover { background: rgba(255, 255, 255, 0.12); }
+.dt-composition-tab.on {
+  border-color: rgba(211, 185, 119, 0.95);
+  background: rgba(211, 185, 119, 0.22);
+  color: #f5f1e8;
+}
+.dt-composition-panel { min-height: calc(22 * var(--vh)); }
 .dt-composition h3 { margin: 0 0 calc(1.2 * var(--vh)); font-size: calc(2 * var(--vh)); font-weight: 700; }
 .dt-composition-grid {
   display: flex;

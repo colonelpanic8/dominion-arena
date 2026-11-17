@@ -9,7 +9,7 @@ use super::supply::{Badges, Tab};
 use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::{Badge, Board, PlayerEntry, Stack, Zone};
+use crate::game::board::{Badge, Board, PlayerEntry, Section, Stack, Zone};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -180,8 +180,6 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                 let row = g.opp_hand_row(slots.len());
                 let hand = zone_popup(format!("{}'s hand", o.name), &o.hand, None);
                 let deck = deck_popup(&o);
-                let deck_key = deck.clone();
-                let discard = zone_popup(format!("{}'s discard pile", o.name), &o.discard, None);
                 let hand_box = if !slots.is_empty() {
                     Rect::new(row.xs[0], row.y, row.xs[row.xs.len() - 1] + row.w - row.xs[0], row.h)
                 } else {
@@ -214,11 +212,11 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                             inverted: true,
                             at: g.opp_discard,
                             anchor: format!("discard:{}", o.seat),
-                            opens: discard,
+                            opens: deck.clone(),
                             class: "dt-peek",
                         }
                     } else {
-                        div { class: "dt-anchor-box", style: "{g.opp_discard.style()}", "data-anchor": "discard:{o.seat}" }
+                        EmptyPile { class: "dt-peek", at: g.opp_discard, anchor: format!("discard:{}", o.seat), opens: deck.clone() }
                     }
                     if o.deck.count > 0 {
                         TableCard {
@@ -229,21 +227,11 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                             count: Some(o.deck.count),
                             at: g.opp_deck,
                             anchor: format!("deck:{}", o.seat),
-                            opens: deck,
+                            opens: deck.clone(),
                             class: "dt-peek",
                         }
                     } else {
-                        div {
-                            class: "dt-anchor-box dt-click", style: "{g.opp_deck.style()}",
-                            "data-anchor": "deck:{o.seat}", role: "button", tabindex: 0,
-                            title: "Deck composition",
-                            onclick: move |e| { e.stop_propagation(); ctx.open(deck.clone()); },
-                            onkeydown: move |e| {
-                                if e.key() == Key::Enter || e.key() == Key::Character(" ".into()) {
-                                    e.stop_propagation(); e.prevent_default(); ctx.open(deck_key.clone());
-                                }
-                            },
-                        }
+                        EmptyPile { class: "dt-peek", at: g.opp_deck, anchor: format!("deck:{}", o.seat), opens: deck.clone() }
                     }
                     PlayerTabs { player: o.clone(), g: g.clone(), you: false, show_in_play: !o.is_turn }
                 }
@@ -369,6 +357,26 @@ fn deck_popup(p: &PlayerEntry) -> Popup {
     }
 }
 
+/// Where an empty deck or discard pile would be: still opens the deck composition.
+#[component]
+fn EmptyPile(at: Rect, anchor: String, opens: Popup, class: &'static str) -> Element {
+    let ctx = use_table();
+    let key = opens.clone();
+    rsx! {
+        div {
+            class: "dt-anchor-box dt-click {class}", style: "{at.style()}",
+            "data-anchor": "{anchor}", role: "button", tabindex: 0,
+            title: "Deck composition",
+            onclick: move |e| { e.stop_propagation(); ctx.open(opens.clone()); },
+            onkeydown: move |e| {
+                if e.key() == Key::Enter || e.key() == Key::Character(" ".into()) {
+                    e.stop_propagation(); e.prevent_default(); ctx.open(key.clone());
+                }
+            },
+        }
+    }
+}
+
 /// The cards of a zone as tiles, most copies first, and its unknown cards as one back.
 #[component]
 fn CompositionCards(zone: Zone) -> Element {
@@ -393,13 +401,48 @@ fn CompositionCards(zone: Zone) -> Element {
     }
 }
 
+/// A breakdown section's cards: its one zone, or each of its zones under its own label.
+#[component]
+fn SectionCards(section: Section) -> Element {
+    rsx! {
+        div { class: "dt-composition-grid",
+            if section.count == 0 {
+                p { class: "dt-composition-empty", "Empty." }
+            } else if let [g] = &section.groups[..]
+                && g.label == section.label
+            {
+                CompositionCards { zone: g.zone.clone() }
+            } else {
+                for g in section.groups.iter() {
+                    div { key: "{g.key}", class: "dt-composition-group", "data-zone": "{g.key}",
+                        div { class: "dt-composition-group-label", "{g.label} ({g.zone.count})" }
+                        div { class: "dt-composition-grid",
+                            CompositionCards { zone: g.zone.clone() }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Everything the player owns, then the draw pile, discard pile and the rest one at a
+/// time: hovering, focusing or clicking a tab shows its part.
 #[component]
 pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
     let ctx = use_table();
+    let mut open = use_signal(|| String::from("deck"));
     let Some(p) = board.players().find(|p| p.seat == seat) else {
         return rsx! {};
     };
-    let sections = p.composition();
+    let mut sections = p.composition().into_iter();
+    let whole = sections.next();
+    let parts: Vec<_> = sections.collect();
+    let shown = parts
+        .iter()
+        .find(|s| s.key == *open.read())
+        .or(parts.first())
+        .cloned();
     let uncertain: Vec<_> = p
         .uncertain
         .iter()
@@ -417,26 +460,37 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
                 button { class: "dt-composition-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
             }
             div { class: "dt-composition-body",
-                for section in sections {
-                    section { key: "{section.key}", class: "dt-composition-section", "data-zone": "{section.key}",
-                        h3 { "{section.label} ({section.count})" }
-                        div { class: "dt-composition-grid",
-                            if section.count == 0 {
-                                p { class: "dt-composition-empty", "Empty." }
-                            } else if let [g] = &section.groups[..]
-                                && g.label == section.label
-                            {
-                                CompositionCards { zone: g.zone.clone() }
-                            } else {
-                                for g in section.groups.iter() {
-                                    div { key: "{g.key}", class: "dt-composition-group", "data-zone": "{g.key}",
-                                        div { class: "dt-composition-group-label", "{g.label} ({g.zone.count})" }
-                                        div { class: "dt-composition-grid",
-                                            CompositionCards { zone: g.zone.clone() }
+                if let Some(whole) = whole {
+                    section { class: "dt-composition-section", "data-zone": "{whole.key}",
+                        h3 { "{whole.label} ({whole.count})" }
+                        SectionCards { section: whole.clone() }
+                    }
+                }
+                if let Some(shown) = shown {
+                    section { class: "dt-composition-section",
+                        div { class: "dt-composition-tabs", role: "tablist",
+                            for s in parts.iter() {
+                                {
+                                    let key = s.key.clone();
+                                    let (k1, k2) = (key.clone(), key.clone());
+                                    rsx! {
+                                        button {
+                                            key: "{key}",
+                                            class: "dt-composition-tab",
+                                            class: if key == shown.key { "on" },
+                                            role: "tab",
+                                            "aria-selected": key == shown.key,
+                                            onmouseenter: move |_| open.set(k1.clone()),
+                                            onfocus: move |_| open.set(k2.clone()),
+                                            onclick: move |_| open.set(key.clone()),
+                                            "{s.label} ({s.count})"
                                         }
                                     }
                                 }
                             }
+                        }
+                        div { class: "dt-composition-panel", role: "tabpanel", "data-zone": "{shown.key}",
+                            SectionCards { section: shown.clone() }
                         }
                     }
                 }
@@ -481,16 +535,6 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     };
     let watching = board.watching;
     let deck = deck_popup(&you);
-    let deck_key = deck.clone();
-    let discard = zone_popup(
-        if watching {
-            format!("{}'s discard pile", you.name)
-        } else {
-            "Your discard pile".into()
-        },
-        &you.discard,
-        None,
-    );
     let hand = watching.then(|| zone_popup(format!("{}'s hand", you.name), &you.hand, None));
     let slots = hand_slots(&you.hand, true);
     let faces = slots.iter().filter(|(_, back)| !back).count();
@@ -508,11 +552,11 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                 back: you.discard_top.is_none(),
                 at: g.your_discard,
                 anchor: format!("discard:{}", you.seat),
-                opens: discard,
+                opens: deck.clone(),
                 class: "dt-own-pile",
             }
         } else {
-            div { class: "dt-anchor-box", style: "{g.your_discard.style()}", "data-anchor": "discard:{you.seat}" }
+            EmptyPile { class: "dt-own-pile", at: g.your_discard, anchor: format!("discard:{}", you.seat), opens: deck.clone() }
         }
         if you.deck.count > 0 {
             TableCard {
@@ -522,21 +566,11 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                 count: Some(you.deck.count),
                 at: g.your_deck,
                 anchor: format!("deck:{}", you.seat),
-                opens: deck,
+                opens: deck.clone(),
                 class: "dt-own-pile",
             }
         } else {
-            div {
-                class: "dt-anchor-box dt-click", style: "{g.your_deck.style()}",
-                "data-anchor": "deck:{you.seat}", role: "button", tabindex: 0,
-                title: "Deck composition",
-                onclick: move |e| { e.stop_propagation(); ctx.open(deck.clone()); },
-                onkeydown: move |e| {
-                    if e.key() == Key::Enter || e.key() == Key::Character(" ".into()) {
-                        e.stop_propagation(); e.prevent_default(); ctx.open(deck_key.clone());
-                    }
-                },
-            }
+            EmptyPile { class: "dt-own-pile", at: g.your_deck, anchor: format!("deck:{}", you.seat), opens: deck.clone() }
         }
         div {
             class: "dt-hand {seat_class(you.seat)}",

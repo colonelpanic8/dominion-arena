@@ -276,6 +276,7 @@ impl PlayerEntry {
         .filter(|z| z.zone.count > 0)
         .collect();
         vec![
+            Section::one(named("owned", "Entire deck", &self.owned)),
             Section::one(named("deck", "Draw pile", &self.deck)),
             Section::one(named("discard", "Discard pile", &self.discard)),
             Section {
@@ -284,7 +285,6 @@ impl PlayerEntry {
                 count: elsewhere.iter().map(|z| z.zone.count).sum(),
                 groups: elsewhere,
             },
-            Section::one(named("owned", "Entire deck", &self.owned)),
         ]
     }
 }
