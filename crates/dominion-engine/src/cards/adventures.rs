@@ -9,7 +9,7 @@ use crate::Note;
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Lasting, Mat, Pos, Scratch, Token, Until, Zone};
+use crate::game::{ExtraLimit, Lasting, Mat, Pos, Scratch, Token, Until, Zone};
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -305,12 +305,13 @@ impl SetRules for Rules {
             (Card::Training, _) => move_token(g, f, input, Token::PlusCoin),
             (Card::Pathfinding, _) => move_token(g, f, input, Token::PlusCard),
             (Card::Mission, _) => {
-                g.extra_turns.push_back(ExtraTurn {
-                    player: f.player,
-                    source: Card::Mission,
-                    limit: ExtraLimit::ThirdInARow,
-                    lasting: None,
-                });
+                g.queue_extra_turn(
+                    f.player,
+                    Card::Mission,
+                    ExtraLimit::ThirdInARow,
+                    None,
+                    false,
+                );
                 Flow::done()
             }
             (Card::Pilgrimage, _) => pilgrimage(g, f, input),

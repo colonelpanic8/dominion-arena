@@ -483,6 +483,9 @@ pub struct ExtraTurn {
     /// The lasting effect that keeps its card in play for it (Outpost, Voyage).
     #[serde(default)]
     pub lasting: Option<u32>,
+    /// Tells it apart in a journal ([`Game::queue_extra_turn`]); 0 in a game without one.
+    #[serde(default)]
+    pub id: u32,
 }
 
 /// When an extra turn doesn't happen (each card's own "but not ..." clause).
@@ -1696,6 +1699,7 @@ impl Game {
         self.show(id);
         self.move_unlogged(id, Zone::SetAside(p));
         self.players[p.index()].face_up.push(id);
+        self.journal_face_up(id);
     }
 
     pub(crate) fn put_on_mat(&mut self, id: CardId, p: PlayerId, mat: Mat) {

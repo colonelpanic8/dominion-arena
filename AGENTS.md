@@ -556,12 +556,21 @@ them.
   entries where they were logged, turns, phases, and counters read each time anything is
   recorded. `events::Recorder` in dominion-agent turns it into the full stream.
   `tests/events.rs` holds the fold to the engine's table at every decision of random
-  games: each zone with its order, each counter, the turn. So a card moves with
+  games: each zone with its order, each counter, the turn, effects, faces, extra turns
+  waiting and the ending. So a card moves with
   `move_as(verb, ..)` where the rules have a word for it (a bare `move_card` is a `put`,
   or by its destination a top-deck, return, set-aside, look or exile), and code that
   rearranges cards without `move_card` (a shuffle in place, a pile rotated, cards ordered
   at the bottom of a deck) journals it with `journal_within`. A counter the stream
-  should carry is a `Gauge`.
+  should carry is a `Gauge`. Lasting effects are read like gauges (`Game::effects`: what
+  `View::lasting` shows, with the cards of its data that are set aside as what it holds),
+  so a change to one needs nothing; one removed is `resolved` unless its remover says
+  why (`journal_effect_end` right after removing it, the journal synced before). Phases
+  change only through `set_phase`, a turn ends through `turn_over`, extra turns are
+  queued only through `queue_extra_turn` (it gives each an id), and a card set aside or
+  revealed face up is followed by `journal_face_up`. Turns that don't happen
+  (`journal_skipped`) and the game's end condition (`journal_game_ending`) are journaled
+  where the turn loop decides them.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The

@@ -1190,12 +1190,7 @@ fn outpost_on_a_turn_right_after_an_extra_turn_of_its_player_is_a_third_turn_in_
     deck(&mut g, P1, &[Card::Outpost; 10]);
     g.start();
     // As if P1 had set up an extra turn of their own during P0's turn.
-    g.extra_turns.push_back(ExtraTurn {
-        player: P1,
-        source: Card::Mission,
-        limit: ExtraLimit::ThirdInARow,
-        lasting: None,
-    });
+    g.queue_extra_turn(P1, Card::Mission, ExtraLimit::ThirdInARow, None, false);
     next_turn(&mut g);
     assert_eq!((g.turn().player, g.turn().extra), (P1, Some(Card::Mission)));
     next_turn(&mut g);

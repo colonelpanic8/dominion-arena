@@ -18,7 +18,7 @@ use super::{
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_shuffled_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Note, PileId, PlayerId, Set, Trace, Types};
@@ -323,12 +323,7 @@ impl SetRules for Rules {
                     Scratch::default(),
                 );
                 if p == g.turn.player {
-                    g.extra_turns.push_back(ExtraTurn {
-                        player: p,
-                        source: Card::Journey,
-                        limit: ExtraLimit::ThirdInARow,
-                        lasting: None,
-                    });
+                    g.queue_extra_turn(p, Card::Journey, ExtraLimit::ThirdInARow, None, false);
                 }
                 Flow::done()
             }

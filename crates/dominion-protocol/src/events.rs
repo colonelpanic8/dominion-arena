@@ -3,7 +3,7 @@
 //! ([`Table::apply`]); no rules engine is needed to follow a game.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str::FromStr;
 
@@ -262,6 +262,17 @@ pub struct Move {
     /// did. Absent: each came off the top.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pos: Vec<u32>,
+    /// Into a set-aside zone or `looking`: whether the cards lie face up (everyone sees
+    /// them) or face down (their owner does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<Face>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Face {
+    Up,
+    Down,
 }
 
 /// A card is played: its instructions are followed. It goes into play when `from` and
@@ -325,16 +336,157 @@ pub enum Phase {
 }
 
 /// A turn beginning. The table's phase becomes `start` and the turn's counters 1 Action,
-/// 1 Buy, $0 and no Potions.
+/// 1 Buy, $0, no Potions and a `next-hand` of 5.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnStart {
     pub player: u8,
-    /// Which of that player's turns it is, from 1, extra turns not counted.
+    /// Which of that player's turns it is, from 1, turns of every kind counted.
     pub number: u32,
     /// The card that gave it, for an extra turn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra: Option<String>,
+    #[serde(default)]
+    pub kind: TurnKind,
+    /// The extra turn waiting it is: it waits no more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_turn: Option<u32>,
+    #[serde(default, skip_serializing_if = "TurnLimits::is_none")]
+    pub limits: TurnLimits,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TurnKind {
+    #[default]
+    Regular,
+    /// Given by a card: it doesn't count for the tiebreaker.
+    Extra,
+    /// One of the round played after the game has ended (Fleet).
+    Final,
+}
+
+/// What a turn forbids beyond the rules of every turn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnLimits {
+    /// No buying cards (Mission); Events and Projects may still be bought.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_card_buys: bool,
+    /// At most this many plays from the hand (Voyage); the turn's `hand-plays` counts them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hand_plays: Option<u32>,
+}
+
+impl TurnLimits {
+    fn is_none(&self) -> bool {
+        *self == TurnLimits::default()
+    }
+}
+
+/// When a lasting effect ends, as its players are told.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Until {
+    /// At the end of this turn.
+    EndOfTurn,
+    /// When that seat's next turn starts.
+    StartOfTurn(u8),
+    /// When the extra turn it keeps its card in play for starts, or doesn't happen.
+    ExtraTurn,
+    /// When something happens that it waits for.
+    Removed,
+}
+
+/// Something that outlives the play that made it: a Duration's later part, a "this turn"
+/// or "until your next turn" effect.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Effect {
+    /// Names it from when it begins to when it ends.
+    pub id: u32,
+    /// The card (or landscape, Boon, State) it is of.
+    pub card: String,
+    /// The physical card it came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<CardRef>,
+    pub owner: u8,
+    pub until: Until,
+    /// Its card left play: it works to the end of this turn and ends then.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ending: bool,
+    /// Cards it keeps in play past Clean-up.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keeps: Vec<CardRef>,
+    /// Cards it holds set aside.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<CardRef>,
+    /// Tokens on its card (Garrison).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u32>,
+}
+
+/// Why an effect ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EffectEnd {
+    /// An ability removed it: as a rule its own, resolving (a Duration's at the start of
+    /// the turn).
+    Resolved,
+    /// When it said it would end.
+    Expired,
+    /// Its card had left play: it ended with the turn.
+    LeftPlay,
+    /// The extra turn it kept its card in play for began, was skipped or was lost.
+    ExtraTurn,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExtraLimit {
+    /// It always happens (Seize the Day).
+    None,
+    /// Not as a third turn in a row: it is lost then.
+    ThirdInARow,
+}
+
+/// An extra turn waiting to be taken.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtraTurn {
+    pub id: u32,
+    pub player: u8,
+    /// The card that gave it.
+    pub card: String,
+    pub limit: ExtraLimit,
+    /// The effect that keeps its card in play until it is taken (Outpost, Voyage).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<u32>,
+}
+
+/// An extra turn queued: after the others waiting, or before them if `front`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtraTurnQueued {
+    pub id: u32,
+    pub player: u8,
+    pub card: String,
+    pub limit: ExtraLimit,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub front: bool,
+}
+
+/// The end condition is met: the game ends once the seats of `final_round` have taken a
+/// turn each, in that order (Fleet; usually none).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ending {
+    /// `provinces`, `colonies`, `piles` or `turn-limit`.
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub final_round: Vec<u8>,
 }
 
 /// A counter changing by `delta` to `value`.
@@ -432,13 +584,18 @@ pub enum What {
     /// What `player` chose, said to everyone: a card's modes, a number.
     Choose(Choice),
     /// A turn `player` would have taken doesn't happen: skipped (Lich), or `lost` as a
-    /// third turn in a row. `extra` is the card that gave it, for an extra turn.
+    /// third turn in a row. `extra` is the card that gave it, for an extra turn, and
+    /// `extraTurn` the extra turn waiting it was.
     TurnSkipped {
         player: u8,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extra: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         lost: bool,
+        #[serde(default)]
+        kind: TurnKind,
+        #[serde(default, rename = "extraTurn", skip_serializing_if = "Option::is_none")]
+        extra_turn: Option<u32>,
     },
     Draw(Move),
     Discard(Move),
@@ -475,6 +632,24 @@ pub enum What {
     },
     Counter(CounterChange),
     GameEnd(GameEnd),
+    /// An effect begins.
+    Effect(Effect),
+    /// The effect with this `id` is now as given: what it keeps or holds, when it ends.
+    EffectChange(Effect),
+    EffectEnd {
+        id: u32,
+        why: EffectEnd,
+    },
+    ExtraTurn(ExtraTurnQueued),
+    /// The extra turn waiting with this `id` won't happen: the effect it came with ended.
+    ExtraTurnRemoved {
+        id: u32,
+    },
+    /// `player`'s turn is over: nobody's turn is in progress, and its counters are gone.
+    TurnEnd {
+        player: u8,
+    },
+    GameEnding(Ending),
 }
 
 impl What {
@@ -568,6 +743,10 @@ pub struct TurnState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra: Option<String>,
     pub phase: Phase,
+    #[serde(default)]
+    pub kind: TurnKind,
+    #[serde(default, skip_serializing_if = "TurnLimits::is_none")]
+    pub limits: TurnLimits,
 }
 
 /// What the events describe: where every card is, and every counter.
@@ -580,11 +759,35 @@ pub struct Table {
     /// Counters that are not zero, by the name [`CounterChange::counter`] gives them.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub counters: BTreeMap<String, i64>,
+    /// The turn in progress: none before the first and between turns.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<TurnState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<GameEnd>,
+    /// Lasting effects, in the order they began.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<Effect>,
+    /// The cards in set-aside zones and `looking` that lie face up.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub face_up: BTreeSet<CardRef>,
+    /// Extra turns waiting, in the order the engine keeps them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_turns: Vec<ExtraTurn>,
+    /// Set once the end condition is met.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ending: Option<Ending>,
 }
+
+/// The turn's counters: set as a turn begins, gone when it ends.
+const TURN_COUNTERS: [(&str, i64); 7] = [
+    ("actions", 1),
+    ("buys", 1),
+    ("coins", 0),
+    ("potions", 0),
+    ("next-hand", 5),
+    ("bought", 0),
+    ("hand-plays", 0),
+];
 
 /// Why an event doesn't apply to a table: the stream is not one game's.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -638,6 +841,7 @@ impl Table {
                         to: to.clone(),
                         at: At::Top,
                         pos: play.pos.into_iter().collect(),
+                        face: None,
                     };
                     self.apply_move(Verb::Put, &m).map_err(fail)?;
                 }
@@ -650,16 +854,25 @@ impl Table {
             | What::Way { .. }
             | What::Unaffected { .. }
             | What::Call { .. }
-            | What::Choose(_)
-            | What::TurnSkipped { .. } => {}
+            | What::Choose(_) => {}
+            What::TurnSkipped {
+                player,
+                kind,
+                extra_turn,
+                ..
+            } => self.turn_taken(*player, *kind, *extra_turn).map_err(fail)?,
             What::Turn(t) => {
+                self.turn_taken(t.player, t.kind, t.extra_turn)
+                    .map_err(fail)?;
                 self.turn = Some(TurnState {
                     player: t.player,
                     number: t.number,
                     extra: t.extra.clone(),
                     phase: Phase::Start,
+                    kind: t.kind,
+                    limits: t.limits,
                 });
-                for (name, value) in [("actions", 1), ("buys", 1), ("coins", 0), ("potions", 0)] {
+                for (name, value) in TURN_COUNTERS {
                     self.set_counter(name, value);
                 }
             }
@@ -694,9 +907,76 @@ impl Table {
                 }
             }
             What::GameEnd(end) => self.ended = Some(end.clone()),
+            What::Effect(e) => {
+                if self.effects.iter().any(|x| x.id == e.id) {
+                    return Err(fail(format!("effect {} has begun already", e.id)));
+                }
+                let at = self.effects.partition_point(|x| x.id < e.id);
+                self.effects.insert(at, e.clone());
+            }
+            What::EffectChange(e) => match self.effects.iter_mut().find(|x| x.id == e.id) {
+                Some(x) => *x = e.clone(),
+                None => return Err(fail(format!("there is no effect {}", e.id))),
+            },
+            What::EffectEnd { id, .. } => match self.effects.iter().position(|x| x.id == *id) {
+                Some(i) => {
+                    self.effects.remove(i);
+                }
+                None => return Err(fail(format!("there is no effect {id}"))),
+            },
+            What::ExtraTurn(q) => {
+                if self.extra_turns.iter().any(|x| x.id == q.id) {
+                    return Err(fail(format!("extra turn {} is waiting already", q.id)));
+                }
+                let turn = ExtraTurn {
+                    id: q.id,
+                    player: q.player,
+                    card: q.card.clone(),
+                    limit: q.limit,
+                    effect: q.effect,
+                };
+                let at = if q.front { 0 } else { self.extra_turns.len() };
+                self.extra_turns.insert(at, turn);
+            }
+            What::ExtraTurnRemoved { id } => self.unqueue(*id).map_err(fail)?,
+            What::TurnEnd { player } => {
+                if self.turn.as_ref().map(|t| t.player) != Some(*player) {
+                    return Err(fail(format!("seat {player} has no turn to end")));
+                }
+                self.turn = None;
+                for (name, _) in TURN_COUNTERS {
+                    self.set_counter(name, 0);
+                }
+            }
+            What::GameEnding(ending) => self.ending = Some(ending.clone()),
             _ => unreachable!("moves are applied above"),
         }
         Ok(())
+    }
+
+    /// A turn of `player` begins or is skipped: what it was waiting as stops waiting.
+    fn turn_taken(&mut self, player: u8, kind: TurnKind, id: Option<u32>) -> Result<(), String> {
+        if let Some(id) = id {
+            self.unqueue(id)?;
+        }
+        if kind == TurnKind::Final {
+            let next = (self.ending.as_mut())
+                .and_then(|e| (!e.final_round.is_empty()).then(|| e.final_round.remove(0)));
+            if next != Some(player) {
+                return Err(format!("seat {player} has no turn next in the final round"));
+            }
+        }
+        Ok(())
+    }
+
+    fn unqueue(&mut self, id: u32) -> Result<(), String> {
+        match self.extra_turns.iter().position(|x| x.id == id) {
+            Some(i) => {
+                self.extra_turns.remove(i);
+                Ok(())
+            }
+            None => Err(format!("there is no extra turn {id} waiting")),
+        }
     }
 
     fn set_counter(&mut self, name: &str, value: i64) {
@@ -719,6 +999,12 @@ impl Table {
         for (i, card) in m.cards.iter().enumerate() {
             let said = m.pos.get(i).copied();
             self.take(&m.from, card, said)?;
+            self.face_up.remove(card);
+            if m.face == Some(Face::Up)
+                && matches!(m.to, Zone::Seat(_, SeatZone::Aside | SeatZone::Looking))
+            {
+                self.face_up.insert(card.clone());
+            }
             if verb == Verb::Shuffle {
                 block.push(card.clone());
             } else {
@@ -959,11 +1245,61 @@ mod tests {
                 "doesn't make it 3",
             ),
             (r#"{"type":"phase","phase":"buy"}"#, "no turn"),
+            (r#"{"type":"turn-end","player":0}"#, "no turn to end"),
+            (
+                r#"{"type":"effect-end","id":4,"why":"expired"}"#,
+                "no effect 4",
+            ),
+            (
+                r#"{"type":"turn","player":0,"number":2,"kind":"extra","extra":"Outpost","extraTurn":3}"#,
+                "no extra turn 3",
+            ),
+            (
+                r#"{"type":"turn","player":0,"number":9,"kind":"final"}"#,
+                "no turn next in the final round",
+            ),
         ] {
             let err = t.clone().apply(&event(5, json)).unwrap_err();
             assert_eq!(err.seq, 5);
             assert!(err.why.contains(why), "{}", err.why);
         }
+    }
+
+    #[test]
+    fn a_final_round_is_taken_in_its_order_and_a_turn_end_clears_the_turn() {
+        let mut t = table(&[]);
+        for (seq, json) in [
+            r#"{"type":"game-ending","reason":"provinces","finalRound":[1,2]}"#,
+            r#"{"type":"turn-skipped","player":1,"kind":"final"}"#,
+            r#"{"type":"turn","player":2,"number":7,"kind":"final"}"#,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.apply(&event(seq as u64, json)).unwrap();
+        }
+        assert!(t.ending.as_ref().unwrap().final_round.is_empty());
+        assert_eq!(t.counter("next-hand"), 5);
+        t.apply(&event(3, r#"{"type":"turn-end","player":2}"#))
+            .unwrap();
+        assert_eq!((t.turn.as_ref(), t.counter("actions")), (None, 0));
+    }
+
+    #[test]
+    fn a_card_set_aside_face_up_is_face_up_until_it_moves() {
+        let mut t = table(&[("0/hand", &["Gold#3", "Copper#1"])]);
+        t.apply(&event(
+            1,
+            r#"{"type":"set-aside","player":0,"cards":["Gold#3"],"from":"0/hand","to":"0/aside","face":"up"}"#,
+        ))
+        .unwrap();
+        assert!(t.face_up.contains(&"Gold#3".parse().unwrap()));
+        t.apply(&event(
+            2,
+            r#"{"type":"put","player":0,"cards":["Gold#3"],"from":"0/aside","to":"0/hand"}"#,
+        ))
+        .unwrap();
+        assert!(t.face_up.is_empty());
     }
 
     #[test]

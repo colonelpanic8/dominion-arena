@@ -1,11 +1,13 @@
 //! A game's `dominion/events@1` stream, written from the engine's journal.
 
 use dominion_engine::{
-    Card, CardId, EndReason, Game, Gauge, Mat, Phase, PileId, PlayerId, Step, Trace, Verb, Zone,
+    Card, CardId, EffectEnd, EffectState, EndReason, ExtraLimit, Game, Gauge, Mat, Phase, PileId,
+    PlayerId, Step, Trace, TurnKind, Until, Verb, Zone,
 };
 use dominion_protocol::events::{
-    self, At, CardRef, Choice, CounterChange, Event, FoldError, GameEnd, Move, Play, Rules,
-    SeatResult, SeatZone, Setup, Table, TurnStart, What,
+    self, At, CardRef, Choice, CounterChange, Effect, Ending, Event, ExtraTurnQueued, Face,
+    FoldError, GameEnd, Move, Play, Rules, SeatResult, SeatZone, Setup, Table, TurnLimits,
+    TurnStart, What,
 };
 
 /// Writes the full stream of a game started with [`Game::new_journaled`]: every card's
@@ -106,6 +108,7 @@ impl Recorder {
                         to,
                         at,
                         pos,
+                        face: None,
                     })
                 }
                 Step::Trace {
@@ -131,6 +134,16 @@ impl Recorder {
                         (true, false, n) => At::Under(n as u32),
                     };
                     let pos = self.depths(&from, &cards);
+                    let face = matches!(
+                        to,
+                        events::Zone::Seat(_, SeatZone::Aside | SeatZone::Looking)
+                    )
+                    .then(|| {
+                        match steps.next_if(|next| matches!(next, Step::FaceUp(c) if *c == card)) {
+                            Some(_) => Face::Up,
+                            None => Face::Down,
+                        }
+                    });
                     let played = (verb == Some(Verb::Play))
                         .then(|| {
                             steps.next_if(
@@ -158,6 +171,7 @@ impl Recorder {
                             to,
                             at,
                             pos,
+                            face,
                         },
                     )
                 }
@@ -175,15 +189,66 @@ impl Recorder {
                 Step::Turn {
                     player,
                     number,
-                    extra,
+                    kind,
+                    limits,
                 } => {
                     self.turn = player.0;
+                    let (kind, extra, extra_turn) = turn_kind(kind);
                     What::Turn(TurnStart {
                         player: player.0,
                         number,
-                        extra: extra.map(|c| c.name().to_string()),
+                        extra,
+                        kind,
+                        extra_turn,
+                        limits: TurnLimits {
+                            no_card_buys: limits.no_card_buys,
+                            hand_plays: limits.hand_plays,
+                        },
                     })
                 }
+                Step::TurnSkipped { player, kind, lost } => {
+                    let (kind, extra, extra_turn) = turn_kind(kind);
+                    What::TurnSkipped {
+                        player: player.0,
+                        extra,
+                        lost,
+                        kind,
+                        extra_turn,
+                    }
+                }
+                Step::TurnEnded { player } => What::TurnEnd { player: player.0 },
+                Step::EffectBegan(e) => What::Effect(self.effect(e)),
+                Step::EffectChanged(e) => What::EffectChange(self.effect(e)),
+                Step::EffectEnded { id, why } => What::EffectEnd {
+                    id,
+                    why: match why {
+                        EffectEnd::Resolved => events::EffectEnd::Resolved,
+                        EffectEnd::Expired => events::EffectEnd::Expired,
+                        EffectEnd::LeftPlay => events::EffectEnd::LeftPlay,
+                        EffectEnd::ExtraTurn => events::EffectEnd::ExtraTurn,
+                    },
+                },
+                Step::ExtraTurnQueued { turn, front } => What::ExtraTurn(ExtraTurnQueued {
+                    id: turn.id,
+                    player: turn.player.0,
+                    card: turn.source.name().to_string(),
+                    limit: match turn.limit {
+                        ExtraLimit::None => events::ExtraLimit::None,
+                        ExtraLimit::ThirdInARow => events::ExtraLimit::ThirdInARow,
+                    },
+                    effect: turn.lasting,
+                    front,
+                }),
+                Step::ExtraTurnRemoved { id } => What::ExtraTurnRemoved { id },
+                Step::GameEnding {
+                    reason,
+                    final_round,
+                } => What::GameEnding(Ending {
+                    reason: reason_of(reason).into(),
+                    final_round: final_round.iter().map(|p| p.0).collect(),
+                }),
+                // Read with the move it follows; alone, the move was no placement.
+                Step::FaceUp(_) => continue,
                 Step::Phase(phase) => What::Phase {
                     phase: phase_of(phase),
                 },
@@ -223,13 +288,7 @@ impl Recorder {
                     resigned: outcome.resigned.contains(&PlayerId(i as u8)),
                 })
                 .collect();
-            let reason = match outcome.reason {
-                EndReason::ProvincesGone => "provinces",
-                EndReason::ColoniesGone => "colonies",
-                EndReason::PilesEmpty => "piles",
-                EndReason::TurnLimit => "turn-limit",
-                EndReason::Resigned => "resigned",
-            };
+            let reason = reason_of(outcome.reason);
             self.push(
                 &mut out,
                 What::GameEnd(GameEnd {
@@ -296,6 +355,7 @@ impl Recorder {
                 to: zone.clone(),
                 at: At::Top,
                 pos,
+                face: None,
             }));
             if !hand.is_empty() {
                 after.push(What::Draw(Move {
@@ -305,6 +365,7 @@ impl Recorder {
                     to: events::Zone::Seat(seat, SeatZone::Hand),
                     at: At::Top,
                     pos: vec![],
+                    face: None,
                 }));
             }
         }
@@ -339,7 +400,7 @@ impl Recorder {
             && v == verb
             && verb != events::Verb::Shuffle
             && let Some(l) = last.what.as_move_mut()
-            && (l.player, &l.from, &l.to, l.at) == (m.player, &m.from, &m.to, m.at)
+            && (l.player, &l.from, &l.to, l.at, l.face) == (m.player, &m.from, &m.to, m.at, m.face)
         {
             if !(l.pos.is_empty() && m.pos.is_empty()) {
                 l.pos.resize(l.cards.len(), 0);
@@ -450,6 +511,31 @@ impl Recorder {
             Gauge::PileDebt(id) => of_pile(self, id, "debt"),
             Gauge::Embargo(id) => of_pile(self, id, "embargo"),
             Gauge::TradeRoute(id) => of_pile(self, id, "trade-route"),
+            Gauge::NextHand => "next-hand".into(),
+            Gauge::Bought => "bought".into(),
+            Gauge::HandPlays => "hand-plays".into(),
+            Gauge::SkipTurns(p) => format!("{}/skip-turns", p.0),
+            Gauge::TurnsSkipped(p) => format!("{}/turns-skipped", p.0),
+        }
+    }
+
+    fn effect(&self, e: EffectState) -> Effect {
+        let cards = |ids: &[CardId]| ids.iter().map(|&c| self.card(c)).collect();
+        Effect {
+            id: e.id,
+            card: e.card.name().to_string(),
+            source: e.source.map(|c| self.card(c)),
+            owner: e.owner.0,
+            until: match e.until {
+                Until::EndOfTurn => events::Until::EndOfTurn,
+                Until::StartOfTurn(p) => events::Until::StartOfTurn(p.0),
+                Until::ExtraTurn => events::Until::ExtraTurn,
+                Until::Removed => events::Until::Removed,
+            },
+            ending: e.ending,
+            keeps: cards(&e.keeps),
+            holds: cards(&e.holds),
+            tokens: e.tokens,
         }
     }
 }
@@ -494,18 +580,31 @@ fn occurrence(event: &dominion_engine::Event) -> Option<What> {
             source: source.as_ref().map(name),
             choices: choices.clone(),
         }),
-        E::TurnSkipped { player, extra } => What::TurnSkipped {
-            player: player.0,
-            extra: extra.as_ref().map(name),
-            lost: false,
-        },
-        E::ExtraTurnLost { player, source } => What::TurnSkipped {
-            player: player.0,
-            extra: Some(name(source)),
-            lost: true,
-        },
         _ => return None,
     })
+}
+
+fn reason_of(reason: EndReason) -> &'static str {
+    match reason {
+        EndReason::ProvincesGone => "provinces",
+        EndReason::ColoniesGone => "colonies",
+        EndReason::PilesEmpty => "piles",
+        EndReason::TurnLimit => "turn-limit",
+        EndReason::Resigned => "resigned",
+    }
+}
+
+/// A turn's kind, the card that gave it and the extra turn waiting it was.
+fn turn_kind(kind: TurnKind) -> (events::TurnKind, Option<String>, Option<u32>) {
+    match kind {
+        TurnKind::Regular => (events::TurnKind::Regular, None, None),
+        TurnKind::Extra { source, id } => (
+            events::TurnKind::Extra,
+            Some(source.name().to_string()),
+            Some(id),
+        ),
+        TurnKind::Final => (events::TurnKind::Final, None, None),
+    }
 }
 
 /// Whether seat `a` finished ahead of seat `b`.
