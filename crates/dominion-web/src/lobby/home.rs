@@ -1,6 +1,7 @@
 //! The Automatch tab: dominion.games' landing tab. Searching for a game against whoever
 //! else is searching, Bot Game (a search for agents), the table starter, joining a seat
-//! by its token, the lobby's chat, and the sign-in panel while nobody is signed in.
+//! by its token, the lobby's chat, the sign-in panel while nobody is signed in, and for
+//! the owner of a dominion.games account, sending agents to play as it.
 
 use super::account::SignIn;
 use super::agent_picker::AgentPicker;
@@ -26,6 +27,7 @@ pub fn AutomatchTab() -> Element {
             div { class: "lb-columns",
                 div { class: "lb-column",
                     Automatch {}
+                    crate::online::OfficialBox {}
                 }
                 div { class: "lb-column",
                     if signed_out {

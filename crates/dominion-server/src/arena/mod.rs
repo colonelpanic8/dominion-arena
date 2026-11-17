@@ -16,6 +16,7 @@ mod chat;
 mod db;
 mod house;
 mod matching;
+mod official;
 mod records;
 mod tables;
 mod transcripts;
@@ -212,6 +213,8 @@ struct State {
     presence: HashMap<String, Presence>,
     chats: HashMap<String, Chat>,
     house: house::House,
+    /// The official accounts `dominion serve` keeps connected, by id.
+    official: BTreeMap<String, official::Official>,
 }
 
 impl State {
@@ -506,6 +509,7 @@ impl Arena {
             queue: mine.and_then(|id| state.queue_status(id)),
             games,
             house,
+            official: self.official_accounts(state),
         }
     }
 

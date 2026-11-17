@@ -63,6 +63,8 @@ pub struct Line {
     pub status: TableStatus,
     pub note: String,
     pub action: Action,
+    /// The official account whose dominion.games game this is.
+    pub official: Option<String>,
 }
 
 /// A game's kingdom as kingdom text.
@@ -123,6 +125,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
             status: TableStatus::of(t),
             note: spec_note(&t.spec),
             action,
+            official: None,
         });
     }
     let at_table = |game: &str| {
@@ -145,6 +148,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
             Source::Automatch => "Automatch",
             Source::Table => "Table",
             Source::Direct => "By token",
+            Source::Official => "dominion.games",
         };
         let rated = if g.rated { "rated" } else { "unrated" };
         lines.push(Line {
@@ -165,6 +169,29 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
             } else {
                 Action::None
             },
+            official: None,
+        });
+    }
+    for a in &lobby.official {
+        let Some(g) = a.game.as_ref().filter(|g| g.running) else {
+            continue;
+        };
+        let seats = (g.players.iter().enumerate())
+            .map(|(i, name)| match &a.agent {
+                Some(agent) if g.seat == Some(i as u8) => SeatMark::Agent(agent.clone()),
+                _ => SeatMark::Player(name.clone()),
+            })
+            .collect();
+        let rated = if g.rated { "rated" } else { "unrated" };
+        lines.push(Line {
+            title: g.players.join(", "),
+            table: None,
+            game: Some(g.id.clone()),
+            seats,
+            status: TableStatus::Running,
+            note: format!("dominion.games as {} · {rated}", a.account),
+            action: Action::Watch,
+            official: Some(a.id.clone()),
         });
     }
     lines
@@ -289,8 +316,12 @@ pub fn TablesTab() -> Element {
                     }
                     for l in lines {
                         {
-                            let key = l.table.clone().or(l.game.clone()).unwrap_or_default();
+                            let key = match &l.official {
+                                Some(account) => format!("official-{account}"),
+                                None => l.table.clone().or(l.game.clone()).unwrap_or_default(),
+                            };
                             let (table, game, action) = (l.table.clone(), l.game.clone(), l.action);
+                            let official = l.official.clone();
                             rsx! {
                                 div {
                                     key: "{key}",
@@ -323,6 +354,10 @@ pub fn TablesTab() -> Element {
                                             "data-action": "{action.label().to_lowercase()}",
                                             onclick: move |_| {
                                                 let (table, game) = (table.clone(), game.clone());
+                                                if let Some(account) = official.clone() {
+                                                    nav.push(Route::OnlineAccount { account });
+                                                    return;
+                                                }
                                                 match (action, table, game) {
                                                     (Action::Join, Some(id), _) => {
                                                         spawn(async move {

@@ -110,6 +110,7 @@ fn Record(game: GameRecord) -> Element {
         Source::Automatch => "Automatch",
         Source::Table => "Table",
         Source::Direct => "By token",
+        Source::Official => "dominion.games",
     };
     let kingdom = game
         .kingdom

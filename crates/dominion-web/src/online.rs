@@ -1,4 +1,11 @@
+//! dominion.games through the official accounts the server keeps connected: the page
+//! watching one's game on the table, the lobby's panel where its owner sends one of the
+//! server's agents to play as it, and its rating there for the Account tab.
+
+use crate::account::use_account;
+use crate::app::Route;
 use crate::lobby::agent_picker::AgentPicker;
+use crate::lobby::{Fieldset, use_lobby};
 use crate::{
     api,
     game::{GameCtx, GameState, table},
@@ -6,9 +13,13 @@ use crate::{
 };
 use dioxus::prelude::*;
 use dominion_protocol::api::{
-    GameSummary, OnlineAccountInfo, OnlineManagement, OnlineMatching, OnlineMode,
-    OnlineObservation, OnlineOutcome, OnlineRating, OnlineRatingType, OnlineStart,
+    GameSummary, OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineOutcome,
+    OnlineRating, OnlineRatingType, OnlineStart,
 };
+use dominion_protocol::lobby::OfficialAccount;
+
+const CSS: &str = include_str!("../assets/online.css");
+
 #[derive(Clone, Copy)]
 enum Action {
     Start,
@@ -18,11 +29,24 @@ enum Action {
     Reconnect,
     Cancel,
 }
+
 fn card_names(text: &str) -> Vec<String> {
     text.split([',', '\n'])
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
+        .collect()
+}
+
+/// The official accounts the signed-in player sends agents to play as.
+fn use_owned() -> Vec<OfficialAccount> {
+    let ctx = use_lobby();
+    let account = use_account();
+    let me = account.name();
+    let lobby = ctx.lobby.read();
+    (lobby.iter().flat_map(|l| &l.official))
+        .filter(|a| me.as_deref() == Some(a.owner.as_str()))
+        .cloned()
         .collect()
 }
 
@@ -41,16 +65,23 @@ fn apply(mut state: Signal<GameState>, mut game: Signal<String>, update: OnlineO
         .error
         .or_else(|| (!update.connected).then(|| "Official connection is disconnected".into()));
 }
-/// One official account's page: `account` none is the primary one's unprefixed routes.
+
+/// An official account's game on the table, for anyone to watch: `account` none is the
+/// primary account's. Its owner also gets the account's panel under the log.
 #[component]
 pub fn OnlinePage(account: Option<String>) -> Element {
     let id = use_signal(|| account.clone());
-    let mut accounts = use_signal(Vec::<OnlineAccountInfo>::new);
+    let mut primary = use_signal(|| None::<String>);
     use_future(move || async move {
-        if let Ok(list) = api::online_accounts().await {
-            accounts.set(list);
+        if id.peek().is_none()
+            && let Ok(list) = api::online_accounts().await
+        {
+            primary.set(list.into_iter().find(|a| a.primary).map(|a| a.id));
         }
     });
+    let owned = use_owned();
+    let shown = account.clone().or(primary());
+    let owner = (shown.as_ref()).filter(|s| owned.iter().any(|a| &&a.id == s));
     let mut state = use_signal(GameState::default);
     let game = use_signal(String::new);
     let summary = use_signal(|| None::<GameSummary>);
@@ -93,35 +124,97 @@ pub fn OnlinePage(account: Option<String>) -> Element {
             platform::sleep(3000).await;
         }
     });
-    let mut rating_type = use_signal(OnlineRatingType::default);
-    let mut refresh = use_signal(|| 0_u32);
-    let rating = use_resource(move || async move {
-        refresh();
-        api::online_rating(id().as_deref(), rating_type())
-            .await
-            .map_err(|e| e.to_string())
-    });
-    // Asked again each minute, and twice once a game ends: at once, and once dominion.games
-    // has had time to count it.
-    use_future(move || async move {
-        let mut ended = None::<String>;
-        let mut waited = 0;
-        loop {
-            platform::sleep(5000).await;
-            waited += 5000;
-            let finished = (state.peek().view.as_ref())
-                .filter(|v| v.game.result.is_some())
-                .map(|v| v.game.id.clone().unwrap_or_default());
-            if finished.is_some() && finished != ended {
-                ended = finished;
-                waited = 35_000;
-                refresh += 1;
-            } else if waited >= 60_000 {
-                waited = 0;
-                refresh += 1;
+    let error = state.read().error.clone();
+    let controls = rsx! {
+        if let Some(account) = owner.cloned() {
+            OfficialPanel { key: "{account}", account }
+        }
+        if let Some(error) = error.clone() {
+            p { class: "error", "{error}" }
+        }
+    };
+    rsx! {
+        style { {CSS} }
+        if state.read().view.is_some() {
+            table::TableGame { controls, arena: false }
+        } else {
+            section { class: "online-idle",
+                h1 { class: "page-title", "dominion.games" }
+                p { class: "page-lede",
+                    "No game on dominion.games right now. "
+                    Link { to: Route::Lobby {}, "Back to the lobby" }
+                }
+                div { class: "panel", {controls} }
             }
         }
-    });
+    }
+}
+
+/// The lobby's dominion.games box: for the owner of an official account, sending one of
+/// the server's agents to play as it.
+#[component]
+pub fn OfficialBox() -> Element {
+    let owned = use_owned();
+    let mut picked = use_signal(|| None::<String>);
+    let nav = navigator();
+    let Some(shown) = (owned.iter())
+        .find(|a| picked().as_ref() == Some(&a.id))
+        .or(owned.first())
+        .cloned()
+    else {
+        return rsx! {};
+    };
+    let running = shown.game.as_ref().is_some_and(|g| g.running);
+    rsx! {
+        style { {CSS} }
+        Fieldset { title: "dominion.games", class: "lb-official",
+            p { class: "lb-note",
+                "Send one of the server's agents to play on dominion.games as {shown.account}. "
+                "Its game is listed on the Tables tab, and the agent's history keeps it."
+            }
+            if owned.len() > 1 {
+                div { class: "lb-multibutton",
+                    for a in owned.iter() {
+                        {
+                            let id = a.id.clone();
+                            rsx! {
+                                div {
+                                    key: "{a.id}",
+                                    class: if a.id == shown.id { "lb-multi active" } else { "lb-multi" },
+                                    onclick: move |_| picked.set(Some(id.clone())),
+                                    "{a.account}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if running {
+                {
+                    let account = shown.id.clone();
+                    rsx! {
+                        button {
+                            class: "lb-button lb-gold",
+                            "data-action": "watch-official",
+                            onclick: move |_| { nav.push(Route::OnlineAccount { account: account.clone() }); },
+                            "Watch"
+                        }
+                    }
+                }
+            }
+            {
+                let account = shown.id.clone();
+                rsx! { OfficialPanel { key: "{account}", account } }
+            }
+        }
+    }
+}
+
+/// What the owner of official account `account` does with it: start a game or a search
+/// with an agent, cancel the search, pause or resume the agent, resign, reconnect.
+#[component]
+fn OfficialPanel(account: String) -> Element {
+    let id = use_signal(|| account.clone());
     let mut management = use_signal(|| None::<OnlineManagement>);
     let mut agent = use_signal(String::new);
     let mut kingdom = use_signal(String::new);
@@ -137,7 +230,7 @@ pub fn OnlinePage(account: Option<String>) -> Element {
     let mut confirming = use_signal(|| false);
     use_future(move || async move {
         loop {
-            match api::online_management(id.peek().as_deref()).await {
+            match api::online_management(Some(&id.peek())).await {
                 Ok(status) => {
                     let first = (status.models.first())
                         .and_then(|m| m.default_choice())
@@ -163,6 +256,7 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         action_error.set(None);
         confirming.set(false);
         let selected = agent.peek().clone();
+        let bot_game = *mode.peek() == OnlineMode::Bots;
         let request = OnlineStart {
             agent: selected.clone(),
             mode: *mode.peek(),
@@ -172,12 +266,12 @@ pub fn OnlinePage(account: Option<String>) -> Element {
                 max_rating: *max_rating.peek(),
                 timer: *timer.peek(),
             },
-            kingdom: if *mode.peek() == OnlineMode::Bots {
+            kingdom: if bot_game {
                 card_names(&kingdom.peek())
             } else {
                 vec![]
             },
-            landscapes: if *mode.peek() == OnlineMode::Bots {
+            landscapes: if bot_game {
                 card_names(&landscapes.peek())
             } else {
                 vec![]
@@ -186,7 +280,7 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         };
         let account = id.peek().clone();
         spawn(async move {
-            let account = account.as_deref();
+            let account = Some(account.as_str());
             let result = match action {
                 Action::Start => api::online_start(account, &request).await,
                 Action::Attach => api::online_attach(account, selected).await,
@@ -202,51 +296,26 @@ pub fn OnlinePage(account: Option<String>) -> Element {
             busy.set(false);
         });
     });
-    let controls = rsx! {
-        div {class:"panel online-controls",
-            strong {"dominion.games"}
-            if accounts.read().len() > 1 {
-                nav {class:"online-accounts",
-                    for a in accounts.read().iter() {
-                        Link {
-                            class: if id.read().as_deref().map_or(a.primary, |id| id == a.id) {"on"} else {""},
-                            to: if a.primary {crate::app::Route::Online{}} else {crate::app::Route::OnlineAccount{account:a.id.clone()}},
-                            "{a.account}"
-                            if a.running {" · playing"} else if !a.connected {" · disconnected"}
+    rsx! {
+        div { class: "online-controls",
+            if let Some(status) = management.read().as_ref() {
+                p { class: "muted",
+                    if status.connected { "Official account connected" } else { "Official account disconnected" }
+                    if let Some(account) = &status.account { " · {account}" }
+                }
+                if status.running || status.searching {
+                    p { class: "muted",
+                        match status.mode {
+                            OnlineMode::Bots => "Unrated server bots",
+                            OnlineMode::Unrated => "Unrated public humans",
+                            OnlineMode::Rated => "Rated public humans",
                         }
                     }
                 }
-            }
-            Link {to:crate::app::Route::Account{},"Arena login / account"}
-            div {class:"online-rating",
-                label {"Rating"
-                    select {value:"{rating_type.read().ordinal()}",onchange:move|e|{if let Some(kind)=e.value().parse().ok().and_then(OnlineRatingType::from_ordinal){rating_type.set(kind);}},
-                        for kind in OnlineRatingType::ALL {option {value:"{kind.ordinal()}","{kind.label()}"}}
-                    }
-                }
-                match rating.read().as_ref() {
-                    None => rsx! {p {class:"muted","Asking dominion.games…"}},
-                    Some(Err(e)) => rsx! {p {class:"muted","{e}"}},
-                    Some(Ok(r)) => rsx! {RatingSummary {rating: r.clone()}},
-                }
-            }
-            if let Some(status)=management.read().as_ref() {
-                p {class:"muted",
-                    if status.connected {"Official account connected"}else{"Official account disconnected"}
-                    if let Some(account)=&status.account {" · {account}"}
-                    " · Your account’s view"
-                }
-                if status.running || status.searching {
-                    p {class:"muted",match status.mode {
-                        OnlineMode::Bots=>"Unrated server bots",
-                        OnlineMode::Unrated=>"Unrated public humans",
-                        OnlineMode::Rated=>"Rated public humans",
-                    }}
-                }
-                label {"Agent"
+                label { "Agent"
                     if status.models.is_empty() {
-                        select {value:"{agent}",disabled:busy(),onchange:move|e|agent.set(e.value()),
-                            for name in &status.agents {option {value:"{name}","{name}"}}
+                        select { value: "{agent}", disabled: busy(), onchange: move |e| agent.set(e.value()),
+                            for name in &status.agents { option { value: "{name}", "{name}" } }
                         }
                     } else {
                         AgentPicker {
@@ -257,92 +326,155 @@ pub fn OnlinePage(account: Option<String>) -> Element {
                         }
                     }
                 }
-                if status.agents.is_empty(){p {class:"muted","The agent runner is unavailable. No game will be started without an agent."}}
-                for feedback in &status.queue_feedback {p {class:"muted","{feedback}"}}
+                if status.agents.is_empty() {
+                    p { class: "muted", "The agent runner is unavailable. No game will be started without an agent." }
+                }
+                for feedback in &status.queue_feedback { p { class: "muted", "{feedback}" } }
                 if status.searching {
-                    p {"Searching for a public match… The selected agent starts when a match is found."}
-                    button {disabled:busy(),onclick:move|_|execute.call(Action::Cancel),"Cancel matchmaking"}
+                    p { "Searching for a public match… The selected agent starts when a match is found." }
+                    button { disabled: busy(), onclick: move |_| execute.call(Action::Cancel), "Cancel matchmaking" }
                 } else if !status.running {
-                    label {"Game type"
-                        select {value: match mode() {OnlineMode::Bots=>"bots",OnlineMode::Unrated=>"unrated",OnlineMode::Rated=>"rated"}, disabled:busy(), onchange:move|e|mode.set(match e.value().as_str(){"bots"=>OnlineMode::Bots,"unrated"=>OnlineMode::Unrated,_=>OnlineMode::Rated}),
-                            option {value:"rated","Public humans · rated"}
-                            option {value:"unrated","Public humans · unrated"}
-                            option {value:"bots","Server bots · unrated"}
+                    label { "Game type"
+                        select {
+                            value: match mode() { OnlineMode::Bots => "bots", OnlineMode::Unrated => "unrated", OnlineMode::Rated => "rated" },
+                            disabled: busy(),
+                            onchange: move |e| mode.set(match e.value().as_str() { "bots" => OnlineMode::Bots, "unrated" => OnlineMode::Unrated, _ => OnlineMode::Rated }),
+                            option { value: "rated", "Public humans · rated" }
+                            option { value: "unrated", "Public humans · unrated" }
+                            option { value: "bots", "Server bots · unrated" }
                         }
                     }
                     if mode() == OnlineMode::Bots {
-                    label {"Server bots"
-                        input {r#type:"number",min:"1",max:"5",value:"{bots}",disabled:busy(),oninput:move|e|{if let Ok(n)=e.value().parse(){bots.set(n);}}}
-                    }
-                    label {"Kingdom (optional, comma-separated)"
-                        textarea {value:"{kingdom}",disabled:busy(),oninput:move|e|kingdom.set(e.value())}
-                    }
-                    label {"Landscapes (optional, comma-separated)"
-                        input {value:"{landscapes}",disabled:busy(),oninput:move|e|landscapes.set(e.value())}
-                    }
+                        label { "Server bots"
+                            input { r#type: "number", min: "1", max: "5", value: "{bots}", disabled: busy(), oninput: move |e| { if let Ok(n) = e.value().parse() { bots.set(n); } } }
+                        }
+                        label { "Kingdom (optional, comma-separated)"
+                            textarea { value: "{kingdom}", disabled: busy(), oninput: move |e| kingdom.set(e.value()) }
+                        }
+                        label { "Landscapes (optional, comma-separated)"
+                            input { value: "{landscapes}", disabled: busy(), oninput: move |e| landscapes.set(e.value()) }
+                        }
                     } else {
-                        label {"Players"
-                            select {value:"{players}",disabled:busy(),onchange:move|e|{if let Ok(n)=e.value().parse(){players.set(n);}},
-                                option {value:"2","2"} option {value:"3","3"}
+                        label { "Players"
+                            select { value: "{players}", disabled: busy(), onchange: move |e| { if let Ok(n) = e.value().parse() { players.set(n); } },
+                                option { value: "2", "2" }
+                                option { value: "3", "3" }
                             }
                         }
-                        label {"Minimum rating difference"
-                            input {r#type:"number",min:"-100",max:"100",value:"{min_rating}",disabled:busy(),oninput:move|e|{if let Ok(n)=e.value().parse(){min_rating.set(n);}}}
+                        label { "Minimum rating difference"
+                            input { r#type: "number", min: "-100", max: "100", value: "{min_rating}", disabled: busy(), oninput: move |e| { if let Ok(n) = e.value().parse() { min_rating.set(n); } } }
                         }
-                        label {"Maximum rating difference"
-                            input {r#type:"number",min:"-100",max:"100",value:"{max_rating}",disabled:busy(),oninput:move|e|{if let Ok(n)=e.value().parse(){max_rating.set(n);}}}
+                        label { "Maximum rating difference"
+                            input { r#type: "number", min: "-100", max: "100", value: "{max_rating}", disabled: busy(), oninput: move |e| { if let Ok(n) = e.value().parse() { max_rating.set(n); } } }
                         }
-                        label {"Timer"
-                            select {value:"{timer}",disabled:busy(),onchange:move|e|{if let Ok(n)=e.value().parse(){timer.set(n);}},
-                                option {value:"3","Patient"} option {value:"2","Friendly"}
-                                option {value:"1","Hasty"} option {value:"0","Reckless"}
+                        label { "Timer"
+                            select { value: "{timer}", disabled: busy(), onchange: move |e| { if let Ok(n) = e.value().parse() { timer.set(n); } },
+                                option { value: "3", "Patient" }
+                                option { value: "2", "Friendly" }
+                                option { value: "1", "Hasty" }
+                                option { value: "0", "Reckless" }
                             }
                         }
                     }
-                    button {class:"primary",disabled:busy() || agent.read().is_empty() || !status.connected || status.agents.is_empty(),onclick:move|_|execute.call(Action::Start),
-                        if mode() == OnlineMode::Bots {"Start unrated bot game"} else if mode() == OnlineMode::Rated {"Find rated human match"} else {"Find unrated human match"}
+                    button {
+                        class: "primary",
+                        disabled: busy() || agent.read().is_empty() || !status.connected || status.agents.is_empty(),
+                        onclick: move |_| execute.call(Action::Start),
+                        match mode() {
+                            OnlineMode::Bots => "Start unrated bot game",
+                            OnlineMode::Rated => "Find rated human match",
+                            OnlineMode::Unrated => "Find unrated human match",
+                        }
                     }
                 } else {
-                    if let Some(playing)=&status.agent {
-                        p {"Playing agent: {playing}"}
-                        button {disabled:busy(),onclick:move|_|execute.call(Action::Pause),"Pause agent"}
+                    if let Some(playing) = &status.agent {
+                        p { "Playing agent: {playing}" }
+                        button { disabled: busy(), onclick: move |_| execute.call(Action::Pause), "Pause agent" }
                     } else {
-                        p {"Agent paused"}
-                        button {disabled:busy() || agent.read().is_empty(),onclick:move|_|execute.call(Action::Attach),"Resume with selected agent"}
+                        p { "Agent paused" }
+                        button { disabled: busy() || agent.read().is_empty(), onclick: move |_| execute.call(Action::Attach), "Resume with selected agent" }
                     }
                     if confirming() {
-                        p {"Resign this official game?"}
-                        button {disabled:busy(),onclick:move|_|execute.call(Action::Resign),"Confirm resign"}
-                        button {onclick:move|_|confirming.set(false),"Keep playing"}
+                        p { "Resign this official game?" }
+                        button { disabled: busy(), onclick: move |_| execute.call(Action::Resign), "Confirm resign" }
+                        button { onclick: move |_| confirming.set(false), "Keep playing" }
                     } else {
-                        button {disabled:busy(),onclick:move|_|confirming.set(true),"Resign…"}
+                        button { disabled: busy(), onclick: move |_| confirming.set(true), "Resign…" }
                     }
                 }
-                button {disabled:busy(),onclick:move|_|execute.call(Action::Reconnect),"Reconnect official account"}
-                if busy(){p {class:"muted","Updating…"}}
-                if let Some(error)=&status.error {p {class:"error","{error}"}}
-            } else {p {"Sign in as this official account’s Arena owner to manage its games."}}
-            if let Some(error)=action_error(){p {class:"error","{error}"}}
-            if let Some(error)=state.read().error.clone() {p {class:"error","{error}"}}
+                button { disabled: busy(), onclick: move |_| execute.call(Action::Reconnect), "Reconnect official account" }
+                if busy() { p { class: "muted", "Updating…" } }
+                if let Some(error) = &status.error { p { class: "error", "{error}" } }
+            } else {
+                p { class: "muted", "Asking the server…" }
+            }
+            if let Some(error) = action_error() { p { class: "error", "{error}" } }
         }
-    };
+    }
+}
+
+/// The Account tab's box for each official account the player owns: its rating and
+/// latest results on dominion.games.
+#[component]
+pub fn OfficialRatings() -> Element {
+    let owned = use_owned();
     rsx! {
-        style { {include_str!("../assets/online.css")} }
-        if state.read().view.as_ref().is_some_and(|v| v.game.running) {
-            table::TableGame {controls, arena: false}
-        } else {
-            section {class:"online-idle",
-                h1 {class:"page-title","dominion.games"}
-                p {class:"page-lede","Send one of the Arena's agents to play on the official server under this official account. Its game shows here on the table."}
-                {controls}
-                if let Some(result) = state.read().view.as_ref().and_then(|v| v.game.result.as_ref()) {
-                    div {class:"panel",
-                        h2 {"Last game"}
-                        for player in &result.players {
-                            p {"{player.rank}. {player.name} · {player.vp} VP"}
+        for a in owned {
+            Fieldset { key: "{a.id}", title: "dominion.games: {a.account}", class: "lb-official-rating",
+                style { {CSS} }
+                OfficialRating { account: a.id.clone(), running: a.game.as_ref().is_some_and(|g| g.running) }
+            }
+        }
+    }
+}
+
+#[component]
+fn OfficialRating(account: String, running: bool) -> Element {
+    let id = use_signal(|| account.clone());
+    let mut rating_type = use_signal(OnlineRatingType::default);
+    let mut refresh = use_signal(|| 0_u32);
+    let rating = use_resource(move || async move {
+        refresh();
+        api::online_rating(Some(&id()), rating_type())
+            .await
+            .map_err(|e| e.to_string())
+    });
+    // Asked again each minute, and twice once a game ends: at once, and once dominion.games
+    // has had time to count it.
+    let mut was_running = use_signal(|| running);
+    if *was_running.peek() != running {
+        was_running.set(running);
+        if !running {
+            refresh += 1;
+            spawn(async move {
+                platform::sleep(30_000).await;
+                refresh += 1;
+            });
+        }
+    }
+    use_future(move || async move {
+        loop {
+            platform::sleep(60_000).await;
+            refresh += 1;
+        }
+    });
+    rsx! {
+        div { class: "online-controls online-rating",
+            label { "Rating"
+                select {
+                    value: "{rating_type.read().ordinal()}",
+                    onchange: move |e| {
+                        if let Some(kind) = e.value().parse().ok().and_then(OnlineRatingType::from_ordinal) {
+                            rating_type.set(kind);
                         }
-                    }
+                    },
+                    for kind in OnlineRatingType::ALL { option { value: "{kind.ordinal()}", "{kind.label()}" } }
                 }
+            }
+            match rating.read().as_ref() {
+                None => rsx! { p { class: "muted", "Asking dominion.games…" } },
+                Some(Err(e)) => rsx! { p { class: "muted", "{e}" } },
+                Some(Ok(r)) => rsx! { RatingSummary { rating: r.clone() } },
             }
         }
     }

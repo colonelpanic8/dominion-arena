@@ -7,8 +7,8 @@ mod common;
 use common::card_db;
 use dominion_protocol::api::{DealSlot, GameSummary};
 use dominion_protocol::lobby::{
-    Lobby, Me, MyTable, RatingInfo, Searching, SeatEdit, SeatKind, Source, Stats, TableInfo,
-    TableSeat, TableSpec, UserRef,
+    Lobby, Me, MyTable, OfficialAccount, OfficialGame, RatingInfo, Searching, SeatEdit, SeatKind,
+    Source, Stats, TableInfo, TableSeat, TableSpec, UserRef,
 };
 use dominion_web::lobby::rules::{
     KINGDOM_SLOTS, LandscapeSlot, Pick, TableRules, TableStatus, Ternary, expansions,
@@ -257,6 +257,7 @@ fn the_tables_tab_offers_what_each_line_allows() {
         queue: None,
         games: vec![],
         house: Default::default(),
+        official: vec![],
     };
     let games = [
         game("g0", &["Ada", "Zed"], false, true),
@@ -379,4 +380,50 @@ fn a_full_kingdom_takes_no_more_piles_and_landscapes_stop_at_four() {
     t.remove("Cellar");
     assert!(!t.kingdom.contains(&Pick::Card("Cellar".into())));
     assert!(t.can_add(&db, "Smithy"));
+}
+
+#[test]
+fn a_running_official_game_is_listed_for_watching() {
+    let game = |running| OfficialGame {
+        id: "123".into(),
+        running,
+        rated: true,
+        players: vec!["Rival".into(), "Mine".into()],
+        seat: Some(1),
+        kingdom: vec![],
+        landscapes: vec![],
+    };
+    let account = |id: &str, running| OfficialAccount {
+        id: id.into(),
+        account: "Mine".into(),
+        owner: "Ada".into(),
+        connected: true,
+        searching: false,
+        agent: Some("Claude".into()),
+        game: Some(game(running)),
+    };
+    let lobby = Lobby {
+        version: 1,
+        you: None,
+        online: 0,
+        searching: Searching::default(),
+        tables: vec![],
+        table: None,
+        queue: None,
+        games: vec![],
+        house: Default::default(),
+        official: vec![account("main", true), account("other", false)],
+    };
+    let lines = listing(&lobby, &[], &|_| false);
+    assert_eq!(lines.len(), 1, "a finished official game isn't listed");
+    let line = &lines[0];
+    assert_eq!(line.official.as_deref(), Some("main"));
+    assert_eq!(line.action, Action::Watch);
+    assert_eq!(
+        line.seats,
+        [
+            SeatMark::Player("Rival".into()),
+            SeatMark::Agent("Claude".into())
+        ]
+    );
 }

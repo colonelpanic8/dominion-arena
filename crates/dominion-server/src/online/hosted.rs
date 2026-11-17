@@ -20,7 +20,7 @@ use dominion_protocol::api::{
     OnlineOutcome, OnlineRating, OnlineRatingPeriod, OnlineRatingPoint, OnlineRatingType,
     OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
 };
-use dominion_protocol::lobby::{GameMeta, UserKind};
+use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, UserKind};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -214,10 +214,12 @@ impl Hosted {
         let lifecycle_stop = stop.clone();
         tokio::spawn(async move {
             let web = lifecycle_web;
+            web.publish(&updates.borrow_and_update().clone());
             loop {
                 tokio::select! {_=lifecycle_stop.cancelled()=>break,changed=updates.changed()=>if changed.is_err(){break;}}
                 let _guard = web.hosted.control.lock().await;
                 let update = updates.borrow_and_update().clone();
+                web.publish(&update);
                 if update.error.is_some() || !update.connected {
                     web.set_job(None);
                 } else if update.reducer.running {
@@ -422,6 +424,34 @@ impl Web {
     }
     fn set_job(&self, job: Option<crate::house::Job>) {
         self.access.arena.set_official_job(&self.hosted.id, job);
+    }
+    /// Tells the lobby how the account stands.
+    fn publish(&self, update: &Update) {
+        let view = update.view().ok().flatten();
+        let game = view.as_ref().and_then(|v| {
+            let mut players: Vec<_> = v.you.iter().chain(&v.opponents).collect();
+            players.sort_by_key(|p| p.index);
+            Some(OfficialGame {
+                id: v.game.id.clone()?,
+                running: v.game.running,
+                rated: update.mode == OnlineMode::Rated,
+                players: players.iter().map(|p| p.name.clone()).collect(),
+                seat: v.seat,
+                kingdom: v.game.kingdom.clone(),
+                landscapes: v.game.landscapes.clone(),
+            })
+        });
+        let info = OfficialAccount {
+            id: self.hosted.id.clone(),
+            account: self.hosted.account.clone(),
+            owner: self.hosted.owner.clone(),
+            connected: update.connected,
+            searching: update.searching,
+            agent: None,
+            game,
+        };
+        let result = view.as_ref().and_then(|v| v.game.result.as_ref());
+        self.access.arena.set_official(info, result);
     }
 }
 impl std::fmt::Debug for Hosted {

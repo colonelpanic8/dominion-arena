@@ -136,6 +136,7 @@ pub fn AccountTab() -> Element {
                             if me.user.kind == UserKind::Registered {
                                 Bots { me }
                             }
+                            crate::online::OfficialRatings {}
                             About {}
                         }
                     },

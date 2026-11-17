@@ -110,7 +110,6 @@ fn Shell() -> Element {
             nav { "aria-label": "Main",
                 Link { to: Route::Lobby {}, active_class: "on", "Lobby" }
                 Link { to: Route::Gallery {}, active_class: "on", "Gallery" }
-                Link { to: Route::Online {}, active_class: "on", "dominion.games" }
             }
             match account.name() {
                 Some(name) => rsx! { Link { class: "who", to: Route::Account {}, "{name}" } },
