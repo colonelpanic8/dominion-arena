@@ -91,8 +91,17 @@ impl GameState {
         } else if self.view.is_none() {
             self.undos = sv.undos;
         }
-        let complete = self.merge_log(&sv.view.since_last_decision);
-        if self.view.is_none() || sv.version >= self.version {
+        let newer = self.view.is_none() || sv.version >= self.version;
+        let entries = &sv.view.since_last_decision;
+        // A log from seq 0 is the whole log, which a server relaying dominion.games' may
+        // have rewritten since.
+        let complete = if newer && entries.first().is_some_and(|e| e.seq == 0) {
+            self.log.clone_from(entries);
+            true
+        } else {
+            self.merge_log(entries)
+        };
+        if newer {
             self.version = sv.version;
             self.view = Some(sv.view);
             self.deciding = sv.deciding;
@@ -107,6 +116,22 @@ impl GameState {
         } else {
             Applied::Refetch
         }
+    }
+
+    /// Takes in a view that is whole in itself, as one relayed from dominion.games is: it
+    /// has the whole log, under counters that start again when its server reconnects or
+    /// restarts. One of another game, or under other counters, replaces all that is held.
+    pub fn apply_whole(&mut self, sv: SeatView) {
+        let continues = (self.view.as_ref()).is_some_and(|v| v.game.id == sv.view.game.id)
+            && sv.undos == self.undos
+            && sv.version >= self.version;
+        if !continues {
+            *self = GameState {
+                server_ahead: self.server_ahead,
+                ..GameState::default()
+            };
+        }
+        self.apply(sv);
     }
 
     /// Whether a change event means the view must be fetched again.

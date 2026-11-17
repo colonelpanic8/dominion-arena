@@ -544,7 +544,8 @@ fn shape(
     }
 }
 
-/// The game page's table. `controls` go under the log; `arena` enables its metadata and chat.
+/// The game page's table. `controls` go under the log; `arena` is a game of this server's,
+/// which has a chat.
 #[component]
 pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Element {
     let game = use_game();
@@ -774,7 +775,7 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
             if let Some((p, _)) = ctx.popup.read().clone() {
                 PopupView { popup: p, g: g.clone(), board: b.clone() }
             }
-            side::Log { entries: log, names, g: g.clone(), game_id, board: b.clone(), arena }
+            side::Log { entries: log, names, g: g.clone(), game_id, board: b.clone() }
             div { class: "dt-below-log", style: "{g.below_log.style()}",
                 div { class: "dt-controls", {controls}
                     if can_undo {

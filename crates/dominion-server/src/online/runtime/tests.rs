@@ -194,6 +194,24 @@ fn active_runtime() -> (TempDir, Runtime) {
     runtime.process(Message::Question(question(7))).unwrap();
     (directory, runtime)
 }
+/// An account in a game with a decision open and `logs` behind it. Its answers reach no
+/// server: one the client accepts is consumed, then fails to send.
+pub(crate) fn fixture_client(logs: Vec<LogEntry>) -> (TempDir, Client) {
+    let (directory, mut runtime) = active_runtime();
+    runtime.update.reducer.logs = logs;
+    let (publish, updates) = watch::channel(runtime.update.clone());
+    let (tx, mut requests) = mpsc::channel(16);
+    tokio::spawn(async move {
+        while let Some(request) = requests.recv().await {
+            if let Request::Answer(answer, expect, reply) = request {
+                let result = runtime.answer(answer, expect).await;
+                publish.send_replace(runtime.update.clone());
+                let _ = reply.send(result);
+            }
+        }
+    });
+    (directory, Client { tx, updates })
+}
 
 #[test]
 fn no_human_seats_or_silently_ignored_counts() {
@@ -634,8 +652,10 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     assert_eq!(response.headers()["cache-control"], "no-store");
     let observed: OnlineObservation =
         serde_json::from_str(&response.text().await.unwrap()).unwrap();
-    assert!(observed.view.as_ref().unwrap().spectating);
-    assert!(observed.view.as_ref().unwrap().decision.is_none());
+    let watched = observed.game.unwrap();
+    assert!(watched.view.spectating && watched.view.decision.is_none());
+    // The account is the one asked, and a snapshot has come.
+    assert_eq!((watched.deciding, watched.undos), (Some(0), 1));
     assert!(client.current().view().unwrap().unwrap().decision.is_some());
     let agent = crate::client::Client::connect_authenticated(
         &format!("{base}/mcp/online"),

@@ -14,6 +14,8 @@ use rmcp::ServiceExt;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 pub use runtime::{Client, NewGame};
+#[cfg(test)]
+pub(crate) use {mcp::Session, runtime::tests::fixture_client};
 
 /// The id of the account the flat `online_*` settings configure.
 pub const LEGACY_ID: &str = "default";

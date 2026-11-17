@@ -87,6 +87,17 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/store.rs            the state directory: its lock, a JSON file per game written atomically
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
+  src/mcp/play.rs         dominion/play@1: arguments, the text a session is shown
+    seat.rs               `PlaySeat`: how a backend's seat is observed, answered and
+                          waited for (Arena's hub: `ArenaSeat`; an official account:
+                          `online::mcp::Session`), and `Play`, the tools over any of
+                          them. A check, result or error of state / step / wait / cards /
+                          log / turns / play_treasures goes here, never in a backend
+    conformance.rs        both backends' seats held to the same contract
+  src/online/             dominion.games played through `dominion-online`: `runtime.rs`
+                          keeps an account's connection, `hosted.rs` serves it from
+                          `dominion serve` (watching as a `SeatView`, management),
+                          `mcp.rs` its MCP session
 crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
                           only on dominion-protocol (engine crates are dev-dependencies)
   src/api.rs              typed client for /api and the SSE change feed
@@ -100,8 +111,11 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     measure.rs            text widths: canvas in the browser, an estimate natively
   assets/cards.css        card styles (cqw units; images through --dc-* variables)
   src/gallery.rs          /gallery: every card through the renderer, with filters
+  src/online.rs           /online: an official account's game on the same table through
+                          the same `GameState`, with its management panel and rating
   src/game/state.rs       the game page's model (view, version, log, `meta`, chat),
-                          selection -> Answer
+                          selection -> Answer; `apply` for Arena's views, `apply_whole`
+                          for an official account's
   src/game/mod.rs         GamePage: the seat shown (one held here, else the account's from
                           `/api/me/games`, else none: watching), keeping state current (the
                           feed for the game and its chat), `GameCtx` context

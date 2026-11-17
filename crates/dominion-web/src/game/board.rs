@@ -866,7 +866,7 @@ pub fn board(
         your_turn: t.your_turn,
         extra: t.extra.clone(),
         deciding: deciding.filter(|_| running).map(|p| names.who(p)),
-        you_decide: running && deciding.is_some() && deciding == view.seat,
+        you_decide: running && !view.spectating && deciding.is_some() && deciding == view.seat,
     };
 
     let mut basic: Vec<PileEntry> = vec![];

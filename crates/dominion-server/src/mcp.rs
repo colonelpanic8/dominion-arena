@@ -1,6 +1,7 @@
 //! The MCP tools: one `Session` per MCP session, sharing the `Hub`.
 
 pub(crate) mod play;
+use play::{Play, PlaySeat, failure, structured};
 
 use crate::arena::{Arena, Ident};
 use crate::hub::{Hub, HubError, NewGame, Seat, panic_message};
@@ -207,18 +208,53 @@ pub struct Session {
     presentation: Arc<Mutex<play::Presentation>>,
 }
 
+const NO_GAME: &str = "call new_game (Arena has token seats, no automatic bots)";
+const NOT_SEATED: &str = "NOT_SEATED: pass token to state, or call join_game first";
+
+/// One of Arena's own seats, played through its hub.
+pub(crate) struct ArenaSeat<'a> {
+    pub hub: &'a Hub,
+    pub seat: Seat,
+    /// The longest this session may wait.
+    pub max_wait: Duration,
+}
+
+impl PlaySeat for ArenaSeat<'_> {
+    fn observe(&self) -> Result<Option<(Seat, crate::hub::PlayObservation)>, String> {
+        match self.hub.play_observation(&self.seat) {
+            Ok(observation) => Ok(Some((self.seat.clone(), observation))),
+            Err(e) => Err(format!("NO_GAME: {e}; call new_game")),
+        }
+    }
+
+    async fn answer(&self, answer: &Answer, _: Option<&[String]>) -> Result<(), String> {
+        let answered = self.hub.answer_with(&self.seat, answer, None);
+        answered.map(drop).map_err(|e| format!("REJECTED: {e}"))
+    }
+
+    async fn wait(&self, timeout: Duration) -> Result<(), String> {
+        let waited = self.hub.wait(&self.seat, timeout.min(self.max_wait)).await;
+        waited
+            .map(drop)
+            .map_err(|e| format!("NO_GAME: {e}; call new_game"))
+    }
+
+    fn cards(&self, names: &[String]) -> Result<Vec<dominion_agent::GlossaryEntry>, String> {
+        (self.hub.card_entries(Some(&self.seat), names)).map_err(|e| e.to_string())
+    }
+
+    /// One recorded step of the table, which an undo takes back whole.
+    async fn play_treasures(&self, decision: &str) -> Result<u32, String> {
+        (self.hub.play_treasures(&self.seat, decision)).map_err(|e| format!("REJECTED: {e}"))
+    }
+
+    fn no_game(&self) -> String {
+        NO_GAME.into()
+    }
+}
+
 const NOT_SIGNED_IN: &str = "sign in first: call sign_in with a bot's `api_key`, or with \
                              nothing to play as a guest";
-
-fn failure(message: impl Into<String>) -> CallToolResult {
-    CallToolResult::error(vec![ContentBlock::text(message.into())])
-}
-
-fn structured(value: serde_json::Value, text: String) -> CallToolResult {
-    let mut result = CallToolResult::structured(value);
-    result.content = vec![ContentBlock::text(text)];
-    result
-}
 
 fn view_result(view: &AgentView, text: String, format: Format) -> CallToolResult {
     let json = serde_json::to_value(view).expect("views serialize");
@@ -378,43 +414,30 @@ impl Session {
             .or_else(|| self.joined().clone())
     }
 
-    fn play_result(&self, seat: &Seat, full: bool) -> CallToolResult {
-        match self.hub.play_observation(seat) {
-            Ok(observation) => {
-                let (text, glossary) = self
-                    .presentation
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .render(seat, &observation, full);
-                let mut value = serde_json::json!({"view": observation.view});
-                if let Some(clock) = &observation.clock {
-                    value["clock"] = serde_json::json!(clock);
-                }
-                if !glossary.is_empty() {
-                    value["glossary"] = serde_json::to_value(glossary).unwrap();
-                }
-                structured(value, text)
-            }
-            Err(e) => failure(format!("NO_GAME: {e}; call new_game")),
+    fn arena_seat(&self, seat: Seat) -> ArenaSeat<'_> {
+        ArenaSeat {
+            hub: &self.hub,
+            seat,
+            max_wait: self.max_wait,
         }
     }
 
-    fn rejected_step(&self, seat: &Seat, message: impl std::fmt::Display) -> CallToolResult {
-        let decision = self
-            .hub
-            .view(seat)
-            .ok()
-            .map(|(_, text, _)| {
-                text.find("DECISION ")
-                    .map(|i| text[i..].to_string())
-                    .unwrap_or_else(|| "No decision is open for you; call wait.".into())
-            })
-            .unwrap_or_default();
-        failure(format!("REJECTED: {message}\n{decision}"))
+    /// The play@1 tools of `seat`, as this session is shown them.
+    fn play<'a>(&'a self, seat: &'a ArenaSeat<'a>) -> Play<'a, ArenaSeat<'a>> {
+        Play {
+            seat,
+            shown: &self.presentation,
+        }
     }
 
-    fn play_timeout(&self, seconds: Option<u64>) -> Duration {
-        Duration::from_secs(seconds.unwrap_or(60)).min(self.max_wait)
+    fn play_result(&self, seat: &Seat, full: bool) -> CallToolResult {
+        self.play(&self.arena_seat(seat.clone())).observation(full)
+    }
+
+    /// The session has been shown `seat` through play@1, so its results are deltas.
+    fn plays(&self, seat: &Seat) -> bool {
+        let shown = self.presentation.lock();
+        shown.unwrap_or_else(PoisonError::into_inner).seat.as_ref() == Some(seat)
     }
 
     fn view_of(&self, seat: &Seat, format: Format) -> CallToolResult {
@@ -456,10 +479,7 @@ impl Session {
         Parameters(p): Parameters<play::StateParams>,
     ) -> Result<CallToolResult, ErrorData> {
         if p.token.is_none() && self.joined().is_none() && self.hub.list().is_empty() {
-            return Ok(structured(
-                serde_json::json!({"status": "no-game"}),
-                "STATUS no game; call new_game (Arena has token seats, no automatic bots).".into(),
-            ));
+            return Ok(play::no_game(NO_GAME));
         }
         Ok(match self.play_seat(p.token.as_deref()) {
             Ok(seat) => self.play_result(&seat, true),
@@ -475,56 +495,10 @@ impl Session {
         Parameters(p): Parameters<play::StepParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let seat = match self.play_seat(p.token.as_deref()) {
-            Ok(seat) => seat,
+            Ok(seat) => self.arena_seat(seat),
             Err(e) => return Ok(e),
         };
-        let (view, _, _) = match self.hub.view(&seat) {
-            Ok(view) => view,
-            Err(e) => return Ok(failure(format!("NO_GAME: {e}; call new_game"))),
-        };
-        let Some(d) = &view.decision else {
-            return Ok(self.rejected_step(&seat, "you are not deciding now; call wait"));
-        };
-        if d.id != p.decision {
-            return Ok(self.rejected_step(
-                &seat,
-                format!(
-                    "decision {} is not open; the open decision is {}",
-                    p.decision, d.id
-                ),
-            ));
-        }
-        if let Err(e) = play::validate_expect(d, &p) {
-            return Ok(self.rejected_step(&seat, e));
-        }
-        let indices = match p
-            .indices
-            .as_ref()
-            .map(|indices| {
-                indices
-                    .iter()
-                    .map(|i| u32::try_from(*i))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .transpose()
-        {
-            Ok(indices) => indices,
-            Err(_) => {
-                return Ok(self.rejected_step(&seat, "indices must be nonnegative option numbers"));
-            }
-        };
-        let answer = Answer {
-            decision: p.decision.clone(),
-            indices,
-            name: p.name.clone(),
-        };
-        if let Err(e) = self.hub.answer_with(&seat, &answer, None) {
-            return Ok(self.rejected_step(&seat, e));
-        }
-        if let Err(e) = self.hub.wait(&seat, self.play_timeout(p.timeout_s)).await {
-            return Ok(failure(e.to_string()));
-        }
-        Ok(self.play_result(&seat, false))
+        Ok(self.play(&seat).step(p).await)
     }
 
     #[tool(
@@ -535,13 +509,10 @@ impl Session {
         Parameters(p): Parameters<play::WaitParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let seat = match self.play_seat(p.token.as_deref()) {
-            Ok(seat) => seat,
+            Ok(seat) => self.arena_seat(seat),
             Err(e) => return Ok(e),
         };
-        if let Err(e) = self.hub.wait(&seat, self.play_timeout(p.timeout_s)).await {
-            return Ok(failure(format!("NO_GAME: {e}; call new_game")));
-        }
-        Ok(self.play_result(&seat, false))
+        Ok(self.play(&seat).wait(p.timeout_s).await)
     }
 
     #[tool(
@@ -551,50 +522,24 @@ impl Session {
         &self,
         Parameters(p): Parameters<play::CardsParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let seat = self.reference_seat();
-        Ok(match self.hub.card_entries(seat.as_ref(), &p.names) {
-            Ok(entries) => structured(
-                serde_json::json!({"glossary": entries}),
-                play::glossary_text(&entries),
+        Ok(match self.reference_seat() {
+            Some(seat) => self.play(&self.arena_seat(seat)).cards(&p.names),
+            None => play::glossary_result(
+                (self.hub.card_entries(None, &p.names)).map_err(|e| e.to_string()),
             ),
-            Err(e) => failure(e.to_string()),
         })
     }
 
     #[tool(
-        description = "dominion/play@1: reread the last observed seat's visible game log after seq `after`, retaining the newest `limit` entries (default 50), oldest first. Join a seat first; no other seat's private entries are returned."
+        description = "dominion/play@1: reread the last observed seat's visible game log after seq `after`, retaining the newest `limit` entries (default 50, at most 1000), oldest first. Join a seat first; no other seat's private entries are returned."
     )]
     async fn log(
         &self,
         Parameters(p): Parameters<play::LogParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let seat = match self.reference_seat() {
-            Some(seat) => seat,
-            None => {
-                return Ok(failure(
-                    "NOT_SEATED: pass token to state, or call join_game first",
-                ));
-            }
-        };
-        Ok(match self.hub.play_observation(&seat) {
-            Ok(observation) => {
-                let mut entries: Vec<_> = observation
-                    .log
-                    .into_iter()
-                    .filter(|e| p.after.is_none_or(|seq| e.seq > seq))
-                    .collect();
-                entries.drain(..entries.len().saturating_sub(p.limit.unwrap_or(50)));
-                let text = format!(
-                    "LOG\n{}",
-                    entries
-                        .iter()
-                        .map(|e| format!("  {}: {}", e.seq, e.text))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                );
-                structured(serde_json::json!({"log": entries}), text)
-            }
-            Err(e) => failure(format!("NO_GAME: {e}; call new_game")),
+        Ok(match self.reference_seat() {
+            Some(seat) => self.play(&self.arena_seat(seat)).log(&p),
+            None => failure(NOT_SEATED),
         })
     }
 
@@ -605,35 +550,9 @@ impl Session {
         &self,
         Parameters(p): Parameters<play::TurnsParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let seat = match self.reference_seat() {
-            Some(seat) => seat,
-            None => {
-                return Ok(failure(
-                    "NOT_SEATED: pass token to state, or call join_game first",
-                ));
-            }
-        };
-        Ok(match self.hub.play_observation(&seat) {
-            Ok(observation) => {
-                let names = dominion_agent::turns::names(&observation.view);
-                let running = observation.view.game.running;
-                let turns = play::turns(&observation.log, &names, running, &p);
-                let json: Vec<_> = turns
-                    .iter()
-                    .map(|(span, summary)| {
-                        let mut v = serde_json::to_value(summary).unwrap_or_default();
-                        if p.detail {
-                            v["entries"] = serde_json::json!(span.entries);
-                        }
-                        v
-                    })
-                    .collect();
-                structured(
-                    serde_json::json!({"turns": json}),
-                    play::turns_text(&turns, p.detail),
-                )
-            }
-            Err(e) => failure(format!("NO_GAME: {e}; call new_game")),
+        Ok(match self.reference_seat() {
+            Some(seat) => self.play(&self.arena_seat(seat)).turns(&p),
+            None => failure(NOT_SEATED),
         })
     }
 
@@ -842,7 +761,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Autoplay Treasures: in a Buy phase move, play the Treasures it offers one after another, instead of answering once per Treasure. Plays only the Treasures offered when called (not ones drawn meanwhile, as by Figurine), and stops early when you are asked anything else (a Treasure's own question). Returns your next view."
+        description = "Autoplay Treasures: in a Buy phase move, play the Treasures it offers one after another, instead of answering once per Treasure. Plays only the Treasures offered when called (not ones drawn meanwhile, as by Figurine), and stops early when you are asked anything else (a Treasure's own question). Returns your next view: as step does in a session playing through state/step/wait, else as answer does."
     )]
     async fn play_treasures(
         &self,
@@ -852,6 +771,10 @@ impl Session {
             Ok(seat) => seat,
             Err(e) => return Ok(failure(e.to_string())),
         };
+        if self.plays(&seat) {
+            let seat = self.arena_seat(seat);
+            return Ok(self.play(&seat).play_treasures(&p.decision_id).await);
+        }
         Ok(match self.hub.play_treasures(&seat, &p.decision_id) {
             Ok(played) => {
                 let mut result = self.view_of(&seat, p.format);
