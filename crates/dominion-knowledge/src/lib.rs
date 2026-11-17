@@ -452,6 +452,55 @@ impl<C: Copy + Ord + std::fmt::Debug, I: Instance, Z: Location> Mind<C, I, Z> {
         self.merge_partial_families();
     }
 
+    /// The viewer is told that `count` of `cards` are `is` without seeing which: the ones
+    /// they know of, and for the rest cards they know nothing of. False, and nothing
+    /// learned, when what they know of `cards` is tied to cards outside them or leaves
+    /// too few unknown.
+    pub fn learn(&mut self, cards: &[I], is: C, count: u32) -> bool {
+        let Some(unknown) = self.unknown else {
+            return false;
+        };
+        let inside: HashSet<I> = cards.iter().copied().collect();
+        let mut groups: Vec<usize> = cards.iter().map(|c| self.group_of[c.index()]).collect();
+        groups.sort_unstable();
+        groups.dedup();
+        let of = |g: &Group<C, I>, card| g.ids.as_ref().and_then(|ids| ids.get(&card)).copied();
+        let apart = |g: &Group<C, I>| {
+            g.family.is_none() && g.ids.is_some() && g.cards.iter().all(|c| inside.contains(c))
+        };
+        if !groups.iter().all(|&g| apart(&self.groups[g])) {
+            return false;
+        }
+        let total = |card| -> u32 {
+            groups
+                .iter()
+                .filter_map(|&g| of(&self.groups[g], card))
+                .sum()
+        };
+        let more = count.saturating_sub(total(is));
+        if more > total(unknown) {
+            return false;
+        }
+        if more == 0 {
+            return true;
+        }
+        let blank: Vec<I> = groups
+            .iter()
+            .filter(|&&g| of(&self.groups[g], unknown).is_some())
+            .flat_map(|&g| self.groups[g].cards.iter().copied())
+            .collect();
+        self.merge(blank.iter().copied());
+        let ids = self.groups[self.group_of[blank[0].index()]]
+            .ids
+            .as_mut()
+            .unwrap();
+        for _ in 0..more {
+            remove(ids, unknown);
+        }
+        add(ids, is, more);
+        true
+    }
+
     /// The viewer sees that one of `among` is an `is`: `card`, but any of them that may be
     /// an `is` could be the one.
     fn identify_among(&mut self, card: I, is: C, among: &[I]) {

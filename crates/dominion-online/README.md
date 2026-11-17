@@ -268,11 +268,13 @@ adapter for legal server observations. It tracks known composition, ownership, a
 candidate groups spanning zones, so later reveals can determine previously unknown
 cards in the hand or deck. Hidden allocation identities are never observations;
 shuffles revoke copy associations. Partially unidentified groups remain conservative.
-A group with cards never seen says how many of its cards are unknown. Replacement
-snapshots reset knowledge. A count correction changes only the corrected zone: missing
-cards arrive unknown and surplus ones leave for no zone. Nothing reconstructs
-unobserved history. Deck order and hand probabilities are not tracked. Duration timing is
-described only as precisely as the server state allows.
+A group with cards never seen says how many of its cards are unknown. Before the first
+turn, the log's "starts with" entries name each player's cards. A replacement snapshot
+of the position the reducer was at keeps what was known of the players' cards; one of
+any other position resets knowledge. A count correction changes only the corrected
+zone: missing cards arrive unknown and surplus ones leave for no zone. Nothing
+reconstructs unobserved history. Deck order and hand probabilities are not tracked.
+Duration timing is described only as precisely as the server state allows.
 
 Questions support Choice, Number, Complex AND/OR, Delayed and Name, including
 position-versus-name ordinals, decline/default answers and top-first ordered

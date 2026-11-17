@@ -739,19 +739,7 @@ impl Runtime {
                 }
                 reducer.ask(question).map_err(|e| e.to_string())?;
             }
-            Message::Log(change) => {
-                let start =
-                    usize::try_from(change.start_index).map_err(|_| "negative log index")?;
-                if reducer.logs.iter().any(|e| e.seq >= start) {
-                    reducer.logs.retain(|e| e.seq < start);
-                }
-                for (offset, entry) in change.entries.iter().enumerate() {
-                    let entry = reducer
-                        .log_entry(start + offset, entry)
-                        .ok_or("unknown or unsupported official log entry")?;
-                    reducer.logs.push(entry);
-                }
-            }
+            Message::Log(change) => reducer.log(&change).map_err(|e| e.to_string())?,
             Message::TableJoined { table, .. } | Message::TableDetails(table) => {
                 for player in table.players.iter().chain(&table.bots) {
                     reducer.names.insert(player.id, player.name.clone());

@@ -12,6 +12,41 @@ use crate::{
 };
 use dominion_protocol as view;
 
+type Position = (
+    model::TurnDescription,
+    Vec<model::Counter>,
+    Vec<model::Token>,
+    BTreeMap<i32, (i32, i32, u32)>,
+);
+
+/// A zone as a snapshot gives it: each card's identity and name where it shows them.
+struct Stock {
+    zone: i32,
+    owned: bool,
+    cards: Vec<(i32, Option<i32>)>,
+}
+
+/// What was known of a position, for a snapshot of that position: nothing a player's
+/// zone showed is forgotten. None if the snapshot shows what could not be.
+fn recalled(mut knowledge: Observations, stocked: &[Stock]) -> Option<Observations> {
+    for stock in stocked {
+        let shown: Vec<_> = stock
+            .cards
+            .iter()
+            .filter_map(|&(id, name)| Some((id, name?)))
+            .collect();
+        if knowledge.count(stock.zone) != stock.cards.len()
+            || knowledge.reveal(stock.zone, &shown).is_err()
+        {
+            if stock.owned {
+                return None;
+            }
+            knowledge.restock(stock.zone, &stock.cards);
+        }
+    }
+    Some(knowledge)
+}
+
 fn invalid(message: impl Into<String>) -> Error {
     Error::Protocol(message.into())
 }
@@ -193,7 +228,29 @@ impl Reducer {
         *self = next;
         Ok(())
     }
+    /// Where the game stands, apart from which cards are where.
+    fn position(&self) -> Option<Position> {
+        let state = self.state.as_ref()?;
+        let zones = state
+            .zones
+            .iter()
+            .map(|z| {
+                // How many cards a zone no player owns holds is not always followed.
+                let count = self.zones.get(&z.index).map_or(0, |k| k.count);
+                (z.index, (z.kind, z.owner, count * u32::from(z.owner >= 0)))
+            })
+            .collect();
+        Some((
+            state.turn.clone(),
+            state.counters.clone(),
+            state.tokens.clone(),
+            zones,
+        ))
+    }
     fn replace_inner(&mut self, snapshot: model::Snapshot) -> Result<()> {
+        let before = (self.game_id == Some(snapshot.game_id))
+            .then(|| Some((self.position()?, self.knowledge.clone())))
+            .flatten();
         self.game_id = Some(snapshot.game_id);
         self.running = true;
         self.result = None;
@@ -209,6 +266,7 @@ impl Reducer {
             return Err(invalid("unsupported player count"));
         }
         let seat = self.seat().map(i32::from);
+        let mut stocked = vec![];
         for zone in &state.zones {
             if zone.index < 0 || self.zones.contains_key(&zone.index) {
                 return Err(invalid("duplicate/negative zone index"));
@@ -226,18 +284,32 @@ impl Reducer {
                 }
                 _ => true,
             };
+            let mut cards = vec![];
             for id in &zone.cards {
                 // Even when a snapshot allocates the entire deck, it is not a reveal.
                 let name = if can_see { self.disclosed(*id)? } else { None };
-                self.knowledge
-                    .insert(zone.index, if name.is_some() { *id } else { -1 }, name);
-                if name.is_some() && *id >= 0 {
-                    self.visible_ids.insert(*id);
+                let id = if name.is_some() { *id } else { -1 };
+                self.knowledge.insert(zone.index, id, name);
+                if id >= 0 {
+                    self.visible_ids.insert(id);
                 }
+                cards.push((id, name));
             }
+            stocked.push(Stock {
+                zone: zone.index,
+                owned: zone.owner >= 0,
+                cards,
+            });
             self.zones.insert(zone.index, KnowledgeZone::default());
         }
         self.refresh_knowledge();
+        if let Some((position, knowledge)) = before
+            && self.position() == Some(position)
+            && let Some(knowledge) = recalled(knowledge, &stocked)
+        {
+            self.knowledge = knowledge;
+            self.refresh_knowledge();
+        }
         for e in &state.temporary_effects.renames {
             self.rename(e.id, e.card_name)?;
         }
@@ -1391,6 +1463,56 @@ impl Reducer {
             }
             LogArgument::MetaGame(m) => format!("game {}", m.game_id),
         })
+    }
+    /// Replaces the log from `change.start_index` on, and learns what the entries say of
+    /// cards that no event shows.
+    pub fn log(&mut self, change: &model::LogChange) -> Result<()> {
+        let start =
+            usize::try_from(change.start_index).map_err(|_| invalid("negative log index"))?;
+        self.logs.retain(|e| e.seq < start);
+        for (offset, entry) in change.entries.iter().enumerate() {
+            let line = self
+                .log_entry(start + offset, entry)
+                .ok_or_else(|| invalid("unknown or unsupported official log entry"))?;
+            self.logs.push(line);
+            self.learn(entry);
+        }
+        Ok(())
+    }
+    /// Before the first turn every card a player has is one they are said to start with.
+    fn learn(&mut self, entry: &model::LogEntry) {
+        let model::LogEntry::Named {
+            name, arguments, ..
+        } = entry
+        else {
+            return;
+        };
+        let key = usize::try_from(*name)
+            .ok()
+            .and_then(|i| self.catalog.enums.get("LogEntryNames")?.get(i));
+        let (Some("STARTS_WITH"), [LogArgument::Player(player), LogArgument::CardNames(cards)]) =
+            (key.map(String::as_str), arguments.as_slice())
+        else {
+            return;
+        };
+        let Some(state) = self.state.as_ref().filter(|s| s.turn.turn_number == 0) else {
+            return;
+        };
+        let zones: Vec<i32> = state
+            .zones
+            .iter()
+            .filter(|z| z.owner == *player)
+            .map(|z| z.index)
+            .collect();
+        for card in cards {
+            if card.name > 0
+                && self.catalog.card(card.name).is_ok()
+                && let Ok(count) = u32::try_from(card.frequency)
+            {
+                self.knowledge.declare(&zones, card.name, count);
+            }
+        }
+        self.refresh_knowledge();
     }
     /// An official log entry as agents and watchers get it: a turn header is `turn-start`
     /// ("Ann starts turn 3", an extra turn's card as `card`), another named entry
