@@ -119,12 +119,24 @@ impl CatalogSpec {
     }
 
     /// Whether the patterns allow `model`, by its id or that of one of its efforts.
-    fn allows(&self, model: &Found) -> bool {
-        let mut ids = std::iter::once(&model.id).chain(model.ids.iter().map(|(_, id)| id));
-        ids.any(|id| {
-            (self.models.is_empty() || self.models.iter().any(|p| glob(p, id)))
-                && !self.exclude.iter().any(|p| glob(p, id))
-        })
+    /// `model` as far as the patterns allow it: an effort whose id names it goes when that
+    /// id is excluded, or isn't allowed and neither is the model's own.
+    fn allowed(&self, mut model: Found) -> Option<Found> {
+        let include = |id: &str| self.models.is_empty() || self.models.iter().any(|p| glob(p, id));
+        let exclude = |id: &str| self.exclude.iter().any(|p| glob(p, id));
+        if exclude(&model.id) {
+            return None;
+        }
+        if model.ids.is_empty() {
+            return include(&model.id).then_some(model);
+        }
+        let whole = include(&model.id);
+        model
+            .ids
+            .retain(|(_, id)| (whole || include(id)) && !exclude(id));
+        let ids = model.ids.clone();
+        model.efforts.retain(|e| ids.iter().any(|(x, _)| x == e));
+        (!model.ids.is_empty()).then_some(model)
     }
 
     /// The models the provider lists now. Antigravity's are asked of its CLI, so this
@@ -139,22 +151,15 @@ impl CatalogSpec {
             Program::OpenAi => codex_catalog(&read(&dir.join("models_cache.json"))?, true)?,
             Program::Antigravity => {
                 let mut cmd = std::process::Command::new(self.command.as_deref().unwrap_or("agy"));
-                cmd.arg("models").stdin(std::process::Stdio::null());
+                cmd.arg("models");
                 if self.auth_dir.is_some() {
                     cmd.env("GEMINI_HOME", &dir);
                 }
-                let out = cmd.output().map_err(|e| format!("agy models: {e}"))?;
-                if !out.status.success() {
-                    return Err(format!(
-                        "agy models: {}",
-                        String::from_utf8_lossy(&out.stderr).trim()
-                    ));
-                }
-                antigravity_models(&String::from_utf8_lossy(&out.stdout))
+                antigravity_models(&run(cmd, LIST_TIMEOUT).map_err(|e| format!("agy models: {e}"))?)
             }
             Program::T3Code => vec![],
         };
-        Ok(found.into_iter().filter(|m| self.allows(m)).collect())
+        Ok(found.into_iter().filter_map(|m| self.allowed(m)).collect())
     }
 
     /// The agent playing `model` at `effort`.
@@ -176,6 +181,54 @@ impl CatalogSpec {
             api_key_env: self.api_key_env.clone(),
             context_results: self.context_results,
         }
+    }
+}
+
+/// How long a CLI may take to list its models.
+const LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// `cmd`'s output, if it succeeds within `timeout`; it is killed after.
+fn run(mut cmd: std::process::Command, timeout: std::time::Duration) -> Result<String, String> {
+    use std::io::Read;
+    use std::process::Stdio;
+    let mut child = (cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped()))
+    .spawn()
+    .map_err(|e| e.to_string())?;
+    // Read as it goes, so a full pipe can't hold it up.
+    let mut stdout = child.stdout.take().expect("piped");
+    let mut stderr = child.stderr.take().expect("piped");
+    let out = std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = stdout.read_to_string(&mut text);
+        text
+    });
+    let err = std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = stderr.read_to_string(&mut text);
+        text
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait().map_err(|e| e.to_string())? {
+            Some(status) => break status,
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("no answer in {} seconds", timeout.as_secs()));
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    };
+    let (out, err) = (
+        out.join().unwrap_or_default(),
+        err.join().unwrap_or_default(),
+    );
+    match status.success() {
+        true => Ok(out),
+        false => Err(err.trim().to_string()),
     }
 }
 
@@ -387,11 +440,6 @@ pub fn offers(
     let mut used = vec![false; profiles.len()];
     let mut out: Vec<(AgentSpec, Offer)> = vec![];
     let mut push = |spec: AgentSpec, model: OfferedModel, on_demand: bool| {
-        let key = spec.name.to_lowercase();
-        if out.iter().any(|(s, _)| s.name.to_lowercase() == key) {
-            eprintln!("dominion agents: {} is offered once", spec.name);
-            return;
-        }
         let offer = Offer {
             name: spec.name.clone(),
             about: spec.about(),
@@ -458,6 +506,30 @@ pub fn offers(
         };
         push(profile.clone(), group, false);
     }
+    // A name plays one agent wherever it is offered: a profile's is its own, and a name
+    // two models come to is neither's.
+    let key = |s: &AgentSpec| s.name.to_lowercase();
+    let profiles: Vec<String> = out
+        .iter()
+        .filter(|(_, o)| !o.on_demand)
+        .map(|(s, _)| key(s))
+        .collect();
+    let derived = |name: &String| {
+        out.iter()
+            .filter(|(s, o)| o.on_demand && key(s) == *name)
+            .count()
+    };
+    let dropped: Vec<String> = (out.iter())
+        .filter(|(s, o)| o.on_demand && (profiles.contains(&key(s)) || derived(&key(s)) > 1))
+        .map(|(s, _)| key(s))
+        .collect();
+    let mut dropped = dropped;
+    dropped.sort();
+    dropped.dedup();
+    for name in &dropped {
+        eprintln!("dominion agents: {name:?} names more than one agent; not offered for a model");
+    }
+    out.retain(|(s, o)| !o.on_demand || !dropped.contains(&key(s)));
     out
 }
 
@@ -673,5 +745,76 @@ mod tests {
             ("Claude Code", "Opus 5.5")
         );
         assert_eq!(offered[1].0.model.as_deref(), Some("claude-opus-5-5"));
+    }
+
+    #[test]
+    fn a_name_two_agents_come_to_never_moves_an_account() {
+        let claude = catalog(Program::Claude);
+        let profile = AgentSpec {
+            name: "Atlas High".into(),
+            effort: Some("high".into()),
+            ..claude.agent(&found("claude-a", "", &[]), None)
+        };
+        let models = vec![
+            found("claude-b", "Atlas", &["high", "low"]),
+            found("claude-c", "Atlas", &["low"]),
+            found("claude-d", "Other", &["low"]),
+        ];
+        let offered = offers(&[profile], &[(claude, models)]);
+        let names: Vec<(&str, Option<&str>)> = (offered.iter())
+            .map(|(s, _)| (s.name.as_str(), s.model.as_deref()))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("Other Low", Some("claude-d")),
+                ("Atlas High", Some("claude-a"))
+            ]
+        );
+    }
+
+    #[test]
+    fn patterns_apply_to_each_effort_an_id_names() {
+        let argon = Found {
+            ids: vec![
+                ("low".into(), "gemini-4-argon-low".into()),
+                ("high".into(), "gemini-4-argon-high".into()),
+            ],
+            ..found("gemini-4-argon", "Gemini 4 Argon", &["low", "high"])
+        };
+        let efforts = |models: &[&str], exclude: &[&str]| {
+            let spec = CatalogSpec {
+                models: models.iter().map(|m| m.to_string()).collect(),
+                exclude: exclude.iter().map(|m| m.to_string()).collect(),
+                ..catalog(Program::Antigravity)
+            };
+            spec.allowed(argon.clone()).map(|m| m.efforts)
+        };
+        assert_eq!(
+            efforts(&["gemini-4-*"], &[]),
+            Some(vec!["low".into(), "high".into()])
+        );
+        assert_eq!(
+            efforts(&[], &["gemini-4-argon-high"]),
+            Some(vec!["low".into()])
+        );
+        assert_eq!(
+            efforts(&["gemini-4-argon-high"], &[]),
+            Some(vec!["high".into()])
+        );
+        assert_eq!(efforts(&[], &["gemini-4-argon"]), None);
+        assert_eq!(efforts(&["gpt-*"], &[]), None);
+    }
+
+    #[test]
+    fn a_cli_that_hangs_is_given_up_on() {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "echo listed; sleep 10"]);
+        let started = std::time::Instant::now();
+        assert!(run(cmd, std::time::Duration::from_millis(200)).is_err());
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        let mut cmd = std::process::Command::new("sh");
+        cmd.args(["-c", "echo listed"]);
+        assert_eq!(run(cmd, LIST_TIMEOUT).unwrap(), "listed\n");
     }
 }

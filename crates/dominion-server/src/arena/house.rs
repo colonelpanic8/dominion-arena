@@ -38,6 +38,8 @@ struct Runner {
     offers: Vec<Offer>,
     /// The offers with an account.
     agents: Vec<Agent>,
+    /// Agents no longer offered, still playing the games they had when they were.
+    retired: Vec<Agent>,
     send: UnboundedSender<ToRunner>,
     /// The jobs it was told of last.
     told: Option<Vec<Job>>,
@@ -49,6 +51,13 @@ pub(super) struct Agent {
     pub user: String,
     pub name: String,
     pub about: String,
+}
+
+impl Runner {
+    /// Every agent with seats it may be playing: those offered and those retired.
+    fn playing(&self) -> Vec<Agent> {
+        self.agents.iter().chain(&self.retired).cloned().collect()
+    }
 }
 
 impl House {
@@ -69,6 +78,12 @@ impl House {
     fn offer_named(&self, name: &str) -> Option<&Offer> {
         let key = name.trim().to_lowercase();
         (self.runner.as_ref()?.offers.iter()).find(|o| o.name.to_lowercase() == key)
+    }
+
+    /// The agent seated for a model alone: the first model's default effort.
+    pub(super) fn default_agent(&self) -> Option<String> {
+        let models = self.models();
+        Some(models.first()?.default_choice()?.agent.clone())
     }
 
     /// Every offer, by model, in the order offered.
@@ -196,7 +211,10 @@ impl Arena {
                 || format!("P{}", i + 1),
                 |a| {
                     if agents.iter().flatten().filter(|b| b.user == a.user).count() > 1 {
-                        format!("{} ({})", a.name, i + 1)
+                        let suffix = format!(" ({})", i + 1);
+                        let room = crate::hub::MAX_NAME_CHARS - suffix.len();
+                        let name: String = a.name.chars().take(room).collect();
+                        format!("{}{suffix}", name.trim_end())
                     } else {
                         a.name.clone()
                     }
@@ -260,7 +278,7 @@ impl Arena {
             return;
         };
         let jobs: Vec<_> = self
-            .jobs(&runner.agents, &official)
+            .jobs(&runner.playing(), &official)
             .into_iter()
             .filter(|j| !j.official || !j.game_id.is_empty())
             .collect();
@@ -287,6 +305,7 @@ impl Arena {
                 capacity,
                 offers,
                 agents,
+                retired: vec![],
                 send,
                 told: None,
             });
@@ -306,14 +325,28 @@ impl Arena {
                 _ => return,
             }
         };
-        let (offers, agents) = self.admit(offers, &send);
+        let (offers, mut agents) = self.admit(offers, &send);
         {
             let mut state = lock(&self.state);
             let Some(runner) = state.house.runner.as_mut().filter(|r| r.id == id) else {
                 return;
             };
+            // Agents summoned meanwhile stay; those no longer offered go on with their games.
+            let mut retired = vec![];
+            for agent in runner.agents.drain(..).chain(runner.retired.drain(..)) {
+                let key = agent.name.to_lowercase();
+                if offers.iter().any(|o| o.name.to_lowercase() == key) {
+                    if agents.iter().all(|a| a.user != agent.user) {
+                        agents.push(agent);
+                    }
+                } else if (self.hub.seats_of(&agent.user, Duration::ZERO).iter()).any(|g| g.running)
+                {
+                    retired.push(agent);
+                }
+            }
             runner.offers = offers;
             runner.agents = agents;
+            runner.retired = retired;
         }
         self.dispatch();
         self.bump();
@@ -365,24 +398,16 @@ impl Arena {
     /// Makes the account of the agent offered on demand as `name`, if it has none: before
     /// it is seated. An agent that isn't offered is left to the caller to refuse.
     pub(super) fn summon(&self, name: &str) -> Result<()> {
-        let offer = {
-            let state = lock(&self.state);
-            if state.house.agent_named(name).is_some() {
-                return Ok(());
-            }
-            match state.house.offer_named(name) {
-                Some(offer) => offer.clone(),
-                None => return Ok(()),
-            }
-        };
-        let user = self.house_account(&offer.name)?;
         let mut state = lock(&self.state);
-        let Some(runner) = state.house.runner.as_mut() else {
+        if state.house.agent_named(name).is_some() {
+            return Ok(());
+        }
+        let Some(offer) = state.house.offer_named(name).cloned() else {
             return Ok(());
         };
-        if runner.offers.iter().any(|o| o.name == offer.name)
-            && runner.agents.iter().all(|a| a.user != user.id)
-        {
+        let user = self.house_account(&offer.name)?;
+        if let Some(runner) = state.house.runner.as_mut() {
+            runner.retired.retain(|a| a.user != user.id);
             runner.agents.push(Agent {
                 user: user.id,
                 name: user.name,
@@ -404,12 +429,14 @@ impl Arena {
     }
 
     fn house_account(&self, name: &str) -> Result<User> {
-        match self.existing_house_account(name)? {
-            Some(user) => Ok(user),
-            None => self
-                .db
-                .add_user(name.trim(), &Login::House, now_ms() / 1000),
+        if let Some(user) = self.existing_house_account(name)? {
+            return Ok(user);
         }
+        // Another may have made it meanwhile.
+        (self
+            .db
+            .add_user(name.trim(), &Login::House, now_ms() / 1000))
+        .or_else(|e| self.existing_house_account(name)?.ok_or(e))
     }
 
     fn existing_house_account(&self, name: &str) -> Result<Option<User>> {
@@ -444,7 +471,7 @@ impl Arena {
             return conflict("the server's agents aren't available now");
         };
         let busy =
-            self.jobs(&runner.agents, &state.house.official).len() as u32 + state.house.reserved;
+            self.jobs(&runner.playing(), &state.house.official).len() as u32 + state.house.reserved;
         let capacity = runner.capacity;
         if busy + seats > capacity {
             return conflict(format!(
@@ -477,7 +504,7 @@ impl Arena {
                 ..lobby::House::default()
             };
         };
-        let jobs = self.jobs(&runner.agents, &state.house.official);
+        let jobs = self.jobs(&runner.playing(), &state.house.official);
         let busy = jobs.len() as u32 + state.house.reserved;
         lobby::House {
             models: state.house.models(),
@@ -526,7 +553,7 @@ impl Arena {
             return conflict("an agent is already assigned to this official account");
         }
         let busy =
-            self.jobs(&runner.agents, &state.house.official).len() as u32 + state.house.reserved;
+            self.jobs(&runner.playing(), &state.house.official).len() as u32 + state.house.reserved;
         if busy >= runner.capacity {
             return conflict("the agent runner is at capacity");
         }

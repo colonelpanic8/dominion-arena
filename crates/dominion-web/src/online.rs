@@ -143,10 +143,9 @@ pub fn OnlinePage(account: Option<String>) -> Element {
                         .and_then(|m| m.default_choice())
                         .map(|c| &c.agent)
                         .or(status.agents.first());
-                    if agent.peek().is_empty()
-                        && let Some(first) = first
-                    {
-                        agent.set(first.clone());
+                    // A selection no longer offered goes back to the default.
+                    if !status.agents.contains(&agent.peek()) {
+                        agent.set(first.cloned().unwrap_or_default());
                     }
                     management.set(Some(status));
                 }

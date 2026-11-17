@@ -301,8 +301,47 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
     let runner = arena.runner_connected(offers, 2, send);
     assert_eq!(job(&mut told), [("Opus 5.5 Max".into(), game.clone())]);
 
-    // No longer offered, it isn't played.
+    // No longer offered, it can't be seated, but plays out the game it holds a seat in.
     arena.offers_changed(runner, vec![offer("Opus High", "high")]);
+    assert_eq!(jobs(&mut told), None);
+    let house = arena.lobby(Some(&ada)).house;
+    assert_eq!((house.models[0].choices.len(), house.free), (1, 1));
+    assert!(matches!(
+        arena.new_table(&ada, &with_agent("Opus 5.5 Max")),
+        Err(Error::BadRequest(_))
+    ));
+    end(&arena, &game);
     assert_eq!(job(&mut told), []);
-    assert_eq!(arena.lobby(Some(&ada)).house.models[0].choices.len(), 1);
+}
+
+#[test]
+fn a_search_for_any_agent_gets_one_when_none_has_an_account_yet() {
+    let arena = arena(5);
+    let offer = |name: &str, effort: &str| Offer {
+        name: name.into(),
+        about: "Claude Code".into(),
+        model: Some(OfferedModel {
+            program: "Claude Code".into(),
+            id: "claude-opus-5-5".into(),
+            name: "Opus 5.5".into(),
+            effort: Some(effort.into()),
+        }),
+        on_demand: true,
+    };
+    let (send, mut told) = unbounded_channel();
+    arena.runner_connected(
+        vec![offer("Opus 5.5 Low", "low"), offer("Opus 5.5 High", "high")],
+        2,
+        send,
+    );
+    let ada = register(&arena, "Ada");
+    let request = MatchRequest {
+        players: vec![2],
+        opponents: Opponents::Agents,
+        ..MatchRequest::default()
+    };
+    arena.search(&ada, &request).unwrap();
+    let jobs = jobs(&mut told).unwrap();
+    let agents: Vec<_> = jobs.iter().map(|j| j.agent.as_str()).collect();
+    assert_eq!(agents, ["Opus 5.5 High"]);
 }

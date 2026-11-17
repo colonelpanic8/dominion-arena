@@ -424,7 +424,9 @@ model and effort is an agent named after them ("Opus 5.5 High"; `tag` appends a 
 to tell two programs' agents of the same model apart), and an account of its own,
 made the first time it is seated, so each has its own rating. An `[[agents]]` profile of
 the same program, model and effort is offered in its place, under its own name and
-account. The runner reads the catalogs again every 10 minutes, so a new model appears
+account; a derived name that is a profile's, or that two models come to, is offered for
+none of them, so no account changes hands. An agent no longer offered plays out the games
+it has. The runner reads the catalogs again every 10 minutes, so a new model appears
 once its CLI lists it; one it can't read keeps what it listed last. The lobby picks a
 model, then its effort (high by default).
 

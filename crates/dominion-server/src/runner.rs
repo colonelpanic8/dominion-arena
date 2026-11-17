@@ -226,14 +226,17 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
                 continue;
             }
             let mut lines = BufReader::new(read).lines();
+            // The jobs the server told last: an agent offered later may play one it skipped.
+            let mut told: Vec<Job> = vec![];
             loop {
                 tokio::select! {
                     line = lines.next_line() => {
                         let Ok(Some(line)) = line else { break };
                         match serde_json::from_str::<ToRunner>(&line) {
                             Ok(ToRunner::Jobs { jobs }) => {
+                                told = jobs;
                                 stopping.retain(|task| !task.is_finished());
-                                stopping.extend(reconcile(&settings, &known, &mut playing, jobs, &logs));
+                                stopping.extend(reconcile(&settings, &known, &mut playing, told.clone(), &logs));
                             }
                             Ok(ToRunner::Refused { agent, reason }) => {
                                 eprintln!("dominion agents: the server refused {agent}: {reason}");
@@ -246,6 +249,7 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
                             break;
                         }
                         let agents = remember(&mut known, &offers.borrow_and_update());
+                        stopping.extend(reconcile(&settings, &known, &mut playing, told.clone(), &logs));
                         if send(&mut write, &FromRunner::Offers { agents }).await.is_err() {
                             break;
                         }
