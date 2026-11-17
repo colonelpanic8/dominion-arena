@@ -396,6 +396,11 @@ impl Client {
         }
     }
 }
+// Kinds of the official `Metagame` message: an opponent asks to undo; a player who left
+// may be resigned (the official client's "permanently resignable" players).
+const UNDO_REQUEST: i32 = 0;
+const TIMEOUT_OFFER: i32 = 1;
+
 struct SessionSecret {
     player: i32,
     token: String,
@@ -733,11 +738,27 @@ impl Runtime {
                 return Err("official server requested reconnect; pending answers invalidated; call online_reconnect".into());
             }
             Message::Metagame {
+                kind: TIMEOUT_OFFER,
+                player,
+                ..
+            } => {
+                if reducer.running && reducer.seat().is_some_and(|s| i32::from(s) != player) {
+                    self.outbox.push(
+                        dominion_online::transport::outgoing::Command::TimeoutRequest {
+                            decision: -1,
+                            player,
+                        }
+                        .encode()
+                        .map_err(|e| e.to_string())?,
+                    );
+                }
+            }
+            Message::Metagame {
                 kind,
                 player,
                 decision,
             } if self.human.is_some() => {
-                if kind == 0 {
+                if kind == UNDO_REQUEST {
                     self.outbox.push(
                         dominion_online::transport::outgoing::Command::UndoRequestDenied {
                             player,

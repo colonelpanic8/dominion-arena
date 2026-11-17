@@ -1475,3 +1475,24 @@ fn match_confirmation_can_arrive_at_each_initialization_boundary() {
         }
     }
 }
+#[test]
+fn a_timeout_offer_for_an_opponent_resigns_them() {
+    let (_directory, mut runtime) = active_runtime();
+    let offer = |player| Message::Metagame {
+        kind: TIMEOUT_OFFER,
+        player,
+        decision: 3,
+    };
+    runtime.process(offer(0)).unwrap();
+    assert!(runtime.outbox.is_empty());
+    runtime.process(offer(1)).unwrap();
+    let bytes = runtime.outbox.pop().unwrap();
+    let mut reader = Reader::new(&bytes);
+    assert_eq!(reader.int().unwrap(), 40);
+    assert_eq!(reader.int().unwrap(), -1);
+    assert_eq!(reader.int().unwrap(), 1);
+    reader.finish().unwrap();
+    runtime.update.reducer.running = false;
+    runtime.process(offer(1)).unwrap();
+    assert!(runtime.outbox.is_empty());
+}
