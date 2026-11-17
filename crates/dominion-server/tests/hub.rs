@@ -235,3 +235,81 @@ fn a_clock_must_start_with_some_time() {
     });
     assert!(empty.contains("some time"), "{empty}");
 }
+
+#[test]
+fn briefs_are_checked_and_shown_only_to_their_seat_until_the_game_is_over() {
+    let briefed = |briefs: Vec<Option<&str>>, debrief: Option<&str>| NewGame {
+        briefs: briefs.into_iter().map(|b| b.map(String::from)).collect(),
+        debrief: debrief.map(String::from),
+        ..two_players()
+    };
+    assert!(refusal(briefed(vec![Some("x")], None)).contains("one entry per player"));
+    assert!(refusal(briefed(vec![], Some("  "))).contains("empty"));
+    let long = "x".repeat(hub::MAX_BRIEF + 1);
+    assert!(refusal(briefed(vec![Some(&long), None], None)).contains("at most"));
+
+    let hub = Hub::default();
+    let created = hub
+        .create(&briefed(
+            vec![Some("Open Silver/Silver."), None],
+            Some("What decided it?"),
+        ))
+        .unwrap();
+    let id = &created.game_id;
+    let seat = |s| Seat {
+        game: id.clone(),
+        seat: PlayerId(s),
+    };
+    assert_eq!(hub.brief(&seat(0)).as_deref(), Some("Open Silver/Silver."));
+    assert_eq!(hub.brief(&seat(1)), None);
+    let running = hub.report(id).unwrap();
+    assert!(running.running && !running.settled && running.decks.is_empty());
+    assert!(matches!(
+        hub.submit_debrief(&seat(0), "Too early."),
+        Err(HubError::BadRequest(_))
+    ));
+
+    hub.resign(&seat(1), "resigned").unwrap();
+    // Token seats owe no debrief: the game is settled once it is over.
+    let over = hub.report(id).unwrap();
+    assert!(!over.running && over.settled);
+    assert_eq!(over.decks[0]["Copper"], 7);
+    assert_eq!(over.decks[0]["Estate"], 3);
+    assert_eq!(over.meta.briefs[0].as_deref(), Some("Open Silver/Silver."));
+    hub.submit_debrief(&seat(0), "  Silver/Silver was fine.  ")
+        .unwrap();
+    assert_eq!(
+        hub.report(id).unwrap().meta.debriefs[0].as_deref(),
+        Some("Silver/Silver was fine.")
+    );
+}
+
+#[test]
+fn a_server_agent_owes_its_debrief_until_it_gives_one() {
+    let hub = Hub::default();
+    let req = NewGame {
+        debrief: Some("What decided it?".into()),
+        ..two_players()
+    };
+    let mut meta = Meta {
+        agents: vec![true, false],
+        ..Meta::default()
+    };
+    hub::brief(&req, &mut meta).unwrap();
+    let created = hub
+        .host(hub::config(&req).unwrap(), strings(&["A", "B"]), meta)
+        .unwrap();
+    let id = &created.game_id;
+    let seat = |s| Seat {
+        game: id.clone(),
+        seat: PlayerId(s),
+    };
+    assert!(!hub.debrief_pending(id, 0), "the game is still running");
+    hub.resign(&seat(1), "resigned").unwrap();
+    assert!(hub.debrief_pending(id, 0));
+    assert!(!hub.debrief_pending(id, 1), "a token seat owes none");
+    assert!(!hub.report(id).unwrap().settled);
+    hub.submit_debrief(&seat(0), "Money won.").unwrap();
+    assert!(!hub.debrief_pending(id, 0));
+    assert!(hub.report(id).unwrap().settled);
+}

@@ -106,6 +106,14 @@ pub struct Meta {
     pub ended_at: Option<u64>,
     /// Its record is in the history.
     pub recorded: bool,
+    /// The account that created it with `create_game`, if one was signed in.
+    pub host: Option<String>,
+    /// Per seat: what its player is told before the game (`NewGame::briefs`).
+    pub briefs: Vec<Option<String>>,
+    /// The question each server agent answers once the game is over.
+    pub debrief: Option<String>,
+    /// Per seat: its answer to `debrief`.
+    pub debriefs: Vec<Option<String>>,
 }
 
 /// A game's chess clock, as of its last change.
@@ -205,6 +213,36 @@ pub struct Hosting {
     pub idle_seconds: u64,
     /// A call waits on it for a seat.
     pub connected: bool,
+}
+
+/// Whether the server agent at `seat` still owes its debrief at `now`, once the game is
+/// over.
+fn debrief_owed(meta: &Meta, seat: usize, now: u64) -> bool {
+    meta.debrief.is_some()
+        && meta.agents.get(seat).copied().unwrap_or(false)
+        && meta.debriefs.get(seat).is_none_or(Option::is_none)
+        && meta
+            .ended_at
+            .is_none_or(|at| now < at + DEBRIEF_WAIT.as_millis() as u64)
+}
+
+/// A game as a record ([`Hub::report`]).
+#[derive(Clone, Debug)]
+pub struct Report {
+    pub game_id: String,
+    pub running: bool,
+    /// Over, with no server agent's debrief still to come.
+    pub settled: bool,
+    pub names: Vec<String>,
+    /// Per seat: the account playing it.
+    pub users: Vec<Option<UserRef>>,
+    pub config: GameConfig,
+    pub result: Option<dominion_protocol::view::GameResult>,
+    /// Once it is over, per seat: every card the player owns, by name.
+    pub decks: Vec<BTreeMap<String, u32>>,
+    /// The log as someone watching saw it.
+    pub log: Vec<dominion_agent::LogEntry>,
+    pub meta: Meta,
 }
 
 /// A game that has just ended.
@@ -619,6 +657,46 @@ fn set(name: &str) -> Result<Set, HubError> {
         })
 }
 
+/// The longest brief, in bytes.
+pub const MAX_BRIEF: usize = 64 * 1024;
+/// The longest debrief question, in bytes.
+pub const MAX_DEBRIEF_QUESTION: usize = 4 * 1024;
+/// The longest debrief, in bytes.
+pub const MAX_DEBRIEF: usize = 64 * 1024;
+/// How long after the game a server agent has for its debrief before it leaves anyway.
+pub const DEBRIEF_WAIT: Duration = Duration::from_secs(15 * 60);
+
+/// `req`'s briefs and debrief question, checked, into `meta`.
+pub fn brief(req: &NewGame, meta: &mut Meta) -> Result<(), HubError> {
+    if !req.briefs.is_empty() && req.briefs.len() != usize::from(req.players) {
+        return Err(bad(
+            "briefs must have one entry per player (null for none)".into()
+        ));
+    }
+    if req.briefs.iter().flatten().any(|b| b.len() > MAX_BRIEF) {
+        return Err(bad(format!("a brief is at most {MAX_BRIEF} bytes")));
+    }
+    let question = req.debrief.as_deref().map(str::trim);
+    if question.is_some_and(str::is_empty) {
+        return Err(bad("the debrief question is empty".into()));
+    }
+    if question.is_some_and(|q| q.len() > MAX_DEBRIEF_QUESTION) {
+        return Err(bad(format!(
+            "the debrief question is at most {MAX_DEBRIEF_QUESTION} bytes"
+        )));
+    }
+    meta.briefs = (req.briefs.iter())
+        .map(|b| {
+            b.as_deref()
+                .map(str::trim)
+                .filter(|b| !b.is_empty())
+                .map(String::from)
+        })
+        .collect();
+    meta.debrief = question.map(String::from);
+    Ok(())
+}
+
 pub fn config(req: &NewGame) -> Result<GameConfig, HubError> {
     let seed = req.seed.unwrap_or_else(|| rand::rng().random());
     let sets: Vec<Set> = req.sets.iter().map(|n| set(n)).collect::<Result<_, _>>()?;
@@ -974,11 +1052,12 @@ impl Hub {
         }
         let config = config(req)?;
         let names = names(req)?;
-        let meta = Meta {
+        let mut meta = Meta {
             watchable: req.watchable.unwrap_or(false),
             clock: req.clock.map(ClockState::new),
             ..Meta::default()
         };
+        brief(req, &mut meta)?;
         self.host(config, names, meta)
     }
 
@@ -1011,6 +1090,8 @@ impl Hub {
         let seats = table.names().len();
         meta.owners.resize(seats, None);
         meta.agents.resize(seats, false);
+        meta.briefs.resize(seats, None);
+        meta.debriefs = vec![None; seats];
         meta.started = now_ms();
         if let Some(clock) = &mut meta.clock {
             clock.rule.check().map_err(bad)?;
@@ -1214,6 +1295,116 @@ impl Hub {
                 summary
             })
             .collect()
+    }
+
+    /// The brief `seat`'s player is shown on joining: none for a server agent's seat,
+    /// which gets its brief from the runner.
+    pub fn brief(&self, seat: &Seat) -> Option<String> {
+        let game = self.read(&seat.game).ok()?;
+        let meta = lock(&game.meta);
+        if meta.agents.get(seat.seat.index()).copied().unwrap_or(false) {
+            return None;
+        }
+        meta.briefs.get(seat.seat.index()).cloned().flatten()
+    }
+
+    /// Whether the server agent at `seat` still owes the debrief of its finished game.
+    pub fn debrief_pending(&self, id: &str, seat: u8) -> bool {
+        let Ok(game) = self.game(id) else {
+            return false;
+        };
+        let over = lock(&game.table).is_over();
+        let meta = lock(&game.meta);
+        over && debrief_owed(&meta, usize::from(seat), now_ms())
+    }
+
+    /// Records `seat`'s debrief of its finished game, in place of any earlier one.
+    pub fn submit_debrief(&self, seat: &Seat, text: &str) -> Result<(), HubError> {
+        let game = self.game(&seat.game)?;
+        let table = lock(&game.table);
+        if !table.is_over() {
+            return Err(HubError::BadRequest(
+                "a debrief comes once the game is over".into(),
+            ));
+        }
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(HubError::BadRequest("the debrief is empty".into()));
+        }
+        let mut end = text.len().min(MAX_DEBRIEF);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        {
+            let mut meta = lock(&game.meta);
+            let seats = table.names().len();
+            meta.debriefs.resize(seats, None);
+            meta.debriefs[seat.seat.index()] = Some(text[..end].to_string());
+        }
+        self.save(&game, &table);
+        game.version.send_modify(|v| *v += 1);
+        Ok(())
+    }
+
+    /// Game `id` as a record: its setup, its players and how it went, the public log, and
+    /// once it is over the decks, briefs and debriefs. `settled` is whether it is over
+    /// with no server agent's debrief still to come.
+    pub fn report(&self, id: &str) -> Result<Report, HubError> {
+        let game = self.read(id)?;
+        let (mut report, owners) = {
+            let table = lock(&game.table);
+            let meta = lock(&game.meta).clone();
+            let over = table.is_over();
+            let g = table.game();
+            let decks = if over {
+                (0..g.num_players())
+                    .map(|p| {
+                        let mut deck: BTreeMap<String, u32> = BTreeMap::new();
+                        for id in g.player(PlayerId(p as u8)).owned() {
+                            *deck.entry(g.card(id).name().to_string()).or_default() += 1;
+                        }
+                        deck
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            let view = engine(|| table.watch_view(0))?;
+            let now = now_ms();
+            let settled =
+                over && (0..table.names().len()).all(|seat| !debrief_owed(&meta, seat, now));
+            let report = Report {
+                game_id: id.into(),
+                running: !over,
+                settled,
+                names: table.names().to_vec(),
+                users: vec![],
+                config: g.config().clone(),
+                result: view.as_ref().and_then(|v| v.game.result.clone()),
+                decks,
+                log: view.map(|v| v.since_last_decision).unwrap_or_default(),
+                meta,
+            };
+            let owners = report.meta.owners.clone();
+            (report, owners)
+        };
+        report.users = self.users(&owners);
+        Ok(report)
+    }
+
+    /// Waits until game `id` changes or `timeout` passes.
+    pub async fn changed_or(&self, id: &str, version: u64, timeout: Duration) {
+        let Ok(game) = self.read(id) else { return };
+        let mut changes = game.version.subscribe();
+        if *changes.borrow_and_update() != version {
+            return;
+        }
+        let _ = tokio::time::timeout(timeout, changes.changed()).await;
+    }
+
+    /// Game `id`'s version, which every change bumps.
+    pub fn version(&self, id: &str) -> Result<u64, HubError> {
+        Ok(*self.read(id)?.version.borrow())
     }
 
     pub fn meta(&self, id: &str) -> Result<Meta, HubError> {

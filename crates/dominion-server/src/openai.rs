@@ -26,7 +26,7 @@ const PRUNE_BATCH: usize = 20;
 const MAX_NUDGES: u32 = 3;
 
 const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries; play_treasures plays every Treasure offered in one call. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
-const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills.";
+const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves.";
 
 enum Auth {
     ChatGpt { file: PathBuf },
@@ -450,6 +450,13 @@ pub async fn play(
         result = play_inner(&client, spec, sandbox, job, archive) => result,
     };
     crate::harness::record_final_result(&client, archive, job).await?;
+    let result = match result {
+        Ok(answer) => {
+            crate::harness::debrief(&client, archive, job, answer).await;
+            Ok(())
+        }
+        Err(e) => Err(e),
+    };
     archive.record("seat_finished", json!({"result": result}))?;
     client.close().await;
     archive.finish_publish().await;
@@ -462,7 +469,7 @@ async fn play_inner(
     sandbox: &Sandbox,
     job: &Job,
     archive: &mut Archive,
-) -> Result<(), String> {
+) -> Result<Result<String, String>, String> {
     let (tool, args) = if job.official {
         ("state", json!({}))
     } else {
@@ -475,6 +482,11 @@ async fn play_inner(
     if !joined.ok {
         return Err(joined.text);
     }
+    if (joined.json.as_ref())
+        .is_some_and(|v| crate::harness::game_state(v)["game"]["running"] == false)
+    {
+        return Ok(Err(crate::harness::JOINED_OVER.into()));
+    }
     let session = Session::new(spec)?;
     let playbook = sandbox.playbook.as_deref();
     let mut instructions = BRIEF.to_string();
@@ -483,7 +495,7 @@ async fn play_inner(
             .map_err(|e| format!("{}: {e}", dir.display()))?;
         instructions.push_str(&format!("\n\n{PLAYBOOK}\n\n# AGENTS.md\n{agents}"));
     }
-    let mut first = String::new();
+    let mut first = crate::harness::opening(job, false);
     if let Some(text) = spec
         .instructions
         .as_deref()
@@ -502,6 +514,8 @@ async fn play_inner(
     let mut game_results: Vec<usize> = vec![];
     let mut nudges = 0;
     let mut over = false;
+    let mut debrief = crate::harness::debrief_request(job).filter(|_| !job.official);
+    let mut asked = false;
     loop {
         let mut reasoning = json!({"summary": "detailed"});
         if let Some(effort) = &spec.effort {
@@ -556,14 +570,22 @@ async fn play_inner(
             input.push(item);
         }
         if calls.is_empty() {
-            if over || archive.has_result() {
+            let ended = over
+                || archive.has_result()
+                || call(client, archive, "dominion", "state", token(job, json!({})))
+                    .await?
+                    .text
+                    .contains("GAME OVER");
+            if ended {
                 archive.record("native_response", json!({"response": said}))?;
-                return Ok(());
-            }
-            let view = call(client, archive, "dominion", "state", token(job, json!({}))).await?;
-            if view.text.contains("GAME OVER") {
-                archive.record("native_response", json!({"response": said}))?;
-                return Ok(());
+                if let Some(request) = debrief.take() {
+                    over = true;
+                    asked = true;
+                    input.push(json!({"type": "message", "role": "user",
+                        "content": [{"type": "input_text", "text": request}]}));
+                    continue;
+                }
+                return Ok(if asked { Ok(said) } else { Ok(String::new()) });
             }
             nudges += 1;
             if nudges > MAX_NUDGES {
@@ -603,7 +625,7 @@ async fn play_inner(
                         let reply = match call(client, archive, "dominion", tool, args).await {
                             Ok(reply) => reply,
                             // An official seat's access ends with its game.
-                            Err(_) if archive.has_result() => return Ok(()),
+                            Err(_) if archive.has_result() => return Ok(Ok(String::new())),
                             Err(error) => return Err(error),
                         };
                         if reply.text.contains("GAME OVER") {

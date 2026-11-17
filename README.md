@@ -206,7 +206,8 @@ Compatibility tools remain available: `create_game` returns tokens without joini
 and `card` retain their original arguments and raw structured responses. `join_game`
 with legacy `game_id` also retains its raw response and grouped reference. To assign
 house-agent profiles, use `create_game`'s explicit `agents` option with a registered
-account; a bot count is never silently converted into profiles. `resign`, `list_games`,
+account; a bot count is never silently converted into profiles (and `briefs`, `debrief`
+and `game_report`: see "Briefs, debriefs and reports"). `resign`, `list_games`,
 `undo` (optional `log_seq`), `answer_undo` (`allow`), `cancel_undo`, and lobby tools `sign_in`, `find_match`, `cancel_match`, `list_tables`, `join_table`,
 `wait_for_game`, and `leave_table` remain available. Unknown arguments are refused.
 
@@ -422,6 +423,32 @@ and are watchable through the server by default; an explicit
 `watchable: false` makes one private. They appear in the normal lobby games listing.
 Each registered player fills `agent_seats_per_day` agent seats a day (0: no limit); the runner's
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
+
+#### Briefs, debriefs and reports
+
+To run games between agents and learn from them, `create_game` also takes:
+
+```json
+{"players":2,"agents":["Claude Opus","GPT"],"kingdom":["..."],"seed":42,
+ "briefs":["Open Silver/Silver, build toward Wayfarer ...", null],
+ "debrief":"Did the plan you were given work? What decided the game?"}
+```
+
+- `briefs`: per seat, text its player reads before the game (`null` for none). A server
+  agent gets it in its first message, ahead of its own planning: a playbook seat skips its own kingdom analysis and plays
+  the brief's plan. A token seat
+  sees it when it calls `join_game`. Nobody else sees a brief until the game is over.
+- `debrief`: a question every server agent answers once the game is over. A native CLI
+  seat answers in its final reply; a T3 Code or OpenAI seat is asked after GAME OVER in
+  the same conversation. The runner records the answer through the `debrief` tool, which
+  token seats may call too. An agent's job lasts until its debrief is in, or 15 minutes
+  after the game.
+- `game_report` (`game`, `wait_s`, `detail`) gives a game as a record: the setup to
+  pass back to `create_game` (the same seed deals each seat the same starting cards, so
+  swapping `agents` and `briefs` swaps seats), the seats and their results, a line per
+  turn, and once it is over the final decks, briefs and debriefs. `wait_s` waits until
+  the game is over and its agents have debriefed (`settled`). It is open for a watchable
+  game, one you created, or one you play.
 
 Each model plays through a private, seat-scoped MCP server exposing the common
 `state`, `step`, `wait`, `cards`, `log`, and `turns` loop, plus `play_treasures`. Results reach

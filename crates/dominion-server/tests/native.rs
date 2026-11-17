@@ -29,6 +29,9 @@ if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content
 assert 'test-credential' not in prompt
 assert '=== CARD & PILE REFERENCE ===' in prompt
 assert 'Village | Action | $3' in prompt
+if 'fixture:brief' in prompt:
+    assert "BRIEF from the game's creator" in prompt
+    assert 'your final reply is your debrief' in prompt
 if 'fixture:transient' in prompt:
     # The token is the only file mounted from the host, so a mark on it outlives the attempt.
     token = Path('/home/agent/.gemini/antigravity-cli/antigravity-oauth-token')
@@ -382,6 +385,38 @@ async fn playbook_seats_start_in_it_read_only_and_may_run_its_lookups() {
                 .unwrap();
         assert!(results.iter().all(Result::is_ok), "{program}: {results:?}");
     }
+}
+
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn a_native_seat_reads_its_brief_and_its_final_reply_is_its_debrief() {
+    let mut h = setup("claude").await;
+    let mut game = request();
+    game.briefs = vec![Some("fixture:brief Play Villages.".into()), None];
+    game.debrief = Some("What decided the game?".into());
+    let created = h.arena.create_game(Some(&h.who), &game).unwrap();
+    let jobs = dispatched(&mut h.jobs);
+    assert_eq!(
+        jobs[0].brief.as_deref(),
+        Some("fixture:brief Play Villages.")
+    );
+    assert_eq!(jobs[1].brief, None);
+    let (_, results) = tokio::time::timeout(std::time::Duration::from_secs(30), play(&mut h, jobs))
+        .await
+        .unwrap();
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    let report = h.arena.hub.report(&created.game_id).unwrap();
+    assert!(report.settled);
+    for debrief in &report.meta.debriefs {
+        assert!(
+            debrief
+                .as_deref()
+                .is_some_and(|d| d.contains("Game completed through MCP")),
+            "{debrief:?}"
+        );
+    }
+    h.arena.sweep();
+    assert!(dispatched(&mut h.jobs).is_empty());
 }
 
 #[tokio::test]
