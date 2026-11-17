@@ -507,8 +507,8 @@ async fn play_inner(
         "Initial view and card reference:\n{}",
         joined.text
     ));
-    let mut input = vec![json!({"type": "message", "role": "user",
-        "content": [{"type": "input_text", "text": first}]})];
+    let mut input = vec![];
+    give(archive, &mut input, user_message(&first))?;
     let tools = tools(playbook.is_some());
     let keep = spec.context_results.unwrap_or(DEFAULT_KEEP_RESULTS);
     let mut game_results: Vec<usize> = vec![];
@@ -516,6 +516,7 @@ async fn play_inner(
     let mut over = false;
     let mut debrief = crate::harness::debrief_request(job).filter(|_| !job.official);
     let mut asked = false;
+    let mut instructed = false;
     loop {
         let mut reasoning = json!({"summary": "detailed"});
         if let Some(effort) = &spec.effort {
@@ -534,10 +535,12 @@ async fn play_inner(
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session.id,
         });
-        archive.record(
-            "direct_request",
-            json!({"model": spec.model, "items": input.len()}),
-        )?;
+        let mut request = json!({"model": spec.model, "items": input.len()});
+        if !instructed {
+            instructed = true;
+            request["instructions"] = json!(instructions);
+        }
+        archive.record("direct_request", request)?;
         let (items, usage) = session.respond(&body).await?;
         archive.record("direct_usage", usage)?;
         let mut calls = vec![];
@@ -564,7 +567,15 @@ async fn play_inner(
                         "item": {"id": item["id"], "type": "agent_message", "text": said}}),
                     )?;
                 }
-                Some("function_call") => calls.push(item.clone()),
+                Some("function_call") => {
+                    archive.record(
+                        "native_event",
+                        json!({"type": "item.completed", "item": {"id": item["id"],
+                        "type": "function_call", "call_id": item["call_id"],
+                        "name": item["name"], "arguments": item["arguments"]}}),
+                    )?;
+                    calls.push(item.clone());
+                }
                 _ => {}
             }
             input.push(item);
@@ -581,8 +592,7 @@ async fn play_inner(
                 if let Some(request) = debrief.take() {
                     over = true;
                     asked = true;
-                    input.push(json!({"type": "message", "role": "user",
-                        "content": [{"type": "input_text", "text": request}]}));
+                    give(archive, &mut input, user_message(&request))?;
                     continue;
                 }
                 return Ok(if asked { Ok(said) } else { Ok(String::new()) });
@@ -591,8 +601,13 @@ async fn play_inner(
             if nudges > MAX_NUDGES {
                 return Err("the model stopped playing before the game finished".into());
             }
-            input.push(json!({"type": "message", "role": "user", "content": [{"type": "input_text",
-                "text": "The game isn't over: keep playing (step to answer your decision, wait when there is none)."}]}));
+            give(
+                archive,
+                &mut input,
+                user_message(
+                    "The game isn't over: keep playing (step to answer your decision, wait when there is none).",
+                ),
+            )?;
             continue;
         }
         for item in calls {
@@ -641,16 +656,37 @@ async fn play_inner(
                     None => format!("ERROR: no tool named {name:?}"),
                 },
             };
-            input.push(json!({"type": "function_call_output", "call_id": item["call_id"], "output": output}));
+            give(
+                archive,
+                &mut input,
+                json!({"type": "function_call_output", "call_id": item["call_id"], "output": output}),
+            )?;
         }
         if game_results.len() > keep + PRUNE_BATCH {
+            let mut pruned = vec![];
             for index in game_results.drain(..PRUNE_BATCH) {
-                input[index]["output"] = json!(
-                    "[an earlier game update, left out to save room: state shows the whole game, log rereads its entries]"
-                );
+                pruned.push(input[index]["call_id"].clone());
+                input[index]["output"] = json!(PRUNED);
             }
+            archive.record(
+                "direct_pruned",
+                json!({"call_ids": pruned, "output": PRUNED}),
+            )?;
         }
     }
+}
+
+const PRUNED: &str = "[an earlier game update, left out to save room: state shows the whole game, log rereads its entries]";
+
+fn user_message(text: &str) -> Value {
+    json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]})
+}
+
+/// Adds an item to the model's input, recording it as the model will see it.
+fn give(archive: &mut Archive, input: &mut Vec<Value>, item: Value) -> Result<(), String> {
+    archive.record("direct_input", item.clone())?;
+    input.push(item);
+    Ok(())
 }
 
 /// Adds the seat's token to a game tool's arguments, except in an official game, where

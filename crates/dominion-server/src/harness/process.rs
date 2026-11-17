@@ -355,7 +355,7 @@ impl Harness {
         let stem = format!("response-{:06}", self.responses);
         let stdout = archive.dir.join(format!("{stem}.stdout.jsonl"));
         let stderr = archive.dir.join(format!("{stem}.stderr"));
-        archive.record("native_request",json!({"program":spec.program,"executable":self.launch.program,"arguments":self.launch.args,"prompt":prompt,"stdout":stdout.file_name(),"stderr":stderr.file_name()}))?;
+        archive.record("native_request",json!({"program":spec.program,"system":brief,"executable":self.launch.program,"arguments":self.launch.args,"prompt":prompt,"stdout":stdout.file_name(),"stderr":stderr.file_name()}))?;
         let mut output = private_file(&stdout)?;
         let error = private_file(&stderr)?;
         let mut cmd = self.command(spec)?;
