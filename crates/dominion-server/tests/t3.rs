@@ -220,6 +220,7 @@ async fn setup(fake: FakeT3) -> Harness {
         vec![Offer {
             name: "Test".into(),
             about: "T3 Code".into(),
+            ..Default::default()
         }],
         2,
         send,

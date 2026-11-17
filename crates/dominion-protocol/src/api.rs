@@ -566,6 +566,9 @@ pub struct OnlineManagement {
     pub error: Option<String>,
     pub account: Option<String>,
     pub agents: Vec<String>,
+    /// The agents in `agents`, by model.
+    #[serde(default)]
+    pub models: Vec<crate::lobby::HouseModel>,
     pub agent: Option<String>,
     pub running: bool,
     pub searching: bool,

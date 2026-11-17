@@ -406,13 +406,29 @@ played by token, by whoever holds it. The lobby makes games between accounts:
 
 A server can play agents using its account's native subscription logins: Claude Code,
 Codex, and Gemini through Antigravity CLI. `dominion agents` connects to `agent_socket`
-and offers the configured `[[agents]]` profiles in the lobby. A registered player can
-seat them at a table, request one in Bot Game, or assign any seats through ordinary
-`POST /api/games` / MCP `create_game`:
+and offers the configured `[[agents]]` profiles in the lobby, along with every model its
+`[[catalogs]]` find. A registered player can seat them at a table, request one in Bot
+Game, or assign any seats through ordinary `POST /api/games` / MCP `create_game`:
 
 ```json
 {"players":2,"agents":["Claude Opus","Gemini"],"seed":42,"turn_limit":100}
 ```
+
+A catalog reads the models a provider lists: Claude Code's
+`cache/model-catalog/*-cc.json` and Codex's `models_cache.json` (both kept by the CLI;
+`openai` reads Codex's, keeping its API models), and `agy models`. It offers each model
+its `models` patterns allow (`*` matches anything; default: all) and `exclude` doesn't,
+at each effort the model has and `efforts` allows (default: all). Antigravity's ids name
+their effort (`gemini-4-argon-high`): those are one model at several efforts. Each
+model and effort is an agent named after them ("Opus 5.5 High"; `tag` appends a word,
+to tell two programs' agents of the same model apart), and an account of its own,
+made the first time it is seated, so each has its own rating. An `[[agents]]` profile of
+the same program, model and effort is offered in its place, under its own name and
+account; a derived name that is a profile's, or that two models come to, is offered for
+none of them, so no account changes hands. An agent no longer offered plays out the games
+it has. The runner reads the catalogs again every 10 minutes, so a new model appears
+once its CLI lists it; one it can't read keeps what it listed last. The lobby picks a
+model, then its effort (high by default).
 
 `agents` has one entry per player; `null` creates a token seat. The creator receives
 only those token seats. A profile may play multiple seats. Existing game options
@@ -691,8 +707,9 @@ agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (def
 playbook_dir = "/srv/dominion-playbook"  # agents: a dominion-playbook checkout seats start in (read-only)
 sandbox_path = ["/run/current-system/sw/bin"]  # agents: put first on PATH in the seats' sandbox
 network_allow = []             # agents: hosts seats may reach beyond their provider's (`*.example.com` too)
-# agents: what the runner offers (default: Claude Opus, Claude Sonnet, Codex); `command`
-# (default claude, codex, or agy on PATH) and `about` (for the lobby) are optional too
+# agents: what the runner offers (default, with no catalogs: Claude Opus, Claude Sonnet,
+# Codex); `command` (default claude, codex, or agy on PATH) and `about` (for the lobby)
+# are optional too
 # [[agents]]
 # name = "Claude Opus"
 # program = "claude"           # claude, codex, antigravity, openai (direct API) or t3code
@@ -705,6 +722,14 @@ network_allow = []             # agents: hosts seats may reach beyond their prov
 # program = "antigravity"
 # command = "/path/to/antigravity-cli/bin/agy"
 # model = "gemini-4-argon-medium"       # use a model ID from `agy models`
+# catalogs: providers whose models are each offered, at each effort (see above)
+# [[catalogs]]
+# program = "claude"           # claude, codex, antigravity or openai
+# models = ["claude-opus-*", "claude-fable-*"]  # default: every model listed
+# exclude = ["claude-*-4-*"]
+# efforts = ["high", "max"]    # default: every effort the model has
+# tag = "Codex"                # appended to the agents' names
+# (and command, auth_dir, instructions, response_seconds, api_key_env, context_results)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 solo_dir = "/srv/dominion/solo"    # solo: where its games are kept (default $XDG_STATE_HOME/dominion/solo)
@@ -731,7 +756,9 @@ services.dominion.agents = {
 ```
 
 `profiles` defaults to `nix/agents.nix` (Opus and Sonnet on Claude Code, Sol and Terra
-on the direct OpenAI agent, Argon on Antigravity); `playbook` defaults to the flake's
+on the direct OpenAI agent, Argon on Antigravity), and `catalogs` to `nix/catalogs.nix`
+(Claude Code's Opus, Sonnet and Fable models from 5 on, OpenAI's GPT-6 models and
+Antigravity's Gemini 4 ones, at every effort); `playbook` defaults to the flake's
 `dominion-playbook` input, which the agents start in. The runner's PATH gets the given
 CLIs and bubblewrap, and the agents' sandbox a shell, coreutils, grep, sed, find and
 python3 (`sandbox_path`). `settings` still sets any runner setting directly.

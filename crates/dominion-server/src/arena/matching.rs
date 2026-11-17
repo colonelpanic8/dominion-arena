@@ -121,6 +121,9 @@ impl Arena {
             if request.opponents != Opponents::Agents {
                 return bad("`agent` names the server's agent for a search of agents");
             }
+            if user.kind() == UserKind::Registered {
+                self.summon(name)?;
+            }
             let state = lock(&self.state);
             let Some(agent) = state.house.agent_named(name) else {
                 return conflict(format!("the server has no agent called {name} now"));
@@ -202,6 +205,25 @@ impl Arena {
     /// player within their day's agent seats, while the runner has room. Searches that
     /// may not have one go on waiting for other agents.
     fn match_house(&self) {
+        // With no agent's account made yet, a search for any of them gets the default one.
+        let fallback = {
+            let state = lock(&self.state);
+            let waiting = state.queue.iter().any(|e| {
+                !e.agent
+                    && !e.guest
+                    && e.request.opponents == Opponents::Agents
+                    && e.request.players.contains(&2)
+                    && e.request.agent.is_none()
+            });
+            (waiting && state.house.agents().is_empty())
+                .then(|| state.house.default_agent())
+                .flatten()
+        };
+        if let Some(name) = fallback
+            && let Err(e) = self.summon(&name)
+        {
+            eprintln!("dominion: the agent {name}: {e}");
+        }
         let mut tried: Vec<String> = vec![];
         loop {
             let found = {

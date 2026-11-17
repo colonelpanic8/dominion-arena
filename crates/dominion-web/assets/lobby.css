@@ -764,6 +764,8 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-agent-select:hover, .lb-agent-select:focus { border-bottom-color: #888; color: #fff; outline: none; }
 .lb-agent-select option { background: #111; color: #fff; font-style: normal; }
 .lb-house .lb-agent-select { font-size: 1.8vh; }
+.lb-agent-select optgroup { background: #111; color: #888; font-style: normal; }
+.lb-effort-select { margin-left: 0.6vh; }
 .lb-order { grid-column: 2; display: flex; flex-direction: column; align-items: center; font-size: 1.4vh; }
 .lb-order-up, .lb-order-down { cursor: pointer; color: #ccc; line-height: 1; }
 .lb-order-up::before { content: "▲"; }

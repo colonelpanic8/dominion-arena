@@ -281,6 +281,19 @@ struct Start {
 }
 
 impl Arena {
+    /// Makes the accounts of the server's agents `host` seats, if they may seat them.
+    fn summon_seated(&self, host: &User, edits: &[SeatEdit]) -> Result<()> {
+        if host.kind() != UserKind::Registered {
+            return Ok(());
+        }
+        for edit in edits {
+            if let SeatEdit::Agent(name) = edit {
+                self.summon(name)?;
+            }
+        }
+        Ok(())
+    }
+
     fn table_info(&self, state: &State, id: &str) -> Result<TableInfo> {
         let table = state.tables.get(id);
         table
@@ -297,6 +310,7 @@ impl Arena {
         limited(&self.limits.lobby, ident.user.clone(), "changes to tables")?;
         let host = self.user(&ident.user)?;
         let edits = new.seats.as_deref().unwrap_or(&[SeatEdit::Open]);
+        self.summon_seated(&host, edits)?;
         let mut state = lock(&self.state);
         let mut seats = vec![Seat::Player {
             user: ident.user.clone(),
@@ -386,6 +400,7 @@ impl Arena {
         let spec = lock(&self.state).hosted(id, &ident.user)?.spec.clone();
         check_spec(&spec, edits.len().clamp(2, 6))?;
         let host = self.user(&ident.user)?;
+        self.summon_seated(&host, edits)?;
         let mut state = lock(&self.state);
         let old = state.hosted(id, &ident.user)?.seats.clone();
         let mut seats = vec![];

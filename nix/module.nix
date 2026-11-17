@@ -176,6 +176,16 @@ in {
         defaultText = lib.literalExpression "import ./nix/agents.nix";
         description = "The agent profiles offered to players: the runner's `[[agents]]`.";
       };
+      catalogs = lib.mkOption {
+        type = lib.types.listOf toml.type;
+        default = import ./catalogs.nix;
+        defaultText = lib.literalExpression "import ./nix/catalogs.nix";
+        description = ''
+          Providers whose models are offered to players, each at every effort allowed: the
+          runner's `[[catalogs]]`. New models appear as the providers list them; a profile
+          of the same program, model and effort is offered in its place.
+        '';
+      };
       atOnce = lib.mkOption {
         type = lib.types.ints.positive;
         default = 2;
@@ -223,6 +233,7 @@ in {
         agent_socket = lib.mkDefault cfg.settings.agent_socket;
         server = lib.mkDefault "http://127.0.0.1:${toString (cfg.settings.port or 7317)}/mcp";
         agents = lib.mkDefault cfg.agents.profiles;
+        catalogs = lib.mkDefault cfg.agents.catalogs;
         agents_at_once = lib.mkDefault cfg.agents.atOnce;
         # What the agents' sandbox has on PATH: a shell for their lookups, and python3
         # for the playbook's ratings script.

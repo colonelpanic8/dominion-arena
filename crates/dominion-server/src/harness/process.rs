@@ -94,23 +94,9 @@ impl Harness {
         }
         let work = archive.join("work");
         std::fs::create_dir(&work).map_err(|e| e.to_string())?;
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
+        let auth = (spec.auth_dir.clone())
+            .or_else(|| spec.program.native_dir())
             .ok_or("HOME is unset")?;
-        let auth = spec.auth_dir.clone().unwrap_or_else(|| match spec.program {
-            Program::Claude => std::env::var_os("CLAUDE_CONFIG_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".claude")),
-            Program::Codex => std::env::var_os("CODEX_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".codex")),
-            Program::T3Code | Program::OpenAi => {
-                unreachable!("only CLI agents have a native harness")
-            }
-            Program::Antigravity => std::env::var_os("GEMINI_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join(".gemini")),
-        });
         let auth = auth
             .canonicalize()
             .map_err(|e| format!("provider credentials {}: {e}", auth.display()))?;

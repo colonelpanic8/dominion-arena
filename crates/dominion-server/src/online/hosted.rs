@@ -437,12 +437,14 @@ impl std::fmt::Debug for Hosted {
 fn management(web: &Web) -> OnlineManagement {
     let update = web.hosted.client.current();
     let view = update.reducer.view().ok();
+    let (agents, models) = web.access.arena.official_agents();
     OnlineManagement {
         connected: update.connected,
         error: update.error,
         id: web.hosted.id.clone(),
         account: update.reducer.names.get(&update.reducer.player_id).cloned(),
-        agents: web.access.arena.official_agents(),
+        agents,
+        models,
         agent: web.job().map(|j| j.agent),
         running: view.is_some_and(|v| v.game.running),
         searching: update.searching || web.job().is_some_and(|j| j.game_id.is_empty()),

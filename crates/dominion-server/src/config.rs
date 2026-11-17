@@ -156,6 +156,11 @@ pub struct Config {
     /// (`claude`, `codex`, or `antigravity`), and optionally `model`, `command`, `about` (default: Claude
     /// Opus, Claude Sonnet and Codex).
     pub agents: Option<Vec<crate::runner::AgentSpec>>,
+    /// Providers whose models `dominion agents` offers, each at every effort allowed, as
+    /// `[[catalogs]]` tables: `program`, and optionally `models` and `exclude` (patterns
+    /// of model ids), `efforts`, `tag` and the agents' other settings. An `[[agents]]`
+    /// profile of the same program, model and effort is offered in its place.
+    pub catalogs: Option<Vec<crate::catalog::CatalogSpec>>,
     /// How many agent seats `dominion agents` plays at once (default 2).
     pub agents_at_once: Option<u32>,
     /// Where `dominion agents` runs its agents and keeps their logs (default
@@ -404,10 +409,17 @@ impl Config {
         let dir = (self.agents_dir.clone())
             .or_else(|| Some(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("dominion/agents")))
             .ok_or("no place for the agents: set agents_dir (or XDG_STATE_HOME or HOME)")?;
+        let catalogs = self.catalogs.clone().unwrap_or_default();
+        for catalog in &catalogs {
+            catalog.validate()?;
+        }
         let agents = self
             .agents
             .clone()
-            .unwrap_or_else(crate::runner::default_agents);
+            .unwrap_or_else(|| match catalogs.is_empty() {
+                true => crate::runner::default_agents(),
+                false => vec![],
+            });
         for (i, agent) in agents.iter().enumerate() {
             agent.validate()?;
             if agents[..i]
@@ -421,6 +433,7 @@ impl Config {
             socket,
             server: self.server(),
             agents,
+            catalogs,
             capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),
             dir,
             t3code: self.t3code.clone(),

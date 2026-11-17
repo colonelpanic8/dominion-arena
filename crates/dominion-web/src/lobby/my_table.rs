@@ -3,6 +3,7 @@
 //! right, Ready and Leave Table below). Its host edits the rules and the seats; everyone
 //! else sees them. While the table's game runs it shows that game, locked.
 
+use super::agent_picker::{AgentPicker, without};
 use super::chat::Chat;
 use super::rules::{
     LandscapeSlot, MAX_PLAYERS, Pick, SLOT_KINDS, Ternary, expansion_icon, expansions,
@@ -24,7 +25,9 @@ use crate::platform;
 use crate::session;
 use dioxus::prelude::*;
 use dominion_protocol::api::GameSummary;
-use dominion_protocol::lobby::{Clock, House, SeatEdit, SeatKind, TableInfo, TableSeat, UndoRule};
+use dominion_protocol::lobby::{
+    Clock, House, HouseModel, SeatEdit, SeatKind, TableInfo, TableSeat, UndoRule, house_choice,
+};
 
 /// The table's game as `/api/games` lists it, asked again every few seconds while the
 /// game runs.
@@ -753,18 +756,24 @@ pub fn Players() -> Element {
         .as_ref()
         .map(|l| l.house.clone())
         .unwrap_or_default();
-    // The server's agents a host may seat: those it offers, if the host may seat any.
-    let agents: Vec<(String, String)> = match house.left {
-        Some(_) => (house.agents.iter())
-            .filter(|a| {
-                !t.seats
-                    .iter()
-                    .any(|s| s.kind == SeatKind::Agent && s.user.as_ref() == Some(&a.user))
-            })
-            .map(|a| (a.user.name.clone(), a.about.clone()))
-            .collect(),
-        None => vec![],
+    // The server's agents a host may seat: those it offers, if the host may seat any,
+    // but those seated (at another seat, for an agent's own picker).
+    let seated: Vec<String> = (t.seats.iter())
+        .filter(|s| s.kind == SeatKind::Agent)
+        .filter_map(|s| s.user.as_ref().map(|u| u.name.clone()))
+        .collect();
+    let (models, may_seat) = (house.models.clone(), house.left.is_some());
+    let models_but = move |keep: Option<&str>| -> Vec<HouseModel> {
+        let taken: Vec<String> = (seated.iter())
+            .filter(|s| Some(s.as_str()) != keep)
+            .cloned()
+            .collect();
+        match may_seat {
+            true => without(&models, &taken),
+            false => vec![],
+        }
     };
+    let agents = models_but(None);
     let left_today = House::left_today(house.left.unwrap_or(0));
     rsx! {
         Fieldset { title: "Players ({filled}/{n})", class: "lb-players",
@@ -801,28 +810,42 @@ pub fn Players() -> Element {
                                 div { class: "lb-person-name",
                                     match kind {
                                         SeatKind::Open if host && !agents.is_empty() => rsx! {
-                                            select {
+                                            AgentPicker {
+                                                models: agents.clone(),
+                                                none: "Empty Slot",
                                                 class: "lb-agent-select",
-                                                "data-action": "seat-agent",
+                                                action: "seat-agent",
                                                 title: "Seat one of the server's agents: the server starts it when the game does ({left_today})",
-                                                onchange: move |e| {
-                                                    let name = e.value();
-                                                    if !name.is_empty() {
+                                                onpick: move |name: Option<String>| {
+                                                    if let Some(name) = name {
                                                         change_seats(ctx, toast, move |_, s| s[i] = SeatEdit::Agent(name));
                                                     }
                                                 },
-                                                option { value: "", selected: true, "Empty Slot" }
-                                                for (agent, about) in agents.iter().cloned() {
-                                                    option { key: "{agent}", value: "{agent}", "{agent} ({about})" }
-                                                }
                                             }
                                         },
                                         SeatKind::Open => rsx! { span { class: "lb-empty-label", "Empty Slot" } },
-                                        SeatKind::Agent => rsx! {
-                                            if let Some(u) = user.clone() {
-                                                UserName { user: u }
+                                        SeatKind::Agent => {
+                                            let models = models_but(Some(&user_name));
+                                            let pickable = host && house_choice(&models, &user_name).is_some();
+                                            rsx! {
+                                                if pickable {
+                                                    AgentPicker {
+                                                        models,
+                                                        value: user_name.clone(),
+                                                        class: "lb-agent-select",
+                                                        action: "change-agent",
+                                                        title: "{user_name}: the server starts it when the game does",
+                                                        onpick: move |name: Option<String>| {
+                                                            if let Some(name) = name {
+                                                                change_seats(ctx, toast, move |_, s| s[i] = SeatEdit::Agent(name));
+                                                            }
+                                                        },
+                                                    }
+                                                } else if let Some(u) = user.clone() {
+                                                    UserName { user: u }
+                                                }
+                                                span { class: "lb-person-away", if seat.here { "agent" } else { "agent, unavailable" } }
                                             }
-                                            span { class: "lb-person-away", if seat.here { "agent" } else { "agent, unavailable" } }
                                         },
                                         SeatKind::Token => rsx! { TokenName { index: i, name: name.clone(), editable: host } },
                                         SeatKind::Player => rsx! {

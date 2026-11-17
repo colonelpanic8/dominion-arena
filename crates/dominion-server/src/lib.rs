@@ -4,6 +4,7 @@
 pub mod archive;
 pub mod arena;
 pub mod assets;
+pub mod catalog;
 pub mod client;
 pub mod config;
 pub mod control;

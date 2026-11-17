@@ -3,6 +3,7 @@
 //! by its token, the lobby's chat, and the sign-in panel while nobody is signed in.
 
 use super::account::SignIn;
+use super::agent_picker::AgentPicker;
 use super::chat::Chat;
 use super::{
     Fieldset, LobbyFrame, OptionRow, Switch, Tab, create_table, flash, now_ms, signed_in, store,
@@ -14,7 +15,7 @@ use crate::app::Route;
 use crate::platform;
 use crate::session::{self, HeldSeat};
 use dioxus::prelude::*;
-use dominion_protocol::lobby::{House, MatchRequest, Opponents, QueueState};
+use dominion_protocol::lobby::{House, MatchRequest, Opponents, QueueState, house_choice};
 
 #[component]
 pub fn AutomatchTab() -> Element {
@@ -80,11 +81,11 @@ fn Automatch() -> Element {
     let house = lobby.as_ref().map(|l| l.house.clone()).unwrap_or_default();
     drop(lobby);
     let mut opponent = use_signal(|| None::<String>);
-    let house_names: Vec<String> = house.agents.iter().map(|a| a.user.name.clone()).collect();
+    let house_names: Vec<String> = house.models.iter().map(|m| m.name.clone()).collect();
     if opponent
         .peek()
         .as_ref()
-        .is_some_and(|o| !house_names.contains(o))
+        .is_some_and(|o| house_choice(&house.models, o).is_none())
     {
         opponent.set(None);
     }
@@ -199,29 +200,20 @@ fn Automatch() -> Element {
         }
         Fieldset { title: "Bot Game", class: "lb-botmatch",
             p { class: "lb-note", "A game against agents searching for one: bots, and agents signed in over MCP." }
-            if !house.agents.is_empty() {
-                p { class: "lb-note lb-house", "data-house": "{house.agents.len()}",
+            if !house.models.is_empty() {
+                p { class: "lb-note lb-house", "data-house": "{house.models.len()}",
                     match house.left {
                         Some(left) => {
                             let left_today = House::left_today(left);
                             rsx! {
                             "Or one of the server's own agents, which it starts for a 1 Bot game when no other agent answers ({house.free} free now, {left_today} for you): "
-                            select {
+                            AgentPicker {
+                                models: house.models.clone(),
+                                value: opponent(),
+                                none: "any of them",
                                 class: "lb-agent-select",
-                                "data-action": "pick-agent",
-                                onchange: move |e| {
-                                    let name = e.value();
-                                    opponent.set((!name.is_empty()).then_some(name));
-                                },
-                                option { value: "", selected: opponent().is_none(), "any of them" }
-                                for a in house.agents.iter().cloned() {
-                                    option {
-                                        key: "{a.user.name}",
-                                        value: "{a.user.name}",
-                                        selected: opponent().as_ref() == Some(&a.user.name),
-                                        "{a.user.name} ({a.about})"
-                                    }
-                                }
+                                action: "pick-agent",
+                                onpick: move |name| opponent.set(name),
                             }
                             }
                         }
