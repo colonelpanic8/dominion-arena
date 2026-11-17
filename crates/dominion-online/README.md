@@ -126,7 +126,9 @@ only after confirmation, including the snapshot roster check. A completed result
 authorizes leaving only its own table, never a subsequently assigned table. It
 never joins or takes over an unrelated human table. Spectators can be present at public
 matches, but the adapter uses only its own playing seat's legal view. Opponent
-undo requests are declined automatically. Reconnect invalidates old decisions;
+undo requests are declined automatically. When the server offers to resign an
+opponent who left (its `TimeoutOffer`), the adapter takes it at once with a
+`TimeoutRequest`, in any game. Reconnect invalidates old decisions;
 process restart leaves the agent paused until explicitly resumed from the page.
 
 ### Several official accounts
@@ -250,8 +252,8 @@ described only as precisely as the server state allows.
 
 Questions support Choice, Number, Complex AND/OR, Delayed and Name, including
 position-versus-name ordinals, decline/default answers and top-first ordered
-answers. Cleanup reordering and controlled turns are supported. Metagame
-requests (undo/timeout), unsolicited player replacements and changes outside the
+answers. Cleanup reordering and controlled turns are supported. Undo requests in
+bot games, unsolicited player replacements and changes outside the
 bot-only runtime policy stop gameplay for operator inspection. All of their wire
 payloads are decoded. Tournament and account workflows are library codecs, not
 MCP gameplay tools. Startup and reconnect must produce a supported snapshot before
