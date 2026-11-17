@@ -44,6 +44,12 @@ crates/dominion-engine/
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
 crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; accounts and the
                           lobby in `lobby`) and the asset manifest; engine-free, builds for wasm
+  src/contract.rs         what every producer of a view keeps beyond the schema: zone names,
+                          landscape kinds, counts that add up, table extras saying no more
+                          than the view. The engine's projection and the dominion.games
+                          reducer (`dominion-online`) are both tested against it; a view
+                          convention goes here before either producer or the client relies
+                          on it
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
@@ -113,6 +119,9 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           `you` is the seat's own player and nobody for someone watching:
                           draw `front()` (then the first player) and `others()`;
                           `with_meta` adds the accounts and how the game ended
+  src/game/sort_groups.tsv  dominion.games' hand-sorting group of each card it has (client
+                          2.3.7), which `board::sort_group` reads; a card it lacks is judged
+                          from its text
   src/game/table/         the graphical table, dominion.games' layout and behaviour; the game
                           page's default view (Plain is a toggle)
     mod.rs                `TableGame`, `TableCtx` (selection, study view, windows, keys,
@@ -125,7 +134,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           AnimationDirector queues them; no shuffle animation
     sound.rs              your-turn and end-of-game sounds when dominion.games plays them
     layout.rs             every zone's box from the window size, in dominion.games' vh/vw
-                          rules: basic columns, kingdom grid, rows, windows (pure)
+                          rules: basic columns, the kingdom grid (its `Layout` step for
+                          step), rows, windows (pure)
     pieces.rs             `TableCard` (action-coloured border, crosses, counts, plus, All),
                           badges, `CardName`, the study view
     supply.rs players.rs prompt.rs side.rs   Supply and tabs; player bars, peeking opponent

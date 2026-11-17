@@ -21,6 +21,7 @@ fn zone_popup(title: String, z: &Zone, note: Option<String>) -> Popup {
         unknown: z.unknown,
         note,
         composition: None,
+        played: false,
     }
 }
 
@@ -104,7 +105,13 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
 fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Option<String>)> {
     let mut out = vec![];
     if show_in_play && p.in_play.count > 0 {
-        out.push(("inPlay".into(), "In play".into(), p.in_play.clone(), None));
+        let shown: u32 = p.play_order.iter().map(|s| s.count).sum();
+        let played = Zone {
+            count: p.in_play.count,
+            known: p.play_order.clone(),
+            unknown: p.in_play.count.saturating_sub(shown),
+        };
+        out.push(("inPlay".into(), "In play".into(), played, None));
     }
     for z in &p.zones {
         if z.zone.count > 0 {
@@ -127,15 +134,17 @@ fn PlayerTabs(player: PlayerEntry, g: Rc<Geometry>, you: bool, show_in_play: boo
     let n = list.len().max(1) as f64;
     let w = (11.0 * g.vw).min(budget / n);
     let y = if you { 96.0 * g.vh + 1.0 } else { 0.0 };
-    let x0 = if you { 13.0 * g.vw } else { 0.0 };
     rsx! {
         for (i, (key, label, z, art)) in list.into_iter().enumerate() {
             Tab {
                 key: "{key}",
                 label: label.clone(),
                 count: z.count,
-                at: Rect::new(x0 + i as f64 * w * 0.95, y, w, 4.0 * g.vh),
-                popup: zone_popup(format!("{}: {label}", p.name), &z, None),
+                at: Rect::new(i as f64 * w * 0.95, y, w, 4.0 * g.vh),
+                popup: Popup {
+                    played: key == "inPlay",
+                    ..zone_popup(format!("{}: {label}", p.name), &z, None)
+                },
                 art,
                 anchor: if key == "inPlay" { format!("inplay:{}", p.seat) } else { format!("zone:{}:{key}", p.seat) },
                 z: i as i32,
@@ -181,6 +190,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
                                 inverted: true,
                                 count: (s.count > 1).then_some(s.count),
                                 at: Rect::new(row.xs[i] - hand_box.x, 0.0, row.w, row.h),
+                                z: if *back { (2 * slots.len() - 2 * i) as i32 } else { 0 },
                             }
                         }
                     }
@@ -231,7 +241,8 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
 }
 
 /// The turn player's cards in play, in the order played, from the left, each over the
-/// last and stepping down 0, 4 and 8vh in turn.
+/// last and stepping down 0, 4 and 8vh in turn: dominion.games' row, in which the
+/// overlap says nothing about which card played which.
 #[component]
 pub fn PlayArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
     let pa = &board.play_area;
@@ -322,16 +333,12 @@ fn hand_slots(hand: &Zone, faces: bool) -> Vec<(Stack, bool)> {
         vec![]
     };
     let unknown = if faces { hand.unknown } else { hand.count };
-    let backs = if faces {
-        unknown.min(1)
-    } else {
-        unknown.min(12)
-    };
+    let backs = if faces { unknown.min(1) } else { unknown };
     for i in 0..backs {
         slots.push((
             Stack {
                 card: String::new(),
-                count: if i + 1 == backs { unknown } else { 1 },
+                count: if i == 0 { unknown } else { 1 },
             },
             true,
         ));
@@ -346,6 +353,7 @@ fn deck_popup(p: &PlayerEntry) -> Popup {
         unknown: 0,
         note: None,
         composition: Some(p.seat),
+        played: false,
     }
 }
 
@@ -593,6 +601,6 @@ mod tests {
         let hidden = hand_slots(&hand, false);
         assert_eq!(hidden.len(), 5);
         assert!(hidden.iter().all(|(s, back)| s.card.is_empty() && *back));
-        assert_eq!(hidden.last().unwrap().0.count, 5);
+        assert_eq!(hidden[0].0.count, 5);
     }
 }

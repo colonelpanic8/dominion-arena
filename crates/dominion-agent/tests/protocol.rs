@@ -5,6 +5,7 @@ use dominion_agent::{
 use dominion_engine::{
     Card, CardId, DecisionKind, GameConfig, Kind, Move, Phase, PlayerId, Set, Types,
 };
+use dominion_protocol::contract;
 use jsonschema::Validator;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -253,6 +254,8 @@ fn random_games_produce_valid_views_and_answerable_options() {
                 &json,
                 &format!("seed {seed} step {step} view"),
             );
+            let wrong = contract::violations(&view, Some(&table.extras(seat)));
+            assert!(wrong.is_empty(), "seed {seed} step {step}: {wrong:?}");
             let d = view
                 .decision
                 .clone()
@@ -392,6 +395,8 @@ fn assert_watcher_sees_every_players_cards(
         );
     }
     let extras = table.watch_extras().expect("a new table is watchable");
+    let wrong = contract::violations(&watch, Some(&extras));
+    assert!(wrong.is_empty(), "{what}: {wrong:?}");
     for s in 0..n as u8 {
         let what = format!("{what}, against seat {s}");
         let seat = table.view_from(PlayerId(s), log_from);
@@ -1399,6 +1404,29 @@ fn a_durations_effect_says_it_lasts_until_its_owners_next_turn() {
             );
             break;
         }
+        let end = pick(&v.decision.unwrap(), |o| o.action == "end-phase").unwrap();
+        t.answer(seat, &end).unwrap();
+    }
+}
+
+#[test]
+fn the_table_extras_say_which_cards_in_play_stay_and_hold_cards() {
+    let mut t = table(&[Card::Haven], 3, &["Ada", "Bo"]);
+    let waiting = |seat: PlayerId, _: &AgentDecision| seat.0 == 1;
+    loop {
+        let seat = play_to(&mut t, "Haven", waiting).expect("the game goes on");
+        let v = t.view(seat);
+        if v.lasting.iter().any(|l| l.card == "Haven") {
+            let extras = t.extras(seat);
+            let kept: Vec<_> = extras.players[0]
+                .in_play
+                .iter()
+                .map(|c| (c.card.as_str(), c.stays, c.holds))
+                .collect();
+            assert_eq!(kept, [("Haven", true, true)]);
+            break;
+        }
+        assert!(t.extras(seat).players[0].in_play.is_empty());
         let end = pick(&v.decision.unwrap(), |o| o.action == "end-phase").unwrap();
         t.answer(seat, &end).unwrap();
     }

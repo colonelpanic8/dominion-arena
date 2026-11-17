@@ -22,10 +22,7 @@ fn is_treasure(p: &PileEntry) -> bool {
 pub fn basic_columns(b: &Board) -> (Vec<PileEntry>, Vec<PileEntry>) {
     let (mut treasures, mut rest): (Vec<_>, Vec<_>) =
         b.supply.basic.iter().cloned().partition(is_treasure);
-    let key = |p: &PileEntry| {
-        let c = crate::game::board::cost_key(p.cost.as_ref());
-        (std::cmp::Reverse(c), p.name.clone())
-    };
+    let key = |p: &PileEntry| (std::cmp::Reverse(p.printed), p.name.clone());
     let curse_last = |p: &PileEntry| p.types.iter().any(|t| t == "Curse");
     treasures.sort_by_key(key);
     rest.sort_by_key(|p| (curse_last(p), key(p)));
@@ -59,14 +56,10 @@ pub fn wides(b: &Board) -> Vec<Wide> {
     out
 }
 
-/// The kingdom piles, cheapest first.
+/// The kingdom piles, cheapest first by the cost printed on each pile's own card.
 fn kingdom(b: &Board) -> Vec<PileEntry> {
     let mut piles: Vec<PileEntry> = b.supply.kingdom.iter().flatten().cloned().collect();
-    piles.sort_by(|a, b| {
-        crate::game::board::cost_key(a.cost.as_ref())
-            .cmp(&crate::game::board::cost_key(b.cost.as_ref()))
-            .then_with(|| a.name.cmp(&b.name))
-    });
+    piles.sort_by(|a, b| a.printed.cmp(&b.printed).then_with(|| a.name.cmp(&b.name)));
     piles
 }
 
@@ -81,11 +74,7 @@ pub fn SupplyArea(
     let kingdom = kingdom(&board);
     let wide = wides(&board);
     let mut non_supply = board.non_supply.clone();
-    non_supply.sort_by(|a, b| {
-        crate::game::board::cost_key(b.cost.as_ref())
-            .cmp(&crate::game::board::cost_key(a.cost.as_ref()))
-            .then_with(|| a.name.cmp(&b.name))
-    });
+    non_supply.sort_by(|a, b| b.printed.cmp(&a.printed).then_with(|| b.name.cmp(&a.name)));
     let basic: Vec<(PileEntry, Rect)> = victory
         .into_iter()
         .zip(g.victory.iter().copied())
@@ -165,6 +154,7 @@ fn TrashTab(board: Rc<Board>, g: Rc<Geometry>) -> Element {
         unknown: b.trash.unknown,
         note: None,
         composition: None,
+        played: false,
     };
     let w = 11.0 * g.vw;
     let at = Rect::new(
@@ -281,6 +271,7 @@ fn Deck(label: String, deck: CardDeck, at: Rect) -> Element {
         unknown: 0,
         note: Some(format!("{} left to draw", deck.count)),
         composition: None,
+        played: false,
     };
     let open = popup.clone();
     let lower = label.to_lowercase();

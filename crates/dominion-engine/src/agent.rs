@@ -332,6 +332,25 @@ impl<'a> View<'a> {
         crate::cards::lasting_tokens(l)
     }
 
+    /// Whether a lasting effect keeps card `id` in play past this turn's Clean-up.
+    pub fn stays_in_play(&self, id: CardId) -> bool {
+        self.game.lasting().iter().any(|l| l.keeps.contains(&id))
+    }
+
+    /// Whether card `id` has something of its own beside it: cards its lasting effect
+    /// set aside (Haven's, seen or not), or tokens on it (Garrison's).
+    pub fn holds(&self, id: CardId) -> bool {
+        let g = self.game;
+        let aside = |c: &CardId| matches!(g.zone(*c), Zone::SetAside(_));
+        g.lasting()
+            .iter()
+            .filter(|l| l.source == Some(id))
+            .any(|l| {
+                crate::cards::lasting_tokens(l).is_some()
+                    || l.data.pick.iter().chain(&l.data.cards).any(aside)
+            })
+    }
+
     /// Public state cards and landscapes keep outside the zones and tokens above.
     pub fn notes(&self) -> Vec<Note> {
         crate::cards::notes(self.game)

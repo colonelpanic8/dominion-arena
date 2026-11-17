@@ -321,6 +321,50 @@ fn projected_snapshot_and_question_follow_shared_schema() {
         .map(|e| e.to_string())
         .collect();
     assert!(errors.is_empty(), "{errors:?}");
+    sound(&reducer);
+}
+
+/// The reducer's view and table extras keep the conventions every producer keeps.
+fn sound(r: &Reducer) {
+    let (view, table) = (r.view().unwrap(), r.table().unwrap());
+    let wrong = view::contract::violations(&view, Some(&table));
+    assert!(wrong.is_empty(), "{wrong:?}");
+}
+
+#[test]
+fn zones_go_by_the_names_every_view_uses() {
+    let mut snap = snapshot();
+    let mut zone = |index, kind, cards: Vec<i32>| {
+        snap.state.zones.push(model::Zone {
+            index,
+            kind,
+            pile_name: 0,
+            owner: 0,
+            cards,
+            created_by: -1,
+            attached_trait: 0,
+            is_visible: true,
+        })
+    };
+    // A Tavern mat, two set-aside zones, cards revealed, and an empty hidden window.
+    zone(40, 10, vec![]);
+    zone(41, 24, vec![]);
+    zone(42, 26, vec![]);
+    zone(43, 23, vec![]);
+    zone(44, 9, vec![]);
+    let mut r = Reducer::new(catalog(), 42);
+    r.replace(snap).unwrap();
+    r.apply(movement(0, 41, vec![0], vec![0])).unwrap();
+    r.apply(movement(2, 42, vec![3], vec![3])).unwrap();
+    r.apply(movement(1, 43, vec![-1], vec![1])).unwrap();
+    let you = r.view().unwrap().you.unwrap();
+    let zones: Vec<_> = you
+        .other_zones
+        .iter()
+        .map(|(key, z)| (key.as_str(), z.count))
+        .collect();
+    assert_eq!(zones, [("looking", 1), ("setAside", 2)]);
+    sound(&r);
 }
 
 #[test]
@@ -723,4 +767,72 @@ fn count_correction_keeps_unaffected_visible_cards_and_never_invents_a_destinati
     assert_eq!(you.deck.unknown, 1);
     assert_eq!(you.discard.known, BTreeMap::from([("Copper".into(), 1)]));
     assert_eq!(QuestionContext::card_name(&r, 0), Some("Copper".into()));
+}
+
+#[test]
+fn the_table_lists_cards_in_play_in_the_order_they_were_played() {
+    let mut r = reducer();
+    r.apply(movement(0, 3, vec![0], vec![0])).unwrap();
+    r.apply(movement(1, 3, vec![-1], vec![1])).unwrap();
+    r.apply(movement(2, 3, vec![3], vec![3])).unwrap();
+    r.apply(model::Event::CardStatus(model::CardStatus {
+        card: 1,
+        stays_out: true,
+        played_card_lists: vec![],
+        set_aside_card_lists: vec![],
+        properties: vec![],
+    }))
+    .unwrap();
+    let table = r.table().unwrap();
+    let played: Vec<_> = table.players[0]
+        .in_play
+        .iter()
+        .map(|c| (c.card.as_str(), c.stays))
+        .collect();
+    assert_eq!(
+        played,
+        [("Copper", false), ("Village", true), ("Copper", false)]
+    );
+    assert!(table.players[1].in_play.is_empty());
+    sound(&r);
+}
+
+#[test]
+fn a_landscape_is_named_by_the_card_in_its_zone() {
+    let mut snap = snapshot();
+    snap.state.cards.push(model::Card {
+        id: 8,
+        card_name: 2,
+        pile_name: 2,
+    });
+    snap.state.zones.push(model::Zone {
+        index: 40,
+        kind: 7,
+        pile_name: 0,
+        owner: -1,
+        cards: vec![8],
+        created_by: -1,
+        attached_trait: 0,
+        is_visible: true,
+    });
+    snap.state.counters.push(model::Counter {
+        index: 0,
+        kind: 7,
+        owner: -1,
+        value: 6,
+        zone: 40,
+        card: -1,
+        is_visible: true,
+    });
+    let mut r = Reducer::new(catalog(), 42);
+    r.replace(snap).unwrap();
+    let view = r.view().unwrap();
+    let shown: Vec<_> = view
+        .landscapes
+        .iter()
+        .map(|l| (l.card.as_str(), l.vp))
+        .collect();
+    assert_eq!(shown, [("Village", Some(6))]);
+    assert_eq!(view.game.landscapes, ["Village"]);
+    sound(&r);
 }

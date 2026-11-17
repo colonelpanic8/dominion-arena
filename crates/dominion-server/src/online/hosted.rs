@@ -326,6 +326,7 @@ fn observation(update: Update) -> OnlineObservation {
         error: update.error,
         version: update.reducer.revision,
         epoch: update.reducer.epoch,
+        table: update.reducer.table().unwrap_or_default(),
         view,
     }
 }

@@ -110,6 +110,8 @@ pub struct Popup {
     pub unknown: u32,
     pub note: Option<String>,
     pub composition: Option<u8>,
+    /// Cards in play, in the order played: drawn as the play row is.
+    pub played: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -837,8 +839,14 @@ fn PopupView(popup: Popup, g: Rc<layout::Geometry>, board: Rc<Board>) -> Element
     let ctx = use_table();
     let p = &popup;
     let n = p.stacks.len() + usize::from(p.unknown > 0);
-    let win = g.window(n.max(1) as f64, false);
-    let row = g.window_row(&win, n, &vec![false; n]);
+    let win = g.tab_window(n);
+    let (row, tops) = if p.played {
+        g.play_window_row(&win, n)
+    } else {
+        let row = g.window_row(&win, n, &vec![false; n], 0.15);
+        let tops = vec![row.y; n];
+        (row, tops)
+    };
     rsx! {
         div {
             class: "dt-window dt-popup",
@@ -851,11 +859,11 @@ fn PopupView(popup: Popup, g: Rc<layout::Geometry>, board: Rc<Board>) -> Element
             }
             for (i, s) in p.stacks.iter().enumerate() {
                 pieces::TableCard {
-                    key: "{s.card}",
+                    key: "{i}{s.card}",
                     name: s.card.clone(),
                     size: crate::card::CardSize::Full,
                     count: (s.count > 1).then_some(s.count),
-                    at: layout::Rect::new(row.xs[i] - win.x, row.y - win.y, row.w, row.h),
+                    at: layout::Rect::new(row.xs[i] - win.x, tops[i] - win.y, row.w, row.h),
                 }
             }
             if p.unknown > 0 {
@@ -863,8 +871,8 @@ fn PopupView(popup: Popup, g: Rc<layout::Geometry>, board: Rc<Board>) -> Element
                     name: "",
                     size: crate::card::CardSize::Full,
                     back: true,
-                    count: Some(p.unknown),
-                    at: layout::Rect::new(row.xs[n - 1] - win.x, row.y - win.y, row.w, row.h),
+                    count: (p.unknown > 1).then_some(p.unknown),
+                    at: layout::Rect::new(row.xs[n - 1] - win.x, tops[n - 1] - win.y, row.w, row.h),
                 }
             }
             if p.stacks.is_empty() && p.unknown == 0 {

@@ -675,6 +675,37 @@ impl Reducer {
         self.revision += 1;
         Ok((index, values))
     }
+    /// What a graphical table draws beside the view: each player's cards in play in the
+    /// order they came into play, as the official client lays them out.
+    pub fn table(&self) -> Result<view::api::TableExtras> {
+        let state = self.state()?;
+        let players = (0..state.players.len() as i32)
+            .map(|owner| {
+                let in_play = state
+                    .zones
+                    .iter()
+                    .filter(|z| z.owner == owner && z.kind == 8)
+                    .flat_map(|z| self.knowledge.ordered(z.index))
+                    .filter_map(|(id, name)| {
+                        let card = self.catalog.card(name?).ok()?.name.clone();
+                        let status = state.card_statuses.iter().find(|s| Some(s.card) == id);
+                        Some(view::api::InPlay {
+                            stays: status.is_some_and(|s| s.stays_out),
+                            holds: card == "Garrison"
+                                || status.is_some_and(|s| !s.set_aside_card_lists.is_empty()),
+                            card,
+                        })
+                    })
+                    .collect();
+                view::api::PlayerTable {
+                    seat: owner as u8,
+                    in_play,
+                    discard_top: None,
+                }
+            })
+            .collect();
+        Ok(view::api::TableExtras { players })
+    }
     pub fn view(&self) -> Result<view::AgentView> {
         let state = self.state()?;
         let seat = self.seat();
@@ -687,11 +718,19 @@ impl Reducer {
                 trash = self.zone_view(zone.index)?;
             }
             if matches!(zone.kind, 4..=7 | 13 | 20 | 22 | 32 | 34) {
-                let info = self.catalog.card(zone.pile_name)?;
-                if zone.pile_name == 0 {
+                let name = self.pile_name(zone);
+                let info = self.catalog.card(name)?;
+                if name == 0 {
                     continue;
                 }
                 if matches!(zone.kind, 7 | 34) {
+                    let tokens = |kind| {
+                        let on_it = |c: &&model::Counter| {
+                            c.zone == zone.index && c.kind == kind && c.is_visible
+                        };
+                        let n: i32 = state.counters.iter().filter(on_it).map(|c| c.value).sum();
+                        (n != 0).then_some(n)
+                    };
                     landscapes.push(view::LandscapeView {
                         card: info.name.clone(),
                         kind: info
@@ -710,18 +749,18 @@ impl Reducer {
                                 )
                             })
                             .cloned()
-                            .unwrap_or_else(|| "unknown".into())
+                            .unwrap_or_else(|| "other".into())
                             .to_lowercase(),
                         cost: Some(info.cost.clone()),
                         types: info.types.clone(),
-                        vp: None,
-                        suns: None,
+                        vp: tokens(7),
+                        suns: tokens(18).and_then(|n| u32::try_from(n).ok()),
                         active: None,
                         owners: state
                             .players
                             .iter()
                             .enumerate()
-                            .filter(|(_, p)| p.bought_projects.contains(&zone.pile_name))
+                            .filter(|(_, p)| p.bought_projects.contains(&name))
                             .map(|(i, _)| i as u8)
                             .collect(),
                     });
@@ -892,7 +931,7 @@ impl Reducer {
                                     pile: if zone.owner < 0
                                         && matches!(zone.kind, 4..=7 | 13 | 20 | 22 | 32 | 34)
                                     {
-                                        Some(self.catalog.card(zone.pile_name)?.name.clone())
+                                        Some(self.catalog.card(self.pile_name(zone))?.name.clone())
                                     } else {
                                         None
                                     },
@@ -955,23 +994,7 @@ impl Reducer {
                 .collect(),
             extra_turns: vec![],
             notes: self.notes()?,
-            counters: state
-                .counters
-                .iter()
-                .filter(|c| c.is_visible)
-                .map(|c| {
-                    (
-                        format!(
-                            "{}:{}",
-                            self.catalog
-                                .label("CounterNames", c.kind)
-                                .unwrap_or_else(|| "counter".into()),
-                            c.index
-                        ),
-                        i64::from(c.value),
-                    )
-                })
-                .collect(),
+            counters: self.counters(-1),
             decision,
             since_last_decision: self.logs.clone(),
         })
@@ -1043,6 +1066,46 @@ impl Reducer {
         }
         Ok(notes)
     }
+    /// `owner`'s counters (nobody's: -1) that no other part of the view shows, by name.
+    /// Left out are the turn's Actions, Buys and money, a player's points and tokens,
+    /// and the tokens on piles and landscapes.
+    fn counters(&self, owner: i32) -> BTreeMap<String, i64> {
+        let Ok(state) = self.state() else {
+            return BTreeMap::new();
+        };
+        let mut out = BTreeMap::new();
+        for c in &state.counters {
+            let shown = match (c.owner >= 0, c.zone >= 0) {
+                (true, _) => matches!(c.kind, 0..=8 | 12 | 15),
+                (false, true) => matches!(c.kind, 6 | 7 | 9 | 10 | 18),
+                (false, false) => false,
+            };
+            if c.owner != owner || !c.is_visible || shown || c.value == 0 {
+                continue;
+            }
+            let mut name = self
+                .catalog
+                .label("CounterNames", c.kind)
+                .unwrap_or_else(|| "counter".into());
+            let pile = self.zone(c.zone).ok().map(|z| self.pile_name(z));
+            if let Some(card) = pile.and_then(|n| self.catalog.card(n).ok()) {
+                name = format!("{name} on {}", card.name);
+            }
+            *out.entry(name).or_default() += i64::from(c.value);
+        }
+        out
+    }
+    /// The card a neutral zone is named after. The official server names a pile's zone
+    /// and leaves a landscape's unnamed: that one is the card lying in it.
+    fn pile_name(&self, zone: &model::Zone) -> i32 {
+        if zone.pile_name != 0 || !matches!(zone.kind, 7 | 34) {
+            return zone.pile_name;
+        }
+        let lying = self.zones.get(&zone.index).map(|k| &k.known);
+        lying
+            .and_then(|known| known.keys().find(|n| **n != 0).copied())
+            .unwrap_or(0)
+    }
     fn named_counts(&self, counts: &BTreeMap<i32, u32>) -> Result<view::CardCount> {
         let mut out = BTreeMap::new();
         for (n, count) in counts {
@@ -1089,7 +1152,7 @@ impl Reducer {
             3 => "trash".into(),
             4..=7 | 13 | 20 | 22 | 32 | 34 if zone.owner < 0 => "pile".into(),
             8 => "inPlay".into(),
-            _ => format!("{}:{}", zone_label(zone.kind), zone.index),
+            _ => zone_key(zone.kind).into(),
         })
     }
     fn player(&self, index: u8) -> Result<view::PlayerView> {
@@ -1112,8 +1175,15 @@ impl Reducer {
                 for (n, c) in v.known {
                     *a.known.entry(n).or_default() += c;
                 }
-            } else {
-                other_zones.insert(format!("{}:{}", zone_label(zone.kind), zone.index), v);
+            } else if v.count > 0 {
+                let a: &mut view::ZoneView = other_zones
+                    .entry(zone_key(zone.kind).to_string())
+                    .or_default();
+                a.count += v.count;
+                a.unknown += v.unknown;
+                for (n, c) in v.known {
+                    *a.known.entry(n).or_default() += c;
+                }
             }
         }
         let owned = self.named_counts(&self.known.owned[index as usize].0)?;
@@ -1226,23 +1296,7 @@ impl Reducer {
             boons: self.reminder_cards(index, "Boon")?,
             artifacts: self.reminder_cards(index, "Artifact")?,
             turns_taken: None,
-            counters: state
-                .counters
-                .iter()
-                .filter(|c| c.owner == owner && c.is_visible)
-                .map(|c| {
-                    (
-                        format!(
-                            "{}:{}",
-                            self.catalog
-                                .label("CounterNames", c.kind)
-                                .unwrap_or_else(|| "counter".into()),
-                            c.index
-                        ),
-                        i64::from(c.value),
-                    )
-                })
-                .collect(),
+            counters: self.counters(owner),
         })
     }
     pub fn cost(&self, id: Option<i32>, name: i32) -> Result<view::Cost> {
@@ -1568,7 +1622,7 @@ impl QuestionContext for Reducer {
             .iter()
             .find(|(_, k)| k.exact.contains_key(&id))
             .and_then(|(index, _)| self.zone(*index).ok())
-            .map(|z| zone_label(z.kind).into())
+            .map(|z| zone_key(z.kind).into())
     }
 }
 fn title(name: &str) -> String {
@@ -1578,6 +1632,18 @@ fn title(name: &str) -> String {
         Some(first) => first.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
     }
 }
+/// A zone's name in a view, one of `dominion_protocol::contract`'s: cards being revealed
+/// or looked at are `looking`, and those the official client keeps out of sight for a
+/// question are set aside.
+fn zone_key(kind: i32) -> &'static str {
+    match kind {
+        4..=7 | 13 | 20 | 22 | 32 | 34 => "pile",
+        23 | 25 | 29 => "looking",
+        9 | 14..=19 | 30 | 33 => "setAside",
+        _ => zone_label(kind),
+    }
+}
+
 fn zone_label(kind: i32) -> &'static str {
     match kind {
         0 => "hand",

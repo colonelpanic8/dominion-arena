@@ -193,7 +193,7 @@ fn check_extras(sv: &SeatView) {
         let t = sv.table.players.iter().find(|t| t.seat == p.index).unwrap();
         let mut counted: std::collections::BTreeMap<String, u32> = Default::default();
         for c in &t.in_play {
-            *counted.entry(c.clone()).or_default() += 1;
+            *counted.entry(c.card.clone()).or_default() += 1;
         }
         assert_eq!(counted, p.in_play.known, "{}'s cards in play", p.name);
         assert_eq!(

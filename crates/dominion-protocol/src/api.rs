@@ -281,9 +281,22 @@ pub struct TableExtras {
 pub struct PlayerTable {
     pub seat: u8,
     /// Their cards in play, in the order they came into play.
-    pub in_play: Vec<String>,
+    pub in_play: Vec<InPlay>,
     /// The face-up card on top of their discard pile.
     pub discard_top: Option<String>,
+}
+
+/// A card in play.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InPlay {
+    pub card: String,
+    /// A lasting effect keeps it in play past this turn's Clean-up.
+    #[serde(default)]
+    pub stays: bool,
+    /// Cards are set aside with it, or tokens lie on it.
+    #[serde(default)]
+    pub holds: bool,
 }
 
 /// The data of an SSE `change` event.
@@ -361,6 +374,8 @@ pub struct OnlineObservation {
     pub version: u64,
     pub epoch: u64,
     pub view: Option<AgentView>,
+    #[serde(default)]
+    pub table: TableExtras,
 }
 
 /// An official account `dominion serve` keeps connected (`GET /api/online/accounts`).

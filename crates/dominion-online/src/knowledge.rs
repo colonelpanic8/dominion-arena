@@ -263,6 +263,18 @@ impl Observations {
             .summarize(players, |s| self.locations[s], owner, |_| None)
     }
 
+    /// The cards of `zone` in the order they arrived: the wire identity of each one
+    /// still followed, and its name if known.
+    pub fn ordered(&self, zone: i32) -> Vec<(Option<i32>, Option<i32>)> {
+        let ids: BTreeMap<usize, i32> = self.observed.iter().map(|(&id, &s)| (s, id)).collect();
+        self.members
+            .get(&zone)
+            .into_iter()
+            .flatten()
+            .map(|slot| (ids.get(slot).copied(), self.mind.identity(*slot)))
+            .collect()
+    }
+
     pub fn zones(&self, summary: &KnownCards<i32, i32>) -> BTreeMap<i32, KnowledgeZone> {
         self.members
             .keys()

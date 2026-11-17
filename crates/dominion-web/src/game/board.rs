@@ -4,12 +4,14 @@
 
 use super::meta::{self, SeatAccount};
 use crate::cards::CardDb;
-use dominion_protocol::api::TableExtras;
+use dominion_protocol::api::{InPlay, TableExtras};
 use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
     AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, ZoneView,
 };
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Board {
@@ -165,6 +167,9 @@ pub struct PileEntry {
     pub card: String,
     pub count: u32,
     pub cost: Option<Cost>,
+    /// The printed cost of the pile's own card, which places it among the piles
+    /// whatever its top card costs now.
+    pub printed: (u32, u32, u32),
     pub empty: bool,
     pub kingdom: bool,
     pub hidden: bool,
@@ -234,7 +239,7 @@ pub struct PlayerEntry {
     pub discard: Zone,
     /// The face-up card on top of the discard pile.
     pub discard_top: Option<String>,
-    /// Cards in play in the order they came into play, runs of one card stacked.
+    /// Cards in play in the order they came into play, stacked by [`runs`].
     pub play_order: Vec<Stack>,
     /// Mats and set-aside cards.
     pub zones: Vec<NamedZone>,
@@ -308,7 +313,7 @@ impl Section {
 pub struct PlayArea {
     pub player: Option<Who>,
     pub cards: Zone,
-    /// The cards in the order they came into play, runs of one card stacked.
+    /// The cards in the order they came into play, stacked by [`runs`].
     pub order: Vec<Stack>,
 }
 
@@ -381,10 +386,25 @@ fn plus(text: &str, thing: &str) -> u32 {
         .unwrap_or(0)
 }
 
+/// dominion.games' sorting group of each card it has (client 2.3.7), by name.
+static SORT_GROUPS: LazyLock<HashMap<&'static str, u8>> = LazyLock::new(|| {
+    include_str!("sort_groups.tsv")
+        .lines()
+        .filter_map(|l| {
+            let (name, group) = l.split_once('\t')?;
+            Some((name, group.parse().ok()?))
+        })
+        .collect()
+});
+
 /// Where a card goes in a hand, as dominion.games sorts it: cards that play others,
 /// villages, draw, cantrips, other Actions, plain Treasures, other Treasures, Night
-/// cards, Victory cards, then Curses and the rest.
+/// cards, Victory cards, then Curses and the rest. Its own group for a card it has,
+/// else one judged from the card's text.
 pub fn sort_group(cards: &CardDb, card: &str) -> u8 {
+    if let Some(&group) = SORT_GROUPS.get(card) {
+        return group;
+    }
     let Some(c) = cards.get(card) else { return 9 };
     let is = |t: &str| c.types.iter().any(|x| x == t);
     let text = c.text.split("\n---").next().unwrap_or("");
@@ -510,7 +530,7 @@ impl Names<'_> {
     }
 }
 
-fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>) -> PileEntry {
+fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> PileEntry {
     let t = &p.tokens;
     let mut badges = vec![];
     if t.embargo > 0 {
@@ -557,6 +577,10 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>) -> PileEntry {
         card: p.top.clone().unwrap_or_else(|| p.card.clone()),
         count: p.count,
         cost: p.cost.clone(),
+        printed: match cards.get(&p.card).and_then(|c| c.cost) {
+            Some(c) => (c.coins, c.potions, c.debt),
+            None => cost_key(p.cost.as_ref()),
+        },
         empty: p.count == 0,
         kingdom: p.kingdom,
         hidden: p.hidden,
@@ -612,17 +636,25 @@ fn counters(c: &std::collections::BTreeMap<String, i64>) -> Vec<(String, i64)> {
     c.iter().map(|(k, &v)| (k.clone(), v)).collect()
 }
 
-/// Runs of one card in a row, stacked.
-pub fn runs(names: &[String]) -> Vec<Stack> {
+/// Cards in play stacked as dominion.games stacks them: a card joins the stack before it
+/// when it has that card's name and, like it, stays in play or doesn't; one with cards
+/// set aside or tokens of its own is always drawn alone.
+pub fn runs(cards: &[InPlay]) -> Vec<Stack> {
     let mut out: Vec<Stack> = vec![];
-    for n in names {
-        match out.last_mut() {
-            Some(s) if &s.card == n => s.count += 1,
+    let mut last: Option<&InPlay> = None;
+    for c in cards {
+        match (out.last_mut(), last) {
+            (Some(s), Some(l))
+                if l.card == c.card && l.stays == c.stays && !l.holds && !c.holds =>
+            {
+                s.count += 1
+            }
             _ => out.push(Stack {
-                card: n.clone(),
+                card: c.card.clone(),
                 count: 1,
             }),
         }
+        last = Some(c);
     }
     out
 }
@@ -841,7 +873,7 @@ pub fn board(
     let mut others = vec![];
     let mut kingdom = vec![];
     for (i, p) in view.supply.iter().enumerate() {
-        let e = pile_entry(PileAt::Supply(i), p, &names);
+        let e = pile_entry(PileAt::Supply(i), p, &names, cards);
         if p.kingdom {
             kingdom.push(e);
         } else if BASIC_ORDER.contains(&p.card.as_str()) {
@@ -907,7 +939,7 @@ pub fn board(
         .non_supply
         .iter()
         .enumerate()
-        .map(|(i, p)| pile_entry(PileAt::NonSupply(i), p, &names))
+        .map(|(i, p)| pile_entry(PileAt::NonSupply(i), p, &names, cards))
         .collect();
     let mut landscapes: Vec<LandscapeEntry> = landscapes;
     for n in &view.notes {
@@ -1022,5 +1054,60 @@ pub fn board(
         rated: false,
         timed: false,
         watchers: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn in_play(card: &str, stays: bool, holds: bool) -> InPlay {
+        InPlay {
+            card: card.into(),
+            stays,
+            holds,
+        }
+    }
+
+    #[test]
+    fn cards_sort_into_dominion_games_groups() {
+        let lines = include_str!("sort_groups.tsv").lines().count();
+        assert_eq!(SORT_GROUPS.len(), lines);
+        let db = CardDb::default();
+        let groups = ["Throne Room", "Hamlet", "Wharf", "Royal Seal", "Province"]
+            .map(|card| sort_group(&db, card));
+        assert_eq!(groups, [0, 1, 2, 5, 8]);
+    }
+
+    #[test]
+    fn cards_in_play_stack_only_with_a_like_card_before_them() {
+        let cards = [
+            in_play("Throne Room", false, false),
+            in_play("Throne Room", false, false),
+            in_play("Wharf", true, false),
+            in_play("Wharf", true, false),
+            in_play("Wharf", false, false),
+            in_play("Haven", true, true),
+            in_play("Haven", true, true),
+            in_play("Copper", false, false),
+            in_play("Wharf", false, false),
+        ];
+        let stacked: Vec<_> = runs(&cards)
+            .into_iter()
+            .map(|s| (s.card, s.count))
+            .collect();
+        let expected = [
+            ("Throne Room", 2),
+            ("Wharf", 2),
+            ("Wharf", 1),
+            ("Haven", 1),
+            ("Haven", 1),
+            ("Copper", 1),
+            ("Wharf", 1),
+        ];
+        assert_eq!(
+            stacked,
+            expected.map(|(card, count)| (card.to_string(), count))
+        );
     }
 }
