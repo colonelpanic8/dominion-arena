@@ -5,11 +5,19 @@
 //! rules' word for each move, the log entries in their place among them, and every
 //! counter as it changes: counters are read whenever something is recorded, so a change
 //! lies between the same two card moves it happened between.
+//!
+//! It also says what caused what. An occurrence (a turn, a phase, the turn's end, a play,
+//! a buy, an ability resolving, a Boon or Hex received, a gain, trash, discard or
+//! shuffle) is marked [`Step::Occurred`] right after the step recording it, and stays
+//! open for as long as the frame it belongs to on the effect stack; [`Step::Within`] says
+//! which open occurrence the steps after it happen inside. Counters and the rest of the
+//! table read at every record are also read whenever one opens or closes, so a change is
+//! put inside the occurrence it happened in.
 
 use crate::game::{EndReason, ExtraLimit, ExtraTurn, Phase, Pos, Token, Until};
 use crate::{
-    Card, CardId, Cost, Game, Kind, Note, PileId, PileStructure, PlayerId, SetupRole, Trace, Types,
-    Zone,
+    Card, CardId, Cost, Game, Kind, Note, Occasion, PileId, PileStructure, PlayerId, SetupRole,
+    Trace, Types, Zone,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
@@ -309,6 +317,19 @@ pub enum Step {
         costs: Vec<(Card, Cost)>,
         types: Vec<(Card, Option<Types>)>,
     },
+    /// The step before this one is occurrence `n` (numbered from 0 in the order marked).
+    Occurred(u32),
+    /// The steps from here on happen inside occurrence `n`, or inside none: before the
+    /// first turn, between turns.
+    Within(Option<u32>),
+    /// A triggered ability of `card` begins to resolve for `player`, answering
+    /// `occasion`. `origin` is the occurrence that made the lasting effect it comes from.
+    Resolve {
+        player: PlayerId,
+        card: Card,
+        occasion: Occasion,
+        origin: Option<u32>,
+    },
 }
 
 /// What the journal reads of the table besides counters, each time it records.
@@ -337,6 +358,70 @@ pub(crate) struct Journal {
     taking: Option<u32>,
     #[serde(default)]
     holdings: Holdings,
+    /// Occurrences marked so far.
+    #[serde(default)]
+    occurrences: u32,
+    /// The occurrences open, innermost last.
+    #[serde(default)]
+    open: Vec<Open>,
+    /// What the last [`Step::Within`] said.
+    #[serde(default)]
+    within: Option<u32>,
+    /// The Turn frame's depth on the stack and the turn's occurrence.
+    #[serde(default)]
+    turn: Option<(usize, u32)>,
+    /// Each lasting effect, by id, with the occurrence that made it.
+    #[serde(default)]
+    lastings: Vec<(u32, u32)>,
+}
+
+/// An occurrence open while the frame at `depth` on the stack is.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Open {
+    depth: usize,
+    occ: u32,
+    /// The card it is about, for occurrences that happen together (cards trashed at once).
+    card: Option<CardId>,
+}
+
+impl Journal {
+    fn innermost(&self) -> Option<u32> {
+        self.open.last().map(|o| o.occ)
+    }
+
+    /// Pushes `step`, which happens inside `cause`.
+    fn push(&mut self, step: Step, cause: Option<u32>) {
+        if cause != self.within {
+            self.within = cause;
+            self.steps.push(Step::Within(cause));
+        }
+        self.steps.push(step);
+    }
+
+    /// Pushes `step` inside the innermost occurrence open.
+    fn push_within(&mut self, step: Step) {
+        self.push(step, self.innermost());
+    }
+
+    /// Marks the step just pushed as an occurrence.
+    fn occur(&mut self) -> u32 {
+        let n = self.occurrences;
+        self.occurrences += 1;
+        self.steps.push(Step::Occurred(n));
+        n
+    }
+
+    /// Marks the step just pushed as an occurrence that takes over from the one the Turn
+    /// frame holds open (a phase, the turn's end): what the turn does directly from now on
+    /// happens inside it.
+    fn occur_for_turn(&mut self) {
+        let occ = self.occur();
+        if let Some((depth, _)) = self.turn
+            && let Some(o) = self.open.iter_mut().find(|o| o.depth == depth)
+        {
+            o.occ = occ;
+        }
+    }
 }
 
 impl Game {
@@ -344,36 +429,39 @@ impl Game {
     /// in it.
     pub fn new_journaled(config: crate::GameConfig) -> Result<Game, crate::SetupError> {
         let mut game = crate::setup::build(config)?;
-        game.enable_trace();
-        let steps = (game.trace().unwrap_or_default().iter().cloned())
+        game.enable_journal();
+        game.start();
+        Ok(game)
+    }
+
+    /// Starts journaling a game not yet started, beginning with every card in it.
+    pub(crate) fn enable_journal(&mut self) {
+        self.enable_trace();
+        let steps = (self.trace().unwrap_or_default().iter().cloned())
             .map(|entry| Step::Trace { entry, verb: None })
             .collect();
         // What setup gave (starting Favors, tokens on piles) is journaled after the cards.
-        game.journal = Some(Journal {
+        self.journal = Some(Journal {
             steps,
-            readings: (game.gauges().into_iter())
+            readings: (self.gauges().into_iter())
                 .filter(|(g, _)| g.of_turn())
                 .collect(),
-            effects: vec![],
             next_extra: 1,
-            taking: None,
-            holdings: Holdings::default(),
+            ..Journal::default()
         });
-        let druid = game.ext.nocturne.druid.clone();
+        let druid = self.ext.nocturne.druid.clone();
         for (cards, to) in [
-            (game.boons.draw.clone(), Spot::Deck),
-            (game.boons.discard.clone(), Spot::Discard),
+            (self.boons.draw.clone(), Spot::Deck),
+            (self.boons.discard.clone(), Spot::Discard),
             (druid, Spot::Druid),
-            (game.hexes.draw.clone(), Spot::Deck),
-            (game.hexes.discard.clone(), Spot::Discard),
+            (self.hexes.draw.clone(), Spot::Deck),
+            (self.hexes.discard.clone(), Spot::Discard),
         ] {
             if !cards.is_empty() {
-                game.journal_push(Step::FateAdded { cards, to });
+                self.journal_push(Step::FateAdded { cards, to });
             }
         }
-        game.sync_journal();
-        game.start();
-        Ok(game)
+        self.sync_journal();
     }
 
     /// Takes the journal recorded so far, leaving it empty (and still recording).
@@ -449,9 +537,12 @@ impl Game {
         }
     }
 
+    /// Journals `player` playing `card`, an occurrence open until its frame finishes.
     pub(crate) fn journal_played(&mut self, player: PlayerId, card: CardId) {
         if self.journal.is_some() {
+            self.sync_journal();
             self.journal_push(Step::Played { player, card });
+            self.journal_opens(Some(card));
         }
     }
 
@@ -462,9 +553,11 @@ impl Game {
         }
     }
 
-    /// Records the turn [`Game::turn`] was just made.
+    /// Records the turn [`Game::turn`] was just made, for the Turn frame about to be
+    /// called.
     pub(crate) fn journal_turn(&mut self) {
         let limits = self.turn_limits();
+        let depth = self.stack.len() + 1;
         let Some(journal) = &mut self.journal else {
             return;
         };
@@ -477,12 +570,19 @@ impl Game {
             None if self.ending.is_some() => TurnKind::Final,
             None => TurnKind::Regular,
         };
-        journal.steps.push(Step::Turn {
+        journal.push_within(Step::Turn {
             player: p,
             number: self.players[p.index()].turns_taken + 1,
             kind,
             limits,
         });
+        let occ = journal.occur();
+        journal.open.push(Open {
+            depth,
+            occ,
+            card: None,
+        });
+        journal.turn = Some((depth, occ));
         for (gauge, value) in &mut journal.readings {
             match gauge {
                 Gauge::Actions | Gauge::Buys => *value = 1,
@@ -510,7 +610,17 @@ impl Game {
         }
         self.sync_journal();
         self.turn.phase = phase;
-        self.journal_push(Step::Phase(phase));
+        let Some(journal) = &mut self.journal else {
+            return;
+        };
+        // A phase the turn moves on to is the turn's; one an effect returns to (Villa) is
+        // that effect's.
+        let cause = match (journal.turn, journal.open.last()) {
+            (Some((depth, turn)), Some(o)) if o.depth == depth => Some(turn),
+            _ => journal.innermost(),
+        };
+        journal.push(Step::Phase(phase), cause);
+        journal.occur_for_turn();
     }
 
     /// Ends the turn in progress: between turns, nobody's turn is.
@@ -519,7 +629,10 @@ impl Game {
         self.turn.phase = Phase::End;
         let player = self.turn.player;
         if let Some(journal) = &mut self.journal {
-            journal.steps.push(Step::TurnEnded { player });
+            // The turn's, not its Clean-up's; what ends with the turn happens inside it.
+            let cause = journal.turn.map(|(_, turn)| turn);
+            journal.push(Step::TurnEnded { player }, cause);
+            journal.occur_for_turn();
             for (gauge, value) in &mut journal.readings {
                 if gauge.of_turn() {
                     *value = 0;
@@ -596,7 +709,7 @@ impl Game {
     pub(crate) fn journal_effect_end(&mut self, id: u32, why: EffectEnd) {
         if let Some(journal) = &mut self.journal {
             journal.effects.retain(|e| e.id != id);
-            journal.steps.push(Step::EffectEnded { id, why });
+            journal.push_within(Step::EffectEnded { id, why });
         }
     }
 
@@ -677,9 +790,10 @@ impl Game {
         let holdings = self.holdings();
         let now = self.gauges();
         let journal = self.journal.as_mut().expect("checked above");
+        let mut out = vec![];
         for old in &journal.effects {
             if !effects.iter().any(|e| e.id == old.id) {
-                journal.steps.push(Step::EffectEnded {
+                out.push(Step::EffectEnded {
                     id: old.id,
                     why: EffectEnd::Resolved,
                 });
@@ -687,8 +801,8 @@ impl Game {
         }
         for e in &effects {
             match journal.effects.iter().find(|old| old.id == e.id) {
-                None => journal.steps.push(Step::EffectBegan(e.clone())),
-                Some(old) if old != e => journal.steps.push(Step::EffectChanged(e.clone())),
+                None => out.push(Step::EffectBegan(e.clone())),
+                Some(old) if old != e => out.push(Step::EffectChanged(e.clone())),
                 Some(_) => {}
             }
         }
@@ -698,7 +812,7 @@ impl Game {
                 .find(|(g, _)| *g == gauge)
                 .map_or(0, |&(_, v)| v);
             if was != value {
-                journal.steps.push(Step::Gauge {
+                out.push(Step::Gauge {
                     gauge,
                     was,
                     now: value,
@@ -708,12 +822,15 @@ impl Game {
         // A gauge that is no longer read (Favors on a pile Divine Wind removed) is 0.
         for &(gauge, was) in &journal.readings {
             if was != 0 && !now.iter().any(|(g, _)| *g == gauge) {
-                journal.steps.push(Step::Gauge { gauge, was, now: 0 });
+                out.push(Step::Gauge { gauge, was, now: 0 });
             }
         }
         journal.readings = now;
         let was = std::mem::replace(&mut journal.holdings, holdings);
-        holding_changes(&was, &journal.holdings, &mut journal.steps);
+        holding_changes(&was, &journal.holdings, &mut out);
+        for step in out {
+            journal.push_within(step);
+        }
     }
 
     fn holdings(&self) -> Holdings {
@@ -802,7 +919,120 @@ impl Game {
 
     fn journal_push(&mut self, step: Step) {
         if let Some(journal) = &mut self.journal {
-            journal.steps.push(step);
+            journal.push_within(step);
+        }
+    }
+
+    /// Marks the step just journaled as an occurrence, returning its number.
+    pub(crate) fn journal_occurred(&mut self) -> Option<u32> {
+        self.journal.as_mut().map(Journal::occur)
+    }
+
+    /// Opens occurrence `occ`, about `card`, for the frame running now.
+    pub(crate) fn journal_open(&mut self, occ: Option<u32>, card: Option<CardId>) {
+        let depth = self.stack.len();
+        if let (Some(journal), Some(occ)) = (&mut self.journal, occ) {
+            journal.open.push(Open { depth, occ, card });
+        }
+    }
+
+    /// Marks the step just journaled as an occurrence and opens it for the frame running
+    /// now.
+    pub(crate) fn journal_opens(&mut self, card: Option<CardId>) {
+        let occ = self.journal_occurred();
+        self.journal_open(occ, card);
+    }
+
+    /// Marks the step just journaled as an occurrence and opens it for the frame the one
+    /// running now is about to call.
+    pub(crate) fn journal_opens_call(&mut self) {
+        let depth = self.stack.len() + 1;
+        if let Some(occ) = self.journal_occurred()
+            && let Some(journal) = &mut self.journal
+        {
+            journal.open.push(Open {
+                depth,
+                occ,
+                card: None,
+            });
+        }
+    }
+
+    /// Closes the occurrences of the frames at `depth` and above: the frame there has
+    /// finished, or (for a window) the ability it ran has.
+    pub(crate) fn journal_close(&mut self, depth: usize) {
+        let open = |g: &Game| {
+            (g.journal.as_ref()).is_some_and(|j| j.open.last().is_some_and(|o| o.depth >= depth))
+        };
+        if !open(self) {
+            return;
+        }
+        // What changed was done inside them.
+        self.sync_journal();
+        let journal = self.journal.as_mut().expect("checked above");
+        journal.open.retain(|o| o.depth < depth);
+        if journal.turn.is_some_and(|(d, _)| d >= depth) {
+            journal.turn = None;
+        }
+    }
+
+    /// Journals a triggered ability beginning to resolve for the window running now, open
+    /// until [`Game::journal_close`] is called for that window.
+    pub(crate) fn journal_resolve(
+        &mut self,
+        player: PlayerId,
+        card: Card,
+        occasion: &Occasion,
+        lasting: Option<u32>,
+    ) {
+        if self.journal.is_none() {
+            return;
+        }
+        self.sync_journal();
+        let journal = self.journal.as_mut().expect("checked above");
+        // Of cards trashed or discarded together, the one it answers.
+        let subject = match *occasion {
+            Occasion::Trash { card, .. } | Occasion::Discard { card, .. } => Some(card),
+            _ => None,
+        };
+        let depth = journal.open.last().map(|o| o.depth);
+        let cause = (journal.open.iter().rev())
+            .take_while(|o| Some(o.depth) == depth)
+            .find(|o| subject.is_some() && o.card == subject)
+            .map(|o| o.occ)
+            .or(journal.innermost());
+        let origin = lasting.and_then(|id| {
+            (journal.lastings.iter())
+                .find(|&&(l, _)| l == id)
+                .map(|&(_, occ)| occ)
+        });
+        journal.push(
+            Step::Resolve {
+                player,
+                card,
+                occasion: occasion.clone(),
+                origin,
+            },
+            cause,
+        );
+        self.journal_opens(None);
+    }
+
+    /// Records the occurrence lasting effect `id` comes from: the one `from` comes from,
+    /// for a later part of it, else the one it was made inside.
+    pub(crate) fn journal_lasting(&mut self, id: u32, from: Option<u32>) {
+        let Some(journal) = &mut self.journal else {
+            return;
+        };
+        let origin = from
+            .and_then(|from| {
+                (journal.lastings.iter())
+                    .find(|&&(l, _)| l == from)
+                    .map(|&(_, occ)| occ)
+            })
+            .or(journal.innermost());
+        if let Some(occ) = origin {
+            journal.lastings.push((id, occ));
         }
     }
 

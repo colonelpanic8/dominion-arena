@@ -427,6 +427,7 @@ impl Frame {
             again: 0,
             at: Mark::default(),
             pc: 0,
+            spends_action: false,
         })
     }
 
@@ -592,10 +593,12 @@ impl Frame {
                 }
                 *i = 1;
                 let first = g.trashing.len();
+                let mut occurred = vec![];
                 for &c in cards.iter() {
                     let from = g.zone(c);
                     g.show(c);
                     g.move_as(Verb::Trash, c, Zone::Trash, Pos::Top);
+                    occurred.push((g.journal_occurred(), c));
                     g.trashing.push(TrashState {
                         card: c,
                         from,
@@ -613,6 +616,9 @@ impl Frame {
                 *at = g.now();
                 for st in &mut g.trashing[first..] {
                     st.at = *at;
+                }
+                for (occ, c) in occurred {
+                    g.journal_open(occ, Some(c));
                 }
                 let occs = cards
                     .iter()
@@ -646,15 +652,20 @@ impl Frame {
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
                 *i = 1;
+                let mut occurred = vec![];
                 for &c in cards.iter() {
                     g.show(c);
                     g.move_as(Verb::Discard, c, Zone::Discard(*player), Pos::Top);
+                    occurred.push((g.journal_occurred(), c));
                     g.emit(Event::Discarded {
                         player: *player,
                         card: g.card(c),
                     });
                 }
                 *at = g.now();
+                for (occ, c) in occurred {
+                    g.journal_open(occ, Some(c));
+                }
                 let occs = cards
                     .iter()
                     .map(|&card| Occasion::Discard {
@@ -692,6 +703,7 @@ impl Frame {
                         player: *player,
                         card: *card,
                     });
+                    g.journal_opens(None);
                     g.begin_resolving(None);
                     Flow::Call(Frame::Card(Box::new(CardFrame::new(
                         *card,
@@ -774,6 +786,7 @@ fn resume_shuffle(
                 });
             }
             g.verb = None;
+            g.journal_opens(None);
             g.touch_shuffled(&under);
             *count = under.len();
             g.last_shuffle = under.clone();
@@ -1125,8 +1138,11 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         2 => {
             match input {
                 Input::Response(Response::Move(Move::Play(c))) => {
-                    g.turn.actions -= 1;
-                    return Flow::Call(Frame::play(p, c, true, vec![]));
+                    let mut play = Frame::play(p, c, true, vec![]);
+                    if let Frame::Play(f) = &mut play {
+                        f.spends_action = true;
+                    }
+                    return Flow::Call(play);
                 }
                 Input::Response(Response::Move(Move::Villager)) => {
                     g.players[p.index()].villagers -= 1;
@@ -1374,11 +1390,13 @@ fn resume_gain(
             let home = g.home_pile(g.printed(st.card));
             g.show(st.card);
             g.move_as(Verb::Gain, st.card, zone, Pos::Top);
-            g.gains.last_mut().expect("gain in progress").at = g.now();
+            // Its face goes with the move, before the gain is marked an occurrence.
             if let Zone::SetAside(p) = zone {
                 g.players[p.index()].face_up.push(st.card);
                 g.journal_face_up(st.card);
             }
+            g.journal_opens(Some(st.card));
+            g.gains.last_mut().expect("gain in progress").at = g.now();
             let kind = g.card(st.card);
             if st.player == g.turn.player {
                 let types = g.types(st.card);
@@ -1452,6 +1470,7 @@ fn resume_buy(
             0 => {
                 let cost = g.cost(l);
                 g.emit(Event::BoughtLandscape { player: p, card: l });
+                g.journal_opens(None);
                 pay(g, p, cost);
                 if l.kind() == Kind::Project {
                     g.players[p.index()].projects.push(l);
@@ -1508,6 +1527,7 @@ fn resume_buy(
                 card: kind,
             });
             *index = g.log.len();
+            g.journal_opens(Some(top));
             pay(g, p, cost);
             g.turn.bought_cards.push(kind);
             *pc = 2;
@@ -1625,6 +1645,8 @@ fn pay(g: &mut Game, p: PlayerId, cost: crate::Cost) {
     }
     turn.bought = true;
     g.add_debt(p, cost.debt as u32);
+    // The price is its own change, apart from what the buy goes on to give.
+    g.sync_journal();
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1641,6 +1663,9 @@ pub(crate) struct PlayFrame {
     #[serde(default)]
     at: Mark,
     pc: u8,
+    /// A play from the turn's own move, which costs an Action.
+    #[serde(default)]
+    spends_action: bool,
 }
 
 impl PlayFrame {
@@ -1665,6 +1690,11 @@ impl PlayFrame {
                 let card = g.card(id);
                 let since = g.log.len();
                 g.journal_played(p, id);
+                if self.spends_action {
+                    g.turn.actions -= 1;
+                    // Apart from what the play goes on to give.
+                    g.sync_journal();
+                }
                 g.emit(Event::Played { player: p, card });
                 let index = g.turn.played.len();
                 g.turn.played.push(card);

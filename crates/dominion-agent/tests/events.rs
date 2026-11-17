@@ -7,9 +7,9 @@ use dominion_engine::{
     Zone as EngineZone,
 };
 use dominion_protocol::events::{
-    self, CardRef, CounterKey, CounterName, CounterOf, Effect, Ending, Event, ExtraTurn, Pack,
-    Phase, PileRole, PileState, Recipe, RecipeGroup, RecipeKind, Role, SeatZone, Table, TokenAt,
-    TokenKind, TokenState, TurnKind, TurnLimits, TurnState, Zone,
+    self, CardRef, CounterKey, CounterName, CounterOf, Effect, Ending, Event, ExtraTurn, Moment,
+    Pack, Phase, PileRole, PileState, Recipe, RecipeGroup, RecipeKind, Role, SeatZone, Table,
+    TokenAt, TokenKind, TokenState, TurnKind, TurnLimits, TurnState, What, Zone,
 };
 use rand::seq::{IndexedRandom, SliceRandom};
 use rand::{Rng, SeedableRng};
@@ -616,6 +616,7 @@ fn follow(config: GameConfig, seed: u64, respond: fn(&Game, &mut ChaCha8Rng) -> 
         answers += 1;
     }
     assert!(recorder.table().ended.is_some(), "seed {seed}");
+    check_causes(&events, &format!("seed {seed}"));
 }
 
 /// Kingdoms around what changes the table outside its zones: Boons and Hexes, tokens,
@@ -711,6 +712,269 @@ const FOCUS: &[(&[&str], &[&str])] = &[
         &["Enlightenment", "Cheap", "Arena", "Basilica"],
     ),
 ];
+
+/// Whether `e` is an occurrence: something other events can happen inside.
+fn occurrence(e: &What) -> bool {
+    matches!(
+        e,
+        What::Turn(_)
+            | What::Phase { .. }
+            | What::TurnEnd { .. }
+            | What::Receive { .. }
+            | What::Play(_)
+            | What::Buy { .. }
+            | What::Resolve { .. }
+            | What::Gain(_)
+            | What::Trash(_)
+            | What::Discard(_)
+            | What::Shuffle(_)
+    )
+}
+
+fn phase_in(e: &What) -> Option<Phase> {
+    match e {
+        What::Phase { phase } => Some(*phase),
+        _ => None,
+    }
+}
+
+fn by_of<'a>(events: &'a [Event], e: &Event) -> Option<&'a What> {
+    e.by.map(|by| &events[by as usize].what)
+}
+
+/// Holds what each event says caused it to what the stream shows happened.
+fn check_causes(events: &[Event], what: &str) {
+    let at = |seq: u64| &events[seq as usize].what;
+    let mut turn = None;
+    // The `turn-end` of the last turn, once it has ended: between turns.
+    let mut ended = None;
+    // How many cards each seat could draw from, as each play began.
+    let mut table = Table::default();
+    let mut drawable = vec![];
+    for e in events {
+        let seq = e.seq;
+        let fail = |why: &str| {
+            let json = serde_json::to_string(e).unwrap();
+            let cause =
+                e.by.map(|by| serde_json::to_string(&events[by as usize]).unwrap());
+            panic!("{what}: event {seq}: {why}\n{json}\nby {cause:?}")
+        };
+        if let Some(by) = e.by
+            && !occurrence(at(by))
+        {
+            fail("caused by something that is no occurrence");
+        }
+        if let What::Turn(_) = e.what {
+            turn = Some(seq);
+            ended = None;
+        }
+        // Everything in a turn happens inside it; between turns, only the game's own and
+        // what ends with the turn (inside its `turn-end`).
+        let mut root = seq;
+        let mut through_end = false;
+        while let Some(by) = events[root as usize].by {
+            root = by;
+            through_end |= Some(by) == ended;
+        }
+        let between = turn.is_none() || ended.is_some();
+        match (&e.what, e.by) {
+            (
+                What::Turn(_)
+                | What::TurnSkipped { .. }
+                | What::GameEnd(_)
+                | What::GameEnding(_)
+                | What::Choose(_),
+                None,
+            ) => {}
+            (What::Resolve { when, .. }, None) if turn.is_none() && *when == Moment::GameStart => {}
+            (_, None) if between => {}
+            (_, None) => fail("nothing caused it"),
+            _ if !between && Some(root) != turn => fail("not inside the turn in progress"),
+            _ if between && turn.is_some() && !through_end && Some(root) <= ended => {
+                fail("between turns, inside a turn that has ended")
+            }
+            _ => {}
+        }
+        if let What::TurnEnd { .. } = e.what {
+            if !matches!(by_of(events, e), Some(What::Turn(_))) || e.by != turn {
+                fail("a turn-end that isn't its turn's");
+            }
+            ended = Some(seq);
+        }
+        let by = e.by.map(at);
+        let by_phase = by.and_then(phase_in);
+        match &e.what {
+            What::Resolve {
+                when,
+                about,
+                target,
+                origin,
+                ..
+            } => {
+                let holds = |event: Option<&What>, card: &CardRef| {
+                    event
+                        .and_then(What::as_move)
+                        .is_some_and(|(_, m)| m.cards.contains(card))
+                };
+                let right = match when {
+                    Moment::GameStart => by.is_none(),
+                    Moment::StartTurn => matches!(by, Some(What::Turn(_))),
+                    Moment::StartBuyPhase => by_phase == Some(Phase::Buy),
+                    Moment::StartNight => by_phase == Some(Phase::Night),
+                    Moment::StartCleanup => by_phase == Some(Phase::Cleanup),
+                    Moment::EndTurn => by_phase == Some(Phase::Cleanup),
+                    Moment::DiscardFromPlay | Moment::EndBuyPhase => {
+                        by_phase.is_none_or(|p| p == Phase::Cleanup || p == Phase::Buy)
+                    }
+                    Moment::Play | Moment::AfterPlay => matches!(by, Some(What::Play(_))),
+                    Moment::Attack => match by {
+                        Some(What::Play(play)) => target.is_some_and(|t| t != play.player),
+                        _ => false,
+                    },
+                    Moment::Buy => matches!(by, Some(What::Buy { .. })),
+                    Moment::Gain => {
+                        matches!(by, Some(What::Gain(_))) && holds(by, about.as_ref().unwrap())
+                    }
+                    Moment::Trash => {
+                        matches!(by, Some(What::Trash(_))) && holds(by, about.as_ref().unwrap())
+                    }
+                    Moment::Discard => {
+                        matches!(by, Some(What::Discard(_))) && holds(by, about.as_ref().unwrap())
+                    }
+                    Moment::Shuffle => matches!(by, Some(What::Shuffle(_))),
+                    Moment::WouldGain | Moment::LeaveSupply => about.is_some(),
+                    Moment::WouldShuffle => true,
+                };
+                if !right {
+                    fail(&format!("a resolve {when:?} with the wrong cause"));
+                }
+                if let Some(origin) = origin
+                    && !matches!(
+                        at(*origin),
+                        What::Play(_)
+                            | What::Resolve { .. }
+                            | What::Buy { .. }
+                            | What::Receive { .. }
+                    )
+                {
+                    fail("an origin that makes no lasting effect");
+                }
+            }
+            What::Play(play) => {
+                match (by_phase, &play.from) {
+                    (Some(Phase::Action), Some(_)) => {
+                        // The Action it costs.
+                        let next = events.get(seq as usize + 1).map(|e| (&e.what, e.by));
+                        if !matches!(next, Some((What::Counter(c), Some(b))) if b == seq && c.counter.name == CounterName::Actions && c.delta == -1)
+                        {
+                            fail("a play from the Action phase doesn't spend an Action");
+                        }
+                    }
+                    (Some(Phase::Buy | Phase::Night), Some(_)) => {}
+                    (None, _) if !matches!(by, Some(What::Turn(_))) => {}
+                    _ => fail("a play the phase can't make"),
+                }
+                if let Some(c) = play.card.name().and_then(dominion_engine::Card::from_name) {
+                    let seat = play.player;
+                    let piles = [SeatZone::Deck, SeatZone::Discard].map(|z| Zone::Seat(seat, z));
+                    let cards = piles.iter().map(|z| table.zone(z).len()).sum::<usize>();
+                    // Not the card itself, played from one of them (City-state's gain).
+                    let own = play.from.as_ref().is_some_and(|z| piles.contains(z));
+                    if c.def().plus.cards >= 2 && cards > usize::from(own) {
+                        drawable.push(seq);
+                    }
+                }
+            }
+            What::Buy { .. } if by_phase.is_some() => {
+                let next = events.get(seq as usize + 1).map(|e| (&e.what, e.by));
+                if !matches!(next, Some((What::Counter(c), Some(b))) if b == seq && matches!(c.counter.name, CounterName::Buys | CounterName::Actions) && c.delta == -1)
+                {
+                    fail("a buy doesn't spend a Buy");
+                }
+            }
+            What::Draw(_) | What::Discard(_) | What::Shuffle(_)
+                if by_phase.is_some_and(|p| p != Phase::Cleanup) =>
+            {
+                fail("moved by a phase other than Clean-up");
+            }
+            _ if matches!(by, Some(What::Turn(_)))
+                && !matches!(
+                    e.what,
+                    What::Phase { .. }
+                        | What::Resolve { .. }
+                        | What::TurnEnd { .. }
+                        | What::EffectEnd {
+                            why: events::EffectEnd::Expired,
+                            ..
+                        }
+                        | What::Derived { .. }
+                ) =>
+            {
+                fail(
+                    "only phases, start-of-turn abilities, effects expiring and the turn's end \
+                     happen directly in a turn",
+                );
+            }
+            _ if matches!(by, Some(What::TurnEnd { .. }))
+                && !matches!(
+                    e.what,
+                    What::EffectEnd { .. }
+                        | What::ExtraTurnRemoved { .. }
+                        | What::Discard(_)
+                        | What::Derived { .. }
+                ) =>
+            {
+                fail("more than effects, extra turns and kept Boons ending with the turn");
+            }
+            What::Effect(_) | What::ExtraTurn(_)
+                if !matches!(
+                    by,
+                    Some(
+                        What::Play(_)
+                            | What::Resolve { .. }
+                            | What::Buy { .. }
+                            | What::Receive { .. }
+                    )
+                ) =>
+            {
+                fail("an effect or extra turn that no play, ability, buy or Boon made");
+            }
+            // Clean-up's draw uses up the -1 Card token.
+            What::Token {
+                token: events::TokenKind::MinusCard,
+                at: None,
+                ..
+            } if by_phase == Some(Phase::Cleanup) => {}
+            What::Take(_) | What::Token { .. } | What::Holding { .. }
+                if by_phase.is_some() || matches!(by, Some(What::Turn(_))) =>
+            {
+                fail("a Boon, Hex, token or holding moved by a phase or turn itself");
+            }
+            _ => {}
+        }
+        table.apply(e).unwrap();
+    }
+    // A card's +Cards are drawn by its play, unless something changed what the play does.
+    for play in drawable {
+        let changed = events[play as usize..].iter().any(|e| {
+            e.by == Some(play)
+                && matches!(
+                    e.what,
+                    What::Way { .. }
+                        | What::Resolve {
+                            when: Moment::Play,
+                            ..
+                        }
+                )
+        });
+        let drew = (events[play as usize..].iter())
+            .any(|e| e.by == Some(play) && matches!(e.what, What::Draw(_)));
+        if !changed && !drew {
+            let json = serde_json::to_string(&events[play as usize]).unwrap();
+            panic!("{what}: event {play} draws nothing of its own\n{json}");
+        }
+    }
+}
 
 #[test]
 fn the_fold_of_the_full_stream_is_the_engines_table() {

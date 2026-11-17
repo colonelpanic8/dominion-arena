@@ -566,19 +566,31 @@ them.
   `View::lasting` shows, with the cards of its data that are set aside as what it holds),
   so a change to one needs nothing; one removed is `resolved` unless its remover says
   why (`journal_effect_end` right after removing it, the journal synced before). Phases
-  change only through `set_phase`, a turn ends through `turn_over`, extra turns are
-  queued only through `queue_extra_turn` (it gives each an id), and a card set aside or
-  revealed face up is followed by `journal_face_up`. Turns that don't happen
-  (`journal_skipped`) and the game's end condition (`journal_game_ending`) are journaled
-  where the turn loop decides them. The rest of the table (Adventures, −Card, −$1 and
-  Journey tokens; Project cubes, Artifacts and States; pile properties and roles;
-  landscapes and the Prophecy; notes; every card's cost and changed types) is read at
-  every record too (`journal::Holdings`) and journaled where it changed: new state of
-  that kind goes there and into the fold test, never into a card script. Boons and Hexes
-  are cards in zones, named without handles, journaled where they move: draw them with
-  `Game::draw_from(player, ..)`, discard them with `discard_fate`, and never change
-  `Game::boons` / `hexes` directly. `journal::table_note` says which `SetRules::notes`
-  the table keeps as notes: public state with no better place.
+  change only through `set_phase` (never a write to `turn.phase`), a turn ends through
+  `turn_over`, extra turns are queued only through `queue_extra_turn` (it gives each an
+  id), and a card set aside or revealed face up is followed by `journal_face_up`, right
+  after its move. Turns that don't happen (`journal_skipped`) and the game's end
+  condition (`journal_game_ending`) are journaled where the turn loop decides them. The
+  rest of the table (Adventures, −Card, −$1 and Journey tokens; Project cubes, Artifacts
+  and States; pile properties and roles; landscapes and the Prophecy; notes; every card's
+  cost and changed types) is read at every record too (`journal::Holdings`) and journaled
+  where it changed: new state of that kind goes there and into the fold test, never into
+  a card script. Boons and Hexes are cards in zones, named without handles, journaled
+  where they move: draw them with `Game::draw_from(player, ..)`, discard them with
+  `discard_fate`, and never change `Game::boons` / `hexes` directly. `journal::table_note`
+  says which `SetRules::notes` the table keeps as notes: public state with no better
+  place. Each event names its cause (`by`) from the effect stack: an occurrence (turn,
+  phase, turn end, play, buy, triggered ability, Boon or Hex received, gain, trash,
+  discard, shuffle) is marked `Step::Occurred` right after its step and stays open for
+  as long as the frame it belongs to (`journal_opens` in that frame; `run` closes it when
+  the frame finishes, a window when its ability has); `Step::Within` says which open
+  occurrence the steps after it happen inside. A phase or the turn's end takes over the
+  Turn frame's occurrence, so what the turn does directly is inside its current phase.
+  Everything read at every record is also read at every open and close, so a change made
+  inside an occurrence must not wait to be read until after it has closed. A new
+  occurrence opens with `journal_opens` (several together: `journal_occurred` for each,
+  then `journal_open`); a lasting effect made outside `add_lasting` / `continue_lasting`
+  records its origin with `journal_lasting`.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The

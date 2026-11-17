@@ -354,6 +354,7 @@ impl Window {
                 self.log_unaffected(g);
                 self.granted.push(i);
             }
+            g.journal_close(g.stack.len());
         }
         if let Input::Response(Response::Options(chosen)) = input {
             match chosen.first() {
@@ -531,6 +532,7 @@ impl Window {
             },
         });
         g.begin_resolving(header);
+        g.journal_resolve(t.owner, t.card, &self.occs[i], t.lasting);
         let mut f = CardFrame::new(t.card, Hook::Ability(t.ability), t.owner, t.source);
         f.occ = Some(self.occs[i].clone());
         f.lasting = t.lasting;

@@ -11,6 +11,7 @@ mod empires;
 mod fuzz;
 mod hinterlands;
 mod intrigue;
+mod journal;
 mod knowledge;
 mod menagerie;
 mod nocturne;

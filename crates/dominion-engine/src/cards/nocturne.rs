@@ -726,6 +726,7 @@ fn sift(g: &mut Game, f: &mut CardFrame, input: Input, at: u8, n: usize) -> Flow
 /// Resolves a Boon or Hex for `p` without drawing or discarding it.
 pub(crate) fn receive_raw(g: &mut Game, p: PlayerId, card: Card) -> Frame {
     g.emit(Event::Received { player: p, card });
+    g.journal_opens_call();
     Frame::Card(Box::new(CardFrame::new(card, Hook::Main, p, None)))
 }
 
