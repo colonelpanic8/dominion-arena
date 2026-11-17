@@ -18,9 +18,9 @@ use dominion_online::{
 use dominion_protocol::api::{
     OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMode, OnlineObservation,
     OnlineOutcome, OnlineRating, OnlineRatingPeriod, OnlineRatingPoint, OnlineRatingType,
-    OnlineResult, OnlineResultOpponent, OnlineStart,
+    OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
 };
-use dominion_protocol::lobby::UserKind;
+use dominion_protocol::lobby::{GameMeta, UserKind};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -350,22 +350,35 @@ async fn no_cache(request: Request, next: Next) -> Response {
     );
     r
 }
+/// What anyone may watch: the account's view without its decision.
 fn observation(update: Update) -> OnlineObservation {
-    let mut view = update.reducer.view().ok();
-    if let Some(view) = &mut view {
-        view.decision = None;
-        view.spectating = true;
-    }
     let now = crate::hub::now_ms();
+    let clock = update.clock(now);
+    let game = update.reducer.view().ok().map(|mut view| {
+        let deciding = view.decision.take().and(view.seat);
+        view.spectating = true;
+        SeatView {
+            view,
+            version: update.reducer.revision,
+            deciding,
+            table: update.reducer.table().unwrap_or_default(),
+            undos: update.reducer.epoch,
+            can_undo: false,
+            undo: Default::default(),
+            meta: GameMeta {
+                rated: update.mode == OnlineMode::Rated,
+                watchable: true,
+                timed: clock.is_some(),
+                clock,
+                now,
+                ..Default::default()
+            },
+        }
+    });
     OnlineObservation {
-        clock: update.clock(now),
-        now,
         connected: update.connected,
         error: update.error,
-        version: update.reducer.revision,
-        epoch: update.reducer.epoch,
-        table: update.reducer.table().unwrap_or_default(),
-        view,
+        game,
     }
 }
 #[derive(Clone)]

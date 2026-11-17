@@ -1250,4 +1250,4 @@ pub(crate) fn glossary(reducer: &Reducer, names: &[String]) -> Result<Vec<Glossa
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

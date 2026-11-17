@@ -286,6 +286,44 @@ fn seat_view(table: &Table, seat: PlayerId, log_from: Option<usize>, version: u6
     }
 }
 
+#[test]
+fn a_whole_view_takes_the_place_of_a_rewritten_log_another_game_or_restarted_counters() {
+    let table = Table::new("g", config(&["Village"], 1), vec![]).unwrap();
+    let whole = |version, undos, texts: &[&str]| {
+        let mut sv = seat_view(&table, PlayerId(0), Some(0), version);
+        sv.undos = undos;
+        sv.view.since_last_decision = entries(0..texts.len());
+        for (e, text) in sv.view.since_last_decision.iter_mut().zip(texts) {
+            e.text = text.to_string();
+        }
+        sv
+    };
+    let texts = |st: &GameState| st.log.iter().map(|e| e.text.clone()).collect::<Vec<_>>();
+    let mut st = GameState::default();
+    st.apply_whole(whole(3, 1, &["a plays a Copper", "a plays a Copper"]));
+    // dominion.games merged the two lines into one.
+    st.apply_whole(whole(4, 1, &["a plays 2 Coppers"]));
+    assert_eq!(texts(&st), ["a plays 2 Coppers"]);
+    // After a reconnect or a restart the counters are other ones, lower or not.
+    for (version, undos) in [(1, 2), (1, 1)] {
+        st.chat_seen = Some(9);
+        st.apply_whole(whole(version, undos, &["again"]));
+        assert_eq!(
+            (st.version, st.undos, texts(&st)),
+            (version, undos, vec!["again".into()])
+        );
+        assert_eq!(st.chat_seen, None);
+    }
+    let mut next = whole(5, 1, &["another game"]);
+    next.view.game.id = Some("h".into());
+    st.chat_seen = Some(9);
+    st.apply_whole(next);
+    assert_eq!(
+        (texts(&st), st.chat_seen),
+        (vec!["another game".into()], None)
+    );
+}
+
 /// One seat's client: loads with `logFrom=0`, refetches from its cursor (or from 0 after
 /// an undo), and takes the response to each of its answers.
 struct Client {

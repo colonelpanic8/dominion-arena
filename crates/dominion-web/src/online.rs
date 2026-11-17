@@ -28,22 +28,17 @@ fn card_names(text: &str) -> Vec<String> {
 fn apply(mut state: Signal<GameState>, mut game: Signal<String>, update: OnlineObservation) {
     table::before_change();
     let mut st = state.write();
+    match update.game {
+        Some(sv) => {
+            game.set(sv.view.game.id.clone().unwrap_or_default());
+            st.server_ahead = crate::game::server_ahead(sv.meta.now, st.server_ahead);
+            st.apply_whole(sv);
+        }
+        None => *st = GameState::default(),
+    }
     st.error = update
         .error
         .or_else(|| (!update.connected).then(|| "Official connection is disconnected".into()));
-    st.version = update.version;
-    st.undos = update.epoch;
-    st.server_ahead = crate::game::server_ahead(update.now, st.server_ahead);
-    st.meta.now = update.now;
-    st.meta.clock = update.clock;
-    st.deciding = None;
-    st.can_undo = false;
-    if let Some(view) = &update.view {
-        st.log = view.since_last_decision.clone();
-        game.set(view.game.id.clone().unwrap_or_default());
-    }
-    st.view = update.view;
-    st.table = update.table;
 }
 /// One official account's page: `account` none is the primary one's unprefixed routes.
 #[component]

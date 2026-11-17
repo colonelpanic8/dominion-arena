@@ -6,6 +6,11 @@ use dominion_protocol::lobby::ClockView;
 use serde::Deserialize;
 use std::collections::BTreeSet;
 
+#[cfg(test)]
+mod conformance;
+mod seat;
+pub(crate) use seat::{Play, PlaySeat, failure, glossary_result, no_game, structured};
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StateParams {

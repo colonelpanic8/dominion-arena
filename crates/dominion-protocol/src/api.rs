@@ -367,23 +367,18 @@ pub struct CardCost {
     pub debt: u32,
 }
 
-/// The authorized observer's current official-server game, without action controls.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// An official account's connection, and its game as anyone may watch it
+/// (`GET /api/online/view`, and each `change` of `/api/online/events`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineObservation {
     pub connected: bool,
     pub error: Option<String>,
-    pub version: u64,
-    pub epoch: u64,
-    pub view: Option<AgentView>,
-    #[serde(default)]
-    pub table: TableExtras,
-    /// The official server's timers, as of `now`.
+    /// The account's game, in the shape `GET /api/games/{id}/watch` gives one of Arena's,
+    /// with the whole log. `undos` counts the snapshots dominion.games has sent: a view
+    /// under another count shares nothing with one before it. None without a game.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub clock: Option<crate::lobby::ClockView>,
-    /// The server's clock when this was read, in milliseconds since the Unix epoch.
-    #[serde(default)]
-    pub now: u64,
+    pub game: Option<SeatView>,
 }
 
 /// An official account `dominion serve` keeps connected (`GET /api/online/accounts`).

@@ -46,7 +46,10 @@ The MCP entry point uses stdio. Register either this backend or Arena's hosted
 backend as `dominion`. Authentication belongs to operator setup; gameplay uses
 the same `state`, `new_game`, `step`, `wait`, `cards`, and `log` contract
 (`dominion/play@1`, structured `{view, glossary?, clock?}` / `dominion/agent-view@2`;
-`clock` carries the server's timers in a timed game).
+`clock` carries the server's timers in a timed game), plus `turns` and
+`play_treasures`. These tools are the ones Arena's own games are played through
+(`dominion-server`'s `mcp/play/seat.rs`): this backend supplies only how its seat is
+observed, answered and waited for, so their checks, results and errors are the same.
 Optional `token` parameters are ignored because one process controls one account.
 
 `new_game` accepts `players`, `bots`, `kingdom`, and `landscapes`. Every opponent
@@ -111,8 +114,8 @@ same account. The state-directory lock prevents two processes sharing it.
   `rated`), and `matching` (`players`, `minRating`, `maxRating`, `timer` ordinal
   0 Reckless / 1 Hasty / 2 Friendly / 3 Patient). Bot settings are `bots`,
   `kingdom` and `landscapes`.
-- Agents play through **`/mcp/online`** using `state`, `step`, `wait`, `cards`
-  and `log`. An Arena owner session or its bot API key also works. Hosted MCP
+- Agents play through **`/mcp/online`** using `state`, `step`, `wait`, `cards`,
+  `log`, `turns` and `play_treasures`. An Arena owner session or its bot API key also works. Hosted MCP
   refuses `new_game`, `resign` and `online_reconnect`; use management for those.
 - **`GET /api/online/rating?type=2p`** returns the connected account's rating and record
   on dominion.games, as its player page shows them. The rating (level, skill (mu),
@@ -128,7 +131,11 @@ same account. The state-directory lock prevents two processes sharing it.
   `RATING_SERVICE_DOWN` reply fails only that request (503), not the connection. It is
   public like watching, and the `/online` page shows it.
 - **`GET /api/online/view`** and **`GET /api/online/events`** provide the legal
-  observation. Responses use `Cache-Control: no-store`, omit the current decision
+  observation: `{connected, error, game?}`, where `game` has the shape
+  `GET /api/games/{id}/watch` gives one of Arena's games (view, version, the seat
+  deciding, table extras, `meta` with the clock), so the web client keeps both in the
+  same model. Its log is always the whole log, and `undos` counts the snapshots
+  dominion.games has sent. Responses use `Cache-Control: no-store`, omit the current decision
   and are public, including to signed-out viewers. Watching shows the playing
   account's legal view, including its hand. The stream closes on shutdown.
   Management and gameplay MCP access remain restricted to the owner and its bot keys.
