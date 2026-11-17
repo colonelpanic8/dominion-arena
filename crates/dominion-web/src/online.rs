@@ -6,7 +6,7 @@ use crate::{
 use dioxus::prelude::*;
 use dominion_protocol::api::{
     GameSummary, OnlineAccountInfo, OnlineManagement, OnlineMatching, OnlineMode,
-    OnlineObservation, OnlineStart,
+    OnlineObservation, OnlineOutcome, OnlineRating, OnlineRatingType, OnlineStart,
 };
 #[derive(Clone, Copy)]
 enum Action {
@@ -95,6 +95,35 @@ pub fn OnlinePage(account: Option<String>) -> Element {
                 }
             }
             platform::sleep(3000).await;
+        }
+    });
+    let mut rating_type = use_signal(OnlineRatingType::default);
+    let mut refresh = use_signal(|| 0_u32);
+    let rating = use_resource(move || async move {
+        refresh();
+        api::online_rating(id().as_deref(), rating_type())
+            .await
+            .map_err(|e| e.to_string())
+    });
+    // Asked again each minute, and twice once a game ends: at once, and once dominion.games
+    // has had time to count it.
+    use_future(move || async move {
+        let mut ended = None::<String>;
+        let mut waited = 0;
+        loop {
+            platform::sleep(5000).await;
+            waited += 5000;
+            let finished = (state.peek().view.as_ref())
+                .filter(|v| v.game.result.is_some())
+                .map(|v| v.game.id.clone().unwrap_or_default());
+            if finished.is_some() && finished != ended {
+                ended = finished;
+                waited = 35_000;
+                refresh += 1;
+            } else if waited >= 60_000 {
+                waited = 0;
+                refresh += 1;
+            }
         }
     });
     let mut management = use_signal(|| None::<OnlineManagement>);
@@ -190,6 +219,18 @@ pub fn OnlinePage(account: Option<String>) -> Element {
                 }
             }
             Link {to:crate::app::Route::Account{},"Arena login / account"}
+            div {class:"online-rating",
+                label {"Rating"
+                    select {value:"{rating_type.read().ordinal()}",onchange:move|e|{if let Some(kind)=e.value().parse().ok().and_then(OnlineRatingType::from_ordinal){rating_type.set(kind);}},
+                        for kind in OnlineRatingType::ALL {option {value:"{kind.ordinal()}","{kind.label()}"}}
+                    }
+                }
+                match rating.read().as_ref() {
+                    None => rsx! {p {class:"muted","Asking dominion.games…"}},
+                    Some(Err(e)) => rsx! {p {class:"muted","{e}"}},
+                    Some(Ok(r)) => rsx! {RatingSummary {rating: r.clone()}},
+                }
+            }
             if let Some(status)=management.read().as_ref() {
                 p {class:"muted",
                     if status.connected {"Official account connected"}else{"Official account disconnected"}
@@ -296,5 +337,50 @@ pub fn OnlinePage(account: Option<String>) -> Element {
                 }
             }
         }
+    }
+}
+
+#[component]
+fn RatingSummary(rating: OnlineRating) -> Element {
+    let r = &rating;
+    let fetched = crate::lobby::date(r.fetched);
+    rsx! {
+        p {
+            strong {"Level {r.level:.2}"}
+            " · skill {r.skill:.2} ± {r.deviation:.2} · {r.games} games"
+            if let Some(rank)=r.rank {" · #{rank}"}
+        }
+        if let Some(period)=&r.period {
+            p {class:"muted",
+                "This period, not yet final: {period.results} games, {period.score} points against {period.expected_score:.2} expected, from level {period.start_level:.2}"
+            }
+        }
+        p {class:"muted",
+            "{r.wins}–{r.losses}–{r.ties} · best level {r.best_level:.2}"
+            if let Some(rank)=r.best_rank {" · best rank #{rank}"}
+            " · longest streaks {r.best_win_streak} won, {r.best_loss_streak} lost"
+        }
+        if !r.results.is_empty() {
+            details {class:"online-results",
+                summary {"Recent games"}
+                ol {
+                    for game in &r.results {
+                        li {key:"{game.game}",
+                            strong {match game.outcome {OnlineOutcome::Win=>"W",OnlineOutcome::Loss=>"L",OnlineOutcome::Tie=>"T"}}
+                            " {game.score}"
+                            for o in &game.opponents {" · {o.name} {o.score}"}
+                            if game.rated {" · {game.level:.2} vs {game.opponent_level:.2}"} else {" · unrated"}
+                            if game.resigned || game.opponents.iter().any(|o| o.resigned) {" · resigned"}
+                            span {class:"muted"," · {crate::lobby::date(game.time.max(0) as u64)}"}
+                            if !game.kingdom.is_empty() {
+                                br {}
+                                span {class:"muted","{game.kingdom.join(\", \")}"}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !fetched.is_empty() {p {class:"muted","From dominion.games, {fetched}"}}
     }
 }

@@ -72,6 +72,8 @@ fn runtime() -> (TempDir, Runtime) {
         queue_status: None,
         outbox: Vec::new(),
         pending_match: Vec::new(),
+        profiles: Waiting::default(),
+        results: Waiting::default(),
         update: Update {
             reducer: Reducer::new(catalog(), 42),
             error: None,
@@ -80,6 +82,7 @@ fn runtime() -> (TempDir, Runtime) {
             queue_feedback: Vec::new(),
             mode: OnlineMode::Bots,
             timers: Vec::new(),
+            finished_at: None,
         },
         store,
     };
@@ -1529,4 +1532,210 @@ fn official_timers_are_kept_by_seat_and_counted_down_while_running() {
     next.game_id = 124;
     runtime.process(Message::Snapshot(next)).unwrap();
     assert!(runtime.update.timers.is_empty());
+}
+
+fn profile(player: i32, kind: i32, skill: f64) -> PlayerProfile {
+    #[derive(serde::Deserialize)]
+    struct Fixture {
+        opcode: i32,
+        hex: String,
+    }
+    let fixtures: Vec<Fixture> = serde_json::from_str(include_str!(
+        "../../../../dominion-online/tests/fixtures/ancillary.json"
+    ))
+    .unwrap();
+    let hex = &fixtures.iter().find(|f| f.opcode == 54).unwrap().hex;
+    let bytes: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+        .collect();
+    let mut profile = PlayerProfile::parse(&mut Reader::new(&bytes)).unwrap();
+    profile.player = named(player);
+    profile.rating_type = kind;
+    profile.summary.current_skill = skill;
+    profile.period.available = false;
+    profile
+}
+
+fn result(rank: i32, opponent_rank: i32) -> ProfileResult {
+    use dominion_online::transport::ancillary::ResultOpponent;
+    ProfileResult {
+        game_id: 186_039_786,
+        time_millis: 1_794_900_000_000,
+        opponents: vec![ResultOpponent {
+            player: named(7),
+            rank: opponent_rank,
+            score: 30,
+            resigned: false,
+        }],
+        my_rank: rank,
+        my_score: 40,
+        rated: true,
+        my_level: 48.5,
+        opponent_level: 47.0,
+        expected_score: 0.55,
+        kingdom: vec![],
+        players: vec![named(42), named(7)],
+        my_resigned: false,
+    }
+}
+
+#[test]
+fn player_page_replies_answer_the_requests_waiting_for_their_rating_type() {
+    use dominion_online::transport::{Failure, ancillary};
+    let (_directory, mut runtime) = active_runtime();
+    let (two, mut two_rx) = oneshot::channel();
+    let (three, mut three_rx) = oneshot::channel();
+    let (results, mut results_rx) = oneshot::channel();
+    assert!(runtime.profiles.wait(0, two));
+    assert!(runtime.profiles.wait(1, three));
+    assert!(runtime.results.wait(1, results));
+    let reply = |p| Message::Ancillary(ancillary::Message::PlayerProfile(p));
+    runtime.process(reply(profile(99, 0, 30.0))).unwrap();
+    assert!(two_rx.try_recv().is_err(), "someone else's profile");
+    runtime.process(reply(profile(42, 0, 30.0))).unwrap();
+    assert_eq!(
+        two_rx.try_recv().unwrap().unwrap().summary.current_skill,
+        30.0
+    );
+    assert!(three_rx.try_recv().is_err());
+    runtime
+        .process(Message::Ancillary(ancillary::Message::PlayerResults {
+            rating_type: 0,
+            results: vec![],
+        }))
+        .unwrap();
+    assert!(results_rx.try_recv().is_err(), "another rating type's");
+    // A rating service outage answers the waiting requests instead of closing the
+    // connection, but stays fatal when nothing asked.
+    let down = || {
+        Message::Failed(Failure {
+            reason: "RATING_SERVICE_DOWN",
+            card: None,
+        })
+    };
+    assert!(!runtime.process(down()).unwrap());
+    assert!(three_rx.try_recv().unwrap().is_err());
+    assert!(results_rx.try_recv().unwrap().is_err());
+    assert!(runtime.process(down()).is_err());
+}
+
+#[tokio::test]
+async fn ratings_are_public_and_asked_of_the_server_once_a_minute() {
+    use dominion_protocol::api::{OnlineRating, OnlineRatingType};
+    let (_directory, runtime) = active_runtime();
+    let (_publish, updates) = watch::channel(runtime.update.clone());
+    let (tx, mut requests) = mpsc::channel(16);
+    let hosted = crate::online::Hosted::new(
+        Client { tx, updates },
+        crate::online::LEGACY_ID.into(),
+        "fixture-42".into(),
+        "rating-owner".into(),
+    );
+    let backend = tokio::spawn(async move {
+        let mut asked = vec![];
+        while let Some(request) = requests.recv().await {
+            match request {
+                Request::Profile(kind, reply) => {
+                    asked.push(kind);
+                    reply.send(Ok(profile(42, kind, 41.5))).unwrap();
+                }
+                Request::Results(_, reply) => reply.send(Ok(vec![result(1, 2)])).unwrap(),
+                _ => {}
+            }
+        }
+        asked
+    });
+    let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
+        .unwrap();
+    let stop = tokio_util::sync::CancellationToken::new();
+    let router = crate::online::router(
+        &[hosted],
+        arena,
+        vec!["127.0.0.1".into()],
+        None,
+        stop.clone(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let stopped = stop.clone();
+    let serving = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(stopped.cancelled_owned())
+            .await
+            .unwrap()
+    });
+    let http = reqwest::Client::new();
+    for path in ["rating?type=3p", "default/rating?type=3p", "rating"] {
+        let response = http
+            .get(format!("{base}/api/online/{path}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK, "{path}");
+        let rating: OnlineRating = response.json().await.unwrap();
+        assert_eq!(rating.skill, 41.5);
+        assert!(!rating.provisional);
+        assert_eq!(rating.account, "fixture-42");
+        assert_eq!(rating.results[0].opponents[0].name, "fixture-7");
+    }
+    let bad = http
+        .get(format!("{base}/api/online/rating?type=4p"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), reqwest::StatusCode::BAD_REQUEST);
+    stop.cancel();
+    serving.await.unwrap();
+    assert_eq!(
+        backend.await.unwrap(),
+        [
+            OnlineRatingType::ThreePlayer.ordinal(),
+            OnlineRatingType::TwoPlayer.ordinal()
+        ]
+    );
+}
+
+#[test]
+fn the_open_period_is_the_latest_rating() {
+    use crate::online::hosted::{rating_of, result_of};
+    use dominion_protocol::api::{OnlineOutcome, OnlineRatingType};
+    let mut profile = profile(42, 0, 41.5);
+    let last = profile.rating_history.iter().map(|p| p.date_millis).max();
+    let date = last.unwrap_or(0) + 1;
+    let period = &mut profile.period;
+    period.available = true;
+    period.results = 3;
+    period.period_date_millis = date;
+    period.new_skill = 43.25;
+    period.new_games = 18;
+    let rating = rating_of(&profile, &[], &catalog(), OnlineRatingType::TwoPlayer, 0);
+    assert!(rating.provisional);
+    assert_eq!((rating.skill, rating.games), (43.25, 18));
+    assert_eq!(rating.period.unwrap().results, 3);
+    let latest = rating.history.last().unwrap();
+    assert_eq!((latest.skill, latest.date), (43.25, date));
+    // Once the history holds the period, its summary is the rating again.
+    profile.period.period_date_millis = last.unwrap_or(0);
+    let rating = rating_of(&profile, &[], &catalog(), OnlineRatingType::TwoPlayer, 0);
+    assert!(!rating.provisional);
+    assert_eq!(rating.skill, 41.5);
+
+    let outcome = |me, them| result_of(&result(me, them), &catalog()).outcome;
+    assert_eq!(outcome(1, 2), OnlineOutcome::Win);
+    assert_eq!(outcome(1, 1), OnlineOutcome::Tie);
+    assert_eq!(outcome(2, 1), OnlineOutcome::Loss);
+}
+
+#[test]
+fn a_rating_is_asked_again_soon_after_a_game_finishes() {
+    use crate::online::hosted::fresh;
+    let now = 1_000_000;
+    assert!(fresh(now - 50_000, None, now));
+    assert!(!fresh(now - 70_000, None, now));
+    // Read before the game finished, or while it may still be being counted.
+    assert!(!fresh(now - 10_000, Some(now - 5_000), now));
+    assert!(fresh(now - 2_000, Some(now - 5_000), now));
+    // Read once it has been counted.
+    assert!(fresh(now - 30_000, Some(now - 60_000), now));
 }

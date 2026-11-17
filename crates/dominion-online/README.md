@@ -114,6 +114,19 @@ same account. The state-directory lock prevents two processes sharing it.
 - Agents play through **`/mcp/online`** using `state`, `step`, `wait`, `cards`
   and `log`. An Arena owner session or its bot API key also works. Hosted MCP
   refuses `new_game`, `resign` and `online_reconnect`; use management for those.
+- **`GET /api/online/rating?type=2p`** returns the connected account's rating and record
+  on dominion.games, as its player page shows them. The rating (level, skill (mu),
+  deviation, games) is the open rating period's when it has games (`provisional`, with
+  the period's games, score against expectation and starting level), since that counts
+  every game finished so far; the leaderboard rank and the history's settled points only
+  move when a period closes. Also: wins/losses/ties, best level and rank with their dates,
+  longest streaks, country and title, the last 30 history points, and the 25 most recent
+  games (outcome, scores, opponents, levels, expected score, kingdom). `type` is `2p`
+  (default), `3p`, `2p-blitz` or `3p-blitz`. The server asks dominion.games over the
+  account's connection at most once a minute per type, and again every few seconds for
+  20 seconds after one of its games finishes, so a finished game shows up promptly. A
+  `RATING_SERVICE_DOWN` reply fails only that request (503), not the connection. It is
+  public like watching, and the `/online` page shows it.
 - **`GET /api/online/view`** and **`GET /api/online/events`** provide the legal
   observation. Responses use `Cache-Control: no-store`, omit the current decision
   and are public, including to signed-out viewers. Watching shows the playing
@@ -155,7 +168,7 @@ resume = true                 # optional, default false
 ```
 
 Ids, official account names and state directories must all differ. Each account's
-routes are `/online/<id>` (web), `/api/online/<id>/{view,events,manage,start,agent,matchmaking,reconnect,resign}`
+routes are `/online/<id>` (web), `/api/online/<id>/{view,events,rating,manage,start,agent,matchmaking,reconnect,resign}`
 and `/mcp/online/<id>`. The `default` account (or, without one, the first
 configured) also keeps the unprefixed `/online`, `/api/online/...` and
 `/mcp/online`. **`GET /api/online/accounts`** lists the served accounts (id,

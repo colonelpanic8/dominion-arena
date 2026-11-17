@@ -512,6 +512,14 @@ pub async fn follow_online(
     .await;
 }
 
+pub async fn online_rating(
+    account: Option<&str>,
+    kind: dominion_protocol::api::OnlineRatingType,
+) -> Result<dominion_protocol::api::OnlineRating> {
+    let kind = serde_json::to_value(kind).ok();
+    let kind = kind.as_ref().and_then(|v| v.as_str()).unwrap_or("2p");
+    imp::get(&online_path(account, &format!("rating?type={kind}")), None).await
+}
 pub async fn online_management(
     account: Option<&str>,
 ) -> Result<dominion_protocol::api::OnlineManagement> {

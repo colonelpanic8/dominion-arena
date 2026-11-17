@@ -2,7 +2,7 @@ use super::{Client, mcp, runtime::Update};
 use crate::{arena::Arena, config::Config};
 use axum::{
     Router,
-    extract::{Request, State},
+    extract::{Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
     response::{
@@ -11,15 +11,28 @@ use axum::{
     },
     routing::{get, post},
 };
+use dominion_online::{
+    catalog::Catalog,
+    transport::ancillary::{PlayerProfile, ProfileResult},
+};
 use dominion_protocol::api::{
-    OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMode, OnlineObservation, OnlineStart,
+    OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMode, OnlineObservation,
+    OnlineOutcome, OnlineRating, OnlineRatingPeriod, OnlineRatingPoint, OnlineRatingType,
+    OnlineResult, OnlineResultOpponent, OnlineStart,
 };
 use dominion_protocol::lobby::UserKind;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
-use std::{convert::Infallible, sync::Arc, time::Duration};
+use std::{collections::HashMap, convert::Infallible, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
+
+/// How long a rating read from dominion.games is served before it is asked again.
+const RATING_FRESH_MS: u64 = 60_000;
+/// How long after a game finishes dominion.games may still be counting it: a rating read
+/// before then is served for `RATING_RECHECK_MS` only.
+const RATING_SETTLE_MS: u64 = 20_000;
+const RATING_RECHECK_MS: u64 = 5_000;
 
 /// One official account kept connected by `dominion serve`.
 #[derive(Clone)]
@@ -32,6 +45,7 @@ pub struct Hosted {
     /// The registered Arena account that controls it.
     pub owner: String,
     control: Arc<tokio::sync::Mutex<()>>,
+    ratings: Arc<std::sync::Mutex<HashMap<OnlineRatingType, OnlineRating>>>,
 }
 
 /// The routes of every hosted account. Each has `/api/online/<id>/...` and
@@ -89,7 +103,27 @@ impl Hosted {
             account,
             owner,
             control: Arc::new(tokio::sync::Mutex::new(())),
+            ratings: Arc::default(),
         }
+    }
+
+    /// The account's rating and recent results on dominion.games. They are asked of the
+    /// official server at most once a minute per rating type, and again soon after a game
+    /// of the account's finishes.
+    pub async fn rating(&self, kind: OnlineRatingType) -> Result<OnlineRating, String> {
+        let finished = self.client.updates.borrow().finished_at;
+        let cached = crate::hub::lock(&self.ratings).get(&kind).cloned();
+        if let Some(rating) = cached.filter(|r| fresh(r.fetched, finished, crate::hub::now_ms())) {
+            return Ok(rating);
+        }
+        let (profile, results) = tokio::join!(
+            self.client.profile(kind.ordinal()),
+            self.client.results(kind.ordinal())
+        );
+        let catalog = self.client.updates.borrow().reducer.catalog.clone();
+        let rating = rating_of(&profile?, &results?, &catalog, kind, crate::hub::now_ms());
+        crate::hub::lock(&self.ratings).insert(kind, rating.clone());
+        Ok(rating)
     }
 
     /// Logs in every account `dominion serve` keeps. An account that fails to log in is
@@ -206,6 +240,7 @@ impl Hosted {
             .route("/view", get(snapshot))
             .route("/events", get(events))
             .route("/manage", get(manage))
+            .route("/rating", get(rating))
             .route("/start", post(start_game))
             .route("/agent", post(attach_agent).delete(pause_agent))
             .route("/matchmaking", axum::routing::delete(cancel_matchmaking))
@@ -263,7 +298,7 @@ async fn authorize(State(access): State<Access>, request: Request, next: Next) -
     let path = request.uri().path();
     let watching = request.method() == axum::http::Method::GET
         && path.starts_with("/api/online/")
-        && (path.ends_with("/view") || path.ends_with("/events"));
+        && (path.ends_with("/view") || path.ends_with("/events") || path.ends_with("/rating"));
     // Only this account's job token opens this account's MCP endpoint.
     let runner = path.starts_with("/mcp/online")
         && crate::http::bearer(request.headers()).is_some_and(|token| {
@@ -404,6 +439,150 @@ fn management(web: &Web) -> OnlineManagement {
 }
 async fn manage(State(web): State<Web>) -> axum::Json<OnlineManagement> {
     axum::Json(management(&web))
+}
+/// Whether a rating read at `fetched` can still be served at `now`, the account's last game
+/// having finished at `finished`.
+pub(super) fn fresh(fetched: u64, finished: Option<u64>, now: u64) -> bool {
+    let age = now.saturating_sub(fetched);
+    let settled = finished.is_none_or(|f| fetched >= f + RATING_SETTLE_MS);
+    age < if settled {
+        RATING_FRESH_MS
+    } else {
+        RATING_RECHECK_MS
+    }
+}
+pub(super) fn rating_of(
+    profile: &PlayerProfile,
+    results: &[ProfileResult],
+    catalog: &Catalog,
+    kind: OnlineRatingType,
+    fetched: u64,
+) -> OnlineRating {
+    let count = |n: i32| u32::try_from(n).unwrap_or(0);
+    let rank = |n: i32| u32::try_from(n).ok().filter(|&n| n > 0);
+    let date = |ms: i64| (ms > 0).then_some(ms);
+    let summary = &profile.summary;
+    let mut history: Vec<_> = (profile.rating_history.iter())
+        .map(|p| OnlineRatingPoint {
+            date: p.date_millis,
+            level: p.level,
+            skill: p.skill,
+            deviation: p.deviation,
+            games: count(p.games),
+        })
+        .collect();
+    history.sort_by_key(|p| p.date);
+    let mut level = summary.current_level;
+    let mut skill = summary.current_skill;
+    let mut deviation = summary.current_deviation;
+    let mut games = history.last().map_or(0, |p| p.games);
+    // The official player page's rule: the open period has a rating of its own once it has
+    // results the history doesn't hold yet.
+    let p = &profile.period;
+    let open = p.available
+        && p.results > 0
+        && p.period_date_millis > 0
+        && history.last().is_none_or(|h| h.date < p.period_date_millis);
+    if open {
+        (level, skill, deviation, games) = (
+            p.new_level,
+            p.new_skill,
+            p.new_deviation,
+            count(p.new_games),
+        );
+        history.push(OnlineRatingPoint {
+            date: p.period_date_millis,
+            level,
+            skill,
+            deviation,
+            games,
+        });
+    }
+    OnlineRating {
+        account: profile.player.name.clone(),
+        rating_type: kind,
+        level,
+        skill,
+        deviation,
+        games,
+        provisional: open,
+        period: open.then(|| OnlineRatingPeriod {
+            start: p.period_start_millis,
+            results: count(p.results),
+            distinct_opponents: count(p.distinct_opponents),
+            score: p.score,
+            expected_score: p.expected_score,
+            start_level: p.start_level,
+            start_skill: p.start_skill,
+            start_deviation: p.start_deviation,
+        }),
+        rank: rank(summary.current_rank),
+        wins: count(summary.wins),
+        losses: count(summary.losses),
+        ties: count(summary.ties),
+        best_level: summary.best_level,
+        best_level_date: date(summary.best_level_date_millis),
+        best_rank: rank(summary.best_rank),
+        best_rank_date: date(summary.best_rank_date_millis),
+        best_win_streak: count(summary.best_win_streak),
+        best_loss_streak: count(summary.best_loss_streak),
+        country: profile.country.clone(),
+        title: profile.title.clone(),
+        history,
+        results: results.iter().map(|r| result_of(r, catalog)).collect(),
+        fetched,
+    }
+}
+pub(super) fn result_of(result: &ProfileResult, catalog: &Catalog) -> OnlineResult {
+    let rank = |n: i32| u32::try_from(n).unwrap_or(0);
+    let opponents = &result.opponents;
+    let outcome = if opponents.iter().all(|o| result.my_rank < o.rank) {
+        OnlineOutcome::Win
+    } else if opponents.iter().all(|o| result.my_rank <= o.rank) {
+        OnlineOutcome::Tie
+    } else {
+        OnlineOutcome::Loss
+    };
+    let mut kingdom: Vec<_> = (result.kingdom.iter())
+        .filter_map(|&id| catalog.card(id).ok().map(|c| c.name.clone()))
+        .collect();
+    kingdom.sort();
+    OnlineResult {
+        game: result.game_id,
+        time: result.time_millis,
+        rated: result.rated,
+        outcome,
+        rank: rank(result.my_rank),
+        score: result.my_score,
+        resigned: result.my_resigned,
+        level: result.my_level,
+        opponent_level: result.opponent_level,
+        expected_score: result.expected_score,
+        opponents: (opponents.iter())
+            .map(|o| OnlineResultOpponent {
+                name: o.player.name.clone(),
+                rank: rank(o.rank),
+                score: o.score,
+                resigned: o.resigned,
+            })
+            .collect(),
+        kingdom,
+    }
+}
+#[derive(serde::Deserialize)]
+struct RatingQuery {
+    #[serde(rename = "type", default)]
+    kind: OnlineRatingType,
+}
+async fn rating(State(web): State<Web>, Query(query): Query<RatingQuery>) -> Response {
+    match web.hosted.rating(query.kind).await {
+        Ok(rating) => axum::Json(rating).into_response(),
+        Err(error) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(dominion_protocol::api::ApiError { error }),
+        )
+            .into_response(),
+    }
 }
 fn refused(error: impl ToString) -> Response {
     (
