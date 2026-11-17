@@ -32,6 +32,9 @@ impl Default for Observations {
     }
 }
 
+/// Where the cards a count correction takes out of a zone are.
+const NOWHERE: i32 = i32::MIN;
+
 fn invalid(message: &str) -> Error {
     Error::Protocol(message.into())
 }
@@ -171,67 +174,28 @@ impl Observations {
         self.finish();
     }
 
-    /// Count corrections contain no movement evidence. Rebuild conservative bounds and
-    /// discard correlations instead of assigning the missing cards to an invented zone.
+    /// A count correction has no movement evidence: missing cards join the zone unknown,
+    /// and surplus ones, which could be any of its cards, leave it for no zone. What is
+    /// known of every other zone stays.
     pub fn reconcile(&mut self, zone: i32, count: u32) {
-        if self.count(zone) == count as usize {
+        let (have, count) = (self.count(zone), count as usize);
+        if have == count {
             return;
         }
-        self.finish();
-        let summary = self
-            .mind
-            .summarize(0, |s| self.locations[s], |_| None, |_| None);
-        let mut zones: BTreeMap<_, _> = self
-            .members
-            .keys()
-            .map(|z| (*z, summary.zone(*z)))
-            .collect();
-        let target = zones.entry(zone).or_default();
-        let lost = target.count.saturating_sub(count as usize) as u32;
-        target.count = count as usize;
-        for n in target.known.values_mut() {
-            *n = n.saturating_sub(lost);
-        }
-        target.known.retain(|_, n| *n > 0);
-        let exact: Vec<_> = self
-            .observed
-            .iter()
-            .filter_map(|(&id, &slot)| {
-                (self.locations[slot] != zone)
-                    .then(|| {
-                        self.mind
-                            .identity(slot)
-                            .map(|name| (self.locations[slot], id, name))
-                    })
-                    .flatten()
-            })
-            .collect();
-        *self = Self::default();
-        for (z, knowledge) in zones {
-            self.create_zone(z);
-            let mut remaining = knowledge.known;
-            let mut added = 0;
-            for &(_, id, name) in exact.iter().filter(|(zone, _, _)| *zone == z) {
-                if let Some(n) = remaining.get_mut(&name)
-                    && *n > 0
-                {
-                    self.insert(z, id, Some(name));
-                    *n -= 1;
-                    added += 1;
-                }
+        self.mind.settle();
+        if have < count {
+            for _ in have..count {
+                self.insert(zone, -1, None);
             }
-            let first_anonymous = self.locations.len();
-            for (name, n) in std::mem::take(&mut remaining) {
-                for _ in 0..n {
-                    self.insert(z, -1, Some(name));
-                    added += 1;
-                }
+        } else {
+            let slots = self.members[&zone].clone();
+            if count > 0 {
+                self.mind.mix(&slots);
             }
-            for _ in added..knowledge.count {
-                self.insert(z, -1, None);
+            self.observed.retain(|_, slot| !slots.contains(slot));
+            for slot in self.members.get_mut(&zone).unwrap().split_off(count) {
+                self.locations[slot] = NOWHERE;
             }
-            let anonymous: Vec<_> = (first_anonymous..self.locations.len()).collect();
-            self.mind.mix(&anonymous);
         }
         self.finish();
     }
@@ -259,8 +223,18 @@ impl Observations {
         players: usize,
         owner: impl Fn(i32) -> Option<usize>,
     ) -> KnownCards<i32, i32> {
-        self.mind
-            .summarize(players, |s| self.locations[s], owner, |_| None)
+        let owner = |zone| (zone != NOWHERE).then(|| owner(zone)).flatten();
+        let mut known = self
+            .mind
+            .summarize(players, |s| self.locations[s], owner, |_| None);
+        known.zones.remove(&NOWHERE);
+        for u in &mut known.uncertain {
+            if let Some(i) = u.zones.iter().position(|(z, _)| *z == NOWHERE) {
+                u.outside += u.zones.remove(i).1;
+            }
+        }
+        known.uncertain.retain(|u| u.zones.len() > 1);
+        known
     }
 
     /// The cards of `zone` in the order they arrived: the wire identity of each one
@@ -305,6 +279,94 @@ impl Observations {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const COPPER: i32 = 1;
+    const SILVER: i32 = 2;
+    const HAND: i32 = 0;
+    const DECK: i32 = 1;
+    const DISCARD: i32 = 2;
+    const HEXES: i32 = 3;
+
+    /// A player whose discard pile is 3 Copper, 2 Silver and a card never seen, shuffled
+    /// into their empty deck, from which they draw 2 cards unseen.
+    fn reshuffled() -> Observations {
+        let mut t = Observations::default();
+        for zone in [HAND, DECK, DISCARD] {
+            t.create_zone(zone);
+        }
+        for (id, name) in [COPPER, COPPER, COPPER, SILVER, SILVER]
+            .into_iter()
+            .enumerate()
+        {
+            t.insert(DISCARD, id as i32, Some(name));
+        }
+        t.insert(DISCARD, -1, None);
+        t.shuffle(DECK, Some(DISCARD));
+        t.move_cards(DECK, HAND, &[(-1, -1, None), (-1, -1, None)])
+            .unwrap();
+        t
+    }
+
+    fn owner(zone: i32) -> Option<usize> {
+        (zone != HEXES).then_some(0)
+    }
+
+    #[test]
+    fn a_reshuffle_keeps_the_discard_piles_cards_as_the_decks_and_hands() {
+        let known = reshuffled().summary(1, owner);
+        assert_eq!(
+            known.uncertain,
+            vec![dominion_knowledge::UncertainCards {
+                zones: vec![(HAND, 2), (DECK, 4)],
+                candidates: BTreeMap::from([(COPPER, 3), (SILVER, 2)]),
+                outside: 0,
+                unknown: 1,
+            }]
+        );
+        assert_eq!(
+            known.owned[0],
+            (BTreeMap::from([(COPPER, 3), (SILVER, 2)]), 1)
+        );
+    }
+
+    #[test]
+    fn a_count_correction_keeps_what_is_known_of_other_zones() {
+        let mut t = reshuffled();
+        t.create_zone(HEXES);
+        for _ in 0..3 {
+            t.insert(HEXES, -1, None);
+        }
+        let before = t.summary(1, owner);
+        t.reconcile(HEXES, 0);
+        let empty = t.summary(1, owner);
+        assert_eq!(empty.zone(HEXES).count, 0);
+        assert_eq!(
+            (&empty.uncertain, &empty.owned),
+            (&before.uncertain, &before.owned)
+        );
+        t.reconcile(HEXES, 3);
+        assert_eq!(t.summary(1, owner), before);
+    }
+
+    #[test]
+    fn a_zone_corrected_down_may_have_lost_any_of_its_cards() {
+        let mut t = Observations::default();
+        for zone in [HAND, DISCARD] {
+            t.create_zone(zone);
+        }
+        t.insert(HAND, 0, Some(COPPER));
+        for (id, name) in [(1, COPPER), (2, COPPER), (3, SILVER)] {
+            t.insert(DISCARD, id, Some(name));
+        }
+        t.reconcile(DISCARD, 2);
+        let known = t.summary(1, owner);
+        assert_eq!(known.zone(HAND).known, BTreeMap::from([(COPPER, 1)]));
+        let discard = known.zone(DISCARD);
+        assert_eq!((discard.count, discard.unknown), (2, 1));
+        assert_eq!(discard.known, BTreeMap::from([(COPPER, 1)]));
+        assert!(known.uncertain.is_empty());
+        assert!(t.zones(&known)[&DISCARD].exact.is_empty());
+    }
 
     #[test]
     fn partial_observations_remain_true_through_hidden_moves_and_reveals() {

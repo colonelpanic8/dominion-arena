@@ -59,7 +59,7 @@
       "additionalProperties": false
     },
     "uncertain": {
-      "description": "Cards spread over several of one player's zones: together these zones hold `count` cards that are exactly `candidates` (when `outside` is 0), in some arrangement. `outside` is how many of the candidates are elsewhere.",
+      "description": "Cards spread over several of one player's zones: together these zones hold `count` cards that are exactly `candidates` (when `outside` is 0), in some arrangement. `outside` is how many of the candidates are elsewhere. `unknown` is how many further candidates the viewer can't name.",
       "type": "object",
       "properties": {
         "zones": {
@@ -69,7 +69,8 @@
         },
         "count": { "$ref": "#/$defs/count" },
         "candidates": { "$ref": "#/$defs/cardCount" },
-        "outside": { "$ref": "#/$defs/count" }
+        "outside": { "$ref": "#/$defs/count" },
+        "unknown": { "$ref": "#/$defs/count" }
       },
       "required": ["zones", "count", "candidates", "outside"],
       "additionalProperties": false
@@ -94,7 +95,8 @@
           }
         },
         "count": { "$ref": "#/$defs/count" },
-        "candidates": { "$ref": "#/$defs/cardCount" }
+        "candidates": { "$ref": "#/$defs/cardCount" },
+        "unknown": { "$ref": "#/$defs/count" }
       },
       "required": ["zones", "count", "candidates"],
       "additionalProperties": false

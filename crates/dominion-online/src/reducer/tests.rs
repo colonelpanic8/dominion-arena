@@ -629,6 +629,7 @@ fn anonymous_draws_keep_correlations_and_a_reveal_deduces_the_remaining_card() {
             count: 2,
             candidates: BTreeMap::from([("Village".into(), 1), ("Gold".into(), 1)]),
             outside: 0,
+            unknown: 0,
         }]
     );
     r.apply(movement(0, 3, vec![-1], vec![1])).unwrap();
@@ -671,6 +672,33 @@ fn opponents_get_the_same_deductions_without_their_hidden_allocation_names() {
         r.view().unwrap().opponents[0].deck.known,
         BTreeMap::from([("Gold".into(), 1)])
     );
+}
+
+#[test]
+fn a_reshuffle_keeps_the_discard_pile_known_through_cards_never_seen_and_pile_updates() {
+    let mut r = reducer();
+    r.apply(model::Event::Shuffle(model::Shuffle {
+        owner: 1,
+        include_discard: true,
+    }))
+    .unwrap();
+    r.apply(movement(11, 10, vec![-1], vec![-1])).unwrap();
+    let shuffled = vec![view::Uncertain {
+        zones: vec!["hand".into(), "deck".into()],
+        count: 2,
+        candidates: BTreeMap::from([("Copper".into(), 1)]),
+        outside: 0,
+        unknown: 1,
+    }];
+    assert_eq!(r.view().unwrap().opponents[0].uncertain, shuffled);
+    r.apply(model::Event::PileUpdate(model::PileUpdate {
+        index: 20,
+        top_card_id: -1,
+    }))
+    .unwrap();
+    let opponent = &r.view().unwrap().opponents[0];
+    assert_eq!(opponent.uncertain, shuffled);
+    assert_eq!(opponent.owned.known, BTreeMap::from([("Copper".into(), 1)]));
 }
 
 #[test]

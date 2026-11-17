@@ -341,6 +341,7 @@ fn PlayerBox(player: PlayerView, you: bool, account: Option<SeatAccount>) -> Ele
                             CardName { key: "{name}", name: name.clone(), count: *n }
                         }
                     }
+                    if u.unknown > 0 { " and {u.unknown} unknown" }
                     if u.outside > 0 { " ({u.outside} of them elsewhere)" }
                 }
             }
@@ -474,6 +475,7 @@ pub fn PlainBoard(view: AgentView, #[props(default)] meta: GameMeta) -> Element 
                                 CardName { key: "{c}", name: c.clone(), count: *n }
                             }
                         }
+                        if u.unknown > 0 { " and {u.unknown} unknown" }
                     }
                 }
             }

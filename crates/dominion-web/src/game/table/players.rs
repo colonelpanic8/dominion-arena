@@ -461,6 +461,7 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
                                     CardName { name: s.card.clone() }
                                     " × {s.count}"
                                 }
+                                if u.unknown > 0 { "; Unknown × {u.unknown}" }
                                 " are among {u.text}."
                             }
                         }

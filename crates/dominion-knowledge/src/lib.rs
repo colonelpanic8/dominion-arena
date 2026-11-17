@@ -106,6 +106,8 @@ pub struct UncertainCards<C, Z> {
     pub candidates: Counts<C>,
     /// How many of the candidates are not these cards but are elsewhere.
     pub outside: usize,
+    /// How many more candidates there are whose identity the viewer doesn't know.
+    pub unknown: usize,
 }
 
 /// A viewer's knowledge of every zone, as zone summaries.
@@ -857,6 +859,7 @@ impl<C: Copy + Ord + std::fmt::Debug, I: Instance, Z: Location> Mind<C, I, Z> {
                     zones,
                     candidates,
                     outside: extra as usize,
+                    unknown: 0,
                 });
             }
         }
@@ -867,8 +870,10 @@ impl<C: Copy + Ord + std::fmt::Debug, I: Instance, Z: Location> Mind<C, I, Z> {
             for (known, count) in &mut out.owned {
                 *count += known.remove(&unknown).unwrap_or(0) as usize;
             }
-            out.uncertain
-                .retain(|u| !u.candidates.contains_key(&unknown));
+            for u in &mut out.uncertain {
+                u.unknown = u.candidates.remove(&unknown).unwrap_or(0) as usize;
+            }
+            out.uncertain.retain(|u| !u.candidates.is_empty());
         }
         out.uncertain
             .sort_by(|a, b| (&a.zones, &a.candidates).cmp(&(&b.zones, &b.candidates)));
@@ -921,6 +926,14 @@ mod tests {
         assert_eq!(known.zone(0).known, Counts::from([(1, 1)]));
         assert_eq!(known.zone(0).unknown, 2);
         assert_eq!(known.owned[0], (Counts::from([(1, 2), (2, 1)]), 1));
-        assert!(known.uncertain.is_empty()); // The protocol has no wildcard candidate.
+        assert_eq!(
+            known.uncertain,
+            vec![UncertainCards {
+                zones: vec![(0, 3), (1, 1)],
+                candidates: Counts::from([(1, 2), (2, 1)]),
+                outside: 0,
+                unknown: 1,
+            }]
+        );
     }
 }
