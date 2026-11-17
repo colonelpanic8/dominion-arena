@@ -702,10 +702,7 @@ impl Frame {
                     g.end_resolving();
                     let kept = g.players[player.index()].boons_kept.contains(card);
                     if !kept {
-                        match card.kind() {
-                            Kind::Hex => g.hexes.discard.push(*card),
-                            _ => g.boons.discard.push(*card),
-                        }
+                        g.discard_fate(*card);
                     }
                     Flow::done()
                 }
@@ -1278,8 +1275,10 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                     g.extra_turns.remove(i);
                 }
             }
-            for pl in &mut g.players {
-                g.boons.discard.append(&mut pl.boons_kept);
+            for i in 0..g.players.len() {
+                for boon in std::mem::take(&mut g.players[i].boons_kept) {
+                    g.discard_fate(boon);
+                }
             }
             g.turn.phase = Phase::End;
             Flow::done()

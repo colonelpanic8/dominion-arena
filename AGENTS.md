@@ -561,7 +561,15 @@ them.
   or by its destination a top-deck, return, set-aside, look or exile), and code that
   rearranges cards without `move_card` (a shuffle in place, a pile rotated, cards ordered
   at the bottom of a deck) journals it with `journal_within`. A counter the stream
-  should carry is a `Gauge`.
+  should carry is a `Gauge`. The rest of the table (Adventures, −Card, −$1 and Journey
+  tokens; Project cubes, Artifacts and States; pile properties and roles; landscapes and
+  the Prophecy; notes; every card's cost and changed types) is read at every record too
+  (`journal::Holdings`) and journaled where it changed: new state of that kind goes there
+  and into the fold test, never into a card script. Boons and Hexes are cards in zones,
+  named without handles, journaled where they move: draw them with
+  `Game::draw_from(player, ..)`, discard them with `discard_fate`, and never change
+  `Game::boons` / `hexes` directly. `journal::table_note` says which `SetRules::notes`
+  the table keeps as notes: public state with no better place.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The

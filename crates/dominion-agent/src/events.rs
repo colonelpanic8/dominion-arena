@@ -1,11 +1,13 @@
 //! A game's `dominion/events@1` stream, written from the engine's journal.
 
 use dominion_engine::{
-    Card, CardId, EndReason, Game, Gauge, Mat, Phase, PileId, PlayerId, Step, Trace, Verb, Zone,
+    Card, CardId, EndReason, Game, Gauge, Kind, Mat, Phase, PileId, PileKind, PileProps, PlayerId,
+    SetupRole, Spot, Step, Token, TokenAt, TokenKind, Trace, Verb, Zone,
 };
 use dominion_protocol::events::{
-    self, At, CardRef, Choice, CounterChange, Event, FoldError, GameEnd, Move, Play, Rules,
-    SeatResult, SeatZone, Setup, Table, TurnStart, What,
+    self, At, CardRef, Choice, CounterChange, CounterKey, CounterName, CounterOf, Event, FoldError,
+    GameEnd, Move, Pack, PileChange, PileRole, PileState, Play, Recipe, RecipeGroup, RecipeKind,
+    Role, Rules, SeatResult, SeatZone, Setup, Table, TurnStart, What,
 };
 
 /// Writes the full stream of a game started with [`Game::new_journaled`]: every card's
@@ -57,12 +59,25 @@ impl Recorder {
                     created.push((card, is, zone));
                 }
             }
-            let mut counters = vec![];
-            while let Some(&Step::Gauge { gauge, now, .. }) = steps.peek() {
-                steps.next();
-                counters.push((self.counter(game, gauge), now));
+            // What setup made besides cards: Boons and Hexes, counters, the rest of the table.
+            let mut made = vec![];
+            while let Some(
+                Step::FateAdded { .. }
+                | Step::Gauge { .. }
+                | Step::Token { .. }
+                | Step::Holding { .. }
+                | Step::Pile { .. }
+                | Step::Landscape { .. }
+                | Step::Notes(_)
+                | Step::Derived { .. },
+            ) = steps.peek()
+            {
+                let step = steps.next().expect("peeked");
+                if let Some(what) = self.state_change(game, step) {
+                    made.push(what);
+                }
             }
-            for what in self.set_up(game, seats, created, counters) {
+            for what in self.set_up(game, seats, created, made) {
                 self.push(&mut out, what)?;
             }
         }
@@ -187,11 +202,19 @@ impl Recorder {
                 Step::Phase(phase) => What::Phase {
                     phase: phase_of(phase),
                 },
-                Step::Gauge { gauge, was, now } => What::Counter(CounterChange {
-                    counter: self.counter(game, gauge),
-                    delta: now - was,
-                    value: now,
-                }),
+                step @ (Step::Gauge { .. }
+                | Step::Fate { .. }
+                | Step::FateShuffled { .. }
+                | Step::FateAdded { .. }
+                | Step::Token { .. }
+                | Step::Holding { .. }
+                | Step::Pile { .. }
+                | Step::Landscape { .. }
+                | Step::Notes(_)
+                | Step::Derived { .. }) => match self.state_change(game, step) {
+                    Some(what) => what,
+                    None => continue,
+                },
                 // Played where it lies: again, or from where it isn't put into play.
                 Step::Played { player, card } => What::Play(Play {
                     player: player.0,
@@ -248,15 +271,20 @@ impl Recorder {
         game: &Game,
         seats: &[String],
         created: Vec<(CardId, Card, Zone)>,
-        counters: Vec<(String, i64)>,
+        made: Vec<What>,
     ) -> Vec<What> {
-        let mut table = Table {
-            counters: counters.into_iter().collect(),
-            ..Table::default()
-        };
+        let mut table = Table::default();
         for i in 0..game.piles().len() {
             let zone = self.zone(game, Zone::Pile(PileId(i as u8)));
             table.zones.insert(zone, vec![]);
+        }
+        for what in made {
+            let event = Event {
+                seq: 0,
+                by: None,
+                what,
+            };
+            table.apply(&event).expect("setup's own state folds");
         }
         let n = game.num_players();
         // Per seat: the deck as shuffled, top first, and how many of it were drawn.
@@ -431,26 +459,142 @@ impl Recorder {
         zone
     }
 
-    fn counter(&mut self, game: &Game, gauge: Gauge) -> String {
-        let of_pile = |r: &mut Recorder, id, name: &str| format!("{}/{name}", r.pile(game, id));
+    fn counter(&mut self, game: &Game, gauge: Gauge) -> CounterKey {
+        use CounterName as N;
+        let seat = |p: PlayerId, name| CounterKey::seat(p.0, name);
+        let mut pile = |id, name| CounterKey::new(CounterOf::Pile(self.pile(game, id)), name);
         match gauge {
-            Gauge::Actions => "actions".into(),
-            Gauge::Buys => "buys".into(),
-            Gauge::Coins => "coins".into(),
-            Gauge::Potions => "potions".into(),
-            Gauge::TradeRouteMat => "trade-route-mat".into(),
-            Gauge::Sun => "sun".into(),
-            Gauge::Coffers(p) => format!("{}/coffers", p.0),
-            Gauge::Villagers(p) => format!("{}/villagers", p.0),
-            Gauge::Favors(p) => format!("{}/favors", p.0),
-            Gauge::Debt(p) => format!("{}/debt", p.0),
-            Gauge::VpTokens(p) => format!("{}/vp-tokens", p.0),
-            Gauge::PirateShip(p) => format!("{}/pirate-ship", p.0),
-            Gauge::PileVp(id) => of_pile(self, id, "vp"),
-            Gauge::PileDebt(id) => of_pile(self, id, "debt"),
-            Gauge::Embargo(id) => of_pile(self, id, "embargo"),
-            Gauge::TradeRoute(id) => of_pile(self, id, "trade-route"),
+            Gauge::Actions => CounterKey::global(N::Actions),
+            Gauge::Buys => CounterKey::global(N::Buys),
+            Gauge::Coins => CounterKey::global(N::Coins),
+            Gauge::Potions => CounterKey::global(N::Potions),
+            Gauge::TradeRouteMat => CounterKey::global(N::TradeRouteMat),
+            Gauge::Sun => CounterKey::global(N::Sun),
+            Gauge::Coffers(p) => seat(p, N::Coffers),
+            Gauge::Villagers(p) => seat(p, N::Villagers),
+            Gauge::Favors(p) => seat(p, N::Favors),
+            Gauge::Debt(p) => seat(p, N::Debt),
+            Gauge::VpTokens(p) => seat(p, N::VpTokens),
+            Gauge::PirateShip(p) => seat(p, N::PirateShip),
+            Gauge::SinisterPlot(p) => seat(p, N::SinisterPlot),
+            Gauge::PileVp(id) => pile(id, N::Vp),
+            Gauge::PileDebt(id) => pile(id, N::Debt),
+            Gauge::Embargo(id) => pile(id, N::Embargo),
+            Gauge::TradeRoute(id) => pile(id, N::TradeRoute),
+            Gauge::PileFavors(id) => pile(id, N::Favors),
+            Gauge::LandscapeVp(card) => {
+                CounterKey::new(CounterOf::Landscape(card.name().to_string()), N::Vp)
+            }
         }
+    }
+
+    /// The event a step that changes the table besides cards says, if any.
+    fn state_change(&mut self, game: &Game, step: Step) -> Option<What> {
+        let name = |c: Card| c.name().to_string();
+        Some(match step {
+            Step::Gauge { gauge, was, now } => What::Counter(CounterChange {
+                counter: self.counter(game, gauge),
+                delta: now - was,
+                value: now,
+            }),
+            Step::Fate { card, to } => {
+                let card = CardRef::Named(name(card));
+                let to = fate_zone(&card, to);
+                // Not found, the fold refuses the move: the journal is not one game's.
+                let from = (self.table.zones.iter())
+                    .find(|(z, cards)| is_fate_zone(z) && cards.contains(&card))
+                    .map_or_else(|| fate_zone(&card, Spot::Deck), |(z, _)| z.clone());
+                let verb = match to {
+                    events::Zone::Boons(Pack::Discard) | events::Zone::Hexes(Pack::Discard) => {
+                        events::Verb::Discard
+                    }
+                    events::Zone::Boons(Pack::Druid) => events::Verb::SetAside,
+                    _ => events::Verb::Take,
+                };
+                let cards = vec![card];
+                let pos = self.depths(&from, &cards);
+                What::moved(
+                    verb,
+                    Move {
+                        player: self.mover(&from, &to),
+                        cards,
+                        from,
+                        to,
+                        at: At::Top,
+                        pos,
+                    },
+                )
+            }
+            Step::FateShuffled { hexes, cards } => {
+                let zone = |pack| match hexes {
+                    true => events::Zone::Hexes(pack),
+                    false => events::Zone::Boons(pack),
+                };
+                let cards: Vec<CardRef> =
+                    cards.into_iter().map(|c| CardRef::Named(name(c))).collect();
+                let from = zone(Pack::Discard);
+                let pos = self.depths(&from, &cards);
+                What::Shuffle(Move {
+                    player: self.turn,
+                    cards,
+                    from,
+                    to: zone(Pack::Deck),
+                    at: At::Top,
+                    pos,
+                })
+            }
+            Step::FateAdded { cards, to } => {
+                let cards: Vec<CardRef> =
+                    cards.into_iter().map(|c| CardRef::Named(name(c))).collect();
+                let to = fate_zone(cards.first()?, to);
+                What::Add { cards, to }
+            }
+            Step::Token { player, token, at } => What::Token {
+                player: player.0,
+                token: token_kind(token),
+                at: at.map(|at| match at {
+                    TokenAt::Pile(id) => events::TokenAt::Pile(self.pile(game, id)),
+                    TokenAt::Player => events::TokenAt::Player,
+                    TokenAt::FaceDown => events::TokenAt::FaceDown,
+                }),
+            },
+            Step::Holding { card, from, to } => What::Holding {
+                card: name(card),
+                from: from.map(|p| p.0),
+                to: to.map(|p| p.0),
+            },
+            Step::Pile { pile, props } => {
+                let zone = self.pile(game, pile);
+                What::Pile(PileChange {
+                    pile: zone,
+                    state: pile_state(game.pile(pile).card, props),
+                })
+            }
+            Step::Landscape { card, prophecy } => What::Landscape {
+                card: name(card),
+                prophecy,
+            },
+            Step::Notes(notes) => What::Notes {
+                notes: (notes.into_iter())
+                    .map(|n| events::Note {
+                        source: name(n.source),
+                        player: n.player.map(|p| p.0),
+                        pile: n.pile.map(|id| self.pile(game, id)),
+                        card: n.card.map(name),
+                        count: n.count,
+                    })
+                    .collect(),
+            },
+            Step::Derived { costs, types } => What::Derived {
+                costs: (costs.into_iter())
+                    .map(|(c, cost)| (name(c), cost_of(cost)))
+                    .collect(),
+                types: (types.into_iter())
+                    .map(|(c, t)| (name(c), t.map(type_names)))
+                    .collect(),
+            },
+            _ => return None,
+        })
     }
 }
 
@@ -459,6 +603,10 @@ fn occurrence(event: &dominion_engine::Event) -> Option<What> {
     use dominion_engine::Event as E;
     let name = |c: &Card| c.name().to_string();
     Some(match event {
+        E::Received { player, card } => What::Receive {
+            player: player.0,
+            card: name(card),
+        },
         E::Bought { player, card } | E::BoughtLandscape { player, card } => What::Buy {
             player: player.0,
             card: name(card),
@@ -573,4 +721,95 @@ fn phase_of(phase: Phase) -> events::Phase {
         Phase::Cleanup => events::Phase::Cleanup,
         Phase::End => events::Phase::End,
     }
+}
+
+fn is_fate_zone(zone: &events::Zone) -> bool {
+    matches!(
+        zone,
+        events::Zone::Boons(_)
+            | events::Zone::Hexes(_)
+            | events::Zone::Seat(_, SeatZone::Boons | SeatZone::Hexes)
+    )
+}
+
+/// The zone a Boon or Hex at `spot` is in.
+fn fate_zone(card: &CardRef, spot: Spot) -> events::Zone {
+    let hex = card
+        .name()
+        .and_then(|n| Card::ALL.iter().find(|c| c.name() == n))
+        .is_some_and(|c| c.kind() == Kind::Hex);
+    match (spot, hex) {
+        (Spot::Deck, false) => events::Zone::Boons(Pack::Deck),
+        (Spot::Deck, true) => events::Zone::Hexes(Pack::Deck),
+        (Spot::Discard, false) => events::Zone::Boons(Pack::Discard),
+        (Spot::Discard, true) => events::Zone::Hexes(Pack::Discard),
+        (Spot::Druid, _) => events::Zone::Boons(Pack::Druid),
+        (Spot::Player(p), false) => events::Zone::Seat(p.0, SeatZone::Boons),
+        (Spot::Player(p), true) => events::Zone::Seat(p.0, SeatZone::Hexes),
+    }
+}
+
+fn token_kind(token: TokenKind) -> events::TokenKind {
+    use events::TokenKind as T;
+    match token {
+        TokenKind::Adventures(Token::PlusCard) => T::PlusCard,
+        TokenKind::Adventures(Token::PlusAction) => T::PlusAction,
+        TokenKind::Adventures(Token::PlusBuy) => T::PlusBuy,
+        TokenKind::Adventures(Token::PlusCoin) => T::PlusCoin,
+        TokenKind::Adventures(Token::MinusCost) => T::MinusCost,
+        TokenKind::Adventures(Token::Trashing) => T::Trashing,
+        TokenKind::Adventures(Token::Estate) => T::Estate,
+        TokenKind::MinusCard => T::MinusCard,
+        TokenKind::MinusCoin => T::MinusCoin,
+        TokenKind::Journey => T::Journey,
+    }
+}
+
+fn pile_state(card: Card, props: PileProps) -> PileState {
+    let name = |c: Card| c.name().to_string();
+    PileState {
+        card: name(card),
+        supply: props.in_supply,
+        hidden: props.hidden,
+        removed: props.removed,
+        roles: (props.roles.into_iter())
+            .map(|(source, role)| PileRole {
+                card: name(source),
+                role: match role {
+                    SetupRole::SetAside => Role::SetAside,
+                    SetupRole::Bane => Role::Bane,
+                    SetupRole::ExtraPile => Role::ExtraPile,
+                    SetupRole::ChosenPile => Role::ChosenPile,
+                    SetupRole::Deck => Role::Deck,
+                },
+            })
+            .collect(),
+        traits: props.traits.into_iter().map(name).collect(),
+        recipe: props.structure.map(|s| Recipe {
+            kind: match s.kind {
+                PileKind::Stacked => RecipeKind::Stacked,
+                PileKind::Rotating => RecipeKind::Rotating,
+                PileKind::Shuffled => RecipeKind::Shuffled,
+            },
+            cards: (s.cards.into_iter())
+                .map(|g| RecipeGroup {
+                    card: name(g.card),
+                    count: g.count,
+                })
+                .collect(),
+            sample: s.sample_size,
+        }),
+    }
+}
+
+fn cost_of(cost: dominion_engine::Cost) -> events::Cost {
+    events::Cost {
+        coins: u32::from(cost.coins),
+        potions: u32::from(cost.potions),
+        debt: u32::from(cost.debt),
+    }
+}
+
+fn type_names(types: dominion_engine::Types) -> Vec<String> {
+    types.names().map(str::to_string).collect()
 }
