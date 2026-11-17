@@ -3,6 +3,7 @@
 
 pub mod api;
 pub mod assets;
+pub mod contract;
 pub mod lobby;
 pub mod transcript;
 pub mod view;
