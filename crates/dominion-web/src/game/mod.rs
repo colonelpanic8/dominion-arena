@@ -16,7 +16,7 @@ pub mod table;
 mod undo;
 pub mod wording;
 
-use crate::account::{Account, use_account};
+use crate::account::use_account;
 use crate::api::{self, ApiError};
 use crate::lobby::seat_link::SeatLink;
 use crate::platform;
@@ -202,14 +202,13 @@ struct Live {
     seat: Signal<Option<HeldSeat>>,
     /// With no seat, the game is watched.
     watch: Signal<bool>,
-    /// The account is being asked for its seats, or signed in to watch.
+    /// The account is being asked for its seats.
     finding: Signal<bool>,
     /// How often that was done: a seat the server then refuses isn't looked for again.
     finds: Signal<u8>,
     /// Why the game is neither played nor watched here.
     refused: Signal<Option<String>>,
     state: Signal<GameState>,
-    account: Account,
 }
 
 impl Live {
@@ -222,7 +221,7 @@ impl Live {
 }
 
 /// With no seat held here: holds the seats this game has for the account signed in, and
-/// failing that watches the game (signing in as a guest when nobody is signed in).
+/// failing that watches the game without requiring an account.
 async fn find_role(mut ctx: Live) {
     if *ctx.finds.peek() >= 2 {
         return;
@@ -246,10 +245,7 @@ async fn find_role(mut ctx: Live) {
             ctx.seats.set(held);
             ctx.seat.set(Some(first));
         } else {
-            match ctx.account.ensure().await {
-                Ok(_) => ctx.watch.set(true),
-                Err(e) => ctx.refused.set(Some(e.message)),
-            }
+            ctx.watch.set(true);
         }
     }
     ctx.finding.set(false);
@@ -531,7 +527,6 @@ pub fn GamePage(id: String) -> Element {
         finds: use_signal(|| 0),
         refused,
         state,
-        account: use_account(),
     };
     let account = use_account();
     let summary = use_summary(game);

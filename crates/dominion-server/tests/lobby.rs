@@ -60,13 +60,17 @@ impl Reply {
 }
 
 async fn start() -> Server {
+    start_with(Options::default()).await
+}
+
+async fn start_with(options: Options) -> Server {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let stop = CancellationToken::new();
     tokio::spawn(dominion_server::serve(
         listener,
         Arc::new(Hub::default()),
-        Options::default(),
+        options,
         stop.clone(),
     ));
     Server {
@@ -299,10 +303,8 @@ async fn two_people_are_matched_and_play_through_their_sessions() {
         (log.messages[0].from.as_str(), log.messages[0].text.as_str()),
         ("Bo", "glhf")
     );
-    server
-        .get(&chat, None)
-        .await
-        .error(StatusCode::UNAUTHORIZED);
+    let public_chat: ChatLog = server.get(&chat, None).await.ok().json();
+    assert_eq!(public_chat.messages, log.messages);
 
     let over: SeatView = server
         .post(&format!("{path}/resign"), Some(&bo), Value::Null)
@@ -324,7 +326,7 @@ async fn two_people_are_matched_and_play_through_their_sessions() {
 }
 
 #[tokio::test]
-async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
+async fn onlookers_can_watch_without_an_account() {
     let server = start().await;
     let (ada, bo, cy) = (
         server.register("Ada").await,
@@ -340,12 +342,14 @@ async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
         .await
         .json();
     let path = format!("/api/games/{}", found.game_id.unwrap());
-    server
-        .get(&format!("{path}/watch"), None)
-        .await
-        .error(StatusCode::UNAUTHORIZED);
+    let anonymous: SeatView = server.get(&format!("{path}/watch"), None).await.ok().json();
     let before: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
     let watched: SeatView = server.get(&format!("{path}/watch"), Some(&cy)).await.json();
+    assert_eq!(anonymous.view, watched.view);
+    server
+        .get(&format!("{path}/transcript"), None)
+        .await
+        .error(StatusCode::FORBIDDEN);
     assert!(watched.view.spectating && watched.view.seat.is_none());
     assert!(watched.view.you.is_none() && watched.view.decision.is_none());
     assert_eq!(watched.view.opponents.len(), 2);
@@ -368,7 +372,6 @@ async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
     let mut feed = server
         .http
         .get(format!("{}{path}/events", server.base))
-        .bearer_auth(&cy)
         .send()
         .await
         .unwrap()
@@ -381,7 +384,9 @@ async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
         .post(&chat, Some(&cy), json!({ "text": "nice hand" }))
         .await
         .ok();
-    let log: ChatLog = server.get(&chat, Some(&ada)).await.json();
+    let changed = next_change(&mut feed).await;
+    assert!(changed["chat"].as_u64().unwrap() > 0);
+    let log: ChatLog = server.get(&chat, None).await.ok().json();
     assert_eq!(
         log.messages[0].kind,
         dominion_protocol::lobby::ChatKind::Watcher
@@ -393,6 +398,10 @@ async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
         .ok()
         .json();
     let private = format!("/api/games/{}/watch", made["game_id"].as_str().unwrap());
+    server
+        .get(&private, None)
+        .await
+        .error(StatusCode::FORBIDDEN);
     server
         .get(&private, Some(&cy))
         .await
@@ -408,4 +417,73 @@ async fn a_signed_in_onlooker_sees_full_hands_and_decks() {
         .json();
     let public = format!("/api/games/{}/watch", open["game_id"].as_str().unwrap());
     server.get(&public, Some(&cy)).await.ok();
+}
+
+#[tokio::test]
+async fn anonymous_watching_works_with_guest_accounts_disabled_and_cannot_act() {
+    let server = start_with(Options {
+        arena: dominion_server::arena::Settings {
+            guests: false,
+            registration: false,
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .await;
+    server
+        .post("/api/auth/guest", None, Value::Null)
+        .await
+        .error(StatusCode::FORBIDDEN);
+    let made: Value = server
+        .post("/api/games", None, json!({"players":2,"watchable":true}))
+        .await
+        .ok()
+        .json();
+    let game = made["game_id"].as_str().unwrap();
+    let path = format!("/api/games/{game}");
+    let viewed = server.get(&format!("{path}/watch"), None).await.ok();
+    assert!(!viewed.headers.contains_key("set-cookie"));
+    let watched: SeatView = viewed.json();
+    assert!(watched.view.spectating && watched.view.decision.is_none());
+    server.get(&format!("{path}/transcript"), None).await.ok();
+    server
+        .get(&format!("/api/chat/game-{game}"), None)
+        .await
+        .ok();
+    for endpoint in ["answer", "resign", "transcript"] {
+        server
+            .post(&format!("{path}/{endpoint}"), None, json!({}))
+            .await
+            .error(StatusCode::UNAUTHORIZED);
+    }
+    server
+        .post(
+            &format!("/api/chat/game-{game}"),
+            None,
+            json!({"text":"hello"}),
+        )
+        .await
+        .error(StatusCode::UNAUTHORIZED);
+    server
+        .get("/api/me", None)
+        .await
+        .error(StatusCode::UNAUTHORIZED);
+    let private: Value = server
+        .post("/api/games", None, json!({"players":2,"watchable":false}))
+        .await
+        .ok()
+        .json();
+    let private = private["game_id"].as_str().unwrap();
+    server
+        .get(&format!("/api/games/{private}/transcript"), None)
+        .await
+        .error(StatusCode::FORBIDDEN);
+    server
+        .get(&format!("/api/games/{private}/events"), None)
+        .await
+        .error(StatusCode::UNAUTHORIZED);
+    server
+        .get(&format!("/api/chat/game-{private}"), None)
+        .await
+        .error(StatusCode::UNAUTHORIZED);
 }

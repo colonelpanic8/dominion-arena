@@ -159,7 +159,7 @@ pub struct TableSpec {
     /// The game counts for ratings when every seat is a different registered player or
     /// bot (and no bot plays its owner).
     pub rated: bool,
-    /// Signed-in people may watch the game (public information only).
+    /// Anyone may watch the game (public information only).
     pub watchable: bool,
     /// A player who must decide and has left, or takes too long, forfeits.
     pub timed: bool,

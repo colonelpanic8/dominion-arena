@@ -952,12 +952,7 @@ async fn transcripts_follow_game_visibility_and_retry_without_duplicate_entries(
         .arena
         .guest("127.0.0.2".parse().unwrap(), Some("Viewer"))
         .unwrap();
-    let feed = http
-        .get(format!("{url}/events"))
-        .bearer_auth(&viewer)
-        .send()
-        .await
-        .unwrap();
+    let feed = http.get(format!("{url}/events")).send().await.unwrap();
     assert_eq!(feed.status(), reqwest::StatusCode::OK);
     use futures_util::StreamExt;
     let mut updates = feed.bytes_stream();
@@ -991,7 +986,7 @@ async fn transcripts_follow_game_visibility_and_retry_without_duplicate_entries(
     assert!(empty.entries.is_empty());
     assert_eq!(
         http.get(&url).send().await.unwrap().status(),
-        reqwest::StatusCode::UNAUTHORIZED
+        reqwest::StatusCode::OK
     );
     let mut private = request();
     private.watchable = Some(false);
@@ -1010,4 +1005,12 @@ async fn transcripts_follow_game_visibility_and_retry_without_duplicate_entries(
         .await
         .unwrap();
     assert_eq!(reply.status(), reqwest::StatusCode::FORBIDDEN);
+    assert_eq!(
+        http.get(format!("{base}/api/games/{}/transcript", private.game_id))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::FORBIDDEN
+    );
 }

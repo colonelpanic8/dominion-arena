@@ -293,8 +293,8 @@ will) or 500.
 | `POST /api/games/{id}/undo/refuse` | | the same, after the seat refuses the undo waiting for it; the asking seat sees `refusedBy` until it acts again |
 | `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
-| `GET /api/games/{id}/watch[?logFrom=N]` | | the same shape for someone watching (signed in; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible |
-| `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, signed in, it is a watcher's |
+| `GET /api/games/{id}/watch[?logFrom=N]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible |
+| `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, for a watchable game, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |
 | `POST /api/auth/login` | `{name, password}` | the account and the session cookie |
 | `POST /api/auth/guest` | `{name?}` | 201, a guest account and its session cookie |
@@ -395,7 +395,7 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   the server ends the game within a few seconds, and refuses any later answer. `POST
   /api/games` takes a `clock` too. `meta.clock` is `{left, running?}`: each seat's
   milliseconds left as of `meta.now`, the running seat's already counted down.
-- **Watching.** Anyone signed in may watch a watchable game: the view of someone with no
+- **Watching.** Anyone may watch a watchable game without signing in: the view of someone with no
   seat, seeing every player's hand, deck contents and other owned cards. Accounts
   playing in a running game must use their seat view instead.
 - **Chat.** The lobby, each table (for those sitting at it) and each game (for its seats
@@ -485,7 +485,7 @@ new tab from **Game menu → Agent transcript**. It combines streamed reasoning 
 replies, collapsible model prompts/observations, the agent's requested Dominion
 actions, and the resulting game events. Filter by seat or hide reasoning; **Follow
 latest** keeps the newest output in view. Reasoning is shown only when the CLI exposes
-it. This view uses the game's ordinary visibility: anyone signed in who can watch an
+it. This view uses the game's ordinary visibility: anyone who can watch an
 unrated game can read its transcript, including private cards and plans. Rated games
 do not publish live transcripts.
 
@@ -821,7 +821,7 @@ and buttons.
 
 Opening `/game/<id>` shows the seat this browser holds, else the seat the account
 signed in plays there (no token in the address), else, when the game is watchable, the
-game as someone watching sees it (signing in as a guest if nobody is signed in): the
+game as someone watching sees it (no account needed): the
 same table with the first player where your own would be, every hand face up and
 nothing to answer. Clicking any player’s deck opens its composition: all owned cards,
 remaining deck, hand, discard, in play, mats and set-aside cards. Seated players see

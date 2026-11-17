@@ -37,7 +37,7 @@ pub struct NewGame {
     pub turn_limit: Option<u32>,
     pub colonies: Option<bool>,
     pub shelters: Option<bool>,
-    /// Let anyone signed in watch the game: public information only (default true
+    /// Let anyone watch the game: public information only (default true
     /// with assigned agents, false otherwise).
     pub watchable: Option<bool>,
     /// A chess clock: a seat whose time runs out forfeits.
@@ -135,7 +135,7 @@ pub struct GameSummary {
     /// It counts for its players' ratings.
     #[serde(default)]
     pub rated: bool,
-    /// Signed-in people may watch it.
+    /// Anyone may watch it.
     #[serde(default)]
     pub watchable: bool,
     /// Per seat: the account playing it, if one is.
