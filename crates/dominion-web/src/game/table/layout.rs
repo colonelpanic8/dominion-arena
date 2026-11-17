@@ -72,7 +72,7 @@ pub struct Shape {
     pub victory: usize,
     pub treasures: usize,
     pub kingdom: usize,
-    /// Landscapes and other wide things (Artifacts, Boons and Hexes).
+    /// Landscapes and other wide things (Boons and Hexes).
     pub landscapes: usize,
     /// Non-Supply piles, drawn as micro strips.
     pub non_supply: usize,
