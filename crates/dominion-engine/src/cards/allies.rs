@@ -16,7 +16,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{ExtraLimit, ExtraTurn, Lasting, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, Lasting, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_rotating_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -1295,12 +1295,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         },
         Card::IslandFolk => {
             spend(g, p, 5);
-            g.extra_turns.push_front(ExtraTurn {
-                player: p,
-                source: Card::IslandFolk,
-                limit: ExtraLimit::ThirdInARow,
-                lasting: None,
-            });
+            g.queue_extra_turn(p, Card::IslandFolk, ExtraLimit::ThirdInARow, None, true);
             Flow::done()
         }
         Card::OrderOfAstrologers | Card::OrderOfMasons => order(g, f, input),
@@ -2621,7 +2616,7 @@ fn old_map(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 /// The cards a Voyage turn's player may play from their hand.
-const VOYAGE_HAND_PLAYS: u32 = 3;
+pub(crate) const VOYAGE_HAND_PLAYS: u32 = 3;
 
 fn voyage(g: &mut Game, f: &mut CardFrame) {
     let p = f.player;
@@ -2633,12 +2628,13 @@ fn voyage(g: &mut Game, f: &mut CardFrame) {
         Until::ExtraTurn,
         Scratch::default(),
     );
-    g.extra_turns.push_back(ExtraTurn {
-        player: p,
-        source: Card::Voyage,
-        limit: ExtraLimit::ThirdInARow,
-        lasting: Some(lasting),
-    });
+    g.queue_extra_turn(
+        p,
+        Card::Voyage,
+        ExtraLimit::ThirdInARow,
+        Some(lasting),
+        false,
+    );
 }
 
 fn sunken_treasure(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

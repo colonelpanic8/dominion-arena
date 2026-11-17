@@ -26,7 +26,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, PAY_OTHERWISE, Value};
-use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Mat, Phase, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, GainState, Lasting, Mat, Phase, Scratch, Until, Zone};
 use crate::setup::{self, Setup};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Types};
@@ -257,12 +257,7 @@ impl SetRules for Rules {
             (Card::SeizeTheDay, _) => {
                 let p = f.player;
                 g.ext.menagerie.seized.push(p);
-                g.extra_turns.push_back(ExtraTurn {
-                    player: p,
-                    source: Card::SeizeTheDay,
-                    limit: ExtraLimit::None,
-                    lasting: None,
-                });
+                g.queue_extra_turn(p, Card::SeizeTheDay, ExtraLimit::None, None, false);
                 Flow::done()
             }
             (Card::Stampede, _) => {

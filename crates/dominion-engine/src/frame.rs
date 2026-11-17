@@ -13,6 +13,7 @@ use crate::game::{
     EndReason, ExtraLimit, ExtraTurn, GainState, Mark, Phase, PlayState, Pos, TrashState, Turn,
     Until, Zone,
 };
+use crate::journal::{EffectEnd, TurnKind};
 use crate::trigger::{Occasion, Window};
 use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types, Verb};
 use serde::{Deserialize, Serialize};
@@ -539,6 +540,7 @@ impl Frame {
                     if *reveal {
                         g.note_shown(c);
                         g.players[p.index()].face_up.push(c);
+                        g.journal_face_up(c);
                     } else {
                         g.show_to(c, p);
                     }
@@ -718,8 +720,8 @@ impl Frame {
                     *pc = 1;
                     return Flow::Call(Frame::window(Occasion::EndBuyPhase { player: *player }));
                 }
+                g.set_phase(Phase::Action);
                 let turn = &mut g.turn;
-                turn.phase = Phase::Action;
                 turn.bought = false;
                 turn.earlier_buy_phase_gains = turn.gained_in_buy_phase.len();
                 g.emit(Event::ReturnedToAction { player: *player });
@@ -869,7 +871,10 @@ fn extra_turn_label(g: &Game, p: PlayerId, source: Card, after_own: bool) -> Str
 /// skipped or lost: the card is discarded in that turn's Clean-up, or the next one.
 fn release(g: &mut Game, e: &ExtraTurn) {
     if let Some(id) = e.lasting {
-        g.lasting.retain(|l| l.id != id);
+        g.sync_journal();
+        if g.remove_lasting(id).is_some() {
+            g.journal_effect_end(id, EffectEnd::ExtraTurn);
+        }
     }
 }
 
@@ -904,6 +909,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 if !lost.is_empty() {
                     for e in lost {
                         release(g, &e);
+                        g.journal_skipped(e.player, TurnKind::extra(&e), true);
                         g.emit(Event::ExtraTurnLost {
                             player: e.player,
                             source: e.source,
@@ -953,6 +959,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 let e = g.extra_turns.remove(i).expect("found above");
                 release(g, &e);
                 if g.skips_turn(p, true) {
+                    g.journal_skipped(p, TurnKind::extra(&e), false);
                     g.emit(Event::TurnSkipped {
                         player: p,
                         extra: Some(source),
@@ -963,6 +970,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 g.turn = Turn::new(p);
                 g.turn.previous = last;
                 g.turn.extra = Some(source);
+                g.journal_taking(e.id);
                 g.record_turn();
                 *pc = 1;
                 return Flow::Call(Frame::Turn { player: p, pc: 0 });
@@ -973,6 +981,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 while let Some(p) = turn
                     && g.skips_turn(p, true)
                 {
+                    g.journal_skipped(p, TurnKind::Final, false);
                     g.emit(Event::TurnSkipped {
                         player: p,
                         extra: None,
@@ -990,6 +999,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                 g.players[p.index()].extra_turns_taken += 1;
             } else {
                 while g.skips_turn(*next, false) {
+                    g.journal_skipped(*next, TurnKind::Regular, false);
                     g.emit(Event::TurnSkipped {
                         player: *next,
                         extra: None,
@@ -1020,6 +1030,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                         .filter(|&p| cards::final_round(g, p))
                         .collect();
                 }
+                g.journal_game_ending();
             }
             if let Some(reason) = g.ending
                 && g.final_round.is_empty()
@@ -1089,7 +1100,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
     let p = player;
     match pc {
         0 => {
-            g.turn.phase = Phase::Start;
+            g.set_phase(Phase::Start);
             let pl = &mut g.players[p.index()];
             pl.turns_taken += 1;
             if g.turn.extra.is_some() {
@@ -1097,13 +1108,20 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             }
             let turn = pl.turns_taken;
             // "Until your next turn" ends the instant it starts, before anything at its start.
-            g.lasting.retain(|l| l.until != Until::StartOfTurn(p));
+            g.sync_journal();
+            for l in std::mem::take(&mut g.lasting) {
+                if l.until == Until::StartOfTurn(p) {
+                    g.journal_effect_end(l.id, EffectEnd::Expired);
+                } else {
+                    g.lasting.push(l);
+                }
+            }
             g.emit(Event::TurnStart { player: p, turn });
             *pc = 1;
             Flow::Call(Frame::window(Occasion::StartTurn { player: p }))
         }
         1 => {
-            g.turn.phase = Phase::Action;
+            g.set_phase(Phase::Action);
             *pc = 2;
             Flow::Continue
         }
@@ -1122,7 +1140,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 Input::Response(Response::Move(Move::Coffers)) => spend_coffers(g, p),
                 Input::Response(Response::Move(Move::PayDebt)) => pay_debt(g, p),
                 Input::Response(Response::Move(Move::EndPhase)) => {
-                    g.turn.phase = Phase::Buy;
+                    g.set_phase(Phase::Buy);
                     *pc = 3;
                     return Flow::Call(Frame::window(Occasion::StartBuyPhase { player: p }));
                 }
@@ -1203,7 +1221,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             ask_moves(p, Phase::Buy, moves)
         }
         4 => {
-            g.turn.phase = Phase::Night;
+            g.set_phase(Phase::Night);
             *pc = 5;
             Flow::Call(Frame::window(Occasion::StartNight { player: p }))
         }
@@ -1215,7 +1233,7 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
                 Input::Response(Response::Move(Move::Coffers)) => spend_coffers(g, p),
                 Input::Response(Response::Move(Move::PayDebt)) => pay_debt(g, p),
                 Input::Response(Response::Move(Move::EndPhase)) => {
-                    g.turn.phase = Phase::Cleanup;
+                    g.set_phase(Phase::Cleanup);
                     *pc = 6;
                     return Flow::Call(Frame::window(Occasion::StartCleanup { player: p }));
                 }
@@ -1269,19 +1287,27 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
             Flow::Call(Frame::window(Occasion::EndTurn { player: p }))
         }
         _ => {
+            g.turn_over();
             for l in std::mem::take(&mut g.lasting) {
                 if l.until != Until::EndOfTurn && !l.ending {
                     g.lasting.push(l);
-                } else if let Some(i) = g.extra_turns.iter().position(|t| t.lasting == Some(l.id)) {
+                    continue;
+                }
+                let why = match l.ending {
+                    true => EffectEnd::LeftPlay,
+                    false => EffectEnd::Expired,
+                };
+                g.journal_effect_end(l.id, why);
+                if let Some(i) = g.extra_turns.iter().position(|t| t.lasting == Some(l.id)) {
                     // The extra turn a Duration stayed in play for (Outpost, Voyage) is
                     // one of the things it no longer does.
-                    g.extra_turns.remove(i);
+                    let e = g.extra_turns.remove(i).expect("found above");
+                    g.journal_extra_turn_removed(e.id);
                 }
             }
             for pl in &mut g.players {
                 g.boons.discard.append(&mut pl.boons_kept);
             }
-            g.turn.phase = Phase::End;
             Flow::done()
         }
     }
@@ -1352,6 +1378,7 @@ fn resume_gain(
             g.gains.last_mut().expect("gain in progress").at = g.now();
             if let Zone::SetAside(p) = zone {
                 g.players[p.index()].face_up.push(st.card);
+                g.journal_face_up(st.card);
             }
             let kind = g.card(st.card);
             if st.player == g.turn.player {

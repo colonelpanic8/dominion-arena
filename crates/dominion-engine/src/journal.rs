@@ -6,9 +6,10 @@
 //! counter as it changes: counters are read whenever something is recorded, so a change
 //! lies between the same two card moves it happened between.
 
-use crate::game::{Phase, Pos};
+use crate::game::{EndReason, ExtraLimit, ExtraTurn, Phase, Pos, Until};
 use crate::{Card, CardId, Game, PileId, PlayerId, Trace, Zone};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 /// What kind of move a card made: the rules' word for it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +57,94 @@ pub enum Gauge {
     TradeRoute(PileId),
     TradeRouteMat,
     Sun,
+    /// How many cards the turn's Clean-up draws.
+    NextHand,
+    /// 1 once the turn has bought something in this Buy phase (no more Treasures).
+    Bought,
+    /// Plays from the hand this turn, followed only in a turn that limits them (Voyage).
+    HandPlays,
+    /// Turns this player will skip (Lich).
+    SkipTurns(PlayerId),
+    /// Regular turns this player has skipped.
+    TurnsSkipped(PlayerId),
+}
+
+/// What kind of turn a turn is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TurnKind {
+    Regular,
+    /// From `source`, the extra turn waiting with that `id`.
+    Extra {
+        source: Card,
+        id: u32,
+    },
+    /// One of the round after the game has ended (Fleet).
+    Final,
+}
+
+impl TurnKind {
+    pub(crate) fn extra(e: &ExtraTurn) -> TurnKind {
+        TurnKind::Extra {
+            source: e.source,
+            id: e.id,
+        }
+    }
+}
+
+/// What a turn forbids beyond the rules of every turn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnLimits {
+    /// No buying cards (Mission's turn); Events and Projects may be bought.
+    pub no_card_buys: bool,
+    /// At most this many plays from the hand (Voyage's turn).
+    pub hand_plays: Option<u32>,
+}
+
+/// A [`crate::Lasting`] as the table shows it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectState {
+    pub id: u32,
+    pub card: Card,
+    pub source: Option<CardId>,
+    pub owner: PlayerId,
+    /// When it ends, as its players are told ([`crate::View::lasting_ends`]).
+    pub until: Until,
+    /// Its card left play: it still works this turn and ends with it.
+    pub ending: bool,
+    pub keeps: Vec<CardId>,
+    /// The cards of its data that are set aside.
+    pub holds: Vec<CardId>,
+    /// Tokens on its card (Garrison's).
+    pub tokens: Option<u32>,
+}
+
+/// Why a lasting effect ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectEnd {
+    /// An ability removed it: its own, resolving, as a rule.
+    Resolved,
+    /// Its `until` came.
+    Expired,
+    /// Its card had left play: it ended with the turn.
+    LeftPlay,
+    /// The extra turn it kept a card in play for began, was skipped or was lost.
+    ExtraTurn,
+}
+
+impl Gauge {
+    /// Whether it is the turn's: reset as a turn begins, gone between turns.
+    pub fn of_turn(self) -> bool {
+        matches!(
+            self,
+            Gauge::Actions
+                | Gauge::Buys
+                | Gauge::Coins
+                | Gauge::Potions
+                | Gauge::NextHand
+                | Gauge::Bought
+                | Gauge::HandPlays
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,12 +164,13 @@ pub enum Step {
     Logged {
         index: usize,
     },
-    /// A turn began: `player`'s `number`th, an extra one from `extra`. Its counters are 1
-    /// Action, 1 Buy, $0 and no Potions, and its phase [`Phase::Start`].
+    /// A turn began: `player`'s `number`th, extra ones counted. Its counters are 1 Action,
+    /// 1 Buy, $0, no Potions and a Clean-up drawing 5, and its phase [`Phase::Start`].
     Turn {
         player: PlayerId,
         number: u32,
-        extra: Option<Card>,
+        kind: TurnKind,
+        limits: TurnLimits,
     },
     Phase(Phase),
     /// `gauge` changed from `was` to `now`.
@@ -89,6 +179,40 @@ pub enum Step {
         was: i64,
         now: i64,
     },
+    /// The card the move right before put into a set-aside zone or `Looking` is face up.
+    FaceUp(CardId),
+    EffectBegan(EffectState),
+    /// The effect with this id is now this.
+    EffectChanged(EffectState),
+    EffectEnded {
+        id: u32,
+        why: EffectEnd,
+    },
+    /// An extra turn is waiting: at the front of those waiting when `front`.
+    ExtraTurnQueued {
+        turn: ExtraTurn,
+        front: bool,
+    },
+    /// The extra turn waiting with this id won't happen: its effect ended.
+    ExtraTurnRemoved {
+        id: u32,
+    },
+    /// A turn `player` would have taken doesn't happen: skipped, or `lost` as a third
+    /// turn in a row.
+    TurnSkipped {
+        player: PlayerId,
+        kind: TurnKind,
+        lost: bool,
+    },
+    /// The turn is over: nobody's turn is in progress.
+    TurnEnded {
+        player: PlayerId,
+    },
+    /// The game will end, after the turns of `final_round` (Fleet), in that order.
+    GameEnding {
+        reason: EndReason,
+        final_round: Vec<PlayerId>,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,7 +220,12 @@ pub(crate) struct Journal {
     steps: Vec<Step>,
     /// What the gauges read when last recorded, in [`Game::gauges`]' order.
     readings: Vec<(Gauge, i64)>,
-    phase: Phase,
+    /// The lasting effects as last recorded.
+    effects: Vec<EffectState>,
+    /// The id the next extra turn queued gets.
+    next_extra: u32,
+    /// The extra turn the turn about to begin takes.
+    taking: Option<u32>,
 }
 
 impl Game {
@@ -109,18 +238,14 @@ impl Game {
             .map(|entry| Step::Trace { entry, verb: None })
             .collect();
         // What setup gave (starting Favors, tokens on piles) is journaled after the cards.
-        let turn = |g: &Gauge| {
-            matches!(
-                g,
-                Gauge::Actions | Gauge::Buys | Gauge::Coins | Gauge::Potions
-            )
-        };
         game.journal = Some(Journal {
             steps,
             readings: (game.gauges().into_iter())
-                .filter(|(g, _)| turn(g))
+                .filter(|(g, _)| g.of_turn())
                 .collect(),
-            phase: game.turn.phase,
+            effects: vec![],
+            next_extra: 1,
+            taking: None,
         });
         game.sync_journal();
         game.start();
@@ -215,37 +340,208 @@ impl Game {
 
     /// Records the turn [`Game::turn`] was just made.
     pub(crate) fn journal_turn(&mut self) {
+        let limits = self.turn_limits();
         let Some(journal) = &mut self.journal else {
             return;
         };
         let p = self.turn.player;
+        let kind = match self.turn.extra {
+            Some(source) => TurnKind::Extra {
+                source,
+                id: journal.taking.take().unwrap_or(0),
+            },
+            None if self.ending.is_some() => TurnKind::Final,
+            None => TurnKind::Regular,
+        };
         journal.steps.push(Step::Turn {
             player: p,
             number: self.players[p.index()].turns_taken + 1,
-            extra: (self.turn.extra).or(self.ending.is_some().then_some(Card::Fleet)),
+            kind,
+            limits,
         });
-        journal.phase = Phase::Start;
         for (gauge, value) in &mut journal.readings {
             match gauge {
                 Gauge::Actions | Gauge::Buys => *value = 1,
-                Gauge::Coins | Gauge::Potions => *value = 0,
+                Gauge::NextHand => *value = 5,
+                Gauge::Coins | Gauge::Potions | Gauge::Bought | Gauge::HandPlays => *value = 0,
                 _ => {}
             }
         }
     }
 
-    /// Records the gauges and the phase that changed since they were last recorded.
+    /// What the turn in progress forbids beyond the rules of every turn.
+    pub fn turn_limits(&self) -> TurnLimits {
+        let extra = self.turn.extra;
+        TurnLimits {
+            no_card_buys: extra == Some(Card::Mission),
+            hand_plays: (extra == Some(Card::Voyage))
+                .then_some(crate::cards::allies::VOYAGE_HAND_PLAYS),
+        }
+    }
+
+    /// Enters `phase` of the turn in progress.
+    pub(crate) fn set_phase(&mut self, phase: Phase) {
+        if self.turn.phase == phase {
+            return;
+        }
+        self.sync_journal();
+        self.turn.phase = phase;
+        self.journal_push(Step::Phase(phase));
+    }
+
+    /// Ends the turn in progress: between turns, nobody's turn is.
+    pub(crate) fn turn_over(&mut self) {
+        self.sync_journal();
+        self.turn.phase = Phase::End;
+        let player = self.turn.player;
+        if let Some(journal) = &mut self.journal {
+            journal.steps.push(Step::TurnEnded { player });
+            for (gauge, value) in &mut journal.readings {
+                if gauge.of_turn() {
+                    *value = 0;
+                }
+            }
+        }
+    }
+
+    /// Queues an extra turn for `player` from `source`, at the front of those waiting if
+    /// `front`.
+    pub(crate) fn queue_extra_turn(
+        &mut self,
+        player: PlayerId,
+        source: Card,
+        limit: ExtraLimit,
+        lasting: Option<u32>,
+        front: bool,
+    ) {
+        let mut turn = ExtraTurn {
+            player,
+            source,
+            limit,
+            lasting,
+            id: 0,
+        };
+        if let Some(journal) = &mut self.journal {
+            turn.id = journal.next_extra;
+            journal.next_extra += 1;
+        }
+        if self.journal.is_some() {
+            self.sync_journal();
+            self.journal_push(Step::ExtraTurnQueued {
+                turn: turn.clone(),
+                front,
+            });
+        }
+        match front {
+            true => self.extra_turns.push_front(turn),
+            false => self.extra_turns.push_back(turn),
+        }
+    }
+
+    /// Records that the extra turn with `id` begins next.
+    pub(crate) fn journal_taking(&mut self, id: u32) {
+        if let Some(journal) = &mut self.journal {
+            journal.taking = Some(id);
+        }
+    }
+
+    pub(crate) fn journal_extra_turn_removed(&mut self, id: u32) {
+        self.journal_push(Step::ExtraTurnRemoved { id });
+    }
+
+    pub(crate) fn journal_skipped(&mut self, player: PlayerId, kind: TurnKind, lost: bool) {
+        if self.journal.is_some() {
+            self.sync_journal();
+            self.journal_push(Step::TurnSkipped { player, kind, lost });
+        }
+    }
+
+    pub(crate) fn journal_game_ending(&mut self) {
+        if let (Some(_), Some(reason)) = (&self.journal, self.ending) {
+            self.sync_journal();
+            let final_round = self.final_round.iter().copied().collect();
+            self.journal_push(Step::GameEnding {
+                reason,
+                final_round,
+            });
+        }
+    }
+
+    /// Records that lasting effect `id`, just removed, ended because of `why`. Sync the
+    /// journal before removing it, so that what changed before is recorded before.
+    pub(crate) fn journal_effect_end(&mut self, id: u32, why: EffectEnd) {
+        if let Some(journal) = &mut self.journal {
+            journal.effects.retain(|e| e.id != id);
+            journal.steps.push(Step::EffectEnded { id, why });
+        }
+    }
+
+    /// Records that `card`, just moved into a set-aside zone or `Looking`, is face up.
+    pub(crate) fn journal_face_up(&mut self, card: CardId) {
+        self.journal_push(Step::FaceUp(card));
+    }
+
+    /// Set once the game has ended, while the round after its end is played (Fleet).
+    pub fn ending(&self) -> Option<EndReason> {
+        self.ending
+    }
+
+    /// The turns of the round after the game's end still to be taken, in order.
+    pub fn final_round(&self) -> &VecDeque<PlayerId> {
+        &self.final_round
+    }
+
+    /// The lasting effects as the table shows them.
+    pub fn effects(&self) -> Vec<EffectState> {
+        let aside = |c: &CardId| matches!(self.zones[c.index()], Zone::SetAside(_));
+        (self.lasting.iter())
+            .map(|l| {
+                let mut holds: Vec<CardId> = vec![];
+                for &c in l.data.pick.iter().chain(&l.data.cards) {
+                    if aside(&c) && !holds.contains(&c) {
+                        holds.push(c);
+                    }
+                }
+                EffectState {
+                    id: l.id,
+                    card: l.card,
+                    source: l.source,
+                    owner: l.owner,
+                    until: crate::cards::lasting_ends(self, l),
+                    ending: l.ending,
+                    keeps: l.keeps.clone(),
+                    holds,
+                    tokens: crate::cards::lasting_tokens(l),
+                }
+            })
+            .collect()
+    }
+
+    /// Records the gauges and the lasting effects that changed since they were last
+    /// recorded.
     pub(crate) fn sync_journal(&mut self) {
         if self.journal.is_none() {
             return;
         }
+        let effects = self.effects();
         let now = self.gauges();
-        let phase = self.turn.phase;
         let journal = self.journal.as_mut().expect("checked above");
-        if journal.phase != phase {
-            journal.phase = phase;
-            journal.steps.push(Step::Phase(phase));
+        for old in &journal.effects {
+            if !effects.iter().any(|e| e.id == old.id) {
+                journal.steps.push(Step::EffectEnded {
+                    id: old.id,
+                    why: EffectEnd::Resolved,
+                });
+            }
         }
+        for e in &effects {
+            match journal.effects.iter().find(|old| old.id == e.id) {
+                None => journal.steps.push(Step::EffectBegan(e.clone())),
+                Some(old) if old != e => journal.steps.push(Step::EffectChanged(e.clone())),
+                Some(_) => {}
+            }
+        }
+        journal.effects = effects;
         for &(gauge, value) in &now {
             let was = (journal.readings.iter())
                 .find(|(g, _)| *g == gauge)
@@ -269,11 +565,20 @@ impl Game {
 
     fn gauges(&self) -> Vec<(Gauge, i64)> {
         let turn = &self.turn;
+        // Between turns the turn's counters are gone.
+        let of_turn = |v: i64| if turn.phase == Phase::End { 0 } else { v };
+        let hand_plays = match self.turn_limits().hand_plays {
+            Some(_) => i64::from(turn.hand_plays),
+            None => 0,
+        };
         let mut out = vec![
-            (Gauge::Actions, i64::from(turn.actions)),
-            (Gauge::Buys, i64::from(turn.buys)),
-            (Gauge::Coins, i64::from(turn.coins)),
-            (Gauge::Potions, i64::from(turn.potions)),
+            (Gauge::Actions, of_turn(i64::from(turn.actions))),
+            (Gauge::Buys, of_turn(i64::from(turn.buys))),
+            (Gauge::Coins, of_turn(i64::from(turn.coins))),
+            (Gauge::Potions, of_turn(i64::from(turn.potions))),
+            (Gauge::NextHand, of_turn(turn.cleanup_draw as i64)),
+            (Gauge::Bought, of_turn(i64::from(turn.bought))),
+            (Gauge::HandPlays, of_turn(hand_plays)),
             (Gauge::TradeRouteMat, i64::from(self.trade_route_mat)),
             (
                 Gauge::Sun,
@@ -289,6 +594,8 @@ impl Game {
                 (Gauge::Debt(id), i64::from(p.debt)),
                 (Gauge::VpTokens(id), i64::from(p.vp_tokens)),
                 (Gauge::PirateShip(id), i64::from(p.pirate_ship)),
+                (Gauge::SkipTurns(id), i64::from(p.skip_turns)),
+                (Gauge::TurnsSkipped(id), i64::from(p.turns_skipped)),
             ]);
         }
         for (i, pile) in self.piles.iter().enumerate() {
