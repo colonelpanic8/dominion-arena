@@ -979,9 +979,13 @@ async fn a_dominion_games_timer_becomes_the_tables_clock_and_its_client_is_sent_
         _ => None,
     });
     assert_eq!(snapshot.unwrap().table_options.timer_settings.preset, 1);
-    let Some(ServerMessage::Timers(timers)) = started.last() else {
-        unreachable!()
-    };
+    let timers = started
+        .iter()
+        .find_map(|m| match m {
+            ServerMessage::Timers(t) => Some(t),
+            _ => None,
+        })
+        .unwrap();
     assert_eq!(timers.len(), 2);
     assert_eq!(timers.iter().filter(|t| t.running).count(), 1);
     // The first player's turn has added its increment; the other's time is untouched.
