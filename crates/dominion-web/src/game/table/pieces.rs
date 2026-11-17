@@ -81,6 +81,77 @@ pub fn badge_icon(kind: &str) -> Option<&'static str> {
     })
 }
 
+/// The counters dominion.games draws as a number on an image (its `CounterNames`): the
+/// image, and whether the number is in Minion (a "coin element") and stroked.
+fn counter_look(kind: &str) -> Option<(&'static str, bool, bool)> {
+    Some(match kind {
+        "coin" => ("images/elements/coin.png", true, false),
+        "potion" => ("images/elements/potion-square.png", false, true),
+        "debt" => ("images/elements/debt_130.png", true, true),
+        "coffers" => ("images/elements/coffers.png", false, true),
+        "villagers" => ("images/elements/villagers.png", false, true),
+        "favors" => ("images/elements/favors.png", false, true),
+        "vp" => ("images/elements/victory_outlined.png", true, true),
+        "pirate-ship" => ("images/elements/pirate_130.png", false, false),
+        _ => return None,
+    })
+}
+
+/// Whether `kind` is drawn as a counter on a player's bar.
+pub fn is_counter(kind: &str) -> bool {
+    counter_look(kind).is_some()
+}
+
+/// A counter as dominion.games' CounterView draws it: a `size` vh square image, the
+/// number fitted into its middle 80% by 90% at no more than 0.95 of its height.
+#[component]
+pub fn Counter(
+    kind: String,
+    value: i64,
+    size: f64,
+    title: String,
+    /// The move clicking it answers (pay off Debt, spend Coffers or a Villager).
+    #[props(default)]
+    target: Option<usize>,
+) -> Element {
+    let ctx = use_table();
+    let assets = use_assets();
+    let Some((path, minion, stroke)) = counter_look(&kind) else {
+        return rsx! {};
+    };
+    let image = assets
+        .file_url(path)
+        .map(|u| format!("background-image:url('{u}');"))
+        .unwrap_or_default();
+    let text = if kind == "potion" && value <= 1 {
+        String::new()
+    } else {
+        value.to_string()
+    };
+    // Minion's figures are about half an em wide, Montserrat's two thirds.
+    let em = text.chars().count().max(1) as f64 * if minion { 0.52 } else { 0.66 };
+    let font = (0.9 * size).min(0.8 * size / em);
+    let stroke = if stroke { 0.1 * size } else { 0.0 };
+    rsx! {
+        span {
+            class: "dt-ctr dt-ctr-{kind}",
+            class: if minion { "dt-ctr-minion" },
+            class: if target.is_some() { "dt-ctr-click" },
+            "data-target": target.map(|i| i.to_string()),
+            title: "{title}",
+            "data-counter": "{kind}",
+            style: "{image}width:calc({size} * var(--vh));height:calc({size} * var(--vh));font-size:calc({font:.3} * var(--vh));-webkit-text-stroke-width:calc({stroke:.3} * var(--vh));",
+            onclick: move |e| {
+                if let Some(i) = target {
+                    e.stop_propagation();
+                    ctx.act(i);
+                }
+            },
+            "{text}"
+        }
+    }
+}
+
 /// What a badge says without its image.
 fn badge_short(kind: &str) -> &str {
     match kind {

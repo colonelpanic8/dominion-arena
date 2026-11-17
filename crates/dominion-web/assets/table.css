@@ -294,24 +294,28 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-buys { color: #fdb; }
 .dt-zero { color: #666; }
 .dt-sep { width: 2px; height: calc(3.3 * var(--vh)); background: #999; }
-.dt-coin, .dt-icon {
+/* Counters drawn as dominion.games' CounterView: a number on an image, sized inline. */
+.dt-ctr {
+  position: relative;
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: calc(3.3 * var(--vh));
-  height: calc(3.3 * var(--vh));
-  font-family: DomNum, var(--count);
-  font-size: calc(2.3 * var(--vh));
-  color: #000;
-  background: center / contain no-repeat;
+  background: center / cover no-repeat;
+  font-family: var(--count);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  color: #fff;
+  -webkit-text-stroke-color: #000;
+  paint-order: stroke fill;
 }
-.dt-coin { background-image: var(--dt-coin, radial-gradient(#f5d36a, #c2962d)); border-radius: 50%; }
-.dt-potion { background-image: var(--dt-potion, none); color: #fff; }
-.dt-debt { background-image: var(--dt-debt, none); color: #fff; }
-.dt-coffers { background-image: var(--dt-coffers, none); color: #fff; }
-.dt-villagers { background-image: var(--dt-villagers, none); color: #fff; }
-.dt-favors { background-image: var(--dt-favors, none); color: #fff; }
-.dt-icon { text-shadow: 0 0 2px #000; }
+.dt-ctr-minion { font-family: DomNum, "Times New Roman", serif; }
+.dt-ctr-coin { color: #000; }
+.dt-ctr-coin:not([style*="background-image"]) { background-image: radial-gradient(#f5d36a, #c2962d); border-radius: 50%; }
+.dt-ctr-vp, .dt-ctr-villagers { color: #000; -webkit-text-stroke-color: #fff; }
+.dt-ctr-pirate-ship { color: #000; }
+.dt-ctr-click { cursor: pointer; filter: drop-shadow(0 0 calc(0.2 * var(--vh)) #ffe746); }
 .dt-ticker {
   height: calc(2.8 * var(--vh));
   font-family: var(--title);

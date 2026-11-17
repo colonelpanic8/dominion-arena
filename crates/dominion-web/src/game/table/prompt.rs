@@ -4,7 +4,7 @@
 //! revealed or looked-at cards, cards in decks and discard piles, named cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, TableCard, seat_class};
+use super::pieces::{CardName, Counter, TableCard, seat_class};
 use super::{Spot, Ui, use_table};
 use crate::app::use_cards;
 use crate::assets::use_assets;
@@ -32,6 +32,18 @@ const SELECT_ALL: [&str; 11] = [
 
 /// Number decisions with more values than this get a slider instead of a button each.
 const MAX_NUMBER_BUTTONS: usize = 6;
+
+/// The status bar's counters, as tall as dominion.games makes them (in vh).
+const SIZE: f64 = 3.3;
+
+/// The moves dominion.games answers by clicking their counter instead of a button.
+const COUNTER_MOVES: [&str; 3] = ["pay-debt", "spend-coffers", "spend-villager"];
+
+/// The button target whose move clicking the `action` counter makes.
+fn counter_target(ui: Option<&Ui>, action: &str) -> Option<usize> {
+    let u = ui?;
+    (0..u.spots.len()).find(|&i| u.spots[i] == Spot::Button && u.inter.targets[i].action == action)
+}
 
 fn plural(n: u32, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
@@ -95,6 +107,7 @@ pub fn StatusBar(
             {waiting}
         }
     };
+    let on_counter = |action: &str| counter_target(ui.as_deref(), action);
     let forfeit = forfeit.filter(|_| s.running && !starting);
     // The phase's end, inside the bar's right end.
     let end = ui.as_ref().and_then(|u| {
@@ -116,26 +129,26 @@ pub fn StatusBar(
             div { class: "dt-counters",
                 span { class: "dt-counter dt-actions", class: if actions == 0 { "dt-zero" }, "{plural(actions, \"Action\", \"Actions\")}" }
                 if villagers > 0 {
-                    span { class: "dt-counter dt-icon dt-villagers", title: "Villagers", "{villagers}" }
+                    Counter { kind: "villagers", value: i64::from(villagers), size: SIZE, title: "Villagers", target: on_counter("spend-villager") }
                 }
                 span { class: "dt-sep" }
                 span { class: "dt-counter dt-buys", class: if buys == 0 { "dt-zero" }, "{plural(buys, \"Buy\", \"Buys\")}" }
                 span { class: "dt-sep" }
-                span { class: "dt-counter dt-coin", title: "Coins", "{coins}" }
+                Counter { kind: "coin", value: i64::from(coins), size: SIZE, title: "Coins" }
                 if potions > 0 {
-                    span { class: "dt-counter dt-icon dt-potion", title: "Potions", if potions > 1 { "{potions}" } }
+                    Counter { kind: "potion", value: i64::from(potions), size: SIZE, title: "Potions" }
                 }
                 if debt > 0 {
-                    span { class: "dt-counter dt-icon dt-debt", title: "Debt", "{debt}" }
+                    Counter { kind: "debt", value: i64::from(debt), size: SIZE, title: "Debt", target: on_counter("pay-debt") }
                 }
                 if coffers > 0 {
-                    span { class: "dt-counter dt-icon dt-coffers", title: "Coffers", "{coffers}" }
-                }
-                if favors > 0 {
-                    span { class: "dt-sep" }
-                    span { class: "dt-counter dt-icon dt-favors", title: "Favors", "{favors}" }
+                    Counter { kind: "coffers", value: i64::from(coffers), size: SIZE, title: "Coffers", target: on_counter("spend-coffers") }
                 }
                 span { class: "dt-sep" }
+                if favors > 0 {
+                    Counter { kind: "favors", value: i64::from(favors), size: SIZE, title: "Favors" }
+                    span { class: "dt-sep" }
+                }
             }
             div { class: "dt-ticker",
                 {ticker}
@@ -202,7 +215,10 @@ pub fn Buttons(
     };
     let d = &u.decision;
     let main: Vec<usize> = (0..u.spots.len())
-        .filter(|&i| u.spots[i] == Spot::Button && u.inter.targets[i].action != "end-phase")
+        .filter(|&i| {
+            let action = u.inter.targets[i].action.as_str();
+            u.spots[i] == Spot::Button && action != "end-phase" && !COUNTER_MOVES.contains(&action)
+        })
         .collect();
     let side: Vec<usize> = (0..u.spots.len())
         .filter(|&i| u.spots[i] == Spot::Ability)

@@ -597,12 +597,13 @@ fn player_badges(p: &PlayerView) -> Vec<Badge> {
             out.push(badge(kind, format!("{v} {label}"), Some(v as i32)));
         }
     };
-    n("coffers", "Coffers", t.coffers.into());
-    n("villagers", "Villager(s)", t.villagers.into());
-    n("favors", "Favor(s)", t.favors.into());
-    n("debt", "Debt", t.debt.into());
+    // dominion.games' order on a player's bar.
     n("vp", "VP token(s)", t.vp_tokens.into());
+    n("debt", "Debt", t.debt.into());
     n("pirate-ship", "Pirate Ship token(s)", t.pirate_ship.into());
+    n("villagers", "Villager(s)", t.villagers.into());
+    n("coffers", "Coffers", t.coffers.into());
+    n("favors", "Favor(s)", t.favors.into());
     if t.minus_card {
         out.push(badge("-card", "-1 Card token".into(), None));
     }

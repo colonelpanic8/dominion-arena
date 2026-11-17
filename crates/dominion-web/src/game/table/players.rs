@@ -4,7 +4,7 @@
 //! tabs for mats and set-aside cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, TableCard, cube_icon, seat_class};
+use super::pieces::{CardName, Counter, TableCard, cube_icon, is_counter, seat_class};
 use super::supply::{Badges, Tab};
 use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::assets::use_assets;
@@ -40,6 +40,11 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
         .cloned()
         .collect();
     let cubes = p.projects.clone();
+    let (counters, others): (Vec<Badge>, Vec<Badge>) = p
+        .badges
+        .iter()
+        .cloned()
+        .partition(|b| is_counter(&b.kind) && b.count.is_some());
     let cube = assets.file_url(&cube_icon(seat));
     let account = p.account.clone();
     let away = account.as_ref().is_some_and(|a| !a.connected);
@@ -93,12 +98,21 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 }
             }
             div { class: "dt-bar-bottom",
-                Badges { badges: p.badges.clone() }
                 for c in cubes.iter() {
                     span { key: "{c}", class: "dt-bar-cube", title: "{c}",
                         if let Some(src) = cube.clone() { img { src, alt: "", draggable: "false" } }
                     }
                 }
+                for b in counters.iter() {
+                    Counter {
+                        key: "{b.kind}",
+                        kind: b.kind.clone(),
+                        value: i64::from(b.count.unwrap_or(0)),
+                        size: 2.6,
+                        title: b.text.clone(),
+                    }
+                }
+                Badges { badges: others }
                 for c in held.iter() {
                     span { key: "h{c}", class: "dt-bar-held", CardName { name: c.clone() } }
                 }
