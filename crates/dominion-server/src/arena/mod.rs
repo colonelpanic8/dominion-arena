@@ -22,7 +22,7 @@ mod transcripts;
 
 use crate::hub::{Hub, HubError, Timing, lock, now_ms};
 use crate::limits::Limiter;
-use crate::rating::Rating;
+use crate::rating::{Rating, Scale};
 use db::Db;
 use dominion_protocol::lobby::{
     ChatMessage, Lobby, Me, RatingInfo, Searching, Stats, UserKind, UserRef,
@@ -86,6 +86,18 @@ pub struct Settings {
     pub keep_idle: Duration,
     /// How many seats one account may fill with the server's agents a day (0: no limit).
     pub agent_seats_per_day: u32,
+    /// Players rated here and on dominion.games, which ratings are read off on its scale.
+    pub skill_anchors: Vec<SkillAnchor>,
+}
+
+/// A player rated here and on dominion.games.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkillAnchor {
+    /// The account here.
+    pub player: String,
+    /// Its dominion.games skill (mu).
+    pub skill: f64,
 }
 
 impl Default for Settings {
@@ -99,6 +111,7 @@ impl Default for Settings {
             keep_finished: Duration::from_secs(7 * 86_400),
             keep_idle: Duration::from_secs(30 * 86_400),
             agent_seats_per_day: 5,
+            skill_anchors: vec![],
         }
     }
 }
@@ -158,11 +171,14 @@ impl User {
         }
     }
 
-    fn rating_info(&self) -> RatingInfo {
+    fn rating_info(&self, scale: Option<&Scale>) -> RatingInfo {
+        let deviation = self.rating.deviation_at(now_ms() / 1000);
         RatingInfo {
             rating: self.rating.rating,
-            deviation: self.rating.deviation_at(now_ms() / 1000),
+            deviation,
             games: self.rated_games,
+            official: (scale.filter(|_| self.rated_games > 0))
+                .map(|s| s.place(self.rating.rating, deviation)),
         }
     }
 
@@ -423,7 +439,7 @@ impl Arena {
         let bots = self.db.bots_of(&user.id)?;
         Ok(Me {
             user: self.user_ref(user),
-            rating: user.rating_info(),
+            rating: user.rating_info(self.skill_scale().as_ref()),
             stats: user.stats(),
             bots: bots.iter().map(|b| self.user_ref(b)).collect(),
         })

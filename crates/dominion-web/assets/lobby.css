@@ -938,6 +938,7 @@ a.lb-user-name:hover { text-decoration: underline; }
   background: rgba(255, 255, 255, .03);
   font: 2.4vh var(--ui);
 }
+.lb-board-line.lb-board-official { grid-template-columns: 7% 33% 11% 16% 11% 11% 11%; }
 .lb-board-line:hover { background: rgba(255, 255, 255, .1); }
 .lb-board-head { background: none; border-bottom: 2px dashed #ccc; color: #ccc; font-size: 1.8vh; flex-shrink: 0; }
 .lb-board-head:hover { background: none; }

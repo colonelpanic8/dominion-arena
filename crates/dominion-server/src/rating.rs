@@ -1,6 +1,7 @@
 //! Glicko-2 ratings, updated after every rated game: a game is one rating period for its
 //! players, and a rating grows less certain by the day it isn't played.
 
+use dominion_protocol::lobby::{Beyond, OfficialSkill};
 use serde::{Deserialize, Serialize};
 
 const SCALE: f64 = 173.7178;
@@ -139,6 +140,58 @@ pub fn after_game(ratings: &[Rating], ranks: &[u32], now: u64) -> Vec<Rating> {
         .collect()
 }
 
+/// A line from ratings here to dominion.games skill, fitted by least squares through
+/// players rated on both: exactly through them when there are two.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Scale {
+    slope: f64,
+    intercept: f64,
+    /// The lowest and highest anchor's rating here: the line is only trusted between them.
+    low: f64,
+    high: f64,
+}
+
+impl Scale {
+    /// Through `(rating here, skill there)` pairs; none unless the ratings span at least
+    /// `spread` and skill rises with rating.
+    pub fn fit(points: &[(f64, f64)], spread: f64) -> Option<Scale> {
+        let n = points.len() as f64;
+        let mean_x = points.iter().map(|p| p.0).sum::<f64>() / n;
+        let mean_y = points.iter().map(|p| p.1).sum::<f64>() / n;
+        let sxx: f64 = points.iter().map(|p| (p.0 - mean_x).powi(2)).sum();
+        let sxy: f64 = (points.iter())
+            .map(|p| (p.0 - mean_x) * (p.1 - mean_y))
+            .sum();
+        if points.len() < 2 || sxx <= 0.0 || sxy <= 0.0 {
+            return None;
+        }
+        let slope = sxy / sxx;
+        let low = points.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
+        let high = points.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+        (high - low >= spread).then_some(Scale {
+            slope,
+            intercept: mean_y - slope * mean_x,
+            low,
+            high,
+        })
+    }
+
+    pub fn place(&self, rating: f64, deviation: f64) -> OfficialSkill {
+        let (at, beyond) = if rating < self.low {
+            (self.low, Some(Beyond::Below))
+        } else if rating > self.high {
+            (self.high, Some(Beyond::Above))
+        } else {
+            (rating, None)
+        };
+        OfficialSkill {
+            skill: self.intercept + self.slope * at,
+            deviation: self.slope * deviation,
+            beyond,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +243,24 @@ mod tests {
         let year = r.deviation_at(1000 + 365 * 86_400);
         assert!(year > 150.0 && year < 350.0, "{year}");
         assert_eq!(r.deviation_at(1000 + 100 * 365 * 86_400), 350.0);
+    }
+
+    #[test]
+    fn a_scale_reads_ratings_off_the_anchors() {
+        let two = Scale::fit(&[(1400.0, 30.0), (1600.0, 40.0)], 100.0).unwrap();
+        let mid = two.place(1500.0, 60.0);
+        assert!((mid.skill - 35.0).abs() < 1e-9 && (mid.deviation - 3.0).abs() < 1e-9);
+        assert_eq!(mid.beyond, None);
+        let low = two.place(1200.0, 60.0);
+        assert_eq!((low.skill, low.beyond), (30.0, Some(Beyond::Below)));
+        assert_eq!(two.place(1700.0, 0.0).beyond, Some(Beyond::Above));
+        // Three anchors off one line: the least-squares line between them.
+        let three = Scale::fit(&[(1400.0, 30.0), (1500.0, 37.0), (1600.0, 38.0)], 0.0).unwrap();
+        assert!((three.place(1500.0, 0.0).skill - 35.0).abs() < 1e-9);
+        // Too few, too close together, or ranked the other way round: no scale.
+        assert_eq!(Scale::fit(&[(1500.0, 30.0)], 0.0), None);
+        assert_eq!(Scale::fit(&[(1500.0, 30.0), (1500.0, 40.0)], 0.0), None);
+        assert_eq!(Scale::fit(&[(1450.0, 30.0), (1500.0, 40.0)], 100.0), None);
+        assert_eq!(Scale::fit(&[(1400.0, 40.0), (1600.0, 30.0)], 0.0), None);
     }
 }

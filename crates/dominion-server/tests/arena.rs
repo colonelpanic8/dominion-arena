@@ -3,10 +3,10 @@
 use dominion_agent::Answer;
 use dominion_engine::PlayerId;
 use dominion_protocol::lobby::{
-    Credentials, MatchRequest, NewTable, Opponents, QueueState, SeatEdit, SeatKind, Source,
+    Beyond, Credentials, MatchRequest, NewTable, Opponents, QueueState, SeatEdit, SeatKind, Source,
     TableSpec, UndoRule, UserKind,
 };
-use dominion_server::arena::{Arena, Error, Ident, Settings};
+use dominion_server::arena::{Arena, Error, Ident, Settings, SkillAnchor};
 use dominion_server::hub::{Hub, Seat, Timing};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -466,6 +466,56 @@ fn a_rated_game_moves_ratings_and_is_recorded() {
     assert!(arena.history(Some("Nobody"), None, 10).is_err());
     // Free to search again.
     assert!(arena.search(&ada, &MatchRequest::default()).is_ok());
+}
+
+/// A rated automatch game between `winner` and `loser`.
+fn rated_win(arena: &Arena, winner: &Ident, loser: &Ident) {
+    arena.search(winner, &MatchRequest::default()).unwrap();
+    let game = (arena.search(loser, &MatchRequest::default()).unwrap())
+        .game_id
+        .unwrap();
+    (arena.hub)
+        .resign(&my_seat(arena, loser, &game), "resigned")
+        .unwrap();
+}
+
+#[test]
+fn ratings_are_read_off_on_dominion_games_scale_once_the_anchors_are_settled() {
+    let anchor = |player: &str, skill| SkillAnchor {
+        player: player.into(),
+        skill,
+    };
+    let settings = Settings {
+        skill_anchors: vec![anchor("Ada", 40.0), anchor("Bo", 30.0)],
+        ..Settings::default()
+    };
+    let arena = Arena::open(Arc::new(Hub::default()), settings).unwrap();
+    let (ada, bo, cy) = (
+        register(&arena, "Ada"),
+        register(&arena, "Bo"),
+        register(&arena, "Cy"),
+    );
+    rated_win(&arena, &ada, &bo);
+    let official = |name: &str| arena.profile(name).unwrap().rating.official;
+    assert_eq!(official("Ada"), None, "an anchor new here is no anchor yet");
+    while (arena.me(&ada).unwrap().rating.deviation).max(arena.me(&bo).unwrap().rating.deviation)
+        > 100.0
+    {
+        for _ in 0..3 {
+            rated_win(&arena, &ada, &bo);
+        }
+        rated_win(&arena, &bo, &ada);
+    }
+    let (ada_skill, bo_skill) = (official("Ada").unwrap(), official("Bo").unwrap());
+    assert!((ada_skill.skill - 40.0).abs() < 1e-9 && ada_skill.beyond.is_none());
+    assert!((bo_skill.skill - 30.0).abs() < 1e-9, "{bo_skill:?}");
+    assert!(bo_skill.deviation > 0.0 && bo_skill.deviation < 10.0);
+    rated_win(&arena, &bo, &cy);
+    let cy_skill = official("Cy").unwrap();
+    assert_eq!(cy_skill.beyond, Some(Beyond::Below));
+    let board = arena.leaderboard(10).unwrap();
+    assert!(board.players.iter().all(|p| p.rating.official.is_some()));
+    assert_eq!(arena.me(&cy).unwrap().rating.official, Some(cy_skill));
 }
 
 #[test]

@@ -291,7 +291,7 @@ will) or 500.
 | `POST /api/auth/login` | `{name, password}` | the account and the session cookie |
 | `POST /api/auth/guest` | `{name?}` | 201, a guest account and its session cookie |
 | `POST /api/auth/logout` | | 204; the session is over |
-| `GET /api/me` | | `{user: {name, kind, rating?, owner?}, rating: {rating, deviation, games}, stats: {games, wins}, bots}` |
+| `GET /api/me` | | `{user: {name, kind, rating?, owner?}, rating: {rating, deviation, games, official?}, stats: {games, wins}, bots}` |
 | `PUT /api/me/password` | `{current, new}` | 204; the account's other sessions are over |
 | `GET /api/me/games` | | the seats the account plays, with their tokens |
 | `POST /api/me/bots` | `{name}` | 201, `{bot, key}`: a bot and its API key, shown this once |
@@ -366,6 +366,13 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   account or bot; a bot against its owner, or two bots of one owner, play for nothing,
   and so does any game with a guest or a token seat. Every finished lobby game leaves a
   record (`GET /api/history`), which stays when the game itself is deleted.
+- **dominion.games' scale.** `[[official_skill_anchors]]` names players also rated on
+  dominion.games, each with its skill there (mu, not the level, which also folds in how
+  sure it is): agents that play enough rated games on both. Once two or more anchors have
+  a deviation here of at most 100 and their ratings span at least 100, every rating is
+  also read off a least-squares line through them (`rating.official`: skill, deviation,
+  and `beyond` below or above every anchor, where the line isn't trusted), shown on the
+  Leaderboard and players' pages.
 - **Resigning and leaving.** A seat can resign (`POST /api/games/{id}/resign`, the
   `resign` tool): the game ends there with the resigner last and the others ranked by
   their scores. In a timed game the seat that must decide forfeits the same way when
@@ -659,6 +666,10 @@ session_idle_minutes = 1440    # serve: close an MCP session after this long wit
 agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
 control_socket = "/run/dominion/control.sock"  # serve, games: where `dominion games` reaches the server; owner only (default: none)
 agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day (0: no limit)
+# serve: players rated here and on dominion.games, with their skill (mu) there
+# [[official_skill_anchors]]
+# player = "Claude Opus"
+# skill = 41.2
 agents_at_once = 2             # agents: seats the runner plays at once
 agents_dir = "/srv/dominion/agents"  # agents: where the agents run and log (default $XDG_STATE_HOME/dominion/agents)
 playbook_dir = "/srv/dominion-playbook"  # agents: a dominion-playbook checkout seats start in (read-only)

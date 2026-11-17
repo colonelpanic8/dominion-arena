@@ -124,6 +124,10 @@ pub struct Config {
     /// one address may do (default false: set it only behind a reverse proxy that sets
     /// the header).
     pub trust_proxy: Option<bool>,
+    /// Players rated here and on dominion.games, as `[[official_skill_anchors]]` tables:
+    /// `player` (the account here) and `skill` (its dominion.games skill, mu, not level).
+    /// With two or more, ratings are also shown on dominion.games' scale.
+    pub official_skill_anchors: Option<Vec<crate::arena::SkillAnchor>>,
     /// Whether new accounts can be registered (default true).
     pub registration: Option<bool>,
     /// Whether people can play without an account, as guests (default true).
@@ -389,6 +393,7 @@ impl Config {
             agent_seats_per_day: self
                 .agent_seats_per_day
                 .unwrap_or(DEFAULT_AGENT_SEATS_PER_DAY),
+            skill_anchors: self.official_skill_anchors.clone().unwrap_or_default(),
         }
     }
 
