@@ -904,11 +904,15 @@ async fn watch(
     headers: HeaderMap,
     view_query: Queried<ViewQuery>,
 ) -> Json<SeatView> {
-    let ident = api.signed_in(&headers)?;
-    api.arena.touch(&ident);
+    let ident = api.ident(&headers);
+    if let Some(ident) = &ident {
+        api.arena.touch(ident);
+    }
     let from = query(view_query)?.log_from.unwrap_or(0);
     let watched = api.hub.watch_view(&id, from)?;
-    if watched.view.game.running && !api.hub.owned_in(&id, &ident.user).is_empty() {
+    if watched.view.game.running
+        && ident.is_some_and(|ident| !api.hub.owned_in(&id, &ident.user).is_empty())
+    {
         return Err(Error::new(
             StatusCode::FORBIDDEN,
             "players must use their seat view while the game is running",
@@ -1007,7 +1011,6 @@ fn transcript_access(api: &Api, id: &str, headers: &HeaderMap, q: &SeatQuery) ->
     if api.seat(id, headers, q.token.as_deref(), q.seat).is_ok() {
         return Ok(());
     }
-    api.signed_in(headers)?;
     if !api.hub.meta(id)?.watchable {
         return Err(Error::new(StatusCode::FORBIDDEN, "this game is private"));
     }
@@ -1120,10 +1123,11 @@ async fn events(
         }
         Err(refused) => {
             let watchable = api.hub.meta(&id).is_ok_and(|m| m.watchable);
-            let Some(ident) = api.ident(&headers).filter(|_| watchable) else {
+            if !watchable {
                 return Err(refused);
-            };
-            let held = (api.hub.watching(&id)?, api.arena.attend(&ident));
+            }
+            let attendance = api.ident(&headers).map(|ident| api.arena.attend(&ident));
+            let held = (api.hub.watching(&id)?, attendance);
             let f = feed_of(&api)?;
             Ok(feed(&api, f.version, f.chat, held, change))
         }
@@ -1368,7 +1372,9 @@ async fn chat_log(
     chat_query: Queried<ChatQuery>,
 ) -> Json<ChatLog> {
     let q = query(chat_query)?;
-    if let Some(game) = channel.strip_prefix("game-") {
+    if let Some(game) = channel.strip_prefix("game-")
+        && !api.hub.meta(game)?.watchable
+    {
         speaker(&api, game, &headers, &q)?;
     }
     Ok(axum::Json(api.arena.chat_log(&channel, q.after)))

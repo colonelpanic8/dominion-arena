@@ -59,6 +59,8 @@ fn ChatLine(message: ChatMessage, names: Vec<String>) -> Element {
 #[component]
 pub fn Chat() -> Element {
     let ctx = use_game();
+    let account = crate::account::use_account();
+    let can_speak = ctx.seat.read().is_some() || account.me.read().is_some();
     let mut draft = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let mut sending = use_signal(|| false);
@@ -107,17 +109,21 @@ pub fn Chat() -> Element {
             if let Some(e) = error() {
                 p { class: "game-chat-error", "data-chat-error": "1", "{e}" }
             }
-            input {
-                class: "game-chat-input",
-                placeholder: hint,
-                maxlength: "500",
-                value: "{draft}",
-                oninput: move |e| draft.set(e.value()),
-                onkeydown: move |e| {
-                    if e.key() == Key::Enter {
-                        send();
-                    }
-                },
+            if !can_speak {
+                p { class: "muted", "Sign in to chat." }
+            } else {
+                input {
+                    class: "game-chat-input",
+                    placeholder: hint,
+                    maxlength: "500",
+                    value: "{draft}",
+                    oninput: move |e| draft.set(e.value()),
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter {
+                            send();
+                        }
+                    },
+                }
             }
         }
     }

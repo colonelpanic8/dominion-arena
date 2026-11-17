@@ -134,12 +134,12 @@ pub async fn watch(game: &str, token: &str, on_change: impl FnMut(Change)) {
     follow(&url, on_change).await
 }
 
-/// Follows a game's change feed as someone watching (signed in).
+/// Follows a game's change feed as someone watching.
 pub async fn watch_unseated(game: &str, on_change: impl FnMut(Change)) {
     follow(&format!("/api/games/{}/events", encode(game)), on_change).await
 }
 
-/// The game as someone watching sees it (signed in; the game must be watchable).
+/// The game as someone watching sees it (the game must be watchable).
 pub async fn watch_view(game: &str, log_from: Option<usize>) -> Result<SeatView> {
     let mut url = format!("/api/games/{}/watch", encode(game));
     if let Some(n) = log_from {
