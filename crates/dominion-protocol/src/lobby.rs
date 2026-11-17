@@ -514,8 +514,12 @@ pub struct Lobby {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct House {
-    /// Empty while the server has nothing to start them with.
+    /// Empty while the server has nothing to start them with. Only agents with an
+    /// account; [`House::models`] has every one the server can start.
     pub agents: Vec<HouseAgent>,
+    /// Every agent the server can start, by model.
+    #[serde(default)]
+    pub models: Vec<HouseModel>,
     /// How many more can play at once now.
     pub free: u32,
     /// How many more agent seats you may fill today (`House::UNLIMITED` when the server
@@ -545,6 +549,51 @@ pub struct HouseAgent {
     pub about: String,
     /// Games it is playing now.
     pub playing: u32,
+}
+
+/// A model the server's agents play with, and its efforts to choose from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HouseModel {
+    /// What runs it ("Claude Code").
+    pub program: String,
+    /// The provider's id for it ("claude-opus-5-5").
+    pub model: String,
+    /// Its name ("Opus 5.5").
+    pub name: String,
+    pub choices: Vec<HouseChoice>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HouseChoice {
+    /// Its reasoning effort; none where the model has none to choose.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// The agent's name, which seats it: its account's.
+    pub agent: String,
+}
+
+impl HouseModel {
+    /// The choice seated when only the model is picked: high effort, else the first.
+    pub fn default_choice(&self) -> Option<&HouseChoice> {
+        (self.choices.iter())
+            .find(|c| c.effort.as_deref() == Some("high"))
+            .or(self.choices.first())
+    }
+}
+
+/// The model of the agent `name` among `models`, and its choice.
+pub fn house_choice<'a>(
+    models: &'a [HouseModel],
+    name: &str,
+) -> Option<(&'a HouseModel, &'a HouseChoice)> {
+    let key = name.trim().to_lowercase();
+    models.iter().find_map(|m| {
+        (m.choices.iter())
+            .find(|c| c.agent.to_lowercase() == key)
+            .map(|c| (m, c))
+    })
 }
 
 /// The data of the lobby feed's `change` events (`GET /api/lobby/events`).

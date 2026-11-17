@@ -13,6 +13,8 @@ use tokio_util::sync::CancellationToken;
 
 const RECONNECT: Duration = Duration::from_secs(5);
 const GRACE: Duration = Duration::from_secs(30);
+/// How often the providers' catalogs are read again.
+const REDISCOVER: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -58,15 +60,13 @@ pub struct AgentSpec {
 }
 
 impl AgentSpec {
-    fn about(&self) -> String {
+    /// What plays it: "Claude Code, claude-opus-5-5, high effort".
+    pub fn about(&self) -> String {
         self.about.clone().unwrap_or_else(|| {
-            format!(
-                "{:?}{}",
-                self.program,
-                self.model
-                    .as_ref()
-                    .map_or(String::new(), |m| format!(" ({m})"))
-            )
+            let parts = [Some(self.program.label().to_string()), self.model.clone()]
+                .into_iter()
+                .chain([self.effort.as_ref().map(|e| format!("{e} effort"))]);
+            parts.flatten().collect::<Vec<_>>().join(", ")
         })
     }
     pub fn validate(&self) -> Result<(), String> {
@@ -95,19 +95,10 @@ impl AgentSpec {
                 self.name
             ));
         }
-        if let Some(effort) = &self.effort {
-            let allowed = match self.program {
-                Program::Claude => &["low", "medium", "high", "max"][..],
-                Program::Codex => {
-                    &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"][..]
-                }
-                Program::Antigravity => &["low", "medium", "high", "xhigh", "max"][..],
-                Program::OpenAi => &["minimal", "low", "medium", "high", "xhigh"][..],
-                Program::T3Code => &[][..],
-            };
-            if !allowed.contains(&effort.as_str()) {
-                return Err(format!("unsupported {:?} effort {effort:?}", self.program));
-            }
+        if let Some(effort) = &self.effort
+            && !self.program.efforts().contains(&effort.as_str())
+        {
+            return Err(format!("unsupported {:?} effort {effort:?}", self.program));
         }
         Ok(())
     }
@@ -144,6 +135,8 @@ pub struct Settings {
     pub socket: PathBuf,
     pub server: String,
     pub agents: Vec<AgentSpec>,
+    /// Providers whose models are each offered, at each effort.
+    pub catalogs: Vec<crate::catalog::CatalogSpec>,
     /// Agent seats played at once.
     pub capacity: u32,
     /// Workspaces and durable archives.
@@ -190,17 +183,14 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
         }
         client.close().await;
     }
-    let hello = FromRunner::Hello {
-        agents: (settings.agents.iter())
-            .map(|a| Offer {
-                name: a.name.clone(),
-                about: a.about(),
-            })
-            .collect(),
-        capacity: settings.capacity,
-    };
-    let mut hello = serde_json::to_string(&hello).expect("serializable");
-    hello.push('\n');
+    let (offered, mut offers) = tokio::sync::watch::channel(vec![]);
+    let discovery = tokio::spawn(discover(settings.clone(), offered, stop.clone()));
+    tokio::select! {
+        _ = stop.cancelled() => return Ok(()),
+        _ = offers.changed() => {},
+    }
+    // Every agent offered since it started, by name: a game goes on with one no longer offered.
+    let mut known: HashMap<String, AgentSpec> = HashMap::new();
     let mut playing: HashMap<Key, Playing> = HashMap::new();
     let mut stopping: Vec<JoinHandle<()>> = vec![];
     let mut said_unreachable = false;
@@ -226,21 +216,40 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
                 settings.socket.display()
             );
             let (read, mut write) = stream.into_split();
-            if write.write_all(hello.as_bytes()).await.is_err() {
+            let agents = remember(&mut known, &offers.borrow_and_update());
+            let hello = FromRunner::Hello {
+                agents,
+                capacity: settings.capacity,
+            };
+            if send(&mut write, &hello).await.is_err() {
                 tokio::time::sleep(RECONNECT).await;
                 continue;
             }
             let mut lines = BufReader::new(read).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                match serde_json::from_str::<ToRunner>(&line) {
-                    Ok(ToRunner::Jobs { jobs }) => {
-                        stopping.retain(|task| !task.is_finished());
-                        stopping.extend(reconcile(&settings, &mut playing, jobs, &logs));
+            loop {
+                tokio::select! {
+                    line = lines.next_line() => {
+                        let Ok(Some(line)) = line else { break };
+                        match serde_json::from_str::<ToRunner>(&line) {
+                            Ok(ToRunner::Jobs { jobs }) => {
+                                stopping.retain(|task| !task.is_finished());
+                                stopping.extend(reconcile(&settings, &known, &mut playing, jobs, &logs));
+                            }
+                            Ok(ToRunner::Refused { agent, reason }) => {
+                                eprintln!("dominion agents: the server refused {agent}: {reason}");
+                            }
+                            Err(_) => eprintln!("dominion agents: the server said {line}"),
+                        }
                     }
-                    Ok(ToRunner::Refused { agent, reason }) => {
-                        eprintln!("dominion agents: the server refused {agent}: {reason}");
+                    changed = offers.changed() => {
+                        if changed.is_err() {
+                            break;
+                        }
+                        let agents = remember(&mut known, &offers.borrow_and_update());
+                        if send(&mut write, &FromRunner::Offers { agents }).await.is_err() {
+                            break;
+                        }
                     }
-                    Err(_) => eprintln!("dominion agents: the server said {line}"),
                 }
             }
             eprintln!("dominion agents: lost the server; reconnecting");
@@ -251,6 +260,7 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
         _ = stop.cancelled() => {},
         () = connected => {},
     }
+    discovery.abort();
     for p in playing.values() {
         p.stop.cancel();
     }
@@ -260,10 +270,72 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
     Ok(())
 }
 
+async fn send(
+    write: &mut tokio::net::unix::OwnedWriteHalf,
+    message: &FromRunner,
+) -> std::io::Result<()> {
+    let mut line = serde_json::to_string(message).expect("serializable");
+    line.push('\n');
+    write.write_all(line.as_bytes()).await
+}
+
+/// Keeps the agents of `offered` among those `known`; their offers.
+fn remember(known: &mut HashMap<String, AgentSpec>, offered: &[(AgentSpec, Offer)]) -> Vec<Offer> {
+    for (spec, _) in offered {
+        known.insert(spec.name.clone(), spec.clone());
+    }
+    offered.iter().map(|(_, offer)| offer.clone()).collect()
+}
+
+/// Reads the providers' catalogs now and every [`REDISCOVER`], and publishes what the
+/// runner offers when it changes. A catalog that can't be read keeps what it last listed.
+async fn discover(
+    settings: Settings,
+    offered: tokio::sync::watch::Sender<Vec<(AgentSpec, Offer)>>,
+    stop: CancellationToken,
+) {
+    let mut listed: Vec<Option<Vec<crate::catalog::Found>>> = vec![None; settings.catalogs.len()];
+    let mut first = true;
+    loop {
+        let catalogs = settings.catalogs.clone();
+        let read = tokio::task::spawn_blocking(move || {
+            catalogs.iter().map(|c| c.discover()).collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_default();
+        for ((catalog, found), last) in settings.catalogs.iter().zip(read).zip(&mut listed) {
+            match found {
+                Ok(found) => *last = Some(found),
+                Err(e) => eprintln!("dominion agents: {:?} models: {e}", catalog.program),
+            }
+        }
+        let catalogs: Vec<_> = (settings.catalogs.iter().cloned())
+            .zip(listed.iter().map(|l| l.clone().unwrap_or_default()))
+            .collect();
+        let offers = crate::catalog::offers(&settings.agents, &catalogs);
+        offered.send_if_modified(|old| {
+            let same = old.len() == offers.len()
+                && old
+                    .iter()
+                    .zip(&offers)
+                    .all(|((a, x), (b, y))| a == b && x == y);
+            if !same {
+                *old = offers;
+            }
+            !same || std::mem::take(&mut first)
+        });
+        tokio::select! {
+            _ = stop.cancelled() => return,
+            () = tokio::time::sleep(REDISCOVER) => {},
+        }
+    }
+}
+
 /// Starts and stops seats to match `jobs`; returns the tasks of the seats it stopped,
 /// which may still be finishing.
 fn reconcile(
     settings: &Settings,
+    known: &HashMap<String, AgentSpec>,
     playing: &mut HashMap<Key, Playing>,
     jobs: Vec<Job>,
     logs: &Path,
@@ -286,7 +358,7 @@ fn reconcile(
         if playing.contains_key(&key) {
             continue;
         }
-        let Some(spec) = settings.agents.iter().find(|a| a.name == job.agent) else {
+        let Some(spec) = known.get(&job.agent) else {
             eprintln!(
                 "dominion agents: no agent {} here for game {}",
                 job.agent, job.game_id

@@ -6,7 +6,7 @@ use dominion_protocol::lobby::{
     UserKind,
 };
 use dominion_server::arena::{Arena, Error, Ident, Settings};
-use dominion_server::house::{Job, Offer, ToRunner};
+use dominion_server::house::{Job, Offer, OfferedModel, ToRunner};
 use dominion_server::hub::Hub;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -37,6 +37,7 @@ fn runner(arena: &Arena, names: &[&str], capacity: u32) -> UnboundedReceiver<ToR
         .map(|n| Offer {
             name: n.to_string(),
             about: "Claude Code (opus)".into(),
+            ..Default::default()
         })
         .collect();
     arena.runner_connected(offers, capacity, send);
@@ -245,4 +246,63 @@ fn no_daily_limit_when_seats_per_day_is_zero() {
         jobs(&mut told);
         arena.leave_table(&ada);
     }
+}
+
+#[test]
+fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_returns() {
+    let arena = arena(5);
+    let offer = |name: &str, effort: &str| Offer {
+        name: name.into(),
+        about: format!("Claude Code, claude-opus-5-5, {effort} effort"),
+        model: Some(OfferedModel {
+            program: "Claude Code".into(),
+            id: "claude-opus-5-5".into(),
+            name: "Opus 5.5".into(),
+            effort: Some(effort.into()),
+        }),
+        on_demand: name != "Opus High",
+    };
+    let offers = vec![offer("Opus High", "high"), offer("Opus 5.5 Max", "max")];
+    let (send, mut told) = unbounded_channel();
+    let runner = arena.runner_connected(offers.clone(), 2, send);
+    let ada = register(&arena, "Ada");
+    let house = arena.lobby(Some(&ada)).house;
+    let names: Vec<_> = house.agents.iter().map(|a| a.user.name.as_str()).collect();
+    assert_eq!(names, ["Opus High"]);
+    let [model] = house.models.as_slice() else {
+        panic!("{:?}", house.models);
+    };
+    let choices: Vec<_> = (model.choices.iter())
+        .map(|c| (c.effort.as_deref(), c.agent.as_str()))
+        .collect();
+    assert_eq!(
+        (model.name.as_str(), choices),
+        (
+            "Opus 5.5",
+            vec![(Some("high"), "Opus High"), (Some("max"), "Opus 5.5 Max")]
+        )
+    );
+    assert!(arena.profile("Opus 5.5 Max").is_err());
+
+    let table = arena.new_table(&ada, &with_agent("Opus 5.5 Max")).unwrap();
+    assert_eq!(table.seats[1].user.as_ref().unwrap().name, "Opus 5.5 Max");
+    let game = arena.ready(&ada, &table.id, true).unwrap().game.unwrap();
+    let job = |told: &mut UnboundedReceiver<ToRunner>| {
+        let jobs = jobs(told).unwrap();
+        jobs.iter()
+            .map(|j| (j.agent.clone(), j.game_id.clone()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(job(&mut told), [("Opus 5.5 Max".into(), game.clone())]);
+
+    // Offered again, it plays the game it holds a seat in.
+    arena.runner_gone(runner);
+    let (send, mut told) = unbounded_channel();
+    let runner = arena.runner_connected(offers, 2, send);
+    assert_eq!(job(&mut told), [("Opus 5.5 Max".into(), game.clone())]);
+
+    // No longer offered, it isn't played.
+    arena.offers_changed(runner, vec![offer("Opus High", "high")]);
+    assert_eq!(job(&mut told), []);
+    assert_eq!(arena.lobby(Some(&ada)).house.models[0].choices.len(), 1);
 }

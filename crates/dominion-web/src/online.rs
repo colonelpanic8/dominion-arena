@@ -1,3 +1,4 @@
+use crate::lobby::agent_picker::AgentPicker;
 use crate::{
     api,
     game::{GameCtx, GameState, table},
@@ -138,8 +139,12 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         loop {
             match api::online_management(id.peek().as_deref()).await {
                 Ok(status) => {
+                    let first = (status.models.first())
+                        .and_then(|m| m.default_choice())
+                        .map(|c| &c.agent)
+                        .or(status.agents.first());
                     if agent.peek().is_empty()
-                        && let Some(first) = status.agents.first()
+                        && let Some(first) = first
                     {
                         agent.set(first.clone());
                     }
@@ -240,8 +245,17 @@ pub fn OnlinePage(account: Option<String>) -> Element {
                     }}
                 }
                 label {"Agent"
-                    select {value:"{agent}",disabled:busy(),onchange:move|e|agent.set(e.value()),
-                        for name in &status.agents {option {value:"{name}","{name}"}}
+                    if status.models.is_empty() {
+                        select {value:"{agent}",disabled:busy(),onchange:move|e|agent.set(e.value()),
+                            for name in &status.agents {option {value:"{name}","{name}"}}
+                        }
+                    } else {
+                        AgentPicker {
+                            models: status.models.clone(),
+                            value: Some(agent()).filter(|a| !a.is_empty()),
+                            disabled: busy(),
+                            onpick: move |name: Option<String>| agent.set(name.unwrap_or_default()),
+                        }
                     }
                 }
                 if status.agents.is_empty(){p {class:"muted","The agent runner is unavailable. No game will be started without an agent."}}

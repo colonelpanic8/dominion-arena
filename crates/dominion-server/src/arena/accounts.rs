@@ -80,6 +80,29 @@ pub fn account_name(given: &str) -> Result<String> {
              or digit",
         );
     }
+    name_rules(name)
+}
+
+/// The name of one of the server's agents, which names its model and effort: up to the
+/// longest seat name, and parentheses allowed ("Gemini 4 Argon (High)").
+pub fn house_name(given: &str) -> Result<String> {
+    let name = given.trim();
+    let len = name.chars().count();
+    let max = crate::hub::MAX_NAME_CHARS;
+    if !(2..=max).contains(&len) {
+        return bad(format!("an agent's name has 2 to {max} characters"));
+    }
+    let allowed = |c: char| c.is_ascii_alphanumeric() || " _-.()".contains(c);
+    if !name.chars().all(allowed) || !name.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return bad(
+            "an agent's name is made of letters, digits, spaces, _ - . ( and ) and starts \
+             with a letter or digit",
+        );
+    }
+    name_rules(name)
+}
+
+fn name_rules(name: &str) -> Result<String> {
     if name.contains("  ") {
         return bad("a name has no two spaces in a row");
     }

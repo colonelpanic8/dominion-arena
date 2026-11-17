@@ -13,12 +13,30 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Offer {
     /// The agent's account name.
     pub name: String,
     /// What plays it, for the lobby.
     pub about: String,
+    /// Its model and effort, which the lobby picks agents by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<OfferedModel>,
+    /// Its account is made when it is first seated, not when it is offered.
+    #[serde(default)]
+    pub on_demand: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OfferedModel {
+    /// What runs it ("Claude Code").
+    pub program: String,
+    /// The provider's id for the model.
+    pub id: String,
+    /// The model's name ("Opus 5.5").
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,6 +44,8 @@ pub struct Offer {
 pub enum FromRunner {
     /// The first line: the agents it offers, and how many seats it plays at once.
     Hello { agents: Vec<Offer>, capacity: u32 },
+    /// The agents it offers now, in place of those it offered before.
+    Offers { agents: Vec<Offer> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,7 +144,13 @@ async fn serve_runner(arena: Arc<Arena>, stream: UnixStream, stop: CancellationT
                 }
             }
             line = lines.next_line() => match line {
-                Ok(Some(_)) => {}
+                Ok(Some(line)) => {
+                    if let Ok(FromRunner::Offers { agents }) = serde_json::from_str(&line) {
+                        let arena = arena.clone();
+                        let _ = tokio::task::spawn_blocking(move || arena.offers_changed(id, agents))
+                            .await;
+                    }
+                }
                 _ => break,
             },
         }

@@ -683,6 +683,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         vec![crate::house::Offer {
             name: "fixture-agent".into(),
             about: "fixture".into(),
+            ..Default::default()
         }],
         1,
         offering,
@@ -994,6 +995,7 @@ async fn official_accounts_keep_their_own_owners_routes_and_agent_tokens() {
         vec![crate::house::Offer {
             name: "fixture-agent".into(),
             about: "fixture".into(),
+            ..Default::default()
         }],
         2,
         offering,

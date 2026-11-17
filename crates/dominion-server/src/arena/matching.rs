@@ -121,6 +121,9 @@ impl Arena {
             if request.opponents != Opponents::Agents {
                 return bad("`agent` names the server's agent for a search of agents");
             }
+            if user.kind() == UserKind::Registered {
+                self.summon(name)?;
+            }
             let state = lock(&self.state);
             let Some(agent) = state.house.agent_named(name) else {
                 return conflict(format!("the server has no agent called {name} now"));

@@ -185,6 +185,7 @@ async fn setup(program: &str) -> Harness {
         vec![Offer {
             name: "Test".into(),
             about: "T3 Code".into(),
+            ..Default::default()
         }],
         2,
         send,
@@ -683,6 +684,7 @@ async fn live_native_game() {
                 .map(|a| Offer {
                     name: a.name.clone(),
                     about: "Bounded native verification".into(),
+                    ..Default::default()
                 })
                 .collect(),
             2,

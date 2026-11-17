@@ -4,6 +4,7 @@
 //! games to watch), Cardlists (your Banned cards list), Leaderboard and Account.
 
 mod account;
+pub mod agent_picker;
 mod cardlists;
 mod chat;
 mod home;

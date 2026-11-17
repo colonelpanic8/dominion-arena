@@ -75,6 +75,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/control.rs          the control socket: `dominion games` lists and retires hosted games
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
+  src/catalog.rs          the models the runner offers: read from each provider's catalog
+                          (`[[catalogs]]`), an agent per model and effort, profiles in place
   src/harness/            native CLI agents (Claude Code, Codex, Antigravity): one process per
                           seat under bubblewrap; `sandbox.rs` is its network namespace, the
                           allowlisting proxy and `dominion sandbox-forward`
@@ -187,6 +189,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           seats, the server's agents, open seats), the table's chat, Ready and Leave Table;
                           while its game runs, that game locked, with the seat links of the
                           tokens handed out. Shared with the score page
+    agent_picker.rs       one of the server's agents picked by model, then effort
     seat_link.rs          a seat handed out: its agent line, link, token, copy buttons
     selector.rs           "Select Cards", the card selector
     account.rs            `SignIn` (log in, register, play as guest) and the Account tab:
