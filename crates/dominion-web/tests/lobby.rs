@@ -242,6 +242,7 @@ fn the_tables_tab_offers_what_each_line_allows() {
                 rating: 1500.0,
                 deviation: 350.0,
                 games: 0,
+                official: None,
             },
             stats: Stats { games: 0, wins: 0 },
             bots: vec![],

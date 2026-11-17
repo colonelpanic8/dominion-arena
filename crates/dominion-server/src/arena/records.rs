@@ -3,8 +3,12 @@
 use super::db::{self, Tally};
 use super::{Arena, Error, Result, User};
 use crate::hub::{Ended, lock, now_ms};
-use crate::rating;
+use crate::rating::{self, Scale};
 use dominion_protocol::lobby::{GameRecord, History, Leader, Leaderboard, Profile, RecordPlayer};
+
+/// The most rating deviation an anchor may have here to count, and the least spread of
+/// the anchors' ratings: closer than that, they can't tell a slope.
+const ANCHOR_DEVIATION: f64 = 100.0;
 
 impl Arena {
     /// Writes an ended game's record and counts it for its players, all or nothing. A
@@ -92,6 +96,21 @@ impl Arena {
         })
     }
 
+    /// The line from ratings here to dominion.games skill, through the anchors whose
+    /// rating here is settled.
+    pub(super) fn skill_scale(&self) -> Option<Scale> {
+        let now = now_ms() / 1000;
+        let points: Vec<(f64, f64)> = (self.settings.skill_anchors.iter())
+            .filter_map(|a| {
+                let user = self.db.user_by_name(&a.player).ok().flatten()?;
+                let settled =
+                    user.rated_games > 0 && user.rating.deviation_at(now) <= ANCHOR_DEVIATION;
+                settled.then_some((user.rating.rating, a.skill))
+            })
+            .collect();
+        Scale::fit(&points, ANCHOR_DEVIATION)
+    }
+
     fn named(&self, name: &str) -> Result<User> {
         (self.db.user_by_name(name)?)
             .ok_or_else(|| Error::NotFound(format!("nobody is called {name}")))
@@ -102,7 +121,7 @@ impl Arena {
         let user = self.named(name)?;
         Ok(Profile {
             user: self.user_ref(&user),
-            rating: user.rating_info(),
+            rating: user.rating_info(self.skill_scale().as_ref()),
             stats: user.stats(),
             recent: self.db.games(Some(&user.id), u64::MAX, 20)?,
         })
@@ -126,12 +145,13 @@ impl Arena {
     /// The rated players, best first.
     pub fn leaderboard(&self, limit: usize) -> Result<Leaderboard> {
         let leaders = self.db.leaders(limit.clamp(1, 200))?;
+        let scale = self.skill_scale();
         Ok(Leaderboard {
             players: (leaders.iter().enumerate())
                 .map(|(i, u)| Leader {
                     rank: i as u32 + 1,
                     user: self.user_ref(u),
-                    rating: u.rating_info(),
+                    rating: u.rating_info(scale.as_ref()),
                     stats: u.stats(),
                 })
                 .collect(),

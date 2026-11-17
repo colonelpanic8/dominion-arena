@@ -5,7 +5,12 @@ use super::{Fieldset, LobbyFrame, OptionRow, Tab, UserName, date};
 use crate::api;
 use crate::app::Route;
 use dioxus::prelude::*;
-use dominion_protocol::lobby::{GameRecord, Leaderboard, Profile, RecordPlayer, Source};
+use dominion_protocol::lobby::{
+    Beyond, GameRecord, Leaderboard, OfficialSkill, Profile, RecordPlayer, Source,
+};
+
+const OFFICIAL_TITLE: &str =
+    "Skill on dominion.games' scale (mu, not level), read off agents rated on both servers";
 
 #[component]
 pub fn LeaderboardTab() -> Element {
@@ -16,11 +21,17 @@ pub fn LeaderboardTab() -> Element {
                 match &*board.read() {
                     None => rsx! {},
                     Some(Err(e)) => rsx! { p { class: "lb-error", "{e.message}" } },
-                    Some(Ok(Leaderboard { players })) => rsx! {
-                        div { class: "lb-board-line lb-board-head",
+                    Some(Ok(Leaderboard { players })) => {
+                        let official = players.iter().any(|p| p.rating.official.is_some());
+                        let line = if official { "lb-board-line lb-board-official" } else { "lb-board-line" };
+                        rsx! {
+                        div { class: "{line} lb-board-head",
                             span { class: "lb-board-rank", "#" }
                             span { class: "lb-board-name", "Player" }
                             span { class: "lb-board-num", "Rating" }
+                            if official {
+                                span { class: "lb-board-num", title: OFFICIAL_TITLE, "dominion.games" }
+                            }
                             span { class: "lb-board-num", "Rated games" }
                             span { class: "lb-board-num", "Games" }
                             span { class: "lb-board-num", "Won" }
@@ -30,20 +41,36 @@ pub fn LeaderboardTab() -> Element {
                                 p { class: "lb-note", "Nobody has played a rated game yet. A game is rated when its table or search says so and every seat is a different registered player or bot." }
                             }
                             for p in players.iter() {
-                                div { key: "{p.user.name}", class: "lb-board-line", "data-leader": "{p.user.name}",
+                                div { key: "{p.user.name}", class: line, "data-leader": "{p.user.name}",
                                     span { class: "lb-board-rank", "{p.rank}" }
                                     span { class: "lb-board-name", UserName { user: without_rating(&p.user), link: true } }
                                     span { class: "lb-board-num", title: "± {p.rating.deviation.round()}", "{p.rating.rating.round()}" }
+                                    if official {
+                                        span { class: "lb-board-num", title: OFFICIAL_TITLE,
+                                            {p.rating.official.map(|o| official_skill(&o, false)).unwrap_or_default()}
+                                        }
+                                    }
                                     span { class: "lb-board-num", "{p.rating.games}" }
                                     span { class: "lb-board-num", "{p.stats.games}" }
                                     span { class: "lb-board-num", "{p.stats.wins}" }
                                 }
                             }
                         }
-                    },
+                    }},
                 }
             }
         }
+    }
+}
+
+/// A rating on dominion.games' scale: "38.2", with its deviation "38.2 ± 1.5", or
+/// "< 30.0" beyond the anchors.
+pub fn official_skill(o: &OfficialSkill, deviation: bool) -> String {
+    match o.beyond {
+        None if deviation => format!("{:.1} ± {:.1}", o.skill, o.deviation),
+        None => format!("{:.1}", o.skill),
+        Some(Beyond::Below) => format!("< {:.1}", o.skill),
+        Some(Beyond::Above) => format!("> {:.1}", o.skill),
     }
 }
 
@@ -136,6 +163,11 @@ pub fn UserPage(name: String) -> Element {
                                 }
                                 OptionRow { label: "Rating",
                                     span { class: "lb-value", "data-rating": "{rating.rating.round()}", "{rating.rating.round()} ± {rating.deviation.round()}" }
+                                }
+                                if let Some(o) = &rating.official {
+                                    OptionRow { label: "dominion.games skill",
+                                        span { class: "lb-value", title: OFFICIAL_TITLE, "{official_skill(o, true)}" }
+                                    }
                                 }
                                 OptionRow { label: "Rated games",
                                     span { class: "lb-value", "{rating.games}" }

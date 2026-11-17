@@ -9,6 +9,12 @@
     effort = "high";
   }
   {
+    name = "Fable High";
+    program = "claude";
+    model = "claude-fable-5-2";
+    effort = "high";
+  }
+  {
     name = "Sonnet High";
     program = "claude";
     model = "claude-sonnet-5-5";
@@ -18,6 +24,12 @@
     name = "Sol High";
     program = "openai";
     model = "gpt-6.1-sol";
+    effort = "high";
+  }
+  {
+    name = "Astra High";
+    program = "openai";
+    model = "gpt-6-astra";
     effort = "high";
   }
   {

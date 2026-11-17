@@ -45,6 +45,31 @@ pub struct RatingInfo {
     pub deviation: f64,
     /// Rated games played.
     pub games: u32,
+    /// The same rating on dominion.games' scale, once the server has anchors to read it
+    /// off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official: Option<OfficialSkill>,
+}
+
+/// A rating as dominion.games skill (its mu, not its level), read off a line through
+/// players rated on both servers (`official_skill_anchors`).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OfficialSkill {
+    pub skill: f64,
+    /// The rating deviation on that scale.
+    pub deviation: f64,
+    /// Below or above every anchor: `skill` is then the nearest end of the line, and the
+    /// rating is only known to lie beyond it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beyond: Option<Beyond>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Beyond {
+    Below,
+    Above,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
