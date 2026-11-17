@@ -4,7 +4,7 @@
 //! tabs for mats and set-aside cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, TableCard, cube_icon, seat_class};
+use super::pieces::{CardName, Reminder, TableCard, cube_icon, seat_class};
 use super::supply::{Badges, Tab};
 use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::assets::use_assets;
@@ -32,13 +32,7 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
     let assets = use_assets();
     let p = &player;
     let seat = p.seat;
-    let held: Vec<String> = p
-        .states
-        .iter()
-        .chain(&p.boons)
-        .chain(&p.artifacts)
-        .cloned()
-        .collect();
+    let reminders: Vec<String> = p.states.iter().chain(&p.artifacts).cloned().collect();
     let cubes = p.projects.clone();
     let cube = assets.file_url(&cube_icon(seat));
     let account = p.account.clone();
@@ -99,7 +93,10 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                         if let Some(src) = cube.clone() { img { src, alt: "", draggable: "false" } }
                     }
                 }
-                for c in held.iter() {
+                for c in reminders.iter() {
+                    Reminder { key: "r{c}", name: c.clone() }
+                }
+                for c in p.boons.iter() {
                     span { key: "h{c}", class: "dt-bar-held", CardName { name: c.clone() } }
                 }
                 for (k, v) in p.counters.iter() {

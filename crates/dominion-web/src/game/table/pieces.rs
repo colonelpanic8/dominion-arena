@@ -158,6 +158,49 @@ pub fn Cube(seat: u8, name: String) -> Element {
     }
 }
 
+/// dominion.games' reminder icon for a State or Artifact and the number drawn on it:
+/// Twice Miserable is Miserable's icon with a 2.
+pub fn reminder_icon(name: &str) -> (String, Option<u8>) {
+    let (name, n) = match name {
+        "Twice Miserable" => ("Miserable", Some(2)),
+        _ => (name, None),
+    };
+    let dashed = name.to_lowercase().replace(' ', "-");
+    (format!("images/reminders/{dashed}.png"), n)
+}
+
+/// A State or Artifact a player has, as dominion.games shows it beside their name: its
+/// reminder icon, or its name where the cache has none. Clicking studies the card.
+#[component]
+pub fn Reminder(name: String) -> Element {
+    let ctx = use_table();
+    let assets = use_assets();
+    let (path, n) = reminder_icon(&name);
+    let Some(src) = assets.file_url(&path) else {
+        return rsx! { span { class: "dt-bar-held", CardName { name } } };
+    };
+    let n1 = name.clone();
+    let n2 = name.clone();
+    rsx! {
+        span {
+            class: "dt-reminder",
+            title: "{name}",
+            "data-reminder": "{name}",
+            style: "background-image:url('{src}');",
+            onclick: move |e| {
+                e.stop_propagation();
+                ctx.study(&n1);
+            },
+            oncontextmenu: move |e| {
+                e.prevent_default();
+                e.stop_propagation();
+                ctx.study(&n2);
+            },
+            if let Some(n) = n { "{n}" }
+        }
+    }
+}
+
 /// A card name in text, coloured by type; clicking or right-clicking it studies the card.
 #[component]
 pub fn CardName(name: String, #[props(default)] label: Option<String>) -> Element {

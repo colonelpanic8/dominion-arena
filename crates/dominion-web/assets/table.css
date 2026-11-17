@@ -254,6 +254,21 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-bar-bottom { display: flex; align-items: center; gap: calc(0.4 * var(--vh)); height: 50%; overflow: hidden; }
 .dt-bar-cube img { height: calc(2.6 * var(--vh)); }
 .dt-bar-held { font-size: calc(1.4 * var(--vh)); white-space: nowrap; }
+/* A State or Artifact held: dominion.games' reminder icon, 2.6vh square. */
+.dt-reminder {
+  flex: none;
+  width: calc(2.6 * var(--vh));
+  height: calc(2.6 * var(--vh));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: center / contain no-repeat;
+  color: #fff;
+  font-family: var(--count);
+  font-size: calc(2.4 * var(--vh));
+  -webkit-text-stroke: calc(0.13 * var(--vh)) #000;
+  cursor: help;
+}
 .dt-bar-you { padding-top: calc(0.4 * var(--vh)); }
 /* The account on a bar: whether it is connected, its rating, guest or bot. */
 .dt-conn { flex: none; width: calc(1.1 * var(--vh)); height: calc(1.1 * var(--vh)); border-radius: 50%; box-sizing: border-box; border: calc(0.2 * var(--vh)) solid #999; }

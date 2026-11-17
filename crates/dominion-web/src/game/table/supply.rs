@@ -8,7 +8,7 @@ use super::pieces::{BadgeView, TableCard};
 use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
 use crate::card::CardSize;
-use crate::game::board::{Board, CardDeck, Holding, LandscapeEntry, PileEntry};
+use crate::game::board::{Board, CardDeck, LandscapeEntry, PileEntry};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -29,12 +29,11 @@ pub fn basic_columns(b: &Board) -> (Vec<PileEntry>, Vec<PileEntry>) {
     (rest, treasures)
 }
 
-/// What sits beside the kingdom, in order: landscapes by cost and name, then Artifacts,
-/// Boons and Hexes.
+/// What sits beside the kingdom, in order: landscapes by cost and name, then Boons and
+/// Hexes. Artifacts are no part of it: their holder's bar shows them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Wide {
     Landscape(LandscapeEntry),
-    Artifact(Holding),
     Deck(&'static str, CardDeck),
 }
 
@@ -46,7 +45,6 @@ pub fn wides(b: &Board) -> Vec<Wide> {
             .then_with(|| a.card.cmp(&b.card))
     });
     let mut out: Vec<Wide> = ls.into_iter().map(Wide::Landscape).collect();
-    out.extend(b.artifacts.iter().cloned().map(Wide::Artifact));
     if let Some(d) = b.boons.clone() {
         out.push(Wide::Deck("Boons", d));
     }
@@ -91,7 +89,6 @@ pub fn SupplyArea(
             for (w, r) in wide.iter().zip(g.landscapes.iter()) {
                 match w.clone() {
                     Wide::Landscape(l) => rsx! { Landscape { key: "l{l.card}", entry: l, at: *r, ui: ui.clone(), sel: sel.clone() } },
-                    Wide::Artifact(a) => rsx! { Artifact { key: "a{a.card}", holding: a, at: *r } },
                     Wide::Deck(label, d) => rsx! { Deck { key: "{label}", label, deck: d, at: *r } },
                 }
             }
@@ -300,18 +297,6 @@ fn Deck(label: String, deck: CardDeck, at: Rect) -> Element {
             },
             None => rsx! {},
         }
-    }
-}
-
-#[component]
-fn Artifact(holding: Holding, at: Rect) -> Element {
-    let cubes: Vec<(u8, String)> = holding
-        .holder
-        .iter()
-        .map(|w| (w.seat, w.name.clone()))
-        .collect();
-    rsx! {
-        TableCard { name: holding.card.clone(), size: CardSize::Mini, class: "dt-landscape", cubes, at }
     }
 }
 
