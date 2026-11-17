@@ -41,6 +41,9 @@ crates/dominion-engine/
   src/tests/fuzz/unused.rs  games played twice in step, once with unused landscapes added
   src/tests/<set>.rs      each set's card tests
   src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
+  src/journal.rs          opt-in ordered record of everything that changes on the table:
+                          the trace with each move's verb, the log's entries in place,
+                          turns, phases, counters
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
 crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; accounts and the
                           lobby in `lobby`) and the asset manifest; engine-free, builds for wasm
@@ -50,7 +53,9 @@ crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; acco
                           reducer (`dominion-online`) are both tested against it; a view
                           convention goes here before either producer or the client relies
                           on it
+  src/events.rs           serde types of events@1 and `Table`, the fold of a stream
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
+  src/events.rs           `Recorder`: a game's events@1 stream from the engine's journal
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
                           and solo games kept in files (`solo.rs`)
@@ -544,6 +549,19 @@ them.
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
   `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.
+- **Events.** `dominion/events@1` (`dominion-playbook/protocol/events.md`) is a game as a
+  stream of events whose fold is the table, with no rules engine: `events::Table::apply`
+  in dominion-protocol is the reference. `Game::new_journaled` records a journal
+  (`journal.rs`): every trace entry with the rules' word for a move (`Verb`), the log's
+  entries where they were logged, turns, phases, and counters read each time anything is
+  recorded. `events::Recorder` in dominion-agent turns it into the full stream.
+  `tests/events.rs` holds the fold to the engine's table at every decision of random
+  games: each zone with its order, each counter, the turn. So a card moves with
+  `move_as(verb, ..)` where the rules have a word for it (a bare `move_card` is a `put`,
+  or by its destination a top-deck, return, set-aside, look or exile), and code that
+  rearranges cards without `move_card` (a shuffle in place, a pile rotated, cards ordered
+  at the bottom of a deck) journals it with `journal_within`. A counter the stream
+  should carry is a `Gauge`.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The

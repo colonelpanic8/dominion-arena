@@ -335,6 +335,8 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         scribe: Default::default(),
         outcome: None,
         trace: None,
+        journal: None,
+        verb: None,
         config,
     };
 

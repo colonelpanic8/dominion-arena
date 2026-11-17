@@ -16,6 +16,7 @@ mod event;
 mod frame;
 mod game;
 mod ids;
+mod journal;
 mod knowledge;
 mod scribe;
 mod setup;
@@ -37,6 +38,7 @@ pub use game::{
     PileGroup, PileKind, PileStructure, Player, Scratch, Token, Turn, Until, Zone,
 };
 pub use ids::{CardId, PileId, PlayerId};
+pub use journal::{Gauge, Step, Verb};
 pub use knowledge::{CardCount, GroupView, Knowledge, KnownCards, UncertainCards, ZoneKnowledge};
 pub use setup::{
     ANY_SLOT_KIND, DEFAULT_SLOTS, DealRules, GameConfig, KINGDOM_PILES, LandscapeSlot, SLOT_KINDS,

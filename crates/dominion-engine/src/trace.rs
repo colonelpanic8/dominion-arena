@@ -87,12 +87,18 @@ impl Game {
 
     pub(crate) fn record_turn(&mut self) {
         let player = self.turn.player;
+        self.journal_turn();
         self.record(|| Trace::Turn { player });
     }
 
     pub(crate) fn record(&mut self, entry: impl FnOnce() -> Trace) {
+        if self.trace.is_none() && self.journal.is_none() {
+            return;
+        }
+        let entry = entry();
+        self.journal_trace(&entry);
         if let Some(trace) = &mut self.trace {
-            trace.push(entry());
+            trace.push(entry);
         }
     }
 

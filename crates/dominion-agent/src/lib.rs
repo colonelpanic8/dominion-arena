@@ -7,6 +7,7 @@
 //! Way questions that follow in advance. [`text::render`] renders a view compactly for
 //! language models. The JSON Schema is vendored at `protocol/agent-view.schema.json`.
 
+pub mod events;
 mod project;
 mod table;
 pub mod text;

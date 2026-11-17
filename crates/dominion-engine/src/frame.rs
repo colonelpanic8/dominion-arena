@@ -14,7 +14,7 @@ use crate::game::{
     Until, Zone,
 };
 use crate::trigger::{Occasion, Window};
-use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types};
+use crate::{Card, CardId, Game, Kind, PileId, PlayerId, Types, Verb};
 use serde::{Deserialize, Serialize};
 
 pub(crate) enum Input {
@@ -486,7 +486,7 @@ impl Frame {
                         shuffle = to.is_some() && !pl.discard.is_empty();
                         break;
                     };
-                    g.move_card(top, Zone::Hand(p), Pos::Top);
+                    g.move_as(Verb::Draw, top, Zone::Hand(p), Pos::Top);
                     drawn.push(top);
                 }
                 if drawn.len() > had {
@@ -533,7 +533,9 @@ impl Frame {
                         g.reveal(p, c);
                     }
                     // The look or reveal is its own log line.
+                    g.verb = Some(if *reveal { Verb::Reveal } else { Verb::Look });
                     g.move_unlogged(c, Zone::Looking(p));
+                    g.verb = None;
                     if *reveal {
                         g.note_shown(c);
                         g.players[p.index()].face_up.push(c);
@@ -591,7 +593,7 @@ impl Frame {
                 for &c in cards.iter() {
                     let from = g.zone(c);
                     g.show(c);
-                    g.move_card(c, Zone::Trash, Pos::Top);
+                    g.move_as(Verb::Trash, c, Zone::Trash, Pos::Top);
                     g.trashing.push(TrashState {
                         card: c,
                         from,
@@ -628,8 +630,10 @@ impl Frame {
             } => {
                 if *cleanup {
                     for &c in cards.iter() {
+                        g.verb = Some(Verb::Discard);
                         g.move_unlogged(c, Zone::Discard(*player));
                     }
+                    g.verb = None;
                     g.last_put = (vec![], Mark::default());
                     return Flow::Done(Value::Cards(std::mem::take(cards)));
                 }
@@ -642,7 +646,7 @@ impl Frame {
                 *i = 1;
                 for &c in cards.iter() {
                     g.show(c);
-                    g.move_card(c, Zone::Discard(*player), Pos::Top);
+                    g.move_as(Verb::Discard, c, Zone::Discard(*player), Pos::Top);
                     g.emit(Event::Discarded {
                         player: *player,
                         card: g.card(c),
@@ -757,6 +761,7 @@ fn resume_shuffle(
             under.extend(rest);
             g.mixed(under.clone());
             let above = g.player(p).deck.len();
+            g.verb = Some(Verb::Shuffle);
             for &c in &under {
                 let from = g.zones[c.index()];
                 g.zones[c.index()] = Zone::Deck(p);
@@ -769,6 +774,7 @@ fn resume_shuffle(
                     under: above,
                 });
             }
+            g.verb = None;
             g.touch_shuffled(&under);
             *count = under.len();
             g.last_shuffle = under.clone();
@@ -803,9 +809,10 @@ fn resume_shuffle(
             // Top first, so the last one is the bottom card of the deck.
             let order = input.cards();
             let deck = &mut g.players[p.index()].deck;
-            for (i, c) in order.into_iter().rev().enumerate() {
+            for (i, &c) in order.iter().rev().enumerate() {
                 deck[i] = c;
             }
+            g.journal_within(Verb::Bottomdeck, Zone::Deck(p), &order, false, Pos::Bottom);
             *pc = 3;
             Flow::Continue
         }
@@ -952,6 +959,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     });
                     continue;
                 }
+                g.sync_journal();
                 g.turn = Turn::new(p);
                 g.turn.previous = last;
                 g.turn.extra = Some(source);
@@ -975,6 +983,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     g.finish(reason);
                     return Flow::done();
                 };
+                g.sync_journal();
                 g.turn = Turn::new(p);
                 g.turn.previous = last;
                 // Like extra turns, these don't count for the tiebreaker.
@@ -987,6 +996,7 @@ fn resume_game(g: &mut Game, next: &mut PlayerId, pc: &mut u8, input: Input) -> 
                     });
                     *next = g.left_of(*next);
                 }
+                g.sync_journal();
                 g.turn = Turn::new(*next);
                 g.turn.previous = last;
                 *next = g.left_of(*next);
@@ -1234,8 +1244,10 @@ fn resume_turn(g: &mut Game, player: PlayerId, pc: &mut u8, input: Input) -> Flo
         7 => {
             for other in g.others(p) {
                 for c in g.leaving_play(other) {
+                    g.verb = Some(Verb::Discard);
                     g.move_unlogged(c, Zone::Discard(other));
                 }
+                g.verb = None;
             }
             let mut cards = g.leaving_play(p);
             cards.extend(&g.players[p.index()].hand);
@@ -1336,7 +1348,7 @@ fn resume_gain(
             gain.phase = g.turn.phase;
             let home = g.home_pile(g.printed(st.card));
             g.show(st.card);
-            g.move_card(st.card, zone, Pos::Top);
+            g.move_as(Verb::Gain, st.card, zone, Pos::Top);
             g.gains.last_mut().expect("gain in progress").at = g.now();
             if let Zone::SetAside(p) = zone {
                 g.players[p.index()].face_up.push(st.card);
@@ -1621,11 +1633,12 @@ impl PlayFrame {
                 }
                 let enters = self.move_to_play && g.zone(id) != Zone::InPlay(p);
                 if enters {
-                    g.move_card(id, Zone::InPlay(p), Pos::Top);
+                    g.move_as(Verb::Play, id, Zone::InPlay(p), Pos::Top);
                     self.at = g.now();
                 }
                 let card = g.card(id);
                 let since = g.log.len();
+                g.journal_played(p, id);
                 g.emit(Event::Played { player: p, card });
                 let index = g.turn.played.len();
                 g.turn.played.push(card);

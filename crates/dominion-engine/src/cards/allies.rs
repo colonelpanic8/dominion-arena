@@ -614,7 +614,15 @@ pub(crate) fn rotate(g: &mut Game, p: PlayerId, pile: PileId) {
         .count();
     let cards = &mut g.piles[pile.index()].cards;
     let moved = cards.split_off(cards.len() - run);
+    let rotated: Vec<CardId> = moved.iter().rev().copied().collect();
     cards.splice(0..0, moved);
+    g.journal_within(
+        crate::Verb::Rotate,
+        Zone::Pile(pile),
+        &rotated,
+        true,
+        Pos::Bottom,
+    );
     g.emit(Event::Rotated { player: p, pile });
 }
 
@@ -1362,7 +1370,15 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let mut new: Vec<CardId> = rest;
             new.extend(chosen.iter().rev());
             new.extend(deck[base..].iter().copied());
+            let above = deck.len() - base;
             *deck = new;
+            // Each goes under the cards left on the deck, the first chosen last.
+            let placed: Vec<CardId> = chosen.iter().rev().copied().collect();
+            let verb = match above {
+                0 => crate::Verb::Topdeck,
+                _ => crate::Verb::Insert,
+            };
+            g.journal_within(verb, Zone::Deck(p), &placed, false, Pos::Under(above));
             g.reshuffle_unplaced(p, &chosen);
             Flow::done()
         }

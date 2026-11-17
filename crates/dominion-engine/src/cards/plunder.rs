@@ -2004,13 +2004,16 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             g.shuffle(&mut deck);
             let mixed = deck.clone();
             g.mixed(mixed);
+            g.journal_within(crate::Verb::Shuffle, Zone::Deck(p), &deck, false, Pos::Top);
             g.players[p.index()].deck = deck;
+            g.verb = Some(crate::Verb::Draw);
             for _ in 0..5 {
                 let Some(&top) = g.players[p.index()].deck.last() else {
                     break;
                 };
                 g.move_unlogged(top, Zone::Hand(p));
             }
+            g.verb = None;
             Flow::done()
         }
     }

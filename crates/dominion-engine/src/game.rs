@@ -604,6 +604,11 @@ pub struct Game {
     pub(crate) outcome: Option<Outcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) trace: Option<Vec<crate::Trace>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) journal: Option<crate::journal::Journal>,
+    /// The rules' word for the move being made (see [`Game::move_as`]).
+    #[serde(skip)]
+    pub(crate) verb: Option<crate::Verb>,
 }
 
 /// Cards a look or reveal took off `player`'s deck (top first), held in
@@ -1303,6 +1308,8 @@ impl Game {
             scribe: Default::default(),
             outcome: None,
             trace: None,
+            journal: None,
+            verb: None,
         };
         g.turn.phase = Phase::End;
         g.lasting.retain(|l| l.until != Until::EndOfTurn);
@@ -1544,6 +1551,7 @@ impl Game {
         self.sync_log(Some(&event));
         cards::on_event(self, &event);
         self.log.push(event);
+        self.journal_logged(self.log.len() - 1);
     }
 
     /// Records that no one but their owner can follow `cards` any more.
@@ -1698,10 +1706,13 @@ impl Game {
     /// `new` goes to `p`'s discard pile (nothing is gained). Returns whether it happened.
     pub(crate) fn exchange(&mut self, p: PlayerId, id: CardId, new: CardId) -> bool {
         let card = self.printed(id);
-        if !self.return_to_pile(id) {
+        self.verb = Some(crate::Verb::Exchange);
+        let returned = self.return_to_pile(id);
+        self.verb = None;
+        if !returned {
             return false;
         }
-        self.move_card(new, Zone::Discard(p), Pos::Top);
+        self.move_as(crate::Verb::Exchange, new, Zone::Discard(p), Pos::Top);
         let into = self.card(new);
         self.emit(Event::Exchanged {
             player: p,
