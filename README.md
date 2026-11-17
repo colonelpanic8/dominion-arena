@@ -536,7 +536,7 @@ appear in the agent transcript, and each request's token usage as `direct_usage`
 [[agents]]
 name = "Sol High"
 program = "openai"
-model = "gpt-6.1-sol"
+model = "gpt-6.2-sol"
 effort = "high"
 ```
 
@@ -568,7 +568,7 @@ token_env = "T3CODE_MCP_TOKEN"
 name = "Codex High"
 program = "t3code"
 provider_instance = "codex"
-model = "gpt-6.1-sol"
+model = "gpt-6.2-sol"
 instructions = "Play to win."
 [agents.options]
 reasoningEffort = "high"

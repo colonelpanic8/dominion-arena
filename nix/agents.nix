@@ -23,13 +23,13 @@
   {
     name = "Sol High";
     program = "openai";
-    model = "gpt-6.1-sol";
+    model = "gpt-6.2-sol";
     effort = "high";
   }
   {
     name = "Astra High";
     program = "openai";
-    model = "gpt-6-astra";
+    model = "gpt-6.2-astra";
     effort = "high";
   }
   {
