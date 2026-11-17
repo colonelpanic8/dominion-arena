@@ -400,6 +400,167 @@ pub struct OnlineAccountInfo {
     pub running: bool,
 }
 
+/// One of dominion.games' four ratings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OnlineRatingType {
+    #[default]
+    #[serde(rename = "2p")]
+    TwoPlayer,
+    #[serde(rename = "3p")]
+    ThreePlayer,
+    #[serde(rename = "2p-blitz")]
+    TwoPlayerBlitz,
+    #[serde(rename = "3p-blitz")]
+    ThreePlayerBlitz,
+}
+
+impl OnlineRatingType {
+    pub const ALL: [Self; 4] = [
+        Self::TwoPlayer,
+        Self::ThreePlayer,
+        Self::TwoPlayerBlitz,
+        Self::ThreePlayerBlitz,
+    ];
+
+    /// Its ordinal in the official client's `RatingTypes`.
+    pub fn ordinal(self) -> i32 {
+        self as i32
+    }
+
+    pub fn from_ordinal(ordinal: i32) -> Option<Self> {
+        Self::ALL.get(usize::try_from(ordinal).ok()?).copied()
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TwoPlayer => "2 players",
+            Self::ThreePlayer => "3 players",
+            Self::TwoPlayerBlitz => "2 players, blitz",
+            Self::ThreePlayerBlitz => "3 players, blitz",
+        }
+    }
+}
+
+/// A connected official account's rating and record on dominion.games, as its player page
+/// shows them (`GET /api/online/<id>/rating?type=2p`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineRating {
+    /// The official account's name.
+    pub account: String,
+    #[serde(rename = "type")]
+    pub rating_type: OnlineRatingType,
+    /// The latest rating: the open rating period's, which counts every game finished so
+    /// far, when it has results (`provisional`), else the last period's.
+    pub level: f64,
+    /// Skill (mu).
+    pub skill: f64,
+    pub deviation: f64,
+    /// Rated games counted in it.
+    pub games: u32,
+    /// From the open rating period, not yet final.
+    pub provisional: bool,
+    /// The open rating period, when there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub period: Option<OnlineRatingPeriod>,
+    /// On the leaderboard; none while unranked. Updated when a period closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<u32>,
+    pub wins: u32,
+    pub losses: u32,
+    pub ties: u32,
+    pub best_level: f64,
+    /// Milliseconds since the Unix epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_level_date: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_rank: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_rank_date: Option<i64>,
+    pub best_win_streak: u32,
+    pub best_loss_streak: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub country: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// Rating history, oldest first, ending with the open period's when it is provisional.
+    #[serde(default)]
+    pub history: Vec<OnlineRatingPoint>,
+    /// Recent games of this rating type, newest first.
+    #[serde(default)]
+    pub results: Vec<OnlineResult>,
+    /// When the official server sent it, in milliseconds since the Unix epoch.
+    pub fetched: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineRatingPoint {
+    /// Milliseconds since the Unix epoch.
+    pub date: i64,
+    pub level: f64,
+    pub skill: f64,
+    pub deviation: f64,
+    pub games: u32,
+}
+
+/// The rating period still open: its games so far and the rating they make.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineRatingPeriod {
+    /// Milliseconds since the Unix epoch.
+    pub start: i64,
+    pub results: u32,
+    pub distinct_opponents: u32,
+    /// Points scored (1 a win, ½ a tie) and expected from the ratings.
+    pub score: f64,
+    pub expected_score: f64,
+    pub start_level: f64,
+    pub start_skill: f64,
+    pub start_deviation: f64,
+}
+
+/// One finished game on an official account's player page.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineResult {
+    /// The official game id.
+    pub game: i64,
+    /// Milliseconds since the Unix epoch.
+    pub time: i64,
+    pub rated: bool,
+    pub outcome: OnlineOutcome,
+    /// Lower is better; ties share a rank.
+    pub rank: u32,
+    pub score: i32,
+    pub resigned: bool,
+    /// The levels the official server records for the account and its opponents (of a
+    /// rated game).
+    pub level: f64,
+    pub opponent_level: f64,
+    pub expected_score: f64,
+    pub opponents: Vec<OnlineResultOpponent>,
+    /// Kingdom card names, as the official client names them.
+    pub kingdom: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OnlineOutcome {
+    Win,
+    Loss,
+    Tie,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnlineResultOpponent {
+    pub name: String,
+    pub rank: u32,
+    pub score: i32,
+    pub resigned: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineManagement {

@@ -4,7 +4,10 @@ use dominion_online::{
     reducer::Reducer,
     transport::{
         Endpoint, Group, Message, RequiredSlot, RuleValue, TableDetails, TableRule, TimerUpdate,
-        Transport, command,
+        Transport,
+        ancillary::{PlayerProfile, ProfileResult},
+        command,
+        outgoing::Command,
     },
 };
 use dominion_protocol::{
@@ -107,6 +110,8 @@ pub(crate) struct Update {
     /// The official server's latest timer for each player, with when it came (ms since
     /// the epoch).
     pub timers: Vec<(TimerUpdate, u64)>,
+    /// When the last game finished, in milliseconds since the epoch.
+    pub finished_at: Option<u64>,
 }
 impl Update {
     /// The game's timers as they stand at `now`, by seat.
@@ -171,6 +176,46 @@ enum Request {
     Reconnect(oneshot::Sender<Result<(), String>>),
     Resign(oneshot::Sender<Result<(), String>>),
     Disconnect(oneshot::Sender<Result<(), String>>),
+    Profile(i32, Reply<PlayerProfile>),
+    Results(i32, Reply<Vec<ProfileResult>>),
+}
+type Reply<T> = oneshot::Sender<Result<T, String>>;
+/// How long dominion.games has to answer a player-page request (its own client's limit).
+const PROFILE_TIMEOUT: Duration = Duration::from_secs(15);
+/// What the official player page asks for: a profile with 30 history points, and 25
+/// results.
+const PROFILE_PERIOD: i32 = 25;
+const PROFILE_HISTORY: i32 = 30;
+const RESULTS: i32 = 25;
+
+/// Player-page requests waiting for the server's reply, by rating type.
+struct Waiting<T>(Vec<(i32, Reply<T>)>);
+impl<T> Default for Waiting<T> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+impl<T: Clone> Waiting<T> {
+    /// Adds a request; true when none of `kind` was waiting already, so it must be sent.
+    fn wait(&mut self, kind: i32, reply: Reply<T>) -> bool {
+        self.0.retain(|(_, r)| !r.is_closed());
+        let first = !self.0.iter().any(|(k, _)| *k == kind);
+        self.0.push((kind, reply));
+        first
+    }
+    /// Answers the requests of `kind`, or all of them.
+    fn answer(&mut self, kind: Option<i32>, result: Result<T, String>) {
+        let (answered, waiting) = std::mem::take(&mut self.0)
+            .into_iter()
+            .partition(|(k, _)| kind.is_none_or(|kind| kind == *k));
+        self.0 = waiting;
+        for (_, reply) in answered {
+            let _ = reply.send(result.clone());
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 #[derive(Clone)]
 pub struct Client {
@@ -223,6 +268,8 @@ impl Client {
             queue_status: None,
             outbox: Vec::new(),
             pending_match: Vec::new(),
+            profiles: Waiting::default(),
+            results: Waiting::default(),
             socket: Some(socket),
             endpoint,
             session: None,
@@ -246,6 +293,7 @@ impl Client {
                 searching: false,
                 queue_feedback: Vec::new(),
                 timers: Vec::new(),
+                finished_at: None,
                 mode,
             },
             store,
@@ -351,6 +399,16 @@ impl Client {
                         runtime.close().await;
                         (Ok(()), reply, true)
                     }
+                    Request::Profile(kind, reply) => {
+                        runtime.request_profile(kind, reply).await;
+                        publish.send_replace(runtime.update.clone());
+                        continue;
+                    }
+                    Request::Results(kind, reply) => {
+                        runtime.request_results(kind, reply).await;
+                        publish.send_replace(runtime.update.clone());
+                        continue;
+                    }
                 };
                 publish.send_replace(runtime.update.clone());
                 let _ = reply.send(result);
@@ -403,6 +461,25 @@ impl Client {
     }
     pub async fn disconnect(&self) -> Result<(), String> {
         self.call(Request::Disconnect).await
+    }
+    /// This account's official profile under `RatingTypes` ordinal `kind`.
+    pub(crate) async fn profile(&self, kind: i32) -> Result<PlayerProfile, String> {
+        self.ask(|reply| Request::Profile(kind, reply)).await
+    }
+    /// This account's recent official results under `RatingTypes` ordinal `kind`.
+    pub(crate) async fn results(&self, kind: i32) -> Result<Vec<ProfileResult>, String> {
+        self.ask(|reply| Request::Results(kind, reply)).await
+    }
+    async fn ask<T>(&self, request: impl FnOnce(Reply<T>) -> Request) -> Result<T, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(request(tx))
+            .await
+            .map_err(|_| "official client stopped")?;
+        tokio::time::timeout(PROFILE_TIMEOUT, rx)
+            .await
+            .map_err(|_| "dominion.games did not answer in time".to_string())?
+            .map_err(|_| "official client stopped".to_string())?
     }
     pub async fn idle_check(&self, duration: Duration) -> Result<(), String> {
         let mut updates = self.updates.clone();
@@ -459,6 +536,8 @@ struct Runtime {
     queue_status: Option<bool>,
     outbox: Vec<Vec<u8>>,
     pending_match: Vec<Message>,
+    profiles: Waiting<PlayerProfile>,
+    results: Waiting<Vec<ProfileResult>>,
     update: Update,
     store: Store,
 }
@@ -476,6 +555,7 @@ impl Runtime {
         self.update.searching = false;
         self.search = None;
         self.pending_match.clear();
+        self.answer_player_page("official connection closed".into());
         if let Some(mut socket) = self.socket.take() {
             let _ = socket.disconnect().await;
         }
@@ -568,6 +648,12 @@ impl Runtime {
                 self.human = None;
                 self.leaving_finished = false;
                 self.completed_table = None;
+            }
+            Message::Failed(f)
+                if f.reason == "RATING_SERVICE_DOWN"
+                    && !(self.profiles.is_empty() && self.results.is_empty()) =>
+            {
+                self.answer_player_page("dominion.games' rating service is down".into());
             }
             Message::Failed(f) => return Err(f.error().to_string()),
             Message::Login(login) => {
@@ -780,6 +866,7 @@ impl Runtime {
                 self.store.remove("own-match").map_err(|e| e.to_string())?;
                 self.completed_table = Some(table.table_id);
                 self.table = Some(table);
+                self.update.finished_at = Some(crate::hub::now_ms());
             }
             Message::AnimationCompensation => return Ok(true),
             Message::ReconnectInstruction(_) | Message::TimeoutInstruction => {
@@ -864,6 +951,17 @@ impl Runtime {
                     self.process(message)?;
                 }
             }
+            Message::Ancillary(dominion_online::transport::ancillary::Message::PlayerProfile(
+                profile,
+            )) if profile.player.id == reducer.player_id => {
+                self.profiles.answer(Some(profile.rating_type), Ok(profile));
+            }
+            Message::Ancillary(dominion_online::transport::ancillary::Message::PlayerResults {
+                rating_type,
+                results,
+            }) => {
+                self.results.answer(Some(rating_type), Ok(results));
+            }
             Message::Succeeded(6) if self.search.is_some() => {
                 self.queue_status = Some(false);
                 self.update.searching = false;
@@ -895,6 +993,50 @@ impl Runtime {
             | Message::FormResult { .. } => {}
         }
         Ok(false)
+    }
+    async fn request_profile(&mut self, kind: i32, reply: Reply<PlayerProfile>) {
+        if let Err(e) = self.connected() {
+            let _ = reply.send(Err(e));
+        } else if self.profiles.wait(kind, reply) {
+            let command = Command::RequestPlayerProfile {
+                player: self.update.reducer.player_id,
+                rating: kind,
+                period: PROFILE_PERIOD,
+                offset: PROFILE_HISTORY,
+            };
+            if let Err(e) = self.send_command(command).await {
+                self.profiles.answer(Some(kind), Err(e));
+            }
+        }
+    }
+    async fn request_results(&mut self, kind: i32, reply: Reply<Vec<ProfileResult>>) {
+        if let Err(e) = self.connected() {
+            let _ = reply.send(Err(e));
+        } else if self.results.wait(kind, reply) {
+            let command = Command::RequestPlayerResults {
+                player: self.update.reducer.player_id,
+                rating: kind,
+                count: RESULTS,
+            };
+            if let Err(e) = self.send_command(command).await {
+                self.results.answer(Some(kind), Err(e));
+            }
+        }
+    }
+    fn connected(&self) -> Result<(), String> {
+        if self.socket.is_none() || self.session.is_none() {
+            return Err("official connection closed; reconnect first".into());
+        }
+        Ok(())
+    }
+    async fn send_command(&mut self, command: Command) -> Result<(), String> {
+        let bytes = command.encode().map_err(|e| e.to_string())?;
+        self.send(bytes).await
+    }
+    /// Answers every player-page request waiting.
+    fn answer_player_page(&mut self, error: String) {
+        self.profiles.answer(None, Err(error.clone()));
+        self.results.answer(None, Err(error));
     }
     async fn answer(&mut self, answer: Answer, expect: Option<Vec<String>>) -> Result<(), String> {
         self.update.view()?;

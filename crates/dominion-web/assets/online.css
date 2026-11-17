@@ -13,3 +13,6 @@
 .online-idle .online-controls > strong { display: none; }
 .online-accounts { display: flex; flex-wrap: wrap; gap: .4em .9em; }
 .online-accounts a.on { font-weight: 700; text-decoration: underline; }
+.online-rating { display: grid; gap: .3em; }
+.online-results ol { margin: .4em 0 0; padding-left: 1.4em; display: grid; gap: .35em; max-height: 18em; overflow-y: auto; }
+.online-results summary { cursor: pointer; }
