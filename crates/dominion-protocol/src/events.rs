@@ -1,6 +1,11 @@
 //! Serde types for `dominion/events@1`: a game of Dominion as a stream of events, and the
 //! [`Table`] they describe. The table after event *n* is the fold of events `0..=n`
 //! ([`Table::apply`]); no rules engine is needed to follow a game.
+//!
+//! The format is these types, not an encoding of them. JSON Lines is what people read;
+//! any self-describing serde format carries the same stream (CBOR is tested). A format
+//! that isn't self-describing (bincode, postcard) can't: an event is a tagged, flattened
+//! map.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
