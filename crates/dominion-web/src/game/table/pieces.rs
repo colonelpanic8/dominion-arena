@@ -365,7 +365,7 @@ pub fn TableCard(
                         }
                     },
                     {face(true)}
-                    span { class: "dt-count",
+                    span { class: if n_picked < 2 { "dt-count dt-gone" } else { "dt-count" },
                         if let Some(src) = counter_url.clone() { img { src: src, alt: "", draggable: "false" } }
                         span { "{n_picked}" }
                     }
@@ -373,7 +373,7 @@ pub fn TableCard(
             }
             div { class: "dt-ov",
                 if let Some(n) = shown_count {
-                    span { class: if n == 0 { "dt-count dt-gone" } else { "dt-count" },
+                    span { class: if splits && n < 2 { "dt-count dt-gone" } else { "dt-count" },
                         if let Some(src) = counter_url.clone() {
                             img { src, alt: "", draggable: "false" }
                         }

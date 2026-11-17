@@ -4,7 +4,7 @@ use dominion_engine::{
     Card, CardId, DecisionKind, Game, GameConfig, Kind, Knowledge, Move, Opt, Phase, PlayerId,
     Purpose, Response, SetupError, Types, View,
 };
-use dominion_protocol::api::{PlayerTable, TableExtras};
+use dominion_protocol::api::{InPlay, PlayerTable, TableExtras};
 use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -369,7 +369,17 @@ impl Table {
                 .players()
                 .map(|p| PlayerTable {
                     seat: p.id().0,
-                    in_play: p.in_play().iter().filter_map(|&id| name(id)).collect(),
+                    in_play: p
+                        .in_play()
+                        .iter()
+                        .filter_map(|&id| {
+                            Some(InPlay {
+                                card: name(id)?,
+                                stays: view.stays_in_play(id),
+                                holds: view.holds(id),
+                            })
+                        })
+                        .collect(),
                     discard_top: p.discard_top().and_then(name),
                 })
                 .collect(),

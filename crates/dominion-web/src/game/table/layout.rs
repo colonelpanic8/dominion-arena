@@ -52,6 +52,16 @@ impl Rect {
             0.97 * self.h,
         )
     }
+
+    /// The box a non-Supply strip is drawn in inside its cell.
+    fn strip_inset(&self) -> Rect {
+        Rect::new(
+            self.x + 0.01 * self.w,
+            self.y + 0.03 * self.h,
+            0.98 * self.w,
+            0.94 * self.h,
+        )
+    }
 }
 
 /// What the layout depends on besides the window.
@@ -88,7 +98,7 @@ pub struct Geometry {
     /// Basic piles: the Victory column top to bottom, then the Treasure column.
     pub victory: Vec<Rect>,
     pub treasures: Vec<Rect>,
-    /// Kingdom piles, cheapest first (filled from the bottom row up, left to right).
+    /// Kingdom piles, cheapest first: from the bottom row up, left to right.
     pub kingdom: Vec<Rect>,
     pub landscapes: Vec<Rect>,
     pub non_supply: Vec<Rect>,
@@ -205,8 +215,39 @@ impl Geometry {
         Rect::new(x, y.min(100.0 * self.vh - h), w, h)
     }
 
-    /// The cards inside a window: `n` slots over 5% to 95% of its width.
-    pub fn window_row(&self, win: &Rect, n: usize, wide: &[bool]) -> Row {
+    /// The window a tab opens (the trash, a mat, cards in play off their turn) for
+    /// `stacks` stacks: centred over the table, as wide as its cards need up to 69.3vw.
+    pub fn tab_window(&self, stacks: usize) -> Rect {
+        let need = 30.0 * self.vh / FULL * (2.0 + 0.8 * stacks as f64);
+        let most = 0.9 * (100.0 - RIGHT_COLUMN) * self.vw;
+        let x = if need > most {
+            self.vw
+        } else {
+            self.vw + ((99.0 - RIGHT_COLUMN) * self.vw - need) / 2.0
+        };
+        Rect::new(x, 25.0 * self.vh, need.min(most), 30.0 * self.vh)
+    }
+
+    /// A player's cards in play inside their tab's window: from its left, each over the
+    /// last by 2vh, and with more than four stacks stepping up, level and down in turn.
+    /// The row and each card's top.
+    pub fn play_window_row(&self, win: &Rect, n: usize) -> (Row, Vec<f64>) {
+        let h = (30.0 * self.vh).min(0.6 * win.h);
+        let w = h / FULL;
+        let (x0, x1) = (win.x + 0.05 * win.w, win.x + 0.95 * win.w);
+        let y = win.y + (win.h - h) / 2.0 + 2.0 * self.vh;
+        let step = |i: usize| match n > 4 {
+            true => 3.0 * ((i % 3) as f64 - 1.0) * self.vh,
+            false => 0.0,
+        };
+        let tops = (0..n).map(|i| y + step(i)).collect();
+        let xs = spread(n, w, x0, x1, -2.0 * self.vh, false);
+        (Row { xs, w, h, y }, tops)
+    }
+
+    /// The cards inside a window: `n` slots over 5% to 95% of its width, lowered by
+    /// `title` of their height for a window with a title bar.
+    pub fn window_row(&self, win: &Rect, n: usize, wide: &[bool], title: f64) -> Row {
         let h = (30.0 * self.vh).min(0.6 * win.h);
         let w = h / FULL;
         let units: f64 = (0..n)
@@ -231,25 +272,53 @@ impl Geometry {
             xs,
             w,
             h,
-            y: win.y + (win.h - h) / 2.0 + 0.075 * h,
+            y: win.y + (win.h - h) / 2.0 + title * h,
         }
     }
 }
 
-/// One way of arranging the kingdom box, in units: a pile is one column wide (a pile's
-/// width) and one row tall.
+/// A cell of the kingdom box, in units: (column, row, columns, rows). A pile is one
+/// column wide (a pile's width) and one row tall.
+type Cell = (f64, f64, f64, f64);
+
+/// One way of arranging the kingdom box: dominion.games' `Layout`, step for step.
+#[derive(Default)]
 struct Grid {
     cols: f64,
     rows: f64,
-    /// (column, row, columns, rows) per pile, landscape and strip.
-    kingdom: Vec<(f64, f64, f64, f64)>,
-    landscapes: Vec<(f64, f64, f64, f64)>,
-    strips: Vec<(f64, f64, f64, f64)>,
+    kingdom: Vec<Cell>,
+    landscapes: Vec<Cell>,
+    strips: Vec<Cell>,
 }
 
-/// A strip is a fifth of a row tall; four go in a pile's cell.
-const STRIP_ROWS: f64 = 0.25;
+impl Grid {
+    fn grow(&mut self, c: Cell) -> Cell {
+        self.cols = self.cols.max(c.0 + c.2);
+        self.rows = self.rows.max(c.1 + c.3);
+        c
+    }
 
+    fn pile(&mut self, col: f64, row: f64) {
+        let c = self.grow((col, row, 1.0, 1.0));
+        self.kingdom.push(c);
+    }
+
+    fn landscape(&mut self, col: f64, row: f64, w: f64, h: f64) {
+        let c = self.grow((col, row, w, h));
+        self.landscapes.push(c);
+    }
+
+    /// A strip is a fifth of a row tall.
+    fn strip(&mut self, col: f64, row: f64) {
+        let c = self.grow((col, row, 1.0, 0.2));
+        self.strips.push(c);
+    }
+}
+
+/// The kingdom in `rows` rows filled from the top, strips in the last row's empty
+/// cells; landscapes in columns to the right (`up`) or in rows below, strips after
+/// them; the strips left over under the grid, `micro_rows` to a column, and then in
+/// columns to its right.
 fn grid(
     kingdom: usize,
     landscapes: usize,
@@ -258,109 +327,111 @@ fn grid(
     up: bool,
     micro_rows: usize,
 ) -> Grid {
-    let rows_f = rows as f64;
-    let cols = kingdom.div_ceil(rows).max(1) as f64;
-    let mut g = Grid {
-        cols,
-        rows: rows_f,
-        kingdom: vec![],
-        landscapes: vec![],
-        strips: vec![],
-    };
-    // Kingdom piles: cheapest at the bottom left, filled bottom row first.
-    for i in 0..kingdom {
-        let col = (i % cols as usize) as f64;
-        let row = rows_f - 1.0 - (i / cols as usize) as f64;
-        g.kingdom.push((col, row, 1.0, 1.0));
-    }
-    // Empty cells that take strips: (column, row, columns wide).
-    let mut free_cells: Vec<(f64, f64, f64)> = vec![];
-    // The partial top row's empty cells take strips.
-    let used_top = kingdom % cols as usize;
-    if kingdom > 0 && used_top != 0 {
-        let top = rows_f - 1.0 - (kingdom / cols as usize) as f64;
-        for c in used_top..cols as usize {
-            free_cells.push((c as f64, top, 1.0));
+    let large = rows as f64;
+    let mut g = Grid::default();
+    let mut left = strips;
+    let per_row = (kingdom as f64 / large).ceil();
+    let (mut col, mut row) = (0.0, 0.0);
+    for _ in 0..kingdom {
+        g.pile(col, row);
+        col += 1.0;
+        if col >= per_row {
+            col = 0.0;
+            row += 1.0;
         }
     }
-    let mut right = cols;
-    let mut bottom = rows_f;
-    if landscapes > 0 {
-        if up {
-            if landscapes == 3 && rows == 2 {
-                for i in 0..3 {
-                    g.landscapes
-                        .push((right, i as f64 * 2.0 / 3.0, 1.0, 2.0 / 3.0));
-                }
-                right += 1.0;
-            } else {
-                let per = rows;
-                let lcols = landscapes.div_ceil(per);
-                for i in 0..landscapes {
-                    let c = right + 1.5 * (i / per) as f64;
-                    let r = rows_f - 1.0 - (i % per) as f64;
-                    g.landscapes.push((c, r, 1.5, 1.0));
-                }
-                let last = landscapes % per;
-                if last != 0 {
-                    let c = right + 1.5 * (lcols - 1) as f64;
-                    for r in 0..(per - last) {
-                        free_cells.push((c, r as f64, 1.5));
-                    }
-                }
-                right += 1.5 * lcols as f64;
+    if col <= per_row - 1.0 && col > 0.0 {
+        row += 1.0 / 30.0;
+        while left > 0 && col <= per_row - 1.0 {
+            g.strip(col, row);
+            row += 0.25;
+            if row >= large {
+                col += 1.0;
+                row -= 1.0;
+            }
+            left -= 1;
+        }
+    }
+    if up {
+        col = per_row;
+        row = 0.0;
+        if landscapes == 3 && rows == 2 {
+            for _ in 0..landscapes {
+                g.landscape(col, row, 1.0, 2.0 / 3.0);
+                row += 2.0 / 3.0;
             }
         } else {
-            let per = cols as usize;
-            let lrows = landscapes.div_ceil(per);
-            for i in 0..landscapes {
-                let c = (i % per) as f64;
-                let r = bottom + (i / per) as f64 * 2.0 / 3.0;
-                g.landscapes.push((c, r, 1.0, 2.0 / 3.0));
+            for _ in 0..landscapes {
+                g.landscape(col, row, 1.5, 1.0);
+                row += 1.0;
+                if row >= large {
+                    col += 1.5;
+                    row = 0.0;
+                }
             }
-            bottom += lrows as f64 * 2.0 / 3.0;
+            if landscapes > 0 {
+                row += 1.0 / 30.0;
+                while left > 0 && row < large {
+                    g.strip(col, row);
+                    row += 0.25;
+                    left -= 1;
+                }
+            }
+        }
+    } else {
+        col = 0.0;
+        row = large;
+        for _ in 0..landscapes {
+            g.landscape(col, row, 1.0, 2.0 / 3.0);
+            col += 1.0;
+            if col >= per_row {
+                col = 0.0;
+                row += 2.0 / 3.0;
+            }
+        }
+        if col > 0.0 {
+            let bottom = g.rows;
+            row += 4.0 / 45.0;
+            while left > 0 && col < per_row {
+                g.strip(col, row);
+                row += 13.0 / 45.0;
+                if row >= bottom {
+                    col += 1.0;
+                    row -= 26.0 / 45.0;
+                }
+                left -= 1;
+            }
         }
     }
-    let mut placed = 0;
-    'cells: for (c, r, w) in free_cells {
-        for k in 0..4 {
-            if placed == strips {
-                break 'cells;
-            }
-            g.strips.push((c, r + k as f64 * STRIP_ROWS, w, STRIP_ROWS));
-            placed += 1;
+    let (right, bottom) = (g.cols, g.rows);
+    col = 0.0;
+    row = bottom + 0.025;
+    while left > 0 && col < right {
+        g.strip(col, row);
+        row += 0.25;
+        if row >= bottom + micro_rows as f64 / 4.0 {
+            col += 1.0;
+            row = bottom + 0.025;
         }
+        left -= 1;
     }
-    let left = strips - placed;
-    if left > 0 {
-        let per_row = (right.floor() as usize).max(1);
-        let rows_needed = left.div_ceil(per_row).min(micro_rows);
-        let under = (rows_needed * per_row).min(left);
-        for i in 0..under {
-            let c = (i % per_row) as f64;
-            let r = bottom + (i / per_row) as f64 * STRIP_ROWS;
-            g.strips.push((c, r, 1.0, STRIP_ROWS));
+    col = g.cols;
+    row = 0.0;
+    while left > 0 {
+        g.strip(col, row);
+        row += 0.25;
+        if row >= g.rows {
+            col += 1.0;
+            row = 0.0;
         }
-        if under > 0 {
-            bottom += rows_needed as f64 * STRIP_ROWS;
-        }
-        let rest = left - under;
-        if rest > 0 {
-            let per_col = ((bottom / STRIP_ROWS).floor() as usize).max(1);
-            for i in 0..rest {
-                let c = right + (i / per_col) as f64;
-                let r = (i % per_col) as f64 * STRIP_ROWS;
-                g.strips.push((c, r, 1.0, STRIP_ROWS));
-            }
-            right += rest.div_ceil(per_col) as f64;
-        }
+        left -= 1;
     }
-    g.cols = right;
-    g.rows = bottom;
     g
 }
 
-/// The kingdom box's best arrangement: the one giving the tallest pile.
+/// The kingdom box's best arrangement, the one giving the tallest pile: piles and
+/// landscapes from the bottom row up, left to right, and the strips in the order they
+/// were placed.
 fn kingdom_layout(shape: &Shape, b: Rect) -> (Vec<Rect>, Vec<Rect>, Vec<Rect>) {
     let mut best: Option<(f64, Grid)> = None;
     for rows in 2..=5usize {
@@ -374,24 +445,30 @@ fn kingdom_layout(shape: &Shape, b: Rect) -> (Vec<Rect>, Vec<Rect>, Vec<Rect>) {
                     up,
                     micro,
                 );
+                if g.rows == 0.0 || g.cols == 0.0 {
+                    continue;
+                }
                 let unit = (b.h / g.rows).min(b.w / g.cols * MINI);
-                if best.as_ref().is_none_or(|(u, _)| unit > *u + 1e-6) {
+                if best.as_ref().is_none_or(|(u, _)| unit > *u) {
                     best = Some((unit, g));
                 }
             }
         }
     }
-    let (unit, g) = best.expect("a layout");
+    let Some((unit, mut g)) = best else {
+        return Default::default();
+    };
     let cw = unit / MINI;
     let x0 = b.x + (b.w - g.cols * cw) / 2.0;
     let y0 = b.y + (b.h - g.rows * unit) / 2.0;
-    let place = |&(c, r, w, h): &(f64, f64, f64, f64)| {
-        Rect::new(x0 + c * cw, y0 + r * unit, w * cw, h * unit).inset()
-    };
+    let place = |&(c, r, w, h): &Cell| Rect::new(x0 + c * cw, y0 + r * unit, w * cw, h * unit);
+    let from_the_bottom = |a: &Cell, b: &Cell| b.1.total_cmp(&a.1).then(a.0.total_cmp(&b.0));
+    g.kingdom.sort_by(from_the_bottom);
+    g.landscapes.sort_by(from_the_bottom);
     (
-        g.kingdom.iter().map(place).collect(),
-        g.landscapes.iter().map(place).collect(),
-        g.strips.iter().map(place).collect(),
+        g.kingdom.iter().map(|c| place(c).inset()).collect(),
+        g.landscapes.iter().map(|c| place(c).inset()).collect(),
+        g.strips.iter().map(|c| place(c).strip_inset()).collect(),
     )
 }
 
@@ -516,6 +593,33 @@ mod tests {
         assert!(g.kingdom[0].y > g.kingdom[5].y);
         assert!(g.kingdom[0].x < g.kingdom[4].x);
         assert!((g.kingdom[0].x - g.kingdom[5].x).abs() < 0.1);
+    }
+
+    /// Boxes dominion.games' own `Layout` gives at 1920 × 1080.
+    #[test]
+    fn the_kingdom_box_is_arranged_as_dominion_games_arranges_it() {
+        let near = |r: &Rect, x: f64, y: f64, w: f64, h: f64| {
+            let off = [r.x - x, r.y - y, r.w - w, r.h - h];
+            assert!(off.iter().all(|d| d.abs() < 0.1), "{r:?}");
+        };
+        // A partial row is the bottom one: the five cheapest of eleven piles.
+        let g = geometry(1920.0, 1080.0, &shape(11, 0, 0));
+        near(&g.kingdom[0], 287.4, 299.8, 192.7, 181.7);
+        near(&g.kingdom[5], 287.4, 112.5, 192.7, 181.7);
+        near(&g.kingdom[10], 1280.7, 112.5, 192.7, 181.7);
+        // Landscapes from the bottom of their column, strips in a column beside it.
+        let g = geometry(1920.0, 1080.0, &shape(10, 2, 3));
+        near(&g.landscapes[0], 1082.2, 299.2, 231.3, 145.4);
+        near(&g.landscapes[1], 1082.2, 149.4, 231.3, 145.4);
+        near(&g.non_supply[0], 1321.1, 153.0, 155.8, 28.2);
+        near(&g.non_supply[2], 1321.1, 228.0, 155.8, 28.2);
+        // A lone landscape sits at the top.
+        let g = geometry(1920.0, 1080.0, &shape(10, 1, 0));
+        near(&g.landscapes[0], 1204.7, 126.7, 266.8, 167.7);
+        // Strips with no landscapes go under the kingdom.
+        let g = geometry(1920.0, 1080.0, &shape(10, 0, 2));
+        near(&g.kingdom[0], 432.8, 280.4, 174.8, 164.8);
+        near(&g.non_supply[1], 613.9, 453.0, 176.6, 31.9);
     }
 
     #[test]

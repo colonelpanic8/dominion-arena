@@ -570,7 +570,7 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
         win.y = (win.y - extra).max(0.0);
     }
     let cards_box = Rect::new(win.x, win.y, win.w, win.h - extra);
-    let row = g.window_row(&cards_box, tray.len(), &wide);
+    let row = g.window_row(&cards_box, tray.len(), &wide, 0.0);
     let q = query().trim().to_lowercase();
     let results: Vec<String> = if u.inter.name_any && q.len() >= 2 {
         cards

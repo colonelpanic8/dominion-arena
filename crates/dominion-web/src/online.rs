@@ -40,6 +40,7 @@ fn apply(mut state: Signal<GameState>, mut game: Signal<String>, update: OnlineO
         game.set(view.game.id.clone().unwrap_or_default());
     }
     st.view = update.view;
+    st.table = update.table;
 }
 /// One official account's page: `account` none is the primary one's unprefixed routes.
 #[component]

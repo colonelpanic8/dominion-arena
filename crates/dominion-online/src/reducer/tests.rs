@@ -724,3 +724,30 @@ fn count_correction_keeps_unaffected_visible_cards_and_never_invents_a_destinati
     assert_eq!(you.discard.known, BTreeMap::from([("Copper".into(), 1)]));
     assert_eq!(QuestionContext::card_name(&r, 0), Some("Copper".into()));
 }
+
+#[test]
+fn the_table_lists_cards_in_play_in_the_order_they_were_played() {
+    let mut r = reducer();
+    r.apply(movement(0, 3, vec![0], vec![0])).unwrap();
+    r.apply(movement(1, 3, vec![-1], vec![1])).unwrap();
+    r.apply(movement(2, 3, vec![3], vec![3])).unwrap();
+    r.apply(model::Event::CardStatus(model::CardStatus {
+        card: 1,
+        stays_out: true,
+        played_card_lists: vec![],
+        set_aside_card_lists: vec![],
+        properties: vec![],
+    }))
+    .unwrap();
+    let table = r.table().unwrap();
+    let played: Vec<_> = table.players[0]
+        .in_play
+        .iter()
+        .map(|c| (c.card.as_str(), c.stays))
+        .collect();
+    assert_eq!(
+        played,
+        [("Copper", false), ("Village", true), ("Copper", false)]
+    );
+    assert!(table.players[1].in_play.is_empty());
+}

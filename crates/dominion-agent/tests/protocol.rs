@@ -1405,6 +1405,29 @@ fn a_durations_effect_says_it_lasts_until_its_owners_next_turn() {
 }
 
 #[test]
+fn the_table_extras_say_which_cards_in_play_stay_and_hold_cards() {
+    let mut t = table(&[Card::Haven], 3, &["Ada", "Bo"]);
+    let waiting = |seat: PlayerId, _: &AgentDecision| seat.0 == 1;
+    loop {
+        let seat = play_to(&mut t, "Haven", waiting).expect("the game goes on");
+        let v = t.view(seat);
+        if v.lasting.iter().any(|l| l.card == "Haven") {
+            let extras = t.extras(seat);
+            let kept: Vec<_> = extras.players[0]
+                .in_play
+                .iter()
+                .map(|c| (c.card.as_str(), c.stays, c.holds))
+                .collect();
+            assert_eq!(kept, [("Haven", true, true)]);
+            break;
+        }
+        assert!(t.extras(seat).players[0].in_play.is_empty());
+        let end = pick(&v.decision.unwrap(), |o| o.action == "end-phase").unwrap();
+        t.answer(seat, &end).unwrap();
+    }
+}
+
+#[test]
 fn the_final_view_knows_the_last_clean_ups_discard_top() {
     let config = GameConfig {
         colonies: Some(false),

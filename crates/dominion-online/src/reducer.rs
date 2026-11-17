@@ -675,6 +675,37 @@ impl Reducer {
         self.revision += 1;
         Ok((index, values))
     }
+    /// What a graphical table draws beside the view: each player's cards in play in the
+    /// order they came into play, as the official client lays them out.
+    pub fn table(&self) -> Result<view::api::TableExtras> {
+        let state = self.state()?;
+        let players = (0..state.players.len() as i32)
+            .map(|owner| {
+                let in_play = state
+                    .zones
+                    .iter()
+                    .filter(|z| z.owner == owner && z.kind == 8)
+                    .flat_map(|z| self.knowledge.ordered(z.index))
+                    .filter_map(|(id, name)| {
+                        let card = self.catalog.card(name?).ok()?.name.clone();
+                        let status = state.card_statuses.iter().find(|s| Some(s.card) == id);
+                        Some(view::api::InPlay {
+                            stays: status.is_some_and(|s| s.stays_out),
+                            holds: card == "Garrison"
+                                || status.is_some_and(|s| !s.set_aside_card_lists.is_empty()),
+                            card,
+                        })
+                    })
+                    .collect();
+                view::api::PlayerTable {
+                    seat: owner as u8,
+                    in_play,
+                    discard_top: None,
+                }
+            })
+            .collect();
+        Ok(view::api::TableExtras { players })
+    }
     pub fn view(&self) -> Result<view::AgentView> {
         let state = self.state()?;
         let seat = self.seat();
