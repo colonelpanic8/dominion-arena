@@ -10,7 +10,7 @@ pub use dominion_protocol::api::{
     Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
 };
 use dominion_protocol::api::{UndoRequest, UndoState};
-use dominion_protocol::lobby::{GameMeta, MyGame, Source, UndoRule, UserRef};
+use dominion_protocol::lobby::{Clock, ClockView, GameMeta, MyGame, Source, UndoRule, UserRef};
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -91,6 +91,8 @@ pub struct Meta {
     pub watchable: bool,
     /// The deciding seat forfeits when it is away or takes too long ([`Timing`]).
     pub timed: bool,
+    /// A chess clock: a seat whose time runs out forfeits.
+    pub clock: Option<ClockState>,
     /// Whether answers can be taken back: an undo shows a player what would have happened.
     pub undo: UndoRule,
     /// Per seat: played by one of the server's agents, which allow every undo.
@@ -99,11 +101,93 @@ pub struct Meta {
     pub table: Option<String>,
     /// Milliseconds since the Unix epoch.
     pub started: u64,
-    /// Why it ended before its end: `resigned` or `abandoned`.
+    /// Why it ended before its end: `resigned`, `abandoned` or `timeout`.
     pub ended: Option<String>,
     pub ended_at: Option<u64>,
     /// Its record is in the history.
     pub recorded: bool,
+}
+
+/// A game's chess clock, as of its last change.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClockState {
+    pub rule: Clock,
+    /// Per seat: milliseconds left.
+    #[serde(default)]
+    pub left: Vec<u64>,
+    /// The seat whose time has run since the last change.
+    #[serde(default)]
+    pub running: Option<PlayerId>,
+    /// Per seat: the turns it has had the increment for.
+    #[serde(default)]
+    pub credited: Vec<u32>,
+}
+
+impl ClockState {
+    pub fn new(rule: Clock) -> ClockState {
+        ClockState {
+            rule,
+            left: vec![],
+            running: None,
+            credited: vec![],
+        }
+    }
+
+    /// After a change `elapsed` milliseconds after the last one: charges the seat whose
+    /// time ran, adds the increment for each turn begun since, and starts `table`'s
+    /// deciding seat's time.
+    fn advance(&mut self, table: &Table, elapsed: u64) {
+        let seats = table.names().len();
+        if self.left.len() != seats {
+            self.left = vec![u64::from(self.rule.initial) * 1000; seats];
+        }
+        self.credited.resize(seats, 0);
+        if let Some(running) = self.running
+            && let Some(left) = self.left.get_mut(running.index())
+        {
+            *left = left.saturating_sub(elapsed);
+        }
+        for seat in 0..seats {
+            let taken = table.game().player(PlayerId(seat as u8)).turns_taken;
+            let begun = taken.saturating_sub(self.credited[seat]);
+            if begun > 0 {
+                self.left[seat] += u64::from(begun) * u64::from(self.rule.increment) * 1000;
+                self.credited[seat] = taken;
+            }
+        }
+        self.running = if table.is_over() {
+            None
+        } else {
+            table.deciding()
+        };
+    }
+
+    /// `seat`'s time `elapsed` milliseconds after the last change.
+    fn left_at(&self, seat: usize, elapsed: u64) -> u64 {
+        let left = self.left.get(seat).copied().unwrap_or(0);
+        if self.running.is_some_and(|r| r.index() == seat) {
+            left.saturating_sub(elapsed)
+        } else {
+            left
+        }
+    }
+
+    /// The running seat and when its time runs out, given when the last change was.
+    fn flag_at(&self, since: u64) -> Option<(PlayerId, u64)> {
+        let running = self.running?;
+        Some((running, since + self.left_at(running.index(), 0)))
+    }
+
+    fn view(&self, elapsed: u64) -> ClockView {
+        ClockView {
+            left: (0..self.left.len())
+                .map(|s| self.left_at(s, elapsed))
+                .collect(),
+            free: vec![],
+            running: self.running.map(|r| r.0),
+            increment: Some(u64::from(self.rule.increment) * 1000),
+        }
+    }
 }
 
 /// A hosted game, for the operator ([`Hub::hosting`]).
@@ -152,6 +236,8 @@ impl Default for Timing {
 
 pub(crate) struct SeatObservation<'a> {
     pub view: dominion_engine::View<'a>,
+    /// The game's chess clock: its rule and how it stands now.
+    pub clock: Option<(Clock, ClockView)>,
     pub known: &'a dominion_engine::KnownCards,
     pub names: &'a [String],
     pub decision_id: Option<&'a str>,
@@ -169,6 +255,8 @@ pub(crate) struct PlayObservation {
     pub undos: u64,
     /// What the seat is told about undos.
     pub note: Option<String>,
+    /// The game's chess clock as it stands.
+    pub clock: Option<ClockView>,
 }
 
 fn current_entry(
@@ -306,6 +394,23 @@ impl Hosted {
     fn connected(&self, seat: usize, now: u64) -> bool {
         self.streams[seat].load(Ordering::Relaxed) > 0
             || now.saturating_sub(self.seen[seat].load(Ordering::Relaxed)) < CONNECTED_MS
+    }
+
+    /// The game's clock as it stands at `now`.
+    fn clock(&self, meta: &Meta, now: u64) -> Option<(Clock, ClockView)> {
+        let clock = meta.clock.as_ref()?;
+        let elapsed = now.saturating_sub(self.since.load(Ordering::Relaxed));
+        Some((clock.rule, clock.view(elapsed)))
+    }
+
+    /// The seat whose clock has run out at `now`, if one has.
+    fn flagged(&self, now: u64) -> Option<PlayerId> {
+        let meta = lock(&self.meta);
+        let (seat, at) = meta
+            .clock
+            .as_ref()?
+            .flag_at(self.since.load(Ordering::Relaxed))?;
+        (at <= now).then_some(seat)
     }
 
     /// When `deciding` forfeits unless it answers.
@@ -871,6 +976,7 @@ impl Hub {
         let names = names(req)?;
         let meta = Meta {
             watchable: req.watchable.unwrap_or(false),
+            clock: req.clock.map(ClockState::new),
             ..Meta::default()
         };
         self.host(config, names, meta)
@@ -906,6 +1012,10 @@ impl Hub {
         meta.owners.resize(seats, None);
         meta.agents.resize(seats, false);
         meta.started = now_ms();
+        if let Some(clock) = &mut meta.clock {
+            clock.rule.check().map_err(bad)?;
+            clock.advance(&table, 0);
+        }
         let tokens: Vec<String> = (0..seats).map(|_| token()).collect();
         let created = Created {
             game_id: id.clone(),
@@ -1069,7 +1179,7 @@ impl Hub {
             .collect()
     }
 
-    /// Whether account `user` plays in a timed game that is still running.
+    /// Whether account `user` plays in a timed or clocked game that is still running.
     pub fn in_timed_game(&self, user: &str) -> bool {
         let games: Vec<Arc<Hosted>> = {
             let index = lock(&self.index);
@@ -1078,9 +1188,12 @@ impl Hub {
                 .filter_map(|s| index.games.get(&s.game).cloned())
                 .collect()
         };
-        games
-            .iter()
-            .any(|g| !lock(&g.table).is_over() && lock(&g.meta).timed)
+        games.iter().any(|g| {
+            !lock(&g.table).is_over() && {
+                let meta = lock(&g.meta);
+                meta.timed || meta.clock.is_some()
+            }
+        })
     }
 
     pub fn list(&self) -> Vec<GameSummary> {
@@ -1183,6 +1296,7 @@ impl Hub {
             let decision = table.decision_id();
             project(SeatObservation {
                 view: table.game().view(seat.seat),
+                clock: game.clock(&meta, now_ms()),
                 known: &known,
                 names: table.names(),
                 decision_id: decision.as_deref(),
@@ -1223,10 +1337,12 @@ impl Hub {
                 glossary,
                 undos: table.undos(),
                 note: None,
+                clock: None,
             }
         })
         .map(|mut observation| {
             observation.note = self.undo_note(&game, &table, seat.seat);
+            observation.clock = game.clock(&lock(&game.meta), now_ms()).map(|(_, c)| c);
             observation
         })
     }
@@ -1273,6 +1389,7 @@ impl Hub {
                 .map(|s| game.connected(s, now))
                 .collect(),
             forfeit_at,
+            clock: game.clock(&meta, now).map(|(_, view)| view),
             watchers: game.watchers.load(Ordering::Relaxed),
             ended: meta.ended.clone(),
             now,
@@ -1396,6 +1513,13 @@ impl Hub {
     /// After a change to `game`, made with `table` locked: saves it and wakes its
     /// followers. What to tell [`Hub::ended`] once the lock is released.
     fn changed(&self, game: &Hosted, table: &Table) -> Option<Ended> {
+        let now = now_ms();
+        if let Some(clock) = &mut lock(&game.meta).clock {
+            clock.advance(
+                table,
+                now.saturating_sub(game.since.load(Ordering::Relaxed)),
+            );
+        }
         let ended = table.is_over().then(|| {
             let mut meta = lock(&game.meta);
             meta.ended_at = Some(now_ms());
@@ -1406,7 +1530,7 @@ impl Hub {
             }
         });
         self.save(game, table);
-        game.since.store(now_ms(), Ordering::Relaxed);
+        game.since.store(now, Ordering::Relaxed);
         game.version.send_modify(|v| *v += 1);
         ended
     }
@@ -1440,12 +1564,29 @@ impl Hub {
         self.mutate(seat, |next| next.respond(seat.seat, decision, response))
     }
 
+    /// Ends game `id` if a seat's clock has run out, which nothing may then change.
+    fn in_time(&self, game: &Hosted, id: &str) -> Result<(), HubError> {
+        let Some(flagged) = game.flagged(now_ms()) else {
+            return Ok(());
+        };
+        let seat = Seat {
+            game: id.into(),
+            seat: flagged,
+        };
+        self.resign(&seat, "timeout")?;
+        Err(HubError::Conflict(format!(
+            "{}'s time ran out: the game is over",
+            self.seat_name(&seat)?
+        )))
+    }
+
     fn mutate<T>(
         &self,
         seat: &Seat,
         apply: impl FnOnce(&mut Table) -> Result<T, AnswerError>,
     ) -> Result<T, HubError> {
         let game = self.game(&seat.game)?;
+        self.in_time(&game, &seat.game)?;
         let (answered, ended) = {
             let mut table = lock(&game.table);
             let mut next = table.clone();
@@ -1495,6 +1636,7 @@ impl Hub {
     /// now. Whether it happened.
     pub fn undo(&self, seat: &Seat, log_seq: Option<usize>) -> Result<bool, HubError> {
         let game = self.game(&seat.game)?;
+        self.in_time(&game, &seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
             if !self.may_undo(&game, &table) {
@@ -1571,6 +1713,7 @@ impl Hub {
     /// allowed it, it happens. Whether it happened.
     pub fn answer_undo(&self, seat: &Seat, allow: bool) -> Result<bool, HubError> {
         let game = self.game(&seat.game)?;
+        self.in_time(&game, &seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
             let allowed = self.may_undo(&game, &table);
@@ -1630,6 +1773,7 @@ impl Hub {
     /// ([`Table::play_treasures`]). How many it played.
     pub fn play_treasures(&self, seat: &Seat, decision: &str) -> Result<u32, HubError> {
         let game = self.game(&seat.game)?;
+        self.in_time(&game, &seat.game)?;
         let (played, ended) = {
             let mut table = lock(&game.table);
             let mut next = table.clone();
@@ -1642,7 +1786,8 @@ impl Hub {
         Ok(played)
     }
 
-    /// Ends the game with `seat` out of it: `cause` is `resigned` or `abandoned`.
+    /// Ends the game with `seat` out of it: `cause` is `resigned`, `abandoned` or
+    /// `timeout`.
     pub fn resign(&self, seat: &Seat, cause: &str) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let ended = {
@@ -1679,21 +1824,30 @@ impl Hub {
         }
     }
 
-    /// The deciding seats of timed games whose time is up.
-    pub fn overdue(&self) -> Vec<Seat> {
+    /// The seats whose time is up, with why: `timeout` (their clock ran out) or
+    /// `abandoned` (the deciding seat of a timed game was away or too slow).
+    pub fn overdue(&self) -> Vec<(Seat, &'static str)> {
         let timing = *lock(&self.timing);
         let games: Vec<Arc<Hosted>> = lock(&self.index).games.values().cloned().collect();
         let now = now_ms();
         games
             .iter()
-            .filter(|g| lock(&g.meta).timed)
             .filter_map(|g| {
                 let table = lock(&g.table);
-                let deciding = table.deciding()?;
-                (g.forfeit_at(deciding, timing)? <= now).then(|| Seat {
+                if table.is_over() {
+                    return None;
+                }
+                let seat = |seat| Seat {
                     game: table.id().into(),
-                    seat: deciding,
-                })
+                    seat,
+                };
+                if let Some(flagged) = g.flagged(now) {
+                    return Some((seat(flagged), "timeout"));
+                }
+                let deciding = table.deciding()?;
+                let timed = lock(&g.meta).timed;
+                (timed && g.forfeit_at(deciding, timing)? <= now)
+                    .then(|| (seat(deciding), "abandoned"))
             })
             .collect()
     }
@@ -1810,6 +1964,7 @@ impl Hub {
     /// stopped them, with why.
     pub fn steps(&self, seat: &Seat, steps: &str) -> Result<Stepped, HubError> {
         let game = self.game(&seat.game)?;
+        self.in_time(&game, &seat.game)?;
         let mut table = lock(&game.table);
         let seen = table
             .view(seat.seat)

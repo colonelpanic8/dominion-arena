@@ -3,13 +3,14 @@ use dominion_online::{
     catalog::{Catalog, VERSION},
     reducer::Reducer,
     transport::{
-        Endpoint, Group, Message, RequiredSlot, RuleValue, TableDetails, TableRule, Transport,
-        command,
+        Endpoint, Group, Message, RequiredSlot, RuleValue, TableDetails, TableRule, TimerUpdate,
+        Transport, command,
     },
 };
 use dominion_protocol::{
     AgentView, Answer, GlossaryEntry,
     api::{OnlineMatching, OnlineMode},
+    lobby::ClockView,
 };
 mod matching;
 use matching::HumanTable;
@@ -103,8 +104,44 @@ pub(crate) struct Update {
     pub searching: bool,
     pub queue_feedback: Vec<String>,
     pub mode: OnlineMode,
+    /// The official server's latest timer for each player, with when it came (ms since
+    /// the epoch).
+    pub timers: Vec<(TimerUpdate, u64)>,
 }
 impl Update {
+    /// The game's timers as they stand at `now`, by seat.
+    pub fn clock(&self, now: u64) -> Option<ClockView> {
+        if self.timers.is_empty() {
+            return None;
+        }
+        let players = &self.reducer.state().ok()?.players;
+        let mut clock = ClockView {
+            left: vec![0; players.len()],
+            free: vec![0; players.len()],
+            running: None,
+            increment: None,
+        };
+        for (timer, at) in &self.timers {
+            let Some(seat) = players.iter().position(|p| p.player_id == timer.player) else {
+                continue;
+            };
+            let (mut left, mut free) = (timer.time.max(0) as u64, timer.free_time.max(0) as u64);
+            if timer.running {
+                let elapsed = now.saturating_sub(*at);
+                let from_free = elapsed.min(free);
+                free -= from_free;
+                left = left.saturating_sub(elapsed - from_free);
+                clock.running = u8::try_from(seat).ok();
+            }
+            clock.left[seat] = left;
+            clock.free[seat] = free;
+        }
+        if clock.free.iter().all(|&f| f == 0) {
+            clock.free.clear();
+        }
+        Some(clock)
+    }
+
     pub fn view(&self) -> Result<Option<AgentView>, String> {
         if let Some(error) = &self.error {
             return Err(error.clone());
@@ -208,6 +245,7 @@ impl Client {
                 connected: true,
                 searching: false,
                 queue_feedback: Vec::new(),
+                timers: Vec::new(),
                 mode,
             },
             store,
@@ -594,11 +632,21 @@ impl Runtime {
                             .into(),
                     );
                 }
+                if reducer.game_id != Some(snapshot.game_id) {
+                    self.update.timers.clear();
+                }
                 reducer.replace(snapshot).map_err(|e| e.to_string())?;
                 self.needs_snapshot = false;
                 self.update.searching = false;
             }
             Message::Event(event) => reducer.apply(event).map_err(|e| e.to_string())?,
+            Message::Timers(timers) => {
+                let at = crate::hub::now_ms();
+                for timer in timers {
+                    self.update.timers.retain(|(t, _)| t.player != timer.player);
+                    self.update.timers.push((timer, at));
+                }
+            }
             Message::Question(question) => {
                 if self.needs_snapshot {
                     return Err("question arrived before reconnect snapshot".into());
@@ -842,7 +890,6 @@ impl Runtime {
             | Message::PlayerReconnected { .. }
             | Message::Ticker(_)
             | Message::Pong
-            | Message::Timers(_)
             | Message::ServerState(_)
             | Message::Explanations { .. }
             | Message::FormResult { .. } => {}

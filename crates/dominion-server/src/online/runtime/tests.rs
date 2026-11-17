@@ -79,6 +79,7 @@ fn runtime() -> (TempDir, Runtime) {
             searching: false,
             queue_feedback: Vec::new(),
             mode: OnlineMode::Bots,
+            timers: Vec::new(),
         },
         store,
     };
@@ -1495,4 +1496,37 @@ fn a_timeout_offer_for_an_opponent_resigns_them() {
     runtime.update.reducer.running = false;
     runtime.process(offer(1)).unwrap();
     assert!(runtime.outbox.is_empty());
+}
+
+#[test]
+fn official_timers_are_kept_by_seat_and_counted_down_while_running() {
+    let (_directory, mut runtime) = active_runtime();
+    assert_eq!(runtime.update.clock(0), None);
+    let timer = |player, time, running, free_time| TimerUpdate {
+        player,
+        time,
+        running,
+        free_time,
+        maximum: 0,
+    };
+    runtime
+        .process(Message::Timers(vec![
+            timer(-2, 300_000, true, 5_000),
+            timer(42, 200_000, false, 0),
+        ]))
+        .unwrap();
+    let at = runtime.update.timers[0].1;
+    let clock = runtime.update.clock(at + 8_000).unwrap();
+    assert_eq!(clock.running, Some(1));
+    assert_eq!(clock.left, [200_000, 297_000]);
+    assert!(clock.free.is_empty(), "free time used up is none");
+    // A later update for one player replaces only theirs; a new game drops them all.
+    runtime
+        .process(Message::Timers(vec![timer(42, 150_000, true, 0)]))
+        .unwrap();
+    assert_eq!(runtime.update.timers.len(), 2);
+    let mut next = snapshot();
+    next.game_id = 124;
+    runtime.process(Message::Snapshot(next)).unwrap();
+    assert!(runtime.update.timers.is_empty());
 }

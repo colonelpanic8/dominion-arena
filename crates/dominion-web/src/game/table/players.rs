@@ -43,10 +43,12 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
     let cube = assets.file_url(&cube_icon(seat));
     let account = p.account.clone();
     let away = account.as_ref().is_some_and(|a| !a.connected);
+    let clock = crate::game::use_clock().and_then(|c| crate::game::meta::seat_clock(&c, seat));
     // The name shrinks to fit beside the VP shield (and the connection mark).
     let vh = at.h / if you { 6.0 } else { 5.5 };
     let chars = p.name.chars().count().max(1) as f64;
-    let beside = if p.account.is_some() { 7.5 } else { 5.5 };
+    let beside =
+        if p.account.is_some() { 7.5 } else { 5.5 } + if clock.is_some() { 5.0 } else { 0.0 };
     let name_px = (2.5 * vh).min((at.w - beside * vh) / (0.55 * chars));
     rsx! {
         div {
@@ -73,6 +75,19 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                     }
                 }
                 span { class: "dt-pname", style: "font-size:{name_px:.1}px;", "{p.name}" }
+                if let Some(c) = &clock {
+                    span {
+                        class: "dt-clock",
+                        class: if c.running { "dt-clock-running" },
+                        class: if let Some(level) = c.level { "dt-clock-{level}" },
+                        title: if c.running { "Time left: running" } else { "Time left" },
+                        "data-clock": "{seat}",
+                        if let Some(free) = &c.free {
+                            span { class: "dt-clock-free", title: "Free time for this decision", "{free}" }
+                        }
+                        "{c.text}"
+                    }
+                }
                 if let Some(vp) = p.vp {
                     span { class: "dt-vp", title: "Victory points", "{vp}" }
                 }

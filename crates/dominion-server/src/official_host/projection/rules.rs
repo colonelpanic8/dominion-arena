@@ -196,6 +196,7 @@ fn update(game: &Game, seat: u8, index: i32) -> ProjectedUpdate {
     };
     super::project(
         hub::SeatObservation {
+            clock: None,
             view: game.view(PlayerId(seat)),
             known: &KnownCards::default(),
             names: &names,

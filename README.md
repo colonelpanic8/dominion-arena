@@ -88,7 +88,12 @@ single-use in-memory code usable by LoginWithCode; parent-session revocation rev
 Tables use explicit unrated, untimed and undo-off defaults. The original New Table request
 can create an editable all-expansion table; compatibility is checked before any game
 starts, including starts triggered by native readiness. Every rule change transforms the
-latest Arena spec atomically. Unsupported timers, undo policies, live total-VP display, spectator table roles,
+latest Arena spec atomically. A table's timer is its chess clock: Reckless, Hasty, Friendly
+and Patient are Arena's clocks of those names, and a Custom timer may set only the time at
+the start of the game and at the start of each turn (with the client's low-time
+thresholds). The client is told each player's time after every change, with the running
+one ticking, and a player whose time runs out is shown as timed out. Other timers, undo
+policies, live total-VP display, spectator table roles,
 automatch and other unmapped rules/operations receive protocol failures. They are not
 silently accepted. Native-only tables retain their usual policies. Every game uses Hub's
 existing transaction, persistence and completion hook; native and binary participants
@@ -179,7 +184,10 @@ keeps its seat authentication and lobby separate.
 
 `state`, `new_game`, and common `join_game` return full text; `step` and `wait` return
 compact changes (full text on the session's first observation). They always carry the
-full structured `{view, glossary?}` envelope. Card text arrives once per session/game
+full structured `{view, glossary?, clock?}` envelope. In a game with a chess clock (or,
+on dominion.games, a timer), `clock` is `{left, free?, running?, increment?}` (milliseconds:
+each seat's time as the call returns, free decision time first, the seat whose time runs,
+what each turn adds) and every text has a `CLOCK` line with each player's time. Card text arrives once per session/game
 as `CARDS`, excluding basic Treasures, Victory cards, and Curse. Logs include sequence
 numbers; long text logs keep the newest 50, summarize the omitted entries by turn, and
 point to `log` for the rest. `log` takes `after` (exclusive seq) and `limit` (default
@@ -278,7 +286,7 @@ will) or 500.
 | `POST /api/games` | `create_game`'s arguments, including optional `agents` (profile name or `null` per seat) | 201, the game id and tokens for seats without agents |
 | `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
-| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo, undo, meta}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the undos done: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat may ask to take back its last answer now. `undo`: `{rule, request?, refusedBy?}`, the game's rule (`off`, `ask`, `free`), the undo waiting to be allowed (`{by, answers, waiting}`: the seat asking, how many answers it takes back, the seats yet to allow it), and the seat that refused the viewer's last request. `meta`: `{source, rated, watchable, timed, users, connected, forfeitAt?, watchers, ended?, now}` (`now`: the server's clock, to read `forfeitAt` against) |
+| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo, undo, meta}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the undos done: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat may ask to take back its last answer now. `undo`: `{rule, request?, refusedBy?}`, the game's rule (`off`, `ask`, `free`), the undo waiting to be allowed (`{by, answers, waiting}`: the seat asking, how many answers it takes back, the seats yet to allow it), and the seat that refused the viewer's last request. `meta`: `{source, rated, watchable, timed, users, connected, forfeitAt?, clock?, watchers, ended?, now}` (`now`: the server's clock, to read `forfeitAt` and `clock` against; `clock`: see "Chess clocks") |
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
 | `POST /api/games/{id}/undo` | `{logSeq?}` (optional) | the same with the whole log, after asking to take back the seat's last answer, or with `logSeq` the answer that led to that log entry, with every answer after it, every seat's. Under the `free` rule, or when every other seat is played by the server's agents (which allow every undo), it happens at once; under `ask` it waits for the other seats to allow it, and the seat answering withdraws it. The game is replayed from its start to that point, shuffles and all, so it comes back exactly; decision ids are never reused. Every answer is saved with the game, so an undo works across a restart (a request waiting does not survive one). 409 when the seat has nothing to take back or another seat's request is waiting; 403 under `off`, after a resignation, and in any lobby game once it is over |
 | `POST /api/games/{id}/undo/allow` | | the same, after the seat allows the undo waiting for it; the undo happens once every seat asked has |
@@ -345,7 +353,7 @@ played by token, by whoever holds it. The lobby makes games between accounts:
 
 - **Tables.** A host creates a table with its rules (`TableSpec`: what `POST /api/deal`
   takes, plus `colonies`, `shelters`, `turnLimit`, `randomizeOrder`, `respectBanned`,
-  `rated`, `watchable`, `timed`, `undo`: `off`, `ask` or `free`) and its seats: open ones anyone signed in may take, and
+  `rated`, `watchable`, `timed`, `clock`, `undo`: `off`, `ask` or `free`) and its seats: open ones anyone signed in may take, and
   token seats, which the host fills by handing out the seat's token once the game starts
   (a second player at the same screen, an agent without an account). The host changes
   the rules and the seats; changed rules make everyone unready. The game starts once no
@@ -379,6 +387,14 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   nobody has been connected for it for `away_minutes` (an open event stream or a waiting
   `wait_for_decision` is a connection), or when it takes longer than `decision_minutes`
   over one decision; `meta.forfeitAt` says when.
+- **Chess clocks.** A table's `clock` (`{initial, increment}`, in seconds; the lobby offers
+  dominion.games' timer names: Patient 30:00 + 30s, Friendly 15:00 + 15s, Hasty 7:00 +
+  10s, Reckless 3:00 + 5s) gives each player a bank of time that runs only while they
+  must decide, Reactions and other turns' questions included, and grows by `increment` at
+  the start of each of their turns. A player whose time runs out forfeits (`timeout`):
+  the server ends the game within a few seconds, and refuses any later answer. `POST
+  /api/games` takes a `clock` too. `meta.clock` is `{left, running?}`: each seat's
+  milliseconds left as of `meta.now`, the running seat's already counted down.
 - **Watching.** Anyone signed in may watch a watchable game: the view of someone with no
   seat, seeing every player's hand, deck contents and other owned cards. Accounts
   playing in a running game must use their seat view instead.
@@ -813,7 +829,9 @@ only their knowledge, including deductions and uncertain locations; spectators s
 the full contents. In a game between accounts each player's bar has their rating (or
 `guest`, `bot`) and whether they are connected; when the player who must decide has
 left, the status bar counts down to their forfeit ("Bo has left: forfeits in 0:47"), as
-it does for anyone's last minute, your own included. The game's chat is under the log,
+it does for anyone's last minute, your own included. In a game with a chess clock each
+bar shows that player's time, ticking for whoever must decide and coloured once under a
+minute and under ten seconds. The game's chat is under the log,
 with the lines of those watching marked. The menu (☰) has Resign, which asks once more
 before it ends the game; the end notice and the score say who resigned or forfeited.
 

@@ -33,6 +33,9 @@ fn apply(mut state: Signal<GameState>, mut game: Signal<String>, update: OnlineO
         .or_else(|| (!update.connected).then(|| "Official connection is disconnected".into()));
     st.version = update.version;
     st.undos = update.epoch;
+    st.server_ahead = crate::game::server_ahead(update.now, st.server_ahead);
+    st.meta.now = update.now;
+    st.meta.clock = update.clock;
     st.deciding = None;
     st.can_undo = false;
     if let Some(view) = &update.view {

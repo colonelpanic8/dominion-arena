@@ -247,6 +247,7 @@ fn token_list(t: &Tokens) -> Vec<String> {
 #[component]
 fn PlayerBox(player: PlayerView, you: bool, account: Option<SeatAccount>) -> Element {
     let p = &player;
+    let clock = super::use_clock().and_then(|c| meta::seat_clock(&c, p.index));
     let mut extras = token_list(&p.tokens);
     for (token, pile) in &p.adventure_tokens {
         extras.push(match pile {
@@ -278,6 +279,12 @@ fn PlayerBox(player: PlayerView, you: bool, account: Option<SeatAccount>) -> Ele
                     }
                 }
                 if let Some(vp) = p.vp { span { class: "vp", "{vp} VP" } }
+                if let Some(c) = &clock {
+                    span { class: if c.running { "clock running" } else { "clock" }, "data-clock": "{p.index}",
+                        if let Some(free) = &c.free { "{free} + " }
+                        "{c.text}"
+                    }
+                }
             }
             table { class: "zones",
                 tbody {

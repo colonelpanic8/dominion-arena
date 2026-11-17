@@ -75,7 +75,9 @@ pub fn kingdom_code(game: &GameSummary) -> String {
 /// What everyone sees of a table's rules, in a few words.
 pub fn spec_note(spec: &TableSpec) -> String {
     let mut parts = vec![if spec.rated { "Rated" } else { "Unrated" }.to_string()];
-    if !spec.timed {
+    if let Some(clock) = spec.clock {
+        parts.push(format!("clock {}", clock.label()));
+    } else if !spec.timed {
         parts.push("untimed".into());
     }
     let chosen = spec.kingdom.len() + spec.landscapes.len();

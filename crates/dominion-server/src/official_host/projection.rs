@@ -5,11 +5,12 @@ use dominion_online::{model, transport};
 
 pub(crate) use super::identity::WireIdentity;
 use super::{
-    catalog::{FORCED_RESIGNATION, MANUAL_RESIGNATION, TIMER_OFF, WireCatalog, zone},
+    catalog::{FORCED_RESIGNATION, MANUAL_RESIGNATION, TIMED_OUT_RESIGNATION, WireCatalog, zone},
     identity::{HostGameContext, ProjectionRequest, ViewerRole},
     questions::{self, PreparedQuestion},
 };
 use crate::hub;
+use dominion_protocol::lobby::ClockView;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ProjectionError {
@@ -34,6 +35,8 @@ pub(crate) struct ProjectedUpdate {
     pub question: Option<PreparedQuestion>,
     pub finished: Option<model::GameResult>,
     pub table: transport::TableDetails,
+    /// Each player's clock, where the game has one.
+    pub timers: Vec<transport::TimerUpdate>,
 }
 
 pub(crate) fn project(
@@ -628,10 +631,13 @@ fn build(
         autoplay_settings: vec![],
         table_options: model::TableOptions {
             players_see_spectator_chat: false,
-            timer_settings: model::TimerSettings {
-                settings: vec![],
-                force_resign: false,
-                preset: TIMER_OFF,
+            timer_settings: {
+                let timer = catalog.timer(observation.clock.as_ref().map(|(rule, _)| *rule))?;
+                model::TimerSettings {
+                    settings: timer.parameters,
+                    force_resign: timer.force_resign,
+                    preset: timer.preset,
+                }
             },
         },
         // Project tokens need the landscape zones to exist in the receiving model.
@@ -672,6 +678,10 @@ fn build(
         .outcome
         .map(|outcome| result(outcome, observation.ended, ids, &piles))
         .transpose()?;
+    let timers = match &observation.clock {
+        Some((_, clock)) => timers(clock, ids)?,
+        None => vec![],
+    };
     Ok(ProjectedUpdate {
         version: observation.version,
         undos: observation.undos,
@@ -679,7 +689,27 @@ fn build(
         question,
         finished,
         table,
+        timers,
     })
+}
+
+/// The client's timer for each player: their time, ticking for the player deciding.
+fn timers(
+    clock: &ClockView,
+    ids: &WireIdentity,
+) -> Result<Vec<transport::TimerUpdate>, ProjectionError> {
+    if clock.left.len() != ids.player_ids.len() {
+        return Err(ProjectionError::Inconsistent("clock seats"));
+    }
+    Ok((clock.left.iter().zip(&ids.player_ids).enumerate())
+        .map(|(seat, (&left, &player))| transport::TimerUpdate {
+            player,
+            time: i64::try_from(left).unwrap_or(i64::MAX),
+            running: clock.running == Some(seat as u8),
+            free_time: 0,
+            maximum: 0,
+        })
+        .collect())
 }
 
 fn result(
@@ -719,7 +749,7 @@ fn result(
     {
         return Err(ProjectionError::Inconsistent("resignation outcome"));
     }
-    if ended.is_some_and(|cause| cause != "resigned" && cause != "abandoned") {
+    if ended.is_some_and(|cause| !["resigned", "abandoned", "timeout"].contains(&cause)) {
         return Err(ProjectionError::UnsupportedState(
             "unknown end cause".into(),
         ));
@@ -750,10 +780,10 @@ fn result(
             },
             card_names: vec![],
             resign_index: if resigned(p) { 0 } else { -1 },
-            resignation_type: resigned(p).then_some(if ended == Some("abandoned") {
-                FORCED_RESIGNATION
-            } else {
-                MANUAL_RESIGNATION
+            resignation_type: resigned(p).then_some(match ended {
+                Some("abandoned") => FORCED_RESIGNATION,
+                Some("timeout") => TIMED_OUT_RESIGNATION,
+                _ => MANUAL_RESIGNATION,
             }),
         });
     }

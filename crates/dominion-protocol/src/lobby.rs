@@ -163,8 +163,74 @@ pub struct TableSpec {
     pub watchable: bool,
     /// A player who must decide and has left, or takes too long, forfeits.
     pub timed: bool,
+    /// A chess clock: a player whose time runs out forfeits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clock: Option<Clock>,
     /// Whether players may take back answers.
     pub undo: UndoRule,
+}
+
+/// A chess clock: each player has a bank of time, which runs only while they must decide
+/// and grows at the start of each of their turns. Whoever runs out forfeits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Clock {
+    /// Each player's time at the start, in seconds.
+    pub initial: u32,
+    /// Added at the start of each of a player's turns, in seconds.
+    #[serde(default)]
+    pub increment: u32,
+}
+
+impl Clock {
+    /// The most time a clock can start with or add: a day.
+    pub const MAX_SECONDS: u32 = 24 * 60 * 60;
+
+    /// dominion.games' timer names, slowest first.
+    pub const PRESETS: [(&'static str, Clock); 4] = [
+        ("Patient", Clock::new(30 * 60, 30)),
+        ("Friendly", Clock::new(15 * 60, 15)),
+        ("Hasty", Clock::new(7 * 60, 10)),
+        ("Reckless", Clock::new(3 * 60, 5)),
+    ];
+
+    pub const fn new(initial: u32, increment: u32) -> Clock {
+        Clock { initial, increment }
+    }
+
+    /// Its preset's name, if it is one.
+    pub fn preset(self) -> Option<&'static str> {
+        Clock::PRESETS
+            .iter()
+            .find(|(_, c)| *c == self)
+            .map(|(name, _)| *name)
+    }
+
+    /// "15:00 + 15s", with its preset's name if it has one.
+    pub fn label(self) -> String {
+        let time = format!(
+            "{}:{:02} + {}s",
+            self.initial / 60,
+            self.initial % 60,
+            self.increment
+        );
+        match self.preset() {
+            Some(name) => format!("{name} ({time})"),
+            None => time,
+        }
+    }
+
+    /// Why no game can have this clock, if none can.
+    pub fn check(self) -> Result<(), String> {
+        if self.initial == 0 {
+            return Err("a clock starts with some time".into());
+        }
+        if self.initial > Clock::MAX_SECONDS || self.increment > Clock::MAX_SECONDS {
+            return Err("a clock holds at most a day".into());
+        }
+        Ok(())
+    }
 }
 
 /// Whether players may take back answers, which shows them what would have happened.
@@ -233,6 +299,7 @@ impl Default for TableSpec {
             rated: true,
             watchable: true,
             timed: true,
+            clock: None,
             undo: UndoRule::Off,
         }
     }
@@ -557,15 +624,36 @@ pub struct GameMeta {
     /// milliseconds since the Unix epoch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forfeit_at: Option<u64>,
+    /// Its chess clock, as of `now`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clock: Option<ClockView>,
     /// People watching now.
     pub watchers: u32,
-    /// Why the game ended early, when it did: `resigned` or `abandoned`.
+    /// Why the game ended early, when it did: `resigned`, `abandoned` or `timeout`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
     /// The server's clock when this was read, in milliseconds since the Unix epoch: what
     /// `forfeit_at` is to be compared with.
     #[serde(default)]
     pub now: u64,
+}
+
+/// A game's clock as it stands.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClockView {
+    /// Per seat: milliseconds left, the running seat's counted down to when this was read.
+    pub left: Vec<u64>,
+    /// Per seat: milliseconds the seat may still take over its decision before its own
+    /// time runs (dominion.games' free decision time). Empty where there is none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub free: Vec<u64>,
+    /// The seat whose time is running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running: Option<u8>,
+    /// Milliseconds added at the start of each of a player's turns, where that is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub increment: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

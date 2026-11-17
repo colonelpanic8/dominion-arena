@@ -40,6 +40,8 @@ pub struct NewGame {
     /// Let anyone signed in watch the game: public information only (default true
     /// with assigned agents, false otherwise).
     pub watchable: Option<bool>,
+    /// A chess clock: a seat whose time runs out forfeits.
+    pub clock: Option<crate::lobby::Clock>,
     /// Choices setup otherwise makes at random, by the card that makes them: Young
     /// Witch's Bane, the pile a Trait or Obelisk goes on, Way of the Mouse's card, the
     /// Black Market deck (top first), Druid's Boons, ...
@@ -376,6 +378,12 @@ pub struct OnlineObservation {
     pub view: Option<AgentView>,
     #[serde(default)]
     pub table: TableExtras,
+    /// The official server's timers, as of `now`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clock: Option<crate::lobby::ClockView>,
+    /// The server's clock when this was read, in milliseconds since the Unix epoch.
+    #[serde(default)]
+    pub now: u64,
 }
 
 /// An official account `dominion serve` keeps connected (`GET /api/online/accounts`).

@@ -24,7 +24,7 @@ use crate::platform;
 use crate::session;
 use dioxus::prelude::*;
 use dominion_protocol::api::GameSummary;
-use dominion_protocol::lobby::{House, SeatEdit, SeatKind, TableInfo, TableSeat, UndoRule};
+use dominion_protocol::lobby::{Clock, House, SeatEdit, SeatKind, TableInfo, TableSeat, UndoRule};
 
 /// The table's game as `/api/games` lists it, asked again every few seconds while the
 /// game runs.
@@ -591,6 +591,29 @@ pub fn GameOptions() -> Element {
                 div { class: "lb-row-label", "Timed: leaving forfeits" }
                 div { class: "lb-row-rule" }
                 Switch { on: r.timed, fixed: !host, onclick: move |_| ctx.edit(|r| r.timed = !r.timed) }
+            }
+            div { class: "lb-row", "data-option": "clock", title: "A chess clock: each player's time runs only while they must decide, and grows at the start of each of their turns. Whoever runs out forfeits",
+                div { class: "lb-row-label", "Clock" }
+                div { class: "lb-row-rule" }
+                select {
+                    class: "lb-agent-select",
+                    "data-field": "clock",
+                    disabled: !host,
+                    onchange: move |e| {
+                        let value = e.value();
+                        let clock = Clock::PRESETS.iter().find(|(name, _)| *name == value).map(|(_, c)| *c);
+                        if value == "off" || clock.is_some() {
+                            ctx.edit(move |r| r.clock = clock);
+                        }
+                    },
+                    option { value: "off", selected: r.clock.is_none(), "Off" }
+                    for (name, clock) in Clock::PRESETS {
+                        option { key: "{name}", value: "{name}", selected: r.clock == Some(clock), "{clock.label()}" }
+                    }
+                    if let Some(custom) = r.clock.filter(|c| c.preset().is_none()) {
+                        option { value: "custom", selected: true, "{custom.label()}" }
+                    }
+                }
             }
             div { class: "lb-row", "data-option": "undo", title: "Whether players may take back answers, which shows them what would have happened. With permission, every other player must allow each undo (the server's agents always do)",
                 div { class: "lb-row-label", "Undo" }

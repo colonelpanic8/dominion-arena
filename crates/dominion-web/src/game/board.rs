@@ -81,7 +81,7 @@ impl Board {
             p.account = meta::account(m, p.seat);
         }
         self.rated = m.rated;
-        self.timed = m.timed;
+        self.timed = m.timed || m.clock.is_some();
         self.watchers = m.watchers;
         self.ended = m.ended.clone();
         if let (Some(players), Some(ended)) = (&self.result, &self.ended)

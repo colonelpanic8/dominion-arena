@@ -93,10 +93,10 @@ fn now_ms() -> u64 {
     0
 }
 
-/// How far the server's clock is ahead of this one, from a response just received; `was`
-/// when either clock can't be read.
-fn server_ahead(sv: &SeatView, was: i64) -> i64 {
-    match (sv.meta.now, now_ms()) {
+/// How far the server's clock is ahead of this one, from the server's time in a response
+/// just received; `was` when either clock can't be read.
+pub(crate) fn server_ahead(server_now: u64, was: i64) -> i64 {
+    match (server_now, now_ms()) {
         (0, _) | (_, 0) => was,
         (server, here) => server as i64 - here as i64,
     }
@@ -130,6 +130,29 @@ pub fn use_forfeit() -> Option<(meta::Forfeit, String)> {
     let name = names.get(usize::from(f.seat)).cloned().unwrap_or_default();
     let text = f.text(&name);
     Some((f, text))
+}
+
+/// The game's chess clock as it stands now, if it has one; the calling component is
+/// drawn again as the running seat's time counts down.
+pub fn use_clock() -> Option<dominion_protocol::lobby::ClockView> {
+    let game = use_game();
+    let mut now = use_signal(now_ms);
+    use_future(move || async move {
+        while now_ms() != 0 {
+            platform::sleep(250).await;
+            let st = game.state.peek();
+            if st.meta.clock.as_ref().is_some_and(|c| c.running.is_some()) {
+                now.set(now_ms());
+            }
+        }
+    });
+    let st = game.state.read();
+    let clock = st.meta.clock.as_ref()?;
+    let server_now = match now() {
+        0 => 0,
+        here => (here as i64 + st.server_ahead).max(1) as u64,
+    };
+    Some(meta::clock_at(clock, st.meta.now, server_now))
 }
 
 /// How a page reaches its game: as a seat, by its token, or as someone watching, by the
@@ -282,7 +305,7 @@ async fn refresh(ctx: Live, via: &Via) -> bool {
                 table::before_change();
                 let applied = {
                     let mut st = state.write();
-                    st.server_ahead = server_ahead(&sv, st.server_ahead);
+                    st.server_ahead = server_ahead(sv.meta.now, st.server_ahead);
                     st.apply(sv)
                 };
                 match applied {
@@ -344,7 +367,7 @@ async fn sent(ctx: Live, via: Via, result: api::Result<SeatView>) {
             table::before_change();
             let mut st = state.write();
             st.answering = false;
-            st.server_ahead = server_ahead(&sv, st.server_ahead);
+            st.server_ahead = server_ahead(sv.meta.now, st.server_ahead);
             st.apply(sv) != Applied::Done
         }
         Err(e) => {

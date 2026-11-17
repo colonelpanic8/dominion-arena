@@ -760,3 +760,29 @@ async fn one_address_makes_only_so_many_guests_over_mcp() {
     server.stop.cancel();
     let _ = server.done.await;
 }
+
+#[tokio::test]
+async fn a_clocked_games_views_say_each_seats_time() {
+    let (url, stop) = start().await;
+    let client = Client::connect(&url).await.unwrap();
+    let created = call(
+        &client,
+        "create_game",
+        json!({"players": 2, "kingdom": ["Village"], "seed": 1, "clock": {"initial": 600, "increment": 10}}),
+    )
+    .await;
+    assert!(created.ok, "{}", created.text);
+    let token = created.json.unwrap()["seats"][1]["token"].clone();
+    let state = call(&client, "state", json!({ "token": token })).await;
+    assert!(state.ok, "{}", state.text);
+    let clock = &state.json.unwrap()["clock"];
+    assert_eq!(clock["running"], 0);
+    assert_eq!(clock["left"][1], 600_000);
+    assert_eq!(clock["increment"], 10_000);
+    assert!(
+        state.text.contains("CLOCK P1 10:") && state.text.contains("· you 10:00"),
+        "{}",
+        state.text
+    );
+    stop.cancel();
+}

@@ -4,7 +4,9 @@
 
 use crate::cards::{CardDb, LANDSCAPE_KINDS};
 use dominion_protocol::api::{CardInfo, DealRequest, DealSlot, Dealt};
-use dominion_protocol::lobby::{SeatEdit, SeatKind, TableInfo, TableSeat, TableSpec, UndoRule};
+use dominion_protocol::lobby::{
+    Clock, SeatEdit, SeatKind, TableInfo, TableSeat, TableSpec, UndoRule,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -219,6 +221,9 @@ pub struct TableRules {
     pub watchable: bool,
     /// A player who has left, or takes too long, forfeits.
     pub timed: bool,
+    /// A chess clock: a player whose time runs out forfeits.
+    #[serde(default)]
+    pub clock: Option<Clock>,
     /// Whether players may take back answers.
     #[serde(default = "no_undo")]
     pub undo: UndoRule,
@@ -262,6 +267,7 @@ impl TableRules {
             rated: spec.rated,
             watchable: spec.watchable,
             timed: spec.timed,
+            clock: spec.clock,
             undo: spec.undo,
         }
     }
@@ -302,6 +308,7 @@ impl TableRules {
             rated: self.rated,
             watchable: self.watchable,
             timed: self.timed,
+            clock: self.clock,
             undo: self.undo,
         })
     }

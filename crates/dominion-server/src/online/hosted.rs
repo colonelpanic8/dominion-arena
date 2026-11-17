@@ -321,7 +321,10 @@ fn observation(update: Update) -> OnlineObservation {
         view.decision = None;
         view.spectating = true;
     }
+    let now = crate::hub::now_ms();
     OnlineObservation {
+        clock: update.clock(now),
+        now,
         connected: update.connected,
         error: update.error,
         version: update.reducer.revision,

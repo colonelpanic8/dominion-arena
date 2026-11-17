@@ -32,6 +32,7 @@ pub(crate) fn context(arena: &Arena, seat: &Seat, host: &Host) -> Result<HostGam
     let table_options = dominion_protocol::lobby::TableSpec {
         rated: meta.rated,
         timed: meta.timed,
+        clock: meta.clock.as_ref().map(|c| c.rule),
         undo: meta.undo,
         ..super::rules::defaults()
     };

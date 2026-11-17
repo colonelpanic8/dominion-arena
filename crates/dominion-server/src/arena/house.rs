@@ -168,6 +168,7 @@ impl Arena {
             owners: owners.clone(),
             watchable: req.watchable.unwrap_or(true),
             timed: true,
+            clock: req.clock.map(crate::hub::ClockState::new),
             undo: lobby::UndoRule::Ask,
             agents: agents.iter().map(Option::is_some).collect(),
             ..Default::default()
