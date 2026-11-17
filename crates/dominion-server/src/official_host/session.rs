@@ -142,6 +142,9 @@ impl Session {
             Message::TableDetails(update.table.clone()),
             Message::Snapshot(update.snapshot),
         ];
+        if !update.timers.is_empty() {
+            messages.push(Message::Timers(update.timers));
+        }
         if let Some(result) = update.finished {
             messages.push(Message::GameFinished {
                 table: update.table,

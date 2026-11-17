@@ -243,6 +243,8 @@ input[type=range] { accent-color: var(--accent-2); padding: 0; border: none; bac
 .player h3 .muted { font-weight: 500; font-size: .85em; }
 .player .vp { margin-left: auto; font: 1em var(--num); color: var(--accent); }
 .player h3:first-child .vp { margin-right: .3em; }
+.player .clock { font: .9em var(--num); color: var(--muted); font-variant-numeric: tabular-nums; }
+.player .clock.running { color: var(--text); font-weight: 700; }
 .zones { border-collapse: collapse; width: 100%; }
 .zones th { text-align: left; color: var(--muted); font-weight: 600; width: 6.5em; padding: .35em .5em .35em 0; vertical-align: top; }
 .zones td { padding: .35em 0; border-top: 1px solid var(--line-soft); }

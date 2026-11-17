@@ -387,6 +387,9 @@ impl Session {
                     .unwrap_or_else(PoisonError::into_inner)
                     .render(seat, &observation, full);
                 let mut value = serde_json::json!({"view": observation.view});
+                if let Some(clock) = &observation.clock {
+                    value["clock"] = serde_json::json!(clock);
+                }
                 if !glossary.is_empty() {
                     value["glossary"] = serde_json::to_value(glossary).unwrap();
                 }
@@ -706,7 +709,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`. `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents; agent games are watchable by default. Returns the game id and secret tokens only for seats without agents."
+        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents; agent games are watchable by default. Returns the game id and secret tokens only for seats without agents."
     )]
     async fn create_game(
         &self,

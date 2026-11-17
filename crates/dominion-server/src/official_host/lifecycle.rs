@@ -161,6 +161,13 @@ impl Session {
             _check: check,
         });
         let mut login = transport::LoginSuccess::new(id, me.user.name, token);
+        let presets = (self.host.catalog.timer_presets())
+            .map_err(|_| Failure(1011, "timer presets unavailable"))?;
+        for (preset, timer) in presets {
+            if let Some(old) = login.timer_presets.iter_mut().find(|(p, _)| *p == preset) {
+                old.1 = timer;
+            }
+        }
         login.reconnecting = self
             .arena
             .hub
@@ -403,6 +410,9 @@ impl Session {
         let _ = version;
         self.question_index = question_index;
         let mut messages = vec![Message::Snapshot(update.snapshot)];
+        if !update.timers.is_empty() {
+            messages.push(Message::Timers(update.timers));
+        }
         if let Some(result) = update.finished {
             if force || previous.as_ref().is_none_or(|s| !s.2) {
                 messages.push(Message::GameFinished {

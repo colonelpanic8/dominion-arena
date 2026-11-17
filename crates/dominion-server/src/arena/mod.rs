@@ -513,8 +513,8 @@ impl Arena {
     /// Called every few seconds.
     pub fn sweep(&self) {
         self.hub.notice_presence();
-        for seat in self.hub.overdue() {
-            let _ = self.hub.resign(&seat, "abandoned");
+        for (seat, cause) in self.hub.overdue() {
+            let _ = self.hub.resign(&seat, cause);
         }
         let changed = {
             let mut state = lock(&self.state);

@@ -262,6 +262,12 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-bar-away .dt-pname { opacity: 0.55; }
 .dt-bar-who { margin-left: auto; flex: none; font-family: var(--count); font-size: calc(1.5 * var(--vh)); color: #ddd; text-shadow: 1px 1px 0 #000; white-space: nowrap; }
 .dt-bar-away .dt-bar-who { color: #ffb0a0; }
+/* The chess clock: each player's time, ticking for whoever must decide. */
+.dt-clock { flex: none; font-family: var(--count); font-size: calc(1.9 * var(--vh)); color: #ccc; text-shadow: 1px 1px 0 #000; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dt-clock-running { color: #fff; font-weight: 700; }
+.dt-clock-low { color: #ffd34d; }
+.dt-clock-very-low { color: #ff5a4a; }
+.dt-clock-free { color: #8fd0ff; margin-right: 0.4em; }
 
 /* Peeking piles and the play row. */
 .dt-opp-hand { position: absolute; cursor: pointer; z-index: 990; }

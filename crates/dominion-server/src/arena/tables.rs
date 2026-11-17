@@ -4,7 +4,7 @@
 
 use super::db::Db;
 use super::{Arena, Error, Ident, Result, State, User, bad, conflict, limited};
-use crate::hub::{self, Meta, lock, seat_name};
+use crate::hub::{self, ClockState, Meta, lock, seat_name};
 use dominion_protocol::api::{DealRequest, SeatToken};
 use dominion_protocol::lobby::{
     ChatKind, MyTable, NewTable, SeatEdit, SeatKind, Source, TableInfo, TableSeat, TableSpec,
@@ -137,6 +137,9 @@ fn deal_request(spec: &TableSpec, players: usize, banned: Vec<String>) -> DealRe
 fn check_spec(spec: &TableSpec, players: usize) -> Result<()> {
     if spec.turn_limit == Some(0) {
         return bad("a turn limit is at least 1");
+    }
+    if let Some(clock) = spec.clock {
+        clock.check().map_err(Error::BadRequest)?;
     }
     hub::deal(&deal_request(spec, players, vec![]))?;
     Ok(())
@@ -684,6 +687,7 @@ impl Arena {
             rated: start.rated,
             watchable: start.spec.watchable,
             timed: start.spec.timed,
+            clock: start.spec.clock.map(ClockState::new),
             undo: start.spec.undo,
             agents: is_agent,
             table: Some(start.table.clone()),

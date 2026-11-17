@@ -81,6 +81,7 @@ fn config() -> GameConfig {
 fn update(game: &Game, seat: u8, catalog: &WireCatalog, index: i32) -> ProjectedUpdate {
     project(
         hub::SeatObservation {
+            clock: None,
             view: game.view(PlayerId(seat)),
             known: &KnownCards::default(),
             names: &["Ada".into(), "Bob".into()],
@@ -906,6 +907,7 @@ fn spectators_invalid_fixed_identities_and_oversized_public_values_are_refused()
     let known = KnownCards::default();
     let names = ["Ada".into(), "Bob".into()];
     let observed = |view| hub::SeatObservation {
+        clock: None,
         view,
         known: &known,
         names: &names,
@@ -940,4 +942,63 @@ fn spectators_invalid_fixed_identities_and_oversized_public_values_are_refused()
     }
     assert!(project(observed(game.view(PlayerId(0))), &ids(), &catalog, 0, false).is_err());
     assert!(integer(65_537, "zone").is_err());
+}
+
+#[test]
+fn a_clock_reaches_the_client_as_its_timer_preset_and_each_players_time() {
+    let catalog = catalog();
+    let game = Game::new(config()).unwrap();
+    let (_, friendly) = dominion_protocol::lobby::Clock::PRESETS[1];
+    let update = project(
+        hub::SeatObservation {
+            clock: Some((
+                friendly,
+                ClockView {
+                    left: vec![60_000, 30_000],
+                    free: vec![],
+                    running: Some(1),
+                    increment: None,
+                },
+            )),
+            view: game.view(PlayerId(0)),
+            known: &KnownCards::default(),
+            names: &["Ada".into(), "Bob".into()],
+            decision_id: game.pending().map(|_| "engine-d1"),
+            deciding: game.pending().map(|d| d.player),
+            version: 7,
+            undos: 2,
+            outcome: game.outcome(),
+            ended: None,
+        },
+        &ids(),
+        &catalog,
+        1,
+        false,
+    )
+    .unwrap();
+    let timer = &update.snapshot.table_options.timer_settings;
+    assert_eq!(
+        timer.preset,
+        catalog.symbol("TimerPresetOptions", "FRIENDLY").unwrap()
+    );
+    assert!(timer.force_resign);
+    let times: Vec<_> = (update.timers.iter())
+        .map(|t| (t.player, t.time, t.running))
+        .collect();
+    assert_eq!(times, [(10, 60_000, false), (20, 30_000, true)]);
+    let bytes = ServerEncoder::new()
+        .encode_batch(&[Message::Timers(update.timers.clone())])
+        .unwrap();
+    let decoded = Decoder::new().decode(&bytes).unwrap();
+    assert!(
+        matches!(&decoded[..], [Message::Timers(t)] if t.len() == 2 && t[1].running),
+        "{decoded:?}"
+    );
+    // Without a clock the timer is off and no times are sent.
+    let plain = self::update(&game, 0, &catalog, 1);
+    assert_eq!(
+        plain.snapshot.table_options.timer_settings.preset,
+        catalog.symbol("TimerPresetOptions", "OFF").unwrap()
+    );
+    assert!(plain.timers.is_empty());
 }

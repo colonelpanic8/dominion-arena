@@ -69,6 +69,7 @@ fn pinned_bundle_proves_fixture_semantics_and_layout_ordinals() {
     for (index, name) in [
         (MANUAL_RESIGNATION, "MANUAL"),
         (FORCED_RESIGNATION, "FORCE_RESIGNED"),
+        (TIMED_OUT_RESIGNATION, "TIMED_OUT"),
     ] {
         assert_eq!(real.symbol("ResignationTypes", name).unwrap(), index);
     }
@@ -84,4 +85,37 @@ fn export_pinned_catalog() {
         serde_json::to_vec(&catalog).unwrap(),
     )
     .unwrap();
+}
+
+#[test]
+fn dominion_games_timers_map_to_arena_clocks_and_back() {
+    let catalog = WireCatalog::new(fixture()).unwrap();
+    let off = catalog.timer(None).unwrap();
+    assert_eq!(off.preset, TIMER_OFF);
+    assert_eq!(catalog.clock(&off), Ok(None));
+    for (name, clock) in Clock::PRESETS {
+        let timer = catalog.timer(Some(clock)).unwrap();
+        let preset = catalog.symbol("TimerPresetOptions", &name.to_uppercase());
+        assert_eq!(timer.preset, preset.unwrap());
+        assert_eq!(catalog.clock(&timer), Ok(Some(clock)));
+    }
+    // A clock that is no preset is a Custom timer of the same times.
+    let custom = Clock::new(100, 7);
+    let timer = catalog.timer(Some(custom)).unwrap();
+    assert_eq!(
+        timer.preset,
+        catalog.symbol("TimerPresetOptions", "CUSTOM").unwrap()
+    );
+    assert!(timer.parameters.contains(&(3, 100_000)));
+    assert!(timer.parameters.contains(&(5, 7_000)));
+    assert_eq!(catalog.clock(&timer), Ok(Some(custom)));
+    // Free decision time has no Arena equivalent.
+    let mut free = timer.clone();
+    free.parameters.push((1, 5_000));
+    assert!(catalog.clock(&free).is_err());
+    let league = TimerSettings {
+        preset: catalog.symbol("TimerPresetOptions", "LEAGUE").unwrap(),
+        ..timer
+    };
+    assert!(catalog.clock(&league).is_err());
 }

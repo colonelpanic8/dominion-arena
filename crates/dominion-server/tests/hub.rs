@@ -1,6 +1,6 @@
 use dominion_agent::Answer;
 use dominion_engine::{Card, PlayerId};
-use dominion_protocol::lobby::UndoRule;
+use dominion_protocol::lobby::{Clock, UndoRule};
 use dominion_server::hub::{self, Hub, HubError, Meta, NewGame, Seat};
 
 fn two_players() -> NewGame {
@@ -185,4 +185,53 @@ fn the_servers_agents_allow_every_undo() {
         .unwrap();
     assert!(hub.undo(&ada, None).unwrap(), "nobody else is asked");
     assert_eq!(hub.seat_view(&ada, None).unwrap().undos, 1);
+}
+
+#[test]
+fn a_chess_clock_runs_for_the_seat_deciding_and_running_out_forfeits() {
+    let hub = Hub::default();
+    let clocked = NewGame {
+        clock: Some(Clock::new(1, 1)),
+        ..two_players()
+    };
+    let created = hub.create(&clocked).unwrap();
+    let ada = hub.find(&created.seats[0].token).unwrap();
+    let bo = hub.find(&created.seats[1].token).unwrap();
+    let clock = || hub.seat_view(&ada, None).unwrap().meta.clock.unwrap();
+    // Ada's first turn has begun, with its increment.
+    let start = clock();
+    assert_eq!(start.running, Some(0));
+    assert!((1_500..=2_000).contains(&start.left[0]), "{start:?}");
+    assert_eq!(start.left[1], 1_000);
+
+    // Ending her turn charges her for it and starts Bo's, with his increment.
+    hub.steps(&ada, "next").unwrap();
+    let handed = clock();
+    assert_eq!(handed.running, Some(1));
+    assert!(
+        handed.left[0] <= start.left[0] && handed.left[0] > 1_000,
+        "{handed:?}"
+    );
+    assert!((1_500..=2_000).contains(&handed.left[1]), "{handed:?}");
+
+    std::thread::sleep(std::time::Duration::from_millis(2_100));
+    assert_eq!(hub.overdue().len(), 1);
+    assert_eq!(hub.overdue()[0], (bo.clone(), "timeout"));
+    // An answer after the flag fell is too late: the game ends instead.
+    let d = hub.view(&bo).unwrap().0.decision.unwrap();
+    let late = hub.answer(&bo, &Answer::indices(&d.id, vec![d.options[0].index]));
+    assert!(matches!(late, Err(HubError::Conflict(_))), "{late:?}");
+    let view = hub.seat_view(&ada, None).unwrap();
+    assert_eq!(view.meta.ended.as_deref(), Some("timeout"));
+    assert_eq!(view.meta.clock.unwrap().running, None);
+    assert!(hub.overdue().is_empty());
+}
+
+#[test]
+fn a_clock_must_start_with_some_time() {
+    let empty = refusal(NewGame {
+        clock: Some(Clock::new(0, 5)),
+        ..two_players()
+    });
+    assert!(empty.contains("some time"), "{empty}");
 }

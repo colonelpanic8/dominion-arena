@@ -80,6 +80,7 @@ impl Session {
             glossary: cards,
             undos: update.reducer.epoch,
             note: None,
+            clock: update.clock(crate::hub::now_ms()),
         };
         let seat = crate::hub::Seat {
             game: view.game.id.clone().unwrap_or_default(),
@@ -90,7 +91,11 @@ impl Session {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .render(&seat, &observation, full);
-        structured(serde_json::json!({"view":view,"glossary":cards}), text)
+        let mut value = serde_json::json!({"view":view,"glossary":cards});
+        if let Some(clock) = &observation.clock {
+            value["clock"] = serde_json::json!(clock);
+        }
+        structured(value, text)
     }
 }
 /// The Treasures a Buy phase move offers to play, as (option index, card name). The

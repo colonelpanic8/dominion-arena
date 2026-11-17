@@ -2,6 +2,7 @@
 
 use dominion_agent::turns::{self, TurnSpan, TurnSummary};
 use dominion_agent::{AgentDecision, AgentView, GlossaryEntry};
+use dominion_protocol::lobby::ClockView;
 use serde::Deserialize;
 use std::collections::BTreeSet;
 
@@ -294,6 +295,56 @@ fn delta(previous: &AgentView, current: &AgentView) -> String {
     out.join("\n")
 }
 
+/// Milliseconds as `m:ss` or `h:mm:ss`, rounded up.
+fn clock_text(ms: u64) -> String {
+    let s = ms.div_ceil(1000);
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+/// `CLOCK you 4:12 (running, +10s each turn) · Bo 6:30`: each player's time as of now.
+fn clock_line(view: &AgentView, clock: &ClockView) -> String {
+    let names = turns::names(view);
+    let players: Vec<String> = (clock.left.iter().enumerate())
+        .map(|(seat, &left)| {
+            let who = if view.seat == Some(seat as u8) {
+                "you".to_string()
+            } else {
+                names
+                    .get(seat)
+                    .cloned()
+                    .unwrap_or_else(|| format!("P{}", seat + 1))
+            };
+            let mut notes = vec![];
+            if clock.running == Some(seat as u8) {
+                notes.push("running".to_string());
+            }
+            if let Some(&free) = clock.free.get(seat).filter(|&&f| f > 0) {
+                notes.push(format!("{} free first", clock_text(free)));
+            }
+            let notes = if notes.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", notes.join(", "))
+            };
+            format!("{who} {}{notes}", clock_text(left))
+        })
+        .collect();
+    let increment = clock
+        .increment
+        .filter(|&ms| ms > 0)
+        .map_or(String::new(), |ms| {
+            format!("; +{}s at the start of each of your turns", ms / 1000)
+        });
+    format!(
+        "CLOCK {}{increment}. Time runs only while you must decide; at 0:00 you forfeit.",
+        players.join(" · ")
+    )
+}
+
 impl Presentation {
     pub fn render(
         &mut self,
@@ -307,6 +358,7 @@ impl Presentation {
             undos,
             glossary,
             note,
+            clock,
         } = observation;
         let undos = *undos;
         if self.seat.as_ref() != Some(seat) {
@@ -346,6 +398,14 @@ impl Presentation {
         } else {
             note + &delta(self.previous.as_ref().unwrap(), &text_view)
         };
+        if let Some(line) = clock
+            .as_ref()
+            .filter(|_| view.game.running)
+            .map(|c| clock_line(view, c))
+        {
+            text.push('\n');
+            text.push_str(&line);
+        }
         let unseen: Vec<_> = logs
             .iter()
             .filter(|e| full || self.last_log.is_none_or(|seq| e.seq > seq))
@@ -455,8 +515,30 @@ mod tests {
                 glossary,
                 undos: 0,
                 note: None,
+                clock: None,
             },
         )
+    }
+
+    #[test]
+    fn every_rendering_of_a_clocked_game_says_each_players_time() {
+        let (seat, mut observation) = observation();
+        observation.clock = Some(ClockView {
+            left: vec![252_000, 390_000],
+            free: vec![],
+            running: Some(0),
+            increment: Some(10_000),
+        });
+        let mut presentation = Presentation::default();
+        let line = "CLOCK you 4:12 (running) · Bo 6:30; +10s at the start of each of your \
+                    turns. Time runs only while you must decide; at 0:00 you forfeit.";
+        let (full, _) = presentation.render(&seat, &observation, false);
+        assert!(full.contains(line), "{full}");
+        let (delta, _) = presentation.render(&seat, &observation, false);
+        assert!(delta.contains(line), "{delta}");
+        observation.clock = None;
+        let (plain, _) = presentation.render(&seat, &observation, false);
+        assert!(!plain.contains("CLOCK"), "{plain}");
     }
 
     #[test]

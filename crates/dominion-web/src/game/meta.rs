@@ -3,7 +3,7 @@
 //! ended. Pure.
 
 use dominion_protocol::ResultPlayer;
-use dominion_protocol::lobby::{GameMeta, UserKind};
+use dominion_protocol::lobby::{ClockView, GameMeta, UserKind};
 
 /// The account playing a seat.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,11 +116,82 @@ impl Forfeit {
     }
 }
 
-/// Who ended the game early and how, a line each: `ended` is the meta's `resigned` or
-/// `abandoned` (without it, a player out of the game resigned).
+/// A seat's clock is low below this, and very low below the other.
+pub const CLOCK_LOW_MS: u64 = 60_000;
+pub const CLOCK_VERY_LOW_MS: u64 = 10_000;
+
+/// `clock`, read at `read` on the server's clock, as it stands at `now`: the running
+/// seat's free time and then its own time counted down. `now` 0 (no clock here) leaves it.
+pub fn clock_at(clock: &ClockView, read: u64, now: u64) -> ClockView {
+    let mut clock = clock.clone();
+    if now == 0 || read == 0 {
+        return clock;
+    }
+    if let Some(seat) = clock.running.map(usize::from) {
+        let mut elapsed = now.saturating_sub(read);
+        if let Some(free) = clock.free.get_mut(seat) {
+            let used = elapsed.min(*free);
+            *free -= used;
+            elapsed -= used;
+        }
+        if let Some(left) = clock.left.get_mut(seat) {
+            *left = left.saturating_sub(elapsed);
+        }
+    }
+    clock
+}
+
+/// A seat's clock as a bar shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeatClock {
+    /// "14:59", "1:02:03", "0:07".
+    pub text: String,
+    /// Its free time for this decision, while it has some: "0:12".
+    pub free: Option<String>,
+    pub running: bool,
+    /// "low" or "very-low" when it is.
+    pub level: Option<&'static str>,
+}
+
+/// `seat`'s clock.
+pub fn seat_clock(clock: &ClockView, seat: u8) -> Option<SeatClock> {
+    let i = usize::from(seat);
+    let left = *clock.left.get(i)?;
+    let free = clock.free.get(i).copied().filter(|&f| f > 0);
+    Some(SeatClock {
+        text: clock_ms(left),
+        free: free.map(clock_ms),
+        running: clock.running == Some(seat),
+        level: match left {
+            l if l < CLOCK_VERY_LOW_MS => Some("very-low"),
+            l if l < CLOCK_LOW_MS => Some("low"),
+            _ => None,
+        },
+    })
+}
+
+/// Milliseconds as `m:ss`, or `h:mm:ss`, rounded up: a clock shows 0:00 only once it
+/// has run out.
+pub fn clock_ms(ms: u64) -> String {
+    let seconds = ms.div_ceil(1000);
+    if seconds >= 3600 {
+        format!(
+            "{}:{:02}:{:02}",
+            seconds / 3600,
+            seconds / 60 % 60,
+            seconds % 60
+        )
+    } else {
+        clock(seconds)
+    }
+}
+
+/// Who ended the game early and how, a line each: `ended` is the meta's `resigned`,
+/// `abandoned` or `timeout` (without it, a player out of the game resigned).
 pub fn ended_lines(players: &[ResultPlayer], ended: Option<&str>) -> Vec<String> {
     let how = match ended {
         Some("abandoned") => "has forfeited: away, or too long over a decision",
+        Some("timeout") => "has forfeited: their time ran out",
         _ => "has resigned",
     };
     players
@@ -140,6 +211,9 @@ pub fn end_reason(
     match (reason, out.as_slice()) {
         (Some("resigned"), [p]) if ended == Some("abandoned") => {
             Some(format!("{} forfeited.", p.name))
+        }
+        (Some("resigned"), [p]) if ended == Some("timeout") => {
+            Some(format!("{} ran out of time.", p.name))
         }
         (Some("resigned"), [p]) => Some(format!("{} resigned.", p.name)),
         (r, _) => r.map(super::wording::end_reason),
@@ -229,6 +303,37 @@ mod tests {
             ..m
         };
         assert_eq!(forfeit(&untimed, Some(1), Some(0), 400_000), None);
+    }
+
+    #[test]
+    fn only_the_running_clock_counts_down_spending_free_time_first() {
+        let read = ClockView {
+            left: vec![90_000, 3_600_000],
+            free: vec![5_000, 5_000],
+            running: Some(0),
+            increment: None,
+        };
+        let at = clock_at(&read, 1_000, 13_000);
+        assert_eq!(at.free, vec![0, 5_000]);
+        assert_eq!(at.left, vec![83_000, 3_600_000]);
+        let mine = seat_clock(&at, 0).unwrap();
+        assert_eq!(
+            (mine.text.as_str(), mine.free, mine.running),
+            ("1:23", None, true)
+        );
+        assert_eq!(mine.level, None);
+        let theirs = seat_clock(&at, 1).unwrap();
+        assert_eq!(theirs.text, "1:00:00");
+        assert_eq!(theirs.free.as_deref(), Some("0:05"));
+        assert!(!theirs.running);
+        // Rounded up, down to zero and no further.
+        let late = clock_at(&read, 1_000, 92_500);
+        assert_eq!(seat_clock(&late, 0).unwrap().text, "0:04");
+        assert_eq!(seat_clock(&late, 0).unwrap().level, Some("very-low"));
+        assert_eq!(clock_at(&read, 1_000, 500_000).left[0], 0);
+        // Without a clock here it stays as read.
+        assert_eq!(clock_at(&read, 1_000, 0), read);
+        assert_eq!(seat_clock(&read, 2), None);
     }
 
     fn result(name: &str, rank: u32, resigned: bool) -> ResultPlayer {

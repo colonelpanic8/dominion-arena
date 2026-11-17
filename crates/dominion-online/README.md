@@ -45,7 +45,8 @@ claude mcp add dominion -- dominion online mcp
 The MCP entry point uses stdio. Register either this backend or Arena's hosted
 backend as `dominion`. Authentication belongs to operator setup; gameplay uses
 the same `state`, `new_game`, `step`, `wait`, `cards`, and `log` contract
-(`dominion/play@1`, structured `{view, glossary?}` / `dominion/agent-view@2`).
+(`dominion/play@1`, structured `{view, glossary?, clock?}` / `dominion/agent-view@2`;
+`clock` carries the server's timers in a timed game).
 Optional `token` parameters are ignored because one process controls one account.
 
 `new_game` accepts `players`, `bots`, `kingdom`, and `landscapes`. Every opponent
@@ -94,7 +95,9 @@ same account. The state-directory lock prevents two processes sharing it.
   server's matchmaking kingdom and preferences, with previews and extra new
   expansion games disabled.
 - The page shows connection status, search status, the assigned agent, and the
-  connected account's live table. Cancel a search, pause/resume an agent,
+  connected account's live table, with each player's time when the game has a timer
+  (the server's latest timers, the running one counted down, free decision time
+  first). Cancel a search, pause/resume an agent,
   reconnect, or explicitly resign. Pausing leaves the game running. A search
   that wins a cancellation race is kept and assigned to its selected agent.
 - A runner slot is reserved before searching or creating a game. Only one

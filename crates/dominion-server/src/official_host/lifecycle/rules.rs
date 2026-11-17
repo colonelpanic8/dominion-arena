@@ -2,7 +2,7 @@ use super::super::{Host, identity};
 use crate::arena::{self, Arena};
 use dominion_engine::Card;
 use dominion_online::transport::{
-    self, Group, NamedId, RequiredSlot, RuleValue, SpecialKingdom, TableRule, TimerSettings,
+    self, Group, NamedId, RequiredSlot, RuleValue, SpecialKingdom, TableRule,
 };
 use dominion_protocol::lobby::{SeatKind, TableInfo, TableSpec, UserKind};
 
@@ -131,12 +131,12 @@ pub(super) fn apply(
         (RuleValue::Int(value), 15) if *value == 0 => {
             spec.undo = dominion_protocol::lobby::UndoRule::Off
         }
-        (RuleValue::Timer(timer), 16)
-            if timer.preset == 4
-                && timer.parameters.iter().all(|(_, v)| *v == 0)
-                && !timer.force_resign =>
-        {
-            spec.timed = false
+        (RuleValue::Timer(timer), 16) => {
+            spec.clock = host
+                .catalog
+                .clock(timer)
+                .map_err(arena::Error::BadRequest)?;
+            spec.timed = false;
         }
         (RuleValue::Group(Group::Everybody), 5) => spec.watchable = true,
         (RuleValue::Group(Group::Nobody), 5) => spec.watchable = false,
@@ -249,15 +249,12 @@ pub(super) fn details(
         ),
     ];
     let mut rules = rules;
-    if !info.spec.timed {
-        rules.push(rule(
-            16,
-            RuleValue::Timer(TimerSettings {
-                parameters: vec![],
-                force_resign: false,
-                preset: 4,
-            }),
-        ));
+    if !info.spec.timed || info.spec.clock.is_some() {
+        let timer = host
+            .catalog
+            .timer(info.spec.clock)
+            .map_err(|e| e.to_string())?;
+        rules.push(rule(16, RuleValue::Timer(timer)));
     }
     Ok(transport::TableDetails {
         table_id: identity::number(&info.id, 't')?,

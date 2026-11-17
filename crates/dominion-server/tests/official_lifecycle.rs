@@ -6,7 +6,7 @@ use dominion_online::{
     catalog::Catalog,
     transport::{self, Decoder, Message as ServerMessage, outgoing::Command},
 };
-use dominion_protocol::lobby::{Credentials, NewTable, TableSpec};
+use dominion_protocol::lobby::{Clock, Credentials, NewTable, TableSpec};
 use dominion_server::{
     Options,
     arena::{Arena, Settings},
@@ -935,4 +935,58 @@ async fn original_consumer_lifecycle_and_rules() {
         String::from_utf8_lossy(&result.stderr)
     );
     eprintln!("original consumer evidence: {}", output.display());
+}
+#[tokio::test]
+async fn a_dominion_games_timer_becomes_the_tables_clock_and_its_client_is_sent_the_times() {
+    let server = Server::new(catalog()).await;
+    let token_a = server.account("Alice");
+    let token_b = server.account("Bobby");
+    let a = server.arena.identify(&token_a).unwrap();
+    let b = server.arena.identify(&token_b).unwrap();
+    let mut client = server.socket("/").await;
+    let login = client.login("Alice").await;
+    let hasty = login
+        .timer_presets
+        .iter()
+        .find(|(preset, _)| *preset == 1)
+        .map(|(_, timer)| timer.clone())
+        .unwrap();
+    client
+        .send(Command::NewTableRequest {
+            rules: vec![
+                required(&server),
+                transport::TableRule {
+                    id: 16,
+                    value: transport::RuleValue::Timer(hasty),
+                },
+            ],
+        })
+        .await;
+    client
+        .until(|m| matches!(m, ServerMessage::TableJoined { .. }))
+        .await;
+    let table = server.arena.lobby(Some(&a)).table.unwrap().id;
+    let spec = server.arena.table(&table).unwrap().spec;
+    assert_eq!(spec.clock, Some(Clock::PRESETS[2].1), "Hasty");
+    server.arena.join_table(&b, &table, None).unwrap();
+    server.arena.ready(&a, &table, true).unwrap();
+    server.arena.ready(&b, &table, true).unwrap();
+    let started = client
+        .until(|m| matches!(m, ServerMessage::Timers(_)))
+        .await;
+    let snapshot = started.iter().find_map(|m| match m {
+        ServerMessage::Snapshot(s) => Some(s),
+        _ => None,
+    });
+    assert_eq!(snapshot.unwrap().table_options.timer_settings.preset, 1);
+    let Some(ServerMessage::Timers(timers)) = started.last() else {
+        unreachable!()
+    };
+    assert_eq!(timers.len(), 2);
+    assert_eq!(timers.iter().filter(|t| t.running).count(), 1);
+    // The first player's turn has added its increment; the other's time is untouched.
+    let mut times: Vec<i64> = timers.iter().map(|t| t.time).collect();
+    times.sort();
+    assert_eq!(times[0], 7 * 60 * 1000);
+    assert!(times[1] > 7 * 60 * 1000);
 }
