@@ -1331,9 +1331,11 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if let Some(c) = input.card()
                 && g.gained(p, c).is_some()
                 && g.zone(c) == Zone::SetAside(p)
-                && let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id))
+                && let Some(id) = f.lasting
+                && let Some(l) = g.lasting_mut(id)
             {
                 l.data.cards.push(c);
+                g.hold(id, c);
             }
             f.pc = 3;
             Flow::Continue
@@ -1600,8 +1602,11 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 && where_gained(g, c)
             {
                 g.set_aside(c, p);
-                if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
+                if let Some(id) = f.lasting
+                    && let Some(l) = g.lasting_mut(id)
+                {
                     l.data.cards.push(c);
+                    g.hold(id, c);
                 }
             }
             Flow::done()
@@ -1654,9 +1659,12 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     && g.zone(c) == Zone::InPlay(p)
                 {
                     g.set_aside(c, p);
-                    if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
+                    if let Some(id) = f.lasting
+                        && let Some(l) = g.lasting_mut(id)
+                    {
                         l.data.n = 1;
                         l.data.cards.push(c);
+                        g.hold(id, c);
                     }
                 }
                 Flow::done()

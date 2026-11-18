@@ -131,7 +131,7 @@ pub struct EffectState {
     /// Its card left play: it still works this turn and ends with it.
     pub ending: bool,
     pub keeps: Vec<CardId>,
-    /// The cards of its data that are set aside.
+    /// The cards it holds set aside ([`crate::Lasting::holds`]).
     pub holds: Vec<CardId>,
     /// Tokens on its card (Garrison's).
     pub tokens: Option<u32>,
@@ -345,6 +345,17 @@ pub enum Step {
     Asked,
     /// The pending decision was answered with this.
     Answered(crate::Response),
+    /// `card`, in the trash, now lies face down ([`Game::face_down_in_trash`]), or face up
+    /// again. One that left the trash face down has no step: its move says so.
+    Face {
+        card: CardId,
+        down: bool,
+    },
+    /// The cards of `player`'s play area that some effect keeps in play are now these.
+    Kept {
+        player: PlayerId,
+        cards: Vec<CardId>,
+    },
 }
 
 /// What the journal reads of the table besides counters, each time it records.
@@ -388,6 +399,12 @@ pub(crate) struct Journal {
     /// Each lasting effect, by id, with the occurrence that made it.
     #[serde(default)]
     lastings: Vec<(u32, u32)>,
+    /// The cards lying face down in the trash as last recorded.
+    #[serde(default)]
+    trash_down: Vec<CardId>,
+    /// Each player's cards kept in play as last recorded, for players with any.
+    #[serde(default)]
+    kept: Vec<(PlayerId, Vec<CardId>)>,
 }
 
 /// An occurrence open while the frame at `depth` on the stack is.
@@ -761,15 +778,9 @@ impl Game {
 
     /// The lasting effects as the table shows them.
     pub fn effects(&self) -> Vec<EffectState> {
-        let aside = |c: &CardId| matches!(self.zones[c.index()], Zone::SetAside(_));
         (self.lasting.iter())
             .map(|l| {
-                let mut holds: Vec<CardId> = vec![];
-                for &c in l.data.pick.iter().chain(&l.data.cards) {
-                    if aside(&c) && !holds.contains(&c) {
-                        holds.push(c);
-                    }
-                }
+                let holds = l.holds.clone();
                 EffectState {
                     id: l.id,
                     card: l.card,
@@ -844,6 +855,8 @@ impl Game {
         let effects = self.effects();
         let holdings = self.holdings();
         let now = self.gauges();
+        let down = self.face_down_in_trash();
+        let kept = self.kept_in_play();
         let journal = self.journal.as_mut().expect("checked above");
         let mut out = vec![];
         // A pile is there before anything is read of it: its tokens, a cost it changes.
@@ -890,9 +903,59 @@ impl Game {
         }
         journal.readings = now;
         out.extend(held);
+        for &card in &down {
+            if !journal.trash_down.contains(&card) {
+                out.push(Step::Face { card, down: true });
+            }
+        }
+        for &card in &journal.trash_down {
+            if !down.contains(&card) && self.zones[card.index()] == Zone::Trash {
+                out.push(Step::Face { card, down: false });
+            }
+        }
+        journal.trash_down = down;
+        for (player, cards) in &kept {
+            if journal
+                .kept
+                .iter()
+                .find(|(p, _)| p == player)
+                .map(|(_, c)| c)
+                != Some(cards)
+            {
+                out.push(Step::Kept {
+                    player: *player,
+                    cards: cards.clone(),
+                });
+            }
+        }
+        for (player, _) in &journal.kept {
+            if !kept.iter().any(|(p, _)| p == player) {
+                out.push(Step::Kept {
+                    player: *player,
+                    cards: vec![],
+                });
+            }
+        }
+        journal.kept = kept;
         for step in out {
             journal.push_within(step);
         }
+    }
+
+    /// Each player's cards some lasting effect keeps in play, for players with any.
+    fn kept_in_play(&self) -> Vec<(PlayerId, Vec<CardId>)> {
+        let mut out: Vec<(PlayerId, Vec<CardId>)> = vec![];
+        for (i, pl) in self.players.iter().enumerate() {
+            let p = PlayerId(i as u8);
+            let mut cards: Vec<CardId> = (pl.in_play.iter().copied())
+                .filter(|c| self.lasting.iter().any(|l| l.keeps.contains(c)))
+                .collect();
+            cards.sort();
+            if !cards.is_empty() {
+                out.push((p, cards));
+            }
+        }
+        out
     }
 
     fn holdings(&self) -> Holdings {

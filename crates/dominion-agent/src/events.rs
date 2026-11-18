@@ -51,6 +51,9 @@ pub struct Recorder {
     /// What the options of the question last asked answer with, until it is answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     asked: Option<(u8, Vec<crate::project::Target>)>,
+    /// The cards lying face down in a zone whose cards lie face up (the trash).
+    #[serde(default)]
+    down: BTreeSet<CardId>,
 }
 
 impl Recorder {
@@ -263,13 +266,19 @@ impl Recorder {
                             seq: self.seq,
                             why: format!("{was} changes but is nowhere"),
                         })?;
-                    let pos = (zone.ordered()).then(|| self.pos_of(&zone, card)).flatten();
+                    // Exactly which card: its place, not the topmost of its name's run.
+                    let pos = (zone.ordered())
+                        .then(|| self.ids[&zone].iter().position(|&c| c == card))
+                        .flatten()
+                        .map(|i| i as u32);
+                    let face = (zone.has_faces() && self.up.contains(&card)).then_some(Face::Up);
                     self.name(card, to);
                     What::Rename {
                         card: was,
                         name: to.name().to_string(),
                         zone,
                         pos: pos.filter(|&p| p > 0),
+                        face,
                     }
                 }
                 Step::Turn {
@@ -367,9 +376,19 @@ impl Recorder {
                     pos: None,
                     from_face: None,
                 }),
-                Step::Logged { index } => match occurrence(&game.log()[index]) {
-                    Some(what) => what,
-                    None => continue,
+                Step::Logged { index } => match &game.log()[index] {
+                    dominion_engine::Event::RevealedHand { player, .. } => {
+                        let zone = events::Zone::Seat(player.0, SeatZone::Hand);
+                        let cards = self.ids.get(&zone).cloned().unwrap_or_default();
+                        match self.show(Some(zone), &cards, None) {
+                            Some(what) => what,
+                            None => continue,
+                        }
+                    }
+                    entry => match occurrence(entry) {
+                        Some(what) => what,
+                        None => continue,
+                    },
                 },
                 Step::Resolve {
                     player,
@@ -377,7 +396,58 @@ impl Recorder {
                     occasion,
                     origin,
                 } => self.resolve(player, card, occasion, origin),
-                // Who saw what is not in the full stream.
+                Step::Trace {
+                    entry: Trace::Shown { card, to },
+                    ..
+                } => {
+                    // Cards of one zone shown to the same eyes one after the other are
+                    // shown together.
+                    let mut cards = vec![card];
+                    let zone = self.zone_of(card);
+                    while let Some(Step::Trace {
+                        entry: Trace::Shown { card: next, .. },
+                        ..
+                    }) = steps.next_if(|next| {
+                        matches!(next, Step::Trace { entry: Trace::Shown { card: c, to: t }, .. } if *t == to && self.zone_of(*c) == zone && !cards.contains(c))
+                    }) {
+                        cards.push(next);
+                    }
+                    match self.show(zone, &cards, to.map(|p| p.0)) {
+                        Some(what) => what,
+                        None => continue,
+                    }
+                }
+                Step::Trace {
+                    entry: Trace::LookedOver { player, cards },
+                    ..
+                } => {
+                    let Some(&first) = cards.first() else {
+                        continue;
+                    };
+                    match self.show(self.zone_of(first), &cards, Some(player.0)) {
+                        Some(what) => what,
+                        None => continue,
+                    }
+                }
+                Step::Trace {
+                    entry: Trace::Mixed { cards },
+                    ..
+                } => {
+                    // A shuffle of just these cards says as much.
+                    let shuffled = steps.shuffle_after();
+                    let mut same = shuffled.clone();
+                    let mut mixed = cards.clone();
+                    same.sort();
+                    mixed.sort();
+                    if same == mixed {
+                        continue;
+                    }
+                    for what in self.mixes(&cards) {
+                        self.push(&mut out, what)?;
+                    }
+                    continue;
+                }
+                // Positions within a deck are followed by its moves.
                 Step::Trace { .. } => continue,
                 Step::Chance { site, cards } => match chance_of(site, cards) {
                     Some(chance) => What::Chance(chance),
@@ -414,6 +484,30 @@ impl Recorder {
                         indices,
                         name,
                     })
+                }
+                Step::Face { card, down } => {
+                    let zone = events::Zone::Trash;
+                    let pos = (self.ids.get(&zone).into_iter().flatten())
+                        .position(|&c| c == card)
+                        .map(|i| i as u32);
+                    match down {
+                        true => self.down.insert(card),
+                        false => self.down.remove(&card),
+                    };
+                    What::Face {
+                        card: self.card(card),
+                        zone,
+                        face: if down { Face::Down } else { Face::Up },
+                        pos: pos.filter(|&p| p > 0),
+                    }
+                }
+                Step::Kept { player, cards } => {
+                    let zone = events::Zone::Seat(player.0, SeatZone::Play);
+                    let cards = self.bag(&cards);
+                    if self.table.kept.get(&zone).map_or(&[][..], Vec::as_slice) == cards {
+                        continue;
+                    }
+                    What::Kept { zone, cards }
                 }
                 Step::Occurred(_) | Step::Within(_) | Step::Closed(_) => {
                     unreachable!("handled above")
@@ -734,8 +828,77 @@ impl Recorder {
         if let Some(ids) = self.ids.get_mut(zone) {
             ids.retain(|&c| c != id);
         }
-        let up = self.up.remove(&id).then_some(Face::Up);
-        (pos, up)
+        let face = match (self.up.remove(&id), self.down.remove(&id)) {
+            (true, _) => Some(Face::Up),
+            (_, true) => Some(Face::Down),
+            _ => None,
+        };
+        (pos, face)
+    }
+
+    /// The zone `id` is in, as the stream has it.
+    fn zone_of(&self, id: CardId) -> Option<events::Zone> {
+        (self.ids.iter())
+            .find(|(_, ids)| ids.contains(&id))
+            .map(|(z, _)| z.clone())
+    }
+
+    /// Exactly how many cards lie over each of `ids` in the ordered `zone`.
+    fn exact(&self, zone: &events::Zone, ids: &[CardId]) -> Vec<u32> {
+        let there = self.ids.get(zone).map_or(&[][..], Vec::as_slice);
+        match zone.ordered() {
+            true => (ids.iter())
+                .filter_map(|id| there.iter().position(|c| c == id))
+                .map(|i| i as u32)
+                .collect(),
+            false => vec![],
+        }
+    }
+
+    /// `ids`, lying in `zone`, shown to `to` (everyone when `None`). Ordered zones list
+    /// them top first.
+    fn show(&self, zone: Option<events::Zone>, ids: &[CardId], to: Option<u8>) -> Option<What> {
+        let zone = zone?;
+        if ids.is_empty() {
+            return None;
+        }
+        let mut ids = ids.to_vec();
+        let there = self.ids.get(&zone).map_or(&[][..], Vec::as_slice);
+        match zone.ordered() {
+            true => ids.sort_by_key(|id| there.iter().position(|c| c == id)),
+            false => ids.sort_by_key(|&id| self.card(id)),
+        }
+        Some(What::Show(events::Show {
+            player: self.mover(&zone, &zone),
+            cards: ids.iter().map(|&id| self.card(id)).collect(),
+            pos: self.exact(&zone, &ids),
+            zone,
+            to,
+        }))
+    }
+
+    /// `ids` mixed where nobody can follow them: an event per zone they lie in.
+    fn mixes(&self, ids: &[CardId]) -> Vec<What> {
+        let mut by_zone: BTreeMap<events::Zone, Vec<CardId>> = BTreeMap::new();
+        for &id in ids {
+            if let Some(zone) = self.zone_of(id) {
+                by_zone.entry(zone).or_default().push(id);
+            }
+        }
+        (by_zone.into_iter())
+            .map(|(zone, mut ids)| {
+                let there = self.ids.get(&zone).map_or(&[][..], Vec::as_slice);
+                match zone.ordered() {
+                    true => ids.sort_by_key(|id| there.iter().position(|c| c == id)),
+                    false => ids.sort_by_key(|&id| self.card(id)),
+                }
+                What::Mix {
+                    cards: ids.iter().map(|&id| self.card(id)).collect(),
+                    pos: self.exact(&zone, &ids),
+                    zone,
+                }
+            })
+            .collect()
     }
 
     /// `id` arrives in `zone` at `at`.
@@ -1061,6 +1224,24 @@ impl Steps {
     }
 }
 
+impl Steps {
+    /// The cards of the shuffle the next steps are, if they are one.
+    fn shuffle_after(&self) -> Vec<CardId> {
+        let mut cards = vec![];
+        for step in &self.0 {
+            match step {
+                Step::Trace {
+                    entry: Trace::Moved { card, .. },
+                    verb: Some(Verb::Shuffle),
+                } => cards.push(*card),
+                _ if cards.is_empty() && is_reading(step) => {}
+                _ => break,
+            }
+        }
+        cards
+    }
+}
+
 /// Whether `step` is what the journal reads of the table each time it records.
 fn is_reading(step: &Step) -> bool {
     matches!(
@@ -1075,6 +1256,8 @@ fn is_reading(step: &Step) -> bool {
             | Step::Landscape { .. }
             | Step::Notes(_)
             | Step::Derived { .. }
+            | Step::Face { .. }
+            | Step::Kept { .. }
     )
 }
 

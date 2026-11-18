@@ -374,19 +374,13 @@ fn engine_table(game: &Game) -> Table {
         holders.sort();
     }
     counters.retain(|_, value| *value != 0);
-    let aside = |c: &CardId| matches!(game.zone(*c), EngineZone::SetAside(_));
     let up: Vec<CardId> = (0..game.num_players())
         .flat_map(|i| game.player(PlayerId(i as u8)).face_up.iter().copied())
         .collect();
     let effects = (game.lasting().iter())
         .map(|l| {
             let view = game.view(l.owner);
-            let mut holds: Vec<CardId> = vec![];
-            for &c in l.data.pick.iter().chain(&l.data.cards) {
-                if aside(&c) && !holds.contains(&c) {
-                    holds.push(c);
-                }
-            }
+            let holds = &l.holds;
             Effect {
                 id: l.id,
                 card: l.card.name().to_string(),
@@ -403,7 +397,7 @@ fn engine_table(game: &Game) -> Table {
                 face_up: bag(&(holds.iter().copied())
                     .filter(|c| up.contains(c))
                     .collect::<Vec<_>>()),
-                holds: bag(&holds),
+                holds: bag(holds),
                 tokens: view.lasting_tokens(l),
             }
         })
@@ -499,6 +493,57 @@ fn engine_table(game: &Game) -> Table {
         extra_turns,
         ending,
         progress: Default::default(),
+        face_down: {
+            let down = bag(&game.face_down_in_trash());
+            (!down.is_empty())
+                .then_some((Zone::Trash, down))
+                .into_iter()
+                .collect()
+        },
+        kept: (0..game.num_players())
+            .filter_map(|i| {
+                let kept: Vec<CardId> = (game.player(PlayerId(i as u8)).in_play.iter().copied())
+                    .filter(|c| game.lasting().iter().any(|l| l.keeps.contains(c)))
+                    .collect();
+                (!kept.is_empty()).then(|| (Zone::Seat(i as u8, SeatZone::Play), bag(&kept)))
+            })
+            .collect(),
+    }
+}
+
+/// An effect holds only cards set aside in its owner's zone, a card set aside is held by at
+/// most one effect, and one held by none is no effect's (a card gained to be set aside,
+/// before its effect is made): what the table says of holdings is true of the cards,
+/// however the engine came to it.
+fn check_holdings(game: &Game, what: &str) {
+    for l in game.lasting() {
+        for &c in &l.holds {
+            assert_eq!(
+                game.zone(c),
+                EngineZone::SetAside(l.owner),
+                "{what}: {} holds {} not set aside",
+                l.card,
+                game.card(c)
+            );
+        }
+    }
+    for i in 0..game.num_players() {
+        for &c in &game.player(PlayerId(i as u8)).set_aside {
+            let by: Vec<Card> = (game.lasting().iter())
+                .filter(|l| l.holds.contains(&c))
+                .map(|l| l.card)
+                .collect();
+            assert!(by.len() <= 1, "{what}: {} held by {by:?}", game.card(c));
+            let names: Vec<Card> = (game.lasting().iter())
+                .filter(|l| l.data.pick == Some(c) || l.data.cards.contains(&c))
+                .map(|l| l.card)
+                .collect();
+            assert!(
+                !by.is_empty() || names.is_empty(),
+                "{what}: {} set aside, held by none, named by {names:?}",
+                game.card(c)
+            );
+        }
     }
 }
 
@@ -528,6 +573,7 @@ fn out_of_decks(table: &mut Table) -> Vec<CardRef> {
 }
 
 fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str) {
+    check_holdings(game, what);
     let mut folded = recorder.table().clone();
     folded.ended = None;
     let mut expected = engine_table(game);
@@ -576,6 +622,8 @@ fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str)
         assert_eq!(folded.notes, expected.notes, "{what}");
         assert_eq!(folded.costs, expected.costs, "{what}");
         assert_eq!(folded.types, expected.types, "{what}");
+        assert_eq!(folded.face_down, expected.face_down, "{what}");
+        assert_eq!(folded.kept, expected.kept, "{what}");
         assert!(folded == expected, "{what}");
     }
     // The stream folds to the same table for anyone who reads it as JSON.
@@ -810,6 +858,17 @@ const FOCUS: &[(&[&str], &[&str])] = &[
         ],
         &["Star Chart", "Avoid", "Fated", "Order of Astrologers"],
     ),
+    (
+        &[
+            "Necromancer",
+            "Rogue",
+            "Cargo Ship",
+            "Wharf",
+            "Graverobber",
+            "Lurker",
+        ],
+        &["Citadel"],
+    ),
 ];
 
 fn phase_in(e: &What) -> Option<Phase> {
@@ -1029,6 +1088,7 @@ fn check_causes(events: &[Event], what: &str) {
                             ..
                         }
                         | What::Derived { .. }
+                        | What::Kept { .. }
                 ) =>
             {
                 fail(
@@ -1043,6 +1103,8 @@ fn check_causes(events: &[Event], what: &str) {
                         | What::ExtraTurnRemoved { .. }
                         | What::Discard(_)
                         | What::Derived { .. }
+                        | What::Face { .. }
+                        | What::Kept { .. }
                 ) =>
             {
                 fail("more than effects, extra turns and kept Boons ending with the turn");
@@ -1298,8 +1360,10 @@ fn a_replay_finds_where_a_stream_was_changed() {
         // when an answer picks one of those cards by its place: Order of Astrologers).
         let into_deck: Vec<usize> = (shuffles.iter().copied())
             .filter(|&i| match &events[i].what {
+                // Not some of a deck's cards shuffled again where they lay.
                 What::Shuffle(m) => {
                     matches!(m.to, Zone::Seat(_, SeatZone::Deck))
+                        && !matches!(m.at, events::At::Under(_))
                         && m.cards.iter().any(|c| *c != m.cards[0])
                 }
                 _ => false,

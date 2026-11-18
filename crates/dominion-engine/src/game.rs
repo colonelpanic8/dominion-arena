@@ -463,6 +463,10 @@ pub struct Lasting {
     /// The place in `Turn::played` of the play of `source` that made it, if one did.
     #[serde(default)]
     pub play: Option<usize>,
+    /// The cards it holds set aside: those of its data set aside when it was made, and
+    /// any it holds later ([`Game::hold`]); each until it leaves the set-aside zone.
+    #[serde(default)]
+    pub holds: Vec<CardId>,
 }
 
 impl Lasting {
@@ -1520,6 +1524,11 @@ impl Game {
         if let Zone::SetAside(p) | Zone::Looking(p) = from {
             self.players[p.index()].face_up.retain(|&c| c != id);
         }
+        if let Zone::SetAside(_) = from {
+            for l in &mut self.lasting {
+                l.holds.retain(|&c| c != id);
+            }
+        }
         self.zones[id.index()] = to;
         let dst = self.zone_vec(to);
         let top = dst.last().copied();
@@ -1799,6 +1808,12 @@ impl Game {
         let id = self.next_lasting;
         self.next_lasting += 1;
         let turn = self.players[owner.index()].turns_taken;
+        let mut holds: Vec<CardId> = vec![];
+        for &c in data.pick.iter().chain(&data.cards) {
+            if self.zones[c.index()] == Zone::SetAside(owner) && !holds.contains(&c) {
+                holds.push(c);
+            }
+        }
         self.lasting.push(Lasting {
             id,
             card,
@@ -1811,9 +1826,19 @@ impl Game {
             tracker,
             ending: false,
             play,
+            holds,
         });
         self.keep_in_play(id, keeps);
         id
+    }
+
+    /// Lasting `id` holds `card`, which it just set aside.
+    pub(crate) fn hold(&mut self, id: u32, card: CardId) {
+        if let Some(l) = self.lasting_mut(id)
+            && !l.holds.contains(&card)
+        {
+            l.holds.push(card);
+        }
     }
 
     /// Makes lasting `id` keep `keeps` in play. A Duration's effect (it keeps its own
@@ -1855,6 +1880,12 @@ impl Game {
 
     pub(crate) fn lasting_mut(&mut self, id: u32) -> Option<&mut Lasting> {
         self.lasting.iter_mut().find(|l| l.id == id)
+    }
+
+    /// The cards in the trash lying face down: each card a Necromancer played this turn,
+    /// while it has stayed there.
+    pub fn face_down_in_trash(&self) -> Vec<CardId> {
+        crate::cards::nocturne::face_down_in_trash(self)
     }
 
     /// Draws a Boon or Hex from its deck for `p`, reshuffling its discards if needed.
