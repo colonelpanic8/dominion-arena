@@ -260,14 +260,27 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
         None => (None, vec![]),
     };
     let rest: Vec<PastPlayer> = rest;
+    let arena = game.venue == Venue::Arena;
     rsx! {
-        button { class, "data-game": "{game.id}", "data-venue": venue, onclick: move |_| onpick.call(()),
+        div {
+            class,
+            role: "button",
+            tabindex: "0",
+            "data-game": "{game.id}",
+            "data-venue": venue,
+            onclick: move |_| onpick.call(()),
+            onkeydown: move |e: KeyboardEvent| {
+                if matches!(e.key(), Key::Enter) || e.key() == Key::Character(" ".into()) {
+                    e.prevent_default();
+                    onpick.call(());
+                }
+            },
             span { class: "lb-history-venue", title: venue_name }
             span { class: "lb-history-entry-body",
                 span { class: "lb-history-entry-line",
                     span { class: "lb-entry-side",
                         if let Some(p) = first {
-                            Seated { won: p.rank == 1, player: p }
+                            Seated { won: p.rank == 1, arena, player: p }
                         }
                     }
                     span { class: "lb-history-score",
@@ -280,7 +293,7 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
                     }
                     span { class: "lb-entry-side right",
                         for p in rest.iter() {
-                            Seated { key: "{p.seat}", player: p.clone(), won: p.rank == 1, right: true }
+                            Seated { key: "{p.seat}", player: p.clone(), won: p.rank == 1, arena, right: true }
                         }
                     }
                 }
@@ -558,11 +571,13 @@ fn Crown() -> Element {
     }
 }
 
-/// A seat in the list: an icon for what played it, its name, and under it a caption.
+/// A seat in the list: an icon for what played it, its name (linking to its Arena
+/// account's page), and under it a caption.
 #[component]
 fn Seated(
     player: PastPlayer,
     #[props(default)] won: bool,
+    #[props(default)] arena: bool,
     /// On the right of the line: aligned to it, its icon outermost.
     #[props(default)]
     right: bool,
@@ -573,6 +588,7 @@ fn Seated(
         (false, true) => "lb-seat right",
         (false, false) => "lb-seat",
     };
+    let account = player.account.clone().filter(|_| arena);
     rsx! {
         span { class,
             SeatIcon { played_by: player.played_by.clone() }
@@ -581,7 +597,16 @@ fn Seated(
                     if won {
                         Crown {}
                     }
-                    "{player.name}"
+                    match account {
+                        Some(name) => rsx! {
+                            span {
+                                onclick: |e| e.stop_propagation(),
+                                onkeydown: |e| e.stop_propagation(),
+                                Link { class: "lb-seat-link", to: Route::User { name }, "{player.name}" }
+                            }
+                        },
+                        None => rsx! { "{player.name}" },
+                    }
                 }
                 span { class: "lb-seat-caption", "{caption(&player)}" }
             }
