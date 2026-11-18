@@ -117,10 +117,12 @@ impl Store {
         builder.create(&expired)?;
         let names = Encoding::ALL.map(|e| format!("{key}{}", e.suffix()));
         let incomplete = Encoding::ALL.map(|e| incomplete_name(key, e));
+        let stale = Encoding::ALL.map(|e| stale_name(key, e));
         for name in [format!("{key}.json")]
             .iter()
             .chain(&names)
             .chain(&incomplete)
+            .chain(&stale)
         {
             match fs::rename(self.dir.join(name), expired.join(name)) {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
@@ -135,11 +137,28 @@ impl Store {
     /// `<key>.incomplete.events.<jsonl|cbor>`, as it is, so that nothing reads it as the
     /// game's stream or writes to it again. Where it was, if there was one.
     pub fn mark_incomplete(&self, key: &str) -> io::Result<Option<PathBuf>> {
+        self.set_aside(key, incomplete_name)
+    }
+
+    /// Sets game `key`'s reconstructed stream, here or in `expired/`, aside as stale:
+    /// renames it to `<key>.stale.events.<jsonl|cbor>`, as it is (over an older one), so
+    /// that nothing reads it as the game's stream and a backfill can write the game's
+    /// afresh. For a stream built from a history the game no longer has. Where it was, if
+    /// there was one.
+    pub fn mark_stale(&self, key: &str) -> io::Result<Option<PathBuf>> {
+        self.set_aside(key, stale_name)
+    }
+
+    fn set_aside(
+        &self,
+        key: &str,
+        name: fn(&str, Encoding) -> String,
+    ) -> io::Result<Option<PathBuf>> {
         let Some((path, encoding)) = self.stream_file(key) else {
             return Ok(None);
         };
         let dir = path.parent().unwrap_or(&self.dir).to_path_buf();
-        let to = dir.join(incomplete_name(key, encoding));
+        let to = dir.join(name(key, encoding));
         fs::rename(&path, &to)?;
         sync_dir(&dir)?;
         Ok(Some(to))
@@ -195,7 +214,7 @@ impl Store {
 }
 
 /// Game `key`'s event stream in state directory `dir` or its `expired/`, with its
-/// encoding: the first found. Never an incomplete one.
+/// encoding: the first found. Never an incomplete or stale one.
 pub fn stream_file(dir: &Path, key: &str) -> Option<(PathBuf, Encoding)> {
     [dir.to_path_buf(), dir.join(EXPIRED)]
         .iter()
@@ -206,6 +225,11 @@ pub fn stream_file(dir: &Path, key: &str) -> Option<(PathBuf, Encoding)> {
 /// The name an incomplete stream is kept under.
 fn incomplete_name(key: &str, encoding: Encoding) -> String {
     format!("{key}.incomplete{}", encoding.suffix())
+}
+
+/// The name a stale reconstructed stream is kept under.
+pub fn stale_name(key: &str, encoding: Encoding) -> String {
+    format!("{key}.stale{}", encoding.suffix())
 }
 
 /// Makes the entries of `dir` (a rename into it) durable.

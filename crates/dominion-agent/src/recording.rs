@@ -3,7 +3,7 @@
 //! ([`Encoding::suffix`]). Records are only ever appended, so a write that never finished
 //! leaves at most one record cut short at the end, which reading ignores.
 
-use dominion_protocol::events::{Event, Header, Reconstructed, SCHEMA, Viewer};
+use dominion_protocol::events::{Event, Header, History, Reconstructed, SCHEMA, Viewer};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -129,12 +129,13 @@ pub fn header(game: &str) -> Header {
 }
 
 /// The first record of the full stream of game `game` rebuilt at `at` (RFC 3339) from the
-/// host's saved game.
-pub fn reconstructed_header(game: &str, at: &str) -> Header {
+/// host's saved game, whose history was `history` ([`crate::Table::history`]).
+pub fn reconstructed_header(game: &str, at: &str, history: History) -> Header {
     Header {
         reconstructed: Some(Reconstructed {
             at: at.into(),
             from: "history".into(),
+            history: Some(history),
         }),
         ..header(game)
     }

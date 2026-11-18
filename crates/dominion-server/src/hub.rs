@@ -11,6 +11,7 @@ pub use dominion_protocol::api::{
     Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
 };
 use dominion_protocol::api::{Replay, ReplayTurn, UndoRequest, UndoState};
+use dominion_protocol::events::History;
 use dominion_protocol::lobby::{
     AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, Source, UndoRule,
     UserRef,
@@ -409,10 +410,13 @@ struct Hosted {
 }
 
 /// A hosted game's stream file, and the writes to it that failed running.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct StreamFile {
     at: Stream,
     failures: u32,
+    /// For a reconstructed stream, the history it was built from (the game's when it was
+    /// loaded): once the game's is another, the file is set aside as stale.
+    built: Option<History>,
 }
 
 /// After this many failed writes running, a game's stream stops.
@@ -429,7 +433,9 @@ pub(crate) enum Stream {
     /// The file's encoding, and its length up to the end of the events written.
     File(Encoding, u64),
     /// A whole stream `dominion games backfill` rebuilt ([`check_reconstructed`]), its
-    /// encoding and length: never written to, served only once the game can't change.
+    /// encoding and length: never written to, served only once the game can't change,
+    /// and set aside as stale once the game's history is no longer the one it was built
+    /// from.
     Reconstructed(Encoding, u64),
 }
 
@@ -439,6 +445,9 @@ pub(crate) enum StreamError {
     /// The stream it records isn't in step with it, or its recording stopped: its
     /// recording stops for good.
     Recorded(String),
+    /// The reconstructed stream beside it was built from another history of the game (it
+    /// was undone since) or doesn't say which: never served, and set aside as stale.
+    Stale(String),
     /// The reconstructed stream beside it isn't its own: left as it is, never served.
     Reconstructed(String),
 }
@@ -447,7 +456,25 @@ impl std::fmt::Display for StreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StreamError::Recorded(why) => f.write_str(why),
+            StreamError::Stale(why) => write!(f, "its reconstructed stream is stale: {why}"),
             StreamError::Reconstructed(why) => write!(f, "its reconstructed stream: {why}"),
+        }
+    }
+}
+
+/// Why a reconstructed stream isn't the game's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Unfit {
+    /// It was built from another history of the game, or doesn't say which.
+    Stale(String),
+    /// It is no whole stream of this game.
+    Broken(String),
+}
+
+impl std::fmt::Display for Unfit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Unfit::Stale(why) | Unfit::Broken(why) => f.write_str(why),
         }
     }
 }
@@ -469,9 +496,11 @@ impl Hosted {
         self.streams.iter().any(|s| s.load(Ordering::Relaxed) > 0)
     }
 
+    /// `stream` as [`stream_state`] found it for `table`.
     fn new(table: Table, tokens: Vec<String>, meta: Meta, changed: u64, stream: Stream) -> Hosted {
         let now = now_ms();
         let seats = tokens.len();
+        let built = matches!(stream, Stream::Reconstructed(..)).then(|| table.history());
         Hosted {
             table: Mutex::new(table),
             meta: Mutex::new(meta),
@@ -493,6 +522,7 @@ impl Hosted {
             stream: Mutex::new(StreamFile {
                 at: stream,
                 failures: 0,
+                built,
             }),
         }
     }
@@ -598,8 +628,15 @@ pub struct Loaded {
     pub unrecorded: Vec<(PathBuf, String)>,
     /// Games saved without a recording: before games were recorded, or with recording off.
     pub never_recorded: usize,
-    /// Games whose stream `dominion games backfill` rebuilt.
+    /// Games whose stream `dominion games backfill` rebuilt, served.
     pub reconstructed: usize,
+    /// Games whose stream `dominion games backfill` rebuilt, which can still change (a
+    /// finished game that can be undone): hosted as ever, the stream kept and served once
+    /// the game can't change, or set aside as stale if it changes first.
+    pub reconstructed_unserved: usize,
+    /// Reconstructed streams built from a history their game no longer has (it was
+    /// undone since): set aside as `<id>.stale.events.<encoding>`, never served.
+    pub stale: Vec<(PathBuf, String)>,
 }
 
 #[derive(Default)]
@@ -1016,21 +1053,27 @@ fn load(path: &Path, stem: &str) -> Result<(Table, Vec<String>, Meta), String> {
 pub(crate) fn stream_state(dir: &Path, table: &Table) -> Result<Stream, StreamError> {
     let file = crate::store::stream_file(dir, table.id());
     if let Some((path, encoding)) = &file {
-        let fail = |e: String| StreamError::Reconstructed(format!("{}: {e}", path.display()));
-        let bytes = fs::read(path).map_err(|e| fail(e.to_string()))?;
+        let at = |e: String| format!("{}: {e}", path.display());
+        let bytes = fs::read(path).map_err(|e| StreamError::Reconstructed(at(e.to_string())))?;
         if recording::read(*encoding, &bytes, Some(0))
             .is_ok_and(|r| r.header.reconstructed.is_some())
         {
             return check_reconstructed(*encoding, &bytes, table)
                 .map(|()| Stream::Reconstructed(*encoding, bytes.len() as u64))
-                .map_err(fail);
+                .map_err(|e| match e {
+                    Unfit::Stale(e) => StreamError::Stale(at(e)),
+                    Unfit::Broken(e) => StreamError::Reconstructed(at(e)),
+                });
         }
     }
     recorded_state(file, table).map_err(StreamError::Recorded)
 }
 
 /// [`stream_state`] of a stream the table recorded, in `file` if it has one.
-fn recorded_state(file: Option<(PathBuf, Encoding)>, table: &Table) -> Result<Stream, String> {
+pub(crate) fn recorded_state(
+    file: Option<(PathBuf, Encoding)>,
+    table: &Table,
+) -> Result<Stream, String> {
     if let Some(why) = table.recording_stopped() {
         return Err(format!("its recording stopped: {why}"));
     }
@@ -1197,22 +1240,32 @@ impl Hub {
             }
             let changed = now_ms().saturating_sub(age.as_millis() as u64);
             let mut table = table;
-            let stream = match stream_state(store.dir(), &table) {
+            let mut state = stream_state(store.dir(), &table);
+            if let Err(StreamError::Stale(e)) = &state {
+                // Of a history the game no longer has: set aside, and the game has what is
+                // left (its own recording, or none) until a backfill writes it afresh.
+                let why = match store.mark_stale(stem) {
+                    Ok(Some(to)) => format!("{e}; set aside as {}", to.display()),
+                    Ok(None) => e.clone(),
+                    Err(err) => format!("{e}; setting it aside: {err}"),
+                };
+                loaded.stale.push((path.clone(), why));
+                state = stream_state(store.dir(), &table);
+            }
+            let stream = match state {
                 Ok(Stream::Off) => {
                     loaded.never_recorded += 1;
-                    Stream::Off
-                }
-                Ok(Stream::Reconstructed(..)) if can_change(&meta, &table) => {
-                    let why = "a reconstructed stream is beside it while it can still change, \
-                               so that stream may not stay its own: it is never served";
-                    table.stop_recording(why);
-                    loaded.unrecorded.push((path.clone(), why.into()));
                     Stream::Off
                 }
                 Ok(stream @ Stream::Reconstructed(..)) => {
                     // A recording whose stream was lost and rebuilt: the rebuilt one stands.
                     table.stop_recording("its stream was rebuilt by `dominion games backfill`");
-                    loaded.reconstructed += 1;
+                    // One of a game that can still change is kept as it is, and served
+                    // once the game can't change; if it changes first, it is set aside.
+                    match can_change(&meta, &table) {
+                        true => loaded.reconstructed_unserved += 1,
+                        false => loaded.reconstructed += 1,
+                    }
                     stream
                 }
                 Ok(stream) => stream,
@@ -1221,7 +1274,7 @@ impl Hub {
                     loaded.unrecorded.push((path.clone(), e));
                     Stream::Off
                 }
-                Err(e @ StreamError::Reconstructed(_)) => {
+                Err(e @ (StreamError::Reconstructed(_) | StreamError::Stale(_))) => {
                     let e = e.to_string();
                     table.stop_recording(&e);
                     loaded.unrecorded.push((path.clone(), e));
@@ -1358,7 +1411,20 @@ impl Hub {
         };
         let mut stream = lock(&game.stream);
         if let Stream::Reconstructed(..) = stream.at {
-            return;
+            if stream.built.as_ref() == Some(&table.history()) {
+                return;
+            }
+            // Undone: the file is no longer the game's history. It is never written to;
+            // set aside, it leaves the game unrecorded, for a backfill to write afresh once
+            // the game is over again. Until it is, a restart finds it stale.
+            stream.at = Stream::Off;
+            stream.built = None;
+            if let Err(e) = store.mark_stale(table.id()) {
+                eprintln!(
+                    "dominion: setting game {}'s stale reconstructed stream aside: {e}",
+                    table.id()
+                );
+            }
         }
         if let Some(why) = table.recording_stopped() {
             if stream.at != Stream::Off {
@@ -2844,8 +2910,14 @@ impl Hub {
         if let (Stream::Reconstructed(encoding, _), Some(store)) = (at, &self.store) {
             let (path, _) = store.stream_file(id).ok_or_else(unrecorded)?;
             let bytes = fs::read(path).map_err(write)?;
-            check_reconstructed(encoding, &bytes, table)
-                .map_err(|e| HubError::Engine(format!("game {id}'s reconstructed stream: {e}")))?;
+            check_reconstructed(encoding, &bytes, table).map_err(|e| match e {
+                Unfit::Stale(e) => {
+                    HubError::NotFound(format!("game {id}'s reconstructed stream is stale: {e}"))
+                }
+                Unfit::Broken(e) => {
+                    HubError::Engine(format!("game {id}'s reconstructed stream: {e}"))
+                }
+            })?;
             return Ok((encoding, bytes));
         }
         if let Some(why) = table.recording_stopped() {
@@ -2907,36 +2979,70 @@ fn check_stream(encoding: Encoding, bytes: &[u8], table: &Table) -> Result<(), S
     Ok(())
 }
 
-/// Checks that `bytes` are a whole stream `dominion games backfill` rebuilt for `table`:
-/// its header says so and names the game, every event folds in order with nothing after
-/// them, its setup has the game's seats and seed, and it ends as the game stands (its
-/// `game-end` the game's outcome, or none while the game is in progress). The backfill
-/// checked it against the game event for event, and writes it only for a game that can no
-/// longer change, so this needs no engine: it holds the file to being that stream still.
-fn check_reconstructed(encoding: Encoding, bytes: &[u8], table: &Table) -> Result<(), String> {
+/// Checks that `bytes` are a whole stream `dominion games backfill` rebuilt for `table` as
+/// it stands: its header says so, names the game and the history it was built from, which
+/// is exactly the table's ([`Table::history`]: its answers and undos), every event folds in
+/// order with nothing after them, its setup has the game's seats and seed, and it ends as
+/// the game stands (its `game-end` the game's outcome, or none while the game is in
+/// progress). The backfill checked it against the game event for event, and a game is
+/// determined by its config and answers, so this needs no engine: it holds the file to
+/// being that stream still. A stream of another history is [`Unfit::Stale`].
+fn check_reconstructed(encoding: Encoding, bytes: &[u8], table: &Table) -> Result<(), Unfit> {
     use dominion_protocol::events::What;
-    let read = recording::read(encoding, bytes, None)?;
+    let read = recording::read(encoding, bytes, None).map_err(Unfit::Broken)?;
     if read.header.game.as_deref() != Some(table.id()) {
-        return Err("its header names another game".into());
+        return Err(Unfit::Broken("its header names another game".into()));
     }
-    if read.header.reconstructed.is_none() {
-        return Err("its header doesn't say it was reconstructed".into());
+    let Some(reconstructed) = &read.header.reconstructed else {
+        return Err(Unfit::Broken(
+            "its header doesn't say it was reconstructed".into(),
+        ));
+    };
+    let history = table.history();
+    match &reconstructed.history {
+        None => {
+            return Err(Unfit::Stale(
+                "its header doesn't say which history of the game it was built from".into(),
+            ));
+        }
+        Some(built) if *built != history => {
+            let counts = |h: &History| {
+                format!(
+                    "{} after {}",
+                    dominion_engine::amount(h.answers as i64, "answer", "answers"),
+                    dominion_engine::amount(h.undos as i64, "undo", "undos"),
+                )
+            };
+            return Err(Unfit::Stale(match counts(built) == counts(&history) {
+                true => format!(
+                    "it was built from {}, as many as the game has, but other ones",
+                    counts(built)
+                ),
+                false => format!(
+                    "it was built from {}, and the game now has {}",
+                    counts(built),
+                    counts(&history)
+                ),
+            }));
+        }
+        Some(_) => {}
     }
+    let broken = |why: &str| Err(Unfit::Broken(why.into()));
     if read.len_of(read.events.len()) != Some(bytes.len()) {
-        return Err("its last record is cut short".into());
+        return broken("its last record is cut short");
     }
     let mut folded = dominion_protocol::events::Table::default();
     for event in &read.events {
         folded
             .apply(event)
-            .map_err(|e| format!("event {}: {e}", event.seq))?;
+            .map_err(|e| Unfit::Broken(format!("event {}: {e}", event.seq)))?;
     }
     let config = table.game().config();
     match read.events.first().map(|e| &e.what) {
         Some(What::Setup(setup))
             if setup.seats == table.names()
                 && setup.config.as_ref().and_then(|c| c.seed) == Some(config.seed) => {}
-        _ => return Err("its setup is not the game's".into()),
+        _ => return broken("its setup is not the game's"),
     }
     let end = match read.events.last().map(|e| &e.what) {
         Some(What::GameEnd(end)) => Some(end),
@@ -2957,7 +3063,7 @@ fn check_reconstructed(encoding: Encoding, bytes: &[u8], table: &Table) -> Resul
         _ => false,
     };
     if !same {
-        return Err("it doesn't end as the game stands".into());
+        return broken("it doesn't end as the game stands");
     }
     Ok(())
 }

@@ -445,10 +445,20 @@ async fn serve(config: Config) -> Result<(), String> {
                     loaded.never_recorded
                 );
             }
+            for (path, e) in &loaded.stale {
+                eprintln!("dominion: {}: {e}", path.display());
+            }
             if loaded.reconstructed > 0 {
                 eprintln!(
                     "dominion: {} saved games have a stream rebuilt by `dominion games backfill`",
                     loaded.reconstructed
+                );
+            }
+            if loaded.reconstructed_unserved > 0 {
+                eprintln!(
+                    "dominion: {} saved games that can still be undone have a stream rebuilt by \
+                     `dominion games backfill`, served once they can't change",
+                    loaded.reconstructed_unserved
                 );
             }
             hub.set_events_encoding(config.events_encoding.unwrap_or_default());
