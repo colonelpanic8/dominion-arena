@@ -295,16 +295,18 @@ fn the_tables_tab_offers_what_each_line_allows() {
         [SeatMark::Player("Hal".into()), SeatMark::You]
     );
     assert_eq!(by("g7").action, Action::Watch);
-    assert_eq!(by("g9").status, TableStatus::PostGame);
-    // A table's game is the table's line, and other people's finished games aren't listed.
+    // A table's game is the table's line, and finished games aren't listed, held or not.
     let listed = |key: &str| {
         lines
             .iter()
             .filter(|l| l.game.as_deref() == Some(key))
             .count()
     };
-    assert_eq!((listed("g0"), listed("g4"), listed("g8")), (0, 1, 0));
-    assert_eq!(lines.len(), 8);
+    assert_eq!(
+        (listed("g0"), listed("g4"), listed("g8"), listed("g9")),
+        (0, 1, 0, 0)
+    );
+    assert_eq!(lines.len(), 7);
 }
 
 #[test]
