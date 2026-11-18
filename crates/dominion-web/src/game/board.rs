@@ -474,6 +474,21 @@ pub fn card_order(cards: &CardDb, a: &str, b: &str) -> Ordering {
     key(a).cmp(&key(b)).then_with(|| a.cmp(b))
 }
 
+/// Every card any of `players` is known to own, in [`card_order`], with how many of it
+/// each owns.
+pub fn owned_side_by_side(players: &[&PlayerEntry], cards: &CardDb) -> Vec<(String, Vec<u32>)> {
+    let mut rows: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+    for (i, p) in players.iter().enumerate() {
+        for s in &p.owned.known {
+            rows.entry(&s.card)
+                .or_insert_with(|| vec![0; players.len()])[i] += s.count;
+        }
+    }
+    let mut out: Vec<_> = rows.into_iter().map(|(c, n)| (c.to_string(), n)).collect();
+    out.sort_by(|a, b| card_order(cards, &a.0, &b.0));
+    out
+}
+
 pub fn stacks(known: &CardCount, cards: &CardDb) -> Vec<Stack> {
     let mut out: Vec<Stack> = known
         .iter()
