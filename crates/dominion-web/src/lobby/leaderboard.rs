@@ -158,6 +158,9 @@ fn ProfileCard(profile: Profile) -> Element {
                 span { "{user.name}" }
             }
             div { class: "lb-profile-who",
+                if user.kind != UserKind::Bot || user.avatar.is_some() {
+                    super::avatar::Avatar { user: user.clone(), size: "4vh" }
+                }
                 span { "{what}" }
                 Link { class: "lb-note-link", to: Route::Leaderboard {}, "Leaderboard" }
             }

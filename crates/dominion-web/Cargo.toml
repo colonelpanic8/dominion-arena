@@ -23,7 +23,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 [features]
-web = ["dioxus/web", "dep:gloo-net", "dep:gloo-timers", "dep:web-sys", "dep:wasm-bindgen", "dep:js-sys"]
+web = ["dioxus/web", "dep:gloo-net", "dep:gloo-timers", "dep:web-sys", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-net = { version = "0.6", default-features = false, features = ["http", "json", "eventsource"], optional = true }
@@ -31,7 +31,8 @@ gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 # wasm-bindgen must match flake.nix's wasm-bindgen-cli; js-sys and web-sys ship in lockstep with it.
 js-sys = { version = "=0.3.107", optional = true }
 wasm-bindgen = { version = "=0.2.130", optional = true }
-web-sys = { version = "=0.3.107", features = ["Window", "Storage", "Location", "History", "Document", "Element", "Navigator", "Clipboard", "HtmlCanvasElement", "CanvasRenderingContext2d", "TextMetrics"], optional = true }
+wasm-bindgen-futures = { version = "=0.4.80", optional = true }
+web-sys = { version = "=0.3.107", features = ["Window", "Storage", "Location", "History", "Document", "Element", "Navigator", "Clipboard", "HtmlCanvasElement", "CanvasRenderingContext2d", "TextMetrics", "Blob", "File", "ImageBitmap"], optional = true }
 
 [dev-dependencies]
 dominion-agent = { path = "../dominion-agent" }

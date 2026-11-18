@@ -71,6 +71,14 @@ CREATE TABLE IF NOT EXISTS agent_transcript (
     UNIQUE (game, seat, attempt, offset)
 );
 CREATE INDEX IF NOT EXISTS agent_transcript_game ON agent_transcript (game, sequence);
+-- An account's picture: a small image its owner uploaded, PNG, JPEG or WebP.
+CREATE TABLE IF NOT EXISTS avatars (
+    user INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    image BLOB NOT NULL,
+    -- When it was set (ms): its URL changes with it.
+    updated INTEGER NOT NULL
+);
 -- The accounts that played each game. They outlive a guest's account.
 CREATE TABLE IF NOT EXISTS game_players (
     user INTEGER NOT NULL,
@@ -116,10 +124,19 @@ fn add_venues(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 /// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 5;
 
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
                     rated_at, rated_games, games, wins, banned_cards";
+
+/// When account `id`'s picture was set, if it has one.
+fn avatar_set(conn: &Connection, id: &str) -> rusqlite::Result<Option<u64>> {
+    let mut query = conn.prepare_cached("SELECT updated FROM avatars WHERE user = ?1")?;
+    query
+        .query_row([row_of(id)], |r| r.get::<_, i64>(0))
+        .optional()
+        .map(|t| t.map(|t| t as u64))
+}
 
 fn id_of(row: i64) -> String {
     format!("u{row}")
@@ -334,6 +351,7 @@ impl Db {
                 kind: u.kind(),
                 rating: (u.rated_games > 0).then(|| u.rating.rating.round() as i32),
                 owner: owner.map(|o| o.name),
+                avatar: avatar_set(&conn, id).ok().flatten(),
                 name: u.name,
             }
         });
@@ -343,6 +361,35 @@ impl Db {
         }
         refs.insert(id.to_string(), found.clone());
         found
+    }
+
+    /// Gives account `id` the picture `image` of media type `kind`, set at `now` (ms).
+    pub fn set_avatar(&self, id: &str, kind: &str, image: &[u8], now: u64) -> Result<()> {
+        lock(&self.conn).execute(
+            "INSERT OR REPLACE INTO avatars (user, type, image, updated) VALUES (?1, ?2, ?3, ?4)",
+            params![row_of(id), kind, image, now as i64],
+        )?;
+        self.changed();
+        Ok(())
+    }
+
+    pub fn clear_avatar(&self, id: &str) -> Result<()> {
+        lock(&self.conn).execute("DELETE FROM avatars WHERE user = ?1", [row_of(id)])?;
+        self.changed();
+        Ok(())
+    }
+
+    /// The picture of the account called `name`, and its media type.
+    pub fn avatar_of(&self, name: &str) -> Result<Option<(String, Vec<u8>)>> {
+        let conn = lock(&self.conn);
+        let mut query = conn.prepare_cached(
+            "SELECT a.type, a.image FROM avatars a JOIN users u ON u.id = a.user \
+             WHERE u.name_key = ?1",
+        )?;
+        let key = name.trim().to_lowercase();
+        Ok(query
+            .query_row([key], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?)
     }
 
     pub fn bots_of(&self, owner: &str) -> Result<Vec<User>> {

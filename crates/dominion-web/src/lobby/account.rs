@@ -152,6 +152,7 @@ fn Summary(me: Me) -> Element {
     let deviation = me.rating.deviation.round();
     rsx! {
         Fieldset { title: "Account", class: "lb-account-summary",
+            super::avatar::PictureControls { me: me.clone() }
             OptionRow { label: "Name",
                 UserName { user: me.user.clone(), link: true }
             }

@@ -74,6 +74,14 @@ impl Account {
         self.took(api::guest(name).await)
     }
 
+    pub async fn set_avatar(self, file: &dioxus::html::FileData) -> Result<Me, ApiError> {
+        self.took(api::set_avatar(file).await)
+    }
+
+    pub async fn clear_avatar(self) -> Result<Me, ApiError> {
+        self.took(api::clear_avatar().await)
+    }
+
     pub async fn logout(self) {
         if api::logout().await.is_ok() {
             self.set(None);

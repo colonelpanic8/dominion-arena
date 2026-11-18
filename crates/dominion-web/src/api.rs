@@ -236,6 +236,15 @@ pub async fn set_password(current: &str, new: &str) -> Result<()> {
     imp::send_empty("PUT", "/api/me/password", None, Some(&passwords)).await
 }
 
+/// Makes the picture in `file` the account's: the middle square of it, made small.
+pub async fn set_avatar(file: &dioxus::html::FileData) -> Result<Me> {
+    imp::upload_avatar(file).await
+}
+
+pub async fn clear_avatar() -> Result<Me> {
+    imp::send("DELETE", "/api/me/avatar", None, None::<&()>).await
+}
+
 /// The seats this account plays, with their tokens.
 pub async fn my_games() -> Result<Vec<MyGame>> {
     imp::get("/api/me/games", None).await
@@ -451,6 +460,86 @@ mod imp {
         send("POST", url, token, Some(body)).await
     }
 
+    /// The side of the square a picture is made, in pixels.
+    const AVATAR_SIDE: u32 = 256;
+
+    /// `file`'s middle square at `AVATAR_SIDE`, as a JPEG.
+    async fn shrink(file: &dioxus::html::FileData) -> std::result::Result<web_sys::Blob, String> {
+        use wasm_bindgen::{JsCast, JsValue};
+        use wasm_bindgen_futures::JsFuture;
+        let unreadable = |_| "this browser can't read that file as a picture".to_string();
+        let file =
+            (file.inner().downcast_ref::<web_sys::File>().cloned()).ok_or("no file was picked")?;
+        let window = web_sys::window().ok_or("no window")?;
+        let decoding = window
+            .create_image_bitmap_with_blob(&file)
+            .map_err(unreadable)?;
+        let bitmap: web_sys::ImageBitmap = JsFuture::from(decoding)
+            .await
+            .map_err(unreadable)?
+            .unchecked_into();
+        let (w, h) = (bitmap.width() as f64, bitmap.height() as f64);
+        let crop = w.min(h);
+        let canvas: web_sys::HtmlCanvasElement = (window.document())
+            .and_then(|d| d.create_element("canvas").ok())
+            .and_then(|e| e.dyn_into().ok())
+            .ok_or("no canvas")?;
+        canvas.set_width(AVATAR_SIDE);
+        canvas.set_height(AVATAR_SIDE);
+        let ctx: web_sys::CanvasRenderingContext2d = (canvas.get_context("2d").ok().flatten())
+            .and_then(|c| c.dyn_into().ok())
+            .ok_or("no canvas")?;
+        let side = AVATAR_SIDE as f64;
+        ctx.set_fill_style_str("#fff");
+        ctx.fill_rect(0.0, 0.0, side, side);
+        ctx.draw_image_with_image_bitmap_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+            &bitmap,
+            (w - crop) / 2.0,
+            (h - crop) / 2.0,
+            crop,
+            crop,
+            0.0,
+            0.0,
+            side,
+            side,
+        )
+        .map_err(unreadable)?;
+        bitmap.close();
+        let encoding = js_sys::Promise::new(&mut |resolve, reject| {
+            let quality = JsValue::from_f64(0.85);
+            if canvas
+                .to_blob_with_type_and_encoder_options(&resolve, "image/jpeg", &quality)
+                .is_err()
+            {
+                let _ = reject.call0(&JsValue::NULL);
+            }
+        });
+        let blob = JsFuture::from(encoding).await.map_err(unreadable)?;
+        blob.dyn_into().map_err(unreadable)
+    }
+
+    pub async fn upload_avatar(
+        file: &dioxus::html::FileData,
+    ) -> Result<dominion_protocol::lobby::Me> {
+        let picture = shrink(file)
+            .await
+            .map_err(|message| ApiError { status: 0, message })?;
+        let req = Request::put("/api/me/avatar")
+            .header("Content-Type", "image/jpeg")
+            .body(picture)
+            .map_err(unreachable)?;
+        let resp = req.send().await.map_err(unreachable)?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(unreachable)?;
+        if !resp.ok() {
+            return Err(error_message(status, &text));
+        }
+        serde_json::from_str(&text).map_err(|e| ApiError {
+            status: 0,
+            message: format!("unreadable response: {e}"),
+        })
+    }
+
     /// Reads one connection's events, giving each `change` event's data to `on_change`;
     /// returns when it drops.
     pub async fn follow(url: &str, on_change: &mut dyn FnMut(&str)) -> std::result::Result<(), ()> {
@@ -506,6 +595,12 @@ mod imp {
         _token: Option<&str>,
         _body: &impl Serialize,
     ) -> Result<T> {
+        unavailable()
+    }
+
+    pub async fn upload_avatar(
+        _file: &dioxus::html::FileData,
+    ) -> Result<dominion_protocol::lobby::Me> {
         unavailable()
     }
 

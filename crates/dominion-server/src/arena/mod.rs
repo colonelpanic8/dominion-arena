@@ -451,6 +451,7 @@ impl Arena {
             kind: user.kind(),
             rating: None,
             owner: None,
+            avatar: None,
         })
     }
 

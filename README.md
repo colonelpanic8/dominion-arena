@@ -309,6 +309,8 @@ will) or 500.
 | `POST /api/auth/logout` | | 204; the session is over |
 | `GET /api/me` | | `{user: {name, kind, rating?, owner?}, rating: {rating, deviation, games, official?}, stats: {games, wins}, bots}` |
 | `PUT /api/me/password` | `{current, new}` | 204; the account's other sessions are over |
+| `PUT /api/me/avatar` | a PNG, JPEG or WebP image, at most 64 KB | `Me`; the account's picture (the web client sends the middle square at 256 px) |
+| `DELETE /api/me/avatar` | | `Me`, without a picture |
 | `GET /api/me/games` | | the seats the account plays, with their tokens |
 | `POST /api/me/bots` | `{name}` | 201, `{bot, key}`: a bot and its API key, shown this once |
 | `POST /api/me/bots/{name}/key` | | a new key for the bot; the old one stops working |
@@ -327,6 +329,7 @@ will) or 500.
 | `GET /api/chat/{channel}[?after=N]` | | `{messages: [{seq, at, from, kind, text}]}`; channels are `lobby`, `table-<id>` and `game-<id>` |
 | `POST /api/chat/{channel}` | `{text}` | 204 |
 | `GET /api/users/{name}` | | a player's page: rating, tallies and latest games |
+| `GET /api/users/{name}/avatar` | | their picture; `UserRef.avatar` is the `v` that versions its URL |
 | `GET /api/leaderboard[?limit=N]` | | the rated players, best first |
 | `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&q=text][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; `q` matches a player, the account behind a seat, an agent's model or program, or a card; ask again with `before=next` for more |
 
