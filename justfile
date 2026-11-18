@@ -26,6 +26,10 @@ build:
 
 check: fmt-check clippy test
 
+# Write the example streams of protocol/events.md again from the current code.
+events-examples:
+    EVENTS_EXAMPLES=write cargo test -p dominion-agent --test spec_examples the_examples_are_what_the_generator_writes
+
 # Copy the agent-view@2 schema from a dominion-playbook checkout.
 sync-protocol playbook="../dominion-playbook":
     cp {{playbook}}/protocol/agent-view.schema.json crates/dominion-agent/protocol/
