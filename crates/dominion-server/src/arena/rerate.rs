@@ -91,8 +91,13 @@ impl Arena {
                     tallies,
                 });
             }
+            // Only a rated game moves a rating: an unrated one needs no account per seat,
+            // and one whose accounts were renamed since can't always say which.
             let keys = (played.iter())
-                .map(|(record, users)| seat_keys(record, users, &names))
+                .map(|(record, users)| match record.rated {
+                    true => seat_keys(record, users, &names),
+                    false => Ok(vec![None; record.players.len()]),
+                })
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(Error::Conflict)?;
             let kept =
@@ -474,6 +479,29 @@ mod tests {
         assert_eq!((ada.stats.games, ada.stats.wins), (1, 1));
         let shown = ada.recent.iter().find(|g| g.id == "g1").unwrap();
         assert!(shown.voided.is_some() && shown.players.iter().all(|p| p.rating.is_none()));
+    }
+
+    #[test]
+    fn an_unrated_game_whose_accounts_were_renamed_doesnt_stop_a_void() {
+        let arena = arena();
+        let ids = ["Ada", "Bo"].map(|n| arena.db.user_by_name(n).unwrap().unwrap().id);
+        // Played as Ada and Bo under names they no longer have, unrated.
+        let old = GameRecord {
+            rated: false,
+            players: vec![seat("Ada 1.0", 1), seat("Bo 1.0", 2)],
+            ..record(&arena, "g1")
+        };
+        let old = GameRecord {
+            game_id: "g0".into(),
+            ended: 1,
+            ..old
+        };
+        let users = ids.map(Some).to_vec();
+        (arena.db)
+            .transaction(|tx| db::add_record(tx, Venue::Arena, &old, &users))
+            .unwrap();
+        arena.void_ratings(&["g1".into()], VOID).unwrap();
+        assert!(record(&arena, "g1").voided.is_some());
     }
 
     #[test]
