@@ -79,6 +79,7 @@ impl Board {
     pub fn with_meta(mut self, m: &GameMeta) -> Board {
         for p in self.you.iter_mut().chain(&mut self.opponents) {
             p.account = meta::account(m, p.seat);
+            p.level = meta::level(m, p.seat);
         }
         self.rated = m.rated;
         self.timed = m.timed || m.clock.is_some();
@@ -255,6 +256,8 @@ pub struct PlayerEntry {
     pub counters: Vec<(String, i64)>,
     /// The account playing the seat ([`Board::with_meta`]).
     pub account: Option<SeatAccount>,
+    /// In a dominion.games game: the player's level there ([`Board::with_meta`]).
+    pub level: Option<f64>,
 }
 
 impl PlayerEntry {
@@ -758,6 +761,7 @@ fn player_entry(
             .collect(),
         counters: counters(&p.counters),
         account: None,
+        level: None,
     }
 }
 

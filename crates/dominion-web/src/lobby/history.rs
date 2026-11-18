@@ -583,13 +583,16 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
                             }
                             span { class: "lb-sheet-num", "{p.vp}" }
                             span { class: "lb-sheet-num", "{p.turns}" }
-                            match p.rating {
-                                Some((before, after)) => rsx! {
+                            match (p.rating, p.level) {
+                                (Some((before, after)), _) => rsx! {
                                     span { class: if after >= before { "lb-sheet-num up" } else { "lb-sheet-num down" },
                                         "{before.round()} → {after.round()}"
                                     }
                                 },
-                                None => rsx! { span { class: "lb-sheet-num none", "—" } },
+                                (None, Some(level)) => rsx! {
+                                    span { class: "lb-sheet-num", title: "dominion.games level as the game began", "{level:.2}" }
+                                },
+                                (None, None) => rsx! { span { class: "lb-sheet-num none", "—" } },
                             }
                         }
                     }

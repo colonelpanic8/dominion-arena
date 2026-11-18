@@ -514,7 +514,7 @@ pub struct Lobby {
 
 /// A dominion.games account the server keeps connected: one of the server's agents plays
 /// as it, sent by its owner.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OfficialAccount {
     /// Its id in routes: `/api/online/<id>/...`.
@@ -535,7 +535,7 @@ pub struct OfficialAccount {
 }
 
 /// An official account's game.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OfficialGame {
     /// dominion.games' id.
@@ -553,6 +553,10 @@ pub struct OfficialGame {
     /// What it was set up with besides those: Platinum and Colony, Shelters, Heirlooms, ...
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub others: Vec<String>,
+    /// Per seat: the player's dominion.games level as the game began, once known (none for
+    /// a bot or an unrated player).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub levels: Vec<Option<f64>>,
 }
 
 /// The server's own agents: it starts one on its machine for a table's `agent` seat, or
@@ -706,7 +710,7 @@ pub enum Source {
 }
 
 /// What a game's page shows beside the seat's view.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameMeta {
     pub source: Source,
@@ -726,6 +730,10 @@ pub struct GameMeta {
     pub clock: Option<ClockView>,
     /// People watching now.
     pub watchers: u32,
+    /// In a dominion.games game: per seat, the player's dominion.games level as the game
+    /// began, once known (none for a bot or an unrated player).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub levels: Vec<Option<f64>>,
     /// Why the game ended early, when it did: `resigned`, `abandoned` or `timeout`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
@@ -773,6 +781,9 @@ pub struct RecordPlayer {
     /// In a rated game: their rating before and after it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<(f64, f64)>,
+    /// In a dominion.games game: their dominion.games level as it began.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<f64>,
     /// For one of the server's agents: what played the seat, as its runner reported it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentRun>,
@@ -997,6 +1008,9 @@ pub struct PastPlayer {
     /// Its rating here before and after a rated game.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<(f64, f64)>,
+    /// In a dominion.games game: its dominion.games level as the game began.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<f64>,
     /// For one of the server's agents in an Arena game: what played the seat, as its
     /// runner reported it.
     #[serde(default, skip_serializing_if = "Option::is_none")]

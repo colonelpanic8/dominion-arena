@@ -108,6 +108,9 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                         "{a.tag()}"
                     }
                 }
+                if let Some((text, title)) = p.level.map(crate::game::meta::level_text) {
+                    span { class: "dt-bar-who", "data-level": "{seat}", title: "{title}", "{text}" }
+                }
             }
         }
     }

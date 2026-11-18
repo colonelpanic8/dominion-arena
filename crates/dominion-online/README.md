@@ -134,7 +134,10 @@ same account. The state-directory lock prevents two processes sharing it.
   observation: `{connected, error, game?}`, where `game` has the shape
   `GET /api/games/{id}/watch` gives one of Arena's games (view, version, the seat
   deciding, table extras, `meta` with the clock), so the web client keeps both in the
-  same model. Its log is always the whole log, and `undos` counts the snapshots
+  same model. `meta.levels` gives each seat's dominion.games level (2p rating for two
+  players, else 3p; none for a bot or an unrated player), asked once per game as it starts
+  running; the lobby's `OfficialGame.levels` and the finished game's record keep the same.
+  Its log is always the whole log, and `undos` counts the snapshots
   dominion.games has sent. Responses use `Cache-Control: no-store`, omit the current decision
   and are public, including to signed-out viewers. Watching shows the playing
   account's legal view, including its hand. The stream closes on shutdown.
