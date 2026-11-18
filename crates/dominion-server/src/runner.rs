@@ -550,6 +550,7 @@ async fn setup(spec: &AgentSpec, sandbox: &crate::harness::Sandbox) -> AgentSetu
         agent: spec.name.clone(),
         program: spec.program.label().into(),
         model: spec.model.clone(),
+        model_name: None,
         effort: spec.effort.clone(),
         version: crate::commit(),
         playbook,

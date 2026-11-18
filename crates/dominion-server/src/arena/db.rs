@@ -795,7 +795,7 @@ mod venue_tests {
         }
         let db = Db::open(Some(dir.path())).unwrap();
         let games = db.games(Venue::Arena, None, u64::MAX, 10).unwrap();
-        let game = super::super::records::past_game(games[0].clone(), Venue::Arena);
+        let game = super::super::records::past_game(games[0].clone(), Venue::Arena, &|_| None);
         assert_eq!((game.seed, game.version.as_deref()), (Some(7), Some("abc")));
         let run = game.players[0].agent.as_ref().unwrap();
         assert_eq!((run.setup.agent.as_str(), run.attempts.len()), ("Opus", 1));

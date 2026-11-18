@@ -1,0 +1,20 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - main:
+      - generic [ref=e2]:
+        - generic "Fullscreen" [ref=e3] [cursor=pointer]
+        - list [ref=e4]:
+          - listitem [ref=e5] [cursor=pointer]:
+            - button "Automatch" [ref=e6]
+          - listitem [ref=e7] [cursor=pointer]:
+            - button "New Table" [ref=e8]
+          - listitem [ref=e9] [cursor=pointer]:
+            - button "Tables" [ref=e10]
+          - listitem [ref=e11] [cursor=pointer]:
+            - button "Cardlists" [ref=e12]
+          - listitem [ref=e13] [cursor=pointer]:
+            - button "Leaderboard" [ref=e14]
+          - listitem [ref=e15] [cursor=pointer]:
+            - button "History" [ref=e16]
+          - listitem [ref=e17] [cursor=pointer]:
+            - button "Account" [ref=e18]

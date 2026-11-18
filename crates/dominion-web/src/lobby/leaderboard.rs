@@ -1,7 +1,7 @@
 //! The Leaderboard tab (the rated players, best first) and a player's page: their
 //! rating and tallies over their games.
 
-use super::history::{GameBrowser, seat_of};
+use super::history::{GameBrowser, agent_line, seat_of};
 use super::{LobbyFrame, Tab, UserName};
 use crate::api;
 use crate::app::Route;
@@ -113,6 +113,7 @@ fn ProfileCard(profile: Profile) -> Element {
         rating,
         stats,
         official_games,
+        agent,
         recent,
     } = profile;
     let line = rating_line(&recent, &user.name);
@@ -134,11 +135,12 @@ fn ProfileCard(profile: Profile) -> Element {
             String::new(),
         ),
     ];
-    let what = match (user.kind, &user.owner) {
-        (UserKind::Registered, _) => "Player".to_string(),
-        (UserKind::Guest, _) => "Playing as a guest".to_string(),
-        (UserKind::Bot, Some(owner)) => format!("{owner}'s bot"),
-        (UserKind::Bot, None) => "One of the server's agents".to_string(),
+    let what = match (user.kind, &user.owner, &agent) {
+        (_, _, Some(a)) => agent_line(a),
+        (UserKind::Registered, _, _) => "Registered player".to_string(),
+        (UserKind::Guest, _, _) => "Playing as a guest".to_string(),
+        (UserKind::Bot, Some(owner), _) => format!("{owner}'s bot"),
+        (UserKind::Bot, None, _) => "One of the server's agents".to_string(),
     };
     if let Some(o) = &rating.official {
         numbers.insert(

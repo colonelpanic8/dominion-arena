@@ -1,0 +1,201 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - main:
+      - generic [ref=e2]:
+        - generic "Fullscreen" [ref=e3] [cursor=pointer]
+        - list [ref=e4]:
+          - listitem [ref=e5] [cursor=pointer]:
+            - button "Automatch" [ref=e6]
+          - listitem [ref=e7] [cursor=pointer]:
+            - button "New Table" [ref=e8]
+          - listitem [ref=e9] [cursor=pointer]:
+            - button "Tables" [ref=e10]
+          - listitem [ref=e11] [cursor=pointer]:
+            - button "Cardlists" [ref=e12]
+          - listitem [ref=e13] [cursor=pointer]:
+            - button "Leaderboard" [ref=e14]
+          - listitem [ref=e15] [cursor=pointer]:
+            - button "History" [ref=e16]
+          - listitem [ref=e17] [cursor=pointer]:
+            - button "Account" [ref=e18]
+          - button "Log in" [ref=e20] [cursor=pointer]
+        - generic [ref=e23]:
+          - generic [ref=e25]:
+            - generic [ref=e27]: Game History
+            - generic [ref=e29]:
+              - generic [ref=e30] [cursor=pointer]: All
+              - generic [ref=e31] [cursor=pointer]: Arena
+              - generic [ref=e32] [cursor=pointer]: dominion.games
+            - generic [ref=e33]:
+              - generic [ref=e34] [cursor=pointer]:
+                - switch [ref=e35]
+                - text: Rated
+              - searchbox "Find a player, agent or card" [ref=e37]
+            - generic [ref=e38]:
+              - generic [ref=e39]:
+                - generic [ref=e40]: Today
+                - button "Bo Registered 3–3 Rookbot rook's bot Arena · Automatch · Rated 20:50" [ref=e41] [cursor=pointer]:
+                  - generic [ref=e43]:
+                    - generic [ref=e44]:
+                      - generic [ref=e46]:
+                        - img [ref=e47]
+                        - generic [ref=e49]:
+                          - generic [ref=e50]: Bo
+                          - generic [ref=e51]: Registered
+                      - generic [ref=e52]: 3–3
+                      - generic [ref=e54]:
+                        - img [ref=e55]
+                        - generic [ref=e57]:
+                          - generic [ref=e58]: Rookbot
+                          - generic [ref=e59]: rook's bot
+                    - generic [ref=e60]:
+                      - generic [ref=e61]: Arena · Automatch · Rated
+                      - generic [ref=e62]: 20:50
+              - button "rook Registered 3–3 Wanderer Guest Arena · Automatch · Unrated 20:50" [ref=e64] [cursor=pointer]:
+                - generic [ref=e66]:
+                  - generic [ref=e67]:
+                    - generic [ref=e69]:
+                      - img [ref=e70]
+                      - generic [ref=e72]:
+                        - generic [ref=e73]: rook
+                        - generic [ref=e74]: Registered
+                    - generic [ref=e75]: 3–3
+                    - generic [ref=e77]:
+                      - img [ref=e78]
+                      - generic [ref=e80]:
+                        - generic [ref=e81]: Wanderer
+                        - generic [ref=e82]: Guest
+                  - generic [ref=e83]:
+                    - generic [ref=e84]: Arena · Automatch · Unrated
+                    - generic [ref=e85]: 20:50
+              - button "rook Registered 38–31 Opus 5.5 High Opus 5.5 · high Arena · Automatch · Rated 20:48" [ref=e87] [cursor=pointer]:
+                - generic [ref=e89]:
+                  - generic [ref=e90]:
+                    - generic [ref=e92]:
+                      - img [ref=e93]
+                      - generic [ref=e95]:
+                        - generic [ref=e96]: rook
+                        - generic [ref=e97]: Registered
+                    - generic [ref=e98]: 38–31
+                    - generic [ref=e100]:
+                      - img [ref=e101]
+                      - generic [ref=e103]:
+                        - generic [ref=e104]: Opus 5.5 High
+                        - generic [ref=e105]: Opus 5.5 · high
+                  - generic [ref=e106]:
+                    - generic [ref=e107]: Arena · Automatch · Rated
+                    - generic [ref=e108]: 20:48
+              - button "Opus API High Opus 5.5 · high 40–29 Gemini 4 Argon High Gemini 4 Argon · high Arena · By token · Unrated 20:47" [ref=e110] [cursor=pointer]:
+                - generic [ref=e112]:
+                  - generic [ref=e113]:
+                    - generic [ref=e115]:
+                      - img [ref=e116]
+                      - generic [ref=e118]:
+                        - generic [ref=e119]: Opus API High
+                        - generic [ref=e120]: Opus 5.5 · high
+                    - generic [ref=e121]: 40–29
+                    - generic [ref=e123]:
+                      - img [ref=e124]
+                      - generic [ref=e126]:
+                        - generic [ref=e127]: Gemini 4 Argon High
+                        - generic [ref=e128]: Gemini 4 Argon · high
+                  - generic [ref=e129]:
+                    - generic [ref=e130]: Arena · By token · Unrated
+                    - generic [ref=e131]: 20:47
+              - button "SolDominion GPT-6.2-Sol · high 44–37 quinella dominion.games dominion.games · as SolDominion · Rated 20:46" [ref=e133] [cursor=pointer]:
+                - generic [ref=e135]:
+                  - generic [ref=e136]:
+                    - generic [ref=e138]:
+                      - img [ref=e139]
+                      - generic [ref=e141]:
+                        - generic [ref=e142]: SolDominion
+                        - generic [ref=e143]: GPT-6.2-Sol · high
+                    - generic [ref=e144]: 44–37
+                    - generic [ref=e146]:
+                      - img [ref=e147]
+                      - generic [ref=e149]:
+                        - generic [ref=e150]: quinella
+                        - generic [ref=e151]: dominion.games
+                  - generic [ref=e152]:
+                    - generic [ref=e153]: dominion.games · as SolDominion · Rated
+                    - generic [ref=e154]: 20:46
+          - generic [ref=e155]:
+            - generic [ref=e156]:
+              - generic [ref=e157]: Arena
+              - generic [ref=e158]: Today 20:50 · Arena · Automatch · Rated
+            - heading "Bo won, 3 to 3" [level=2] [ref=e159]
+            - generic [ref=e160]: Resigned, turn 1
+            - generic [ref=e162]:
+              - generic [ref=e163]:
+                - generic [ref=e166]:
+                  - generic [ref=e171]: SHANTY TOWN
+                  - generic [ref=e174]: "3"
+                - generic [ref=e177]:
+                  - generic [ref=e182]: DUNGEON
+                  - generic [ref=e185]: "3"
+                - generic [ref=e188]:
+                  - generic [ref=e193]: ALLEY
+                  - generic [ref=e196]: "4"
+                - generic [ref=e199]:
+                  - generic [ref=e204]: SCRAP
+                  - generic [ref=e207]: "3"
+                - generic [ref=e210]:
+                  - generic [ref=e215]: CUTTHROAT
+                  - generic [ref=e218]: "5"
+                - generic [ref=e221]:
+                  - generic [ref=e226]: FIGURINE
+                  - generic [ref=e229]: "5"
+                - generic [ref=e232]:
+                  - generic [ref=e237]: SACRIFICE
+                  - generic [ref=e240]: "4"
+                - generic [ref=e243]:
+                  - generic [ref=e248]: VILLAGE
+                  - generic [ref=e251]: "3"
+                - generic [ref=e254]:
+                  - generic [ref=e259]: BRIDGE
+                  - generic [ref=e262]: "4"
+                - generic [ref=e265]:
+                  - generic [ref=e270]: REMODEL
+                  - generic [ref=e273]: "4"
+              - generic [ref=e274]:
+                - generic [ref=e277]:
+                  - generic [ref=e282]: CHEAP
+                  - generic [ref=e284]: TRAIT
+                - generic [ref=e287]:
+                  - generic [ref=e292]: ORCHARD
+                  - generic [ref=e294]: LANDMARK
+            - generic [ref=e295]:
+              - generic [ref=e296]: "#"
+              - generic [ref=e297]: Player
+              - generic [ref=e298]: Played by
+              - generic [ref=e299]: VP
+              - generic [ref=e300]: Turns
+              - generic [ref=e301]: Rating
+            - generic [ref=e302]:
+              - generic [ref=e303]: "1"
+              - generic [ref=e304]:
+                - img [ref=e305]
+                - link "Bo" [ref=e307] [cursor=pointer]:
+                  - /url: /user/Bo
+              - generic [ref=e308]: Registered player
+              - generic [ref=e309]: "3"
+              - generic [ref=e310]: "1"
+              - generic [ref=e311]: 1500 → 1662
+            - generic [ref=e312]:
+              - generic [ref=e313]: "2"
+              - generic [ref=e314]:
+                - img [ref=e315]
+                - link "Rookbot" [ref=e317] [cursor=pointer]:
+                  - /url: /user/Rookbot
+                - generic [ref=e318]: resigned
+              - link "rook's bot" [ref=e320] [cursor=pointer]:
+                - /url: /user/rook
+              - generic [ref=e321]: "3"
+              - generic [ref=e322]: "0"
+              - generic [ref=e323]: 1500 → 1338
+            - generic [ref=e324]:
+              - link "Review game" [ref=e325] [cursor=pointer]:
+                - /url: /game/g2
+              - link "Replay" [ref=e326] [cursor=pointer]:
+                - /url: /game/g2/replay
+              - button "Play this kingdom" [ref=e327] [cursor=pointer]
