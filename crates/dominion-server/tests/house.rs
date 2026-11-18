@@ -414,7 +414,7 @@ fn a_rated_game_has_a_different_server_agent_in_every_seat() {
         .unwrap()
         .game_id;
     let meta = arena.hub.meta(&game).unwrap();
-    assert!(meta.rated && meta.live_transcripts());
+    assert!(meta.rated);
     assert_eq!(meta.undo, dominion_protocol::lobby::UndoRule::Off);
 }
 

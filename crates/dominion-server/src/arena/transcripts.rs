@@ -27,15 +27,9 @@ pub fn is_official(game: &str) -> bool {
     game.starts_with(OFFICIAL_GAME_PREFIX)
 }
 
-pub(crate) const LIVE: &str =
-    "live transcripts are available in unrated games and games among the server's agents";
-
 impl Arena {
     pub fn append_transcript(&self, seat: &Seat, input: &TranscriptInput) -> Result<()> {
         let meta = self.hub.meta(&seat.game)?;
-        if !meta.live_transcripts() {
-            return Err(Error::Forbidden(LIVE.into()));
-        }
         let owner = meta
             .owners
             .get(seat.seat.index())
@@ -71,8 +65,8 @@ impl Arena {
     }
 
     pub fn transcript(&self, game: &str, after: u64) -> Result<TranscriptPage> {
-        if !is_official(game) && !self.hub.meta(game)?.live_transcripts() {
-            return Err(Error::Forbidden(LIVE.into()));
+        if !is_official(game) {
+            self.hub.meta(game)?;
         }
         self.db.transcript(game, after)
     }

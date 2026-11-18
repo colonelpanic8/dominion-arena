@@ -128,14 +128,6 @@ pub struct Meta {
     pub runs: Vec<Option<AgentRun>>,
 }
 
-impl Meta {
-    /// Whether the agents' transcripts may be followed while it runs: not in a rated
-    /// game a person plays, whose opponent's reasoning they would read.
-    pub fn live_transcripts(&self) -> bool {
-        !self.rated || (!self.agents.is_empty() && self.agents.iter().all(|&a| a))
-    }
-}
-
 /// The most of an agent's error kept with its game.
 const MAX_AGENT_ERROR: usize = 1000;
 
@@ -1485,7 +1477,7 @@ impl Hub {
         let config = config(req)?;
         let names = names(req)?;
         let mut meta = Meta {
-            watchable: req.watchable.unwrap_or(false),
+            watchable: req.watchable.unwrap_or(true),
             clock: req.clock.map(ClockState::new),
             ..Meta::default()
         };

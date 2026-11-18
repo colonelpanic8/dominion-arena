@@ -646,9 +646,8 @@ pub fn GamePage(id: String) -> Element {
     use_context_provider(|| summary);
     let offers = use_memo(move || {
         let meta = &state.read().meta;
-        let agents = !meta.rated
-            && (meta.users.iter().flatten())
-                .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
+        let agents = (meta.users.iter().flatten())
+            .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
         Offers {
             chat: true,
             transcript: agents.then(|| game.read().clone()),

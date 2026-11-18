@@ -216,7 +216,7 @@ impl Arena {
             let config = crate::hub::config(&req)?;
             let names = crate::hub::names(&req)?;
             let mut meta = crate::hub::Meta {
-                watchable: req.watchable.unwrap_or(false),
+                watchable: req.watchable.unwrap_or(true),
                 clock: req.clock.map(crate::hub::ClockState::new),
                 host: who.map(|w| w.user.clone()),
                 ..Default::default()
@@ -318,7 +318,7 @@ impl Arena {
                     Job {
                         official: false,
                         official_account: None,
-                        transcript: meta.live_transcripts(),
+                        transcript: true,
                         configuration: self.hub.configuration(&g.game_id),
                         agent: agent.name.clone(),
                         brief: meta.briefs.get(usize::from(g.seat)).cloned().flatten(),
