@@ -1089,7 +1089,6 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-sheet-num.none { color: #8f8a80; }
 .lb-sheet-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 1vh; margin-top: auto; padding-top: 1vh; }
 .lb-sheet-actions .lb-button, .lb-sheet-actions a.lb-button { margin: 0; padding: .8vh 2vh; font-size: 1.9vh; text-decoration: none; }
-.lb-sheet-actions a.lb-sheet-replay { color: #f5bc34; }
 .lb-sheet-official { margin-left: auto; font: 1.6vh var(--ui); color: #c8c0ae; }
 .lb-sheet-number { font: 1.6vh var(--num); color: #fff; }
 
