@@ -2,17 +2,19 @@
 //! player's page shares with it. Everything here comes from `/api/history` and
 //! `/api/users/{name}` as the protocol's `PastGame`s.
 
-use super::rules::{Pick, TableRules, Ternary};
+use super::rules::{Pick, TableRules, Ternary, is_landscape};
 use super::{
     LobbyCtx, LobbyFrame, Tab, clock, create_table, day, flash, store, use_lobby, use_toast,
 };
 use crate::account::{Account, use_account};
 use crate::api;
-use crate::app::Route;
+use crate::app::{Route, use_cards};
+use crate::assets::{self, use_assets};
 use crate::card::{CardHover, CardSize, CardView};
 use crate::platform;
 use dioxus::prelude::*;
 use dioxus::router::Navigator;
+use dominion_protocol::api::CardInfo;
 use dominion_protocol::lobby::{
     Arranged, HistoryQuery, PastGame, PastPlayer, PlayedBy, SeatAgent, Venue,
 };
@@ -285,6 +287,100 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
                 span { class: "lb-history-how",
                     span { "{how(&game)}" }
                     span { class: "lb-history-time", "{clock(game.ended)}" }
+                }
+                KingdomPeek {
+                    kingdom: game.kingdom.clone(),
+                    landscapes: game.landscapes.clone(),
+                    others: game.others.clone(),
+                }
+            }
+        }
+    }
+}
+
+/// The colour a card's thumbnail is framed in without its art: its main type's.
+fn tone(card: Option<&CardInfo>) -> &'static str {
+    let Some(card) = card else {
+        return "action";
+    };
+    if is_landscape(card) {
+        return "landscape";
+    }
+    let has = |t: &str| card.types.iter().any(|x| x == t);
+    if has("Night") {
+        "night"
+    } else if has("Duration") {
+        "duration"
+    } else if has("Reaction") {
+        "reaction"
+    } else if has("Treasure") && !has("Action") {
+        "treasure"
+    } else if has("Victory") && !has("Action") {
+        "victory"
+    } else {
+        "action"
+    }
+}
+
+/// A kingdom as a strip of tiny pictures of its cards' art, which shows the whole of it
+/// while the pointer is over it.
+#[component]
+fn KingdomPeek(kingdom: Vec<String>, landscapes: Vec<String>, others: Vec<String>) -> Element {
+    let cards = use_cards();
+    let art = use_assets();
+    let mut at = use_signal(|| None::<(f64, f64)>);
+    let popup = at().map(|(x, y)| {
+        let (vw, vh) = platform::viewport();
+        let lu = (vh / 100.0).min(vw / 200.0);
+        let margin = 8.0;
+        let side = if landscapes.is_empty() {
+            0.0
+        } else {
+            16.5 * lu
+        };
+        let width = 5.0 * 10.6 * lu + side + 3.0 * lu;
+        let also = if others.is_empty() { 0.0 } else { 12.6 * lu };
+        let height = 2.0 * 10.4 * lu + also + 3.0 * lu;
+        let mut left = x + 24.0;
+        if left + width > vw - margin {
+            left = x - 24.0 - width;
+        }
+        let left = left.min(vw - width - margin).max(margin);
+        let top = (y - height / 2.0).min(vh - height - margin).max(margin);
+        format!("left:{left:.0}px;top:{top:.0}px;")
+    });
+    rsx! {
+        span {
+            class: "lb-thumbs",
+            onmouseenter: move |e: MouseEvent| {
+                let p = e.client_coordinates();
+                at.set(Some((p.x, p.y)));
+            },
+            onmouseleave: move |_| at.set(None),
+            for name in kingdom.iter().chain(&landscapes).chain(&others) {
+                {
+                    let card = cards.get(name);
+                    let wide = card.is_some_and(is_landscape);
+                    let picture = (art.card(name))
+                        .and_then(|f| f.mini_art.as_deref().or(f.art.as_deref()))
+                        .map(|path| format!("background-image: url('{}');", assets::url(path)))
+                        .unwrap_or_default();
+                    rsx! {
+                        span {
+                            key: "{name}",
+                            class: if wide { "lb-thumb wide {tone(card)}" } else { "lb-thumb {tone(card)}" },
+                            style: picture,
+                        }
+                    }
+                }
+            }
+            if let Some(style) = popup {
+                div { class: "lb-peek-pop", style,
+                    KingdomCards {
+                        kingdom: kingdom.clone(),
+                        landscapes: landscapes.clone(),
+                        others: others.clone(),
+                    }
                 }
             }
         }

@@ -1163,7 +1163,38 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-history-how { display: flex; justify-content: space-between; gap: 1vh; font: 1.3vh var(--ui); color: #a9a294; }
 .lb-history-more { align-self: center; width: max-content; margin: 1.5vh auto; }
 /* Outranks the page's content-box rule. */
-.lb-page .lb-history-entry { box-sizing: border-box; }
+.lb-page .lb-history-entry, .lb-page .lb-thumb { box-sizing: border-box; }
+
+/* A kingdom in tiny pictures: art when the cache has it, else its type's colour. */
+.lb-thumbs { display: flex; gap: .3vh; overflow: hidden; padding: .3vh 0; cursor: zoom-in; }
+.lb-thumbs:hover .lb-thumb { border-color: #fff; }
+.lb-thumb {
+  display: block;
+  flex-shrink: 0;
+  width: 3.3vh;
+  height: 2.3vh;
+  box-sizing: border-box;
+  border: .25vh solid #e3dac4;
+  border-radius: .2vh;
+  background: #3b342b center / cover no-repeat;
+}
+.lb-thumb.wide { width: 4.6vh; }
+.lb-thumb.treasure { border-color: #d8b54a; }
+.lb-thumb.victory { border-color: #a9c98a; }
+.lb-thumb.reaction { border-color: #a9c4dc; }
+.lb-thumb.duration { border-color: #e8a46a; }
+.lb-thumb.night { border-color: #5a5a6e; }
+.lb-thumb.landscape { border-color: #c9c3b6; }
+.lb-peek-pop {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  padding: 1.5vh;
+  border: 2px solid #888;
+  border-radius: 1vh;
+  background: rgba(17, 12, 8, .95);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .6);
+}
 
 /* A game's sheet. */
 .lb-sheet {
