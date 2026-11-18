@@ -1,5 +1,6 @@
 use super::{Sandbox, antigravity, claude, codex, instructions, sandbox};
 use crate::archive::Archive;
+use crate::codex_usage::UsageLog;
 use crate::runner::{AgentSpec, Program};
 use serde_json::{Value, json};
 use std::fs::{File, OpenOptions};
@@ -41,6 +42,8 @@ pub struct Harness {
     forwarder: PathBuf,
     sockets: sandbox::Sockets,
     _proxy: sandbox::Proxy,
+    /// Codex's usage, for what counts it: `--ephemeral` keeps no rollout of its own.
+    usage: Option<UsageLog>,
 }
 
 pub fn write_json(path: &Path, value: &Value) -> Result<(), String> {
@@ -84,7 +87,10 @@ pub fn executable(name: &str) -> Result<PathBuf, String> {
 
 impl Harness {
     pub fn new(spec: &AgentSpec, settings: &Sandbox, archive: &Path) -> Result<Self, String> {
-        if matches!(spec.program, Program::T3Code | Program::OpenAi) {
+        if matches!(
+            spec.program,
+            Program::T3Code | Program::OpenAi | Program::Anthropic
+        ) {
             return Err("only CLI agents have a native harness".into());
         }
         if !cfg!(target_os = "linux") {
@@ -112,10 +118,12 @@ impl Harness {
             .chain(settings.allow_hosts.iter().cloned())
             .collect();
         let proxy = sandbox::Proxy::start(&sockets.proxy(), hosts, archive.join("network.jsonl"))?;
+        let mut usage = None;
         let mut launch = match spec.program {
             Program::Claude => claude::launch(spec, playbook),
             Program::Codex => {
                 let model = codex::catalog(&auth, &work, spec.model.as_deref(), playbook)?;
+                usage = Some(UsageLog::open(&auth, &model));
                 let mut resolved = spec.clone();
                 resolved.model = Some(model);
                 codex::launch(&resolved, playbook)
@@ -124,7 +132,7 @@ impl Harness {
                 antigravity::settings(&work, playbook)?;
                 antigravity::launch(spec)
             }
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         };
@@ -145,6 +153,7 @@ impl Harness {
             forwarder,
             sockets,
             _proxy: proxy,
+            usage,
         })
     }
 
@@ -195,7 +204,7 @@ impl Harness {
                 }
             }
             Program::Antigravity => antigravity::enable_mcp(&self.work, url, self.playbook)?,
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         }
@@ -268,7 +277,7 @@ impl Harness {
                     "antigravity-cli/installation_id",
                 ],
             ),
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         };
@@ -355,7 +364,7 @@ impl Harness {
         let stem = format!("response-{:06}", self.responses);
         let stdout = archive.dir.join(format!("{stem}.stdout.jsonl"));
         let stderr = archive.dir.join(format!("{stem}.stderr"));
-        archive.record("native_request",json!({"program":spec.program,"executable":self.launch.program,"arguments":self.launch.args,"prompt":prompt,"stdout":stdout.file_name(),"stderr":stderr.file_name()}))?;
+        archive.record("native_request",json!({"program":spec.program,"system":brief,"executable":self.launch.program,"arguments":self.launch.args,"prompt":prompt,"stdout":stdout.file_name(),"stderr":stderr.file_name()}))?;
         let mut output = private_file(&stdout)?;
         let error = private_file(&stderr)?;
         let mut cmd = self.command(spec)?;
@@ -438,6 +447,11 @@ impl Harness {
                 if tool_event(&event, self.playbook) {
                     return Err("native harness attempted a forbidden tool; see its archive".into());
                 }
+                if let Some(log) = &mut self.usage
+                    && event["type"] == "turn.completed"
+                {
+                    log.record(&event["usage"]);
+                }
                 events.push(event);
             }
             tokio::time::timeout(idle, child.wait())
@@ -469,7 +483,7 @@ impl Harness {
                 Program::Claude => claude::response(&events),
                 Program::Codex => codex::response(&events),
                 Program::Antigravity => antigravity::response(&events),
-                Program::T3Code | Program::OpenAi => {
+                Program::T3Code | Program::OpenAi | Program::Anthropic => {
                     unreachable!("only CLI agents have a native harness")
                 }
             }
@@ -485,7 +499,7 @@ impl Harness {
             Program::Claude => claude::response(&events),
             Program::Codex => codex::response(&events),
             Program::Antigravity => antigravity::response(&events),
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         }?;

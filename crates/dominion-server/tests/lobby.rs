@@ -359,6 +359,22 @@ async fn onlookers_can_watch_without_an_account() {
         assert_eq!(player.deck.known.values().sum::<u32>(), player.deck.count);
         assert_eq!(player.owned.unknown, 0);
     }
+    // Watching as a seat shows what that seat knows, with nothing to answer.
+    let ada_seat = before.view.seat.unwrap();
+    let as_ada: SeatView = server
+        .get(&format!("{path}/watch?as={ada_seat}"), None)
+        .await
+        .ok()
+        .json();
+    assert_eq!(as_ada.view.seat, Some(ada_seat));
+    assert!(as_ada.view.spectating && as_ada.view.decision.is_none());
+    assert_eq!(as_ada.view.you, before.view.you);
+    assert_eq!(as_ada.view.opponents[0].hand, before.view.opponents[0].hand);
+    assert!(as_ada.view.opponents[0].hand.unknown > 0);
+    server
+        .get(&format!("{path}/watch?as=2"), None)
+        .await
+        .error(StatusCode::BAD_REQUEST);
     server
         .get(&format!("{path}/watch"), Some(&ada))
         .await

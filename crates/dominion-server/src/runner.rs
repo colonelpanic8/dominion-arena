@@ -27,6 +27,8 @@ pub enum Program {
     T3Code,
     /// OpenAI's Responses API called directly (`crate::openai`), with no CLI.
     OpenAi,
+    /// Anthropic's Messages API called directly (`crate::anthropic`), with no CLI.
+    Anthropic,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -53,9 +55,11 @@ pub struct AgentSpec {
     pub options: BTreeMap<String, crate::t3::OptionValue>,
     /// openai: the environment variable holding an API key; without it the agent signs in
     /// with Codex's ChatGPT login (`auth.json` in `auth_dir`, default `$CODEX_HOME`).
+    /// anthropic: the one holding its API key (default `ANTHROPIC_API_KEY`).
     pub api_key_env: Option<String>,
     /// openai: game updates kept verbatim in the conversation (default 60); older ones
-    /// are replaced by a note.
+    /// are replaced by a note. anthropic: the game updates the API keeps when it clears
+    /// old ones (default 60).
     pub context_results: Option<usize>,
 }
 
@@ -84,14 +88,13 @@ impl AgentSpec {
                 self.name
             ));
         }
-        if self.program == Program::OpenAi && self.model.is_none() {
-            return Err(format!("{}: an openai agent needs a model", self.name));
+        let direct = matches!(self.program, Program::OpenAi | Program::Anthropic);
+        if direct && self.model.is_none() {
+            return Err(format!("{}: a direct API agent needs a model", self.name));
         }
-        if self.program != Program::OpenAi
-            && (self.api_key_env.is_some() || self.context_results.is_some())
-        {
+        if !direct && (self.api_key_env.is_some() || self.context_results.is_some()) {
             return Err(format!(
-                "{}: api_key_env and context_results require program = \"openai\"",
+                "{}: api_key_env and context_results require program = \"openai\" or \"anthropic\"",
                 self.name
             ));
         }
@@ -413,6 +416,17 @@ async fn keep_playing(
             let play = async {
                 match (spec.program, &t3code) {
                     (Program::T3Code, None) => Err("a t3code agent needs [t3code] settings".into()),
+                    (Program::Anthropic, _) => {
+                        crate::anthropic::play(
+                            &spec,
+                            &sandbox,
+                            &job,
+                            &server,
+                            &mut archive,
+                            cancelled.clone(),
+                        )
+                        .await
+                    }
                     (Program::OpenAi, _) => {
                         crate::openai::play(
                             &spec,

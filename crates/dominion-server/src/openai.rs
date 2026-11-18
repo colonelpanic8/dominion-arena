@@ -5,6 +5,7 @@
 
 use crate::archive::{Archive, call};
 use crate::client::Client;
+use crate::codex_usage::UsageLog;
 use crate::harness::Sandbox;
 use crate::house::Job;
 use crate::runner::AgentSpec;
@@ -20,13 +21,13 @@ const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 /// Game results kept verbatim; older ones are replaced by a note, a batch at a time so
 /// the cached prefix of the conversation changes rarely.
-const DEFAULT_KEEP_RESULTS: usize = 60;
+pub(crate) const DEFAULT_KEEP_RESULTS: usize = 60;
 const PRUNE_BATCH: usize = 20;
 /// Times the model may stop calling tools while the game still runs.
-const MAX_NUDGES: u32 = 3;
+pub(crate) const MAX_NUDGES: u32 = 3;
 
-const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries; play_treasures plays every Treasure offered in one call. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
-const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves.";
+pub(crate) const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries; play_treasures plays every Treasure offered in one call. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
+pub(crate) const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves.";
 
 enum Auth {
     ChatGpt { file: PathBuf },
@@ -37,6 +38,8 @@ struct Session {
     auth: Auth,
     agent: ureq::Agent,
     id: String,
+    /// The subscription's usage, for what counts Codex's.
+    usage: Option<UsageLog>,
 }
 
 impl Session {
@@ -59,6 +62,12 @@ impl Session {
                 }
             }
         };
+        let usage = match (&auth, &spec.model) {
+            (Auth::ChatGpt { file }, Some(model)) => {
+                file.parent().map(|home| UsageLog::open(home, model))
+            }
+            _ => None,
+        };
         let seconds = u64::from(spec.response_seconds.unwrap_or(600));
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(seconds)))
@@ -69,11 +78,12 @@ impl Session {
             auth,
             agent,
             id: format!("{:032x}", rand::random::<u128>()),
+            usage,
         })
     }
 
     /// One model turn: its output items, and the usage it reports.
-    async fn respond(&self, body: &Value) -> Result<(Vec<Value>, Value), String> {
+    async fn respond(&mut self, body: &Value) -> Result<(Vec<Value>, Value), String> {
         let mut refreshed = false;
         let mut delay = Duration::from_secs(2);
         let mut attempt = 0;
@@ -128,7 +138,13 @@ impl Session {
                 Err(e) => return Err(format!("OpenAI: {e}")),
             };
             match status {
-                200 => return parse_stream(&text),
+                200 => {
+                    let (items, usage) = parse_stream(&text)?;
+                    if let Some(log) = &mut self.usage {
+                        log.record(&usage);
+                    }
+                    return Ok((items, usage));
+                }
                 401 if !refreshed => {
                     if let Auth::ChatGpt { file } = &self.auth {
                         refresh(file).await?;
@@ -225,7 +241,7 @@ async fn refresh(file: &Path) -> Result<(), String> {
 }
 
 /// `2026-11-16T09:44:00Z`.
-fn rfc3339(time: std::time::SystemTime) -> String {
+pub(crate) fn rfc3339(time: std::time::SystemTime) -> String {
     let secs = time
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -278,7 +294,7 @@ fn parse_stream(text: &str) -> Result<(Vec<Value>, Value), String> {
 }
 
 /// The function tools the model gets: the game's, and the playbook's when there is one.
-fn tools(playbook: bool) -> Vec<Value> {
+pub(crate) fn tools(playbook: bool) -> Vec<Value> {
     let mut tools: Vec<Value> = crate::harness::GAME_TOOLS
         .iter()
         .map(|name| {
@@ -350,7 +366,7 @@ fn inside(playbook: &Path, path: &str) -> Result<PathBuf, String> {
     }
 }
 
-fn read_file(playbook: &Path, args: &Value) -> Result<String, String> {
+pub(crate) fn read_file(playbook: &Path, args: &Value) -> Result<String, String> {
     let path = inside(playbook, args["path"].as_str().unwrap_or(""))?;
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let offset = args["offset"].as_u64().unwrap_or(1).max(1) as usize - 1;
@@ -366,7 +382,7 @@ fn read_file(playbook: &Path, args: &Value) -> Result<String, String> {
         .join("\n"))
 }
 
-fn list_files(playbook: &Path, args: &Value) -> Result<String, String> {
+pub(crate) fn list_files(playbook: &Path, args: &Value) -> Result<String, String> {
     let root = playbook.canonicalize().map_err(|e| e.to_string())?;
     let start = inside(playbook, args["dir"].as_str().unwrap_or("."))?;
     let mut found = vec![];
@@ -392,7 +408,11 @@ fn list_files(playbook: &Path, args: &Value) -> Result<String, String> {
     Ok(found.join("\n"))
 }
 
-async fn card_ratings(sandbox: &Sandbox, playbook: &Path, args: &Value) -> Result<String, String> {
+pub(crate) async fn card_ratings(
+    sandbox: &Sandbox,
+    playbook: &Path,
+    args: &Value,
+) -> Result<String, String> {
     let names: Vec<String> = (args["names"].as_array().into_iter().flatten())
         .filter_map(|n| n.as_str().map(String::from))
         .collect();
@@ -487,7 +507,7 @@ async fn play_inner(
     {
         return Ok(Err(crate::harness::JOINED_OVER.into()));
     }
-    let session = Session::new(spec)?;
+    let mut session = Session::new(spec)?;
     let playbook = sandbox.playbook.as_deref();
     let mut instructions = BRIEF.to_string();
     if let Some(dir) = playbook {
@@ -507,8 +527,8 @@ async fn play_inner(
         "Initial view and card reference:\n{}",
         joined.text
     ));
-    let mut input = vec![json!({"type": "message", "role": "user",
-        "content": [{"type": "input_text", "text": first}]})];
+    let mut input = vec![];
+    give(archive, &mut input, user_message(&first))?;
     let tools = tools(playbook.is_some());
     let keep = spec.context_results.unwrap_or(DEFAULT_KEEP_RESULTS);
     let mut game_results: Vec<usize> = vec![];
@@ -516,6 +536,7 @@ async fn play_inner(
     let mut over = false;
     let mut debrief = crate::harness::debrief_request(job).filter(|_| !job.official);
     let mut asked = false;
+    let mut instructed = false;
     loop {
         let mut reasoning = json!({"summary": "detailed"});
         if let Some(effort) = &spec.effort {
@@ -534,10 +555,12 @@ async fn play_inner(
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session.id,
         });
-        archive.record(
-            "direct_request",
-            json!({"model": spec.model, "items": input.len()}),
-        )?;
+        let mut request = json!({"model": spec.model, "items": input.len()});
+        if !instructed {
+            instructed = true;
+            request["instructions"] = json!(instructions);
+        }
+        archive.record("direct_request", request)?;
         let (items, usage) = session.respond(&body).await?;
         archive.record("direct_usage", usage)?;
         let mut calls = vec![];
@@ -564,7 +587,15 @@ async fn play_inner(
                         "item": {"id": item["id"], "type": "agent_message", "text": said}}),
                     )?;
                 }
-                Some("function_call") => calls.push(item.clone()),
+                Some("function_call") => {
+                    archive.record(
+                        "native_event",
+                        json!({"type": "item.completed", "item": {"id": item["id"],
+                        "type": "function_call", "call_id": item["call_id"],
+                        "name": item["name"], "arguments": item["arguments"]}}),
+                    )?;
+                    calls.push(item.clone());
+                }
                 _ => {}
             }
             input.push(item);
@@ -581,8 +612,7 @@ async fn play_inner(
                 if let Some(request) = debrief.take() {
                     over = true;
                     asked = true;
-                    input.push(json!({"type": "message", "role": "user",
-                        "content": [{"type": "input_text", "text": request}]}));
+                    give(archive, &mut input, user_message(&request))?;
                     continue;
                 }
                 return Ok(if asked { Ok(said) } else { Ok(String::new()) });
@@ -591,8 +621,13 @@ async fn play_inner(
             if nudges > MAX_NUDGES {
                 return Err("the model stopped playing before the game finished".into());
             }
-            input.push(json!({"type": "message", "role": "user", "content": [{"type": "input_text",
-                "text": "The game isn't over: keep playing (step to answer your decision, wait when there is none)."}]}));
+            give(
+                archive,
+                &mut input,
+                user_message(
+                    "The game isn't over: keep playing (step to answer your decision, wait when there is none).",
+                ),
+            )?;
             continue;
         }
         for item in calls {
@@ -641,28 +676,49 @@ async fn play_inner(
                     None => format!("ERROR: no tool named {name:?}"),
                 },
             };
-            input.push(json!({"type": "function_call_output", "call_id": item["call_id"], "output": output}));
+            give(
+                archive,
+                &mut input,
+                json!({"type": "function_call_output", "call_id": item["call_id"], "output": output}),
+            )?;
         }
         if game_results.len() > keep + PRUNE_BATCH {
+            let mut pruned = vec![];
             for index in game_results.drain(..PRUNE_BATCH) {
-                input[index]["output"] = json!(
-                    "[an earlier game update, left out to save room: state shows the whole game, log rereads its entries]"
-                );
+                pruned.push(input[index]["call_id"].clone());
+                input[index]["output"] = json!(PRUNED);
             }
+            archive.record(
+                "direct_pruned",
+                json!({"call_ids": pruned, "output": PRUNED}),
+            )?;
         }
     }
 }
 
+const PRUNED: &str = "[an earlier game update, left out to save room: state shows the whole game, log rereads its entries]";
+
+pub(crate) fn user_message(text: &str) -> Value {
+    json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]})
+}
+
+/// Adds an item to the model's input, recording it as the model will see it.
+fn give(archive: &mut Archive, input: &mut Vec<Value>, item: Value) -> Result<(), String> {
+    archive.record("direct_input", item.clone())?;
+    input.push(item);
+    Ok(())
+}
+
 /// Adds the seat's token to a game tool's arguments, except in an official game, where
 /// the connection is the seat.
-fn token(job: &Job, mut args: Value) -> Value {
+pub(crate) fn token(job: &Job, mut args: Value) -> Value {
     if !job.official {
         args["token"] = json!(job.token);
     }
     args
 }
 
-fn playbook_call(
+pub(crate) fn playbook_call(
     archive: &mut Archive,
     tool: &str,
     args: &Value,

@@ -97,14 +97,36 @@ async fn refresh(
 
 fn label(kind: Kind) -> &'static str {
     match kind {
-        Kind::Observation => "Model input",
+        Kind::System => "System prompt",
+        Kind::Observation => "Prompt",
         Kind::Reasoning => "Reasoning",
         Kind::Message => "Model reply",
+        Kind::Call => "Tool call",
         Kind::Action => "Dominion action",
         Kind::Game => "Game",
         Kind::Result => "Tool result",
         Kind::Status => "Status",
     }
+}
+
+/// A collapsed block's one-line summary: its first non-empty line, shortened, and how
+/// many lines it has.
+fn summary(text: &str) -> (String, usize) {
+    let first = text
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    let short = match first.char_indices().nth(140) {
+        Some((end, _)) => format!("{}…", &first[..end]),
+        None => first.to_string(),
+    };
+    (short, text.lines().count().max(1))
+}
+
+/// Whether a block is short enough to show open without being asked.
+fn short(text: &str) -> bool {
+    text.len() <= 240 && text.lines().count() <= 3
 }
 
 fn clock(time: u64) -> String {
@@ -128,6 +150,8 @@ pub fn TranscriptPage(id: String) -> Element {
     let reasoning = use_signal(|| true);
     let follow = use_signal(|| true);
     let inputs = use_signal(|| true);
+    let tools = use_signal(|| true);
+    let expand = use_signal(|| false);
     let account = crate::account::use_account();
     use_resource(move || {
         let _ = account.name();
@@ -182,7 +206,8 @@ pub fn TranscriptPage(id: String) -> Element {
         .iter()
         .filter(|b| selected().is_none_or(|s| b.seat == s || b.kind == Kind::Game))
         .filter(|b| reasoning() || b.kind != Kind::Reasoning)
-        .filter(|b| inputs() || b.kind != Kind::Observation)
+        .filter(|b| inputs() || !matches!(b.kind, Kind::Observation | Kind::System))
+        .filter(|b| tools() || !matches!(b.kind, Kind::Call | Kind::Result))
         .cloned()
         .collect();
     rsx! {
@@ -193,7 +218,7 @@ pub fn TranscriptPage(id: String) -> Element {
                 div {
                     p { class:"transcript-eyebrow", "Game {game}" }
                     h1 { "Agent Transcript" }
-                    p { class:"transcript-description", "Live model output and Dominion actions, in order. Transcripts may reveal hidden cards. Reasoning appears when the model provides it. Times are UTC." }
+                    p { class:"transcript-description", "Everything each model was given and everything it returned, in order: its system prompt, prompts, reasoning, replies, tool calls and what they returned, with the game's events. Long inputs and results are folded; open them, or expand everything. Transcripts may reveal hidden cards. Reasoning appears when the model provides it. Times are UTC." }
                 }
                 Link { class:"button copper",to:Route::Game {id:game()},"Back to game" }
             }
@@ -213,7 +238,9 @@ pub fn TranscriptPage(id: String) -> Element {
                     section { class:"panel", role:"group", "aria-label":"Show",
                         h3 { "Show" }
                         Switch { label:"Reasoning", on:reasoning }
-                        Switch { label:"Model input", on:inputs }
+                        Switch { label:"Prompts", on:inputs }
+                        Switch { label:"Tool calls and results", on:tools }
+                        Switch { label:"Expand everything", on:expand }
                         Switch { label:"Follow latest", on:follow }
                     }
                 }
@@ -234,9 +261,7 @@ pub fn TranscriptPage(id: String) -> Element {
                                             span {class:"trace-kind","{label(block.kind)}"}
                                             span {class:"trace-agent", span { class:"seat-dot" } "P{block.seat+1} · {block.agent}"}
                                         }
-                                        if block.kind==Kind::Observation {
-                                            details { summary {"Prompt and game observation"} pre {"{block.text}"} }
-                                        } else { pre {"{block.text}"} }
+                                        Body { kind: block.kind, text: block.text.clone(), expand: expand() }
                                     }
                                 }
                             }
@@ -246,6 +271,26 @@ pub fn TranscriptPage(id: String) -> Element {
                 }
             }
         }
+    }
+}
+
+/// A block's text: folded behind a summary when it is model input or a tool's result
+/// too long to read at a glance.
+#[component]
+fn Body(kind: Kind, text: String, expand: bool) -> Element {
+    let (first, lines) = summary(&text);
+    let open = expand || short(&text);
+    match kind {
+        Kind::System => rsx! {
+            details { open: expand, summary { "{lines} lines" } pre { "{text}" } }
+        },
+        Kind::Observation => rsx! {
+            details { open: expand, summary { "{first}" span { class:"trace-lines", " · {lines} lines" } } pre { "{text}" } }
+        },
+        Kind::Result | Kind::Call if !short(&text) => rsx! {
+            details { open, summary { "{first}" span { class:"trace-lines", " · {lines} lines" } } pre { "{text}" } }
+        },
+        _ => rsx! { pre { "{text}" } },
     }
 }
 

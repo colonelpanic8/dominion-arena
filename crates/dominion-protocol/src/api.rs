@@ -320,13 +320,17 @@ pub struct Change {
     pub chat: u64,
 }
 
-/// Query of `GET /api/games/{id}/view`.
+/// Query of `GET /api/games/{id}/view` and `/watch`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ViewQuery {
     /// Log from this sequence number on, instead of from the seat's last answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log_from: Option<usize>,
+    /// For `GET /api/games/{id}/watch`: the game as this seat sees it, without its
+    /// decision, instead of with every player's cards visible.
+    #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
+    pub as_seat: Option<u8>,
 }
 
 /// Every error's body.

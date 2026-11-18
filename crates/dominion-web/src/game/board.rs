@@ -10,7 +10,7 @@ use dominion_protocol::{
     AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, ZoneView,
 };
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -258,54 +258,78 @@ pub struct PlayerEntry {
 }
 
 impl PlayerEntry {
-    /// The deck breakdown from the viewer's knowledge, without assigning uncertain
-    /// cards to a particular location: the draw pile, the discard pile, every other
-    /// zone holding cards, and all owned cards.
-    pub fn composition(&self) -> Vec<Section> {
-        let named = |key: &str, label: &str, zone: &Zone| NamedZone {
-            key: key.into(),
-            label: label.into(),
-            zone: zone.clone(),
-        };
-        let elsewhere: Vec<_> = [
-            named("hand", "Hand", &self.hand),
-            named("inPlay", "In play", &self.in_play),
+    /// The zones the player's cards are in, by the view's key and a label: the draw
+    /// pile, discard pile, hand, cards in play, and each mat or set-aside zone holding
+    /// cards.
+    fn parts(&self) -> impl Iterator<Item = (&str, &str, &Zone)> {
+        [
+            ("deck", "Draw pile", &self.deck),
+            ("discard", "Discard pile", &self.discard),
+            ("hand", "Hand", &self.hand),
+            ("inPlay", "In play", &self.in_play),
         ]
         .into_iter()
-        .chain(self.zones.iter().cloned())
-        .filter(|z| z.zone.count > 0)
-        .collect();
-        vec![
-            Section::one(named("deck", "Draw pile", &self.deck)),
-            Section::one(named("discard", "Discard pile", &self.discard)),
-            Section {
-                key: "excluded".into(),
-                label: "Excluded from active deck".into(),
-                count: elsewhere.iter().map(|z| z.zone.count).sum(),
-                groups: elsewhere,
-            },
-            Section::one(named("owned", "Entire deck", &self.owned)),
-        ]
+        .chain(
+            self.zones
+                .iter()
+                .filter(|z| z.zone.count > 0)
+                .map(|z| (z.key.as_str(), z.label.as_str(), &z.zone)),
+        )
     }
-}
 
-/// A part of the deck breakdown: one zone, or several shown together.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Section {
-    pub key: String,
-    pub label: String,
-    pub count: u32,
-    pub groups: Vec<NamedZone>,
-}
+    /// The deck breakdown from the viewer's knowledge, without assigning uncertain
+    /// cards to a particular location: every card owned, then each zone of them.
+    pub fn composition(&self) -> Vec<NamedZone> {
+        [("owned", "Entire deck", &self.owned)]
+            .into_iter()
+            .chain(self.parts())
+            .map(|(key, label, zone)| NamedZone {
+                key: key.into(),
+                label: label.into(),
+                zone: zone.clone(),
+            })
+            .collect()
+    }
 
-impl Section {
-    fn one(z: NamedZone) -> Self {
-        Section {
-            key: z.key.clone(),
-            label: z.label.clone(),
-            count: z.zone.count,
-            groups: vec![z],
+    /// The zones holding cards the viewer can't name, as one: the cards known to be
+    /// owned and seen nowhere else are among them. `None` unless that says more than
+    /// the zones do apart.
+    pub fn rest(&self) -> Option<NamedZone> {
+        if self.parts().map(|(_, _, z)| z.count).sum::<u32>() != self.owned.count {
+            return None;
         }
+        let mut left: BTreeMap<&str, u32> = BTreeMap::new();
+        for s in &self.owned.known {
+            *left.entry(&s.card).or_default() += s.count;
+        }
+        for s in self.parts().flat_map(|(_, _, z)| &z.known) {
+            let n = left.get_mut(s.card.as_str())?;
+            *n = n.checked_sub(s.count)?;
+        }
+        left.retain(|_, n| *n > 0);
+        let hidden: Vec<_> = self.parts().filter(|(_, _, z)| z.unknown > 0).collect();
+        if hidden.len() < 2 || left.is_empty() {
+            return None;
+        }
+        for s in hidden.iter().flat_map(|(_, _, z)| &z.known) {
+            *left.entry(&s.card).or_default() += s.count;
+        }
+        let labels: Vec<&str> = hidden.iter().map(|&(_, label, _)| label).collect();
+        Some(NamedZone {
+            key: "rest".into(),
+            label: labels.join(" + "),
+            zone: Zone {
+                count: hidden.iter().map(|(_, _, z)| z.count).sum(),
+                known: left
+                    .into_iter()
+                    .map(|(card, count)| Stack {
+                        card: card.into(),
+                        count,
+                    })
+                    .collect(),
+                unknown: self.owned.unknown,
+            },
+        })
     }
 }
 

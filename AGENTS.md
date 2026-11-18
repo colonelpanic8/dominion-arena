@@ -76,6 +76,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
     accounts.rs           accounts, passwords, sessions, bots and their API keys
     tables.rs matching.rs lobby tables; the automatch queue
     chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard
+    official.rs           the official accounts as the lobby lists them; their finished
+                          games' records (no rating or tally)
     house.rs              the server's own agents: their accounts, the runner connected,
                           its jobs (every seat they hold in a running game, sent when they
                           change), each player's agent seats a day
@@ -91,6 +93,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           seat under bubblewrap; `sandbox.rs` is its network namespace, the
                           allowlisting proxy and `dominion sandbox-forward`
   src/openai.rs           the direct OpenAI agent: the Responses API, game and playbook tools
+  src/anthropic.rs        the direct Anthropic agent: the Messages API, the same tools, an
+                          append-only history the API clears old game results from
   src/t3.rs               T3 MCP client bridge: per-seat conversations, game tool calls,
                           OAuth sign-in
   src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle
@@ -113,6 +117,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           `mcp.rs` its MCP session
 crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
                           only on dominion-protocol (engine crates are dev-dependencies)
+  build.rs                the commit and its time that the Account tab's About box shows:
+                          from git, or from the flake (its source has no .git)
   src/api.rs              typed client for /api and the SSE change feed
   src/session.rs          seat tokens held in localStorage
   src/cards.rs            /api/cards data by name (provided as `app::Cards` context)
@@ -124,8 +130,10 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     measure.rs            text widths: canvas in the browser, an estimate natively
   assets/cards.css        card styles (cqw units; images through --dc-* variables)
   src/gallery.rs          /gallery: every card through the renderer, with filters
-  src/online.rs           /online: an official account's game on the same table through
-                          the same `GameState`, with its management panel and rating
+  src/online.rs           an official account's game watched at /online/<id> on the same
+                          table through the same `GameState`; its owner's panel (the
+                          Automatch tab's dominion.games box, under the log) and rating
+                          (Account tab)
   src/game/state.rs       the game page's model (view, version, log, `meta`, chat),
                           selection -> Answer; `apply` for Arena's views, `apply_whole`
                           for an official account's
@@ -169,7 +177,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           piles, play row, your hand and piles; status bar, buttons, decision
                           window; log, "more" panel, game end and score screen. Someone
                           watching sees the first player's area with hands face up; deck
-                          clicks show composition by zone, using the viewer's knowledge
+                          clicks show composition by zone, using the viewer's knowledge,
+                          and the zones it can't see into as one (`PlayerEntry::rest`)
   src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
   assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
   src/game/entry.rs       log entries parsed back from their text in every form the agent
@@ -209,8 +218,9 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     home.rs               Automatch: the search, Bot Game (a search for agents, with the
                           server's agent to play when none answers), Create
                           Table, Join a Seat, the lobby's chat
-    tables.rs             Tables: `listing` (pure) of the lobby's tables and the games
-                          without one, with Join / Open / Play / Watch
+    tables.rs             Tables: `listing` (pure) of the lobby's tables, the games
+                          without one and the official accounts' running games, with
+                          Join / Open / Play / Watch
     leaderboard.rs        the Leaderboard tab and a player's page (`/user/:name`)
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw

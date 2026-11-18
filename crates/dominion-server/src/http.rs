@@ -910,8 +910,9 @@ async fn watch(
     if let Some(ident) = &ident {
         api.arena.touch(ident);
     }
-    let from = query(view_query)?.log_from.unwrap_or(0);
-    let watched = api.hub.watch_view(&id, from)?;
+    let view_query = query(view_query)?;
+    let from = view_query.log_from.unwrap_or(0);
+    let watched = api.hub.watch_view(&id, from, view_query.as_seat)?;
     if watched.view.game.running
         && ident.is_some_and(|ident| !api.hub.owned_in(&id, &ident.user).is_empty())
     {

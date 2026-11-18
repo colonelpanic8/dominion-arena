@@ -49,8 +49,12 @@ A `Game` can be cloned or serialized at any point, including mid-decision.
 backend supports an exclusive account playing server bots or public human
 matchmaking (rated or unrated).
 With `online_enabled` and `online_owner` configured, `dominion serve` shares the
-connection through `/mcp/online`, owner-only management and public live watching at
-`/online`. Select an agent, start/cancel searches, or pause/resume play there. Its
+connection through `/mcp/online` and the lobby. The owner manages it from the lobby's
+Automatch tab (select an agent, start/cancel searches, pause/resume play, resign) and
+sees its dominion.games rating on the Account tab; anyone can watch its running game
+from the Tables tab (`/online/<id>`), and each finished game is recorded in Arena's
+history for the agent that played it (else the owner), without changing anyone's
+rating or tallies here. Its
 account setup, cache, state, reconnect rules, and current limitations are in
 [the official-backend guide](crates/dominion-online/README.md). Arena's hosted
 engine and existing APIs remain available through `dominion serve`.
@@ -294,7 +298,7 @@ will) or 500.
 | `POST /api/games/{id}/undo/refuse` | | the same, after the seat refuses the undo waiting for it; the asking seat sees `refusedBy` until it acts again |
 | `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
-| `GET /api/games/{id}/watch[?logFrom=N]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible |
+| `GET /api/games/{id}/watch[?logFrom=N][&as=S]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible. With `as`, what seat `S` knows instead (its view, `spectating`, without its decision) |
 | `GET /api/games/{id}/recording` | | the game's recorded `dominion/events@1` stream as written, the file `state_dir/<game id>.events.jsonl` or `.events.cbor` beside its snapshot: `application/jsonl` or `application/cbor-seq`. It shows every hidden card and every shuffle's order, so only once the game is over (409 before), to its seats, or to anyone if it is watchable (403 otherwise); 404 for a game recorded without one |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, for a watchable game, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |
@@ -307,7 +311,7 @@ will) or 500.
 | `POST /api/me/bots` | `{name}` | 201, `{bot, key}`: a bot and its API key, shown this once |
 | `POST /api/me/bots/{name}/key` | | a new key for the bot; the old one stops working |
 | `DELETE /api/me/bots/{name}` | | 204 |
-| `GET /api/lobby` | | `{version, you, online, searching, tables, table, queue, games}`: the lobby as the asker sees it |
+| `GET /api/lobby` | | `{version, you, online, searching, tables, table, queue, games, house, official?}`: the lobby as the asker sees it; `official` lists the dominion.games accounts the server keeps connected and their games |
 | `GET /api/lobby/events` | | server-sent `change` events with `{version, chat}`; while it is open the account counts as connected |
 | `POST /api/tables` | `{spec?, seats?}` | 201, the new table, hosted by the asker |
 | `GET /api/tables/{id}` | | the table: `{id, host, spec, seats, game?, lastGame?}` |
@@ -375,7 +379,9 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   a day unplayed another) when it says so and every seat is a different registered
   account or bot; a bot against its owner, or two bots of one owner, play for nothing,
   and so does any game with a guest or a token seat. Every finished lobby game leaves a
-  record (`GET /api/history`), which stays when the game itself is deleted.
+  record (`GET /api/history`), which stays when the game itself is deleted, and so does
+  every finished game of an official account (`source: official`, id
+  `dominion.games-<id>`), which counts for no rating or tally here.
 - **dominion.games' scale.** `[[official_skill_anchors]]` names players also rated on
   dominion.games, each with its skill there (mu, not the level, which also folds in how
   sure it is): agents that play enough rated games on both. Once two or more anchors have
@@ -550,7 +556,7 @@ login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and res
 `models_cache.json`, populated by starting Codex once after sign-in.
 
 For an opt-in native subscription check, set `DOMINION_LIVE_AGENT` to `claude`, `codex`,
-or `antigravity` (an opponent may also be `openai`) and run `cargo test -p dominion-server --test native live_native_game
+or `antigravity` (an opponent may also be `openai` or `anthropic`) and run `cargo test -p dominion-server --test native live_native_game
 -- --ignored --nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL`
 select the executable and model. This runs a short game through the same isolated
 MCP bridge and writes evidence under `/tmp/dominion-native-live`.
@@ -576,11 +582,40 @@ it needs no sandbox. Game results reach it as text; it keeps the newest
 time. Its reasoning summaries and replies are archived as `native_event`s, so they
 appear in the agent transcript, and each request's token usage as `direct_usage`.
 
+A seat on a ChatGPT login, this one or a `codex` CLI seat, also writes its token usage
+to a usage-only Codex rollout under that login's `sessions/dominion-arena/`, so
+anything that counts Codex usage from those rollouts (T3 Code's usage page) counts it
+too. `codex resume` lists only its dated folders, so these never show up there.
+
 ```toml
 [[agents]]
 name = "Sol High"
 program = "openai"
 model = "gpt-6.2-sol"
+effort = "high"
+```
+
+#### Direct Anthropic agents
+
+`program = "anthropic"` plays a seat by calling Anthropic's Messages API itself
+(`api.anthropic.com`), with the direct OpenAI agent's system prompt and tools. It signs
+in with an API key named by `api_key_env` (default `ANTHROPIC_API_KEY`); a Claude
+subscription's login doesn't work here. A key not scoped to a workspace (a user key,
+`sk-ant-usr-`) also needs `ANTHROPIC_WORKSPACE_ID`, the workspace to bill. The NixOS
+module sets both from `services.dominion.agents.anthropic`: `apiKeyCredential`, a
+systemd-creds encrypted key, and `workspace`. Claude's thinking blocks are bound to the
+conversation before them, so its history is only appended to: instead of replacing old
+game results, it asks the API to clear them (context editing, `clear_tool_uses`): like
+the OpenAI agent, it keeps the newest `context_results` (default 60) and clears older
+ones 20 at a time, never the playbook's reads. Thinking summaries, replies and usage are archived as
+for the OpenAI agent, and each clearing as `direct_context`. Its models aren't listed
+in a catalog: offer each as an `[[agents]]` profile.
+
+```toml
+[[agents]]
+name = "Fable API High"
+program = "anthropic"
+model = "claude-fable-5-2"
 effort = "high"
 ```
 
@@ -752,7 +787,7 @@ network_allow = []             # agents: hosts seats may reach beyond their prov
 # are optional too
 # [[agents]]
 # name = "Claude Opus"
-# program = "claude"           # claude, codex, antigravity, openai (direct API) or t3code
+# program = "claude"           # claude, codex, antigravity, openai or anthropic (direct API), or t3code
 # model = "opus"
 # effort = "high"
 # instructions = "Prefer engine strategies when the kingdom supports them."
@@ -864,10 +899,13 @@ to it; when the game waits on a token seat nobody has joined, the table and the 
 page say so, with the line to give that seat's agent. The last rules you hosted are remembered in the browser for your next table.
 **Automatch** searches for a game (player counts; anyone, people or agents; rated or
 not) and goes to it when one is found; Bot Game is the same search for agents only, and
-says which of the server's own agents a 1 Bot game may get (any, or the one picked). It
-also has the lobby's chat, Create Table, and joining a seat by its token. **Tables**
-lists the lobby's tables (Join where a slot is empty) and the games played without one
-(Play where this browser holds a seat, Watch where watching is allowed); **Cardlists**
+says which of the server's own agents a 1 Bot game may get (any, or the one picked). For
+the owner of a dominion.games account the server keeps connected, it also sends one of
+the server's agents to play there as that account. It also has the lobby's chat, Create
+Table, and joining a seat by its token. **Tables** lists the lobby's tables (Join where
+a slot is empty), the games played without one (Play where this browser holds a seat,
+Watch where watching is allowed) and the official accounts' running dominion.games
+games (Watch); **Cardlists**
 edits your account's Banned cards list; **Leaderboard** ranks the rated players, each
 name leading to that player's page (`/user/<name>`: rating, tallies, latest games).
 After a game the score page has the table's Ready (another game at the same table),

@@ -5,11 +5,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TranscriptKind {
+    /// The model's system prompt.
+    System,
+    /// Text given to the model as a user turn.
     Observation,
     Reasoning,
     Message,
+    /// A tool call the model made: its name and arguments.
+    Call,
+    /// A friendly label for a game move the model made.
     Action,
     Game,
+    /// What a tool call returned to the model.
     Result,
     Status,
 }

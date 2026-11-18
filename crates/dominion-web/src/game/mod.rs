@@ -60,7 +60,7 @@ impl GameCtx {
     fn via(&self) -> Option<Via> {
         match self.seat.peek().as_ref() {
             Some(s) => Some(Via::Seat(s.token.clone())),
-            None => self.watching.peek().then_some(Via::Watch),
+            None => self.watching.peek().then_some(Via::Watch(None)),
         }
     }
 
@@ -156,25 +156,25 @@ pub fn use_clock() -> Option<dominion_protocol::lobby::ClockView> {
 }
 
 /// How a page reaches its game: as a seat, by its token, or as someone watching, by the
-/// session's cookie.
+/// session's cookie (seeing everything, or what one seat knows).
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Via {
     Seat(String),
-    Watch,
+    Watch(Option<u8>),
 }
 
 impl Via {
     fn token(&self) -> Option<&str> {
         match self {
             Via::Seat(t) => Some(t),
-            Via::Watch => None,
+            Via::Watch(_) => None,
         }
     }
 
     async fn view(&self, game: &str, log_from: usize) -> api::Result<SeatView> {
         match self {
             Via::Seat(t) => api::view(game, t, Some(log_from)).await,
-            Via::Watch => api::watch_view(game, Some(log_from)).await,
+            Via::Watch(seat) => api::watch_view(game, Some(log_from), *seat).await,
         }
     }
 }
@@ -202,6 +202,7 @@ struct Live {
     seat: Signal<Option<HeldSeat>>,
     /// With no seat, the game is watched.
     watch: Signal<bool>,
+    watch_as: Signal<Option<u8>>,
     /// The account is being asked for its seats.
     finding: Signal<bool>,
     /// How often that was done: a seat the server then refuses isn't looked for again.
@@ -215,7 +216,9 @@ impl Live {
     fn still_shown(&self, via: &Via) -> bool {
         match via {
             Via::Seat(t) => self.seat.peek().as_ref().is_some_and(|s| &s.token == t),
-            Via::Watch => self.seat.peek().is_none() && *self.watch.peek(),
+            Via::Watch(seat) => {
+                self.seat.peek().is_none() && *self.watch.peek() && *self.watch_as.peek() == *seat
+            }
         }
     }
 }
@@ -271,7 +274,7 @@ fn fetch_failed(mut ctx: Live, via: &Via, e: ApiError) {
     let first = ctx.state.peek().view.is_none();
     match via {
         Via::Seat(token) if e.status == 401 && *ctx.finds.peek() < 2 => lose_seat(ctx, token),
-        Via::Watch if first && matches!(e.status, 401 | 403) => {
+        Via::Watch(_) if first && matches!(e.status, 401 | 403) => {
             ctx.watch.set(false);
             ctx.refused.set(Some(e.message));
         }
@@ -332,7 +335,7 @@ async fn drive(ctx: Live, via: Via) {
     let feed = async {
         match &via {
             Via::Seat(token) => api::watch(&game, token, on_change).await,
-            Via::Watch => api::watch_unseated(&game, on_change).await,
+            Via::Watch(_) => api::watch_unseated(&game, on_change).await,
         }
     };
     let worker = async {
@@ -509,6 +512,7 @@ pub fn GamePage(id: String) -> Element {
     let mut seats = use_signal(|| session::seats(&id));
     let mut seat = use_signal(|| seats.peek().first().cloned());
     let watch = use_signal(|| false);
+    let mut watch_as = use_signal(|| None::<u8>);
     let finding = use_signal(|| false);
     let refused = use_signal(|| None::<String>);
     let mut state = use_signal(GameState::default);
@@ -523,6 +527,7 @@ pub fn GamePage(id: String) -> Element {
         seats,
         seat,
         watch,
+        watch_as,
         finding,
         finds: use_signal(|| 0),
         refused,
@@ -603,7 +608,7 @@ pub fn GamePage(id: String) -> Element {
     use_effect(move || {
         let via = match seat() {
             Some(s) => Some(Via::Seat(s.token)),
-            None => watch().then_some(Via::Watch),
+            None => watch().then(|| Via::Watch(watch_as())),
         };
         if let Some(t) = driver.take() {
             t.cancel();
@@ -627,6 +632,15 @@ pub fn GamePage(id: String) -> Element {
     let held = seats();
     let shown = !held.is_empty() || watching();
     let watchers = state.read().meta.watchers;
+    let player_names = match summary.read().as_ref() {
+        Some(g) => g.names.clone(),
+        None => state
+            .read()
+            .view
+            .as_ref()
+            .map(logfmt::names)
+            .unwrap_or_default(),
+    };
     let mut paste = use_signal(String::new);
     let mut table_on = use_signal(table::table_mode);
     let seat_bar = rsx! {
@@ -655,6 +669,29 @@ pub fn GamePage(id: String) -> Element {
                 span { "playing as {s.name}" }
             } else if watching() {
                 span { class: "watching-mark", "data-watching": "1", "watching" }
+                span { class: "watch-as", "data-watch-as": "{watch_as().map(i32::from).unwrap_or(-1)}",
+                    span { class: "muted", "as:" }
+                    button {
+                        class: if watch_as().is_none() { "toggle on" } else { "toggle" },
+                        title: "Every player's cards",
+                        onclick: move |_| watch_as.set(None),
+                        "Everyone"
+                    }
+                    for (i, name) in player_names.iter().cloned().enumerate() {
+                        {
+                            let i = i as u8;
+                            rsx! {
+                                button {
+                                    key: "{i}",
+                                    class: if watch_as() == Some(i) { "toggle on" } else { "toggle" },
+                                    title: "What {name} knows",
+                                    onclick: move |_| watch_as.set(Some(i)),
+                                    "{name}"
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if watchers > 0 {
                 span { class: "muted", "data-watchers": "{watchers}", title: "People watching this game", "{watchers} watching" }

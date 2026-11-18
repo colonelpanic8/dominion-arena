@@ -1719,8 +1719,14 @@ impl Hub {
         Ok(seat_view)
     }
 
-    /// Game `id` as someone watching sees it, with the log from `log_from` on.
-    pub fn watch_view(&self, id: &str, log_from: usize) -> Result<SeatView, HubError> {
+    /// Game `id` as someone watching sees it, with the log from `log_from` on: every
+    /// player's cards, or with `as_seat` only what that seat knows, and no decision.
+    pub fn watch_view(
+        &self,
+        id: &str,
+        log_from: usize,
+        as_seat: Option<u8>,
+    ) -> Result<SeatView, HubError> {
         let game = self.read(id)?;
         let refused = || HubError::Forbidden(format!("game {id} can't be watched"));
         let (mut seat_view, owners) = {
@@ -1728,8 +1734,22 @@ impl Hub {
             if !lock(&game.meta).watchable {
                 return Err(refused());
             }
-            let view = engine(|| table.watch_view(log_from))?.ok_or_else(refused)?;
-            let extras = engine(|| table.watch_extras())?.unwrap_or_default();
+            let (view, extras) = match as_seat {
+                None => (
+                    engine(|| table.watch_view(log_from))?.ok_or_else(refused)?,
+                    engine(|| table.watch_extras())?.unwrap_or_default(),
+                ),
+                Some(seat) if usize::from(seat) >= table.names().len() => {
+                    return Err(HubError::BadRequest(format!("there is no seat {seat}")));
+                }
+                Some(seat) => {
+                    let seat = PlayerId(seat);
+                    let mut view = engine(|| table.view_from(seat, log_from))?;
+                    view.decision = None;
+                    view.spectating = true;
+                    (view, engine(|| table.extras(seat))?)
+                }
+            };
             let (meta, owners) = self.game_meta(&game, &table);
             let seat_view = SeatView {
                 view,
@@ -2473,7 +2493,7 @@ mod archive_tests {
         let check = |hub: &Hub| {
             let seat = hub.claim(&id, &token).unwrap();
             assert_eq!(hub.seat_view(&seat, Some(0)).unwrap().view, ended.view);
-            assert!(!hub.watch_view(&id, 0).unwrap().view.game.running);
+            assert!(!hub.watch_view(&id, 0, None).unwrap().view.game.running);
             assert!(hub.subscribe(&id).is_ok());
             assert!(matches!(
                 hub.resign(&seat, "resigned"),
@@ -2489,7 +2509,7 @@ mod archive_tests {
         check(&hub);
         for id in ["../g1", "g01", "g1/../g1", "expired/g1"] {
             assert!(matches!(
-                hub.watch_view(id, 0),
+                hub.watch_view(id, 0, None),
                 Err(HubError::UnknownGame(_))
             ));
         }

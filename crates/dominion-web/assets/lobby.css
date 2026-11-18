@@ -923,6 +923,8 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-account-page > .lb-column > .lb-fieldset { margin-top: 2vh; }
 .lb-bots-list { display: flex; flex-direction: column; gap: .8vh; padding: 1vh 2.5vh; font: 700 2.2vh var(--ui); }
 .lb-bot { display: flex; align-items: center; }
+.lb-commit { color: #f5bc34; text-decoration: none; }
+.lb-commit:hover { text-decoration: underline; }
 .lb-bot .lb-user { flex-grow: 1; }
 .lb-bot .lb-oval { font-size: 1.5vh; padding: .3vh 1vh; margin: 0 0 0 1vh; }
 .lb-bot-key { padding: 0 2.5vh 1vh; }

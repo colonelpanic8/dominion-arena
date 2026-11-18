@@ -70,6 +70,10 @@ impl House {
         self.agents().iter().find(|a| a.name.to_lowercase() == key)
     }
 
+    pub(super) fn official_job(&self, account: &str) -> Option<Job> {
+        self.official.get(account).cloned()
+    }
+
     pub(super) fn offers(&self, user: &str) -> bool {
         self.agents().iter().any(|a| a.user == user)
     }

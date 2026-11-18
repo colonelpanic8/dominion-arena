@@ -121,6 +121,7 @@ pub fn AccountTab() -> Element {
                         div { class: "lb-column",
                             if loaded { SignIn {} }
                         }
+                        div { class: "lb-column", About {} }
                     },
                     Some(me) => rsx! {
                         div { class: "lb-column",
@@ -135,6 +136,8 @@ pub fn AccountTab() -> Element {
                             if me.user.kind == UserKind::Registered {
                                 Bots { me }
                             }
+                            crate::online::OfficialRatings {}
+                            About {}
                         }
                     },
                 }
@@ -163,6 +166,54 @@ fn Summary(me: Me) -> Element {
             }
         }
     }
+}
+
+/// The commit this client was built from, linked to the repository, and its time.
+#[component]
+fn About() -> Element {
+    let commit = env!("DOMINION_COMMIT");
+    let hash = commit.trim_end_matches("-dirty");
+    let short = &hash[..hash.len().min(10)];
+    let dirty = if hash.len() < commit.len() {
+        " (modified)"
+    } else {
+        ""
+    };
+    let url = format!("{}/commit/{hash}", env!("CARGO_PKG_REPOSITORY"));
+    let time = commit_time(env!("DOMINION_COMMIT_TIME"));
+    rsx! {
+        Fieldset { title: "About", class: "lb-about",
+            OptionRow { label: "Version",
+                if hash.is_empty() {
+                    span { class: "lb-value", "unknown" }
+                } else {
+                    a { class: "lb-value lb-commit", href: "{url}", target: "_blank", rel: "noopener",
+                        "{short}{dirty}"
+                    }
+                }
+            }
+            if let Some(time) = time {
+                OptionRow { label: "Committed",
+                    span { class: "lb-value", "{time}" }
+                }
+            }
+        }
+    }
+}
+
+/// `YYYYMMDDHHMMSS` (UTC) as `YYYY-MM-DD HH:MM UTC`.
+fn commit_time(t: &str) -> Option<String> {
+    if t.len() != 14 || !t.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!(
+        "{}-{}-{} {}:{} UTC",
+        &t[..4],
+        &t[4..6],
+        &t[6..8],
+        &t[8..10],
+        &t[10..12]
+    ))
 }
 
 /// A guest registers: the account stays theirs, with its games.
