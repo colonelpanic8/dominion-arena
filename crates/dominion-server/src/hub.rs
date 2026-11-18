@@ -10,11 +10,11 @@ use dominion_engine::{
 pub use dominion_protocol::api::{
     Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
 };
-use dominion_protocol::api::{Replay, ReplayTurn, UndoRequest, UndoState};
+use dominion_protocol::api::{Progress, Replay, ReplayTurn, SeatProgress, UndoRequest, UndoState};
 use dominion_protocol::events::History;
 use dominion_protocol::lobby::{
-    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, Source, UndoRule,
-    UserRef,
+    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, SeatAgent, Source,
+    UndoRule, UserRef,
 };
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
@@ -1153,6 +1153,7 @@ fn snapshot(table: &mut Table, tokens: &[String], meta: &Meta) -> Result<Vec<u8>
 }
 
 fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary {
+    let watchable = meta.watchable && table.watchable();
     GameSummary {
         game_id: table.id().into(),
         names: table.names().to_vec(),
@@ -1174,9 +1175,53 @@ fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary 
             .collect(),
         source: meta.source,
         rated: meta.rated,
-        watchable: meta.watchable && table.watchable(),
+        watchable,
         users: vec![],
+        agents: (0..table.names().len())
+            .map(|i| match meta.runs.get(i) {
+                Some(Some(run)) => Some(SeatAgent::from(&run.setup)),
+                _ if meta.agents.get(i).copied().unwrap_or(false) => Some(SeatAgent {
+                    agent: table.names()[i].clone(),
+                    ..SeatAgent::default()
+                }),
+                _ => None,
+            })
+            .collect(),
+        progress: progress(table, watchable),
     }
+}
+
+/// Where `table`'s game stands while it runs; what each seat owns and would score only
+/// when anyone may watch it.
+fn progress(table: &Table, watchable: bool) -> Option<Progress> {
+    let g = table.game();
+    if table.is_over() {
+        return None;
+    }
+    let t = g.turn();
+    let seats = if watchable {
+        (0..g.num_players() as u8)
+            .map(|p| {
+                let p = PlayerId(p);
+                let mut owned = BTreeMap::new();
+                for id in g.player(p).owned() {
+                    *owned.entry(g.card(id).name().to_string()).or_insert(0) += 1;
+                }
+                SeatProgress {
+                    vp: g.score(p),
+                    owned,
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+    Some(Progress {
+        player: t.player.0,
+        turn: g.player(t.player).turns_taken,
+        phase: format!("{:?}", t.phase).to_lowercase(),
+        seats,
+    })
 }
 
 impl Hub {

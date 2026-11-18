@@ -377,7 +377,7 @@ fn icon_class(by: &PlayedBy) -> &'static str {
 /// name: the drawings fill the same box, 2.5 to 13.5 across and 2 to 14.5 down of 16, and
 /// a logo the same share of its own.
 #[component]
-fn SeatIcon(played_by: PlayedBy) -> Element {
+pub(crate) fn SeatIcon(played_by: PlayedBy) -> Element {
     let class = icon_class(&played_by);
     let logo = match &played_by {
         PlayedBy::Agent(a) => maker(a).map(|m| match m {

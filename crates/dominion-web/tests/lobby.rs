@@ -5,10 +5,10 @@
 mod common;
 
 use common::card_db;
-use dominion_protocol::api::{DealSlot, GameSummary};
+use dominion_protocol::api::{DealSlot, GameSummary, Progress};
 use dominion_protocol::lobby::{
-    Lobby, Me, MyTable, OfficialAccount, OfficialGame, RatingInfo, Searching, SeatEdit, SeatKind,
-    Source, Stats, TableInfo, TableSeat, TableSpec, UserRef,
+    Lobby, Me, MyTable, OfficialAccount, OfficialGame, RatingInfo, Searching, SeatAgent, SeatEdit,
+    SeatKind, Source, Stats, TableInfo, TableSeat, TableSpec, UserRef,
 };
 use dominion_web::lobby::rules::{
     KINGDOM_SLOTS, LandscapeSlot, Pick, TableRules, TableStatus, Ternary, expansions,
@@ -221,6 +221,8 @@ fn game(id: &str, names: &[&str], running: bool, watchable: bool) -> GameSummary
         rated: false,
         watchable,
         users: names.iter().map(|n| Some(user(n))).collect(),
+        agents: vec![],
+        progress: None,
     }
 }
 
@@ -268,6 +270,15 @@ fn the_tables_tab_offers_what_each_line_allows() {
         game("g8", &["Kim", "Lu"], false, true),
         game("g9", &["Mo", "Ada"], false, true),
     ];
+    let mut games = games;
+    let progress = Progress {
+        player: 1,
+        turn: 4,
+        phase: "buy".into(),
+        seats: vec![],
+    };
+    games[1].progress = Some(progress.clone());
+    games[4].agents = vec![None, Some(SeatAgent::default())];
     let held = |g: &str| ["g0", "g6", "g9"].contains(&g);
     let lines = listing(&lobby, &games, &held);
     let by = |key: &str| {
@@ -276,12 +287,12 @@ fn the_tables_tab_offers_what_each_line_allows() {
             .unwrap_or_else(|| panic!("no line for {key}"))
     };
     assert_eq!(by("t1").action, Action::Open);
-    assert_eq!(by("t1").seats, [SeatMark::You, SeatMark::Open]);
+    assert_eq!(by("t1").marks(), [SeatMark::You, SeatMark::Open]);
     assert_eq!(by("t1").status, TableStatus::PostGame);
     assert_eq!(by("t2").action, Action::Join);
     assert_eq!(by("t3").action, Action::None, "no open seat");
     assert_eq!(
-        by("t3").seats,
+        by("t3").marks(),
         [
             SeatMark::Player("Cy".into()),
             SeatMark::Token("Agent 1".into())
@@ -291,10 +302,24 @@ fn the_tables_tab_offers_what_each_line_allows() {
     assert_eq!(by("t5").action, Action::None, "not watchable");
     assert_eq!(by("g6").action, Action::Play);
     assert_eq!(
-        by("g6").seats,
+        by("g6").marks(),
         [SeatMark::Player("Hal".into()), SeatMark::You]
     );
     assert_eq!(by("g7").action, Action::Watch);
+    assert_eq!(
+        by("g7").marks(),
+        [SeatMark::Player("Ida".into()), SeatMark::Agent("Jo".into())],
+        "an agent's seat is the agent's, whatever account holds it"
+    );
+    assert_eq!(
+        by("t4").progress,
+        Some(progress),
+        "a table shows its game's turn"
+    );
+    assert_eq!(
+        by("t4").marks(),
+        [SeatMark::Player("Di".into()), SeatMark::Player("Ed".into())]
+    );
     // A table's game is the table's line, and finished games aren't listed, held or not.
     let listed = |key: &str| {
         lines
@@ -424,7 +449,7 @@ fn a_running_official_game_is_listed_for_watching() {
     assert_eq!(line.official.as_deref(), Some("main"));
     assert_eq!(line.action, Action::Watch);
     assert_eq!(
-        line.seats,
+        line.marks(),
         [
             SeatMark::Player("Rival".into()),
             SeatMark::Agent("Claude".into())
