@@ -2271,3 +2271,30 @@ fn moat_blocks_raider_at_night() {
     next_turn(&mut g);
     assert_eq!(g.turn().coins, 3);
 }
+
+/// A Boon drawn when its deck and discard pile are both empty (Druid's three set aside and
+/// the rest taken for later) draws nothing and asks chance for nothing: the next
+/// reshuffle takes the outcome given for it, as a replay gives it.
+#[test]
+fn a_boon_drawn_from_nothing_draws_no_chance() {
+    let mut g = setup(&[Card::BlessedVillage]);
+    g.start();
+    g.boons.draw.clear();
+    g.boons.discard.clear();
+    let order = vec![Card::TheSeasGift, Card::TheSunsGift];
+    let mut outcomes = crate::chance::Outcomes::default();
+    outcomes.push(
+        crate::chance::Site::Reshuffle { hexes: false },
+        order.clone(),
+        None,
+    );
+    g.chance = Some(Box::new(crate::chance::Chance {
+        given: Some(outcomes),
+        ..Default::default()
+    }));
+    assert_eq!(g.draw_from(P0, false), None);
+    g.boons.discard = vec![Card::TheSunsGift, Card::TheSeasGift];
+    assert_eq!(g.draw_from(P0, false), Some(Card::TheSeasGift));
+    assert!(g.chance_refused().is_none(), "{:?}", g.chance_refused());
+    assert_eq!(g.chance_left().map(|o| o.left()), Some(0));
+}

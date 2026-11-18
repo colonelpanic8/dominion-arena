@@ -799,6 +799,17 @@ const FOCUS: &[(&[&str], &[&str])] = &[
         ],
         &["Inherited"],
     ),
+    (
+        &[
+            "Smithy",
+            "Stash",
+            "Cellar",
+            "Laboratory",
+            "Sentry",
+            "Gold Mine",
+        ],
+        &["Star Chart", "Avoid", "Fated", "Order of Astrologers"],
+    ),
 ];
 
 fn phase_in(e: &What) -> Option<Phase> {
@@ -1104,7 +1115,10 @@ fn check_causes(events: &[Event], what: &str) {
         });
         let drew = (events[play as usize..].iter())
             .any(|e| e.by == Some(play) && matches!(e.what, What::Draw(_)));
-        if !changed && !drew {
+        // A seat resigned before the play could draw.
+        let cut = matches!(events.last().map(|e| &e.what), Some(What::GameEnd(end)) if end.reason == "resigned")
+            && !(events[play as usize..].iter()).any(|e| matches!(e.what, What::Turn(_)));
+        if !changed && !drew && !cut {
             let json = serde_json::to_string(&events[play as usize]).unwrap();
             panic!("{what}: event {play} draws nothing of its own\n{json}");
         }
@@ -1405,4 +1419,112 @@ fn a_tables_stream_replays() {
             dominion_agent::replay::replay(events).unwrap_or_else(|d| panic!("seed {seed}: {d}"));
         assert_eq!(replay.game.outcome(), table.game().outcome(), "seed {seed}");
     }
+}
+
+/// Buys Star Chart and Stashes, and resolves Stash's ability before Star Chart's: a Stash
+/// placed among the shuffled cards keeps its place when Star Chart's pick has the others
+/// shuffled again.
+fn stash_before_star_chart(game: &Game, rng: &mut ChaCha8Rng) -> Response {
+    let d = game.pending().expect("a decision");
+    match &d.kind {
+        DecisionKind::Choose {
+            options, labels, ..
+        } if d.purpose == dominion_engine::Purpose::Trigger => {
+            if let Some(i) = labels.iter().position(|l| l.contains("Stash")) {
+                return Response::Options(vec![options[i]]);
+            }
+        }
+        DecisionKind::Turn { moves, .. } => {
+            let owns = game.player(d.player).projects.contains(&Card::StarChart);
+            let wanted = [
+                Move::BuyLandscape(Card::StarChart),
+                Move::Buy(game.pile_of(Card::Stash).expect("Stash's pile")),
+            ];
+            for m in wanted.iter().skip(usize::from(owns)) {
+                if moves.contains(m) {
+                    return Response::Move(*m);
+                }
+            }
+        }
+        _ => {}
+    }
+    eager_response(game, rng)
+}
+
+#[test]
+fn a_stash_placed_before_a_reshuffle_keeps_its_place() {
+    use Card::*;
+    let mut among = 0;
+    for seed in 0..seeds(40) {
+        let kingdom = vec![
+            Stash, Smithy, Moat, Cellar, Village, Market, Laboratory, Festival, Mine, Militia,
+        ];
+        let mut config = GameConfig::new(2, kingdom, seed);
+        config.landscapes = vec![StarChart];
+        config.turn_limit = Some(40);
+        let events = follow(config, seed, stash_before_star_chart);
+        among += (1..events.len())
+            .filter(|&i| {
+                matches!(&events[i].what, What::Insert(m) if m.cards == [CardRef::named("Stash")])
+                    && matches!(&events[i - 1].what, What::Shuffle(m) if m.from == m.to && m.at != events::At::Top)
+            })
+            .count();
+    }
+    assert!(among > 0, "no Stash lay among cards shuffled again");
+}
+
+/// Replay fails cleanly on a stream no game wrote, reports differences in stream order, and
+/// neither needs nor checks the seed.
+#[test]
+fn a_replay_fails_cleanly_and_in_order() {
+    let config = GameConfig::random(2, &released(), 5);
+    let events = follow(config, 5, eager_response);
+    let ask = (events.iter())
+        .position(|e| matches!(e.what, What::Ask(_)))
+        .unwrap();
+
+    // A resignation of a seat that doesn't exist.
+    let mut bad = events[..=ask].to_vec();
+    bad.push(Event {
+        seq: ask as u64 + 1,
+        by: None,
+        what: What::GameEnd(events::GameEnd {
+            reason: "resigned".into(),
+            result: vec![events::SeatResult {
+                seat: 9,
+                vp: 0,
+                turns: 0,
+                rank: 2,
+                resigned: true,
+            }],
+        }),
+    });
+    assert_eq!(differs_at(&bad), Some(ask as u64 + 1));
+
+    // The seed is provenance: absent or changed, the stream replays.
+    for seed in [None, Some(11)] {
+        let mut changed = events.clone();
+        if let What::Setup(setup) = &mut changed[0].what {
+            setup.config.as_mut().unwrap().seed = seed;
+        }
+        assert_eq!(differs_at(&changed), None, "seed {seed:?}");
+    }
+
+    // A malformed outcome late in the stream is no reason to fail before an earlier
+    // difference.
+    let shuffle = (events.iter())
+        .rposition(|e| matches!(&e.what, What::Shuffle(m) if m.cards.len() > 1))
+        .unwrap();
+    let answer = (events[..shuffle].iter())
+        .rposition(|e| matches!(&e.what, What::Answer(_)))
+        .unwrap();
+    let mut changed = events.clone();
+    if let What::Shuffle(m) = &mut changed[shuffle].what {
+        m.cards[0] = CardRef::named("No Such Card");
+    }
+    assert_eq!(differs_at(&changed), Some(shuffle as u64));
+    if let What::Answer(a) = &mut changed[answer].what {
+        a.indices = Some(vec![u32::MAX]);
+    }
+    assert_eq!(differs_at(&changed), Some(answer as u64));
 }

@@ -1672,12 +1672,13 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     .ask_cards(shuffled, 0, 3, Purpose::Move)
                     .question("put into your discard pile");
             }
-            for c in input.cards() {
+            let chosen = input.cards();
+            for &c in &chosen {
                 if g.zone(c) == Zone::Deck(p) {
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
             }
-            g.reshuffle_unplaced(p, &[]);
+            g.reshuffle_unplaced(p, &chosen);
             Flow::done()
         }
         Card::Fated => fated(g, f, input),

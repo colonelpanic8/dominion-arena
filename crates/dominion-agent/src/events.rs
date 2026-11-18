@@ -152,7 +152,10 @@ impl Recorder {
                     }
                 }
                 Step::Trace {
-                    entry: Trace::Moved { from, to, .. },
+                    entry:
+                        Trace::Moved {
+                            from, to, under, ..
+                        },
                     verb: Some(Verb::Shuffle),
                 } => {
                     // Its cards are journaled bottom first.
@@ -170,7 +173,13 @@ impl Recorder {
                     }
                     ids.reverse();
                     let (from, to) = (self.zone(game, from), self.zone(game, to));
-                    let at = if from == to { At::Top } else { At::Bottom };
+                    // Into its own zone, some of a deck's cards shuffled again where they
+                    // lay go back under the cards over them.
+                    let at = match (from == to, under) {
+                        (false, _) => At::Bottom,
+                        (true, 0) => At::Top,
+                        (true, n) => At::Under(n as u32),
+                    };
                     What::Shuffle(self.shuffle(&from, &to, &ids, at))
                 }
                 Step::Trace {
@@ -742,18 +751,36 @@ impl Recorder {
 
     /// The cards `ids` (listed top first as they end up) shuffled from `from` into `to`.
     /// Which copy went where is no outcome of a shuffle: each card is said to leave as the
-    /// topmost of its name.
+    /// topmost of its name among the cards shuffled.
     fn shuffle(&mut self, from: &events::Zone, to: &events::Zone, ids: &[CardId], at: At) -> Move {
         let cards: Vec<CardRef> = ids.iter().map(|&id| self.card(id)).collect();
-        let there: Vec<CardRef> = (self.ids.get(from).into_iter().flatten())
-            .map(|&id| self.card(id))
+        let mut there: Vec<(CardRef, bool)> = (self.ids.get(from).into_iter().flatten())
+            .map(|&id| (self.card(id), ids.contains(&id)))
             .collect();
-        let pos = sequential_depths(&there, &cards);
+        let depths: Vec<u32> = (cards.iter())
+            .map(|card| {
+                let i = (there.iter())
+                    .position(|(c, shuffled)| *shuffled && c == card)
+                    .unwrap_or(0);
+                if i < there.len() {
+                    there.remove(i);
+                }
+                i as u32
+            })
+            .collect();
+        let pos = match depths.iter().all(|&d| d == 0) {
+            true => vec![],
+            false => depths,
+        };
         for &id in ids {
             self.leave(from, id);
         }
         let block = self.ids.entry(to.clone()).or_default();
-        let i = if at == At::Bottom { block.len() } else { 0 };
+        let i = match at {
+            At::Top => 0,
+            At::Bottom => block.len(),
+            At::Under(n) => (n as usize).min(block.len()),
+        };
         block.splice(i..i, ids.iter().copied());
         Move {
             player: self.mover(from, to),

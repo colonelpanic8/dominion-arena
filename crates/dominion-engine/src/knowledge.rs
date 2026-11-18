@@ -121,7 +121,7 @@ impl dominion_knowledge::Location for Zone {
 
 /// Whether everyone can tell this card from its back: Stash, and the Shadow cards, each
 /// with a back of its own.
-fn marked(card: Card) -> bool {
+pub(crate) fn marked(card: Card) -> bool {
     card == Card::Stash || card.is(Types::SHADOW)
 }
 

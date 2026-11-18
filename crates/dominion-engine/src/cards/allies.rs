@@ -1342,11 +1342,11 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let k = chosen.len() as u32;
             spend(g, p, if astrologers { k } else { k.div_ceil(2) }.max(1));
             if !astrologers {
-                for c in chosen {
+                for &c in &chosen {
                     g.show_to(c, p);
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
-                g.reshuffle_unplaced(p, &[]);
+                g.reshuffle_unplaced(p, &chosen);
                 return Flow::done();
             }
             f.pc = 2;
