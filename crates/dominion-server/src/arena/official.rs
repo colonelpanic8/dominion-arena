@@ -1,10 +1,16 @@
 //! The dominion.games accounts `dominion serve` keeps connected, as the lobby lists them,
 //! and their finished games' records.
 
-use super::{Arena, Result, db};
+use super::db::{self, Db};
+use super::history::GameSource;
+use super::records::past_game;
+use super::{Arena, Result};
 use crate::hub::{lock, now_ms};
-use dominion_protocol::lobby::{GameRecord, OfficialAccount, OfficialGame, RecordPlayer, Source};
+use dominion_protocol::lobby::{
+    GameRecord, OfficialAccount, OfficialGame, PastGame, RecordPlayer, Source, Venue,
+};
 use dominion_protocol::view::GameResult;
+use std::sync::Arc;
 
 /// What the lobby knows of an official account beyond what it lists.
 #[derive(Default)]
@@ -18,9 +24,37 @@ pub(super) struct Official {
     recorded: Option<String>,
 }
 
+/// What an official game's record id starts with.
+const RECORD: &str = "dominion.games-";
+
 /// The id of an official game's record.
 fn record_id(game: &str) -> String {
-    format!("dominion.games-{game}")
+    format!("{RECORD}{game}")
+}
+
+/// The records of the official accounts' finished games.
+pub(super) struct OfficialRecords {
+    pub db: Arc<Db>,
+}
+
+impl GameSource for OfficialRecords {
+    fn venue(&self) -> Venue {
+        Venue::Official
+    }
+
+    fn page(&self, user: Option<&str>, before: u64, limit: usize) -> Result<Vec<PastGame>> {
+        let records = self.db.games(Venue::Official, user, before, limit)?;
+        let games = records.into_iter().map(|r| {
+            let mut game = past_game(r, Venue::Official);
+            game.official_id = game.id.strip_prefix(RECORD).map(str::to_string);
+            game
+        });
+        Ok(games.collect())
+    }
+
+    fn count(&self, user: &str) -> Result<u32> {
+        self.db.count_games(Venue::Official, user)
+    }
 }
 
 impl Arena {
@@ -122,6 +156,7 @@ impl Arena {
                         seat: p.index,
                         name: p.name.clone(),
                         kind: user.map(|u| u.kind()),
+                        user: user.map(|u| u.name.clone()).filter(|n| *n != p.name),
                         vp: p.vp,
                         rank: p.rank,
                         turns: p.turns,
@@ -139,9 +174,10 @@ impl Arena {
                 reason: result.reason.clone().unwrap_or_default(),
                 kingdom: game.kingdom.clone(),
                 landscapes: game.landscapes.clone(),
+                others: game.others.clone(),
                 players,
             };
-            db::add_record(tx, &record, &users)?;
+            db::add_record(tx, Venue::Official, &record, &users)?;
             Ok(true)
         })
     }
@@ -151,7 +187,7 @@ impl Arena {
 mod tests {
     use super::*;
     use crate::hub::Hub;
-    use dominion_protocol::lobby::Credentials;
+    use dominion_protocol::lobby::{Credentials, HistoryQuery};
     use dominion_protocol::view::ResultPlayer;
     use std::sync::Arc;
 
@@ -173,6 +209,7 @@ mod tests {
             seat: Some(1),
             kingdom: vec!["Village".into()],
             landscapes: vec![],
+            others: vec!["Colony".into()],
         };
         let mut info = OfficialAccount {
             id: "main".into(),
@@ -202,18 +239,22 @@ mod tests {
         arena.set_official(info.clone(), Some(&result));
         arena.set_official(info, Some(&result));
 
-        let games = arena.history(Some("Owner"), None, 10).unwrap().games;
+        let games = arena.history(&HistoryQuery::default()).unwrap().games;
         assert_eq!(games.len(), 1);
         let record = &games[0];
-        assert_eq!(record.source, Source::Official);
-        assert!(record.rated);
+        assert_eq!(record.venue, Venue::Official);
+        assert_eq!(record.official_id.as_deref(), Some("123"));
+        assert!(record.rated && !record.open);
         assert_eq!(record.kingdom, ["Village"]);
-        assert!(record.players[1].kind.is_some() && record.players[0].kind.is_none());
+        assert_eq!(record.others, ["Colony"]);
+        assert_eq!(record.players[1].account.as_deref(), Some("Owner"));
+        assert_eq!(record.players[0].account, None);
         assert!(record.players.iter().all(|p| p.rating.is_none()));
         let owner = arena.profile("Owner").unwrap();
         assert_eq!(
             owner.stats.games, 0,
             "Arena's stats count only its own games"
         );
+        assert_eq!(owner.official_games, 1);
     }
 }

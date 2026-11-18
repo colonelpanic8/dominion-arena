@@ -258,6 +258,8 @@ pub struct Ended {
     pub meta: Meta,
     /// With its result.
     pub info: GameInfo,
+    /// What it was set up with besides its Kingdom piles and landscapes.
+    pub setup: Vec<String>,
 }
 
 /// When the deciding seat of a timed game forfeits. Zero is never.
@@ -2073,10 +2075,14 @@ impl Hub {
                 meta.ended_at = Some(now);
             }
         })?;
-        let ended = table.is_over().then(|| Ended {
-            id: table.id().into(),
-            meta: lock(&game.meta).clone(),
-            info: table.view(PlayerId(0)).game,
+        let ended = table.is_over().then(|| {
+            let view = table.view(PlayerId(0));
+            Ended {
+                id: table.id().into(),
+                meta: lock(&game.meta).clone(),
+                setup: crate::setup_cards::setup_cards(&view),
+                info: view.game,
+            }
         });
         game.since.store(now, Ordering::Relaxed);
         game.version.send_modify(|v| *v += 1);
@@ -2429,10 +2435,14 @@ impl Hub {
             .filter_map(|g| {
                 let table = lock(&g.table);
                 let meta = lock(&g.meta);
-                (table.is_over() && !meta.recorded).then(|| Ended {
-                    id: table.id().into(),
-                    meta: meta.clone(),
-                    info: table.view(PlayerId(0)).game,
+                (table.is_over() && !meta.recorded).then(|| {
+                    let view = table.view(PlayerId(0));
+                    Ended {
+                        id: table.id().into(),
+                        meta: meta.clone(),
+                        setup: crate::setup_cards::setup_cards(&view),
+                        info: view.game,
+                    }
                 })
             })
             .collect()

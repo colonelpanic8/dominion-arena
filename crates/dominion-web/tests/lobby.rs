@@ -392,6 +392,7 @@ fn a_running_official_game_is_listed_for_watching() {
         seat: Some(1),
         kingdom: vec![],
         landscapes: vec![],
+        others: vec![],
     };
     let account = |id: &str, running| OfficialAccount {
         id: id.into(),

@@ -14,6 +14,7 @@
 mod accounts;
 mod chat;
 mod db;
+pub mod history;
 mod house;
 mod matching;
 mod official;
@@ -272,7 +273,9 @@ fn limited<K: std::hash::Hash + Eq>(limiter: &Limiter<K>, key: K, what: &str) ->
 
 pub struct Arena {
     pub hub: Arc<Hub>,
-    db: Db,
+    db: Arc<Db>,
+    /// Finished games, as the history and players' pages show them.
+    history: history::HistoryModel,
     settings: Settings,
     state: Mutex<State>,
     /// Bumped whenever what `Arena::lobby` returns may have changed.
@@ -334,9 +337,18 @@ impl Arena {
         db.reserve_table_numbers(retained_table).map_err(failed)?;
         hub.set_timing(settings.timing);
         hub.set_max_games(settings.max_games);
+        let db = Arc::new(db);
+        let history = history::HistoryModel::new(vec![
+            Box::new(records::ArenaRecords {
+                db: db.clone(),
+                hub: hub.clone(),
+            }),
+            Box::new(official::OfficialRecords { db: db.clone() }),
+        ]);
         let arena = Arc::new(Arena {
             hub: hub.clone(),
             db,
+            history,
             settings,
             state: Mutex::default(),
             lobby: watch::channel(0).0,

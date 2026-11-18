@@ -78,9 +78,13 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           place they are kept (`state` in mod.rs holds what is live)
     accounts.rs           accounts, passwords, sessions, bots and their API keys
     tables.rs matching.rs lobby tables; the automatch queue
-    chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard
+    chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard;
+                          `ArenaRecords`, the history's source of Arena's own games
     official.rs           the official accounts as the lobby lists them; their finished
-                          games' records (no rating or tally)
+                          games' records (no rating or tally), `OfficialRecords`
+    history.rs            the history read model: `/api/history` and players' pages read
+                          finished games only through it, as `PastGame`s, merged and
+                          filtered over its `GameSource`s (one per place games are kept)
     house.rs              the server's own agents: their accounts, the runner connected,
                           its jobs (every seat they hold in a running game, sent when they
                           change), each player's agent seats a day
@@ -106,6 +110,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle
   src/steps.rs            named steps (`play A, B; treasures; buy C; next`) for solo and the
                           MCP `steps` tool
+  src/setup_cards.rs      what a finished game was set up with besides its Kingdom piles
+                          and landscapes (Platinum and Colony, Shelters, Heirlooms, ...),
+                          read from its view: kept in its record for the history
   src/store.rs            the state directory: its lock, a JSON file per game written
                           atomically and durably (the directory synced too), each game's
                           event stream appended to, or marked incomplete
@@ -228,7 +235,13 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     tables.rs             Tables: `listing` (pure) of the lobby's tables, the games
                           without one and the official accounts' running games, with
                           Join / Open / Play / Watch
-    leaderboard.rs        the Leaderboard tab and a player's page (`/user/:name`)
+    leaderboard.rs        the Leaderboard tab and a player's page (`/user/:name`): their
+                          profile over their games
+    history.rs            History: finished games (filtered by where, whose, rated, a
+                          name) beside the picked one's sheet (kingdom, standings, Review
+                          game, Play this kingdom); `GameBrowser`, shared with a
+                          player's page; a game's kingdom strip shows the whole kingdom
+                          while hovered (`KingdomPeek`)
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the

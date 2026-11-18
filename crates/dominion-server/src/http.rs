@@ -21,9 +21,9 @@ use dominion_protocol::api::{
     ViewQuery, WebSettings,
 };
 use dominion_protocol::lobby::{
-    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, JoinTable, Leaderboard, Lobby,
-    LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable, Profile, QueueStatus,
-    Ready, Say, SeatEdit, TableInfo, TableSpec,
+    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable,
+    Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable,
+    Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -1444,8 +1444,6 @@ async fn profile(State(api): State<Api>, Path(name): Path<String>) -> Json<Profi
 
 #[derive(Deserialize, Default)]
 struct ListQuery {
-    user: Option<String>,
-    before: Option<u64>,
     limit: Option<usize>,
 }
 
@@ -1454,8 +1452,6 @@ async fn leaderboard(State(api): State<Api>, list: Queried<ListQuery>) -> Json<L
     Ok(axum::Json(api.arena.leaderboard(limit)?))
 }
 
-async fn history(State(api): State<Api>, list: Queried<ListQuery>) -> Json<History> {
-    let q = query(list)?;
-    let games = (api.arena).history(q.user.as_deref(), q.before, q.limit.unwrap_or(20))?;
-    Ok(axum::Json(games))
+async fn history(State(api): State<Api>, q: Queried<HistoryQuery>) -> Json<History> {
+    Ok(axum::Json(api.arena.history(&query(q)?)?))
 }

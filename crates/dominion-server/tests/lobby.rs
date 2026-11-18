@@ -316,13 +316,20 @@ async fn two_people_are_matched_and_play_through_their_sessions() {
     let board: Value = server.get("/api/leaderboard", None).await.json();
     assert_eq!(board["players"][0]["user"]["name"], json!("Ada"));
     let profile: Value = server.get("/api/users/bo", None).await.json();
-    assert_eq!(profile["recent"][0]["gameId"], json!(game));
+    assert_eq!(profile["recent"][0]["id"], json!(game));
     assert_eq!(profile["stats"], json!({ "games": 1, "wins": 0 }));
     let history: Value = server
         .get("/api/history?user=Ada&limit=5", None)
         .await
         .json();
     assert_eq!(history["games"].as_array().unwrap().len(), 1);
+    for (query, games) in [("venue=arena&rated=true&q=bo", 1), ("venue=official", 0)] {
+        let history: Value = server
+            .get(&format!("/api/history?{query}"), None)
+            .await
+            .json();
+        assert_eq!(history["games"].as_array().unwrap().len(), games, "{query}");
+    }
 }
 
 #[tokio::test]

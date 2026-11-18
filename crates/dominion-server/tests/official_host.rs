@@ -10,7 +10,7 @@ use dominion_online::{
 use dominion_protocol::{
     Cost,
     api::{Created, NewGame},
-    lobby::Source,
+    lobby::{HistoryQuery, Source},
 };
 use dominion_server::{
     Options,
@@ -631,7 +631,15 @@ async fn complete_game_on(server: Server, mixed: bool, owned: bool) {
     if owned {
         assert!(server.hub.meta(&created.game_id).unwrap().recorded);
         assert_eq!(server.arena.profile("First").unwrap().stats.games, 1);
-        assert_eq!(server.arena.history(None, None, 10).unwrap().games.len(), 1);
+        assert_eq!(
+            server
+                .arena
+                .history(&HistoryQuery::default())
+                .unwrap()
+                .games
+                .len(),
+            1
+        );
     }
     let attached = server.attach(&created, 0).await;
     assert_eq!(attached.view().game.result, final_view.game.result);

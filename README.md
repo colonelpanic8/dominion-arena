@@ -326,7 +326,7 @@ will) or 500.
 | `POST /api/chat/{channel}` | `{text}` | 204 |
 | `GET /api/users/{name}` | | a player's page: rating, tallies and latest games |
 | `GET /api/leaderboard[?limit=N]` | | the rated players, best first |
-| `GET /api/history[?user=name][&before=ended][&limit=N]` | | finished lobby games, newest first |
+| `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&q=text][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; `q` matches a player, the account behind a seat or a card; ask again with `before=next` for more |
 
 `POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
 and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
