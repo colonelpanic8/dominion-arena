@@ -272,9 +272,9 @@ fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()
                             span { class: "lb-history-entry-line",
                                 span { class: "lb-history-score", "{score}" }
                                 span { class: "lb-history-names",
-                                    "vs"
+                                    span { class: "lb-history-vs", "vs" }
                                     for p in others.iter() {
-                                        Seated { key: "{p.seat}", name: p.name.clone(), played_by: p.played_by.clone() }
+                                        Seated { key: "{p.seat}", player: (*p).clone() }
                                     }
                                 }
                                 if let Some(r) = me.rating {
@@ -293,12 +293,7 @@ fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()
                             span { class: "lb-history-entry-line",
                                 span { class: "lb-history-names",
                                     for (i, p) in ranked.iter().enumerate() {
-                                        Seated {
-                                            key: "{p.seat}",
-                                            name: p.name.clone(),
-                                            played_by: p.played_by.clone(),
-                                            won: p.rank == 1,
-                                        }
+                                        Seated { key: "{p.seat}", player: (*p).clone(), won: p.rank == 1 }
                                         if i == 0 {
                                             span { class: "lb-history-score", "{score}" }
                                         }
@@ -315,19 +310,63 @@ fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()
     }
 }
 
-/// One of the server's agents in a few words: its model and effort, "Opus 5.5 · High".
-pub fn agent_chip(a: &SeatAgent) -> String {
-    let name = a.name.clone().unwrap_or_else(|| a.agent.clone());
-    match &a.effort {
-        Some(effort) => {
-            let mut chars = effort.chars();
-            let effort: String = (chars.next().into_iter())
-                .flat_map(char::to_uppercase)
-                .chain(chars)
+/// What played a seat, in a few words under its name: "Claude Code · high", "rook's bot".
+/// An agent whose seat isn't named after its model (an official account's) is named.
+pub fn caption(p: &PastPlayer) -> String {
+    match &p.played_by {
+        PlayedBy::Person => "Registered".into(),
+        PlayedBy::Guest => "Guest".into(),
+        PlayedBy::Token => "Seat token".into(),
+        PlayedBy::Bot { owner: Some(owner) } => format!("{owner}'s bot"),
+        PlayedBy::Bot { owner: None } => "Bot".into(),
+        PlayedBy::Official => "dominion.games".into(),
+        PlayedBy::Agent(a) => {
+            let named = (a.name.as_deref()).is_some_and(|n| p.name.starts_with(n));
+            let lead = if named {
+                a.program.clone()
+            } else {
+                a.name.clone()
+            };
+            let parts: Vec<String> = [lead.or(Some(a.agent.clone())), a.effort.clone()]
+                .into_iter()
+                .flatten()
                 .collect();
-            format!("{name} · {effort}")
+            match parts.as_slice() {
+                [only] if *only == p.name => "Agent".into(),
+                _ => parts.join(" · "),
+            }
         }
-        None => name,
+    }
+}
+
+/// The class of the icon before a seat's name.
+fn icon_class(by: &PlayedBy) -> &'static str {
+    match by {
+        PlayedBy::Person => "lb-seat-icon person",
+        PlayedBy::Guest => "lb-seat-icon guest",
+        PlayedBy::Token => "lb-seat-icon token",
+        PlayedBy::Bot { .. } => "lb-seat-icon bot",
+        PlayedBy::Agent(_) => "lb-seat-icon agent",
+        PlayedBy::Official => "lb-seat-icon official",
+    }
+}
+
+/// A person, or a machine, drawn small before a seat's name.
+#[component]
+fn SeatIcon(played_by: PlayedBy) -> Element {
+    let class = icon_class(&played_by);
+    let machine = matches!(played_by, PlayedBy::Bot { .. } | PlayedBy::Agent(_));
+    let token = played_by == PlayedBy::Token;
+    rsx! {
+        svg { class, view_box: "0 0 16 16", "aria-hidden": "true",
+            if machine {
+                path { d: "M8 1.5v2M4 4.5h8a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 12 12.5H4A1.5 1.5 0 0 1 2.5 11V6A1.5 1.5 0 0 1 4 4.5zM6 8v.5M10 8v.5M6 14.5h4" }
+            } else if token {
+                path { d: "M2.5 5h11v6h-11zM5.5 8h5" }
+            } else {
+                path { d: "M8 2.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5zM3 14c.5-3 2.5-4.5 5-4.5s4.5 1.5 5 4.5" }
+            }
+        }
     }
 }
 
@@ -345,23 +384,15 @@ pub fn agent_line(a: &SeatAgent) -> String {
     }
 }
 
-/// A seat's name with what played it: nothing for a person, else a tag, or a chip for one
-/// of the server's agents.
+/// A seat in the list: an icon for what played it, its name, and under it a caption.
 #[component]
-fn Seated(name: String, played_by: PlayedBy, #[props(default)] won: bool) -> Element {
-    let (mark, chip) = match &played_by {
-        PlayedBy::Person | PlayedBy::Official => (None, false),
-        PlayedBy::Guest => (Some("guest".to_string()), false),
-        PlayedBy::Token => (Some("token".to_string()), false),
-        PlayedBy::Bot { owner: Some(owner) } => (Some(format!("{owner}'s bot")), false),
-        PlayedBy::Bot { owner: None } => (Some("bot".to_string()), false),
-        PlayedBy::Agent(a) => (Some(agent_chip(a)), true),
-    };
+fn Seated(player: PastPlayer, #[props(default)] won: bool) -> Element {
     rsx! {
-        span { class: if won { "lb-history-who won" } else { "lb-history-who" },
-            span { class: "lb-history-who-name", "{name}" }
-            if let Some(m) = mark {
-                span { class: if chip { "lb-agent-chip" } else { "lb-user-kind" }, "{m}" }
+        span { class: if won { "lb-seat won" } else { "lb-seat" },
+            SeatIcon { played_by: player.played_by.clone() }
+            span { class: "lb-seat-text",
+                span { class: "lb-seat-name", "{player.name}" }
+                span { class: "lb-seat-caption", "{caption(&player)}" }
             }
         }
     }
@@ -527,6 +558,7 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
                         div { key: "{p.seat}", class: row,
                             span { class: "lb-sheet-place", "{p.rank}" }
                             span { class: if p.rank == 1 { "lb-sheet-name won" } else { "lb-sheet-name" },
+                                SeatIcon { played_by: p.played_by.clone() }
                                 match own {
                                     Some(a) => rsx! { Link { to: Route::User { name: a }, "{p.name}" } },
                                     None => rsx! { "{p.name}" },

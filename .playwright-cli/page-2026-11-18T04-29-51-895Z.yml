@@ -1,0 +1,55 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - main:
+      - generic [ref=e2]:
+        - generic "Fullscreen" [ref=e3] [cursor=pointer]
+        - list [ref=e4]:
+          - listitem [ref=e5] [cursor=pointer]:
+            - button "Automatch" [ref=e6]
+          - listitem [ref=e7] [cursor=pointer]:
+            - button "New Table" [ref=e8]
+          - listitem [ref=e9] [cursor=pointer]:
+            - button "Tables" [ref=e10]
+          - listitem [ref=e11] [cursor=pointer]:
+            - button "Cardlists" [ref=e12]
+          - listitem [ref=e13] [cursor=pointer]:
+            - button "Leaderboard" [ref=e14]
+          - listitem [ref=e15] [cursor=pointer]:
+            - button "History" [ref=e16]
+          - listitem [ref=e17] [cursor=pointer]:
+            - button "Account" [ref=e18]
+          - button "Log in" [ref=e20] [cursor=pointer]
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e27]: rook
+            - generic [ref=e28]:
+              - generic [ref=e29]: Registered player
+              - link "Leaderboard" [ref=e30] [cursor=pointer]:
+                - /url: /leaderboard
+            - generic [ref=e31]:
+              - generic [ref=e32]:
+                - generic [ref=e33]: Rating
+                - generic [ref=e34]: 1500 ± 350
+              - generic [ref=e35]:
+                - generic [ref=e36]: Rated games
+                - generic [ref=e37]: "0"
+              - generic [ref=e38]:
+                - generic [ref=e39]: Arena games won
+                - generic [ref=e40]: 1 of 1
+              - generic [ref=e41]:
+                - generic [ref=e42]: dominion.games games
+                - generic [ref=e43]: "0"
+            - generic [ref=e44]:
+              - generic [ref=e45]: "Rating over the latest rated games: 1612 → 1627"
+              - img "Rating over the latest rated games" [ref=e46]
+          - generic [ref=e48]:
+            - generic [ref=e50]: Games
+            - generic [ref=e52]:
+              - generic [ref=e53] [cursor=pointer]: All
+              - generic [ref=e54] [cursor=pointer]: Arena
+              - generic [ref=e55] [cursor=pointer]: dominion.games
+            - generic [ref=e56]:
+              - generic [ref=e57] [cursor=pointer]:
+                - switch [ref=e58]
+                - text: Rated
+              - searchbox "Find a player, agent or card" [ref=e60]
