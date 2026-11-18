@@ -30,7 +30,12 @@ impl Arena {
     }
 
     fn write_record(&self, ended: Ended) -> Result<()> {
-        let Ended { id, meta, info } = ended;
+        let Ended {
+            id,
+            meta,
+            seed,
+            info,
+        } = ended;
         let Some(result) = info.result else {
             return Ok(());
         };
@@ -74,6 +79,7 @@ impl Arena {
                     turns: p.turns,
                     resigned: p.resigned,
                     rating: rated.then(|| (before[i].rating, after[i].rating)),
+                    agent: meta.runs.get(usize::from(p.index)).cloned().flatten(),
                 });
             }
             let record = GameRecord {
@@ -88,6 +94,8 @@ impl Arena {
                 kingdom: info.kingdom.clone(),
                 landscapes: info.landscapes.clone(),
                 players,
+                seed: Some(seed),
+                version: crate::commit(),
             };
             let users: Vec<Option<String>> = (accounts.iter())
                 .map(|u| u.as_ref().map(|u| u.id.clone()))

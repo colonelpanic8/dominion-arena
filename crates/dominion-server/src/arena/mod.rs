@@ -19,7 +19,7 @@ mod matching;
 mod official;
 mod records;
 mod tables;
-mod transcripts;
+pub(crate) mod transcripts;
 
 use crate::hub::{Hub, HubError, Timing, lock, now_ms};
 use crate::limits::Limiter;

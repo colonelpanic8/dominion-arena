@@ -5,6 +5,7 @@
 //! mode is the only access control.
 
 use crate::arena::Arena;
+use dominion_protocol::lobby::AgentSetup;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -46,6 +47,20 @@ pub enum FromRunner {
     Hello { agents: Vec<Offer>, capacity: u32 },
     /// The agents it offers now, in place of those it offered before.
     Offers { agents: Vec<Offer> },
+    /// It started playing a job's seat afresh: a new conversation, kept in `archive`.
+    Attempt {
+        game_id: String,
+        seat: u8,
+        archive: String,
+        setup: AgentSetup,
+    },
+    /// The attempt kept in `archive` stopped before its job was done.
+    Failed {
+        game_id: String,
+        seat: u8,
+        archive: String,
+        error: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,11 +166,25 @@ async fn serve_runner(arena: Arc<Arena>, stream: UnixStream, stop: CancellationT
             }
             line = lines.next_line() => match line {
                 Ok(Some(line)) => {
-                    if let Ok(FromRunner::Offers { agents }) = serde_json::from_str(&line) {
-                        let arena = arena.clone();
-                        let _ = tokio::task::spawn_blocking(move || arena.offers_changed(id, agents))
-                            .await;
-                    }
+                    let Ok(message) = serde_json::from_str::<FromRunner>(&line) else {
+                        continue;
+                    };
+                    let arena = arena.clone();
+                    let _ = tokio::task::spawn_blocking(move || match message {
+                        FromRunner::Offers { agents } => arena.offers_changed(id, agents),
+                        FromRunner::Attempt { game_id, seat, archive, setup } => {
+                            if let Err(e) = arena.hub.agent_attempt(&game_id, seat, archive, setup) {
+                                eprintln!("dominion: an agent attempt at {game_id}: {e}");
+                            }
+                        }
+                        FromRunner::Failed { game_id, seat, archive, error } => {
+                            if let Err(e) = arena.hub.agent_failed(&game_id, seat, &archive, &error) {
+                                eprintln!("dominion: an agent failure at {game_id}: {e}");
+                            }
+                        }
+                        FromRunner::Hello { .. } => {}
+                    })
+                    .await;
                 }
                 _ => break,
             },

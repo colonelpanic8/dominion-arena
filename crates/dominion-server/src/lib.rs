@@ -27,6 +27,12 @@ pub mod store;
 pub mod t3;
 mod transcript;
 
+/// The commit this build is from, where that is known.
+pub fn commit() -> Option<String> {
+    let commit = env!("DOMINION_COMMIT");
+    (!commit.is_empty()).then(|| commit.to_string())
+}
+
 use dominion_agent::GlossaryEntry;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
