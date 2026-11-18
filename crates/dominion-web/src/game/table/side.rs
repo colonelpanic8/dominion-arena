@@ -114,7 +114,8 @@ pub fn Log(
     }));
     let mut toggled = use_signal(HashMap::<usize, bool>::new);
     let short = initials(&names);
-    let header = crate::game::meta::log_header(game_id.as_deref(), board.rated, board.timed);
+    let header =
+        crate::game::meta::log_header(game_id.as_deref(), board.rated, board.voided, board.timed);
     let mut stick = use_signal(|| true);
     let len = entries.len();
     use_effect(use_reactive!(|len| {

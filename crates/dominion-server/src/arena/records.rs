@@ -63,6 +63,7 @@ impl Arena {
                 });
             }
             let rated = meta.rated && accounts.iter().all(Option::is_some);
+            let voided = meta.voided.filter(|_| accounts.iter().all(Option::is_some));
             let before: Vec<rating::Rating> = (accounts.iter())
                 .map(|u| u.as_ref().map(|u| u.rating).unwrap_or_default())
                 .collect();
@@ -72,7 +73,7 @@ impl Arena {
             let won = ranks.iter().filter(|&&r| r == 1).count() < ranks.len();
             let mut players = vec![];
             for (i, p) in result.players.iter().enumerate() {
-                if let Some(user) = &accounts[i] {
+                if let Some(user) = accounts[i].as_ref().filter(|_| voided.is_none()) {
                     let tally = Tally {
                         user: &user.id,
                         win: p.rank == 1 && won,
@@ -108,6 +109,7 @@ impl Arena {
                 ended: now,
                 source: meta.source,
                 rated,
+                voided,
                 reason: (meta.ended.clone())
                     .or(result.reason.clone())
                     .unwrap_or_default(),
@@ -351,6 +353,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
         started: record.started,
         ended: record.ended,
         rated: record.rated,
+        voided: record.voided,
         reason: record.reason,
         kingdom: record.kingdom,
         landscapes: record.landscapes,

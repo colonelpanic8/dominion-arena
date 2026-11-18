@@ -82,7 +82,7 @@ pub enum Beyond {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {
-    /// Finished games against other players, rated or not.
+    /// Finished games against other players, rated or not; no voided game.
     pub games: u32,
     pub wins: u32,
 }
@@ -731,6 +731,9 @@ pub enum Source {
 pub struct GameMeta {
     pub source: Source,
     pub rated: bool,
+    /// It was to be rated, and was taken out of the rated record.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub voided: bool,
     pub watchable: bool,
     pub timed: bool,
     /// Per seat: the account playing it, if one is.
@@ -913,7 +916,12 @@ pub struct GameRecord {
     pub started: u64,
     pub ended: u64,
     pub source: Source,
+    /// It counts for its players' ratings. A voided game doesn't.
     pub rated: bool,
+    /// When it was voided, in milliseconds since the Unix epoch: a rated game taken out of
+    /// the record, which changes no rating and counts in no tally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voided: Option<u64>,
     /// The view's end reason (`provinces-gone`, ...), or `resigned` / `abandoned`.
     pub reason: String,
     pub kingdom: Vec<String>,
@@ -989,7 +997,7 @@ pub struct HistoryQuery {
     pub limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub venue: Option<Venue>,
-    /// Rated games only.
+    /// Rated games only: no voided game.
     #[serde(default, skip_serializing_if = "is_false")]
     pub rated: bool,
     /// Games with a player, the account behind a seat or a card whose name contains this.
@@ -1074,6 +1082,9 @@ pub struct PastGame {
     pub started: u64,
     pub ended: u64,
     pub rated: bool,
+    /// When it was taken out of the rated record (`GameRecord::voided`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voided: Option<u64>,
     /// How it ended: `provinces-gone`, `resigned`, `abandoned`, ...
     pub reason: String,
     pub kingdom: Vec<String>,
