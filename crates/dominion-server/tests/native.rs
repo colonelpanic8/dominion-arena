@@ -34,9 +34,14 @@ if 'fixture:brief' in prompt:
     assert 'your final reply is your debrief' in prompt
 if 'fixture:transient' in prompt:
     # The token is the only file mounted from the host, so a mark on it outlives the attempt.
-    token = Path('/home/agent/.gemini/antigravity-cli/antigravity-oauth-token')
-    if 'failed' not in token.read_text():
-        token.write_text(token.read_text() + ' failed')
+    # Both seats start at once: only the first to lock it fails.
+    import fcntl
+    with open('/home/agent/.gemini/antigravity-cli/antigravity-oauth-token', 'r+') as token:
+        fcntl.flock(token, fcntl.LOCK_EX)
+        first = 'failed' not in token.read()
+        if first:
+            token.write(' failed')
+    if first:
         print(json.dumps({'event':'result', 'result':{'status':'ERROR', 'response':'', 'error':'Provider temporarily unavailable'}}), flush=True)
         sys.exit(1)
 if 'fixture:streaming' in prompt:
@@ -680,6 +685,12 @@ async fn runner_game(transient_failure: bool) {
     }
     assert_eq!(finished, 2);
     assert_eq!(failed, usize::from(transient_failure));
+    let meta = hub.meta(&created.game_id).unwrap();
+    let runs: Vec<_> = meta.runs.iter().flatten().collect();
+    assert_eq!(runs.len(), 2);
+    let attempts = runs.iter().flat_map(|r| &r.attempts);
+    assert_eq!(attempts.clone().count(), 2 + failed);
+    assert_eq!(attempts.filter(|a| a.error.is_some()).count(), failed);
     listener_task.abort();
 }
 

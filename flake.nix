@@ -56,6 +56,9 @@
         inherit src;
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [pkgs.makeWrapper];
+        # The commit records and agent runs name: the source has no .git.
+        DOMINION_COMMIT = self.rev or self.dirtyRev or "";
+        DOMINION_COMMIT_TIME = self.lastModifiedDate or "";
         # The tests run in `just check`.
         doCheck = false;
         postInstall = pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''

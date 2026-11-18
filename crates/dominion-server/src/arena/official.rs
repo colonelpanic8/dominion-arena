@@ -127,6 +127,7 @@ impl Arena {
                         turns: p.turns,
                         resigned: p.resigned,
                         rating: None,
+                        agent: None,
                     }
                 })
                 .collect();
@@ -140,6 +141,8 @@ impl Arena {
                 kingdom: game.kingdom.clone(),
                 landscapes: game.landscapes.clone(),
                 players,
+                seed: None,
+                version: crate::commit(),
             };
             db::add_record(tx, &record, &users)?;
             Ok(true)

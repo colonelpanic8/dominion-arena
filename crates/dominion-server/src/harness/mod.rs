@@ -39,6 +39,64 @@ pub struct Sandbox {
     pub forwarder: Option<std::path::PathBuf>,
 }
 
+/// The playbook at `dir` as a seat is given it: its commit, where git can tell, and a
+/// digest of what is in it.
+pub fn playbook(dir: &std::path::Path) -> Result<dominion_protocol::lobby::Playbook, String> {
+    use sha2::{Digest, Sha256};
+    fn walk(
+        root: &std::path::Path,
+        dir: &std::path::Path,
+        files: &mut Vec<std::path::PathBuf>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.file_name().is_some_and(|n| n == ".git") {
+                continue;
+            }
+            let meta = std::fs::metadata(&path)?;
+            if meta.is_dir() {
+                walk(root, &path, files)?;
+            } else if meta.is_file() {
+                files.push(path.strip_prefix(root).unwrap_or(&path).to_path_buf());
+            }
+        }
+        Ok(())
+    }
+    let failed = |e: std::io::Error| format!("reading the playbook {}: {e}", dir.display());
+    let mut files = vec![];
+    walk(dir, dir, &mut files).map_err(failed)?;
+    files.sort();
+    let mut hash = Sha256::new();
+    for file in &files {
+        let contents = std::fs::read(dir.join(file)).map_err(failed)?;
+        hash.update(file.to_string_lossy().as_bytes());
+        hash.update([0]);
+        hash.update((contents.len() as u64).to_le_bytes());
+        hash.update(&contents);
+    }
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    let commit = git(&["rev-parse", "HEAD"]).filter(|c| !c.is_empty());
+    let dirty = commit.is_some()
+        && git(&["status", "--porcelain", "--untracked-files=normal"])
+            .is_some_and(|s| !s.is_empty());
+    Ok(dominion_protocol::lobby::Playbook {
+        path: dir.display().to_string(),
+        commit,
+        dirty,
+        digest: format!("{:x}", hash.finalize()),
+    })
+}
+
 /// The game brief: the seat's system prompt.
 pub fn instructions(playbook: bool) -> String {
     format!(
@@ -390,5 +448,21 @@ mod tests {
         assert_eq!(kinds(&archive), ["\"final_view_unavailable\""]);
         assert!(session_end(&client, &mut archive, &job).await.is_err());
         client.close().await;
+    }
+}
+
+#[cfg(test)]
+mod playbook_tests {
+    #[test]
+    fn a_playbooks_digest_follows_its_files_and_not_its_git_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("skills")).unwrap();
+        std::fs::write(dir.path().join("skills/a.md"), "plan").unwrap();
+        let first = super::playbook(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join(".git/HEAD"), "ref").unwrap();
+        assert_eq!(super::playbook(dir.path()).unwrap().digest, first.digest);
+        std::fs::write(dir.path().join("skills/a.md"), "plan!").unwrap();
+        assert_ne!(super::playbook(dir.path()).unwrap().digest, first.digest);
     }
 }

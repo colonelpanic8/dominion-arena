@@ -2,12 +2,14 @@
 //! returns structured actions; only Dominion's bridge holds the seat credentials.
 
 use crate::house::{FromRunner, Job, Offer, ToRunner};
+use dominion_protocol::lobby::AgentSetup;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -186,6 +188,8 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
         }
         client.close().await;
     }
+    // What the seats report to the server, kept while it is away.
+    let (report, mut reports) = unbounded_channel();
     let (offered, mut offers) = tokio::sync::watch::channel(vec![]);
     let discovery = tokio::spawn(discover(settings.clone(), offered, stop.clone()));
     tokio::select! {
@@ -239,7 +243,7 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
                             Ok(ToRunner::Jobs { jobs }) => {
                                 told = jobs;
                                 stopping.retain(|task| !task.is_finished());
-                                stopping.extend(reconcile(&settings, &known, &mut playing, told.clone(), &logs));
+                                stopping.extend(reconcile(&settings, &known, &mut playing, told.clone(), &logs, &report));
                             }
                             Ok(ToRunner::Refused { agent, reason }) => {
                                 eprintln!("dominion agents: the server refused {agent}: {reason}");
@@ -252,8 +256,13 @@ pub async fn run_until(settings: Settings, stop: CancellationToken) -> Result<()
                             break;
                         }
                         let agents = remember(&mut known, &offers.borrow_and_update());
-                        stopping.extend(reconcile(&settings, &known, &mut playing, told.clone(), &logs));
+                        stopping.extend(reconcile(&settings, &known, &mut playing, told.clone(), &logs, &report));
                         if send(&mut write, &FromRunner::Offers { agents }).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(message) = reports.recv() => {
+                        if send(&mut write, &message).await.is_err() {
                             break;
                         }
                     }
@@ -346,6 +355,7 @@ fn reconcile(
     playing: &mut HashMap<Key, Playing>,
     jobs: Vec<Job>,
     logs: &Path,
+    report: &UnboundedSender<FromRunner>,
 ) -> Vec<JoinHandle<()>> {
     let wanted: HashMap<Key, Job> = (jobs.into_iter())
         .map(|j| ((j.game_id.clone(), j.seat), j))
@@ -381,11 +391,10 @@ fn reconcile(
         let task = tokio::spawn(keep_playing(
             spec.clone(),
             job.clone(),
-            settings.server.clone(),
+            settings.clone(),
             log,
             stop.clone(),
-            settings.t3code.clone(),
-            settings.sandbox.clone(),
+            report.clone(),
         ));
         playing.insert(key, Playing { job, stop, task });
     }
@@ -395,15 +404,21 @@ fn reconcile(
 async fn keep_playing(
     spec: AgentSpec,
     job: Job,
-    server: String,
+    settings: Settings,
     logs: PathBuf,
     stop: CancellationToken,
-    t3code: Option<crate::t3::Settings>,
-    sandbox: crate::harness::Sandbox,
+    report: UnboundedSender<FromRunner>,
 ) {
+    let Settings {
+        server,
+        t3code,
+        sandbox,
+        ..
+    } = settings;
     let mut retry = RECONNECT;
     let mut failures = 0;
     while !stop.is_cancelled() {
+        let mut archived = String::new();
         let result = async {
             let mut archive = crate::archive::Archive::create(&logs)?;
             eprintln!(
@@ -412,6 +427,19 @@ async fn keep_playing(
                 job.game_id,
                 archive.dir.display()
             );
+            let setup = setup(&spec, &sandbox).await;
+            archive.record("setup", serde_json::to_value(&setup).expect("serializable"))?;
+            archived = (archive.dir.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if !job.official {
+                let _ = report.send(FromRunner::Attempt {
+                    game_id: job.game_id.clone(),
+                    seat: job.seat,
+                    archive: archived.clone(),
+                    setup,
+                });
+            }
             let cancelled = CancellationToken::new();
             let play = async {
                 match (spec.program, &t3code) {
@@ -469,6 +497,14 @@ async fn keep_playing(
         if stop.is_cancelled() {
             return;
         }
+        if !job.official && !archived.is_empty() {
+            let _ = report.send(FromRunner::Failed {
+                game_id: job.game_id.clone(),
+                seat: job.seat,
+                archive: archived,
+                error: error.clone(),
+            });
+        }
         failures += 1;
         if failures >= 3
             || error.contains("agent finished without submitting a move")
@@ -492,5 +528,30 @@ async fn keep_playing(
             () = tokio::time::sleep(retry) => {},
         }
         retry = (retry * 2).min(Duration::from_secs(60));
+    }
+}
+
+/// What plays a seat: the agent's profile, this build, and the playbook it is given.
+async fn setup(spec: &AgentSpec, sandbox: &crate::harness::Sandbox) -> AgentSetup {
+    let dir = sandbox
+        .playbook
+        .clone()
+        .filter(|_| spec.program != Program::T3Code);
+    let playbook = match dir {
+        None => None,
+        Some(dir) => tokio::task::spawn_blocking(move || crate::harness::playbook(&dir))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|r| r)
+            .inspect_err(|e| eprintln!("dominion agents: {e}"))
+            .ok(),
+    };
+    AgentSetup {
+        agent: spec.name.clone(),
+        program: spec.program.label().into(),
+        model: spec.model.clone(),
+        effort: spec.effort.clone(),
+        version: crate::commit(),
+        playbook,
     }
 }

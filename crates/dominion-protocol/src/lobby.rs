@@ -766,6 +766,68 @@ pub struct RecordPlayer {
     /// In a rated game: their rating before and after it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<(f64, f64)>,
+    /// For one of the server's agents: what played the seat, as its runner reported it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentRun>,
+}
+
+/// What played a seat for one of the server's agents: its setup when it first started,
+/// and every attempt, each a new conversation picking the seat up where it stood.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRun {
+    #[serde(flatten)]
+    pub setup: AgentSetup,
+    pub attempts: Vec<AgentAttempt>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSetup {
+    /// The agent's name.
+    pub agent: String,
+    /// What runs it ("Claude Code", "OpenAI").
+    pub program: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// The commit of the `dominion` build running it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// The playbook it was given, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playbook: Option<Playbook>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAttempt {
+    /// Milliseconds since the Unix epoch.
+    pub started: u64,
+    /// Its archive's directory name, under the runner's `archives`.
+    pub archive: String,
+    /// Why it stopped before its job was done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Its setup, where it differs from the first attempt's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup: Option<AgentSetup>,
+}
+
+/// A dominion-playbook checkout as an agent was given it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Playbook {
+    pub path: String,
+    /// Its git commit, where it is a git checkout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+    /// Files differ from that commit.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dirty: bool,
+    /// SHA-256 of its files' paths and contents, `.git` aside: what the agent could read.
+    pub digest: String,
 }
 
 /// A finished game.
@@ -783,6 +845,12 @@ pub struct GameRecord {
     pub kingdom: Vec<String>,
     pub landscapes: Vec<String>,
     pub players: Vec<RecordPlayer>,
+    /// The game's seed: the same setup and seed deal each seat the same starting cards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    /// The commit of the `dominion` build that hosted it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 /// `GET /api/users/{name}`.
