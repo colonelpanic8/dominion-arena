@@ -609,9 +609,12 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-tseat-icon .lb-seat-mark { width: 62%; height: 62%; }
 .lb-tseat-icon.open { background: none; box-shadow: none; outline: 1px dashed #8f8a80; outline-offset: -1px; }
 .lb-deck-peek {
+  --vh: 1vh;
   position: fixed;
   z-index: 2000;
   box-sizing: border-box;
+  max-height: calc(100vh - 8px);
+  overflow: hidden;
   padding: 1vh 1.2vh 1.2vh;
   border: 1px solid #c9a24d;
   border-radius: .6vh;
@@ -621,14 +624,8 @@ a.lb-user-name:hover { text-decoration: underline; }
   font: 1.8vh var(--ui);
   color: #eee8dc;
 }
-.lb-deck-peek-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1vh; }
-.lb-deck-peek-name { font-weight: 700; font-size: 2.2vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lb-deck-peek-sum { flex-shrink: 0; color: #f5bc34; font-weight: 700; }
-.lb-deck-peek-what { color: #c8c0ae; font-size: 1.5vh; margin-top: .2vh; }
-.lb-deck-peek-cards { display: grid; grid-template-columns: 1fr 1fr; gap: .4vh .8vh; margin-top: .8vh; }
-.lb-deck-peek-row { display: flex; align-items: center; gap: .6vh; min-width: 0; }
-.lb-deck-peek-count { width: 2.6vh; flex-shrink: 0; text-align: right; font-weight: 700; }
-.lb-deck-peek-strip { flex: 1; min-width: 0; }
+.lb-deck-peek-what { color: #c8c0ae; font-size: 1.5vh; margin-bottom: .8vh; }
+.lb-deck-peek .dt-decks-player { position: static; }
 .lb-table-play { width: 10%; font-size: 3vh; }
 .lb-tables-empty { margin-top: 4vh; font-size: 2vh; }
 

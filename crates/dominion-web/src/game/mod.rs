@@ -4,6 +4,7 @@
 
 pub mod board;
 mod chat;
+pub mod counts;
 pub mod entry;
 pub mod interaction;
 pub mod logfmt;

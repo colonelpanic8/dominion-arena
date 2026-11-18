@@ -474,14 +474,13 @@ pub fn card_order(cards: &CardDb, a: &str, b: &str) -> Ordering {
     key(a).cmp(&key(b)).then_with(|| a.cmp(b))
 }
 
-/// Every card any of `players` is known to own, in [`card_order`], with how many of it
-/// each owns.
-pub fn owned_side_by_side(players: &[&PlayerEntry], cards: &CardDb) -> Vec<(String, Vec<u32>)> {
+/// Every card in any of `owned` (a player's cards by name each), in [`card_order`], with
+/// how many of it each has.
+pub fn side_by_side(owned: &[Vec<(&str, u32)>], cards: &CardDb) -> Vec<(String, Vec<u32>)> {
     let mut rows: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
-    for (i, p) in players.iter().enumerate() {
-        for s in &p.owned.known {
-            rows.entry(&s.card)
-                .or_insert_with(|| vec![0; players.len()])[i] += s.count;
+    for (i, p) in owned.iter().enumerate() {
+        for &(card, n) in p {
+            rows.entry(card).or_insert_with(|| vec![0; owned.len()])[i] += n;
         }
     }
     let mut out: Vec<_> = rows.into_iter().map(|(c, n)| (c.to_string(), n)).collect();

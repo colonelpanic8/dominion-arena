@@ -10,9 +10,8 @@ use super::{Composition, DecksView, Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
 use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::{
-    Badge, Board, CountsKey, PlayerEntry, Stack, Uncertain, Zone, owned_side_by_side, sort_counts,
-};
+use crate::game::board::{Badge, Board, PlayerEntry, Stack, Uncertain, Zone, side_by_side};
+use crate::game::counts::{CardCounts, CountsColumn};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -585,7 +584,7 @@ pub fn AllDecks(board: Rc<Board>) -> Element {
             div { class: "dt-composition-head",
                 span { "Deck compositions" }
                 div { class: "dt-composition-actions",
-                    for (m, label) in [(DecksView::Columns, "Side by side"), (DecksView::Counts, "Card counts")] {
+                    for (m, label) in [(DecksView::Counts, "Card counts"), (DecksView::Columns, "Side by side")] {
                         button {
                             key: "{label}",
                             class: "dt-composition-tab",
@@ -652,39 +651,6 @@ fn DecksColumns(board: Rc<Board>) -> Element {
     }
 }
 
-/// A column's header in the card counts: sorts the rows by it.
-#[component]
-fn CountsHeader(
-    class: String,
-    name: String,
-    sub: String,
-    title: String,
-    /// Whether the rows are sorted by this column, and if so whether smallest first.
-    sorted: Option<bool>,
-    onclick: EventHandler<()>,
-) -> Element {
-    let arrow = match sorted {
-        Some(true) => " ▲",
-        Some(false) => " ▼",
-        None => "",
-    };
-    rsx! {
-        button {
-            class: "dt-decks-player {class}",
-            class: if sorted.is_some() { "sorted" },
-            title: "{title}",
-            "aria-sort": match sorted {
-                Some(true) => "ascending",
-                Some(false) => "descending",
-                None => "none",
-            },
-            onclick: move |_| onclick.call(()),
-            span { class: "dt-decks-name", "{name}{arrow}" }
-            span { class: "dt-decks-total", "{sub}" }
-        }
-    }
-}
-
 /// A row per card any player owns, with how many each owns, sortable by any player's
 /// counts; two players also get the difference between them.
 #[component]
@@ -692,105 +658,36 @@ fn DecksCounts(board: Rc<Board>) -> Element {
     let cards = use_cards();
     let mut sort = use_table().decks_sort;
     let players: Vec<&PlayerEntry> = board.players().collect();
-    let pair = players.len() == 2;
-    let mut rows = owned_side_by_side(&players, &cards);
-    let order = sort();
-    let sorted_by = order.by.filter(|k| match k {
-        CountsKey::Player(i) => *i < players.len(),
-        CountsKey::Delta => pair,
-    });
-    if let Some(key) = sorted_by {
-        sort_counts(&mut rows, key, order.ascending);
-    }
-    let sorted = move |key| (sorted_by == Some(key)).then_some(order.ascending);
-    let unknown: Vec<u32> = players.iter().map(|p| p.owned.unknown).collect();
-    let columns = format!(
-        "grid-template-columns: calc(16 * var(--vh)) repeat({}, minmax(0, 1fr));",
-        players.len() + usize::from(pair)
-    );
-    let cell = |n: u32, most: bool| {
-        rsx! {
-            div {
-                class: "dt-decks-n",
-                class: if n == 0 { "none" },
-                class: if most { "most" },
-                if n == 0 { "–" } else { "{n}" }
-            }
-        }
-    };
-    let most = |counts: &[u32]| {
-        let max = counts.iter().copied().max().unwrap_or(0);
-        let differ = counts.iter().any(|&n| n != max);
-        move |n: u32| differ && n == max
-    };
-    let seats: Vec<u8> = players.iter().map(|p| p.seat).collect();
-    let delta = |a: u32, b: u32| {
-        let d = i64::from(a) - i64::from(b);
-        let leader = match d.signum() {
-            1 => seat_class(seats[0]),
-            -1 => seat_class(seats[1]),
-            _ => String::new(),
-        };
-        rsx! {
-            div {
-                class: "dt-decks-n dt-decks-delta {leader}",
-                class: if d == 0 { "none" },
-                if d == 0 { "–" } else { "{d:+}" }
-            }
-        }
-    };
-    let total_delta = pair.then(|| {
-        let d = i64::from(players[0].owned.count) - i64::from(players[1].owned.count);
-        if d == 0 {
-            "even".to_string()
-        } else {
-            format!("{d:+} cards")
-        }
-    });
+    let owned: Vec<Vec<(&str, u32)>> = players
+        .iter()
+        .map(|p| {
+            p.owned
+                .known
+                .iter()
+                .map(|s| (s.card.as_str(), s.count))
+                .collect()
+        })
+        .collect();
+    let rows = side_by_side(&owned, &cards);
+    let columns = players
+        .iter()
+        .map(|p| CountsColumn {
+            seat: p.seat,
+            name: p.name.clone(),
+            cards: p.owned.count,
+            sub: format!("{} cards", p.owned.count),
+            note: None,
+        })
+        .collect();
+    let unknown = players.iter().map(|p| p.owned.unknown).collect();
     rsx! {
-        div { class: "dt-decks-grid", style: "{columns}",
-            div {}
-            for (i, p) in players.iter().enumerate() {
-                CountsHeader {
-                    key: "h{p.seat}",
-                    class: seat_class(p.seat),
-                    name: p.name.clone(),
-                    sub: format!("{} cards", p.owned.count),
-                    title: format!("Sort by {}'s counts", p.name),
-                    sorted: sorted(CountsKey::Player(i)),
-                    onclick: move |_| sort.set(sort().toggle(CountsKey::Player(i))),
-                }
-            }
-            if let Some(sub) = total_delta {
-                CountsHeader {
-                    class: "dt-decks-diff",
-                    name: "Difference",
-                    sub,
-                    title: format!("Sort by {} − {}", players[0].name, players[1].name),
-                    sorted: sorted(CountsKey::Delta),
-                    onclick: move |_| sort.set(sort().toggle(CountsKey::Delta)),
-                }
-            }
-            for (card, counts) in rows.iter() {
-                div { key: "c{card}", class: "dt-decks-card",
-                    TableCard { name: card.clone(), size: CardSize::Micro }
-                }
-                for (i, &n) in counts.iter().enumerate() {
-                    Fragment { key: "{card}{i}", {cell(n, most(counts)(n))} }
-                }
-                if pair {
-                    Fragment { key: "{card}d", {delta(counts[0], counts[1])} }
-                }
-            }
-            if unknown.iter().any(|&n| n > 0) {
-                div { class: "dt-decks-card dt-decks-label", "Unknown" }
-                for (i, &n) in unknown.iter().enumerate() {
-                    Fragment { key: "u{i}", {cell(n, false)} }
-                }
-                if pair {
-                    div {}
-                }
-            }
+        CardCounts {
+            columns,
+            rows,
+            unknown,
+            sort: sort(),
+            on_sort: move |key| sort.set(sort().toggle(key)),
+            card: move |name: String| rsx! { TableCard { name, size: CardSize::Micro } },
         }
     }
 }

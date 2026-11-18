@@ -15,7 +15,8 @@ mod side;
 mod sound;
 mod supply;
 
-use super::board::{Board, CountsKey, Stack, board};
+use super::board::{Board, Stack, board};
+use super::counts::DecksSort;
 use super::interaction::{Interaction, TreasureRun, interaction, tone};
 use super::state::{Selection, answers_on_click};
 use super::{use_game, wording};
@@ -134,34 +135,10 @@ pub enum Composition {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum DecksView {
     /// Each player's own deck composition, side by side.
-    #[default]
     Columns,
     /// A row per card, with how many each player owns.
+    #[default]
     Counts,
-}
-
-/// The order of the card counts' rows: the Supply's, or by a column's numbers.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct DecksSort {
-    pub by: Option<CountsKey>,
-    pub ascending: bool,
-}
-
-impl DecksSort {
-    /// Clicking a column: largest first, then smallest first, then the Supply's order.
-    pub fn toggle(self, key: CountsKey) -> Self {
-        match self.by {
-            Some(k) if k == key && !self.ascending => Self {
-                by: Some(key),
-                ascending: true,
-            },
-            Some(k) if k == key => Self::default(),
-            _ => Self {
-                by: Some(key),
-                ascending: false,
-            },
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -866,7 +843,7 @@ pub fn TableGame(controls: Element) -> Element {
                     }
                     button {
                         "data-action": "all-decks",
-                        title: "Every player's deck composition, side by side",
+                        title: "Every player's deck composition",
                         onclick: move |e| { e.stop_propagation(); ctx.open(players::all_decks_popup()); },
                         "Decks"
                     }

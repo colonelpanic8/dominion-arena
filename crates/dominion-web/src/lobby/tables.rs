@@ -2,7 +2,7 @@
 //! Join where a seat is open), then the running games played without one, with Play for a
 //! seat held here and Watch where watching is allowed. Finished games are History's.
 //! A running game's seats show whose turn it is and, where anyone may watch it, each
-//! seat's VP, with the cards it owns while hovered.
+//! seat's VP, and while its seats are hovered, the cards each one owns side by side.
 
 use super::avatar::Avatar;
 use super::history::{SeatIcon, agent_line};
@@ -12,8 +12,8 @@ use super::{LobbyFrame, Tab, join_table, use_lobby, use_toast};
 use crate::account::use_account;
 use crate::api;
 use crate::app::{Route, use_cards};
-use crate::card::{CardSize, CardView};
-use crate::game::board::card_order;
+use crate::game::board::side_by_side;
+use crate::game::counts::{CardCounts, CountsColumn, DecksSort};
 use crate::platform;
 use crate::session;
 use dioxus::prelude::*;
@@ -339,7 +339,7 @@ pub fn TablesTab() -> Element {
     let mut players = use_signal(|| [true; 3]);
     let mut statuses = use_signal(|| [true; 3]);
     let mut sort = use_signal(|| 0u8);
-    let peek = use_signal(|| None::<Peek>);
+    let mut peek = use_signal(|| None::<Peek>);
 
     let held = session::all();
     let listed = games().and_then(|g| g.ok()).unwrap_or_default();
@@ -436,6 +436,8 @@ pub fn TablesTab() -> Element {
                             let (table, game, action) = (l.table.clone(), l.game.clone(), l.action);
                             let official = l.official.clone();
                             let turn = l.progress.as_ref().map(turn_text);
+                            let peekable = l.progress.as_ref().is_some_and(|p| !p.seats.is_empty());
+                            let line = key.clone();
                             rsx! {
                                 div {
                                     key: "{key}",
@@ -444,16 +446,22 @@ pub fn TablesTab() -> Element {
                                     "data-game": l.game.clone().unwrap_or_default(),
                                     title: l.game.clone().map(|i| format!("Game {i}")).unwrap_or_default(),
                                     div { class: "lb-table-host", title: "{l.title}", "{l.label}" }
-                                    div { class: "lb-table-players",
+                                    div {
+                                        class: "lb-table-players",
+                                        onmouseenter: move |e: MouseEvent| {
+                                            if peekable {
+                                                let c = e.client_coordinates();
+                                                peek.set(Some((line.clone(), (c.x, c.y))));
+                                            }
+                                        },
+                                        onmouseleave: move |_| peek.set(None),
                                         for (s, seat) in l.seats.iter().enumerate() {
                                             SeatChip {
                                                 key: "{s}",
                                                 seat: seat.clone(),
                                                 index: s as u8,
-                                                line: key.clone(),
                                                 progress: l.progress.clone(),
                                                 deciding: l.deciding,
-                                                peek,
                                             }
                                         }
                                     }
@@ -495,9 +503,9 @@ pub fn TablesTab() -> Element {
                         }
                     }
                 }
-                if let Some((line, seat, at)) = peek() {
+                if let Some((line, at)) = peek() {
                     if let Some(l) = peeked.iter().find(|l| l.key() == line) {
-                        DeckPeek { line: l.clone(), seat, at }
+                        GamePeek { line: l.clone(), at }
                     }
                 }
             }
@@ -505,9 +513,8 @@ pub fn TablesTab() -> Element {
     }
 }
 
-/// The seat whose cards are shown: its line's key, its index, and where the pointer
-/// entered it.
-type Peek = (String, u8, (f64, f64));
+/// The game whose cards are shown: its line's key, and where the pointer entered its seats.
+type Peek = (String, (f64, f64));
 
 /// "Turn 7 · Buy".
 fn turn_text(p: &Progress) -> String {
@@ -547,16 +554,9 @@ fn SeatFace(seat: Seat) -> Element {
 }
 
 /// A seat on a line: its face, and in a running game its name, VP and whether it is that
-/// seat's turn. Hovering one whose cards are known shows them.
+/// seat's turn.
 #[component]
-fn SeatChip(
-    seat: Seat,
-    index: u8,
-    line: String,
-    progress: Option<Progress>,
-    deciding: Option<u8>,
-    peek: Signal<Option<Peek>>,
-) -> Element {
+fn SeatChip(seat: Seat, index: u8, progress: Option<Progress>, deciding: Option<u8>) -> Element {
     let Some(p) = progress else {
         let title = seat.title();
         return rsx! {
@@ -586,16 +586,6 @@ fn SeatChip(
             class,
             title: if has_cards { String::new() } else { title.clone() },
             "data-seat": "{index}",
-            onmouseenter: move |e: MouseEvent| {
-                if has_cards {
-                    let c = e.client_coordinates();
-                    peek.set(Some((line.clone(), index, (c.x, c.y))));
-                }
-            },
-            onmouseleave: move |_| {
-                let mut peek = peek;
-                peek.set(None);
-            },
             SeatFace { seat: seat.clone() }
             span { class: "lb-tseat-name", "{name}" }
             if let Some(k) = known {
@@ -605,32 +595,45 @@ fn SeatChip(
     }
 }
 
-/// The cards a seat owns, beside the pointer, in dominion.games' order, as of the latest
-/// listing.
+/// The cards each seat owns, side by side beside the pointer, as of the latest listing.
 #[component]
-fn DeckPeek(line: Line, seat: u8, at: (f64, f64)) -> Element {
+fn GamePeek(line: Line, at: (f64, f64)) -> Element {
     let cards = use_cards();
     let Some(p) = line.progress.as_ref() else {
         return rsx! {};
     };
-    let Some(known) = p.seats.get(seat as usize) else {
-        return rsx! {};
-    };
-    let who = line.seats.get(seat as usize);
-    let name = who.and_then(Seat::name).unwrap_or_default().to_string();
-    let what = who.map(Seat::title).unwrap_or_default();
-    let mut what = (what.strip_prefix(&format!("{name}: ")))
-        .unwrap_or(&what)
-        .to_string();
-    if let Some(first) = what.get_mut(..1) {
-        first.make_ascii_uppercase();
-    }
-    let mut owned: Vec<(&String, &u32)> = known.owned.iter().collect();
-    owned.sort_by(|a, b| card_order(&cards, a.0, b.0));
-    let total: u32 = known.owned.values().sum();
+    let owned: Vec<Vec<(&str, u32)>> = p
+        .seats
+        .iter()
+        .map(|s| s.owned.iter().map(|(c, &n)| (c.as_str(), n)).collect())
+        .collect();
+    let rows = side_by_side(&owned, &cards);
+    let columns: Vec<CountsColumn> = p
+        .seats
+        .iter()
+        .enumerate()
+        .map(|(i, known)| {
+            let who = line.seats.get(i);
+            let name = who.and_then(Seat::name).unwrap_or_default().to_string();
+            let cards: u32 = known.owned.values().sum();
+            CountsColumn {
+                seat: i as u8,
+                note: who.and_then(|w| plays(w, &name)),
+                sub: format!("{} VP · {cards} cards", known.vp),
+                name,
+                cards,
+            }
+        })
+        .collect();
+    let turn = columns
+        .get(p.player as usize)
+        .map(|c| format!("{}'s turn · {}", c.name, turn_text(p)));
     let (vw, vh) = platform::viewport();
-    let rows = owned.len().div_ceil(2) as f64;
-    let (width, height) = (vw * 0.26, vh * (0.09 + rows * 0.034));
+    let n = columns.len() + usize::from(columns.len() == 2);
+    // In the popup's --vh: its card column, a column per seat and the padding.
+    let unit = vh * 0.01;
+    let width = (unit * (19.0 + 15.0 * n as f64)).min(vw - 8.0);
+    let height = unit * (12.0 + 3.6 * rows.len() as f64);
     let (x, y) = at;
     let left = if x + 16.0 + width > vw {
         (x - 16.0 - width).max(4.0)
@@ -638,29 +641,25 @@ fn DeckPeek(line: Line, seat: u8, at: (f64, f64)) -> Element {
         x + 16.0
     };
     let top = (y - height / 2.0).clamp(4.0, (vh - height - 4.0).max(4.0));
-    let turn = (p.player == seat).then(|| turn_text(p));
     rsx! {
         div { class: "lb-deck-peek", style: "left: {left}px; top: {top}px; width: {width}px;",
-            div { class: "lb-deck-peek-head",
-                span { class: "lb-deck-peek-name", "{name}" }
-                span { class: "lb-deck-peek-sum", "{known.vp} VP · {total} cards" }
-            }
-            if what != name {
-                div { class: "lb-deck-peek-what", "{what}" }
-            }
             if let Some(turn) = turn {
-                div { class: "lb-deck-peek-what", "Their turn: {turn}" }
+                div { class: "lb-deck-peek-what", "{turn}" }
             }
-            div { class: "lb-deck-peek-cards",
-                for (card, n) in owned {
-                    div { key: "{card}", class: "lb-deck-peek-row",
-                        span { class: "lb-deck-peek-count", "{n}" }
-                        div { class: "lb-deck-peek-strip",
-                            CardView { name: card.clone(), size: CardSize::Micro }
-                        }
-                    }
-                }
-            }
+            CardCounts { columns, rows, sort: DecksSort::default() }
         }
     }
+}
+
+/// What plays a seat, when its name doesn't say: "Antigravity · gemini-4-hydrogen-high".
+fn plays(seat: &Seat, name: &str) -> Option<String> {
+    let what = seat.title();
+    let mut what = what
+        .strip_prefix(&format!("{name}: "))
+        .unwrap_or(&what)
+        .to_string();
+    if let Some(first) = what.get_mut(..1) {
+        first.make_ascii_uppercase();
+    }
+    (what != name).then_some(what)
 }

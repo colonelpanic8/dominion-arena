@@ -31,13 +31,6 @@ body:has(.dt-root) .topbar { display: none; }
 }
 .dt-loading-text { position: absolute; left: 40%; top: 45%; }
 
-/* Player colours, by seat. */
-.dt-p0 { --pc: rgb(255, 0, 0); }
-.dt-p1 { --pc: rgb(80, 160, 255); }
-.dt-p2 { --pc: rgb(0, 128, 0); }
-.dt-p3 { --pc: rgb(255, 255, 0); }
-.dt-p4 { --pc: rgb(255, 165, 0); }
-.dt-p5 { --pc: rgb(128, 0, 128); }
 .dt-pc, .dt-lp { color: var(--pc); }
 
 /* Card names in text, by type. */
@@ -701,35 +694,3 @@ body:has(.dt-root) .topbar { display: none; }
   padding-top: calc(1.6 * var(--vh));
   border-top: 1px solid rgba(211, 185, 119, 0.35);
 }
-.dt-decks-grid {
-  display: grid;
-  align-items: center;
-  gap: calc(0.5 * var(--vh)) calc(1.2 * var(--vh));
-}
-.dt-decks-player {
-  position: sticky;
-  top: calc(-1.8 * var(--vh));
-  z-index: 1;
-  display: grid;
-  justify-items: center;
-  padding: calc(0.6 * var(--vh)) calc(0.8 * var(--vh));
-  border: 1px solid rgba(211, 185, 119, 0.45);
-  border-bottom: calc(0.4 * var(--vh)) solid var(--pc);
-  border-radius: calc(0.5 * var(--vh));
-  background: rgb(46, 38, 28);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  min-width: 0;
-}
-.dt-decks-player:hover { background: rgb(64, 54, 40); }
-.dt-decks-player.sorted { background: rgb(70, 58, 40); }
-.dt-decks-diff { --pc: rgba(211, 185, 119, 0.6); }
-.dt-decks-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(1.9 * var(--vh)); font-weight: 700; }
-.dt-decks-total { font-size: calc(1.5 * var(--vh)); color: rgba(245, 241, 232, 0.72); }
-.dt-decks-card > .dt-c { width: 100%; }
-.dt-decks-label { font-size: calc(1.7 * var(--vh)); font-weight: 650; padding-left: calc(0.6 * var(--vh)); }
-.dt-decks-n { text-align: center; font-size: calc(2.2 * var(--vh)); font-weight: 650; font-variant-numeric: tabular-nums; }
-.dt-decks-n.none { color: rgba(245, 241, 232, 0.3); }
-.dt-decks-n.most { color: rgb(240, 208, 128); font-weight: 800; }
-.dt-decks-delta { color: var(--pc); }
