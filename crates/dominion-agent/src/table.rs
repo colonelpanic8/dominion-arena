@@ -202,7 +202,7 @@ impl Recording {
                  one (version {RECORDING_VERSION}) can't go on with"
             ));
         }
-        match serde_json::from_value(saved["state"].clone()) {
+        match Recorder::deserialize(&saved["state"]) {
             Ok(recorder) => Recording::On(Box::new(recorder)),
             Err(e) => Recording::Stopped(format!("its recorder can't be read: {e}")),
         }
@@ -245,7 +245,7 @@ impl TryFrom<Saved> for Table {
     fn try_from(saved: Saved) -> Result<Table, String> {
         let mut recording = saved.recorder.map(Recording::load);
         let mut game = saved.game;
-        let parsed: Result<Game, _> = serde_json::from_value(game.clone());
+        let parsed = Game::deserialize(&game);
         let mut game = match parsed {
             Ok(game) => game,
             // A journal or chance this build can't read: the game without them.
