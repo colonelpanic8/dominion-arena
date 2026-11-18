@@ -1,5 +1,5 @@
 //! The operator's socket: `dominion games` lists the games a running `dominion serve`
-//! hosts and retires them. A connection sends one request line and reads one reply line,
+//! hosts, retires them, and voids finished games' ratings. A connection sends one request line and reads one reply line,
 //! both JSON. Only the socket's owner may connect.
 
 use crate::arena::Arena;
@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 pub enum Request {
     List,
     Retire { games: Vec<String> },
+    Void { games: Vec<String>, dry_run: bool },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,6 +29,10 @@ pub enum Reply {
         retired: Vec<String>,
         /// Each game not retired, with why.
         refused: Vec<(String, String)>,
+    },
+    Voided {
+        voided: crate::arena::Voided,
+        dry_run: bool,
     },
     Error {
         message: String,
@@ -99,6 +104,12 @@ fn handle(arena: &Arena, request: Request) -> Reply {
             }
             Reply::Retired { retired, refused }
         }
+        Request::Void { games, dry_run } => match arena.void_ratings(&games, dry_run) {
+            Ok(voided) => Reply::Voided { voided, dry_run },
+            Err(e) => Reply::Error {
+                message: e.to_string(),
+            },
+        },
     }
 }
 

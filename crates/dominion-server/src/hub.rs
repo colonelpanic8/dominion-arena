@@ -2688,6 +2688,13 @@ impl Hub {
             .collect()
     }
 
+    /// Notes that game `id` no longer counts for ratings, if it is still hosted.
+    pub fn unrate(&self, id: &str) {
+        if let Ok(game) = self.game(id) {
+            self.note(&game, |meta, _| meta.rated = false);
+        }
+    }
+
     /// Notes that game `id`'s record has been written.
     pub fn set_recorded(&self, id: &str) {
         if let Ok(game) = self.game(id) {

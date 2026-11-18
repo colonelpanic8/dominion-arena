@@ -92,6 +92,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           played each seat, kept in its record (an agent's `AgentRun` as
                           its runner reported it, else its setup as last offered; a bot's
                           owner) and shown as `PlayedBy`
+    rerate.rs             voiding games' ratings (`dominion games void`): every rating
+                          worked out again from the rated records left, refused unless the
+                          records as they stand give the ratings kept
     official.rs           the official accounts as the lobby lists them; their finished
                           games' records (no rating or tally), `OfficialRecords`
     history.rs            the history read model: `/api/history` and players' pages read
@@ -103,7 +106,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/rating.rs           Glicko-2 (pure)
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
-  src/control.rs          the control socket: `dominion games` lists and retires hosted games
+  src/control.rs          the control socket: `dominion games` lists and retires hosted
+                          games and voids finished games' ratings
   src/backfill.rs         `dominion games backfill`: streams for games saved before they
                           were recorded, replayed from their answers and checked against
                           the snapshot, each naming the history it was built from;

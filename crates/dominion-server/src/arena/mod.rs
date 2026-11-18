@@ -19,6 +19,7 @@ mod house;
 mod matching;
 mod official;
 mod records;
+mod rerate;
 mod tables;
 pub(crate) mod transcripts;
 pub use transcripts::is_official;
@@ -38,6 +39,7 @@ use tokio::sync::watch;
 
 pub use accounts::SESSION_COOKIE;
 pub use house::RunnerId;
+pub use rerate::Voided;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

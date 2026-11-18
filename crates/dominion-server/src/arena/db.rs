@@ -754,6 +754,93 @@ pub(super) fn tally(tx: &Transaction<'_>, t: &Tally<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Every Arena game's record in the order the games ended, with the accounts that
+/// played it.
+pub(super) fn arena_records(tx: &Transaction<'_>) -> Result<Vec<(GameRecord, Vec<String>)>> {
+    let mut query = tx
+        .prepare("SELECT id, record FROM games WHERE venue = 'arena' ORDER BY ended, number, id")?;
+    let rows = query.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut players = tx.prepare_cached("SELECT user FROM game_players WHERE game = ?1")?;
+    let mut out = vec![];
+    for row in rows {
+        let (id, json) = row?;
+        let record = serde_json::from_str(&json)
+            .map_err(|e| Error::Storage(format!("game {id}'s record: {e}")))?;
+        let users = players.query_map([&id], |r| r.get::<_, i64>(0))?;
+        let users = users
+            .map(|u| u.map(id_of))
+            .collect::<rusqlite::Result<_>>()?;
+        out.push((record, users));
+    }
+    Ok(out)
+}
+
+/// An account's rating, rated games and rated wins.
+pub(super) struct Rated {
+    pub id: String,
+    pub name: String,
+    pub rating: Rating,
+    pub games: u32,
+    pub wins: u32,
+}
+
+/// Every account's rating.
+pub(super) fn ratings(tx: &Transaction<'_>) -> Result<Vec<Rated>> {
+    let mut query = tx.prepare(
+        "SELECT id, name, rating, deviation, volatility, rated_at, rated_games, rated_wins \
+         FROM users",
+    )?;
+    let rows = query.query_map([], |r| {
+        Ok(Rated {
+            id: id_of(r.get(0)?),
+            name: r.get(1)?,
+            rating: Rating {
+                rating: r.get(2)?,
+                deviation: r.get(3)?,
+                volatility: r.get(4)?,
+                at: r.get::<_, i64>(5)? as u64,
+            },
+            games: r.get(6)?,
+            wins: r.get(7)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Replaces a game's record.
+pub(super) fn set_record(tx: &Transaction<'_>, record: &GameRecord) -> Result<()> {
+    let json = serde_json::to_string(record).map_err(|e| Error::Storage(e.to_string()))?;
+    tx.execute(
+        "UPDATE games SET record = ?2 WHERE id = ?1",
+        params![record.game_id, json],
+    )?;
+    Ok(())
+}
+
+/// Sets account `user`'s rating, rated games and rated wins.
+pub(super) fn set_rating(
+    tx: &Transaction<'_>,
+    user: &str,
+    r: Rating,
+    games: u32,
+    wins: u32,
+) -> Result<()> {
+    tx.execute(
+        "UPDATE users SET rating = ?2, deviation = ?3, volatility = ?4, rated_at = ?5, \
+         rated_games = ?6, rated_wins = ?7 WHERE id = ?1",
+        params![
+            row_of(user),
+            r.rating,
+            r.deviation,
+            r.volatility,
+            r.at as i64,
+            games,
+            wins
+        ],
+    )?;
+    Ok(())
+}
+
 /// Writes a finished game's record, played at `venue`, for the accounts `users` that
 /// played it.
 pub(super) fn add_record(

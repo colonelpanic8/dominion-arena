@@ -67,8 +67,8 @@ enum Command {
     /// Play the server's own agents on this machine: connect to its `agent_socket` and
     /// run Claude Code, Codex or T3 Code for every seat they hold.
     Agents,
-    /// List or retire the games a running `dominion serve` hosts, through its
-    /// `control_socket`.
+    /// List or retire the games a running `dominion serve` hosts, or void finished games'
+    /// ratings, through its `control_socket`.
     Games {
         /// The server's control socket (default from the config file).
         #[arg(long)]
@@ -105,6 +105,16 @@ enum GamesCommand {
     Retire {
         #[arg(required = true)]
         games: Vec<String>,
+    },
+    /// Make finished games unrated, and every rating what the other rated games make it,
+    /// played again in the order they ended. Refused unless the records give exactly
+    /// the ratings kept now.
+    Void {
+        #[arg(required = true)]
+        games: Vec<String>,
+        /// Say what would change, and change nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Write dominion/events@1 streams for games saved before the server recorded them,
     /// here and in `expired/`, checking each against its snapshot first. Run it with the
@@ -315,6 +325,7 @@ async fn games(
     let asked = match command {
         GamesCommand::List => Request::List,
         GamesCommand::Retire { games } => Request::Retire { games },
+        GamesCommand::Void { games, dry_run } => Request::Void { games, dry_run },
         GamesCommand::Backfill { .. } => unreachable!("run without the server"),
     };
     match request(&socket, &asked).await? {
@@ -356,6 +367,14 @@ async fn games(
             } else {
                 Err(format!("{} not retired", refused.len()))
             }
+        }
+        Reply::Voided { voided, dry_run } => {
+            let verb = if dry_run { "would void" } else { "voided" };
+            println!("{verb} {}", voided.games.join(" "));
+            for (name, before, after) in &voided.ratings {
+                println!("  {name:<24} {before:>8.1} -> {after:>8.1}");
+            }
+            Ok(())
         }
         Reply::Error { message } => Err(message),
     }

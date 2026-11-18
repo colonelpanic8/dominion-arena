@@ -886,9 +886,14 @@ python3 (`sandbox_path`). `settings` still sets any runner setting directly.
 `dominion games list` shows every game a running server hosts (finished or not, how long
 idle, where it came from, players), and `dominion games retire ID...` stops hosting games
 at once, moving their files to `expired/` as `keep_idle_days` would. It refuses an
-unfinished game of a lobby table or the server's agents, which ends by resigning. Both
-talk to `control_socket`, which only the server's user can reach; the NixOS module sets
-it and installs `dominion-games` for root: `sudo dominion-games list`.
+unfinished game of a lobby table or the server's agents, which ends by resigning.
+`dominion games void ID... [--dry-run]` makes finished games unrated and works every
+rating out again from the rated records left, in the order the games ended, printing each
+rating it changes; it refuses unless the records as they stand give exactly the ratings
+kept. A game is unrated anyway when a seat of the server's agents is abandoned: that is
+an agent failing to play. All three talk to `control_socket`, which only the server's
+user can reach; the NixOS module sets it and installs `dominion-games` for root:
+`sudo dominion-games list`.
 
 `dominion games backfill` writes `dominion/events@1` streams for the saved games, in
 `state_dir` and `expired/`, that have no whole stream: saved before the server recorded
