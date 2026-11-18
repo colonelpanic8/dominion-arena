@@ -592,9 +592,18 @@ them.
   game (`Game::create`) or changes identity (`Trace::Changed`, after `sync_journal`) is
   journaled before what it changes is read, so its cost follows it. A counter the stream
   should carry is a `Gauge`. Lasting effects are read like gauges (`Game::effects`: what
-  `View::lasting` shows, with the cards of its data that are set aside as what it holds),
-  so a change to one needs nothing; one removed is `resolved` unless its remover says
-  why (`journal_effect_end` right after removing it, the journal synced before). Phases
+  `View::lasting` shows, with `Lasting::holds` as what it holds), so a change to one
+  needs nothing; one removed is `resolved` unless its remover says why
+  (`journal_effect_end` right after removing it, the journal synced before). An effect
+  holds the cards of its data that are set aside when it is made; one that sets a card
+  aside later, after it is made, says so with `g.hold(id, card)` (`continue_lasting`
+  makes a new one, which holds what is set aside then). A holding ends by itself when
+  the card leaves the set-aside zone. Never infer a holding from what an effect's data
+  names: it may name a card for another reason (Necromancer's marker). The fold test
+  holds every effect to holding only cards set aside, a card to at most one holder, and a
+  card nobody holds to being no effect's. The trash's face-down cards
+  (`Game::face_down_in_trash`) and each play area's cards some effect keeps are read at
+  every record too. Phases
   change only through `set_phase` (never a write to `turn.phase`), a turn ends through
   `turn_over`, extra turns are queued only through `queue_extra_turn` (it gives each an
   id), and a card set aside or revealed face up is followed by `journal_face_up`, right
@@ -649,7 +658,18 @@ them.
   them as `ask` (agent-view@2's decision as that seat sees it, `project::question`) and
   `answer` (indices into it). Replay gives the cards of a shuffle by name, so the engine
   must do the same for any copies of a name in the same places: never order a choice's
-  options by `CardId` (sort by name, then position: `Game::shuffled_unordered`).
+  options by `CardId` (sort by name, then position: `Game::shuffled_unordered`). Then
+  which copy a "when you shuffle" choice takes must change nothing, so it ends with
+  `g.reshuffle_unplaced(p, placed)`, `placed` being every card it placed or took out
+  (nothing: the order stands): the cards left are shuffled again through the chance seam
+  (a shuffle of the deck into itself, under the cards over them; a card with a back of
+  its own keeps its place, as Stash placed by its own ability must). A site asked to shuffle or draw from fewer than two cards draws,
+  takes and records nothing, and replay reads no outcome from a shuffle of fewer than
+  two: never ask chance for something with one outcome elsewhere. What players are shown
+  without anything moving reaches the stream from the trace (`g.show`, `g.show_to`,
+  `g.reveal`, `look_over_shuffled`: a `show` event; `g.mixed`: a `mix`, unless a shuffle
+  of just those cards follows) and from the log (`RevealedHand`): show and mix through
+  those, never by hand.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The
