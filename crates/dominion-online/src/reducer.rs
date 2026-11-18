@@ -22,12 +22,12 @@ type Position = (
 /// A zone as a snapshot gives it: each card's identity and name where it shows them.
 struct Stock {
     zone: i32,
-    owned: bool,
     cards: Vec<(i32, Option<i32>)>,
 }
 
-/// What was known of a position, for a snapshot of that position: nothing a player's
-/// zone showed is forgotten. None if the snapshot shows what could not be.
+/// What was known of a position, for a snapshot of that position: nothing a zone showed
+/// is forgotten. None if any zone differs from what was known of it: a card could have
+/// left a hidden zone for it while another took its place, so no zone is trusted.
 fn recalled(mut knowledge: Observations, stocked: &[Stock]) -> Option<Observations> {
     for stock in stocked {
         let shown: Vec<_> = stock
@@ -38,10 +38,7 @@ fn recalled(mut knowledge: Observations, stocked: &[Stock]) -> Option<Observatio
         if knowledge.count(stock.zone) != stock.cards.len()
             || knowledge.reveal(stock.zone, &shown).is_err()
         {
-            if stock.owned {
-                return None;
-            }
-            knowledge.restock(stock.zone, &stock.cards);
+            return None;
         }
     }
     Some(knowledge)
@@ -235,9 +232,8 @@ impl Reducer {
             .zones
             .iter()
             .map(|z| {
-                // How many cards a zone no player owns holds is not always followed.
                 let count = self.zones.get(&z.index).map_or(0, |k| k.count);
-                (z.index, (z.kind, z.owner, count * u32::from(z.owner >= 0)))
+                (z.index, (z.kind, z.owner, count))
             })
             .collect();
         Some((
@@ -297,7 +293,6 @@ impl Reducer {
             }
             stocked.push(Stock {
                 zone: zone.index,
-                owned: zone.owner >= 0,
                 cards,
             });
             self.zones.insert(zone.index, KnowledgeZone::default());

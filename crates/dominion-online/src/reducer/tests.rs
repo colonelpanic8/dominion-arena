@@ -852,18 +852,38 @@ fn a_snapshot_that_contradicts_old_deductions_discards_them() {
 }
 
 #[test]
-fn a_snapshot_corrects_a_pile_without_discarding_old_deductions() {
-    let mut a = reducer();
+fn a_snapshot_after_cards_left_and_joined_a_hidden_zone_discards_old_deductions() {
+    let with_trash = |trash: Vec<i32>| {
+        let mut s = snapshot();
+        s.state.zones.push(model::Zone {
+            index: 40,
+            kind: 3,
+            pile_name: 0,
+            owner: -1,
+            cards: trash,
+            created_by: -1,
+            attached_trait: 0,
+            is_visible: true,
+        });
+        s
+    };
+    let mut a = Reducer::new(catalog(), 42);
+    a.replace(with_trash(vec![])).unwrap();
     inspect(&mut a, 1, vec![1, 2]);
-    a.apply(model::Event::PileUpdate(model::PileUpdate {
-        index: 20,
-        top_card_id: -1,
-    }))
-    .unwrap();
-    a.replace(snapshot()).unwrap();
-    let view = a.view().unwrap();
-    assert_eq!(view.you.unwrap().deck.unknown, 0);
-    assert_eq!(view.supply[0].count, 1);
+    assert_eq!(a.view().unwrap().you.unwrap().deck.unknown, 0);
+    // Unseen, the Gold on the deck was trashed and the Supply's Village put there: the
+    // deck holds as many cards as before.
+    let mut s = with_trash(vec![2]);
+    for z in &mut s.state.zones {
+        match z.index {
+            1 => z.cards = vec![1, 7],
+            20 => z.cards = vec![],
+            _ => {}
+        }
+    }
+    a.replace(s).unwrap();
+    let deck = a.view().unwrap().you.unwrap().deck;
+    assert_eq!((deck.count, deck.unknown), (2, 2));
 }
 
 #[test]
