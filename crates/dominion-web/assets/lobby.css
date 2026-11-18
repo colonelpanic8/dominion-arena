@@ -1059,24 +1059,95 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-bot-key .lb-note { margin: .6vh 0; }
 
 /* Leaderboard and a player's page. */
-.lb-board-page { width: 70%; height: 100%; display: flex; flex-direction: column; }
-.lb-board-list { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+/* The Leaderboard: rated players, best first, framed like the History. */
+.lb-board-page { width: 78%; height: 100%; display: flex; flex-direction: column; min-height: 0; }
+.lb-board { flex: 1 1 0; min-height: 0; }
 .lb-board-line {
   display: grid;
-  grid-template-columns: 8% 40% 13% 13% 13% 13%;
+  grid-template-columns: calc(6 * var(--lu)) minmax(0, 1fr) calc(22 * var(--lu)) calc(9 * var(--lu)) calc(9 * var(--lu)) calc(10 * var(--lu));
   align-items: center;
-  height: 5vh;
-  margin-top: .6vh;
-  background: rgba(255, 255, 255, .03);
-  font: 2.4vh var(--ui);
+  column-gap: calc(1.6 * var(--lu));
+  padding: 0 calc(1.4 * var(--lu));
 }
-.lb-board-line.lb-board-official { grid-template-columns: 7% 33% 11% 16% 11% 11% 11%; }
-.lb-board-line:hover { background: rgba(255, 255, 255, .1); }
-.lb-board-head { background: none; border-bottom: 2px dashed #ccc; color: #ccc; font-size: 1.8vh; flex-shrink: 0; }
-.lb-board-head:hover { background: none; }
-.lb-board-rank { text-align: center; font-family: var(--num); }
-.lb-board-name { font-weight: 700; overflow: hidden; }
-.lb-board-num { text-align: right; padding-right: 1vw; font-family: var(--num); }
+.lb-board-line.lb-board-official { grid-template-columns: calc(6 * var(--lu)) minmax(0, 1fr) calc(22 * var(--lu)) calc(12 * var(--lu)) calc(9 * var(--lu)) calc(9 * var(--lu)) calc(10 * var(--lu)); }
+.lb-board-head {
+  margin: calc(1 * var(--lu)) calc(1 * var(--lu)) 0;
+  padding-top: calc(.6 * var(--lu));
+  padding-bottom: calc(.6 * var(--lu));
+  border-bottom: 2px dashed rgba(204, 204, 204, .5);
+  color: #b9b2a3;
+  font: 700 calc(1.3 * var(--lu)) var(--ui);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.lb-board-list { flex: 1 1 0; min-height: 0; overflow-y: auto; margin: 0 calc(1 * var(--lu)); background: rgba(0, 0, 0, .45); }
+.lb-page a.lb-board-player { box-sizing: border-box; }
+a.lb-board-player {
+  min-height: calc(7 * var(--lu));
+  padding-top: calc(1 * var(--lu));
+  padding-bottom: calc(1 * var(--lu));
+  border-left: calc(.3 * var(--lu)) solid transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  color: inherit;
+  text-decoration: none;
+  transition: .2s background ease;
+}
+a.lb-board-player:hover { background: rgba(255, 255, 255, .06); }
+a.lb-board-player:hover .lb-board-title { text-decoration: underline; }
+a.lb-board-player:has(.first) { border-left-color: #f5bc34; background: linear-gradient(90deg, rgba(245, 188, 52, .1), transparent 45%); }
+.lb-board-rank { justify-self: center; text-align: center; font: 700 calc(2.2 * var(--lu)) var(--num); color: #cfc8b8; }
+.lb-board-rank.first, .lb-board-rank.second, .lb-board-rank.third {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(3.6 * var(--lu));
+  height: calc(3.6 * var(--lu));
+  border-radius: 50%;
+  font-size: calc(1.9 * var(--lu));
+  color: #2b2318;
+  box-shadow: inset 0 calc(-.3 * var(--lu)) 0 rgba(0, 0, 0, .25), 0 calc(.2 * var(--lu)) calc(.6 * var(--lu)) rgba(0, 0, 0, .6);
+}
+.lb-board-rank.first { background: radial-gradient(circle at 35% 30%, #ffe7a1, #f5bc34 55%, #b07d14); }
+.lb-board-rank.second { background: radial-gradient(circle at 35% 30%, #ffffff, #c9cfd6 55%, #868d96); }
+.lb-board-rank.third { background: radial-gradient(circle at 35% 30%, #f6c79a, #c9874a 55%, #8a5427); }
+.lb-board-head .lb-board-rank { font: inherit; color: inherit; }
+.lb-board-who { display: flex; align-items: center; gap: calc(1.4 * var(--lu)); min-width: 0; }
+.lb-board-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(4.4 * var(--lu));
+  height: calc(4.4 * var(--lu));
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 30%, #3a3026, #15100b);
+  box-shadow: 0 0 0 calc(.25 * var(--lu)) #c9a24d, 0 calc(.3 * var(--lu)) calc(.8 * var(--lu)) rgba(0, 0, 0, .6);
+}
+.lb-board-badge .lb-seat-mark { width: calc(2.9 * var(--lu)); height: calc(2.9 * var(--lu)); }
+.lb-board-text { display: flex; flex-direction: column; gap: calc(.4 * var(--lu)); min-width: 0; line-height: 1.15; }
+.lb-board-name { display: flex; align-items: center; gap: calc(.9 * var(--lu)); min-width: 0; }
+.lb-board-title { font: 700 calc(2.2 * var(--lu)) var(--ui); color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-board-effort {
+  flex-shrink: 0;
+  padding: calc(.15 * var(--lu)) calc(.8 * var(--lu));
+  border: 1px solid rgba(201, 162, 77, .7);
+  border-radius: calc(1 * var(--lu));
+  color: #f0cf7a;
+  font: 600 calc(1.25 * var(--lu)) var(--ui);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.lb-board-caption { font: calc(1.45 * var(--lu)) var(--ui); color: #a9a294; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-board-rating { display: flex; flex-direction: column; gap: calc(.7 * var(--lu)); min-width: 0; }
+.lb-board-score { font: 700 calc(2.3 * var(--lu)) var(--num); color: #f0cf7a; line-height: 1; white-space: nowrap; }
+.lb-board-dev { font: 400 calc(1.4 * var(--lu)) var(--ui); color: #a9a294; }
+.lb-board-bar { position: relative; height: calc(.8 * var(--lu)); border-radius: calc(.4 * var(--lu)); background: rgba(255, 255, 255, .08); }
+.lb-board-span { position: absolute; top: 0; bottom: 0; border-radius: calc(.4 * var(--lu)); background: linear-gradient(90deg, rgba(201, 162, 77, .25), rgba(240, 207, 122, .55), rgba(201, 162, 77, .25)); }
+.lb-board-tick { position: absolute; top: calc(-.35 * var(--lu)); bottom: calc(-.35 * var(--lu)); width: calc(.35 * var(--lu)); margin-left: calc(-.175 * var(--lu)); border-radius: calc(.2 * var(--lu)); background: #f5bc34; box-shadow: 0 0 calc(.5 * var(--lu)) rgba(245, 188, 52, .7); }
+.lb-board-num { text-align: right; font: 600 calc(2 * var(--lu)) var(--num); color: #e9e3d6; white-space: nowrap; }
+.lb-board-head .lb-board-num, .lb-board-head .lb-board-rating { font: inherit; color: inherit; }
+.lb-board-rate { color: #f0cf7a; }
+.lb-board-foot { margin: calc(1 * var(--lu)) calc(1.4 * var(--lu)) calc(.4 * var(--lu)); font: calc(1.35 * var(--lu)) var(--ui); color: #a9a294; }
 
 /* History, and a player's page: the games beside the sheet of the one picked. */
 .lb-history { display: flex; gap: 1.5vw; width: 100%; height: 100%; min-height: 0; }

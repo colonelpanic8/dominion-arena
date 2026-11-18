@@ -153,25 +153,8 @@ impl Arena {
         };
         let mut recent = self.history.find(&ask, u64::MAX, 20)?.games;
         complete_agents(&mut recent, &lock(&self.state).house.setups());
-        let agent = matches!(user.login, Login::House).then(|| {
-            let setups = lock(&self.state).house.setups();
-            let latest = recent.iter().find_map(|g| {
-                let seat = g
-                    .players
-                    .iter()
-                    .find(|p| p.account.as_deref() == Some(&user.name));
-                match &seat?.played_by {
-                    PlayedBy::Agent(a) if a.model.is_some() => Some(a.clone()),
-                    _ => None,
-                }
-            });
-            (setups.get(&user.name.to_lowercase()).map(SeatAgent::from))
-                .or(latest)
-                .unwrap_or_else(|| SeatAgent {
-                    agent: user.name.clone(),
-                    ..SeatAgent::default()
-                })
-        });
+        let agent = matches!(user.login, Login::House)
+            .then(|| agent_of(&user, &lock(&self.state).house.setups(), &recent));
         Ok(Profile {
             user: self.user_ref(&user),
             rating: user.rating_info(self.skill_scale().as_ref()),
@@ -201,17 +184,63 @@ impl Arena {
     pub fn leaderboard(&self, limit: usize) -> Result<Leaderboard> {
         let leaders = self.db.leaders(limit.clamp(1, 200))?;
         let scale = self.skill_scale();
-        Ok(Leaderboard {
-            players: (leaders.iter().enumerate())
-                .map(|(i, u)| Leader {
-                    rank: i as u32 + 1,
-                    user: self.user_ref(u),
-                    rating: u.rating_info(scale.as_ref()),
-                    stats: u.stats(),
-                })
-                .collect(),
-        })
+        let setups = lock(&self.state).house.setups();
+        let mut players = vec![];
+        for (i, u) in leaders.iter().enumerate() {
+            let agent = match u.login {
+                Login::House => {
+                    // Their latest games say what played them once they are no longer offered.
+                    let recent = match setups.contains_key(&u.name.to_lowercase()) {
+                        true => vec![],
+                        false => {
+                            let ask = Ask {
+                                user: Some(&u.id),
+                                ..Ask::default()
+                            };
+                            self.history.find(&ask, u64::MAX, 5)?.games
+                        }
+                    };
+                    Some(agent_of(u, &setups, &recent))
+                }
+                _ => None,
+            };
+            players.push(Leader {
+                rank: i as u32 + 1,
+                user: self.user_ref(u),
+                rating: u.rating_info(scale.as_ref()),
+                agent,
+            });
+        }
+        Ok(Leaderboard { players })
     }
+}
+
+/// What one of the server's agents is: as it is offered now, else as it played its latest
+/// of `recent`, else only its name. A model offered without a name of its own takes the
+/// name another offer gives it.
+fn agent_of(user: &User, setups: &Setups, recent: &[PastGame]) -> SeatAgent {
+    let latest = recent.iter().find_map(|g| {
+        let seat = (g.players.iter()).find(|p| p.account.as_deref() == Some(&user.name));
+        match &seat?.played_by {
+            PlayedBy::Agent(a) if a.model.is_some() => Some(a.clone()),
+            _ => None,
+        }
+    });
+    let mut agent = (setups.get(&user.name.to_lowercase()).map(SeatAgent::from))
+        .or(latest)
+        .unwrap_or_else(|| SeatAgent {
+            agent: user.name.clone(),
+            ..SeatAgent::default()
+        });
+    if agent.name.is_none() || agent.name == agent.model {
+        let named = setups.values().find_map(|s| {
+            (s.model.is_some() && s.model == agent.model && s.model_name != s.model)
+                .then(|| s.model_name.clone())
+                .flatten()
+        });
+        agent.name = named.or(agent.name);
+    }
+    agent
 }
 
 /// What played a seat of account `user`'s, to keep in its record: one of the server's
