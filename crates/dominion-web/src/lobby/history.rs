@@ -89,7 +89,6 @@ pub fn GameBrowser(
         .and_then(|id| games.iter().find(|g| &g.id == id))
         .or(games.first())
         .cloned();
-    let side = user.clone();
     let mut last_day = String::new();
     let items: Vec<(Option<String>, PastGame, bool)> = (games.iter())
         .map(|g| {
@@ -158,7 +157,6 @@ pub fn GameBrowser(
                                 }
                                 Entry {
                                     game: g.clone(),
-                                    side: side.clone(),
                                     on,
                                     onpick: {
                                         let id = g.id.clone();
@@ -235,84 +233,51 @@ fn how(game: &PastGame) -> String {
     parts.join(" · ")
 }
 
-/// A rating's change, rounded: "+15", "-13".
-fn change((before, after): (f64, f64)) -> String {
-    format!("{:+}", (after - before).round() as i64)
-}
-
 /// One game in the list: the winner and the score, or the side's result.
 #[component]
-fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()>) -> Element {
+fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
     let ranked = standings(&game);
-    let mine = side.as_deref().and_then(|s| seat_of(&game, s));
     let class = if on {
         "lb-history-entry on"
     } else {
         "lb-history-entry"
     };
-    let venue = match game.venue {
-        Venue::Arena => "arena",
-        Venue::Official => "official",
+    let (venue, venue_name) = match game.venue {
+        Venue::Arena => ("arena", "Played on Arena"),
+        Venue::Official => ("official", "Played on dominion.games"),
     };
+    let (first, rest) = match ranked.split_first() {
+        Some((f, r)) => (Some((*f).clone()), r.iter().map(|p| (*p).clone()).collect()),
+        None => (None, vec![]),
+    };
+    let rest: Vec<PastPlayer> = rest;
     rsx! {
         button { class, "data-game": "{game.id}", "data-venue": venue, onclick: move |_| onpick.call(()),
-            match mine {
-                Some(me) => {
-                    let won = me.rank == 1;
-                    let tied = won && game.players.iter().filter(|p| p.rank == 1).count() > 1;
-                    let (mark, result) = match (won, tied) {
-                        (true, true) => ("T", "tie"),
-                        (true, false) => ("W", "win"),
-                        _ => ("L", "loss"),
-                    };
-                    let others: Vec<&PastPlayer> = ranked.iter().copied().filter(|p| p.seat != me.seat).collect();
-                    let score = std::iter::once(me).chain(others.iter().copied()).map(|p| p.vp.to_string()).collect::<Vec<_>>().join("–");
-                    rsx! {
-                        span { class: "lb-history-result {result}", "{mark}" }
-                        span { class: "lb-history-entry-body",
-                            span { class: "lb-history-entry-line",
-                                span { class: "lb-history-score", "{score}" }
-                                span { class: "lb-history-vs", "vs" }
-                                span { class: "lb-entry-side right",
-                                    for p in others.iter() {
-                                        Seated { key: "{p.seat}", player: (*p).clone(), right: true }
-                                    }
-                                }
+            span { class: "lb-history-venue", title: venue_name }
+            span { class: "lb-history-entry-body",
+                span { class: "lb-history-entry-line",
+                    span { class: "lb-entry-side",
+                        if let Some(p) = first {
+                            Seated { won: p.rank == 1, player: p }
+                        }
+                    }
+                    span { class: "lb-history-score",
+                        for (i, p) in ranked.iter().enumerate() {
+                            span { key: "{p.seat}", class: if p.rank == 1 { "lb-score-won" } else { "lb-score-lost" },
+                                if i > 0 { "–" }
+                                "{p.vp}"
                             }
-                            span { class: "lb-history-how",
-                                span { "{clock(game.ended)} · {how(&game)}" }
-                                if let Some(r) = me.rating {
-                                    span { class: if r.1 >= r.0 { "lb-history-delta up" } else { "lb-history-delta" }, "{change(r)}" }
-                                }
-                            }
+                        }
+                    }
+                    span { class: "lb-entry-side right",
+                        for p in rest.iter() {
+                            Seated { key: "{p.seat}", player: p.clone(), won: p.rank == 1, right: true }
                         }
                     }
                 }
-                None => {
-                    let score = ranked.iter().map(|p| p.vp.to_string()).collect::<Vec<_>>().join("–");
-                    let (first, rest) = ranked.split_first().map(|(f, r)| (Some(*f), r.to_vec())).unwrap_or((None, vec![]));
-                    rsx! {
-                        span { class: "lb-history-venue" }
-                        span { class: "lb-history-entry-body",
-                            span { class: "lb-history-entry-line",
-                                span { class: "lb-entry-side",
-                                    if let Some(p) = first {
-                                        Seated { player: p.clone(), won: p.rank == 1 }
-                                    }
-                                }
-                                span { class: "lb-history-score", "{score}" }
-                                span { class: "lb-entry-side right",
-                                    for p in rest.iter() {
-                                        Seated { key: "{p.seat}", player: (*p).clone(), won: p.rank == 1, right: true }
-                                    }
-                                }
-                            }
-                            span { class: "lb-history-how",
-                                span { "{how(&game)}" }
-                                span { class: "lb-history-time", "{clock(game.ended)}" }
-                            }
-                        }
-                    }
+                span { class: "lb-history-how",
+                    span { "{how(&game)}" }
+                    span { class: "lb-history-time", "{clock(game.ended)}" }
                 }
             }
         }
@@ -461,7 +426,14 @@ fn Seated(
         span { class,
             SeatIcon { played_by: player.played_by.clone() }
             span { class: "lb-seat-text",
-                span { class: "lb-seat-name", "{player.name}" }
+                span { class: "lb-seat-name",
+                    if won {
+                        svg { class: "lb-crown", view_box: "0 0 16 16", role: "img", "aria-label": "won",
+                            path { d: "M2.5 12.5h11M3 12.5 2 5l3.5 3L8 3l2.5 5L14 5l-1 7.5" }
+                        }
+                    }
+                    "{player.name}"
+                }
                 span { class: "lb-seat-caption", "{caption(&player)}" }
             }
         }
@@ -542,21 +514,8 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
         .filter(|p| p.rank != 1)
         .map(|p| p.vp.to_string())
         .collect::<Vec<_>>();
-    let title = match mine {
-        Some(me) if winners.len() > 1 && me.rank == 1 => format!("Tied, {}", me.vp),
-        Some(me) => {
-            let others = ranked
-                .iter()
-                .filter(|p| p.seat != me.seat)
-                .map(|p| p.vp.to_string());
-            let word = if me.rank == 1 { "Won" } else { "Lost" };
-            format!(
-                "{word}, {} to {}",
-                me.vp,
-                others.collect::<Vec<_>>().join(" and ")
-            )
-        }
-        None if winners.len() > 1 => {
+    let title = match winners.first() {
+        _ if winners.len() > 1 => {
             let names = winners
                 .iter()
                 .map(|p| p.name.as_str())
@@ -564,11 +523,9 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
                 .join(" and ");
             format!("{names} tied, {}", winners[0].vp)
         }
-        None => match winners.first() {
-            Some(w) if losers.is_empty() => format!("{} won, {}", w.name, w.vp),
-            Some(w) => format!("{} won, {} to {}", w.name, w.vp, losers.join(" and ")),
-            None => String::new(),
-        },
+        Some(w) if losers.is_empty() => format!("{} won, {}", w.name, w.vp),
+        Some(w) => format!("{} won, {} to {}", w.name, w.vp, losers.join(" and ")),
+        None => String::new(),
     };
     let turns = game.players.iter().map(|p| p.turns).max().unwrap_or(0);
     let mut ending = reason(&game.reason);

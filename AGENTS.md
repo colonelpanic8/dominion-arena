@@ -248,9 +248,10 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     history.rs            History: finished games (filtered by where, whose, rated, a
                           name) beside the picked one's sheet (kingdom, standings, Review
                           game, Replay, Play this kingdom); `GameBrowser`, shared with a
-                          player's page; each game in the list names its players with
-                          what played each seat (`PlayedBy`: an agent's model and effort,
-                          a user's bot, a guest, a seat token)
+                          player's page, which lists its games the same way: winner on
+                          the left (crowned), the other side on the right, each name with
+                          an icon (a person, a bot, a token, an agent's maker's logo) and
+                          a caption of what played it (`PlayedBy`)
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
