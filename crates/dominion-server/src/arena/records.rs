@@ -1,10 +1,15 @@
 //! Finished games: each lobby game's record, its players' ratings and tallies.
 
-use super::db::{self, Tally};
+use super::db::{self, Db, Tally};
+use super::history::{Ask, GameSource};
 use super::{Arena, Error, Result, User};
-use crate::hub::{Ended, lock, now_ms};
+use crate::hub::{Ended, Hub, lock, now_ms};
 use crate::rating::{self, Scale};
-use dominion_protocol::lobby::{GameRecord, History, Leader, Leaderboard, Profile, RecordPlayer};
+use dominion_protocol::lobby::{
+    Arranged, GameRecord, History, HistoryQuery, Leader, Leaderboard, PastGame, PastPlayer,
+    Profile, RecordPlayer, Source, Venue,
+};
+use std::sync::Arc;
 
 /// The most rating deviation an anchor may have here to count, and the least spread of
 /// the anchors' ratings: closer than that, they can't tell a slope.
@@ -69,6 +74,9 @@ impl Arena {
                     seat: p.index,
                     name: p.name.clone(),
                     kind: accounts[i].as_ref().map(|u| u.kind()),
+                    user: (accounts[i].as_ref())
+                        .map(|u| u.name.clone())
+                        .filter(|n| *n != p.name),
                     vp: p.vp,
                     rank: p.rank,
                     turns: p.turns,
@@ -92,7 +100,7 @@ impl Arena {
             let users: Vec<Option<String>> = (accounts.iter())
                 .map(|u| u.as_ref().map(|u| u.id.clone()))
                 .collect();
-            db::add_record(tx, &record, &users)
+            db::add_record(tx, Venue::Arena, &record, &users)
         })
     }
 
@@ -119,27 +127,31 @@ impl Arena {
     /// A player's page.
     pub fn profile(&self, name: &str) -> Result<Profile> {
         let user = self.named(name)?;
+        let ask = Ask {
+            user: Some(&user.id),
+            ..Ask::default()
+        };
         Ok(Profile {
             user: self.user_ref(&user),
             rating: user.rating_info(self.skill_scale().as_ref()),
             stats: user.stats(),
-            recent: self.db.games(Some(&user.id), u64::MAX, 20)?,
+            official_games: self.history.count(&user.id, Venue::Official)?,
+            recent: self.history.find(&ask, u64::MAX, 20)?.games,
         })
     }
 
-    /// Finished games that ended before `before`, newest first: `user`'s, or everyone's.
-    pub fn history(
-        &self,
-        user: Option<&str>,
-        before: Option<u64>,
-        limit: usize,
-    ) -> Result<History> {
-        let user = user.map(|name| self.named(name)).transpose()?;
-        let user = user.as_ref().map(|u| u.id.as_str());
-        let before = before.unwrap_or(u64::MAX);
-        Ok(History {
-            games: self.db.games(user, before, limit.clamp(1, 100))?,
-        })
+    /// Finished games, newest first, as `q` asks.
+    pub fn history(&self, q: &HistoryQuery) -> Result<History> {
+        let user = q.user.as_deref().map(|name| self.named(name)).transpose()?;
+        let ask = Ask {
+            user: user.as_ref().map(|u| u.id.as_str()),
+            venue: q.venue,
+            rated: q.rated,
+            text: q.q.as_deref(),
+        };
+        let before = q.before.unwrap_or(u64::MAX);
+        self.history
+            .find(&ask, before, q.limit.unwrap_or(20).clamp(1, 100))
     }
 
     /// The rated players, best first.
@@ -156,5 +168,71 @@ impl Arena {
                 })
                 .collect(),
         })
+    }
+}
+
+/// A stored record as the history shows it.
+pub(super) fn past_game(record: GameRecord, venue: Venue) -> PastGame {
+    let official = venue == Venue::Official;
+    PastGame {
+        venue,
+        arranged: match record.source {
+            Source::Automatch => Some(Arranged::Automatch),
+            Source::Table => Some(Arranged::Table),
+            Source::Direct => Some(Arranged::Tokens),
+            Source::Official => None,
+        },
+        official_id: None,
+        open: false,
+        started: record.started,
+        ended: record.ended,
+        rated: record.rated,
+        reason: record.reason,
+        kingdom: record.kingdom,
+        landscapes: record.landscapes,
+        players: (record.players.into_iter())
+            .map(|p| PastPlayer {
+                // An Arena seat's name is its account's; an official one's is the official
+                // account's, whatever played it here.
+                account: p
+                    .user
+                    .or((p.kind.is_some() && !official).then(|| p.name.clone())),
+                seat: p.seat,
+                name: p.name,
+                kind: p.kind,
+                vp: p.vp,
+                rank: p.rank,
+                turns: p.turns,
+                resigned: p.resigned,
+                rating: p.rating,
+            })
+            .collect(),
+        id: record.game_id,
+    }
+}
+
+/// The records of Arena's own games, written when each ends.
+pub(super) struct ArenaRecords {
+    pub db: Arc<Db>,
+    pub hub: Arc<Hub>,
+}
+
+impl GameSource for ArenaRecords {
+    fn venue(&self) -> Venue {
+        Venue::Arena
+    }
+
+    fn page(&self, user: Option<&str>, before: u64, limit: usize) -> Result<Vec<PastGame>> {
+        let records = self.db.games(Venue::Arena, user, before, limit)?;
+        let games = records.into_iter().map(|r| {
+            let mut game = past_game(r, Venue::Arena);
+            game.open = self.hub.meta(&game.id).is_ok();
+            game
+        });
+        Ok(games.collect())
+    }
+
+    fn count(&self, user: &str) -> Result<u32> {
+        self.db.count_games(Venue::Arena, user)
     }
 }

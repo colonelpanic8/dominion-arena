@@ -5,7 +5,7 @@
 use super::{Error, Login, Result, User};
 use crate::hub::lock;
 use crate::rating::Rating;
-use dominion_protocol::lobby::{GameRecord, UserKind, UserRef};
+use dominion_protocol::lobby::{GameRecord, Source, UserKind, UserRef, Venue};
 use rusqlite::{Connection, ErrorCode, OptionalExtension, Row, Transaction, params};
 use std::collections::HashMap;
 use std::path::Path;
@@ -55,7 +55,9 @@ CREATE TABLE IF NOT EXISTS games (
     number INTEGER NOT NULL,
     ended INTEGER NOT NULL,
     -- The GameRecord as JSON.
-    record TEXT NOT NULL
+    record TEXT NOT NULL,
+    -- Where it was played: `arena` or `official` (dominion.games).
+    venue TEXT NOT NULL DEFAULT 'arena'
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS games_ended ON games (ended DESC);
 CREATE TABLE IF NOT EXISTS agent_transcript (
@@ -78,8 +80,43 @@ CREATE TABLE IF NOT EXISTS game_players (
 ) WITHOUT ROWID;
 ";
 
+fn venue_name(venue: Venue) -> &'static str {
+    match venue {
+        Venue::Arena => "arena",
+        Venue::Official => "official",
+    }
+}
+
+/// Gives a database from before `games.venue` the column, read from each record.
+fn add_venues(conn: &Connection) -> rusqlite::Result<()> {
+    let has = conn
+        .prepare("SELECT 1 FROM pragma_table_info('games') WHERE name = 'venue'")?
+        .exists([])?;
+    if has {
+        return Ok(());
+    }
+    conn.execute_batch("ALTER TABLE games ADD COLUMN venue TEXT NOT NULL DEFAULT 'arena'")?;
+    let official: Vec<String> = {
+        let mut query = conn.prepare("SELECT id, record FROM games")?;
+        let rows = query.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut ids = vec![];
+        for row in rows {
+            let (id, record) = row?;
+            let record = serde_json::from_str::<GameRecord>(&record);
+            if record.is_ok_and(|r| r.source == Source::Official) {
+                ids.push(id);
+            }
+        }
+        ids
+    };
+    for id in official {
+        conn.execute("UPDATE games SET venue = 'official' WHERE id = ?1", [id])?;
+    }
+    Ok(())
+}
+
 /// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
-const SCHEMA_VERSION: i32 = 3;
+const SCHEMA_VERSION: i32 = 4;
 
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
                     rated_at, rated_games, games, wins, banned_cards";
@@ -208,6 +245,8 @@ impl Db {
         // Someone looking into the file with another program holds it only briefly.
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
+        add_venues(&conn)?;
+        conn.execute_batch("CREATE INDEX IF NOT EXISTS games_venue ON games (venue, ended DESC)")?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db {
             conn: Mutex::new(conn),
@@ -527,24 +566,45 @@ impl Db {
         Ok(last.unwrap_or(0) as u64)
     }
 
-    /// Finished games that ended before `before`, newest first: `user`'s, or everyone's.
-    pub fn games(&self, user: Option<&str>, before: u64, limit: usize) -> Result<Vec<GameRecord>> {
+    /// Up to `limit` games played at `venue` that ended before `before`, newest first:
+    /// account `user`'s, or everyone's.
+    pub fn games(
+        &self,
+        venue: Venue,
+        user: Option<&str>,
+        before: u64,
+        limit: usize,
+    ) -> Result<Vec<GameRecord>> {
         let conn = lock(&self.conn);
-        let (before, limit) = (before.min(i64::MAX as u64) as i64, limit as i64);
+        let before = before.min(i64::MAX as u64) as i64;
+        let limit = limit.min(i64::MAX as usize) as i64;
+        let venue = venue_name(venue);
         Ok(match user {
             Some(user) => records(
                 &conn,
                 "SELECT games.record FROM game_players JOIN games ON games.id = game_players.game \
-                 WHERE game_players.user = ?1 AND game_players.ended < ?2 \
-                 ORDER BY game_players.ended DESC LIMIT ?3",
-                params![row_of(user), before, limit],
+                 WHERE game_players.user = ?1 AND games.venue = ?2 AND game_players.ended < ?3 \
+                 ORDER BY game_players.ended DESC LIMIT ?4",
+                params![row_of(user), venue, before, limit],
             )?,
             None => records(
                 &conn,
-                "SELECT record FROM games WHERE ended < ?1 ORDER BY ended DESC LIMIT ?2",
-                params![before, limit],
+                "SELECT record FROM games WHERE venue = ?1 AND ended < ?2 \
+                 ORDER BY ended DESC LIMIT ?3",
+                params![venue, before, limit],
             )?,
         })
+    }
+
+    /// How many games played at `venue` account `user` played.
+    pub fn count_games(&self, venue: Venue, user: &str) -> Result<u32> {
+        let conn = lock(&self.conn);
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM game_players JOIN games ON games.id = game_players.game \
+             WHERE game_players.user = ?1 AND games.venue = ?2",
+            params![row_of(user), venue_name(venue)],
+            |r| r.get(0),
+        )?)
     }
 
     /// The rated accounts, best first.
@@ -591,9 +651,11 @@ pub(super) fn tally(tx: &Transaction<'_>, t: &Tally<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Writes a finished game's record, for the accounts `users` that played it.
+/// Writes a finished game's record, played at `venue`, for the accounts `users` that
+/// played it.
 pub(super) fn add_record(
     tx: &Transaction<'_>,
+    venue: Venue,
     record: &GameRecord,
     users: &[Option<String>],
 ) -> Result<()> {
@@ -604,8 +666,14 @@ pub(super) fn add_record(
     let json = serde_json::to_string(record).map_err(|e| Error::Storage(e.to_string()))?;
     let ended = record.ended.min(i64::MAX as u64) as i64;
     tx.execute(
-        "INSERT INTO games (id, number, ended, record) VALUES (?1, ?2, ?3, ?4)",
-        params![record.game_id, number.unwrap_or(0i64), ended, json],
+        "INSERT INTO games (id, number, ended, record, venue) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            record.game_id,
+            number.unwrap_or(0i64),
+            ended,
+            json,
+            venue_name(venue)
+        ],
     )?;
     for user in users.iter().flatten() {
         tx.execute(
@@ -648,5 +716,56 @@ mod transcript_tests {
         assert!(!rest.more);
         assert_eq!(rest.entries[0].activity.offset, 201);
         assert!(db.transcript("g2", 0).unwrap().entries.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod venue_tests {
+    use super::*;
+    use dominion_protocol::lobby::GameRecord;
+
+    fn record(id: &str, source: Source, ended: u64) -> String {
+        serde_json::to_string(&GameRecord {
+            game_id: id.into(),
+            started: 0,
+            ended,
+            source,
+            rated: false,
+            reason: String::new(),
+            kingdom: vec![],
+            landscapes: vec![],
+            players: vec![],
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn records_from_before_venues_are_given_theirs() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join(FILE)).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE games (id TEXT PRIMARY KEY, number INTEGER NOT NULL, \
+                 ended INTEGER NOT NULL, record TEXT NOT NULL) WITHOUT ROWID;",
+            )
+            .unwrap();
+            for (id, source, ended) in [
+                ("g1", Source::Table, 1),
+                ("dominion.games-9", Source::Official, 2),
+            ] {
+                conn.execute(
+                    "INSERT INTO games (id, number, ended, record) VALUES (?1, 0, ?2, ?3)",
+                    params![id, ended, record(id, source, ended as u64)],
+                )
+                .unwrap();
+            }
+        }
+        let db = Db::open(Some(dir.path())).unwrap();
+        let ids = |venue| -> Vec<String> {
+            let games = db.games(venue, None, u64::MAX, 10).unwrap();
+            games.into_iter().map(|g| g.game_id).collect()
+        };
+        assert_eq!(ids(Venue::Arena), ["g1"]);
+        assert_eq!(ids(Venue::Official), ["dominion.games-9"]);
     }
 }
