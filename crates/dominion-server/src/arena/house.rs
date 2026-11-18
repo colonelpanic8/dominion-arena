@@ -9,7 +9,7 @@
 use super::{Arena, Error, Login, Result, State, User, conflict};
 use crate::house::{Job, Offer, ToRunner};
 use crate::hub::{lock, now_ms};
-use dominion_protocol::lobby::{self, HouseAgent, HouseChoice, HouseModel, UserKind};
+use dominion_protocol::lobby::{self, HouseAgent, HouseChoice, HouseModel, SeatAgent, UserKind};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
@@ -29,7 +29,13 @@ pub(super) struct House {
     official: BTreeMap<String, Job>,
     /// When each account filled its agent seats, over the last day (ms).
     filled: HashMap<String, VecDeque<u64>>,
+    /// What each agent was when last offered, by its name in lower case: kept after it
+    /// stops being offered, for the games it plays out.
+    setups: HashMap<String, SeatAgent>,
 }
+
+/// What the runner offers as an agent, by its name in lower case.
+pub(super) type Setups = HashMap<String, SeatAgent>;
 
 struct Runner {
     id: RunnerId,
@@ -72,6 +78,26 @@ impl House {
 
     pub(super) fn official_job(&self, account: &str) -> Option<Job> {
         self.official.get(account).cloned()
+    }
+
+    /// Every agent's setup as last offered.
+    pub(super) fn setups(&self) -> Setups {
+        self.setups.clone()
+    }
+
+    fn remember(&mut self, offers: &[Offer]) {
+        for offer in offers {
+            if let Some(m) = &offer.model {
+                let setup = SeatAgent {
+                    agent: offer.name.clone(),
+                    program: Some(m.program.clone()),
+                    model: Some(m.id.clone()),
+                    name: Some(m.name.clone()),
+                    effort: m.effort.clone(),
+                };
+                self.setups.insert(offer.name.trim().to_lowercase(), setup);
+            }
+        }
     }
 
     pub(super) fn offers(&self, user: &str) -> bool {
@@ -325,6 +351,7 @@ impl Arena {
         let id = {
             let mut state = lock(&self.state);
             let house = &mut state.house;
+            house.remember(&offers);
             house.next_runner += 1;
             house.runner = Some(Runner {
                 id: house.next_runner,
@@ -354,7 +381,11 @@ impl Arena {
         let (offers, mut agents) = self.admit(offers, &send);
         {
             let mut state = lock(&self.state);
-            let Some(runner) = state.house.runner.as_mut().filter(|r| r.id == id) else {
+            if state.house.runner.as_ref().is_none_or(|r| r.id != id) {
+                return;
+            }
+            state.house.remember(&offers);
+            let Some(runner) = state.house.runner.as_mut() else {
                 return;
             };
             // Agents summoned meanwhile stay; those no longer offered go on with their games.

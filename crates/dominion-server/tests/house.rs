@@ -2,8 +2,8 @@
 //! runner's room and each player's day, with the runner told the seats they hold.
 
 use dominion_protocol::lobby::{
-    Credentials, MatchRequest, NewTable, Opponents, QueueState, SeatEdit, SeatKind, TableSpec,
-    UserKind,
+    Credentials, HistoryQuery, MatchRequest, NewTable, Opponents, PlayedBy, QueueState, SeatAgent,
+    SeatEdit, SeatKind, TableSpec, UserKind,
 };
 use dominion_server::arena::{Arena, Error, Ident, Settings};
 use dominion_server::house::{Job, Offer, OfferedModel, ToRunner};
@@ -312,6 +312,28 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
     ));
     end(&arena, &game);
     assert_eq!(job(&mut told), []);
+
+    // Its record says what it was, though no longer offered when the game ended.
+    let max = SeatAgent {
+        agent: "Opus 5.5 Max".into(),
+        program: Some("Claude Code".into()),
+        model: Some("claude-opus-5-5".into()),
+        name: Some("Opus 5.5".into()),
+        effort: Some("max".into()),
+    };
+    let query = HistoryQuery {
+        q: Some("claude-opus".into()),
+        ..HistoryQuery::default()
+    };
+    let games = arena.history(&query).unwrap().games;
+    let seat = |name: &str| {
+        let player = games[0].players.iter().find(|p| p.name == name).unwrap();
+        player.played_by.clone()
+    };
+    assert_eq!(seat("Ada"), PlayedBy::Person);
+    assert_eq!(seat("Opus 5.5 Max"), PlayedBy::Agent(max.clone()));
+    assert_eq!(arena.profile("Opus 5.5 Max").unwrap().agent, Some(max));
+    assert_eq!(arena.profile("Ada").unwrap().agent, None);
 }
 
 #[test]

@@ -2,20 +2,20 @@
 //! player's page shares with it. Everything here comes from `/api/history` and
 //! `/api/users/{name}` as the protocol's `PastGame`s.
 
-use super::rules::{Pick, TableRules, Ternary, is_landscape};
+use super::rules::{Pick, TableRules, Ternary};
 use super::{
     LobbyCtx, LobbyFrame, Tab, clock, create_table, day, flash, store, use_lobby, use_toast,
 };
 use crate::account::{Account, use_account};
 use crate::api;
-use crate::app::{Route, use_cards};
-use crate::assets::{self, use_assets};
+use crate::app::Route;
 use crate::card::{CardHover, CardSize, CardView};
 use crate::platform;
 use dioxus::prelude::*;
 use dioxus::router::Navigator;
-use dominion_protocol::api::CardInfo;
-use dominion_protocol::lobby::{Arranged, HistoryQuery, PastGame, PastPlayer, UserKind, Venue};
+use dominion_protocol::lobby::{
+    Arranged, HistoryQuery, PastGame, PastPlayer, PlayedBy, SeatAgent, Venue,
+};
 
 /// Games asked for at a time.
 const PAGE: usize = 30;
@@ -200,7 +200,7 @@ fn standings(game: &PastGame) -> Vec<&PastPlayer> {
 
 /// The seat an official account played the game from.
 fn official_seat(game: &PastGame) -> Option<&PastPlayer> {
-    let ours = |p: &&PastPlayer| p.account.is_some() || p.kind.is_some();
+    let ours = |p: &&PastPlayer| p.played_by != PlayedBy::Official;
     (game.venue == Venue::Official)
         .then(|| game.players.iter().find(ours))
         .flatten()
@@ -266,45 +266,47 @@ fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()
                     };
                     let others: Vec<&PastPlayer> = ranked.iter().copied().filter(|p| p.seat != me.seat).collect();
                     let score = std::iter::once(me).chain(others.iter().copied()).map(|p| p.vp.to_string()).collect::<Vec<_>>().join("–");
-                    let names = others.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ");
                     rsx! {
                         span { class: "lb-history-result {result}", "{mark}" }
                         span { class: "lb-history-entry-body",
                             span { class: "lb-history-entry-line",
                                 span { class: "lb-history-score", "{score}" }
-                                span { class: "lb-history-names", "vs {names}" }
+                                span { class: "lb-history-names",
+                                    "vs"
+                                    for p in others.iter() {
+                                        Seated { key: "{p.seat}", name: p.name.clone(), played_by: p.played_by.clone() }
+                                    }
+                                }
                                 if let Some(r) = me.rating {
                                     span { class: if r.1 >= r.0 { "lb-history-delta up" } else { "lb-history-delta" }, "{change(r)}" }
                                 }
                             }
                             span { class: "lb-history-how", "{clock(game.ended)} · {how(&game)}" }
-                            KingdomPeek {
-                                kingdom: game.kingdom.clone(),
-                                landscapes: game.landscapes.clone(),
-                                others: game.others.clone(),
-                            }
                         }
                     }
                 }
                 None => {
-                    let winner = ranked.first().map(|p| p.name.clone()).unwrap_or_default();
                     let score = ranked.iter().map(|p| p.vp.to_string()).collect::<Vec<_>>().join("–");
-                    let rest = ranked.iter().skip(1).map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ");
                     rsx! {
                         span { class: "lb-history-venue" }
                         span { class: "lb-history-entry-body",
                             span { class: "lb-history-entry-line",
-                                span { class: "lb-history-winner", "{winner}" }
-                                span { class: "lb-history-score", "{score}" }
-                                span { class: "lb-history-names", "{rest}" }
+                                span { class: "lb-history-names",
+                                    for (i, p) in ranked.iter().enumerate() {
+                                        Seated {
+                                            key: "{p.seat}",
+                                            name: p.name.clone(),
+                                            played_by: p.played_by.clone(),
+                                            won: p.rank == 1,
+                                        }
+                                        if i == 0 {
+                                            span { class: "lb-history-score", "{score}" }
+                                        }
+                                    }
+                                }
                                 span { class: "lb-history-time", "{clock(game.ended)}" }
                             }
                             span { class: "lb-history-how", "{how(&game)}" }
-                            KingdomPeek {
-                                kingdom: game.kingdom.clone(),
-                                landscapes: game.landscapes.clone(),
-                                others: game.others.clone(),
-                            }
                         }
                     }
                 }
@@ -313,116 +315,74 @@ fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()
     }
 }
 
-/// The colour a card's thumbnail is framed in without its art: its main type's.
-fn tone(card: Option<&CardInfo>) -> &'static str {
-    let Some(card) = card else {
-        return "action";
-    };
-    if is_landscape(card) {
-        return "landscape";
+/// One of the server's agents in a few words: its model and effort, "Opus 5.5 · High".
+pub fn agent_chip(a: &SeatAgent) -> String {
+    let name = a.name.clone().unwrap_or_else(|| a.agent.clone());
+    match &a.effort {
+        Some(effort) => {
+            let mut chars = effort.chars();
+            let effort: String = (chars.next().into_iter())
+                .flat_map(char::to_uppercase)
+                .chain(chars)
+                .collect();
+            format!("{name} · {effort}")
+        }
+        None => name,
     }
-    let has = |t: &str| card.types.iter().any(|x| x == t);
-    if has("Night") {
-        "night"
-    } else if has("Duration") {
-        "duration"
-    } else if has("Reaction") {
-        "reaction"
-    } else if has("Treasure") && !has("Action") {
-        "treasure"
-    } else if has("Victory") && !has("Action") {
-        "victory"
+}
+
+/// One of the server's agents in full: "Claude Code · claude-opus-5-5 · high effort".
+pub fn agent_line(a: &SeatAgent) -> String {
+    let effort = a.effort.as_ref().map(|e| format!("{e} effort"));
+    let parts: Vec<String> = [a.program.clone(), a.model.clone(), effort]
+        .into_iter()
+        .flatten()
+        .collect();
+    if parts.is_empty() {
+        a.agent.clone()
     } else {
-        "action"
+        parts.join(" · ")
     }
 }
 
-/// A kingdom as a strip of tiny pictures of its cards' art, which shows the whole of it
-/// while the pointer is over it.
+/// A seat's name with what played it: nothing for a person, else a tag, or a chip for one
+/// of the server's agents.
 #[component]
-fn KingdomPeek(kingdom: Vec<String>, landscapes: Vec<String>, others: Vec<String>) -> Element {
-    let cards = use_cards();
-    let art = use_assets();
-    let mut at = use_signal(|| None::<(f64, f64)>);
-    let popup = at().map(|(x, y)| {
-        let (vw, vh) = platform::viewport();
-        let lu = (vh / 100.0).min(vw / 200.0);
-        let margin = 8.0;
-        let side = if landscapes.is_empty() {
-            0.0
-        } else {
-            16.5 * lu
-        };
-        let width = 5.0 * 10.6 * lu + side + 3.0 * lu;
-        let rows = 2.0 + if others.is_empty() { 0.0 } else { 1.0 };
-        let height = rows * 10.4 * lu + 3.0 * lu;
-        let mut left = x + 24.0;
-        if left + width > vw - margin {
-            left = x - 24.0 - width;
-        }
-        let left = left.min(vw - width - margin).max(margin);
-        let top = (y - height / 2.0).min(vh - height - margin).max(margin);
-        format!("left:{left:.0}px;top:{top:.0}px;")
-    });
+fn Seated(name: String, played_by: PlayedBy, #[props(default)] won: bool) -> Element {
+    let (mark, chip) = match &played_by {
+        PlayedBy::Person | PlayedBy::Official => (None, false),
+        PlayedBy::Guest => (Some("guest".to_string()), false),
+        PlayedBy::Token => (Some("token".to_string()), false),
+        PlayedBy::Bot { owner: Some(owner) } => (Some(format!("{owner}'s bot")), false),
+        PlayedBy::Bot { owner: None } => (Some("bot".to_string()), false),
+        PlayedBy::Agent(a) => (Some(agent_chip(a)), true),
+    };
     rsx! {
-        span {
-            class: "lb-thumbs",
-            onmouseenter: move |e: MouseEvent| {
-                let p = e.client_coordinates();
-                at.set(Some((p.x, p.y)));
-            },
-            onmouseleave: move |_| at.set(None),
-            for name in kingdom.iter().chain(&landscapes).chain(&others) {
-                {
-                    let card = cards.get(name);
-                    let wide = card.is_some_and(is_landscape);
-                    let picture = (art.card(name))
-                        .and_then(|f| f.mini_art.as_deref().or(f.art.as_deref()))
-                        .map(|path| format!("background-image: url('{}');", assets::url(path)))
-                        .unwrap_or_default();
-                    rsx! {
-                        span {
-                            key: "{name}",
-                            class: if wide { "lb-thumb wide {tone(card)}" } else { "lb-thumb {tone(card)}" },
-                            style: picture,
-                        }
-                    }
-                }
-            }
-            if let Some(style) = popup {
-                div { class: "lb-peek-pop", style,
-                    KingdomCards {
-                        kingdom: kingdom.clone(),
-                        landscapes: landscapes.clone(),
-                        others: others.clone(),
-                    }
-                }
+        span { class: if won { "lb-history-who won" } else { "lb-history-who" },
+            span { class: "lb-history-who-name", "{name}" }
+            if let Some(m) = mark {
+                span { class: if chip { "lb-agent-chip" } else { "lb-user-kind" }, "{m}" }
             }
         }
     }
 }
 
 /// A kingdom as the table lays it out: its piles in two rows, its landscapes beside them
-/// and what else it was set up with under them. `hover` shows each card in full.
+/// and what else it was set up with under them; each card in full while hovered.
 #[component]
-fn KingdomCards(
-    kingdom: Vec<String>,
-    landscapes: Vec<String>,
-    others: Vec<String>,
-    #[props(default)] hover: bool,
-) -> Element {
+fn KingdomCards(kingdom: Vec<String>, landscapes: Vec<String>, others: Vec<String>) -> Element {
     rsx! {
         div { class: "lb-setup-cards",
             div { class: "lb-sheet-kingdom",
                 div { class: "lb-sheet-piles",
                     for name in kingdom.iter() {
-                        KingdomCard { key: "{name}", name: name.clone(), hover }
+                        KingdomCard { key: "{name}", name: name.clone() }
                     }
                 }
                 if !landscapes.is_empty() {
                     div { class: "lb-sheet-landscapes",
                         for name in landscapes.iter() {
-                            KingdomCard { key: "{name}", name: name.clone(), wide: true, hover }
+                            KingdomCard { key: "{name}", name: name.clone(), wide: true }
                         }
                     }
                 }
@@ -430,7 +390,7 @@ fn KingdomCards(
             if !others.is_empty() {
                 div { class: "lb-setup-others",
                     for name in others.iter() {
-                        KingdomCard { key: "{name}", name: name.clone(), hover }
+                        KingdomCard { key: "{name}", name: name.clone() }
                     }
                 }
             }
@@ -439,28 +399,30 @@ fn KingdomCards(
 }
 
 #[component]
-fn KingdomCard(name: String, #[props(default)] wide: bool, hover: bool) -> Element {
+fn KingdomCard(name: String, #[props(default)] wide: bool) -> Element {
     let class = if wide { "lb-lcard" } else { "lb-kcard" };
-    let face = rsx! {
-        div { class, CardView { name: name.clone(), size: CardSize::Mini } }
-    };
-    if hover {
-        rsx! { CardHover { name, {face} } }
-    } else {
-        face
+    rsx! {
+        CardHover { name: name.clone(),
+            div { class, CardView { name, size: CardSize::Mini } }
+        }
     }
 }
 
-/// Who played a seat, beyond its name.
+/// Who played a seat, beyond its name, and the account to link to.
 fn played_by(game: &PastGame, p: &PastPlayer) -> (String, Option<String>) {
-    match (game.venue, &p.account, p.kind) {
-        (Venue::Official, Some(account), _) => (account.clone(), Some(account.clone())),
-        (Venue::Official, None, Some(_)) => ("An Arena agent".into(), None),
-        (Venue::Official, None, None) => ("dominion.games player".into(), None),
-        (Venue::Arena, _, Some(UserKind::Bot)) => ("Bot".into(), None),
-        (Venue::Arena, _, Some(UserKind::Guest)) => ("Guest".into(), None),
-        (Venue::Arena, _, Some(UserKind::Registered)) => ("Player".into(), None),
-        (Venue::Arena, _, None) => ("Seat token".into(), None),
+    let official = game.venue == Venue::Official;
+    match &p.played_by {
+        PlayedBy::Agent(a) => (agent_line(a), Some(a.agent.clone())),
+        PlayedBy::Bot { owner: Some(owner) } => (format!("{owner}'s bot"), Some(owner.clone())),
+        PlayedBy::Bot { owner: None } => ("A user's bot".into(), None),
+        PlayedBy::Person if official => match &p.account {
+            Some(account) => (account.clone(), Some(account.clone())),
+            None => ("Registered player".into(), None),
+        },
+        PlayedBy::Person => ("Registered player".into(), None),
+        PlayedBy::Guest => ("Guest".into(), None),
+        PlayedBy::Token => ("Seat token".into(), None),
+        PlayedBy::Official => ("dominion.games player".into(), None),
     }
 }
 
@@ -547,7 +509,6 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
                 kingdom: game.kingdom.clone(),
                 landscapes: game.landscapes.clone(),
                 others: game.others.clone(),
-                hover: true,
             }
             div { class: "lb-sheet-line lb-sheet-head",
                 span { class: "lb-sheet-place", "#" }

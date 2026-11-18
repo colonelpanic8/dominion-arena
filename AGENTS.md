@@ -79,7 +79,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
     accounts.rs           accounts, passwords, sessions, bots and their API keys
     tables.rs matching.rs lobby tables; the automatch queue
     chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard;
-                          `ArenaRecords`, the history's source of Arena's own games
+                          `ArenaRecords`, the history's source of Arena's own games; what
+                          played each seat, kept in its record (an agent's setup as last
+                          offered, a bot's owner) and shown as `PlayedBy`
     official.rs           the official accounts as the lobby lists them; their finished
                           games' records (no rating or tally), `OfficialRecords`
     history.rs            the history read model: `/api/history` and players' pages read
@@ -242,8 +244,9 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     history.rs            History: finished games (filtered by where, whose, rated, a
                           name) beside the picked one's sheet (kingdom, standings, Review
                           game, Replay, Play this kingdom); `GameBrowser`, shared with a
-                          player's page; a game's kingdom strip shows the whole kingdom
-                          while hovered (`KingdomPeek`)
+                          player's page; each game in the list names its players with
+                          what played each seat (`PlayedBy`: an agent's model and effort,
+                          a user's bot, a guest, a seat token)
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the

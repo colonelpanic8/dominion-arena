@@ -4,7 +4,7 @@
 //! them) and paging across sources are this model's.
 
 use super::Result;
-use dominion_protocol::lobby::{History, PastGame, Venue};
+use dominion_protocol::lobby::{History, PastGame, PastPlayer, PlayedBy, Venue};
 
 /// One place finished games are kept.
 pub trait GameSource: Send + Sync {
@@ -26,7 +26,8 @@ pub struct Ask<'a> {
     pub user: Option<&'a str>,
     pub venue: Option<Venue>,
     pub rated: bool,
-    /// A player, the account behind a seat or a card whose name contains it, in any case.
+    /// A player, the account behind a seat, an agent's model or program, or a card whose
+    /// name contains it, in any case.
     pub text: Option<&'a str>,
 }
 
@@ -39,11 +40,14 @@ impl Ask<'_> {
             return true;
         };
         let has = |s: &str| s.to_lowercase().contains(text);
-        let players = game.players.iter();
-        players
-            .flat_map(|p| [Some(&p.name), p.account.as_ref()])
-            .flatten()
-            .any(|s| has(s))
+        let named = |p: &PastPlayer| {
+            let mut names = vec![Some(&p.name), p.account.as_ref()];
+            if let PlayedBy::Agent(a) = &p.played_by {
+                names.extend([a.model.as_ref(), a.name.as_ref(), a.program.as_ref()]);
+            }
+            names.into_iter().flatten().any(|s| has(s))
+        };
+        game.players.iter().any(named)
             || game.kingdom.iter().chain(&game.landscapes).any(|s| has(s))
     }
 }
@@ -124,7 +128,7 @@ impl HistoryModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dominion_protocol::lobby::PastPlayer;
+    use dominion_protocol::lobby::SeatAgent;
 
     struct Fake {
         venue: Venue,
@@ -173,7 +177,14 @@ mod tests {
                     seat: i as u8,
                     name: name.to_string(),
                     account: Some(name.to_lowercase()),
-                    kind: None,
+                    played_by: match *name {
+                        "Rival" => PlayedBy::Agent(SeatAgent {
+                            agent: "Rival".into(),
+                            model: Some("claude-opus-5-5".into()),
+                            ..SeatAgent::default()
+                        }),
+                        _ => PlayedBy::Person,
+                    },
                     vp: 0,
                     rank: 1,
                     turns: 1,
@@ -185,8 +196,8 @@ mod tests {
     }
 
     /// Arena games ending at 2, 4, ... 400 and official ones at 3, 9, ... 597: Ada plays
-    /// every one, Bo every Arena game, Rival the official ones; every tenth Arena game is
-    /// rated, and every 50th of each has Witch.
+    /// every one, Bo every Arena game, Rival (an agent on claude-opus-5-5) the official
+    /// ones; every tenth Arena game is rated, and every 50th of each has Witch.
     fn model() -> HistoryModel {
         let card = |i: u64| {
             if i.is_multiple_of(50) {
@@ -283,15 +294,13 @@ mod tests {
             })),
             [597, 400, 300, 297, 200, 100]
         );
-        assert_eq!(
-            find(Ask {
-                text: Some("rival"),
+        for text in ["rival", "OPUS-5-5"] {
+            let ask = Ask {
+                text: Some(text),
                 ..Ask::default()
-            })
-            .games
-            .len(),
-            100
-        );
+            };
+            assert_eq!(find(ask).games.len(), 100, "{text}");
+        }
         assert!(
             find(Ask {
                 text: Some("Smithy"),

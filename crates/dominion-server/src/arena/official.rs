@@ -3,7 +3,7 @@
 
 use super::db::{self, Db};
 use super::history::GameSource;
-use super::records::past_game;
+use super::records::{past_game, recall, who_played};
 use super::{Arena, Result};
 use crate::hub::{lock, now_ms};
 use dominion_protocol::lobby::{
@@ -45,7 +45,7 @@ impl GameSource for OfficialRecords {
     fn page(&self, user: Option<&str>, before: u64, limit: usize) -> Result<Vec<PastGame>> {
         let records = self.db.games(Venue::Official, user, before, limit)?;
         let games = records.into_iter().map(|r| {
-            let mut game = past_game(r, Venue::Official);
+            let mut game = past_game(r, Venue::Official, &|name| recall(&self.db, name));
             game.official_id = game.id.strip_prefix(RECORD).map(str::to_string);
             game
         });
@@ -143,10 +143,15 @@ impl Arena {
             None => self.db.user_by_name(owner)?,
         };
         let ended = now_ms();
+        let setups = lock(&self.state).house.setups();
         self.db.transaction(|tx| {
             if db::recorded(tx, &id)? {
                 return Ok(false);
             }
+            let (agent, bot_owner) = match &player {
+                Some(user) => who_played(tx, user, &setups)?,
+                None => (None, None),
+            };
             let mut users = vec![];
             let players = (result.players.iter())
                 .map(|p| {
@@ -162,6 +167,8 @@ impl Arena {
                         turns: p.turns,
                         resigned: p.resigned,
                         rating: None,
+                        agent: user.and(agent.clone()),
+                        owner: user.and(bot_owner.clone()),
                     }
                 })
                 .collect();
@@ -187,7 +194,7 @@ impl Arena {
 mod tests {
     use super::*;
     use crate::hub::Hub;
-    use dominion_protocol::lobby::{Credentials, HistoryQuery};
+    use dominion_protocol::lobby::{Credentials, HistoryQuery, PlayedBy};
     use dominion_protocol::view::ResultPlayer;
     use std::sync::Arc;
 
@@ -248,6 +255,8 @@ mod tests {
         assert_eq!(record.kingdom, ["Village"]);
         assert_eq!(record.others, ["Colony"]);
         assert_eq!(record.players[1].account.as_deref(), Some("Owner"));
+        assert_eq!(record.players[1].played_by, PlayedBy::Person);
+        assert_eq!(record.players[0].played_by, PlayedBy::Official);
         assert_eq!(record.players[0].account, None);
         assert!(record.players.iter().all(|p| p.rating.is_none()));
         let owner = arena.profile("Owner").unwrap();
