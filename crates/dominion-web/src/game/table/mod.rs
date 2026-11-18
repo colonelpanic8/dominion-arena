@@ -18,7 +18,7 @@ mod supply;
 use super::board::{Board, Stack, board};
 use super::interaction::{Interaction, TreasureRun, interaction, tone};
 use super::state::{Selection, answers_on_click};
-use super::use_game;
+use super::{use_game, wording};
 use crate::app::{Cards, Settings};
 use crate::assets::use_assets;
 use crate::platform;
@@ -82,6 +82,14 @@ impl Ui {
             .get(spot)
             .map(|&t| self.mark_target(sel, t))
             .unwrap_or_default()
+    }
+
+    /// The Ways a click on target `t` may play its card with, each on its own button.
+    pub fn ways_of(&self, t: Option<usize>) -> Vec<String> {
+        match t.and_then(|t| self.inter.targets.get(t)) {
+            Some(target) if self.click_answers && target.takes_way => self.inter.ways.clone(),
+            _ => vec![],
+        }
     }
 
     /// Whether any pile is to be clicked: windows then open low, over the hand.
@@ -190,7 +198,11 @@ impl TableCtx {
         let d = &ui.decision;
         if ui.click_answers {
             if let Some(a) = Selection::new(vec![target.options[0]]).answer(d) {
-                self.submit(a);
+                if target.takes_way {
+                    self.game.submit_way.call((a, "none".into()));
+                } else {
+                    self.submit(a);
+                }
             }
             return;
         }
@@ -201,6 +213,22 @@ impl TableCtx {
             sel.unclick(&target.options);
         }
         self.set_sel(&d.id, sel);
+    }
+
+    /// A click on target `t`'s Way button: plays the card using `way`.
+    pub fn act_way(&self, t: usize, way: &str) {
+        let Some(ui) = self.ui.peek().clone() else {
+            return;
+        };
+        if self.busy() || !ui.click_answers {
+            return;
+        }
+        let Some(target) = ui.inter.targets.get(t).filter(|t| t.takes_way) else {
+            return;
+        };
+        if let Some(a) = Selection::new(vec![target.options[0]]).answer(&ui.decision) {
+            self.game.submit_way.call((a, way.to_string()));
+        }
     }
 
     /// The "All" chip on target `t`: plays every copy, one after another, or picks (or
@@ -617,7 +645,11 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
                     run: next,
                     sent: Some(a.decision.clone()),
                 }));
-                game.submit.call(a);
+                if view.decision.as_ref().is_some_and(wording::may_ask_way) {
+                    game.submit_way.call((a, "none".into()));
+                } else {
+                    game.submit.call(a);
+                }
             }
             Some(_) => {}
             None => run.set(None),

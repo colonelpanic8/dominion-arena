@@ -97,6 +97,7 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         state,
         deciding,
         submit: Callback::new(|_| {}),
+        submit_way: Callback::new(|_| {}),
         undo: Callback::new(|_| {}),
         answer_undo: Callback::new(|_| {}),
         cancel_undo: Callback::new(|_| {}),

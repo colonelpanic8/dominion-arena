@@ -332,6 +332,64 @@ async fn errors_have_their_status_and_a_message() {
 }
 
 #[tokio::test]
+async fn an_answer_may_answer_the_way_question_of_the_card_it_plays() {
+    let server = start().await;
+    let kingdom = [
+        "Village",
+        "Smithy",
+        "Market",
+        "Militia",
+        "Moat",
+        "Cellar",
+        "Chapel",
+        "Festival",
+        "Laboratory",
+        "Witch",
+    ];
+    // Necropolis is an Action in the starting deck: find a seed that starts with it in hand.
+    let (created, token, d, necropolis) = 'found: {
+        for seed in 0..50 {
+            let created = server
+                .create(json!({
+                    "players": 2,
+                    "kingdom": kingdom,
+                    "landscapes": ["Way of the Sheep"],
+                    "shelters": true,
+                    "seed": seed,
+                }))
+                .await;
+            let (token, d) = server.deciding(&created).await;
+            if let Some(o) = d
+                .options
+                .iter()
+                .find(|o| o.action == "play" && o.card.as_deref() == Some("Necropolis"))
+            {
+                let index = o.index;
+                break 'found (created, token, d, index);
+            }
+        }
+        panic!("no seed starts with Necropolis in hand");
+    };
+    let id = &created.game_id;
+    let answer =
+        |way: &str| json!({ "decision": d.id, "indices": [necropolis], "way": way }).to_string();
+    let path = format!("/api/games/{id}/answer");
+    server
+        .post(&path, Some(&token), answer("Village"))
+        .await
+        .error(StatusCode::BAD_REQUEST);
+    let reply = server
+        .post(&path, Some(&token), answer("way of the sheep"))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    let sv: SeatView = reply.json();
+    let next = sv.view.decision.expect("a decision");
+    assert_eq!(next.kind, "turn", "no Way question: {next:?}");
+    assert_eq!(sv.view.turn.coins, Some(2));
+    assert_eq!(sv.view.turn.actions, Some(0));
+}
+
+#[tokio::test]
 async fn a_token_names_its_seat() {
     let server = start().await;
     let created = server

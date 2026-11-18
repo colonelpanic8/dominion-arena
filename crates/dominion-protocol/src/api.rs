@@ -2,7 +2,7 @@
 //! creation and listing share the MCP tools' snake_case types; the rest are camelCase.
 
 use crate::lobby::{GameMeta, Source, UndoRule, UserRef};
-use crate::view::AgentView;
+use crate::view::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 
 /// What a client asks for when creating a game.
@@ -267,6 +267,16 @@ pub struct UndoRequest {
     pub answers: u32,
     /// The seats yet to allow it.
     pub waiting: Vec<u8>,
+}
+
+/// `POST /api/games/{id}/answer`: an answer and, with `way` (`none` or a Way's name),
+/// the Way question of the card it plays answered in advance, for that card's replays too.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnswerRequest {
+    #[serde(flatten)]
+    pub answer: Answer,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub way: Option<String>,
 }
 
 /// What `POST /api/games/{id}/undo` asks for: by default, to take back the seat's last

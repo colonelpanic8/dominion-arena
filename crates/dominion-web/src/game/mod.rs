@@ -40,6 +40,9 @@ pub struct GameCtx {
     pub deciding: Memo<Option<u8>>,
     /// Sends an answer for the shown seat.
     pub submit: Callback<Answer>,
+    /// Sends an answer with the Way question of the card it plays answered: `none` or a
+    /// Way's name.
+    pub submit_way: Callback<(Answer, String)>,
     /// Asks to take back the shown seat's last answer.
     pub undo: Callback<()>,
     /// Allows (true) or refuses the undo waiting for the shown seat.
@@ -385,14 +388,14 @@ async fn sent(ctx: Live, via: Via, result: api::Result<SeatView>) {
     }
 }
 
-async fn send_answer(ctx: Live, answer: Answer) {
+async fn send_answer(ctx: Live, answer: Answer, way: Option<String>) {
     let Some(seat) = ctx.seat.peek().clone() else {
         return;
     };
     let mut state = ctx.state;
     let game = ctx.game.peek().clone();
     state.write().answering = true;
-    let result = api::answer(&game, &seat.token, &answer).await;
+    let result = api::answer(&game, &seat.token, &answer, way).await;
     sent(ctx, Via::Seat(seat.token), result).await;
 }
 
@@ -543,7 +546,10 @@ pub fn GamePage(id: String) -> Element {
         state,
         deciding,
         submit: Callback::new(move |answer: Answer| {
-            spawn(send_answer(live, answer));
+            spawn(send_answer(live, answer, None));
+        }),
+        submit_way: Callback::new(move |(answer, way): (Answer, String)| {
+            spawn(send_answer(live, answer, Some(way)));
         }),
         undo: Callback::new(move |()| {
             spawn(send_undo(live));

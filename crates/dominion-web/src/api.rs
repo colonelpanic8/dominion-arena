@@ -3,8 +3,8 @@
 use crate::platform::{self, encode};
 use dominion_protocol::Answer;
 use dominion_protocol::api::{
-    CardInfo, Change, Created, DealRequest, Dealt, GameSummary, NewGame, SeatInfo, SeatView,
-    WebSettings,
+    AnswerRequest, CardInfo, Change, Created, DealRequest, Dealt, GameSummary, NewGame, SeatInfo,
+    SeatView, WebSettings,
 };
 use dominion_protocol::lobby::{
     BotKey, ChatLog, Credentials, GuestRequest, History, JoinTable, Leaderboard, Lobby,
@@ -84,9 +84,20 @@ pub async fn view(game: &str, token: &str, log_from: Option<usize>) -> Result<Se
     imp::get(&url, Some(token)).await
 }
 
-pub async fn answer(game: &str, token: &str, answer: &Answer) -> Result<SeatView> {
+/// Sends an answer; with `way` (`none` or a Way's name) the Way question of the card it
+/// plays is answered with it.
+pub async fn answer(
+    game: &str,
+    token: &str,
+    answer: &Answer,
+    way: Option<String>,
+) -> Result<SeatView> {
     let url = format!("/api/games/{}/answer", encode(game));
-    imp::post(&url, Some(token), answer).await
+    let body = AnswerRequest {
+        answer: answer.clone(),
+        way,
+    };
+    imp::post(&url, Some(token), &body).await
 }
 
 /// Asks to take back the seat's last answer; the view returned has the whole log.

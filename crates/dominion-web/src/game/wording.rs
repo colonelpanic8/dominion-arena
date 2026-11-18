@@ -48,11 +48,19 @@ pub fn own_prompt(d: &AgentDecision) -> &str {
     without_way_hint(&d.prompt)
 }
 
+const WAY_HINT: &str = " (to pre-answer the Way question";
+
 pub fn without_way_hint(prompt: &str) -> &str {
-    match prompt.find(" (to pre-answer the Way question") {
+    match prompt.find(WAY_HINT) {
         Some(at) => &prompt[..at],
         None => prompt,
     }
+}
+
+/// Whether answering `d` may play an Action card in a game with Ways, so that a Way
+/// question may follow: the server says so in the prompt.
+pub fn may_ask_way(d: &AgentDecision) -> bool {
+    d.prompt.contains(WAY_HINT)
 }
 
 /// Whether `d` asks whether to play a card as itself or use a Way instead.
