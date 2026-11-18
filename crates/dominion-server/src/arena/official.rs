@@ -7,7 +7,8 @@ use super::records::{past_game, recall, who_played};
 use super::{Arena, Result};
 use crate::hub::{lock, now_ms};
 use dominion_protocol::lobby::{
-    GameRecord, OfficialAccount, OfficialGame, PastGame, RecordPlayer, Source, Venue,
+    GameRecord, OFFICIAL_GAME_PREFIX, OfficialAccount, OfficialGame, PastGame, RecordPlayer,
+    Source, Venue, official_game_id,
 };
 use dominion_protocol::view::GameResult;
 use std::sync::Arc;
@@ -24,14 +25,6 @@ pub(super) struct Official {
     recorded: Option<String>,
 }
 
-/// What an official game's record id starts with.
-const RECORD: &str = "dominion.games-";
-
-/// The id of an official game's record.
-fn record_id(game: &str) -> String {
-    format!("{RECORD}{game}")
-}
-
 /// The records of the official accounts' finished games.
 pub(super) struct OfficialRecords {
     pub db: Arc<Db>,
@@ -46,7 +39,10 @@ impl GameSource for OfficialRecords {
         let records = self.db.games(Venue::Official, user, before, limit)?;
         let games = records.into_iter().map(|r| {
             let mut game = past_game(r, Venue::Official, &|name| recall(&self.db, name));
-            game.official_id = game.id.strip_prefix(RECORD).map(str::to_string);
+            game.official_id = game
+                .id
+                .strip_prefix(OFFICIAL_GAME_PREFIX)
+                .map(str::to_string);
             game
         });
         Ok(games.collect())
@@ -54,6 +50,14 @@ impl GameSource for OfficialRecords {
 
     fn count(&self, user: &str) -> Result<u32> {
         self.db.count_games(Venue::Official, user)
+    }
+}
+
+/// Notes that `job` plays official account `account`'s game.
+pub(super) fn played_by(state: &mut super::State, account: &str, job: &crate::house::Job) {
+    if !job.game_id.is_empty() {
+        let entry = state.official.entry(account.into()).or_default();
+        entry.played_by = Some((job.game_id.clone(), job.agent.clone()));
     }
 }
 
@@ -112,6 +116,14 @@ impl Arena {
         }
     }
 
+    /// The agent that has played official account `account`'s game `game`: the only one
+    /// that may go on playing it.
+    pub(crate) fn official_game_agent(&self, account: &str, game: &str) -> Option<String> {
+        let state = lock(&self.state);
+        let played = state.official.get(account)?.played_by.as_ref()?;
+        (played.0 == game).then(|| played.1.clone())
+    }
+
     /// The official accounts, each with the agent sent to play as it.
     pub(super) fn official_accounts(&self, state: &super::State) -> Vec<OfficialAccount> {
         (state.official.values())
@@ -133,7 +145,7 @@ impl Arena {
         agent: Option<&str>,
         owner: &str,
     ) -> Result<bool> {
-        let id = record_id(&game.id);
+        let id = official_game_id(&game.id);
         let player = match agent
             .map(|a| self.db.user_by_name(a))
             .transpose()?

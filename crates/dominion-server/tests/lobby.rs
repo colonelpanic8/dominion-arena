@@ -385,10 +385,8 @@ async fn onlookers_can_watch_without_an_account() {
     let before: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
     let watched: SeatView = server.get(&format!("{path}/watch"), Some(&cy)).await.json();
     assert_eq!(anonymous.view, watched.view);
-    server
-        .get(&format!("{path}/transcript"), None)
-        .await
-        .error(StatusCode::FORBIDDEN);
+    // A rated game's agent transcript is as open as the game.
+    server.get(&format!("{path}/transcript"), None).await.ok();
     assert!(watched.view.spectating && watched.view.seat.is_none());
     assert!(watched.view.you.is_none() && watched.view.decision.is_none());
     assert_eq!(watched.view.opponents.len(), 2);
@@ -446,9 +444,13 @@ async fn onlookers_can_watch_without_an_account() {
         log.messages[0].kind,
         dominion_protocol::lobby::ChatKind::Watcher
     );
-    // A game made by hand is its seats' only, unless it says otherwise.
+    // A game made private is its seats' only.
     let made: Value = server
-        .post("/api/games", None, json!({ "players": 2 }))
+        .post(
+            "/api/games",
+            None,
+            json!({ "players": 2, "watchable": false }),
+        )
         .await
         .ok()
         .json();
@@ -461,12 +463,9 @@ async fn onlookers_can_watch_without_an_account() {
         .get(&private, Some(&cy))
         .await
         .error(StatusCode::FORBIDDEN);
+    // Anyone may watch one that doesn't say.
     let open: Value = server
-        .post(
-            "/api/games",
-            None,
-            json!({ "players": 2, "watchable": true }),
-        )
+        .post("/api/games", None, json!({ "players": 2 }))
         .await
         .ok()
         .json();

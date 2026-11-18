@@ -21,6 +21,7 @@ mod official;
 mod records;
 mod tables;
 pub(crate) mod transcripts;
+pub use transcripts::is_official;
 
 use crate::hub::{Hub, HubError, Timing, lock, now_ms};
 use crate::limits::Limiter;
@@ -282,6 +283,8 @@ pub struct Arena {
     lobby: watch::Sender<u64>,
     /// Bumped whenever something is said in the lobby or at a table.
     chat: watch::Sender<u64>,
+    /// Bumped whenever an agent playing on dominion.games adds to its transcript.
+    official_transcripts: watch::Sender<u64>,
     limits: Limits,
     /// When the slow part of [`Arena::sweep`] last ran.
     swept: Mutex<Option<Instant>>,
@@ -353,6 +356,7 @@ impl Arena {
             state: Mutex::default(),
             lobby: watch::channel(0).0,
             chat: watch::channel(0).0,
+            official_transcripts: watch::channel(0).0,
             limits: Limits::default(),
             swept: Mutex::new(None),
             start_checks: Mutex::default(),

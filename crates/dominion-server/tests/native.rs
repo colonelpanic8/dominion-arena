@@ -1071,4 +1071,25 @@ async fn transcripts_follow_game_visibility_and_retry_without_duplicate_entries(
             .status(),
         reqwest::StatusCode::FORBIDDEN
     );
+    // A game on dominion.games: anyone reads its agent's transcript, signed in or not.
+    let job: dominion_server::house::Job = serde_json::from_value(serde_json::json!({
+        "official": true, "agent": "Astra", "gameId": "77", "seat": 1,
+        "name": "AstraDominion", "token": "job-token",
+    }))
+    .unwrap();
+    h.arena.append_official_transcript(&job, &input).unwrap();
+    let url = format!(
+        "{base}/api/games/{}/transcript",
+        dominion_protocol::lobby::official_game_id("77")
+    );
+    let reply = http.get(&url).send().await.unwrap();
+    assert_eq!(reply.status(), reqwest::StatusCode::OK);
+    let page: TranscriptPage = serde_json::from_str(&reply.text().await.unwrap()).unwrap();
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(
+        (page.entries[0].seat, page.entries[0].agent.as_str()),
+        (1, "Astra")
+    );
+    let feed = http.get(format!("{url}/events")).send().await.unwrap();
+    assert_eq!(feed.status(), reqwest::StatusCode::OK);
 }

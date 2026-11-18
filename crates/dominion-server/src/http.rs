@@ -537,7 +537,7 @@ struct Api {
     native_web_dir: Option<std::path::PathBuf>,
 }
 
-struct Error {
+pub(crate) struct Error {
     status: StatusCode,
     message: String,
     retry_after: Option<Duration>,
@@ -1019,11 +1019,8 @@ struct TranscriptQuery {
 }
 
 fn transcript_access(api: &Api, id: &str, headers: &HeaderMap, q: &SeatQuery) -> Result<()> {
-    if !api.hub.meta(id)?.live_transcripts() {
-        return Err(Error::new(
-            StatusCode::FORBIDDEN,
-            crate::arena::transcripts::LIVE,
-        ));
+    if crate::arena::is_official(id) {
+        return Ok(());
     }
     if api.seat(id, headers, q.token.as_deref(), q.seat).is_ok() {
         return Ok(());
@@ -1068,7 +1065,11 @@ async fn transcript_events(
     seat: Queried<SeatQuery>,
 ) -> Result<Events> {
     transcript_access(&api, &id, &headers, &query(seat)?)?;
-    let changes = api.hub.transcript_changes(&id)?;
+    let changes = if crate::arena::is_official(&id) {
+        api.arena.official_transcript_changes()
+    } else {
+        api.hub.transcript_changes(&id)?
+    };
     let (held, idle) = tokio::sync::watch::channel(0);
     Ok(feed(&api, changes, idle, held, |version, _| Change {
         version,

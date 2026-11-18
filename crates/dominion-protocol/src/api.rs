@@ -18,7 +18,7 @@ pub struct NewGame {
     pub names: Vec<String>,
     /// Per seat: the server's agent profile to play it, or null for a token seat.
     /// When supplied, one entry per player. Seating agents requires a registered
-    /// account and uses its agent-seat allowance. Agent games are watchable by default.
+    /// account and uses its agent-seat allowance.
     #[serde(default)]
     pub agents: Vec<Option<String>>,
     /// Kingdom piles by name. Without it, a random kingdom is dealt from `sets`.
@@ -37,8 +37,8 @@ pub struct NewGame {
     pub turn_limit: Option<u32>,
     pub colonies: Option<bool>,
     pub shelters: Option<bool>,
-    /// Let anyone watch the game: public information only (default true
-    /// with assigned agents, false otherwise).
+    /// Let anyone watch the game, signed in or not (default true); false makes it
+    /// private.
     pub watchable: Option<bool>,
     /// A chess clock: a seat whose time runs out forfeits.
     pub clock: Option<crate::lobby::Clock>,
@@ -624,6 +624,9 @@ pub struct OnlineManagement {
     #[serde(default)]
     pub models: Vec<crate::lobby::HouseModel>,
     pub agent: Option<String>,
+    /// The agent that has played the running game: only it may resume it.
+    #[serde(default)]
+    pub game_agent: Option<String>,
     pub running: bool,
     pub searching: bool,
     pub queue_feedback: Vec<String>,

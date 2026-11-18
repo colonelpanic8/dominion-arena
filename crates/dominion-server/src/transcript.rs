@@ -31,7 +31,14 @@ impl Live {
             .trim_end_matches('/')
             .strip_suffix("/mcp")
             .ok_or("transcript upload requires the server's /mcp endpoint")?;
-        let url = format!("{base}/api/games/{}/transcript", job.game_id);
+        let url = match (job.official, job.official_account.as_deref()) {
+            (false, _) => format!("{base}/api/games/{}/transcript", job.game_id),
+            (true, None) => format!("{base}/api/online/transcript"),
+            (true, Some(id)) => {
+                crate::harness::endpoint(server, job)?;
+                format!("{base}/api/online/{id}/transcript")
+            }
+        };
         let client: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(10)))
             .http_status_as_error(false)

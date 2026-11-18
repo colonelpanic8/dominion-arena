@@ -7,7 +7,7 @@ mod chat;
 pub mod entry;
 pub mod interaction;
 pub mod logfmt;
-mod menu;
+pub mod menu;
 pub mod meta;
 pub mod moves;
 pub mod plain;
@@ -28,7 +28,9 @@ use dominion_protocol::api::{Change, GameSummary, SeatView};
 use futures_util::StreamExt;
 pub use state::{Applied, GameState, Selection};
 
-/// What the game page provides to everything rendered inside it.
+/// A game as its page is given it: what every source of games provides (this server's
+/// games in `GamePage`, a finished one's replay, an official account's game in
+/// `online.rs`) and all that [`GameShell`], the table and the plain page read.
 #[derive(Clone, Copy)]
 pub struct GameCtx {
     pub game: Signal<String>,
@@ -54,10 +56,47 @@ pub struct GameCtx {
     pub resign: Callback<()>,
     /// The question before resigning is open.
     pub resigning: Signal<bool>,
+    pub offers: Memo<Offers>,
+}
+
+/// What a game's source has besides its views. The page draws only what is offered.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Offers {
+    /// The game has a chat (`game-<id>`).
+    pub chat: bool,
+    /// The id its agents' transcript is kept under.
+    pub transcript: Option<String>,
 }
 
 pub fn use_game() -> GameCtx {
     use_context::<GameCtx>()
+}
+
+/// Provides a game that is only looked at: nothing is answered, undone or resigned.
+pub fn use_watched_game(
+    game: Signal<String>,
+    state: Signal<GameState>,
+    offers: Memo<Offers>,
+) -> GameCtx {
+    let seat = use_signal(|| None);
+    let watching = use_memo(|| true);
+    let deciding = use_memo(move || state.read().deciding);
+    let resigning = use_signal(|| false);
+    use_context_provider(|| GameCtx {
+        game,
+        seat,
+        watching,
+        state,
+        deciding,
+        submit: Callback::new(|_| {}),
+        submit_way: Callback::new(|_| {}),
+        undo: Callback::new(|_| {}),
+        answer_undo: Callback::new(|_| {}),
+        cancel_undo: Callback::new(|_| {}),
+        resign: Callback::new(|_| {}),
+        resigning,
+        offers,
+    })
 }
 
 impl GameCtx {
@@ -511,6 +550,70 @@ pub fn WaitingNotice(#[props(default)] style: String) -> Element {
     }
 }
 
+/// Table or Plain, remembered for the session.
+#[component]
+pub fn ViewToggle(table_on: Signal<bool>) -> Element {
+    rsx! {
+        span { class: "view-toggle",
+            button {
+                class: if table_on() { "toggle on" } else { "toggle" },
+                "data-view": "table",
+                onclick: move |_| { table::set_table_mode(true); table_on.set(true); },
+                "Table"
+            }
+            button {
+                class: if table_on() { "toggle" } else { "toggle on" },
+                "data-view": "plain",
+                onclick: move |_| { table::set_table_mode(false); table_on.set(false); },
+                "Plain"
+            }
+        }
+    }
+}
+
+/// The bar over every game: its title, whose view is shown (the children), how many
+/// watch, the view toggle and the menu.
+#[component]
+pub fn GameBar(title: String, table_on: Signal<bool>, children: Element) -> Element {
+    let watchers = use_game().state.read().meta.watchers;
+    rsx! {
+        div { class: "seat-bar",
+            span { class: "game-title", "{title}" }
+            {children}
+            if watchers > 0 {
+                span { class: "muted", "data-watchers": "{watchers}", title: "People watching this game", "{watchers} watching" }
+            }
+            ViewToggle { table_on }
+            menu::GameMenu {}
+        }
+    }
+}
+
+/// The game of the [`GameCtx`] provided, on the table or as plain text under its bar:
+/// the one page every source of games is shown through. `who` says whose view it is and
+/// switches it; `extra` is what only this source has (an official account's panel).
+#[component]
+pub fn GameShell(title: String, who: Element, extra: Element) -> Element {
+    let table_on = use_signal(table::table_mode);
+    let bar = rsx! {
+        GameBar { title, table_on, {who} }
+    };
+    if table_on() {
+        return rsx! {
+            table::TableGame { controls: rsx! { {bar} {extra} } }
+        };
+    }
+    rsx! {
+        div { class: "game-page",
+            {bar}
+            {extra}
+            WaitingNotice {}
+            plain::PlainGame {}
+            menu::ResignDialog {}
+        }
+    }
+}
+
 #[component]
 pub fn GamePage(id: String) -> Element {
     let game = use_signal(|| id.clone());
@@ -541,6 +644,15 @@ pub fn GamePage(id: String) -> Element {
     let account = use_account();
     let summary = use_summary(game);
     use_context_provider(|| summary);
+    let offers = use_memo(move || {
+        let meta = &state.read().meta;
+        let agents = (meta.users.iter().flatten())
+            .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
+        Offers {
+            chat: true,
+            transcript: agents.then(|| game.read().clone()),
+        }
+    });
     use_context_provider(|| GameCtx {
         game,
         seat,
@@ -566,6 +678,7 @@ pub fn GamePage(id: String) -> Element {
             spawn(send_resign(live));
         }),
         resigning: Signal::new(false),
+        offers,
     });
 
     let take_token = move |token: String| {
@@ -639,7 +752,6 @@ pub fn GamePage(id: String) -> Element {
 
     let held = seats();
     let shown = !held.is_empty() || watching();
-    let watchers = state.read().meta.watchers;
     let player_names = match summary.read().as_ref() {
         Some(g) => g.names.clone(),
         None => state
@@ -650,10 +762,9 @@ pub fn GamePage(id: String) -> Element {
             .unwrap_or_default(),
     };
     let mut paste = use_signal(String::new);
-    let mut table_on = use_signal(table::table_mode);
-    let seat_bar = rsx! {
-        div { class: "seat-bar",
-            span { class: "game-title", "Game {game}" }
+    let table_on = use_signal(table::table_mode);
+    let title = format!("Game {game}");
+    let who = rsx! {
             if held.len() > 1 {
                 span { class: "muted", "Seat:" }
                 for s in held.iter().cloned() {
@@ -701,25 +812,9 @@ pub fn GamePage(id: String) -> Element {
                     }
                 }
             }
-            if watchers > 0 {
-                span { class: "muted", "data-watchers": "{watchers}", title: "People watching this game", "{watchers} watching" }
-            }
-            span { class: "view-toggle",
-                button {
-                    class: if table_on() { "toggle on" } else { "toggle" },
-                    "data-view": "table",
-                    onclick: move |_| { table::set_table_mode(true); table_on.set(true); },
-                    "Table"
-                }
-                button {
-                    class: if table_on() { "toggle" } else { "toggle on" },
-                    "data-view": "plain",
-                    onclick: move |_| { table::set_table_mode(false); table_on.set(false); },
-                    "Plain"
-                }
-            }
-            menu::GameMenu {}
-        }
+    };
+    let seat_bar = rsx! {
+        GameBar { title: title.clone(), table_on, {who.clone()} }
     };
     if let Some(e) = gone() {
         let id = game.read().clone();
@@ -739,17 +834,25 @@ pub fn GamePage(id: String) -> Element {
             }
         };
     }
-    if shown && table_on() && join_error().is_none() {
+    if shown {
         return rsx! {
-            table::TableGame { controls: seat_bar }
+            GameShell {
+                title,
+                who,
+                extra: rsx! {
+                    if let Some(e) = join_error() {
+                        p { class: "error", "{e}" }
+                    }
+                },
+            }
         };
     }
     rsx! {
         div { class: "game-page",
             {seat_bar}
-            if finding() && !shown {
+            if finding() {
                 p { class: "muted", "data-finding": "1", "Looking for your seat…" }
-            } else if !shown {
+            } else {
                 section { class: "panel", "data-no-seat": "1",
                     h2 { "Take a seat" }
                     if let Some(why) = refused() {
@@ -776,13 +879,6 @@ pub fn GamePage(id: String) -> Element {
                         p { class: "error", "{e}" }
                     }
                 }
-            } else {
-                if let Some(e) = join_error() {
-                    p { class: "error", "{e}" }
-                }
-                WaitingNotice {}
-                plain::PlainGame {}
-                menu::ResignDialog {}
             }
         }
     }

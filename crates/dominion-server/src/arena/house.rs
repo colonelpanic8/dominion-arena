@@ -216,7 +216,7 @@ impl Arena {
             let config = crate::hub::config(&req)?;
             let names = crate::hub::names(&req)?;
             let mut meta = crate::hub::Meta {
-                watchable: req.watchable.unwrap_or(false),
+                watchable: req.watchable.unwrap_or(true),
                 clock: req.clock.map(crate::hub::ClockState::new),
                 host: who.map(|w| w.user.clone()),
                 ..Default::default()
@@ -318,7 +318,7 @@ impl Arena {
                     Job {
                         official: false,
                         official_account: None,
-                        transcript: meta.live_transcripts(),
+                        transcript: true,
                         configuration: self.hub.configuration(&g.game_id),
                         agent: agent.name.clone(),
                         brief: meta.briefs.get(usize::from(g.seat)).cloned().flatten(),
@@ -642,15 +642,16 @@ impl Arena {
     /// Sets official account `account`'s job; the job is marked as that account's.
     pub(crate) fn set_official_job(&self, account: &str, job: Option<Job>) {
         {
-            let official = &mut lock(&self.state).house.official;
+            let state = &mut *lock(&self.state);
             match job {
                 Some(mut job) => {
                     job.official = true;
                     job.official_account = Some(account.into());
-                    official.insert(account.into(), job);
+                    super::official::played_by(state, account, &job);
+                    state.house.official.insert(account.into(), job);
                 }
                 None => {
-                    official.remove(account);
+                    state.house.official.remove(account);
                 }
             }
         }

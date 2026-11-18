@@ -8,7 +8,7 @@ use crate::lobby::agent_picker::AgentPicker;
 use crate::lobby::{Fieldset, use_lobby};
 use crate::{
     api,
-    game::{GameCtx, GameState, table},
+    game::{GameShell, GameState, Offers, table, use_watched_game},
     platform,
 };
 use dioxus::prelude::*;
@@ -16,14 +16,15 @@ use dominion_protocol::api::{
     GameSummary, OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineOutcome,
     OnlineRating, OnlineRatingType, OnlineStart,
 };
-use dominion_protocol::lobby::OfficialAccount;
+use dominion_protocol::lobby::{OfficialAccount, official_game_id};
 
 const CSS: &str = include_str!("../assets/online.css");
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum Action {
     Start,
     Attach,
+    Resume(String),
     Pause,
     Resign,
     Reconnect,
@@ -86,24 +87,13 @@ pub fn OnlinePage(account: Option<String>) -> Element {
     let game = use_signal(String::new);
     let summary = use_signal(|| None::<GameSummary>);
     use_context_provider(|| summary);
-    let seat = use_signal(|| None);
-    let watching = use_memo(|| true);
-    let deciding = use_memo(|| None);
-    let resigning = use_signal(|| false);
-    use_context_provider(|| GameCtx {
-        game,
-        seat,
-        watching,
-        state,
-        deciding,
-        submit: Callback::new(|_| {}),
-        submit_way: Callback::new(|_| {}),
-        undo: Callback::new(|_| {}),
-        answer_undo: Callback::new(|_| {}),
-        cancel_undo: Callback::new(|_| {}),
-        resign: Callback::new(|_| {}),
-        resigning,
+    let offers = use_memo(move || Offers {
+        chat: false,
+        transcript: Some(game())
+            .filter(|g| !g.is_empty())
+            .map(|g| official_game_id(&g)),
     });
+    use_watched_game(game, state, offers);
     use_future(move || async move {
         loop {
             let account = id.peek().clone();
@@ -126,6 +116,9 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         }
     });
     let error = state.read().error.clone();
+    let playing = (state.read().view.as_ref())
+        .and_then(|v| v.you.as_ref())
+        .map(|y| y.name.clone());
     let controls = rsx! {
         if let Some(account) = owner.cloned() {
             OfficialPanel { key: "{account}", account }
@@ -137,7 +130,16 @@ pub fn OnlinePage(account: Option<String>) -> Element {
     rsx! {
         style { {CSS} }
         if state.read().view.is_some() {
-            table::TableGame { controls, arena: false }
+            GameShell {
+                title: format!("dominion.games {}", game().rsplit(':').next().unwrap_or_default()),
+                who: rsx! {
+                    span { class: "watching-mark", "data-watching": "1", "watching" }
+                    if let Some(name) = playing {
+                        span { class: "muted", "as {name}" }
+                    }
+                },
+                extra: controls,
+            }
         } else {
             section { class: "online-idle",
                 h1 { class: "page-title", "dominion.games" }
@@ -285,6 +287,7 @@ fn OfficialPanel(account: String) -> Element {
             let result = match action {
                 Action::Start => api::online_start(account, &request).await,
                 Action::Attach => api::online_attach(account, selected).await,
+                Action::Resume(agent) => api::online_attach(account, agent).await,
                 Action::Pause => api::online_manage_action(account, "pause").await,
                 Action::Resign => api::online_manage_action(account, "resign").await,
                 Action::Cancel => api::online_manage_action(account, "cancel").await,
@@ -313,6 +316,8 @@ fn OfficialPanel(account: String) -> Element {
                         }
                     }
                 }
+                // A running game keeps the agent it started with.
+                if !status.running || (status.agent.is_none() && status.game_agent.is_none()) {
                 label { "Agent"
                     if status.models.is_empty() {
                         select { value: "{agent}", disabled: busy(), onchange: move |e| agent.set(e.value()),
@@ -326,6 +331,7 @@ fn OfficialPanel(account: String) -> Element {
                             onpick: move |name: Option<String>| agent.set(name.unwrap_or_default()),
                         }
                     }
+                }
                 }
                 if status.agents.is_empty() {
                     p { class: "muted", "The agent runner is unavailable. No game will be started without an agent." }
@@ -391,9 +397,12 @@ fn OfficialPanel(account: String) -> Element {
                     if let Some(playing) = &status.agent {
                         p { "Playing agent: {playing}" }
                         button { disabled: busy(), onclick: move |_| execute.call(Action::Pause), "Pause agent" }
+                    } else if let Some(paused) = status.game_agent.clone() {
+                        p { "{paused} is paused" }
+                        button { disabled: busy(), onclick: move |_| execute.call(Action::Resume(paused.clone())), "Resume {paused}" }
                     } else {
-                        p { "Agent paused" }
-                        button { disabled: busy() || agent.read().is_empty(), onclick: move |_| execute.call(Action::Attach), "Resume with selected agent" }
+                        p { "No agent is playing this game" }
+                        button { disabled: busy() || agent.read().is_empty(), onclick: move |_| execute.call(Action::Attach), "Start the selected agent" }
                     }
                     if confirming() {
                         p { "Resign this official game?" }

@@ -580,7 +580,7 @@ impl Session {
     }
 
     #[tool(
-        description = "dominion/play@1: create a game, join seat 0, return its full view and all secret seat tokens. players defaults to 2. Arena has no automatic bot opponents: bots must be 0 (default); other seats need agents with their tokens. For explicit registered house-agent profiles use create_game instead. kingdom/landscapes are required inclusions, filled randomly. Extras: sets, names, seed, turn_limit, colonies, shelters, watchable. Never replaces or resigns your previous game."
+        description = "dominion/play@1: create a game, join seat 0, return its full view and all secret seat tokens. players defaults to 2. Arena has no automatic bot opponents: bots must be 0 (default); other seats need agents with their tokens. For explicit registered house-agent profiles use create_game instead. kingdom/landscapes are required inclusions, filled randomly. Extras: sets, names, seed, turn_limit, colonies, shelters, watchable (false makes the game private; anyone may watch otherwise). Never replaces or resigns your previous game."
     )]
     async fn new_game(
         &self,
@@ -651,7 +651,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents; agent games are watchable by default. `briefs` gives each seat's player text to read before the game (null for none): a plan to play, notes from earlier games; a server agent gets it with its first view, a token seat on joining. `debrief` is a question every server agent answers once the game is over, before it leaves; game_report collects the answers. `rated: true` counts a game with a different server agent in every seat for their ratings (no undo). Returns the game id and secret tokens only for seats without agents."
+        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents. Anyone may watch a game unless `watchable` is false. `briefs` gives each seat's player text to read before the game (null for none): a plan to play, notes from earlier games; a server agent gets it with its first view, a token seat on joining. `debrief` is a question every server agent answers once the game is over, before it leaves; game_report collects the answers. `rated: true` counts a game with a different server agent in every seat for their ratings (no undo). Returns the game id and secret tokens only for seats without agents."
     )]
     async fn create_game(
         &self,

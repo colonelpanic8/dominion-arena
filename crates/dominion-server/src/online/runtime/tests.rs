@@ -697,11 +697,13 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     assert!(requests.try_recv().is_err());
     let (offering, mut jobs) = mpsc::unbounded_channel();
     arena.runner_connected(
-        vec![crate::house::Offer {
-            name: "fixture-agent".into(),
-            about: "fixture".into(),
-            ..Default::default()
-        }],
+        ["fixture-agent", "other-agent"]
+            .map(|name| crate::house::Offer {
+                name: name.into(),
+                about: "fixture".into(),
+                ..Default::default()
+            })
+            .into(),
         1,
         offering,
     );
@@ -746,7 +748,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     let mut requests = backend.await.unwrap();
     let first = arena.official_job(crate::online::LEGACY_ID).unwrap();
     assert!(first.official);
-    assert!(!first.transcript);
+    assert!(first.transcript);
     let crate::house::ToRunner::Jobs { jobs } = jobs.recv().await.unwrap() else {
         panic!("job dispatch")
     };
@@ -769,6 +771,29 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         assert!(!reply.ok, "{tool} unexpectedly allowed");
     }
     assert!(requests.try_recv().is_err());
+    // Only the playing agent adds to the game's transcript, which anyone may read.
+    let entry = serde_json::json!({
+        "attempt": "attempt-1", "offset": 0, "time": 1, "kind": "message",
+        "block": "b1", "append": false, "text": "Opening with Silver.",
+    });
+    for (token, status) in [
+        (&owner, reqwest::StatusCode::FORBIDDEN),
+        (&first.token, reqwest::StatusCode::NO_CONTENT),
+    ] {
+        let response = http
+            .post(format!("{manager}/transcript"))
+            .bearer_auth(token)
+            .json(&entry)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+    }
+    let kept = dominion_protocol::lobby::official_game_id(&first.game_id);
+    assert!(crate::arena::is_official(&kept));
+    let page = arena.transcript(&kept, 0).unwrap();
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].agent, "fixture-agent");
     let response = http
         .get(format!("{manager}/manage"))
         .bearer_auth(&first.token)
@@ -792,6 +817,26 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
     capability.close().await;
+    // The paused game keeps its agent: no other may take it over.
+    let response = http
+        .post(format!("{manager}/agent"))
+        .bearer_auth(&owner)
+        .json(&serde_json::json!({"agent":"other-agent"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CONFLICT);
+    assert!(arena.official_job(crate::online::LEGACY_ID).is_none());
+    let managed: dominion_protocol::api::OnlineManagement = http
+        .get(format!("{manager}/manage"))
+        .bearer_auth(&owner)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(managed.game_agent.as_deref(), Some("fixture-agent"));
     let response = http
         .post(format!("{manager}/agent"))
         .bearer_auth(&owner)

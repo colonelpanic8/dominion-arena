@@ -619,7 +619,7 @@ impl Changes {
 async fn every_change_reaches_event_subscribers() {
     let server = start().await;
     let created = server
-        .create(json!({ "players": 2, "kingdom": ["Village"], "seed": 2 }))
+        .create(json!({ "players": 2, "kingdom": ["Village"], "seed": 2, "watchable": false }))
         .await;
     let id = &created.game_id;
     let missing = server.get(&format!("/api/games/{id}/events"), None).await;
@@ -968,7 +968,7 @@ async fn a_finished_games_recorded_stream_is_served_to_its_seats() {
     let (hub, _) = Hub::open(tmp.path(), Duration::from_secs(3600)).unwrap();
     let server = start_hub(hub, Options::default()).await;
     let created = server
-        .create(json!({ "players": 2, "seed": 3, "turn_limit": 4 }))
+        .create(json!({ "players": 2, "seed": 3, "turn_limit": 4, "watchable": false }))
         .await;
     let id = &created.game_id;
     let path = format!("/api/games/{id}/recording");

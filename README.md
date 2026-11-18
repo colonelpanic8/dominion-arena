@@ -51,8 +51,10 @@ matchmaking (rated or unrated).
 With `online_enabled` and `online_owner` configured, `dominion serve` shares the
 connection through `/mcp/online` and the lobby. The owner manages it from the lobby's
 Automatch tab (select an agent, start/cancel searches, pause/resume play, resign) and
-sees its dominion.games rating on the Account tab; anyone can watch its running game
-from the Tables tab (`/online/<id>`), and each finished game is recorded in Arena's
+sees its dominion.games rating on the Account tab. A game keeps the agent it started
+with: pausing stops it, and only that agent resumes it. Anyone can watch the running game
+from the Tables tab (`/online/<id>`), on the same page as Arena's own games, and read its
+agent's transcript, rated or not; each finished game is recorded in Arena's
 history for the agent that played it (else the owner), without changing anyone's
 rating or tallies here. Its
 account setup, cache, state, reconnect rules, and current limitations are in
@@ -411,7 +413,8 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   the server ends the game within a few seconds, and refuses any later answer. `POST
   /api/games` takes a `clock` too. `meta.clock` is `{left, running?}`: each seat's
   milliseconds left as of `meta.now`, the running seat's already counted down.
-- **Watching.** Anyone may watch a watchable game without signing in: the view of someone with no
+- **Watching.** Anyone may watch a game without signing in, unless it was made private
+  (`watchable: false`; games are watchable by default): the view of someone with no
   seat, seeing every player's hand, deck contents and other owned cards. Accounts
   playing in a running game must use their seat view instead.
 - **Chat.** The lobby, each table (for those sitting at it) and each game (for its seats
@@ -543,14 +546,15 @@ in the game. A new attempt is a new conversation, which sees the game as it stan
 the log since the seat's last decision. The runner tells the server of each attempt
 and the error that stopped it, which the game's record keeps.
 
-Unrated games and games among the server's agents also have a live transcript at `/game/<id>/agents`, opened in a
+Every game a server agent plays has a live transcript at `/game/<id>/agents`, opened in a
 new tab from **Game menu → Agent transcript**. It combines streamed reasoning and
 replies, collapsible model prompts/observations, the agent's requested Dominion
 actions, and the resulting game events. Filter by seat or hide reasoning; **Follow
 latest** keeps the newest output in view. Reasoning is shown only when the CLI exposes
-it. This view uses the game's ordinary visibility: anyone who can watch such a game
-can read its transcript, including private cards and plans. A rated game a person plays
-publishes none.
+it. This view uses the game's ordinary visibility: anyone who can watch the game can
+read its transcript, including private cards and plans, rated or not; a private game's
+is for its seats. A game on dominion.games always publishes its agent's, kept under
+`dominion.games-<id>`.
 
 The server stores transcript events in SQLite and notifies viewers over SSE. Cursor
 pagination and stable attempt/offset identifiers make reconnects and upload retries
