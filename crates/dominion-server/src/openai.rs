@@ -527,6 +527,7 @@ async fn play_inner(
         "Initial view and card reference:\n{}",
         joined.text
     ));
+    archive.record("direct_instructions", json!({"instructions": instructions}))?;
     let mut input = vec![];
     give(archive, &mut input, user_message(&first))?;
     let tools = tools(playbook.is_some());
@@ -536,7 +537,6 @@ async fn play_inner(
     let mut over = false;
     let mut debrief = crate::harness::debrief_request(job).filter(|_| !job.official);
     let mut asked = false;
-    let mut instructed = false;
     loop {
         let mut reasoning = json!({"summary": "detailed"});
         if let Some(effort) = &spec.effort {
@@ -555,12 +555,10 @@ async fn play_inner(
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session.id,
         });
-        let mut request = json!({"model": spec.model, "items": input.len()});
-        if !instructed {
-            instructed = true;
-            request["instructions"] = json!(instructions);
-        }
-        archive.record("direct_request", request)?;
+        archive.record(
+            "direct_request",
+            json!({"model": spec.model, "items": input.len()}),
+        )?;
         let (items, usage) = session.respond(&body).await?;
         archive.record("direct_usage", usage)?;
         let mut calls = vec![];

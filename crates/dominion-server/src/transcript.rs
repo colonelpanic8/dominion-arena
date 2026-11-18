@@ -541,7 +541,7 @@ impl Normalizer {
                     "Waiting for model",
                 );
             }
-            "direct_request" => self.system(&mut out, time, data["instructions"].as_str()),
+            "direct_instructions" => self.system(&mut out, time, data["instructions"].as_str()),
             "direct_input" => self.direct_input(data, time, &mut out),
             "direct_pruned" => {
                 let count = data["call_ids"].as_array().map_or(0, Vec::len);
@@ -820,8 +820,8 @@ mod tests {
     fn direct_agents_show_instructions_inputs_calls_and_outputs() {
         let mut n = Normalizer::new("attempt".into());
         let system = n.record(
-            "direct_request",
-            &json!({"model":"m","items":1,"instructions":"Play well."}),
+            "direct_instructions",
+            &json!({"instructions":"Play well."}),
             1,
         );
         assert_eq!(texts(&system)[0].0, Kind::System);

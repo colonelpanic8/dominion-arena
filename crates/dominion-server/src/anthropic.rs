@@ -363,6 +363,7 @@ async fn play_inner(
         "Initial view and card reference:\n{}",
         joined.text
     ));
+    archive.record("direct_instructions", json!({"instructions": instructions}))?;
     let mut messages = vec![];
     say(archive, &mut messages, &first)?;
     let system =
@@ -373,7 +374,6 @@ async fn play_inner(
     let mut over = false;
     let mut debrief = crate::harness::debrief_request(job).filter(|_| !job.official);
     let mut asked = false;
-    let mut instructed = false;
     loop {
         let mut body = json!({
             "model": model,
@@ -390,12 +390,10 @@ async fn play_inner(
         if let Some(effort) = &spec.effort {
             body["output_config"] = json!({"effort": effort});
         }
-        let mut request = json!({"model": model, "items": messages.len()});
-        if !instructed {
-            instructed = true;
-            request["instructions"] = json!(instructions);
-        }
-        archive.record("direct_request", request)?;
+        archive.record(
+            "direct_request",
+            json!({"model": model, "items": messages.len()}),
+        )?;
         let reply = session.respond(&body).await?;
         archive.record("direct_usage", reply.usage.clone())?;
         if (reply.context_management["applied_edits"].as_array()).is_some_and(|e| !e.is_empty()) {
