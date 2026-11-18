@@ -484,7 +484,8 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-log-head:hover { color: #fff; }
 .dt-log-caret { display: inline-block; width: 1.1em; color: #888; }
 .dt-log-gains { margin: 0 0 calc(0.4 * var(--vh)) calc(2% + 1.1em); font-size: calc(1.8 * var(--vh)); color: #a8a8a8; }
-.dt-log-gains::before { content: "gains "; color: #777; }
+.dt-log-plus > span:not(.dt-name) { color: #8fc98f; }
+.dt-log-minus > span:not(.dt-name) { color: #e08a8a; }
 .dt-log-gain + .dt-log-gain::before { content: " · "; color: #777; }
 .dt-below-log {
   position: absolute;

@@ -7,7 +7,7 @@ use super::pieces::{CardName, TableCard, seat_class};
 use crate::app::{Route, use_cards};
 use crate::card::CardSize;
 use crate::game::board::{Board, Stack};
-use crate::game::logfmt::{LogLine, LogTurn, Span, gain_spans, initials, log_turns};
+use crate::game::logfmt::{LogLine, LogTurn, Span, initials, log_turns, tally_spans};
 use dioxus::prelude::*;
 use dominion_protocol::LogEntry;
 use std::collections::HashMap;
@@ -47,13 +47,20 @@ fn LogRow(line: LogLine, short: Vec<String>) -> Element {
     }
 }
 
-/// A turn's header, which opens and closes it, with what each player gained in it.
+/// A turn's header, which opens and closes it, with what each player gained (+) and
+/// trashed (−) in it.
 #[component]
 fn TurnHead(turn: LogTurn, short: Vec<String>, open: bool, ontoggle: EventHandler) -> Element {
     let head = turn.head.as_ref().expect("a turn's header");
     let owner = head.player;
-    let mut gains = turn.gains.clone();
-    gains.sort_by_key(|(p, _)| Some(*p) != owner);
+    let mut players = turn.changed_players();
+    players.sort_by_key(|p| Some(*p) != owner);
+    let of = |list: &[(u8, Vec<(String, u32)>)], p: u8| {
+        list.iter()
+            .find(|(q, _)| *q == p)
+            .map(|(_, items)| items.clone())
+            .unwrap_or_default()
+    };
     rsx! {
         div {
             class: "dt-log-line dt-log-turn dt-log-head",
@@ -62,14 +69,28 @@ fn TurnHead(turn: LogTurn, short: Vec<String>, open: bool, ontoggle: EventHandle
             span { class: "dt-log-caret", if open { "▾" } else { "▸" } }
             {spans(&head.spans, &short)}
         }
-        if !gains.is_empty() {
+        if !players.is_empty() {
             div { class: "dt-log-gains",
-                for (p, items) in gains {
-                    span { key: "{p}", class: "dt-log-gain",
-                        if Some(p) != owner {
-                            {spans(&[Span::Player(p), Span::Text(": ".into())], &short)}
+                for p in players {
+                    {
+                        let gained = of(&turn.gains, p);
+                        let trashed = of(&turn.trashes, p);
+                        rsx! {
+                            span { key: "{p}", class: "dt-log-gain",
+                                if Some(p) != owner {
+                                    {spans(&[Span::Player(p), Span::Text(": ".into())], &short)}
+                                }
+                                if !gained.is_empty() {
+                                    span { class: "dt-log-plus", {spans(&tally_spans("+", &gained), &short)} }
+                                }
+                                if !gained.is_empty() && !trashed.is_empty() {
+                                    " "
+                                }
+                                if !trashed.is_empty() {
+                                    span { class: "dt-log-minus", {spans(&tally_spans("−", &trashed), &short)} }
+                                }
+                            }
                         }
-                        {spans(&gain_spans(&items), &short)}
                     }
                 }
             }
