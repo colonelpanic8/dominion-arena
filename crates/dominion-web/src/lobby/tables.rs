@@ -107,9 +107,8 @@ impl Seat {
 pub struct Line {
     /// A table's host; a game's players.
     pub title: String,
-    /// What its first column shows: a table's host, or for an official account's game,
-    /// dominion.games (a game's seats name its players).
-    pub label: String,
+    /// A table's host, crowned among its seats.
+    pub host: Option<String>,
     pub table: Option<String>,
     pub game: Option<String>,
     pub seats: Vec<Seat>,
@@ -225,7 +224,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
         };
         lines.push(Line {
             title: t.host.clone(),
-            label: t.host.clone(),
+            host: Some(t.host.clone()),
             table: Some(t.id.clone()),
             game: t.game.clone(),
             seats,
@@ -256,7 +255,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
         let rated = if g.rated { "Rated" } else { "Unrated" };
         lines.push(Line {
             title: g.names.join(", "),
-            label: String::new(),
+            host: None,
             table: None,
             game: Some(g.game_id.clone()),
             seats,
@@ -296,7 +295,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
         let rated = if g.rated { "rated" } else { "unrated" };
         lines.push(Line {
             title: g.players.join(", "),
-            label: "dominion.games".into(),
+            host: None,
             table: None,
             game: Some(g.id.clone()),
             seats,
@@ -445,7 +444,6 @@ pub fn TablesTab() -> Element {
                                     "data-table": l.table.clone().unwrap_or_default(),
                                     "data-game": l.game.clone().unwrap_or_default(),
                                     title: l.game.clone().map(|i| format!("Game {i}")).unwrap_or_default(),
-                                    div { class: "lb-table-host", title: "{l.title}", "{l.label}" }
                                     div {
                                         class: "lb-table-players",
                                         onmouseenter: move |e: MouseEvent| {
@@ -460,6 +458,7 @@ pub fn TablesTab() -> Element {
                                                 key: "{s}",
                                                 seat: seat.clone(),
                                                 index: s as u8,
+                                                host: l.host.is_some() && seat.name() == l.host.as_deref(),
                                                 progress: l.progress.clone(),
                                                 deciding: l.deciding,
                                             }
@@ -474,7 +473,7 @@ pub fn TablesTab() -> Element {
                                     }
                                     if action != Action::None {
                                         div {
-                                            class: "lb-oval lb-table-play",
+                                            class: "lb-button lb-copper lb-table-play",
                                             "data-action": "{action.label().to_lowercase()}",
                                             onclick: move |_| {
                                                 let (table, game) = (table.clone(), game.clone());
@@ -497,6 +496,8 @@ pub fn TablesTab() -> Element {
                                             },
                                             "{action.label()}"
                                         }
+                                    } else {
+                                        div { class: "lb-button lb-copper lb-table-play none" }
                                     }
                                 }
                             }
@@ -556,17 +557,17 @@ fn SeatFace(seat: Seat) -> Element {
 /// A seat on a line: its face, and in a running game its name, VP and whether it is that
 /// seat's turn.
 #[component]
-fn SeatChip(seat: Seat, index: u8, progress: Option<Progress>, deciding: Option<u8>) -> Element {
-    let Some(p) = progress else {
-        let title = seat.title();
-        return rsx! {
-            div { class: "lb-tseat", title, SeatFace { seat } }
-        };
-    };
-    let turn = p.player == index;
-    let waits = deciding == Some(index) && !turn;
-    let known = p.seats.get(index as usize).cloned();
-    let mut class = String::from("lb-tseat named");
+fn SeatChip(
+    seat: Seat,
+    index: u8,
+    host: bool,
+    progress: Option<Progress>,
+    deciding: Option<u8>,
+) -> Element {
+    let turn = progress.as_ref().is_some_and(|p| p.player == index);
+    let waits = progress.is_some() && deciding == Some(index) && !turn;
+    let known = progress.and_then(|p| p.seats.get(index as usize).cloned());
+    let mut class = String::from("lb-tseat");
     if turn {
         class.push_str(" turn");
     }
@@ -574,6 +575,9 @@ fn SeatChip(seat: Seat, index: u8, progress: Option<Progress>, deciding: Option<
         class.push_str(" deciding");
     }
     let mut title = seat.title();
+    if host {
+        title.push_str(" (host)");
+    }
     if turn {
         title.push_str(" — their turn");
     } else if waits {
@@ -587,7 +591,12 @@ fn SeatChip(seat: Seat, index: u8, progress: Option<Progress>, deciding: Option<
             title: if has_cards { String::new() } else { title.clone() },
             "data-seat": "{index}",
             SeatFace { seat: seat.clone() }
-            span { class: "lb-tseat-name", "{name}" }
+            if !name.is_empty() {
+                span { class: "lb-tseat-name", "{name}" }
+            }
+            if host {
+                span { class: "lb-tseat-host", title: "Host" }
+            }
             if let Some(k) = known {
                 span { class: "lb-tseat-vp", title: "Victory points if the game ended now", "{k.vp}" }
             }
