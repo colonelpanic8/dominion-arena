@@ -114,7 +114,7 @@ in {
     agents = {
       enable = lib.mkEnableOption ''
         the server's own agents: `dominion agents` runs as `user`, with that account's
-        Claude Code, Codex, and Antigravity CLI logins, and plays a seat for each agent registered players
+        Claude Code, Codex, and Antigravity CLI logins, and plays a seat for each agent registered players (or the accounts `agent_players` names)
         seat (`agent_seats_per_day` each a day, 0 for no limit; `agents_at_once` at once). They use that
         account's subscriptions'';
       user = lib.mkOption {

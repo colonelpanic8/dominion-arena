@@ -159,6 +159,10 @@ impl House {
     }
 }
 
+pub(super) fn no_agents() -> Error {
+    Error::Forbidden("this account may not seat the server's agents".into())
+}
+
 /// Seats filled with the server's agents for a game being set up, released when dropped.
 pub(crate) struct Reservation<'a> {
     arena: &'a Arena,
@@ -226,7 +230,7 @@ impl Arena {
         }
         let who =
             who.ok_or_else(|| Error::Unauthorized("sign in to seat the server's agents".into()))?;
-        if self.user(&who.user)?.kind() == UserKind::Registered {
+        if self.may_seat_agents(&self.user(&who.user)?) {
             for name in req.agents.iter().flatten() {
                 self.summon(name)?;
             }
@@ -531,10 +535,8 @@ impl Arena {
         if seats == 0 {
             return Ok(reservation(0));
         }
-        if self.user(host)?.kind() != UserKind::Registered {
-            return Err(Error::Forbidden(
-                "only registered players seat the server's agents".into(),
-            ));
+        if !self.may_seat_agents(&self.user(host)?) {
+            return Err(no_agents());
         }
         let per_day = self.settings.agent_seats_per_day;
         let mut state = lock(&self.state);
@@ -560,11 +562,23 @@ impl Arena {
         Ok(reservation(seats))
     }
 
+    /// Whether `user` may seat the server's agents: an account `agent_players` names, or
+    /// without that list, any registered player.
+    pub(super) fn may_seat_agents(&self, user: &User) -> bool {
+        match (&self.settings.agent_players, &user.login) {
+            (_, Login::Guest | Login::House) => false,
+            (None, _) => user.kind() == UserKind::Registered,
+            (Some(allowed), _) => {
+                (allowed.iter()).any(|name| name.trim().eq_ignore_ascii_case(&user.name))
+            }
+        }
+    }
+
     /// What the lobby says about the server's agents, for `you`.
     pub(super) fn house_info(&self, state: &mut State, you: Option<&User>) -> lobby::House {
         let per_day = self.settings.agent_seats_per_day;
         let left = you
-            .filter(|u| u.kind() == UserKind::Registered)
+            .filter(|u| self.may_seat_agents(u))
             .map(|u| match per_day {
                 0 => lobby::House::UNLIMITED,
                 _ => per_day.saturating_sub(state.house.filled_today(&u.id)),
