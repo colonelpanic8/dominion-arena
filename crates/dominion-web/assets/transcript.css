@@ -58,7 +58,10 @@
 .trace-result details summary, .trace-call details summary { font: .82em/1.55 ui-monospace, Menlo, monospace; color: #cfc4ae; }
 .trace-content details[open] summary { margin-bottom: .5em; }
 .trace-lines { color: var(--muted); }
-.trace-call pre { display: inline-block; max-width: 100%; padding: .35em .8em; border-left: 3px solid var(--seat, #a07a2a); background: rgba(0, 0, 0, .3); font: .82em/1.55 ui-monospace, Menlo, monospace; color: #e8dcc4; }
+.trace-paired { margin-top: .6em; }
+.trace-paired > .trace-kind { display: inline-block; margin-bottom: .35em; }
+.trace-paired > .trace-lines { font-size: .8em; }
+.trace-call-body pre { display: inline-block; max-width: 100%; padding: .35em .8em; border-left: 3px solid var(--seat, #a07a2a); background: rgba(0, 0, 0, .3); font: .82em/1.55 ui-monospace, Menlo, monospace; color: #e8dcc4; }
 .trace-status pre { display: inline-block; padding: .2em .8em; border: 1px dashed rgba(214, 203, 182, .35); border-radius: 1em; font-size: .85em; color: var(--muted); }
 .trace-game-line { margin: 0; font-size: .93em; color: #e2d7c2; }
 .trace-game-line .trace-kind { margin-right: .8em; }
