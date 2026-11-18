@@ -552,26 +552,83 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-tables-list { display: flex; flex-direction: column; align-items: center; width: 100%; height: 75vh; overflow-y: auto; }
 .lb-table-host { width: 15vw; padding-left: 1vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-table-players { display: flex; align-items: center; width: 20vw; height: 100%; }
-.lb-seat-icon {
-  position: relative;
-  width: 4vh;
-  height: 4vh;
-  margin-right: 1vh;
-  background: #8a4f2c var(--dc-lb-copper-small) center / 100% 100% no-repeat;
-}
-.lb-seat-icon.other, .lb-seat-icon.token { background-color: #55575a; background-image: var(--dc-lb-stone-small); }
-.lb-seat-icon.token::after { background-image: var(--dc-lb-bot); }
-.lb-seat-icon.open { background: none; outline: 1px dashed #777; outline-offset: -1px; }
-.lb-seat-icon.open::after { display: none; }
-.lb-seat-icon::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  filter: grayscale(100%);
-  background: var(--dc-lb-person) center / contain no-repeat;
-}
 .lb-table-status { width: 26%; padding-left: 1vh; margin-left: 2vw; display: flex; flex-direction: column; justify-content: center; }
 .lb-table-rules { color: #bbb; font: 1.5vh var(--ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-table-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-table-turn { color: #f5bc34; font-weight: 700; }
+/* A running game's seats: face, name and VP, the turn's seat in the lobby's gold. */
+.lb-table-line.running .lb-table-host { width: 11vw; color: #c8c0ae; font-size: 2.4vh; }
+.lb-table-line.running .lb-table-players { width: auto; flex: 1; min-width: 0; gap: .6vw; }
+.lb-table-line.running .lb-table-status { width: 18%; margin-left: 1vw; }
+.lb-tseat { --seat-face: 4vh; display: flex; align-items: center; flex-shrink: 0; margin-right: 1vh; }
+.lb-tseat.named {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 13vw;
+  gap: .7vh;
+  margin: 0;
+  padding: .4vh .8vh .4vh .4vh;
+  border: 2px solid rgba(255, 255, 255, .14);
+  border-radius: 3vh;
+  background: rgba(0, 0, 0, .55);
+  font: 2vh var(--ui);
+  cursor: default;
+}
+.lb-tseat.turn { border-color: #f5bc34; background: rgba(60, 42, 8, .85); box-shadow: 0 0 1.2vh rgba(245, 188, 52, .45); }
+.lb-tseat.turn .lb-tseat-name { color: #fff; font-weight: 700; }
+.lb-tseat.turn .lb-avatar, .lb-tseat.turn .lb-tseat-icon { box-shadow: 0 0 0 .25vh #f5bc34; }
+.lb-tseat.deciding { border-color: rgba(245, 188, 52, .7); border-style: dashed; }
+.lb-tseat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #eee8dc; text-shadow: 1px 1px 0 #000; }
+/* VP on the victory shield, as the game's player bars show it. */
+.lb-tseat-vp {
+  flex-shrink: 0;
+  min-width: 3.4vh;
+  height: 4vh;
+  margin: -.3vh 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: .6vh;
+  background: var(--dc-vp, linear-gradient(#3f8c4c, #24572e)) center / 100% 100% no-repeat;
+  color: #fff;
+  font: 1.8vh var(--num);
+  letter-spacing: -.05em;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+}
+.lb-tseat-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--seat-face);
+  height: var(--seat-face);
+  border-radius: 50%;
+  background: #1c1a17;
+  box-shadow: 0 0 0 .25vh #c9a24d, 0 .3vh .8vh rgba(0, 0, 0, .6);
+}
+.lb-tseat-icon .lb-seat-mark { width: 62%; height: 62%; }
+.lb-tseat-icon.open { background: none; box-shadow: none; outline: 1px dashed #8f8a80; outline-offset: -1px; }
+.lb-deck-peek {
+  position: fixed;
+  z-index: 2000;
+  box-sizing: border-box;
+  padding: 1vh 1.2vh 1.2vh;
+  border: 1px solid #c9a24d;
+  border-radius: .6vh;
+  background: rgba(12, 11, 9, .97);
+  box-shadow: 0 .6vh 2vh rgba(0, 0, 0, .8);
+  pointer-events: none;
+  font: 1.8vh var(--ui);
+  color: #eee8dc;
+}
+.lb-deck-peek-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1vh; }
+.lb-deck-peek-name { font-weight: 700; font-size: 2.2vh; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-deck-peek-sum { flex-shrink: 0; color: #f5bc34; font-weight: 700; }
+.lb-deck-peek-what { color: #c8c0ae; font-size: 1.5vh; margin-top: .2vh; }
+.lb-deck-peek-cards { display: grid; grid-template-columns: 1fr 1fr; gap: .4vh .8vh; margin-top: .8vh; }
+.lb-deck-peek-row { display: flex; align-items: center; gap: .6vh; min-width: 0; }
+.lb-deck-peek-count { width: 2.6vh; flex-shrink: 0; text-align: right; font-weight: 700; }
+.lb-deck-peek-strip { flex: 1; min-width: 0; }
 .lb-table-play { width: 10%; font-size: 3vh; }
 .lb-tables-empty { margin-top: 4vh; font-size: 2vh; }
 

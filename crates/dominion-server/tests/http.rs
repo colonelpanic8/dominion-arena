@@ -482,6 +482,30 @@ async fn games_say_which_seats_have_joined() {
 }
 
 #[tokio::test]
+async fn running_games_say_where_they_stand() {
+    let server = start().await;
+    let open = server
+        .create(json!({ "players": 2, "kingdom": ["Village"], "seed": 1 }))
+        .await;
+    let p = server.summary(&open.game_id).await.progress.unwrap();
+    assert_eq!((p.player, p.turn, p.phase.as_str()), (0, 1, "buy"));
+    assert_eq!(p.seats.len(), 2);
+    for seat in &p.seats {
+        assert_eq!(seat.vp, 3);
+        assert_eq!(seat.owned.get("Copper"), Some(&7));
+        assert_eq!(seat.owned.get("Estate"), Some(&3));
+    }
+    let private = server
+        .create(json!({ "players": 2, "kingdom": ["Village"], "watchable": false }))
+        .await;
+    let p = server.summary(&private.game_id).await.progress.unwrap();
+    assert!(
+        p.seats.is_empty(),
+        "only a watchable game shows its seats' cards"
+    );
+}
+
+#[tokio::test]
 async fn undo_takes_back_the_seats_last_answer() {
     let server = start().await;
     let created = server

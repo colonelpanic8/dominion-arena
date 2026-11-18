@@ -870,6 +870,7 @@ pub struct Playbook {
 
 /// One of the server's agents as the history shows it played a seat.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SeatAgent {
     /// Its account's name ("Opus 5.5 High").

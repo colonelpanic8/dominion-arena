@@ -295,7 +295,7 @@ will) or 500.
 | `GET /api/cards` | | every card-shaped object as printed |
 | `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume, bannedCards, registration, guests}`; `bannedCards` is the asker's own list once they have set one |
 | `PUT /api/settings/banned-cards` | `["Witch", ...]` | the settings, after replacing the asker's Banned cards list (signed in) |
-| `GET /api/games` | | the games, as `list_games` gives them, with `joined` (per seat, whether its token has been used since the server started), `source` (`direct`, `table`, `automatch`), `rated`, `watchable` and `users` (per seat, the account playing it) |
+| `GET /api/games` | | the games, as `list_games` gives them, with `joined` (per seat, whether its token has been used since the server started), `source` (`direct`, `table`, `automatch`), `rated`, `watchable`, `users` (per seat, the account playing it), `agents` (per seat, the server's agent playing it) and, while it runs, `progress`: `{player, turn, phase, seats}`, the seat whose turn it is, its turn number and phase, and in a watchable game per seat its `vp` if the game ended now and the cards it `owned` by name |
 | `POST /api/games` | `create_game`'s arguments, including optional `agents` (profile name or `null` per seat) | 201, the game id and tokens for seats without agents |
 | `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
