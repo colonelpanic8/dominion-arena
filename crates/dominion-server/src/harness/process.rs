@@ -386,6 +386,8 @@ impl Harness {
         let idle = Duration::from_secs(u64::from(spec.response_seconds.unwrap_or(300)));
         let mut deadline = tokio::time::Instant::now() + idle;
         let mut pending_tools = 0i32;
+        // The tools the CLI says it offers: a call to any other runs nothing.
+        let mut exposed: Option<Vec<String>> = None;
         let result = async {
             let mut stdin = child.stdin.take().ok_or("native harness has no stdin")?;
             tokio::time::timeout(idle, stdin.write_all(input.as_bytes()))
@@ -437,6 +439,16 @@ impl Harness {
                 archive.record("native_event", event.clone())?;
                 if event["type"] == "system"
                     && event["subtype"] == "init"
+                    && let Some(tools) = event["tools"].as_array()
+                {
+                    exposed = Some(
+                        (tools.iter())
+                            .filter_map(|t| t.as_str().map(String::from))
+                            .collect(),
+                    );
+                }
+                if event["type"] == "system"
+                    && event["subtype"] == "init"
                     && event["tools"].as_array().is_some_and(|v| {
                         v.iter()
                             .any(|t| !allowed_tool(t.as_str().unwrap_or(""), self.playbook))
@@ -444,7 +456,7 @@ impl Harness {
                 {
                     return Err("native harness exposed forbidden tools; see its archive".into());
                 }
-                if tool_event(&event, self.playbook) {
+                if tool_event(&event, self.playbook, exposed.as_deref()) {
                     return Err("native harness attempted a forbidden tool; see its archive".into());
                 }
                 if let Some(log) = &mut self.usage
@@ -534,8 +546,10 @@ fn allowed_tool(name: &str, playbook: bool) -> bool {
                 || antigravity::PLAYBOOK_TOOLS.contains(&name)))
 }
 
-/// Whether an event shows a seat using a tool it may not.
-fn tool_event(event: &Value, playbook: bool) -> bool {
+/// Whether an event shows a seat using a tool it may not. A Claude seat's call to a tool
+/// its CLI doesn't offer (`exposed`), such as a misspelled name, runs nothing: the CLI
+/// answers it with an error, and the seat plays on.
+fn tool_event(event: &Value, playbook: bool, exposed: Option<&[String]>) -> bool {
     // Antigravity refused something its permissions don't allow, and ended the turn.
     if event["result"]["denied_actions"]
         .as_array()
@@ -548,7 +562,10 @@ fn tool_event(event: &Value, playbook: bool) -> bool {
     }
     if event["message"]["content"].as_array().is_some_and(|xs| {
         xs.iter().any(|x| {
-            x["type"] == "tool_use" && !allowed_tool(x["name"].as_str().unwrap_or(""), playbook)
+            let name = x["name"].as_str().unwrap_or("");
+            x["type"] == "tool_use"
+                && !allowed_tool(name, playbook)
+                && exposed.is_none_or(|tools| tools.iter().any(|t| t == name))
         })
     }) {
         return true;
@@ -593,15 +610,34 @@ mod tests {
     fn antigravity_playbook_tools_and_refusals() {
         let step = |tool: &str| json!({"event":"step_update","step_update":{"state":"ACTIVE","step_type":"tool","tool_name":tool,"tool_info":{"name":tool}}});
         for tool in ["read_file", "run_command", "manage_task"] {
-            assert!(!tool_event(&step(tool), true), "{tool}");
-            assert!(tool_event(&step(tool), false), "{tool}");
+            assert!(!tool_event(&step(tool), true, None), "{tool}");
+            assert!(tool_event(&step(tool), false, None), "{tool}");
         }
-        assert!(tool_event(&step("write_to_file"), true));
+        assert!(tool_event(&step("write_to_file"), true, None));
         let result = |denied| json!({"event":"result","result":{"status":"SUCCESS","response":"","denied_actions":denied}});
-        assert!(!tool_event(&result(json!([])), true));
+        assert!(!tool_event(&result(json!([])), true, None));
         assert!(tool_event(
             &result(json!([{"action":"command","display_name":"RunCommand"}])),
-            true
+            true,
+            None
         ));
+    }
+
+    #[test]
+    fn a_claude_call_to_a_tool_its_cli_does_not_offer_is_no_forbidden_use() {
+        let call = |name: &str| json!({"type":"assistant","message":{"content":[{"type":"tool_use","name":name,"input":{}}]}});
+        let exposed = ["mcp__dominion__wait".to_string(), "Bash".to_string()];
+        assert!(!tool_event(
+            &call("mcp__dominion::wait"),
+            false,
+            Some(&exposed)
+        ));
+        assert!(!tool_event(
+            &call("mcp__dominion__wait"),
+            false,
+            Some(&exposed)
+        ));
+        assert!(tool_event(&call("Bash"), false, Some(&exposed)));
+        assert!(tool_event(&call("mcp__dominion::wait"), false, None));
     }
 }

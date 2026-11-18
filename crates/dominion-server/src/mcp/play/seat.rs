@@ -10,6 +10,10 @@ use rmcp::model::{CallToolResult, ContentBlock};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+/// How long `wait` waits by default: under the 60 seconds MCP clients commonly allow a
+/// tool call (Claude Code, Codex), so a wait with no timeout of its own returns first.
+pub const DEFAULT_WAIT_S: u64 = 45;
+
 /// Its errors are whole messages: where the contract gives one a code (`NO_GAME`,
 /// `REJECTED`, `REFUSED`) the backend puts it first.
 pub(crate) trait PlaySeat {
@@ -249,7 +253,8 @@ impl<S: PlaySeat> Play<'_, S> {
     }
 
     pub async fn wait(&self, timeout_s: Option<u64>) -> CallToolResult {
-        let timeout = Duration::from_secs(timeout_s.unwrap_or(60)).min(crate::mcp::MAX_WAIT);
+        let timeout =
+            Duration::from_secs(timeout_s.unwrap_or(DEFAULT_WAIT_S)).min(crate::mcp::MAX_WAIT);
         match self.seat.wait(timeout).await {
             Ok(()) => self.observation(false),
             Err(e) => self.failure(e),

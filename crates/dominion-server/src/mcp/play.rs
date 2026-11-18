@@ -21,7 +21,7 @@ pub struct StateParams {
 #[serde(deny_unknown_fields)]
 pub struct WaitParams {
     pub token: Option<String>,
-    /// Seconds to wait (default 60, capped at 600 and the session's lifetime).
+    /// Seconds to wait (default 45, capped at 600 and the session's lifetime).
     pub timeout_s: Option<u64>,
 }
 

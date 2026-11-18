@@ -62,6 +62,12 @@ pub fn launch(spec: &AgentSpec, playbook: bool) -> Launch {
     launch
         .env
         .push(("ENABLE_CLAUDEAI_MCP_SERVERS".into(), "false".into()));
+    // A game tool may wait up to MAX_WAIT for the other seats; Claude Code's own limit
+    // must not end the call first.
+    let limit = crate::mcp::MAX_WAIT + std::time::Duration::from_secs(60);
+    launch
+        .env
+        .push(("MCP_TOOL_TIMEOUT".into(), limit.as_millis().to_string()));
     launch
 }
 
