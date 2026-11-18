@@ -5,6 +5,7 @@
 
 use crate::archive::{Archive, call};
 use crate::client::Client;
+use crate::codex_usage::UsageLog;
 use crate::harness::Sandbox;
 use crate::house::Job;
 use crate::runner::AgentSpec;
@@ -37,6 +38,8 @@ struct Session {
     auth: Auth,
     agent: ureq::Agent,
     id: String,
+    /// The subscription's usage, for what counts Codex's.
+    usage: Option<UsageLog>,
 }
 
 impl Session {
@@ -59,6 +62,12 @@ impl Session {
                 }
             }
         };
+        let usage = match (&auth, &spec.model) {
+            (Auth::ChatGpt { file }, Some(model)) => {
+                file.parent().map(|home| UsageLog::open(home, model))
+            }
+            _ => None,
+        };
         let seconds = u64::from(spec.response_seconds.unwrap_or(600));
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(seconds)))
@@ -69,11 +78,12 @@ impl Session {
             auth,
             agent,
             id: format!("{:032x}", rand::random::<u128>()),
+            usage,
         })
     }
 
     /// One model turn: its output items, and the usage it reports.
-    async fn respond(&self, body: &Value) -> Result<(Vec<Value>, Value), String> {
+    async fn respond(&mut self, body: &Value) -> Result<(Vec<Value>, Value), String> {
         let mut refreshed = false;
         let mut delay = Duration::from_secs(2);
         let mut attempt = 0;
@@ -128,7 +138,13 @@ impl Session {
                 Err(e) => return Err(format!("OpenAI: {e}")),
             };
             match status {
-                200 => return parse_stream(&text),
+                200 => {
+                    let (items, usage) = parse_stream(&text)?;
+                    if let Some(log) = &mut self.usage {
+                        log.record(&usage);
+                    }
+                    return Ok((items, usage));
+                }
                 401 if !refreshed => {
                     if let Auth::ChatGpt { file } = &self.auth {
                         refresh(file).await?;
@@ -225,7 +241,7 @@ async fn refresh(file: &Path) -> Result<(), String> {
 }
 
 /// `2026-11-16T09:44:00Z`.
-fn rfc3339(time: std::time::SystemTime) -> String {
+pub(crate) fn rfc3339(time: std::time::SystemTime) -> String {
     let secs = time
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -487,7 +503,7 @@ async fn play_inner(
     {
         return Ok(Err(crate::harness::JOINED_OVER.into()));
     }
-    let session = Session::new(spec)?;
+    let mut session = Session::new(spec)?;
     let playbook = sandbox.playbook.as_deref();
     let mut instructions = BRIEF.to_string();
     if let Some(dir) = playbook {

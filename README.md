@@ -581,6 +581,11 @@ it needs no sandbox. Game results reach it as text; it keeps the newest
 time. Its reasoning summaries and replies are archived as `native_event`s, so they
 appear in the agent transcript, and each request's token usage as `direct_usage`.
 
+A seat on a ChatGPT login, this one or a `codex` CLI seat, also writes its token usage
+to a usage-only Codex rollout under that login's `sessions/dominion-arena/`, so
+anything that counts Codex usage from those rollouts (T3 Code's usage page) counts it
+too. `codex resume` lists only its dated folders, so these never show up there.
+
 ```toml
 [[agents]]
 name = "Sol High"

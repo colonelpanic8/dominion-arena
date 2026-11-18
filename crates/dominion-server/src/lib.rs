@@ -6,6 +6,7 @@ pub mod arena;
 pub mod assets;
 pub mod catalog;
 pub mod client;
+mod codex_usage;
 pub mod config;
 pub mod control;
 pub mod harness;

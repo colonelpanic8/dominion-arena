@@ -1,5 +1,6 @@
 use super::{Sandbox, antigravity, claude, codex, instructions, sandbox};
 use crate::archive::Archive;
+use crate::codex_usage::UsageLog;
 use crate::runner::{AgentSpec, Program};
 use serde_json::{Value, json};
 use std::fs::{File, OpenOptions};
@@ -41,6 +42,8 @@ pub struct Harness {
     forwarder: PathBuf,
     sockets: sandbox::Sockets,
     _proxy: sandbox::Proxy,
+    /// Codex's usage, for what counts it: `--ephemeral` keeps no rollout of its own.
+    usage: Option<UsageLog>,
 }
 
 pub fn write_json(path: &Path, value: &Value) -> Result<(), String> {
@@ -112,10 +115,12 @@ impl Harness {
             .chain(settings.allow_hosts.iter().cloned())
             .collect();
         let proxy = sandbox::Proxy::start(&sockets.proxy(), hosts, archive.join("network.jsonl"))?;
+        let mut usage = None;
         let mut launch = match spec.program {
             Program::Claude => claude::launch(spec, playbook),
             Program::Codex => {
                 let model = codex::catalog(&auth, &work, spec.model.as_deref(), playbook)?;
+                usage = Some(UsageLog::open(&auth, &model));
                 let mut resolved = spec.clone();
                 resolved.model = Some(model);
                 codex::launch(&resolved, playbook)
@@ -145,6 +150,7 @@ impl Harness {
             forwarder,
             sockets,
             _proxy: proxy,
+            usage,
         })
     }
 
@@ -437,6 +443,11 @@ impl Harness {
                 }
                 if tool_event(&event, self.playbook) {
                     return Err("native harness attempted a forbidden tool; see its archive".into());
+                }
+                if let Some(log) = &mut self.usage
+                    && event["type"] == "turn.completed"
+                {
+                    log.record(&event["usage"]);
                 }
                 events.push(event);
             }
