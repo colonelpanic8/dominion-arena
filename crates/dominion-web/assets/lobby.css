@@ -1001,6 +1001,7 @@ a.lb-user-name:hover { text-decoration: underline; }
   stroke-linecap: round;
 }
 .lb-seat.right .lb-crown { margin: 0 .5vh 0 0; }
+.lb-sheet-name .lb-crown { width: 1.8vh; height: 1.8vh; margin: 0; flex-shrink: 0; }
 .lb-entry-side { display: flex; align-items: center; gap: 1.2vh; flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; }
 .lb-entry-side.right { justify-content: flex-end; }
 .lb-seat { display: inline-flex; align-items: center; gap: .7vh; min-width: 0; }
@@ -1061,7 +1062,7 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-setup-cards .lb-kcard, .lb-setup-cards .lb-lcard { margin: 0; }
 .lb-sheet-line {
   display: grid;
-  grid-template-columns: 5vh minmax(0, 1.2fr) minmax(0, 1.5fr) 6vh 7vh 14vh;
+  grid-template-columns: 6vh minmax(0, 1.2fr) minmax(0, 1.5fr) 6vh 7vh 14vh;
   align-items: center;
   min-height: 4.6vh;
   margin-top: .5vh;

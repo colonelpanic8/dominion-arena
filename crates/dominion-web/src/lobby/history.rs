@@ -190,6 +190,13 @@ pub fn seat_of<'a>(game: &'a PastGame, name: &str) -> Option<&'a PastPlayer> {
 }
 
 /// The players by place, ties by seat.
+/// The players in seat order, first player first.
+fn by_seat(game: &PastGame) -> Vec<&PastPlayer> {
+    let mut players: Vec<&PastPlayer> = game.players.iter().collect();
+    players.sort_by_key(|p| p.seat);
+    players
+}
+
 fn standings(game: &PastGame) -> Vec<&PastPlayer> {
     let mut players: Vec<&PastPlayer> = game.players.iter().collect();
     players.sort_by_key(|p| (p.rank, p.seat));
@@ -236,7 +243,7 @@ fn how(game: &PastGame) -> String {
 /// One game in the list: the winner and the score, or the side's result.
 #[component]
 fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
-    let ranked = standings(&game);
+    let seated = by_seat(&game);
     let class = if on {
         "lb-history-entry on"
     } else {
@@ -246,7 +253,7 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
         Venue::Arena => ("arena", "Played on Arena"),
         Venue::Official => ("official", "Played on dominion.games"),
     };
-    let (first, rest) = match ranked.split_first() {
+    let (first, rest) = match seated.split_first() {
         Some((f, r)) => (Some((*f).clone()), r.iter().map(|p| (*p).clone()).collect()),
         None => (None, vec![]),
     };
@@ -262,7 +269,7 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
                         }
                     }
                     span { class: "lb-history-score",
-                        for (i, p) in ranked.iter().enumerate() {
+                        for (i, p) in seated.iter().enumerate() {
                             span { key: "{p.seat}", class: if p.rank == 1 { "lb-score-won" } else { "lb-score-lost" },
                                 if i > 0 { "–" }
                                 "{p.vp}"
@@ -407,6 +414,16 @@ const CLAUDE: &str = "m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l
 const OPENAI: &str = "M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z";
 const GEMINI: &str = "M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81";
 
+/// The winner's mark, before their name.
+#[component]
+fn Crown() -> Element {
+    rsx! {
+        svg { class: "lb-crown", view_box: "0 0 16 16", role: "img", "aria-label": "won",
+            path { d: "M2.5 12.5h11M3 12.5 2 5l3.5 3L8 3l2.5 5L14 5l-1 7.5" }
+        }
+    }
+}
+
 /// A seat in the list: an icon for what played it, its name, and under it a caption.
 #[component]
 fn Seated(
@@ -428,9 +445,7 @@ fn Seated(
             span { class: "lb-seat-text",
                 span { class: "lb-seat-name",
                     if won {
-                        svg { class: "lb-crown", view_box: "0 0 16 16", role: "img", "aria-label": "won",
-                            path { d: "M2.5 12.5h11M3 12.5 2 5l3.5 3L8 3l2.5 5L14 5l-1 7.5" }
-                        }
+                        Crown {}
                     }
                     "{player.name}"
                 }
@@ -569,14 +584,14 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
                 others: game.others.clone(),
             }
             div { class: "lb-sheet-line lb-sheet-head",
-                span { class: "lb-sheet-place", "#" }
+                span { class: "lb-sheet-place", "Place" }
                 span { "Player" }
                 span { "Played by" }
                 span { class: "lb-sheet-num", "VP" }
                 span { class: "lb-sheet-num", "Turns" }
                 span { class: "lb-sheet-num", "Rating" }
             }
-            for p in ranked.iter() {
+            for p in by_seat(&game) {
                 {
                     let (by, link) = played_by(&game, p);
                     let own = p.account.clone().filter(|_| game.venue == Venue::Arena);
@@ -586,6 +601,9 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
                             span { class: "lb-sheet-place", "{p.rank}" }
                             span { class: if p.rank == 1 { "lb-sheet-name won" } else { "lb-sheet-name" },
                                 SeatIcon { played_by: p.played_by.clone() }
+                                if p.rank == 1 {
+                                    Crown {}
+                                }
                                 match own {
                                     Some(a) => rsx! { Link { to: Route::User { name: a }, "{p.name}" } },
                                     None => rsx! { "{p.name}" },

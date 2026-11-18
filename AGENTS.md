@@ -248,8 +248,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     history.rs            History: finished games (filtered by where, whose, rated, a
                           name) beside the picked one's sheet (kingdom, standings, Review
                           game, Replay, Play this kingdom); `GameBrowser`, shared with a
-                          player's page, which lists its games the same way: winner on
-                          the left (crowned), the other side on the right, each name with
+                          player's page, which lists its games the same way: players in
+                          seat order, the first on the left, the winner crowned, each name with
                           an icon (a person, a bot, a token, an agent's maker's logo) and
                           a caption of what played it (`PlayedBy`)
     cardlists.rs          Cardlists: the account's Banned list
