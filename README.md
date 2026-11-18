@@ -894,19 +894,21 @@ idle, where it came from, players), and `dominion games retire ID...` stops host
 at once, moving their files to `expired/` as `keep_idle_days` would. It refuses an
 unfinished game of a lobby table or the server's agents, which ends by resigning.
 `dominion games void ID... [--dry-run]` voids finished rated games: it takes them out of
-the rated record and works every rating out again from the rated records left, in the
-order the games ended, printing each rating it changes; it refuses unless the records as
-they stand give exactly the ratings kept. A rated game is voided as it ends when a seat
+the record and off their players' tallies of games and wins, and works every rating out
+again from the rated records left, in the order the games ended, printing each rating and
+tally it changes; it refuses unless the records as they stand give exactly the ratings
+kept. A rated game is voided as it ends when a seat
 of the server's agents is abandoned: that is an agent failing to play, which says nothing
 of anyone's skill. A voided game's record keeps when it was voided (`voided`, beside
 `rated: false`), so it is told apart from a game that was never rated. It counts toward
-nothing rated (ratings, the leaderboard, a player's rated games and wins and the line of
-their rating) and the History's Rated filter leaves it out; everywhere else it is still
-listed, marked Voided, as the game that was played, and it still counts among a player's
-Arena games. Nothing is deleted: the game's files and record stay as they were. Games
-voided before records kept that say only `rated: false`; `dominion games void
---record-only ID...` marks them voided (when it is run), changing no rating, and refuses
-a game that is rated, voided already, or had a seat of no account. All three talk to
+nothing: no rating, the leaderboard, a player's rated or Arena games and wins, or the
+line of their rating, and the History's Rated filter leaves it out. It is still listed
+everywhere else, marked Voided, as the game that was played. Nothing is deleted: the
+game's files and record stay. Games voided before records kept that say only `rated:
+false` and still count among their players' Arena games; `dominion games void
+--record-only ID...` marks them voided (when it is run) and takes them off those
+tallies, changing no rating, and refuses a game that is rated, voided already, or had a
+seat of no account. All three talk to
 `control_socket`, which only the server's user can reach; the NixOS module sets it and
 installs `dominion-games` for root: `sudo dominion-games list`.
 

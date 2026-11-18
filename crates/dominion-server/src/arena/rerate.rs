@@ -15,7 +15,7 @@ pub struct VoidHow {
     /// Only say what would change.
     pub dry_run: bool,
     /// Only mark games voided that a void made unrated before it kept that: they change
-    /// no rating.
+    /// no rating, only the games and wins they still count in.
     pub record_only: bool,
 }
 
@@ -25,6 +25,10 @@ pub struct Voided {
     pub games: Vec<String>,
     /// Each account whose rating changes: its name, then its rating before and after.
     pub ratings: Vec<(String, f64, f64)>,
+    /// Each account the games counted for: its name, then the games and wins taken off
+    /// its tally of every game.
+    #[serde(default)]
+    pub tallies: Vec<(String, u32, u32)>,
 }
 
 /// An account's standing as the rated records make it.
@@ -40,15 +44,20 @@ struct Standing {
 const EPSILON: f64 = 1e-6;
 
 impl Arena {
-    /// Voids `games`, rated games: marks them so, and makes every rating what the other
-    /// rated games make it. Refuses unless the records as they stand give exactly the
-    /// ratings kept, so that nothing the records don't say is lost.
+    /// Voids `games`, rated games: marks them so, takes them off their players' tallies,
+    /// and makes every rating what the other rated games make it. Refuses unless the
+    /// records as they stand give exactly the ratings kept, so that nothing the records
+    /// don't say is lost.
     pub fn void_ratings(&self, games: &[String], how: VoidHow) -> Result<Voided> {
         let void: HashSet<&str> = games.iter().map(String::as_str).collect();
         let at = now_ms();
         let dry_run = how.dry_run;
         let voided = self.db.transaction(|tx| {
             let mut played = db::arena_records(tx)?;
+            let accounts = db::ratings(tx)?;
+            let names: HashMap<&str, &str> = (accounts.iter())
+                .map(|a| (a.id.as_str(), a.name.as_str()))
+                .collect();
             for id in &void {
                 let Some((r, _)) = played.iter_mut().find(|(r, _)| r.game_id == *id) else {
                     return Err(Error::NotFound(format!("no record of game {id}")));
@@ -74,16 +83,14 @@ impl Arena {
                     }
                 }
             }
+            let tallies = untally(tx, &played, &void, &names, dry_run)?;
             if how.record_only {
                 return Ok(Voided {
                     games: games.to_vec(),
                     ratings: vec![],
+                    tallies,
                 });
             }
-            let accounts = db::ratings(tx)?;
-            let names: HashMap<&str, &str> = (accounts.iter())
-                .map(|a| (a.id.as_str(), a.name.as_str()))
-                .collect();
             let keys = (played.iter())
                 .map(|(record, users)| seat_keys(record, users, &names))
                 .collect::<std::result::Result<Vec<_>, _>>()
@@ -109,6 +116,7 @@ impl Arena {
             let mut voided = Voided {
                 games: games.to_vec(),
                 ratings: vec![],
+                tallies,
             };
             for a in &accounts {
                 let (old, new) = (kept.get(&a.id), after.get(&a.id));
@@ -139,6 +147,41 @@ impl Arena {
         }
         Ok(voided)
     }
+}
+
+/// Takes the games `void` of `played` off the tallies of the accounts that played them, as
+/// they were counted when each ended; with `dry_run`, only says so. Each account's name,
+/// games and wins taken off.
+fn untally(
+    tx: &rusqlite::Transaction<'_>,
+    played: &[(GameRecord, Vec<String>)],
+    void: &HashSet<&str>,
+    names: &HashMap<&str, &str>,
+    dry_run: bool,
+) -> Result<Vec<(String, u32, u32)>> {
+    let mut off: Vec<(String, u32, u32)> = vec![];
+    for (record, users) in played {
+        if !void.contains(record.game_id.as_str()) {
+            continue;
+        }
+        let keys = seat_keys(record, users, names).map_err(Error::Conflict)?;
+        let won = record.players.iter().any(|p| p.rank != 1);
+        for (p, key) in record.players.iter().zip(keys) {
+            let Some(name) = key.as_deref().and_then(|k| names.get(k)) else {
+                continue;
+            };
+            let key = key.as_deref().unwrap_or_default();
+            let win = u32::from(won && p.rank == 1);
+            match off.iter_mut().find(|(n, ..)| n == name) {
+                Some(t) => (t.1, t.2) = (t.1 + 1, t.2 + win),
+                None => off.push((name.to_string(), 1, win)),
+            }
+            if !dry_run {
+                db::untally(tx, key, win == 1)?;
+            }
+        }
+    }
+    Ok(off)
 }
 
 fn same(a: Standing, b: Standing) -> bool {
@@ -342,6 +385,12 @@ mod tests {
         (u.rating.rating, u.rated_games, u.rated_wins)
     }
 
+    /// An account's tally of every game: games, wins.
+    fn tally(arena: &Arena, name: &str) -> (u32, u32) {
+        let u = arena.db.user_by_name(name).unwrap().unwrap();
+        (u.games, u.wins)
+    }
+
     const VOID: VoidHow = VoidHow {
         dry_run: false,
         record_only: false,
@@ -380,6 +429,10 @@ mod tests {
         let dry = arena.void_ratings(&["g1".into()], dry).unwrap();
         assert_eq!(standing(&arena, "Bo"), bo);
         assert_eq!(record(&arena, "g1").voided, None);
+        assert_eq!(
+            (tally(&arena, "Ada"), tally(&arena, "Bo")),
+            ((2, 2), (2, 1))
+        );
         let voided = arena.void_ratings(&["g1".into()], VOID).unwrap();
         assert_eq!(voided, dry);
         // Without g1, Bo's first game is g2, from a fresh rating, and Ada's is g3.
@@ -389,6 +442,15 @@ mod tests {
         assert_eq!(standing(&arena, "Bo"), (g2[0].rating, 1, 1));
         assert_eq!(standing(&arena, "Ada"), (g3[0].rating, 1, 1));
         assert_eq!(standing(&arena, "Cy"), (g3[1].rating, 2, 0));
+        // Off every tally too: Ada won g1, Bo lost it.
+        assert_eq!(
+            (tally(&arena, "Ada"), tally(&arena, "Bo")),
+            ((1, 1), (1, 1))
+        );
+        assert_eq!(tally(&arena, "Cy"), (2, 0));
+        let mut off = voided.tallies.clone();
+        off.sort();
+        assert_eq!(off, [("Ada".into(), 1, 1), ("Bo".into(), 1, 0)]);
         let g1 = record(&arena, "g1");
         assert!(!g1.rated && g1.voided.is_some());
         assert!(g1.players.iter().all(|p| p.rating.is_none()));
@@ -409,6 +471,7 @@ mod tests {
         );
         let ada = arena.profile("Ada").unwrap();
         assert_eq!((ada.rating.games, ada.rating.wins), (1, 1));
+        assert_eq!((ada.stats.games, ada.stats.wins), (1, 1));
         let shown = ada.recent.iter().find(|g| g.id == "g1").unwrap();
         assert!(shown.voided.is_some() && shown.players.iter().all(|p| p.rating.is_none()));
     }
@@ -417,10 +480,29 @@ mod tests {
     fn a_game_voided_before_voids_were_kept_is_marked_without_rerating() {
         let arena = arena();
         arena.void_ratings(&["g1".into()], VOID).unwrap();
-        // As a void left it before it kept when: only unrated.
+        // As a void left it before it kept when: only unrated, and still on the tallies.
         let mut g1 = record(&arena, "g1");
         g1.voided = None;
-        arena.db.transaction(|tx| db::set_record(tx, &g1)).unwrap();
+        let ids = ["Ada", "Bo"].map(|n| arena.db.user_by_name(n).unwrap().unwrap().id);
+        arena
+            .db
+            .transaction(|tx| {
+                db::set_record(tx, &g1)?;
+                for (user, win) in ids.iter().zip([true, false]) {
+                    let t = db::Tally {
+                        user,
+                        win,
+                        rating: None,
+                    };
+                    db::tally(tx, &t)?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            (tally(&arena, "Ada"), tally(&arena, "Bo")),
+            ((2, 2), (2, 1))
+        );
         assert_eq!(listed(&arena, false).1, Vec::<String>::new());
         let before: Vec<_> = ["Ada", "Bo", "Cy"].map(|n| standing(&arena, n)).to_vec();
         let only = VoidHow {
@@ -441,6 +523,10 @@ mod tests {
         assert_eq!(
             ["Ada", "Bo", "Cy"].map(|n| standing(&arena, n)).to_vec(),
             before
+        );
+        assert_eq!(
+            (tally(&arena, "Ada"), tally(&arena, "Bo")),
+            ((1, 1), (1, 1))
         );
         assert!(refused("g1"), "voided already");
         // A game with a seat of no account was never rated.

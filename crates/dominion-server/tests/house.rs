@@ -549,4 +549,8 @@ fn a_rated_game_an_agent_abandons_is_recorded_voided_and_moves_no_rating() {
     };
     assert!(arena.history(&rated).unwrap().games.is_empty());
     assert!(arena.leaderboard(10).unwrap().players.is_empty());
+    for agent in ["Opus", "Sol"] {
+        let stats = arena.profile(agent).unwrap().stats;
+        assert_eq!((stats.games, stats.wins), (0, 0), "{agent}");
+    }
 }

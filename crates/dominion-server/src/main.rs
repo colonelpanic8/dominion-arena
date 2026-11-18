@@ -106,8 +106,8 @@ enum GamesCommand {
         #[arg(required = true)]
         games: Vec<String>,
     },
-    /// Void finished rated games: take them out of the rated record (they stay in the
-    /// history, marked voided), and make every rating what the other rated games make it,
+    /// Void finished rated games: take them out of the record (they stay in the history,
+    /// marked voided) and off their players' tallies, and make every rating what the other rated games make it,
     /// played again in the order they ended. Refused unless the records give exactly
     /// the ratings kept now.
     Void {
@@ -117,7 +117,7 @@ enum GamesCommand {
         #[arg(long)]
         dry_run: bool,
         /// Only mark games voided that an earlier void made unrated before voids were
-        /// kept in the record; no rating changes.
+        /// kept in the record, and take them off their players' tallies; no rating changes.
         #[arg(long)]
         record_only: bool,
     },
@@ -386,6 +386,9 @@ async fn games(
             println!("{verb} {}", voided.games.join(" "));
             for (name, before, after) in &voided.ratings {
                 println!("  {name:<24} {before:>8.1} -> {after:>8.1}");
+            }
+            for (name, games, wins) in &voided.tallies {
+                println!("  {name:<24} games -{games}, wins -{wins}");
             }
             Ok(())
         }

@@ -93,9 +93,10 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           its runner reported it, else its setup as last offered; a bot's
                           owner) and shown as `PlayedBy`
     rerate.rs             voiding rated games (`dominion games void`): their records marked
-                          voided, every rating worked out again from the rated records
-                          left, refused unless the records as they stand give the ratings
-                          kept; `--record-only` marks games voided before records kept it
+                          voided and taken off their players' tallies, every rating worked
+                          out again from the rated records left, refused unless the
+                          records as they stand give the ratings kept; `--record-only`
+                          marks games voided before records kept it
     official.rs           the official accounts as the lobby lists them; their finished
                           games' records (no rating or tally), `OfficialRecords`
     history.rs            the history read model: `/api/history` and players' pages read

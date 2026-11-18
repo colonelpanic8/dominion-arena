@@ -82,7 +82,7 @@ pub enum Beyond {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {
-    /// Finished games against other players, rated or not.
+    /// Finished games against other players, rated or not; no voided game.
     pub games: u32,
     pub wins: u32,
 }
@@ -919,7 +919,7 @@ pub struct GameRecord {
     /// It counts for its players' ratings. A voided game doesn't.
     pub rated: bool,
     /// When it was voided, in milliseconds since the Unix epoch: a rated game taken out of
-    /// the rated record, which changes no rating and counts in no rated tally.
+    /// the record, which changes no rating and counts in no tally.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voided: Option<u64>,
     /// The view's end reason (`provinces-gone`, ...), or `resigned` / `abandoned`.
