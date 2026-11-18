@@ -557,11 +557,13 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-score-rows { margin-bottom: calc(3 * var(--vh)); }
 .dt-score-row { display: flex; align-items: center; gap: calc(1.5 * var(--vh)); font-size: calc(2.8 * var(--vh)); margin: calc(1.5 * var(--vh)) 0; }
 .dt-rank { width: calc(4 * var(--vh)); height: calc(4 * var(--vh)); border: calc(0.3 * var(--vh)) solid #fff; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.dt-score-name { overflow-wrap: break-word; }
+.dt-score-turns { white-space: nowrap; }
 .dt-score-line { flex: 1; height: calc(0.4 * var(--vh)); background: #bbb; min-width: 2em; }
 .dt-score-vp { font-family: DomNum, var(--title); font-size: calc(3.6 * var(--vh)); min-width: 2.5em; text-align: center; background: var(--dt-vp, none) center / contain no-repeat; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000; }
 .dt-score-box { border: calc(0.4 * var(--vh)) solid #ddd; margin: 0 0 calc(3 * var(--vh)); padding: calc(1.5 * var(--vh)); display: flex; gap: calc(3 * var(--vh)); }
 .dt-score-box legend { font-size: calc(2.8 * var(--vh)); padding: 0 0.4em; }
-.dt-score-sources { flex: 1; display: flex; flex-direction: column; gap: calc(1 * var(--vh)); border-right: 2px dashed #ddd; padding-right: calc(3 * var(--vh)); }
+.dt-score-sources { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: calc(1 * var(--vh)); border-right: 2px dashed #ddd; padding-right: calc(3 * var(--vh)); }
 .dt-score-source { display: flex; align-items: center; gap: calc(1 * var(--vh)); }
 .dt-score-source .dt-score-line { height: calc(0.2 * var(--vh)); background: #a88a3a; }
 .dt-score-deck { display: flex; gap: calc(2 * var(--vh)); }
