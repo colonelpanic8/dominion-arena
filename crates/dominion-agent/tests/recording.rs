@@ -194,3 +194,44 @@ fn a_recording_from_another_version_stops_and_the_game_plays_on() {
         assert!(table.recording_stopped().is_some());
     }
 }
+
+/// Stepping through a finished game to look at it never records, whatever it is handed
+/// to go on from; an undo records the game as it now stands afresh, and a stopped
+/// recording stays stopped.
+#[test]
+fn a_replay_to_look_at_never_records_and_an_undo_records_afresh() {
+    for seed in 0..4 {
+        let mut table = table(seed);
+        advance(&mut table, 10_000);
+        let events = table.unwritten().to_vec();
+        table.mark_written();
+        let n = table.answers();
+        let mut from = None;
+        for step in [0, n / 3, n / 2, n] {
+            let replayed = table.replay(step, from.take()).unwrap();
+            assert!(!replayed.records() && replayed.recording_stopped().is_none());
+            assert!(replayed.unwritten().is_empty(), "seed {seed}");
+            assert_eq!(replayed.answers(), step);
+            from = Some(replayed);
+        }
+        assert!(table.unwritten().is_empty() && table.records());
+
+        let k = n / 2;
+        let mut back = table.clone();
+        back.rewind(back.answered_by(k).unwrap(), k).unwrap();
+        let mut fresh =
+            Table::new_recorded(table.id(), table.game().config().clone(), vec![]).unwrap();
+        advance(&mut fresh, k);
+        assert!(back.unwritten() == fresh.unwritten(), "seed {seed}");
+        assert!(events.starts_with(back.unwritten()));
+        // A recording table at an earlier point is no place for a look to go on from.
+        let replayed = table.replay(n, Some(back)).unwrap();
+        assert!(!replayed.records() && replayed.unwritten().is_empty());
+
+        let mut stopped = table.clone();
+        stopped.stop_recording("stopped for a test");
+        stopped.rewind(stopped.answered_by(k).unwrap(), k).unwrap();
+        assert_eq!(stopped.recording_stopped(), Some("stopped for a test"));
+        assert!(stopped.unwritten().is_empty());
+    }
+}

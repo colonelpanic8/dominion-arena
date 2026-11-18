@@ -4,7 +4,7 @@
 mod common;
 
 use common::card_db;
-use dominion_agent::Table;
+use dominion_agent::{Table, WayChoice};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use dominion_protocol::api::SeatView;
 use dominion_protocol::lobby::{GameMeta, UserKind, UserRef};
@@ -407,6 +407,7 @@ fn check_watched(table: &Table, deciding: PlayerId, cards: &CardDb) -> Board {
         can_undo: false,
         undo: Default::default(),
         meta: Default::default(),
+        replay: None,
     });
     assert!(state.watching() && state.decision().is_none());
     watched
@@ -963,6 +964,56 @@ fn way_questions_read_like_dominion_games() {
         }
     }
     panic!("hinted {hinted}, asked {asked}");
+}
+
+#[test]
+fn way_buttons_answer_the_way_question_in_advance() {
+    let cards = card_db();
+    let is_way_question = |d: &AgentDecision| {
+        d.options
+            .iter()
+            .any(|o| o.card.as_deref() == Some("Way of the Ox"))
+    };
+    let mut c = config(&["Village", "Smithy", "Throne Room", "Market"], 2, 5);
+    c.landscapes = vec![Card::WayOfTheOx];
+    let mut table = Table::new("g", c, vec![]).unwrap();
+    let mut rng = StdRng::seed_from_u64(5);
+    let (mut pre_answered, mut used) = (false, 0);
+    while let Some(seat) = table.deciding() {
+        let view = table.view(seat);
+        let d = view.decision.clone().unwrap();
+        assert!(!(pre_answered && is_way_question(&d)), "asked again: {d:?}");
+        let inter = interaction(&view, &d, &cards);
+        assert_eq!(!inter.ways.is_empty(), wording::may_ask_way(&d));
+        let buttons: Vec<&Target> = inter.targets.iter().filter(|t| t.takes_way).collect();
+        for t in &buttons {
+            assert_eq!(inter.ways, ["Way of the Ox"]);
+            let card = cards.get(t.card.as_deref().unwrap()).unwrap();
+            assert!(card.types.iter().any(|t| t == "Action"), "{t:?}");
+            assert!(t.action == "play" || d.purpose == "play", "{t:?}");
+        }
+        pre_answered = false;
+        if let Some(t) = buttons.choose(&mut rng) {
+            let way = if rng.random_bool(0.5) {
+                WayChoice::Way(Card::WayOfTheOx)
+            } else {
+                WayChoice::None
+            };
+            let answer = Selection::new(vec![t.options[0]]).answer(&d).unwrap();
+            table.answer_with(seat, &answer, Some(way)).unwrap();
+            pre_answered = true;
+            used += 1;
+            continue;
+        }
+        let sel = steer(
+            &view,
+            &cards,
+            &["Throne Room", "Village", "Smithy"],
+            &mut rng,
+        );
+        table.answer(seat, &sel.answer(&d).unwrap()).unwrap();
+    }
+    assert!(used > 10, "used {used}");
 }
 
 #[test]

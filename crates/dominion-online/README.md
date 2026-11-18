@@ -270,8 +270,9 @@ cards in the hand or deck. Hidden allocation identities are never observations;
 shuffles revoke copy associations. Partially unidentified groups remain conservative.
 A group with cards never seen says how many of its cards are unknown. Before the first
 turn, the log's "starts with" entries name each player's cards. A replacement snapshot
-of the position the reducer was at keeps what was known of the players' cards; one of
-any other position resets knowledge. A count correction changes only the corrected
+of the position the reducer was at, every zone holding the cards it was known to hold,
+keeps what was known of the players' cards; any other snapshot resets knowledge, since
+cards that left and joined a hidden zone while unseen leave its count the same. A count correction changes only the corrected
 zone: missing cards arrive unknown and surplus ones leave for no zone. Nothing
 reconstructs unobserved history. Deck order and hand probabilities are not tracked.
 Duration timing is described only as precisely as the server state allows.

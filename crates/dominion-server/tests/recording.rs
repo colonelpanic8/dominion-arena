@@ -2,7 +2,6 @@
 
 use dominion_agent::recording::{self, Encoding};
 use dominion_agent::{Answer, Table};
-use dominion_engine::{PlayerId, Response};
 use dominion_protocol::events::{self, Event};
 use dominion_protocol::lobby::UndoRule;
 use dominion_server::hub::{self, Hub, HubError, Meta, NewGame, Seat};
@@ -84,23 +83,11 @@ fn saved(dir: &Path) -> Value {
     serde_json::from_slice(&fs::read(dir.join("g1.json")).unwrap()).unwrap()
 }
 
-/// The stream of the game the snapshot holds, recorded afresh by replaying its answers.
+/// The stream of the game the snapshot holds, recorded afresh by replaying its answers
+/// (with their Way pre-answers and Autoplay Treasures runs).
 fn replayed(saved: &Value) -> Vec<Event> {
     let table: Table = serde_json::from_value(saved["table"].clone()).unwrap();
-    let config = table.game().config().clone();
-    let mut fresh = Table::new_recorded(table.id(), config, table.names().to_vec()).unwrap();
-    for step in saved["table"]["history"].as_array().unwrap() {
-        let seat = PlayerId(step["seat"].as_u64().unwrap() as u8);
-        let id = fresh.decision_id().unwrap();
-        if step["act"] == "Treasures" {
-            fresh.play_treasures(seat, &id).unwrap();
-        } else {
-            let response: Response =
-                serde_json::from_value(step["act"]["Answer"]["response"].clone()).unwrap();
-            fresh.respond(seat, &id, response).unwrap();
-        }
-    }
-    fresh.unwritten().to_vec()
+    table.rerecorded().unwrap().unwritten().to_vec()
 }
 
 /// Checks game g1's stream in `dir` against its snapshot: exactly the stream its answers
@@ -299,6 +286,135 @@ fn after_an_undo_the_file_is_the_stream_of_the_game_as_it_now_stands() {
     advance(&hub, &seats, 10_000, false);
     let after = check(dir, Encoding::JsonLines);
     assert!(after.starts_with(&undone) && !after.starts_with(&before));
+}
+
+/// Game g1's snapshot and stream as they are on disk.
+fn on_disk(dir: &Path) -> (Vec<u8>, Vec<u8>) {
+    (
+        fs::read(dir.join("g1.json")).unwrap(),
+        fs::read(dir.join("g1.events.jsonl")).unwrap(),
+    )
+}
+
+/// Steps through finished game g1 forwards, then back and on again, as one seat too.
+fn step_through(hub: &Hub) {
+    let steps = hub
+        .replay_view("g1", 0, 0, None)
+        .unwrap()
+        .replay
+        .unwrap()
+        .steps;
+    for step in (0..=steps).chain([steps / 2, 1, steps - 1, steps / 3]) {
+        let view = hub.replay_view("g1", step, 0, None).unwrap();
+        assert_eq!(view.replay.unwrap().step, step);
+        hub.replay_view("g1", step, 0, Some(1)).unwrap();
+    }
+}
+
+#[test]
+fn stepping_through_a_finished_game_leaves_its_stream_as_it_was() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let (hub, _) = Hub::open(dir, KEEP).unwrap();
+    let config = hub::config(&new_game()).unwrap();
+    let meta = Meta {
+        watchable: true,
+        undo: UndoRule::Free,
+        ..Meta::default()
+    };
+    let created = hub.host(config, vec![], meta).unwrap();
+    let seats: Vec<Seat> = (created.seats.iter())
+        .map(|s| hub.claim(&created.game_id, &s.token).unwrap())
+        .collect();
+    advance(&hub, &seats, 10_000, false);
+    assert!(!hub.list()[0].running);
+    let finished = on_disk(dir);
+    let events = check(dir, Encoding::JsonLines);
+    step_through(&hub);
+    assert!(
+        on_disk(dir) == finished,
+        "stepping changed the game on disk"
+    );
+
+    // An undo still makes the file the stream of the game as it now stands, and the
+    // points replayed before it are no help to the game that follows.
+    assert!(hub.undo(&seats[0], None).unwrap());
+    let undone = check(dir, Encoding::JsonLines);
+    assert!(undone.len() < events.len() && events.starts_with(&undone));
+    advance(&hub, &seats, 3, true);
+    advance(&hub, &seats, 10_000, false);
+    let after = check(dir, Encoding::JsonLines);
+    assert!(after.starts_with(&undone) && !after.starts_with(&events));
+    let finished = on_disk(dir);
+    step_through(&hub);
+    assert!(
+        on_disk(dir) == finished,
+        "stepping changed the game on disk"
+    );
+    check(dir, Encoding::JsonLines);
+
+    // Once retired, its stream is served as written.
+    hub.retire("g1").unwrap();
+    step_through(&hub);
+    assert_eq!(
+        hub.recording("g1").unwrap(),
+        (Encoding::JsonLines, finished.1)
+    );
+}
+
+/// An answer that plays a card with a Way answered in advance (the table's Way buttons)
+/// is recorded as the play's question and the Way question, each asked and answered.
+#[test]
+fn an_answer_played_with_a_way_records_the_way_question_and_its_answer() {
+    use dominion_agent::WayChoice;
+    for seed in 0..50 {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        let (hub, _) = Hub::open(dir, KEEP).unwrap();
+        let req = NewGame {
+            landscapes: vec!["Way of the Sheep".into()],
+            shelters: Some(true),
+            seed: Some(seed),
+            turn_limit: Some(4),
+            ..new_game()
+        };
+        let created = (hub.host(hub::config(&req).unwrap(), vec![], Meta::default())).unwrap();
+        let seats: Vec<Seat> = (created.seats.iter())
+            .map(|s| hub.claim(&created.game_id, &s.token).unwrap())
+            .collect();
+        let (seat, d) = (seats.iter())
+            .find_map(|s| Some((s, hub.view(s).unwrap().0.decision?)))
+            .unwrap();
+        let Some(necropolis) = (d.options.iter())
+            .find(|o| o.action == "play" && o.card.as_deref() == Some("Necropolis"))
+        else {
+            continue;
+        };
+        let answer = Answer::indices(&d.id, vec![necropolis.index]);
+        let way = Some(WayChoice::Way(dominion_engine::Card::WayOfTheSheep));
+        hub.answer_with(seat, &answer, way).unwrap();
+        let next = hub.view(seat).unwrap().0.decision.unwrap();
+        assert_eq!(next.kind, "turn", "the Way question was left open");
+        advance(&hub, &seats, 10_000, false);
+
+        let events = check(dir, Encoding::JsonLines);
+        let asked = (events.windows(2)).position(|w| match (&w[0].what, &w[1].what) {
+            (events::What::Ask(a), events::What::Answer(b)) => {
+                a.seat == b.seat
+                    && a.source.as_deref() == Some("Necropolis")
+                    && a.options
+                        .iter()
+                        .any(|o| o.label.contains("Way of the Sheep"))
+            }
+            _ => false,
+        });
+        assert!(asked.is_some(), "no Way question asked and answered");
+        let replayed = dominion_agent::replay::replay(&events).unwrap();
+        let saved: Table = serde_json::from_value(saved(dir)["table"].clone()).unwrap();
+        assert_eq!(replayed.game.outcome(), saved.game().outcome());
+        return;
+    }
+    panic!("no seed starts with Necropolis in hand");
 }
 
 #[test]

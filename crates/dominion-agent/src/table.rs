@@ -483,20 +483,76 @@ impl Table {
         Ok(())
     }
 
-    /// The game replayed from its start up to just before answer `answers`.
+    /// Whether the game can be replayed to any point: it kept every answer.
+    pub fn replayable(&self) -> bool {
+        self.complete
+    }
+
+    /// The game replayed from its start up to just before answer `answers`, going on from
+    /// `from` when that is an earlier point of this game replayed so. It is only to look
+    /// at: it never records, so whatever keeps this game's stream has nothing to write.
+    pub fn replay(&self, answers: usize, from: Option<Table>) -> Result<Table, AnswerError> {
+        if !self.complete || answers > self.history.len() {
+            return Err(AnswerError::Unreplayable(
+                "it doesn't keep that many answers".into(),
+            ));
+        }
+        let from = from.filter(|t| {
+            t.id == self.id
+                && t.recording.is_none()
+                && t.history.len() <= answers
+                && self.history.starts_with(&t.history)
+                && t.game.config() == self.game.config()
+        });
+        self.replayed_from(answers, from, false)
+    }
+
+    /// Each turn's start: how many answers there were when it was logged, whose turn it
+    /// is and its number.
+    pub fn turn_starts(&self) -> Vec<(usize, PlayerId, u32)> {
+        (self.game.log().iter().enumerate())
+            .filter_map(|(i, e)| match e {
+                dominion_engine::Event::TurnStart { player, turn } => {
+                    let answers = self.history.iter().filter(|s| s.log <= i).count();
+                    Some((answers, *player, *turn))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The game replayed from its start up to just before answer `answers`, to become the
+    /// game: a recording table records it afresh, and one whose recording stopped stays
+    /// stopped.
     fn replayed(&self, answers: usize) -> Result<Table, AnswerError> {
-        let fail = |why: String| AnswerError::Unreplayable(why);
-        let mut table = Table::start(
-            self.id.clone(),
-            self.game.config().clone(),
-            self.names.clone(),
-            self.records(),
-        )
-        .map_err(|e| fail(e.to_string()))?;
+        let mut table = self.replayed_from(answers, None, self.records())?;
         if let Some(why) = self.recording_stopped() {
             table.recording = Some(Recording::Stopped(why.into()));
         }
-        for (i, step) in self.history[..answers].iter().enumerate() {
+        Ok(table)
+    }
+
+    /// Replays answers onto `from`, a table of this game that has taken a prefix of them
+    /// and records as `record` says, or onto a new one.
+    fn replayed_from(
+        &self,
+        answers: usize,
+        from: Option<Table>,
+        record: bool,
+    ) -> Result<Table, AnswerError> {
+        let fail = |why: String| AnswerError::Unreplayable(why);
+        let mut table = match from {
+            Some(t) => t,
+            None => Table::start(
+                self.id.clone(),
+                self.game.config().clone(),
+                self.names.clone(),
+                record,
+            )
+            .map_err(|e| fail(e.to_string()))?,
+        };
+        let start = table.history.len();
+        for (i, step) in self.history[..answers].iter().enumerate().skip(start) {
             if table.game.log().len() != step.log || table.deciding() != Some(step.seat) {
                 return Err(fail(format!("answer {i} doesn't replay as it was given")));
             }

@@ -200,19 +200,6 @@ impl Observations {
         self.finish();
     }
 
-    /// `zone` holds `cards` and what was known of it is wrong: the cards it was thought to
-    /// hold are in no zone.
-    pub fn restock(&mut self, zone: i32, cards: &[(i32, Option<i32>)]) {
-        for slot in std::mem::take(self.members.entry(zone).or_default()) {
-            self.locations[slot] = NOWHERE;
-            self.observed.retain(|_, s| *s != slot);
-        }
-        for &(id, name) in cards {
-            self.insert(zone, id, name);
-        }
-        self.finish();
-    }
-
     /// `count` of the cards in `zones` are `name`, whichever of them those are.
     pub fn declare(&mut self, zones: &[i32], name: i32, count: u32) {
         let slots: Vec<usize> = zones

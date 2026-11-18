@@ -267,6 +267,10 @@ pub fn TableCard(
     /// The "All" chip: playing or picking every copy.
     #[props(default)]
     all: bool,
+    /// A button for each Way the card may be played with (dominion.games' Way button):
+    /// a click on the rest of the card plays it as itself.
+    #[props(default)]
+    ways: Vec<String>,
 ) -> Element {
     let ctx = use_table();
     let assets = use_assets();
@@ -296,6 +300,16 @@ pub fn TableCard(
     let counter_url = assets.file_url("images/elements/card-counter.png");
     let plus_url = assets.file_url("images/elements/plus-sign.png");
     let red_cross = assets.file_url("images/elements/red-cross.png");
+    let way_buttons: Vec<(String, Option<String>)> = ways
+        .iter()
+        .map(|w| {
+            let art = assets
+                .card(w)
+                .and_then(|f| f.art.as_deref())
+                .map(crate::assets::url);
+            (w.clone(), art)
+        })
+        .collect();
     let n_picked = picked.len() as u32;
     // A stack's picked copies split off it, tilted. The copy and the crosses stay mounted
     // and are only shown or hidden, so picking never reloads their images.
@@ -432,6 +446,36 @@ pub fn TableCard(
                             img { src, alt: "+", draggable: "false" }
                         } else {
                             "+"
+                        }
+                    }
+                }
+                if !way_buttons.is_empty() {
+                    div { class: "dt-ways",
+                        for (way, art) in way_buttons {
+                            {
+                                let short = way.rsplit(' ').next().unwrap_or(&way).to_string();
+                                let w = way.clone();
+                                let bare = art.is_none();
+                                rsx! {
+                                    button {
+                                        key: "{way}",
+                                        class: "dt-way",
+                                        r#type: "button",
+                                        title: "Play {name} using {way}",
+                                        "data-way": "{way}",
+                                        style: art.map(|a| format!("background-image:url(\"{a}\");")).unwrap_or_default(),
+                                        onclick: move |e| {
+                                            e.stop_propagation();
+                                            if let Some(t) = target {
+                                                ctx.act_way(t, &w);
+                                            }
+                                        },
+                                        if bare {
+                                            span { class: "dt-way-name", "{short}" }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

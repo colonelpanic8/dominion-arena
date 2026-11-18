@@ -161,6 +161,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page
   src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
   src/game/undo.rs        the undo request waiting: withdraw yours, allow or refuse another's
+  src/game/replay.rs      `/game/<id>/replay`: a finished game on the table at any answer, stepped
+                          or played through, as everyone or one seat saw it
   src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
   src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
                           "Play Treasures" (`TreasureRun`)
@@ -239,7 +241,7 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           profile over their games
     history.rs            History: finished games (filtered by where, whose, rated, a
                           name) beside the picked one's sheet (kingdom, standings, Review
-                          game, Play this kingdom); `GameBrowser`, shared with a
+                          game, Replay, Play this kingdom); `GameBrowser`, shared with a
                           player's page; a game's kingdom strip shows the whole kingdom
                           while hovered (`KingdomPeek`)
     cardlists.rs          Cardlists: the account's Banned list
@@ -750,7 +752,9 @@ them.
   a recorded table's replay records afresh, so after a rewind `Table::unwritten` is the
   whole stream of the game as it now stands, from event 0, and replaces the file (only
   once the snapshot saying so is saved; until it has, the file is not served as the
-  stream). A table whose recording stopped replays unjournaled and stays stopped. Who
+  stream). A table whose recording stopped replays unjournaled and stays stopped.
+  `Table::replay` (stepping through a finished game to look at it) never records: its
+  table is never the game, and the hub writes nothing for it. Who
   may undo and whose permission it needs (`UndoRule`, requests waiting) is the hub's.
 
 ## Writing a set

@@ -585,6 +585,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                     let all = mark.target.is_some()
                         && !mark.tone.is_empty()
                         && (click_answers && mark.tone == "play" || !click_answers && s.count > 1 && mark.options > 1);
+                    let ways = ui.as_ref().map(|u| u.ways_of(mark.target)).unwrap_or_default();
                     let key = if *back { format!("back{}", i - faces) } else { format!("false{}", s.card) };
                     rsx! {
                         TableCard {
@@ -595,6 +596,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
                             count: (s.count > 1).then_some(s.count),
                             mark,
                             all,
+                            ways,
                             at: Rect::new(row.xs[i] - hand_box.x, 0.0, row.w, row.h),
                             z: 2000 + 2 * i as i32,
                             class: "dt-slot",

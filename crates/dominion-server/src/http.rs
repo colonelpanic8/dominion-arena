@@ -14,11 +14,11 @@ use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
-use dominion_agent::{Answer, AnswerError};
+use dominion_agent::{AnswerError, WayChoice};
 use dominion_engine::{Card, Kind, PlayerId};
 use dominion_protocol::api::{
-    ApiError, CardCost, CardInfo, Change, DealRequest, Dealt, NewGame, SeatInfo, SeatView, UndoAsk,
-    ViewQuery, WebSettings,
+    AnswerRequest, ApiError, CardCost, CardInfo, Change, DealRequest, Dealt, NewGame, SeatInfo,
+    SeatView, UndoAsk, ViewQuery, WebSettings,
 };
 use dominion_protocol::lobby::{
     BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable,
@@ -912,6 +912,14 @@ async fn watch(
     }
     let view_query = query(view_query)?;
     let from = view_query.log_from.unwrap_or(0);
+    if let Some(step) = view_query.step {
+        return Ok(axum::Json(api.hub.replay_view(
+            &id,
+            step,
+            from,
+            view_query.as_seat,
+        )?));
+    }
     let watched = api.hub.watch_view(&id, from, view_query.as_seat)?;
     if watched.view.game.running
         && ident.is_some_and(|ident| !api.hub.owned_in(&id, &ident.user).is_empty())
@@ -932,8 +940,14 @@ async fn answer(
     req: Bytes,
 ) -> Json<SeatView> {
     let seat = api.seat(&id, &headers, None, query(seat_query)?.seat)?;
-    let answer: Answer = body(&req)?;
-    api.hub.answer(&seat, &answer)?;
+    let req: AnswerRequest = body(&req)?;
+    let way = req
+        .way
+        .as_deref()
+        .map(WayChoice::parse)
+        .transpose()
+        .map_err(|e| Error::new(StatusCode::BAD_REQUEST, e))?;
+    api.hub.answer_with(&seat, &req.answer, way)?;
     Ok(axum::Json(api.hub.seat_view(&seat, None)?))
 }
 

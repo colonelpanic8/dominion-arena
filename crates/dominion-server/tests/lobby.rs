@@ -332,6 +332,37 @@ async fn two_people_are_matched_and_play_through_their_sessions() {
     }
 }
 
+/// Answers the questions a random kingdom may ask before the first turn (Inherited deals
+/// the opening hand again after asking), so that every player holds their opening hand.
+async fn to_first_turn(server: &Server, path: &str, sessions: &[&str]) {
+    for _ in 0..20 {
+        let mut asked = None;
+        for &session in sessions {
+            let seat: SeatView = server
+                .get(&format!("{path}/view"), Some(session))
+                .await
+                .json();
+            if let Some(d) = seat.view.decision {
+                asked = Some((session, d));
+            }
+        }
+        let (session, d) = asked.expect("someone decides");
+        if d.kind == "turn" {
+            return;
+        }
+        let picks: Vec<u32> = (d.options.iter())
+            .take(d.min.unwrap_or(1) as usize)
+            .map(|o| o.index)
+            .collect();
+        let answer = json!({ "decision": d.id, "indices": picks });
+        server
+            .post(&format!("{path}/answer"), Some(session), answer)
+            .await
+            .ok();
+    }
+    panic!("no first turn after 20 setup questions");
+}
+
 #[tokio::test]
 async fn onlookers_can_watch_without_an_account() {
     let server = start().await;
@@ -349,6 +380,7 @@ async fn onlookers_can_watch_without_an_account() {
         .await
         .json();
     let path = format!("/api/games/{}", found.game_id.unwrap());
+    to_first_turn(&server, &path, &[&ada, &bo]).await;
     let anonymous: SeatView = server.get(&format!("{path}/watch"), None).await.ok().json();
     let before: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
     let watched: SeatView = server.get(&format!("{path}/watch"), Some(&cy)).await.json();
