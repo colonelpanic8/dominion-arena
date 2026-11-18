@@ -240,6 +240,7 @@ impl<'a> View<'a> {
         PileView {
             id,
             pile: self.game.pile(id),
+            game: self.game,
         }
     }
 
@@ -526,6 +527,7 @@ impl<'a> PlayerView<'a> {
 pub struct PileView<'a> {
     id: PileId,
     pile: &'a Pile,
+    game: &'a Game,
 }
 
 impl<'a> PileView<'a> {
@@ -572,6 +574,11 @@ impl<'a> PileView<'a> {
     /// Embargo's Curse tokens.
     pub fn embargo(&self) -> u32 {
         self.pile.embargo
+    }
+
+    /// Blockades whose set-aside card is a copy of this pile's.
+    pub fn blockades(&self) -> u32 {
+        crate::cards::seaside::blockades(self.game, self.id)
     }
 
     /// Whether a Trade Route token is still on it.

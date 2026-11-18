@@ -584,6 +584,13 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> Pi
             Some(t.embargo as i32),
         ));
     }
+    if t.blockade > 0 {
+        badges.push(badge(
+            "blockade",
+            format!("{} Blockade token(s)", t.blockade),
+            Some(t.blockade as i32),
+        ));
+    }
     if t.trade_route {
         badges.push(badge("trade-route", "Trade Route token".into(), None));
     }

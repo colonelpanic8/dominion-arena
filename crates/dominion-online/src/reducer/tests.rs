@@ -445,6 +445,15 @@ fn visible_auxiliary_state_is_projected_and_hidden_associations_stay_hidden() {
         card: -1,
         is_visible: true,
     });
+    r.state.as_mut().unwrap().counters.push(model::Counter {
+        index: 1,
+        kind: 14,
+        owner: -1,
+        value: 1,
+        zone: 20,
+        card: -1,
+        is_visible: true,
+    });
     r.state
         .as_mut()
         .unwrap()
@@ -458,6 +467,8 @@ fn visible_auxiliary_state_is_projected_and_hidden_associations_stay_hidden() {
         });
     let v = r.view().unwrap();
     assert_eq!(v.supply[0].tokens.embargo, 2);
+    assert_eq!(v.supply[0].tokens.blockade, 1);
+    assert!(v.counters.is_empty());
     assert_eq!(v.supply[0].tokens.players.len(), 1);
     assert_eq!(v.lasting[0].cards, vec!["Copper"]);
     assert!(v.notes.iter().any(|n| n.source == "Uses Village abilities"));
