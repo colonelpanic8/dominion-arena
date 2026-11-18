@@ -2596,7 +2596,8 @@ impl Hub {
     }
 
     /// Ends the game with `seat` out of it: `cause` is `resigned`, `abandoned` or
-    /// `timeout`.
+    /// `timeout`. A seat of the server's agents that is abandoned failed to play, which
+    /// says nothing of anyone's skill: the game is no longer rated.
     pub fn resign(&self, seat: &Seat, cause: &str) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let ended = {
@@ -2604,6 +2605,10 @@ impl Hub {
             let (next, ()) = self.attempt(&table, |next| next.resign(seat.seat))?;
             let ended = self.changed(&game, &mut table, next, |meta| {
                 meta.ended = Some(cause.into());
+                let agent = meta.agents.get(seat.seat.index()) == Some(&true);
+                if cause == "abandoned" && agent {
+                    meta.rated = false;
+                }
             })?;
             lock(&game.undo).request = None;
             ended
@@ -3221,6 +3226,32 @@ mod shared_response_tests {
 #[cfg(test)]
 mod archive_tests {
     use super::*;
+
+    #[test]
+    fn a_game_an_agent_abandons_is_not_rated() {
+        let hub = Hub::default();
+        let req = NewGame {
+            players: 2,
+            kingdom: vec!["Village".into()],
+            seed: Some(1),
+            ..NewGame::default()
+        };
+        let rated_after = |seat: u8, cause: &str| {
+            let meta = Meta {
+                rated: true,
+                agents: vec![false, true],
+                ..Meta::default()
+            };
+            let game = (hub.host(config(&req).unwrap(), names(&req).unwrap(), meta)).unwrap();
+            let seat = hub.claim(&game.game_id, &game.seats[usize::from(seat)].token);
+            hub.resign(&seat.unwrap(), cause).unwrap();
+            hub.meta(&game.game_id).unwrap().rated
+        };
+        assert!(!rated_after(1, "abandoned"));
+        assert!(rated_after(0, "abandoned"));
+        assert!(rated_after(1, "resigned"));
+        assert!(rated_after(1, "timeout"));
+    }
 
     #[test]
     fn expired_games_can_be_viewed_but_not_played() {
