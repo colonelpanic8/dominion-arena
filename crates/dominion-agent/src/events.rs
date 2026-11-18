@@ -32,10 +32,10 @@ pub struct Recorder {
     ended: bool,
     /// The player of the latest turn: whose its phases are.
     turn: u8,
-    /// The event each of the journal's occurrences became, by its number, and which of
-    /// its cards it is about when it is a move.
-    occurrences: Vec<Option<(u64, u32)>>,
-    /// How many cards each move event moved.
+    /// The event each of the journal's occurrences that can still be named became, by
+    /// its number, and which of its cards it is about when it is a move.
+    occurrences: BTreeMap<u32, (u64, u32)>,
+    /// How many cards each move event moved, of those occurrences' events.
     moved: BTreeMap<u64, u32>,
     /// The occurrence the journal's steps happen inside now.
     within: Option<u32>,
@@ -44,10 +44,10 @@ pub struct Recorder {
     /// An event that was an occurrence now over: no later move joins it.
     #[serde(default)]
     closed: Option<u64>,
-    /// Whose each of the journal's occurrences is, by its number: who moves a card between
-    /// zones nobody owns inside it.
+    /// Whose each of those occurrences is, by its number: who moves a card between zones
+    /// nobody owns inside it.
     #[serde(default)]
-    actors: Vec<Option<u8>>,
+    actors: BTreeMap<u32, u8>,
     /// What the options of the question last asked answer with, until it is answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     asked: Option<(u8, Vec<crate::project::Target>)>,
@@ -436,7 +436,22 @@ impl Recorder {
                 }),
             )?;
         }
+        self.forget(game);
         Ok(out)
+    }
+
+    /// Forgets the occurrences no later step of the journal can name, so that what it keeps
+    /// doesn't grow with the game.
+    fn forget(&mut self, game: &Game) {
+        let mut live = game.journal_live();
+        live.extend(self.within);
+        let live: BTreeSet<u32> = live.into_iter().collect();
+        self.occurrences.retain(|n, _| live.contains(n));
+        self.actors.retain(|n, _| live.contains(n));
+        let events: BTreeSet<u64> = self.occurrences.values().map(|&(seq, _)| seq).collect();
+        let last = self.seq.checked_sub(1);
+        self.moved
+            .retain(|seq, _| events.contains(seq) || Some(*seq) == last);
     }
 
     /// The setup event, then each player's opening shuffle and draw: the engine deals
@@ -599,15 +614,14 @@ impl Recorder {
         let actor = (out.last())
             .filter(|_| self.wrote)
             .and_then(|e| self.actor(&e.what));
-        let n = n as usize;
-        if self.occurrences.len() <= n {
-            self.occurrences.resize(n + 1, None);
-        }
-        self.occurrences[n] = event;
-        if self.actors.len() <= n {
-            self.actors.resize(n + 1, None);
-        }
-        self.actors[n] = actor;
+        match event {
+            Some(event) => self.occurrences.insert(n, event),
+            None => self.occurrences.remove(&n),
+        };
+        match actor {
+            Some(actor) => self.actors.insert(n, actor),
+            None => self.actors.remove(&n),
+        };
     }
 
     /// Whose an occurrence is: its player's; a phase is its turn's.
@@ -630,7 +644,7 @@ impl Recorder {
     }
 
     fn occurrence(&self, occ: Option<u32>) -> Option<(u64, u32)> {
-        occ.and_then(|n| self.occurrences.get(n as usize).copied().flatten())
+        occ.and_then(|n| self.occurrences.get(&n).copied())
     }
 
     fn resolve(
@@ -772,7 +786,7 @@ impl Recorder {
     fn mover(&self, from: &events::Zone, to: &events::Zone) -> Option<u8> {
         match (from, to) {
             (events::Zone::Seat(p, _), _) | (_, events::Zone::Seat(p, _)) => Some(*p),
-            _ => (self.within).and_then(|n| self.actors.get(n as usize).copied().flatten()),
+            _ => (self.within).and_then(|n| self.actors.get(&n).copied()),
         }
     }
 
