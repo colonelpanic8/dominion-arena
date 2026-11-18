@@ -316,6 +316,11 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-actions { color: #bfb; }
 .dt-buys { color: #fdb; }
 .dt-zero { color: #666; }
+.dt-status-held { display: inline-flex; align-items: center; gap: calc(0.6 * var(--vh)); min-width: 0; overflow: hidden; }
+.dt-status-held .dt-reminder { width: calc(3.3 * var(--vh)); height: calc(3.3 * var(--vh)); font-size: calc(2.8 * var(--vh)); }
+.dt-status-held .dt-badge { height: calc(3.3 * var(--vh)); }
+.dt-status-held .dt-badge-n { font-size: calc(1.9 * var(--vh)); }
+.dt-status-held .dt-bar-held { font-size: calc(2 * var(--vh)); }
 .dt-sep { width: 2px; height: calc(3.3 * var(--vh)); background: #999; }
 .dt-coin, .dt-icon {
   display: inline-flex;
