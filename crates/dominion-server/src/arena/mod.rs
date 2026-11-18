@@ -91,9 +91,9 @@ pub struct Settings {
     pub keep_idle: Duration,
     /// How many seats one account may fill with the server's agents a day (0: no limit).
     pub agent_seats_per_day: u32,
-    /// The registered players who may seat the server's agents, and their bots (empty:
-    /// every registered player).
-    pub agent_players: Vec<String>,
+    /// The accounts, players' or bots', that may seat the server's agents (none: every
+    /// registered player).
+    pub agent_players: Option<Vec<String>>,
     /// Players rated here and on dominion.games, which ratings are read off on its scale.
     pub skill_anchors: Vec<SkillAnchor>,
 }
@@ -119,7 +119,7 @@ impl Default for Settings {
             keep_finished: Duration::from_secs(7 * 86_400),
             keep_idle: Duration::from_secs(30 * 86_400),
             agent_seats_per_day: 5,
-            agent_players: vec![],
+            agent_players: None,
             skill_anchors: vec![],
         }
     }

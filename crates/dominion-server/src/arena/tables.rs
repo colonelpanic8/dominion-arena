@@ -281,7 +281,7 @@ struct Start {
 impl Arena {
     /// Makes the accounts of the server's agents `host` seats, if they may seat them.
     fn summon_seated(&self, host: &User, edits: &[SeatEdit]) -> Result<()> {
-        if self.agent_payer(host).is_none() {
+        if !self.may_seat_agents(host) {
             return Ok(());
         }
         for edit in edits {
@@ -309,7 +309,7 @@ impl Arena {
         let host = self.user(&ident.user)?;
         let edits = new.seats.as_deref().unwrap_or(&[SeatEdit::Open]);
         self.summon_seated(&host, edits)?;
-        let may = self.agent_payer(&host).is_some();
+        let may = self.may_seat_agents(&host);
         let mut state = lock(&self.state);
         let mut seats = vec![Seat::Player {
             user: ident.user.clone(),
@@ -400,7 +400,7 @@ impl Arena {
         check_spec(&spec, edits.len().clamp(2, 6))?;
         let host = self.user(&ident.user)?;
         self.summon_seated(&host, edits)?;
-        let may = self.agent_payer(&host).is_some();
+        let may = self.may_seat_agents(&host);
         let mut state = lock(&self.state);
         let old = state.hosted(id, &ident.user)?.seats.clone();
         let mut seats = vec![];
