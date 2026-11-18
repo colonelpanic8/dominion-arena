@@ -755,7 +755,7 @@ fn an_ordered_selection_keeps_the_order_clicked() {
 #[test]
 fn log_lines_follow_a_real_game() {
     let cards = card_db();
-    let c = config(&["Smithy", "Militia", "Moat", "Village"], 2, 4);
+    let c = config(&["Smithy", "Militia", "Moat", "Village", "Chapel"], 2, 4);
     let mut table = Table::new("g", c, vec!["Ann".into(), "Bo".into()]).unwrap();
     let mut rng = StdRng::seed_from_u64(4);
     while let Some(seat) = table.deciding() {
@@ -831,6 +831,17 @@ fn log_lines_follow_a_real_game() {
         gained as usize,
         log.iter().filter(|e| e.kind == "gained").count()
     );
+    let trashed: u32 = grouped
+        .iter()
+        .flat_map(|t| &t.trashes)
+        .flat_map(|(_, items)| items)
+        .map(|(_, n)| n)
+        .sum();
+    assert!(trashed > 0);
+    assert_eq!(
+        trashed as usize,
+        log.iter().filter(|e| e.kind == "trashed").count()
+    );
     assert!(
         treasures > 0 && buys > 0 && under_smithy > 0 && cleanup > 0,
         "{treasures} {buys} {under_smithy} {cleanup}"
@@ -867,6 +878,12 @@ fn official_log_entries_group_by_turn_with_their_gains() {
         entry(5, "official-gain", Some(1), "Bo gains 1 Curse."),
         entry(6, "turn-start", Some(1), "Bo starts turn 1"),
         entry(
+            8,
+            "official-trash",
+            Some(1),
+            "Bo trashes 1 Estate, 2 Copper.",
+        ),
+        entry(
             7,
             "official-gain-to-hand",
             Some(1),
@@ -892,6 +909,11 @@ fn official_log_entries_group_by_turn_with_their_gains() {
         [(0, items(&[("Witch", 1)])), (1, items(&[("Curse", 1)]))]
     );
     assert_eq!(turns[2].gains, [(1, items(&[("Silver", 2)]))]);
+    assert!(turns[1].trashes.is_empty());
+    assert_eq!(
+        turns[2].trashes,
+        [(1, items(&[("Estate", 1), ("Copper", 2)]))]
+    );
 }
 
 #[test]

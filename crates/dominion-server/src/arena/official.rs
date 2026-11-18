@@ -167,6 +167,7 @@ impl Arena {
                         turns: p.turns,
                         resigned: p.resigned,
                         rating: None,
+                        level: game.levels.get(usize::from(p.index)).copied().flatten(),
                         agent: user.and(agent.clone()),
                         owner: user.and(bot_owner.clone()),
                     }
@@ -219,6 +220,7 @@ mod tests {
             kingdom: vec!["Village".into()],
             landscapes: vec![],
             others: vec!["Colony".into()],
+            levels: vec![Some(41.25), None],
         };
         let mut info = OfficialAccount {
             id: "main".into(),
@@ -261,6 +263,8 @@ mod tests {
         assert_eq!(record.players[0].played_by, PlayedBy::Official);
         assert_eq!(record.players[0].account, None);
         assert!(record.players.iter().all(|p| p.rating.is_none()));
+        assert_eq!(record.players[0].level, Some(41.25));
+        assert_eq!(record.players[1].level, None);
         let owner = arena.profile("Owner").unwrap();
         assert_eq!(
             owner.stats.games, 0,

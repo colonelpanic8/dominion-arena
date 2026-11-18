@@ -6,10 +6,11 @@
 use super::layout::{Geometry, Rect};
 use super::pieces::{CardName, Reminder, TableCard, cube_icon, seat_class};
 use super::supply::{Badges, Tab};
-use super::{Popup, Spot, Ui, mark_at, use_table};
+use super::{Composition, DecksView, Popup, Spot, Ui, mark_at, use_table};
+use crate::app::use_cards;
 use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::{Badge, Board, PlayerEntry, Stack, Zone};
+use crate::game::board::{Badge, Board, PlayerEntry, Stack, Uncertain, Zone, owned_side_by_side};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -107,6 +108,9 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                         if away { "away " }
                         "{a.tag()}"
                     }
+                }
+                if let Some((text, title)) = p.level.map(crate::game::meta::level_text) {
+                    span { class: "dt-bar-who", "data-level": "{seat}", title: "{title}", "{text}" }
                 }
             }
         }
@@ -352,7 +356,7 @@ fn deck_popup(p: &PlayerEntry) -> Popup {
         stacks: vec![],
         unknown: 0,
         note: None,
-        composition: Some(p.seat),
+        composition: Some(Composition::Seat(p.seat)),
         played: false,
     }
 }
@@ -415,11 +419,42 @@ fn CompositionCards(zone: Zone) -> Element {
     }
 }
 
-/// Everything the player owns, then each part of it one at a time: hovering, focusing
-/// or clicking a tab shows that part.
+/// One player's deck composition in its own window.
 #[component]
 pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
     let ctx = use_table();
+    let Some(p) = board.players().find(|p| p.seat == seat) else {
+        return rsx! {};
+    };
+    rsx! {
+        div {
+            class: "dt-composition",
+            role: "dialog",
+            "aria-label": "{p.name}'s deck composition",
+            onclick: move |e| e.stop_propagation(),
+            div { class: "dt-composition-head",
+                span { "{p.name}'s deck composition" }
+                div { class: "dt-composition-actions",
+                    button {
+                        class: "dt-composition-tab", "data-action": "all-decks",
+                        onclick: move |_| ctx.open(all_decks_popup()),
+                        "All decks"
+                    }
+                    button { class: "dt-composition-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+                }
+            }
+            div { class: "dt-composition-body",
+                CompositionBody { board: board.clone(), seat, shared: true }
+            }
+        }
+    }
+}
+
+/// Everything the player owns, then each part of it one at a time: hovering, focusing
+/// or clicking a tab shows that part. `shared` adds what is uncertain about every
+/// player's cards.
+#[component]
+fn CompositionBody(board: Rc<Board>, seat: u8, shared: bool) -> Element {
     let mut open = use_signal(|| None::<(u8, String)>);
     let Some(p) = board.players().find(|p| p.seat == seat) else {
         return rsx! {};
@@ -439,83 +474,226 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
         .cloned();
     // The combined tab holds the cards known to be owned and seen nowhere else.
     let unlocated: &[Stack] = if combined { &[] } else { &p.unlocated };
-    let uncertain: Vec<_> = p
-        .uncertain
-        .iter()
-        .chain(&board.uncertain)
-        .cloned()
-        .collect();
+    let shared_notes: &[Uncertain] = if shared { &board.uncertain } else { &[] };
+    let uncertain: Vec<_> = p.uncertain.iter().chain(shared_notes).cloned().collect();
+    rsx! {
+        if let Some(whole) = whole {
+            section { class: "dt-composition-section", "data-zone": "{whole.key}",
+                h3 { "{whole.label} ({whole.zone.count})" }
+                ZoneCards { zone: whole.zone.clone() }
+            }
+        }
+        if let Some(shown) = shown {
+            section { class: "dt-composition-section",
+                div { class: "dt-composition-tabs", role: "tablist",
+                    for s in parts.iter() {
+                        {
+                            let key = s.key.clone();
+                            let (k1, k2) = (key.clone(), key.clone());
+                            rsx! {
+                                button {
+                                    key: "{key}",
+                                    class: "dt-composition-tab",
+                                    class: if key == shown.key { "on" },
+                                    role: "tab",
+                                    "aria-selected": key == shown.key,
+                                    onmouseenter: move |_| open.set(Some((seat, k1.clone()))),
+                                    onfocus: move |_| open.set(Some((seat, k2.clone()))),
+                                    onclick: move |_| open.set(Some((seat, key.clone()))),
+                                    "{s.label} ({s.zone.count})"
+                                }
+                            }
+                        }
+                    }
+                }
+                div { class: "dt-composition-panel", role: "tabpanel", "data-zone": "{shown.key}",
+                    ZoneCards { zone: shown.zone.clone() }
+                }
+            }
+        }
+        if !unlocated.is_empty() || !uncertain.is_empty() {
+            section { class: "dt-composition-section",
+                h3 { "Uncertain locations" }
+                if !unlocated.is_empty() {
+                    p { class: "dt-composition-note",
+                        "Known to be owned, location unknown: "
+                        for (i, s) in unlocated.iter().enumerate() {
+                            if i > 0 { "; " }
+                            CardName { name: s.card.clone() }
+                            " × {s.count}"
+                        }
+                    }
+                }
+                for (i, u) in uncertain.into_iter().enumerate() {
+                    UncertainNote { key: "uncertain{i}", u }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn UncertainNote(u: Uncertain) -> Element {
+    rsx! {
+        p { class: "dt-composition-note",
+            "{u.count} of "
+            for (j, s) in u.candidates.iter().enumerate() {
+                if j > 0 { "; " }
+                CardName { name: s.card.clone() }
+                " × {s.count}"
+            }
+            if u.unknown > 0 { "; Unknown × {u.unknown}" }
+            " are among {u.text}."
+        }
+    }
+}
+
+pub fn all_decks_popup() -> Popup {
+    Popup {
+        title: "Deck compositions".into(),
+        stacks: vec![],
+        unknown: 0,
+        note: None,
+        composition: Some(Composition::All),
+        played: false,
+    }
+}
+
+/// Every player's deck composition at once: each one's whole window side by side, or a
+/// row per card with how many each player owns.
+#[component]
+pub fn AllDecks(board: Rc<Board>) -> Element {
+    let ctx = use_table();
+    let mut view = ctx.decks_view;
+    let mode = view();
+    let style = match mode {
+        DecksView::Columns => format!(
+            "width: min(calc({} * 60 * var(--vh)), 97%);",
+            board.players().count()
+        ),
+        DecksView::Counts => "width: min(calc(120 * var(--vh)), 94%);".into(),
+    };
     rsx! {
         div {
-            class: "dt-composition",
+            class: "dt-composition dt-decks",
+            style: "{style}",
             role: "dialog",
-            "aria-label": "{p.name}'s deck composition",
+            "aria-label": "Deck compositions",
             onclick: move |e| e.stop_propagation(),
             div { class: "dt-composition-head",
-                span { "{p.name}'s deck composition" }
-                button { class: "dt-composition-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+                span { "Deck compositions" }
+                div { class: "dt-composition-actions",
+                    for (m, label) in [(DecksView::Columns, "Side by side"), (DecksView::Counts, "Card counts")] {
+                        button {
+                            key: "{label}",
+                            class: "dt-composition-tab",
+                            class: if mode == m { "on" },
+                            "aria-pressed": mode == m,
+                            onclick: move |_| view.set(m),
+                            "{label}"
+                        }
+                    }
+                    button { class: "dt-composition-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+                }
             }
             div { class: "dt-composition-body",
-                if let Some(whole) = whole {
-                    section { class: "dt-composition-section", "data-zone": "{whole.key}",
-                        h3 { "{whole.label} ({whole.zone.count})" }
-                        ZoneCards { zone: whole.zone.clone() }
-                    }
+                match mode {
+                    DecksView::Columns => rsx! { DecksColumns { board } },
+                    DecksView::Counts => rsx! { DecksCounts { board } },
                 }
-                if let Some(shown) = shown {
-                    section { class: "dt-composition-section",
-                        div { class: "dt-composition-tabs", role: "tablist",
-                            for s in parts.iter() {
-                                {
-                                    let key = s.key.clone();
-                                    let (k1, k2) = (key.clone(), key.clone());
-                                    rsx! {
-                                        button {
-                                            key: "{key}",
-                                            class: "dt-composition-tab",
-                                            class: if key == shown.key { "on" },
-                                            role: "tab",
-                                            "aria-selected": key == shown.key,
-                                            onmouseenter: move |_| open.set(Some((seat, k1.clone()))),
-                                            onfocus: move |_| open.set(Some((seat, k2.clone()))),
-                                            onclick: move |_| open.set(Some((seat, key.clone()))),
-                                            "{s.label} ({s.zone.count})"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        div { class: "dt-composition-panel", role: "tabpanel", "data-zone": "{shown.key}",
-                            ZoneCards { zone: shown.zone.clone() }
-                        }
-                    }
+            }
+        }
+    }
+}
+
+/// A player's name over their column: opens their own deck composition.
+#[component]
+fn DecksPlayer(player: PlayerEntry) -> Element {
+    let ctx = use_table();
+    let opens = deck_popup(&player);
+    rsx! {
+        button {
+            class: "dt-decks-player {seat_class(player.seat)}",
+            title: "{player.name}'s deck composition",
+            onclick: move |_| ctx.open(opens.clone()),
+            span { class: "dt-decks-name", "{player.name}" }
+            span { class: "dt-decks-total", "{player.owned.count} cards" }
+        }
+    }
+}
+
+/// Each player's deck composition in a column of its own.
+#[component]
+fn DecksColumns(board: Rc<Board>) -> Element {
+    let players: Vec<PlayerEntry> = board.players().cloned().collect();
+    let columns = format!(
+        "grid-template-columns: repeat({}, minmax(calc(34 * var(--vh)), 1fr));",
+        players.len()
+    );
+    rsx! {
+        div { class: "dt-decks-columns", style: "{columns}",
+            for p in players {
+                div { key: "{p.seat}", class: "dt-decks-column",
+                    DecksPlayer { player: p.clone() }
+                    CompositionBody { board: board.clone(), seat: p.seat, shared: false }
                 }
-                if !unlocated.is_empty() || !uncertain.is_empty() {
-                    section { class: "dt-composition-section",
-                        h3 { "Uncertain locations" }
-                        if !unlocated.is_empty() {
-                            p { class: "dt-composition-note",
-                                "Known to be owned, location unknown: "
-                                for (i, s) in unlocated.iter().enumerate() {
-                                    if i > 0 { "; " }
-                                    CardName { name: s.card.clone() }
-                                    " × {s.count}"
-                                }
-                            }
-                        }
-                        for (i, u) in uncertain.iter().enumerate() {
-                            p { key: "uncertain{i}", class: "dt-composition-note",
-                                "{u.count} of "
-                                for (j, s) in u.candidates.iter().enumerate() {
-                                    if j > 0 { "; " }
-                                    CardName { name: s.card.clone() }
-                                    " × {s.count}"
-                                }
-                                if u.unknown > 0 { "; Unknown × {u.unknown}" }
-                                " are among {u.text}."
-                            }
-                        }
-                    }
+            }
+        }
+        if !board.uncertain.is_empty() {
+            section { class: "dt-composition-section",
+                h3 { "Uncertain locations" }
+                for (i, u) in board.uncertain.iter().enumerate() {
+                    UncertainNote { key: "{i}", u: u.clone() }
+                }
+            }
+        }
+    }
+}
+
+/// A row per card any player owns, with how many each owns.
+#[component]
+fn DecksCounts(board: Rc<Board>) -> Element {
+    let cards = use_cards();
+    let players: Vec<&PlayerEntry> = board.players().collect();
+    let rows = owned_side_by_side(&players, &cards);
+    let unknown: Vec<u32> = players.iter().map(|p| p.owned.unknown).collect();
+    let columns = format!(
+        "grid-template-columns: calc(16 * var(--vh)) repeat({}, minmax(0, 1fr));",
+        players.len()
+    );
+    let cell = |n: u32, most: bool| {
+        rsx! {
+            div {
+                class: "dt-decks-n",
+                class: if n == 0 { "none" },
+                class: if most { "most" },
+                if n == 0 { "–" } else { "{n}" }
+            }
+        }
+    };
+    let most = |counts: &[u32]| {
+        let max = counts.iter().copied().max().unwrap_or(0);
+        let differ = counts.iter().any(|&n| n != max);
+        move |n: u32| differ && n == max
+    };
+    rsx! {
+        div { class: "dt-decks-grid", style: "{columns}",
+            div {}
+            for p in players.iter() {
+                DecksPlayer { key: "h{p.seat}", player: (*p).clone() }
+            }
+            for (card, counts) in rows.iter() {
+                div { key: "c{card}", class: "dt-decks-card",
+                    TableCard { name: card.clone(), size: CardSize::Micro }
+                }
+                for (i, &n) in counts.iter().enumerate() {
+                    Fragment { key: "{card}{i}", {cell(n, most(counts)(n))} }
+                }
+            }
+            if unknown.iter().any(|&n| n > 0) {
+                div { class: "dt-decks-card dt-decks-label", "Unknown" }
+                for (i, &n) in unknown.iter().enumerate() {
+                    Fragment { key: "u{i}", {cell(n, false)} }
                 }
             }
         }

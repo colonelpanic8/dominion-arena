@@ -1,6 +1,7 @@
 //! Serde types for `dominion/events@1`: a game of Dominion as a stream of events, and the
 //! [`Table`] they describe. The table after event *n* is the fold of events `0..=n`
-//! ([`Table::apply`]); no rules engine is needed to follow a game.
+//! ([`Table::apply`]); no rules engine is needed to follow a game. The specification is
+//! `protocol/events.md` at the repository's root.
 //!
 //! The format is these types, not an encoding of them. JSON Lines is what people read;
 //! any self-describing serde format carries the same stream (CBOR is tested). A format
@@ -37,6 +38,23 @@ pub struct Reconstructed {
     /// From what: `"history"`, the host's saved game (its setup and every answer it
     /// took) played again by the engine `setup.rules` names and checked against it.
     pub from: String,
+    /// Exactly which of the game's histories it was built from: the stream is the game's
+    /// only while the game's history is this one. Absent in streams rebuilt before it was
+    /// written, which therefore say of no history that it is theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history: Option<History>,
+}
+
+/// A game's history as a host keeps it: every answer it took, and every undo.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct History {
+    /// How many answers it holds.
+    pub answers: u64,
+    /// How many undos the game has had: an undo is never taken back, so this only grows.
+    pub undos: u64,
+    /// `sha256:` and the hex SHA-256 of the answers and undos as the host saves them.
+    pub digest: String,
 }
 
 /// Whose eyes a stream is written for: which cards' faces it shows.
@@ -1381,7 +1399,66 @@ pub struct Show {
     pub to: Option<u8>,
 }
 
+/// Who sees the faces of the cards a move moves, by the move alone: a `show` of them
+/// beside it, to eyes that see them anyway, says nothing ([`What::seen`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Seen {
+    Everyone,
+    /// That seat only: the owner of a hand, a set-aside zone, `looking` or the Native
+    /// Village mat the cards go to face down.
+    Seat(u8),
+    /// Nobody but who saw them already.
+    Nobody,
+}
+
+impl Seen {
+    /// Whether these eyes include those of a `show` to `to` (everyone when `None`).
+    pub fn covers(self, to: Option<u8>) -> bool {
+        match (self, to) {
+            (Seen::Everyone, _) => true,
+            (Seen::Seat(s), Some(t)) => s == t,
+            _ => false,
+        }
+    }
+}
+
 impl What {
+    /// Who sees the cards of this move as it moves them, `table` being the table before
+    /// or after it: everyone for a `play`, a `gain` and a `reveal`, and for cards that
+    /// arrive face up or where every card lies face up (a play area, the trash, a mat other
+    /// than the Native Village mat, a pile not hidden, a player's Boons or Hexes); the
+    /// owner alone for cards going face down into their hand, set-aside zone, `looking` or
+    /// Native Village mat; otherwise nobody. A discard is no public move: Clean-up
+    /// discards a hand unseen. `None` for an event that is no move.
+    pub fn seen(&self, table: &Table) -> Option<Seen> {
+        if let What::Play(_) = self {
+            return Some(Seen::Everyone);
+        }
+        let (verb, m) = self.as_move()?;
+        let public_pile = |zone: &Zone| table.piles.get(zone).is_some_and(|p| !p.hidden);
+        Some(match &m.to {
+            _ if matches!(verb, Verb::Gain | Verb::Reveal) || m.face == Some(Face::Up) => {
+                Seen::Everyone
+            }
+            Zone::Trash
+            | Zone::Seat(
+                _,
+                SeatZone::Play
+                | SeatZone::Tavern
+                | SeatZone::Island
+                | SeatZone::Exile
+                | SeatZone::Boons
+                | SeatZone::Hexes,
+            ) => Seen::Everyone,
+            to @ (Zone::Pile(_) | Zone::Aside(_)) if public_pile(to) => Seen::Everyone,
+            Zone::Seat(
+                s,
+                SeatZone::Hand | SeatZone::Aside | SeatZone::Looking | SeatZone::NativeVillage,
+            ) => Seen::Seat(*s),
+            _ => Seen::Nobody,
+        })
+    }
+
     pub fn moved(verb: Verb, m: Move) -> What {
         match verb {
             Verb::Draw => What::Draw(m),

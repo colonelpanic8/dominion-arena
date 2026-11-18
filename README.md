@@ -736,7 +736,7 @@ watch it see it as it was left, read from `expired/` when asked for, and nothing
 can be done in it.
 
 Every game the server saves is also recorded as a `dominion/events@1` stream (every
-card's face and every shuffle's order; the format is the playbook's `protocol/events.md`)
+card's face and every shuffle's order; the format is [`protocol/events.md`](protocol/events.md))
 beside its snapshot: `state_dir/<game id>.events.jsonl`, one JSON object per line, or
 `.events.cbor`, a CBOR sequence, as `events_encoding` says when the game starts. Its first
 record says the schema, the viewer (`full`) and the game. It is appended to as the game
@@ -752,9 +752,13 @@ so a server can be deployed with recording off and turned on later; games alread
 recording go on. Games saved before streams were recorded have none, and neither do
 games started with recording off, until `dominion games backfill` writes one (below); it
 also rebuilds a whole stream for a game whose recording stopped, beside the incomplete
-one. Such a stream's first record says it was `reconstructed`, and when; the server
-checks it at startup and before serving it, and serves it like any other once the game
-can no longer change.
+one. Such a stream's first record says it was `reconstructed`, when, and exactly which
+history of the game it was built from (how many answers, how many undos, and a digest of
+both); the server checks it against the game at startup and before serving it, and
+serves it like any other once the game can no longer change. Until then it is kept as it
+is, and if the game is undone first the server sets it aside as
+`<game id>.stale.events.<jsonl|cbor>`, never serves it, and the game has no stream until
+a backfill writes it afresh.
 
 A game's snapshot is written, and synced, before a change to it is acknowledged: a
 change that can't be saved (a full or failing disk) is refused, and the game is as it
@@ -882,15 +886,24 @@ its saved config and answers with recording on, and its stream is written only i
 is the saved game exactly: every log entry, the final state and the outcome, with the
 stream replaying to it. It is written beside the snapshot, atomically and synced, in
 `events_encoding` (`--events-encoding`), never over a stream already there, and its first
-record says it was reconstructed and when; snapshots are never touched. A game the
-server hosts that can still change is left for a later run: one in progress, since its
-table goes on unrecorded, and a finished one whose rules still allow an undo, until it
-is retired. Running it again changes nothing, and stopping it midway loses nothing.
-`--dry-run` converts and checks every game, writes nothing, and can run beside the
-server; a run that writes takes the state directory's lock, so stop the server first.
-Each prints a line per game (converted, has a stream, in progress, can be undone, or not
-convertible and why: answers not all kept, or where the game now plays differently, with
-the log entries that differ) and the totals:
+record says it was reconstructed, when, and the history it was built from: the number of
+answers and undos and a SHA-256 digest of them as the snapshot keeps them. A stream is
+the game's only while that is the game's history, and anything holding one checks it
+exactly: a game undone, even one finished again the same way, has another. Snapshots are
+never touched. A hosted game in progress is left for a later run, since its table goes on
+unrecorded. A finished one is written even while its rules still allow an undo (as games
+made directly do until retired): the server keeps that stream, serves it only once the
+game can't change (retired, or no undo allowed) and sets it aside as stale if the game is
+undone first; a later run, once the game is over again, writes the stream of the game as
+it then stands. A stale stream a run finds (built from a history the game no longer has)
+is set aside the same way, `<game id>.stale.events.<encoding>`, and the game backfilled
+as if it had none. Running it again changes nothing, and stopping it midway loses
+nothing. `--dry-run` converts and checks every game, writes nothing, and can run beside
+the server; a run that writes takes the state directory's lock, so stop the server first.
+Each prints a line per game (converted; converted, undoable: written, served once it
+can't change; has a stream; stale stream: why, where it is set aside and what then
+happened to the game; in progress; or not convertible and why: answers not all kept, or
+where the game now plays differently, with the log entries that differ) and the totals:
 
 ```
 sudo dominion-games backfill --dry-run

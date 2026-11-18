@@ -190,6 +190,7 @@ mod tests {
                     turns: 1,
                     resigned: false,
                     rating: None,
+                    level: None,
                     agent: None,
                 })
                 .collect(),

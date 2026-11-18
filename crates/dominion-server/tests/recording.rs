@@ -486,7 +486,10 @@ fn a_game_with_tokens_out_saves_restarts_and_undoes() {
             .id
     };
     let before = decision(&hub);
-    assert_eq!(saved(dir)["table"]["recorder"]["version"], 1);
+    assert_eq!(
+        saved(dir)["table"]["recorder"]["version"],
+        dominion_agent::RECORDING_VERSION
+    );
     drop(hub);
     let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
     assert_eq!((loaded.games, loaded.unrecorded.len()), (1, 0));

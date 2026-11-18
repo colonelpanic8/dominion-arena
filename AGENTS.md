@@ -22,6 +22,8 @@ From the repo root (direnv loads the Nix dev shell; otherwise prefix `nix develo
 
 ```
 data/cards/<set>.json     card data, the source of truth (see "Card data")
+protocol/events.md        the `dominion/events@1` specification; its example streams in
+                          protocol/examples/events/, generated (`just events-examples`)
 build/commit.rs           the build scripts' commit and its time (`DOMINION_COMMIT`), from
                           git or the flake
 crates/dominion-engine/
@@ -65,6 +67,10 @@ crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection,
                           CBOR), reading one back
   protocol/               the vendored JSON Schema (`just sync-protocol`)
   examples/record_cost.rs what recording costs a long 4-seat game, per answer and on disk
+  tests/spec_examples.rs  protocol/events.md held to the code: generates its examples and
+                          checks them, its quoted events and that it names every type and
+                          field of the protocol's events module
+  tests/support/          the scripted seats the fold test and the example generator share
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
                           and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
@@ -100,7 +106,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/control.rs          the control socket: `dominion games` lists and retires hosted games
   src/backfill.rs         `dominion games backfill`: streams for games saved before they
                           were recorded, replayed from their answers and checked against
-                          the snapshot; offline, under the state directory's lock
+                          the snapshot, each naming the history it was built from;
+                          offline, under the state directory's lock
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
   src/catalog.rs          the models the runner offers: read from each provider's catalog
@@ -121,7 +128,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           read from its view: kept in its record for the history
   src/store.rs            the state directory: its lock, a JSON file per game written
                           atomically and durably (the directory synced too), each game's
-                          event stream appended to, or marked incomplete
+                          event stream appended to, or marked incomplete (or stale, a
+                          reconstructed one of a history the game no longer has)
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
   src/mcp/play.rs         dominion/play@1: arguments, the text a session is shown
@@ -595,9 +603,12 @@ them.
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
   `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.
-- **Events.** `dominion/events@1` (`dominion-playbook/protocol/events.md`) is a game as a
-  stream of events whose fold is the table, with no rules engine: `events::Table::apply`
-  in dominion-protocol is the reference. `Game::new_journaled` records a journal
+- **Events.** `dominion/events@1` ([`protocol/events.md`](protocol/events.md)) is a game as
+  a stream of events whose fold is the table, with no rules engine: `events::Table::apply`
+  in dominion-protocol is the reference. A change to what the stream says or to what the
+  engine does in the example games changes the examples: run `just events-examples`, fix
+  the excerpts `events.md` quotes, and describe any new event, field or table state there
+  (`tests/spec_examples.rs` fails until all three are done). `Game::new_journaled` records a journal
   (`journal.rs`): every trace entry with the rules' word for a move (`Verb`), the log's
   entries where they were logged, turns, phases, and counters read each time anything is
   recorded. `events::Recorder` in dominion-agent turns it into the full stream.
@@ -703,12 +714,21 @@ them.
   get one from `backfill.rs`: `Table::rerecorded` plays the table's config and `history`
   again recording, and the stream is written only if that game's log, final state (the
   saved game's fields as written then) and outcome are the saved ones and the stream
-  replays; an incomplete stream stays beside it. Its header carries `reconstructed`, and
-  the hub never writes to it: `stream_state` checks such a file as a whole
-  (`check_reconstructed`: header, fold, setup, ending) whatever the table's recording
-  says, and so does `Hub::recording` before serving it. The backfill writes one only for
-  a game that can't change (`hub::can_change`: a hosted game in progress or able to be
-  undone waits), so the check needs no engine; the hub refuses one beside a game that can.
+  replays; an incomplete stream stays beside it. Its header carries `reconstructed`, with
+  the history it was built from (`Table::history`: answers, undos and a digest of both as
+  the snapshot keeps them), and the hub never writes to it: `stream_state` checks such a
+  file as a whole (`check_reconstructed`: header, that history exactly the table's, fold,
+  setup, ending) whatever the table's recording says, and so does `Hub::recording` before
+  serving it. A game is determined by its config and answers, so the check needs no
+  engine, and since an undo only adds to the undos, a stream of a game undone since, even
+  one finished again the same way, is stale (`StreamError::Stale`). The backfill writes
+  one for every game but a hosted one in progress, a finished game that can still be
+  undone included: the hub keeps it (`StreamFile::built`) and serves it only once the
+  game can't change. A commit that leaves the table another history sets the file aside
+  (`Store::mark_stale`: `<id>.stale.events.<enc>`, as it is), and so do startup and the
+  backfill when they find one stale; the backfill then writes the game's afresh, once it
+  isn't in progress. Anything that changes a table's answers or undos changes its
+  history: keep `Table::history` digesting all of them.
   The stream also holds what caused the game, so that `replay::replay` can play it again
   from the stream alone (its `setup`'s `config`, its chance outcomes, its answers) and
   hold the new stream to it event for event; the fold tests replay every game they play.
@@ -731,10 +751,12 @@ them.
   its own keeps its place, as Stash placed by its own ability must). A site asked to shuffle or draw from fewer than two cards draws,
   takes and records nothing, and replay reads no outcome from a shuffle of fewer than
   two: never ask chance for something with one outcome elsewhere. What players are shown
-  without anything moving reaches the stream from the trace (`g.show`, `g.show_to`,
-  `g.reveal`, `look_over_shuffled`: a `show` event; `g.mixed`: a `mix`, unless a shuffle
-  of just those cards follows) and from the log (`RevealedHand`): show and mix through
-  those, never by hand.
+  reaches the stream from the trace (`g.show`, `g.show_to`, `g.reveal`,
+  `look_over_shuffled`, a hand revealed: a `show` event; `g.mixed`: a `mix`, unless a
+  shuffle of just those cards follows): show and mix through those, never by hand. The
+  recorder writes a `show` only of what no move beside it says (`Recorder::sighting`, with
+  `What::seen` saying who sees a move's cards), and one needed for cards moved together
+  before their move, so it never splits them.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The

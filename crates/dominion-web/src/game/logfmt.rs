@@ -875,12 +875,51 @@ pub fn log_lines(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
 }
 
 /// One turn of the log: its header (none for what comes before the first turn), its
-/// lines, and the cards each player gained in it.
+/// lines, and the cards each player gained and trashed in it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogTurn {
     pub head: Option<LogLine>,
     pub lines: Vec<LogLine>,
     pub gains: Vec<(u8, Vec<(String, u32)>)>,
+    pub trashes: Vec<(u8, Vec<(String, u32)>)>,
+}
+
+impl LogTurn {
+    fn new(head: Option<LogLine>) -> Self {
+        LogTurn {
+            head,
+            lines: vec![],
+            gains: vec![],
+            trashes: vec![],
+        }
+    }
+
+    /// The players who gained or trashed anything, in the order they first did.
+    pub fn changed_players(&self) -> Vec<u8> {
+        let mut out = vec![];
+        for (p, _) in self.gains.iter().chain(&self.trashes) {
+            if !out.contains(p) {
+                out.push(*p);
+            }
+        }
+        out
+    }
+}
+
+fn add_tally(to: &mut Vec<(u8, Vec<(String, u32)>)>, p: u8, items: Vec<(String, u32)>) {
+    let i = match to.iter().position(|(q, _)| *q == p) {
+        Some(i) => i,
+        None => {
+            to.push((p, vec![]));
+            to.len() - 1
+        }
+    };
+    for (card, n) in items {
+        match to[i].1.iter_mut().find(|(c, _)| *c == card) {
+            Some((_, k)) => *k += n,
+            None => to[i].1.push((card, n)),
+        }
+    }
 }
 
 /// The log's lines, by turn, without the official server's "answered" entries.
@@ -891,18 +930,10 @@ pub fn log_turns(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
         .cloned()
         .collect();
     let entries = entries.as_slice();
-    let mut turns = vec![LogTurn {
-        head: None,
-        lines: vec![],
-        gains: vec![],
-    }];
+    let mut turns = vec![LogTurn::new(None)];
     for line in log_lines(entries, names, cards) {
         if line.is_turn() {
-            turns.push(LogTurn {
-                head: Some(line),
-                lines: vec![],
-                gains: vec![],
-            });
+            turns.push(LogTurn::new(Some(line)));
         } else {
             turns.last_mut().expect("a turn").lines.push(line);
         }
@@ -916,44 +947,54 @@ pub fn log_turns(entries: &[LogEntry], names: &[String], cards: &CardDb) -> Vec<
         {
             at += 1;
         }
-        let (Some(p), gained) = (e.player, gained(e, names, cards)) else {
+        let Some(p) = e.player else {
             continue;
         };
-        if gained.is_empty() {
-            continue;
+        let gained = tallied(e, names, cards, Tally::Gained);
+        if !gained.is_empty() {
+            add_tally(&mut turns[at].gains, p, gained);
         }
-        let gains = &mut turns[at].gains;
-        let i = match gains.iter().position(|(q, _)| *q == p) {
-            Some(i) => i,
-            None => {
-                gains.push((p, vec![]));
-                gains.len() - 1
-            }
-        };
-        for (card, n) in gained {
-            match gains[i].1.iter_mut().find(|(c, _)| *c == card) {
-                Some((_, k)) => *k += n,
-                None => gains[i].1.push((card, n)),
-            }
+        let trashed = tallied(e, names, cards, Tally::Trashed);
+        if !trashed.is_empty() {
+            add_tally(&mut turns[at].trashes, p, trashed);
         }
     }
-    if turns[0].lines.is_empty() && turns[0].gains.is_empty() {
+    let first = &turns[0];
+    if first.lines.is_empty() && first.gains.is_empty() && first.trashes.is_empty() {
         turns.remove(0);
     }
     turns
 }
 
-/// What a player gained, as a list: "a Gold and 2 Coppers".
-pub fn gain_spans(items: &[(String, u32)]) -> Vec<Span> {
+/// Cards in a turn's summary, each after `sign`: "+Gold +2 Coppers".
+pub fn tally_spans(sign: &str, items: &[(String, u32)]) -> Vec<Span> {
     let mut out = vec![];
-    push_list(&mut out, items, false);
+    for (i, (card, k)) in items.iter().enumerate() {
+        let label = match k {
+            1 => card.clone(),
+            _ => format!("{k} {}", plural(card)),
+        };
+        let sep = if i == 0 { "" } else { " " };
+        out.push(Span::Text(format!("{sep}{sign}")));
+        out.push(Span::Cards(card.clone(), label));
+    }
     out
 }
 
-/// The cards an entry says its player gained.
-fn gained(e: &LogEntry, names: &[String], cards: &CardDb) -> Vec<(String, u32)> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tally {
+    Gained,
+    Trashed,
+}
+
+/// The cards an entry says its player gained, or trashed.
+fn tallied(e: &LogEntry, names: &[String], cards: &CardDb, what: Tally) -> Vec<(String, u32)> {
     if let Some(kind) = e.kind.strip_prefix("official-") {
-        if !(kind.starts_with("gain") || kind == "buy-and-gain") {
+        let ours = match what {
+            Tally::Gained => kind.starts_with("gain") || kind == "buy-and-gain",
+            Tally::Trashed => kind.starts_with("trash"),
+        };
+        if !ours {
             return vec![];
         }
         return official_lists(&rest_of(e, names), cards)
@@ -961,8 +1002,9 @@ fn gained(e: &LogEntry, names: &[String], cards: &CardDb) -> Vec<(String, u32)> 
             .next()
             .unwrap_or_default();
     }
-    match entry::parse(e, names) {
-        Some(Entry::Gained(card, _)) => vec![(card, 1)],
+    match (entry::parse(e, names), what) {
+        (Some(Entry::Gained(card, _)), Tally::Gained)
+        | (Some(Entry::Trashed(card)), Tally::Trashed) => vec![(card, 1)],
         _ => vec![],
     }
 }

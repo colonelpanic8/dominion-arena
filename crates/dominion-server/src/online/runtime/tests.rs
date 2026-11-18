@@ -9,6 +9,21 @@ use dominion_protocol::LogEntry;
 use std::collections::BTreeMap;
 use tempfile::TempDir;
 
+/// The requests a hosted account's backend gets, without those for its game's players'
+/// levels.
+fn without_levels(mut requests: mpsc::Receiver<Request>) -> mpsc::Receiver<Request> {
+    let (tx, rest) = mpsc::channel(16);
+    tokio::spawn(async move {
+        while let Some(request) = requests.recv().await {
+            if !matches!(request, Request::Profile(Some(_), ..)) && tx.send(request).await.is_err()
+            {
+                break;
+            }
+        }
+    });
+    rest
+}
+
 fn catalog() -> Arc<Catalog> {
     Arc::new(Catalog {
         cards: vec![],
@@ -83,6 +98,7 @@ fn runtime() -> (TempDir, Runtime) {
             mode: OnlineMode::Bots,
             timers: Vec::new(),
             finished_at: None,
+            bots: Vec::new(),
         },
         store,
     };
@@ -532,7 +548,8 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     use std::net::{IpAddr, Ipv4Addr};
     let (_directory, runtime) = active_runtime();
     let (publish, updates) = watch::channel(runtime.update.clone());
-    let (tx, mut requests) = mpsc::channel(16);
+    let (tx, requests) = mpsc::channel(16);
+    let mut requests = without_levels(requests);
     let client = Client { tx, updates };
     let hosted = crate::online::Hosted::new(
         client.clone(),
@@ -957,8 +974,10 @@ async fn official_accounts_keep_their_own_owners_routes_and_agent_tokens() {
     let (_b_directory, b_runtime) = active_runtime();
     let (_a_publish, a_updates) = watch::channel(a_runtime.update.clone());
     let (_b_publish, b_updates) = watch::channel(b_runtime.update.clone());
-    let (a_tx, mut a_requests) = mpsc::channel(16);
-    let (b_tx, mut b_requests) = mpsc::channel(16);
+    let (a_tx, a_requests) = mpsc::channel(16);
+    let mut a_requests = without_levels(a_requests);
+    let (b_tx, b_requests) = mpsc::channel(16);
+    let mut b_requests = without_levels(b_requests);
     let hosted = [
         crate::online::Hosted::new(
             Client {
@@ -1603,14 +1622,16 @@ fn result(rank: i32, opponent_rank: i32) -> ProfileResult {
 }
 
 #[test]
-fn player_page_replies_answer_the_requests_waiting_for_their_rating_type() {
+fn player_page_replies_answer_the_requests_waiting_for_their_player_and_rating_type() {
     use dominion_online::transport::{Failure, ancillary};
     let (_directory, mut runtime) = active_runtime();
     let (two, mut two_rx) = oneshot::channel();
     let (three, mut three_rx) = oneshot::channel();
+    let (opponent, mut opponent_rx) = oneshot::channel();
     let (results, mut results_rx) = oneshot::channel();
-    assert!(runtime.profiles.wait(0, two));
-    assert!(runtime.profiles.wait(1, three));
+    assert!(runtime.profiles.wait((42, 0), two));
+    assert!(runtime.profiles.wait((42, 1), three));
+    assert!(runtime.profiles.wait((7, 0), opponent));
     assert!(runtime.results.wait(1, results));
     let reply = |p| Message::Ancillary(ancillary::Message::PlayerProfile(p));
     runtime.process(reply(profile(99, 0, 30.0))).unwrap();
@@ -1619,6 +1640,17 @@ fn player_page_replies_answer_the_requests_waiting_for_their_rating_type() {
     assert_eq!(
         two_rx.try_recv().unwrap().unwrap().summary.current_skill,
         30.0
+    );
+    assert!(opponent_rx.try_recv().is_err());
+    runtime.process(reply(profile(7, 0, 25.0))).unwrap();
+    assert_eq!(
+        opponent_rx
+            .try_recv()
+            .unwrap()
+            .unwrap()
+            .summary
+            .current_skill,
+        25.0
     );
     assert!(three_rx.try_recv().is_err());
     runtime
@@ -1658,7 +1690,7 @@ async fn ratings_are_public_and_asked_of_the_server_once_a_minute() {
         let mut asked = vec![];
         while let Some(request) = requests.recv().await {
             match request {
-                Request::Profile(kind, reply) => {
+                Request::Profile(None, kind, reply) => {
                     asked.push(kind);
                     reply.send(Ok(profile(42, kind, 41.5))).unwrap();
                 }
@@ -1716,6 +1748,92 @@ async fn ratings_are_public_and_asked_of_the_server_once_a_minute() {
             OnlineRatingType::TwoPlayer.ordinal()
         ]
     );
+}
+
+#[tokio::test]
+async fn watchers_and_the_lobby_see_the_players_levels_once_asked() {
+    use dominion_online::transport::ancillary::PlayerRatingPoint;
+    let (_directory, mut runtime) = active_runtime();
+    runtime.update.bots = vec![-2];
+    let (_publish, updates) = watch::channel(runtime.update.clone());
+    let (tx, mut requests) = mpsc::channel(16);
+    let hosted = crate::online::Hosted::new(
+        Client { tx, updates },
+        crate::online::LEGACY_ID.into(),
+        "fixture-42".into(),
+        "level-owner".into(),
+    );
+    let (asked_tx, mut asked) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(request) = requests.recv().await {
+            if let Request::Profile(Some(player), kind, reply) = request {
+                asked_tx.send((player, kind)).unwrap();
+                let mut profile = profile(player, kind, 30.0);
+                profile.rating_history = vec![PlayerRatingPoint {
+                    date_millis: 1,
+                    level: 47.5,
+                    skill: 30.0,
+                    deviation: 2.0,
+                    games: 12,
+                }];
+                profile.summary.current_level = 47.5;
+                reply.send(Ok(profile)).unwrap();
+            }
+        }
+    });
+    let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
+        .unwrap();
+    let stop = tokio_util::sync::CancellationToken::new();
+    let router = crate::online::router(
+        &[hosted],
+        arena.clone(),
+        vec!["127.0.0.1".into()],
+        None,
+        stop.clone(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let stopped = stop.clone();
+    let serving = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(stopped.cancelled_owned())
+            .await
+            .unwrap()
+    });
+    assert_eq!(
+        asked.recv().await.unwrap(),
+        (
+            42,
+            dominion_protocol::api::OnlineRatingType::TwoPlayer.ordinal()
+        ),
+        "the bot's level is never asked"
+    );
+    let http = reqwest::Client::new();
+    let mut levels = vec![];
+    for _ in 0..100 {
+        let observed: dominion_protocol::api::OnlineObservation = http
+            .get(format!("{base}/api/online/view"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        levels = observed.game.unwrap().meta.levels;
+        if levels.first().copied().flatten().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(levels, [Some(47.5), None]);
+    let listed = arena.lobby(None).official;
+    assert_eq!(listed[0].game.as_ref().unwrap().levels, [Some(47.5), None]);
+    assert!(
+        asked.try_recv().is_err(),
+        "each game's levels are asked once"
+    );
+    stop.cancel();
+    serving.await.unwrap();
 }
 
 #[test]

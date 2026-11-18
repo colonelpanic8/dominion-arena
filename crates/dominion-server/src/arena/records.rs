@@ -96,6 +96,7 @@ impl Arena {
                     turns: p.turns,
                     resigned: p.resigned,
                     rating: rated.then(|| (before[i].rating, after[i].rating)),
+                    level: None,
                     agent,
                     owner: bot_owner,
                 });
@@ -316,6 +317,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
                     turns: p.turns,
                     resigned: p.resigned,
                     rating: p.rating,
+                    level: p.level,
                     agent: p.agent,
                 }
             })

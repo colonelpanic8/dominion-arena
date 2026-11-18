@@ -1149,6 +1149,16 @@ a.lb-user-name:hover { text-decoration: underline; }
   padding: 0;
   overflow: hidden auto;
   z-index: 1;
+  container-type: inline-size;
+}
+/* Too narrow for the deck beside the VP sources: the deck goes under them. */
+@container (width < 82vh) {
+  .lb-score-panel .dt-score-box { flex-direction: column; }
+  .lb-score-panel .dt-score-sources { border-right: none; padding-right: 0; border-bottom: 2px dashed #ddd; padding-bottom: 1.5vh; }
+  .lb-score-panel .dt-strip { width: min(16vh, 36cqw); }
+  .lb-score-panel .dt-score-row { font-size: min(2.4vh, 4.6cqw); gap: min(1vh, 1.5cqw); }
+  .lb-score-panel .dt-score-row .dt-score-line { min-width: 1em; }
+  .lb-score-panel .dt-score-vp { min-width: 1.8em; }
 }
 .lb-score-panel h1 { font: 700 3vw var(--ui); margin: 3vh 0; text-align: center; }
 .lb-score-panel > :not(h1) { margin-left: 1vw; margin-right: 1vw; }

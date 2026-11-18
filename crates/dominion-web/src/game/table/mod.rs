@@ -117,9 +117,27 @@ pub struct Popup {
     pub stacks: Vec<Stack>,
     pub unknown: u32,
     pub note: Option<String>,
-    pub composition: Option<u8>,
+    pub composition: Option<Composition>,
     /// Cards in play, in the order played: drawn as the play row is.
     pub played: bool,
+}
+
+/// Whose deck composition a window shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Composition {
+    Seat(u8),
+    /// Every player's, side by side.
+    All,
+}
+
+/// How the window of every player's deck composition shows them.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum DecksView {
+    /// Each player's own deck composition, side by side.
+    #[default]
+    Columns,
+    /// A row per card, with how many each player owns.
+    Counts,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -138,6 +156,7 @@ pub struct TableCtx {
     pub popup: Signal<Option<(Popup, bool)>>,
     /// The opponent whose hand, deck and discard peek in from the top, when chosen.
     pub chosen_opponent: Signal<Option<u8>>,
+    pub decks_view: Signal<DecksView>,
     run: Signal<Option<Run>>,
     cards: Signal<Rc<crate::cards::CardDb>>,
     game: super::GameCtx,
@@ -621,6 +640,7 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
         studied: Signal::new(None),
         popup: Signal::new(None),
         chosen_opponent: Signal::new(None),
+        decks_view: Signal::new(DecksView::default()),
         run: Signal::new(None),
         cards,
         game,
@@ -819,6 +839,12 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
                             "Undo"
                         }
                     }
+                    button {
+                        "data-action": "all-decks",
+                        title: "Every player's deck composition, side by side",
+                        onclick: move |e| { e.stop_propagation(); ctx.open(players::all_decks_popup()); },
+                        "Decks"
+                    }
                     sound::MuteToggle { muted }
                 }
                 side::More { board: b.clone() }
@@ -866,8 +892,10 @@ fn starting_board(b: &Board) -> Board {
 /// A window listing a pile's or mat's cards, as dominion.games opens them from tabs.
 #[component]
 fn PopupView(popup: Popup, g: Rc<layout::Geometry>, board: Rc<Board>) -> Element {
-    if let Some(seat) = popup.composition {
-        return rsx! { players::DeckComposition { board, seat } };
+    match popup.composition {
+        Some(Composition::Seat(seat)) => return rsx! { players::DeckComposition { board, seat } },
+        Some(Composition::All) => return rsx! { players::AllDecks { board } },
+        None => {}
     }
     let ctx = use_table();
     let p = &popup;

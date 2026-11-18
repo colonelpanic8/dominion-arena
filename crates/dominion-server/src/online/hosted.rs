@@ -46,6 +46,26 @@ pub struct Hosted {
     pub owner: String,
     control: Arc<tokio::sync::Mutex<()>>,
     ratings: Arc<std::sync::Mutex<HashMap<OnlineRatingType, OnlineRating>>>,
+    levels: Arc<tokio::sync::watch::Sender<Levels>>,
+}
+
+/// The dominion.games levels of a game's players by seat, asked of the official server as
+/// the game began.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Levels {
+    game: Option<i64>,
+    by_seat: Vec<Option<f64>>,
+}
+
+impl Levels {
+    /// Game `game`'s levels, as far as they are known.
+    fn of(&self, game: Option<i64>) -> Vec<Option<f64>> {
+        if game.is_some() && self.game == game {
+            self.by_seat.clone()
+        } else {
+            vec![]
+        }
+    }
 }
 
 /// The routes of every hosted account. Each has `/api/online/<id>/...` and
@@ -104,7 +124,13 @@ impl Hosted {
             owner,
             control: Arc::new(tokio::sync::Mutex::new(())),
             ratings: Arc::default(),
+            levels: Arc::new(tokio::sync::watch::Sender::new(Levels::default())),
         }
+    }
+
+    /// The levels of `update`'s game's players.
+    fn levels(&self, update: &Update) -> Vec<Option<f64>> {
+        self.levels.borrow().of(update.reducer.game_id)
     }
 
     /// The account's rating and recent results on dominion.games. They are asked of the
@@ -214,11 +240,14 @@ impl Hosted {
         let lifecycle_stop = stop.clone();
         tokio::spawn(async move {
             let web = lifecycle_web;
-            web.publish(&updates.borrow_and_update().clone());
+            let update = updates.borrow_and_update().clone();
+            web.ask_levels(&update);
+            web.publish(&update);
             loop {
                 tokio::select! {_=lifecycle_stop.cancelled()=>break,changed=updates.changed()=>if changed.is_err(){break;}}
                 let _guard = web.hosted.control.lock().await;
                 let update = updates.borrow_and_update().clone();
+                web.ask_levels(&update);
                 web.publish(&update);
                 if update.error.is_some() || !update.connected {
                     web.set_job(None);
@@ -353,7 +382,7 @@ async fn no_cache(request: Request, next: Next) -> Response {
     r
 }
 /// What anyone may watch: the account's view without its decision.
-fn observation(update: Update) -> OnlineObservation {
+fn observation(update: Update, levels: Vec<Option<f64>>) -> OnlineObservation {
     let now = crate::hub::now_ms();
     let clock = update.clock(now);
     let game = update.reducer.view().ok().map(|mut view| {
@@ -373,6 +402,7 @@ fn observation(update: Update) -> OnlineObservation {
                 timed: clock.is_some(),
                 clock,
                 now,
+                levels,
                 ..Default::default()
             },
             replay: None,
@@ -391,15 +421,18 @@ struct Web {
     stop: CancellationToken,
 }
 async fn snapshot(State(web): State<Web>) -> axum::Json<OnlineObservation> {
-    axum::Json(observation(web.hosted.client.current()))
+    let update = web.hosted.client.current();
+    let levels = web.hosted.levels(&update);
+    axum::Json(observation(update, levels))
 }
 async fn events(
     State(web): State<Web>,
 ) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
     let updates = web.hosted.client.updates.clone();
+    let levels = web.hosted.levels.subscribe();
     let stream = futures_util::stream::unfold(
-        (updates, true, web),
-        |(mut updates, first, web)| async move {
+        (updates, levels, true, web),
+        |(mut updates, mut levels, first, web)| async move {
             if web.stop.is_cancelled() {
                 return None;
             }
@@ -407,19 +440,77 @@ async fn events(
                 tokio::select! {
                     _=web.stop.cancelled()=>return None,
                     changed=updates.changed()=>if changed.is_err(){return None;},
+                    changed=levels.changed()=>if changed.is_err(){return None;},
                 }
             }
             let update = updates.borrow_and_update().clone();
+            let shown = levels.borrow_and_update().of(update.reducer.game_id);
             let event = Event::default()
                 .event("change")
-                .json_data(observation(update))
+                .json_data(observation(update, shown))
                 .expect("serializable observation");
-            Some((Ok(event), (updates, false, web)))
+            Some((Ok(event), (updates, levels, false, web)))
         },
     );
     Sse::new(stream).keep_alive(KeepAlive::new())
 }
 impl Web {
+    /// Asks the official server once for the levels of the players of `update`'s game, if
+    /// it is running, and publishes them when they come.
+    fn ask_levels(&self, update: &Update) {
+        let Some(game) = update.reducer.game_id.filter(|_| update.reducer.running) else {
+            return;
+        };
+        let Ok(state) = update.reducer.state() else {
+            return;
+        };
+        let players: Vec<i32> = state.players.iter().map(|p| p.player_id).collect();
+        let fresh = self.hosted.levels.send_if_modified(|levels| {
+            if levels.game == Some(game) {
+                return false;
+            }
+            *levels = Levels {
+                game: Some(game),
+                by_seat: vec![None; players.len()],
+            };
+            true
+        });
+        if !fresh {
+            return;
+        }
+        let kind = level_type(players.len());
+        let bots = update.bots.clone();
+        let catalog = update.reducer.catalog.clone();
+        let web = self.clone();
+        tokio::spawn(async move {
+            let asked = players.iter().map(|&player| {
+                let client = web.hosted.client.clone();
+                let catalog = catalog.clone();
+                let bot = bots.contains(&player);
+                async move {
+                    if bot {
+                        return None;
+                    }
+                    let profile = client.player_profile(player, kind.ordinal()).await.ok()?;
+                    let rating = rating_of(&profile, &[], &catalog, kind, 0);
+                    (rating.games > 0).then_some(rating.level)
+                }
+            });
+            let by_seat = futures_util::future::join_all(asked).await;
+            let changed = web.hosted.levels.send_if_modified(|levels| {
+                let current = levels.game == Some(game) && levels.by_seat != by_seat;
+                if current {
+                    levels.by_seat = by_seat;
+                }
+                current
+            });
+            if changed {
+                let _guard = web.hosted.control.lock().await;
+                web.publish(&web.hosted.client.current());
+            }
+        });
+    }
+
     fn job(&self) -> Option<crate::house::Job> {
         self.access.arena.official_job(&self.hosted.id)
     }
@@ -440,6 +531,7 @@ impl Web {
                 seat: v.seat,
                 kingdom: v.game.kingdom.clone(),
                 landscapes: v.game.landscapes.clone(),
+                levels: self.hosted.levels(update),
                 others: crate::setup_cards::setup_cards(v),
             })
         });
@@ -486,6 +578,14 @@ fn management(web: &Web) -> OnlineManagement {
 }
 async fn manage(State(web): State<Web>) -> axum::Json<OnlineManagement> {
     axum::Json(management(&web))
+}
+/// The rating dominion.games rates a game of `players` players under.
+fn level_type(players: usize) -> OnlineRatingType {
+    if players <= 2 {
+        OnlineRatingType::TwoPlayer
+    } else {
+        OnlineRatingType::ThreePlayer
+    }
 }
 /// Whether a rating read at `fetched` can still be served at `now`, the account's last game
 /// having finished at `finished`.

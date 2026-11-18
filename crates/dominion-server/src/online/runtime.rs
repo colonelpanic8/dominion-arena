@@ -112,6 +112,8 @@ pub(crate) struct Update {
     pub timers: Vec<(TimerUpdate, u64)>,
     /// When the last game finished, in milliseconds since the epoch.
     pub finished_at: Option<u64>,
+    /// The official server's ids of the bots at the table.
+    pub bots: Vec<i32>,
 }
 impl Update {
     /// The game's timers as they stand at `now`, by seat.
@@ -176,7 +178,8 @@ enum Request {
     Reconnect(oneshot::Sender<Result<(), String>>),
     Resign(oneshot::Sender<Result<(), String>>),
     Disconnect(oneshot::Sender<Result<(), String>>),
-    Profile(i32, Reply<PlayerProfile>),
+    /// A player's profile (this account's when none) under a `RatingTypes` ordinal.
+    Profile(Option<i32>, i32, Reply<PlayerProfile>),
     Results(i32, Reply<Vec<ProfileResult>>),
 }
 type Reply<T> = oneshot::Sender<Result<T, String>>;
@@ -188,26 +191,27 @@ const PROFILE_PERIOD: i32 = 25;
 const PROFILE_HISTORY: i32 = 30;
 const RESULTS: i32 = 25;
 
-/// Player-page requests waiting for the server's reply, by rating type.
-struct Waiting<T>(Vec<(i32, Reply<T>)>);
-impl<T> Default for Waiting<T> {
+/// Player-page requests waiting for the server's reply, by what they ask: a rating type,
+/// with the player for a profile.
+struct Waiting<K, T>(Vec<(K, Reply<T>)>);
+impl<K, T> Default for Waiting<K, T> {
     fn default() -> Self {
         Self(Vec::new())
     }
 }
-impl<T: Clone> Waiting<T> {
+impl<K: PartialEq, T: Clone> Waiting<K, T> {
     /// Adds a request; true when none of `kind` was waiting already, so it must be sent.
-    fn wait(&mut self, kind: i32, reply: Reply<T>) -> bool {
+    fn wait(&mut self, kind: K, reply: Reply<T>) -> bool {
         self.0.retain(|(_, r)| !r.is_closed());
         let first = !self.0.iter().any(|(k, _)| *k == kind);
         self.0.push((kind, reply));
         first
     }
     /// Answers the requests of `kind`, or all of them.
-    fn answer(&mut self, kind: Option<i32>, result: Result<T, String>) {
+    fn answer(&mut self, kind: Option<K>, result: Result<T, String>) {
         let (answered, waiting) = std::mem::take(&mut self.0)
             .into_iter()
-            .partition(|(k, _)| kind.is_none_or(|kind| kind == *k));
+            .partition(|(k, _)| kind.as_ref().is_none_or(|kind| kind == k));
         self.0 = waiting;
         for (_, reply) in answered {
             let _ = reply.send(result.clone());
@@ -294,6 +298,7 @@ impl Client {
                 queue_feedback: Vec::new(),
                 timers: Vec::new(),
                 finished_at: None,
+                bots: Vec::new(),
                 mode,
             },
             store,
@@ -399,8 +404,8 @@ impl Client {
                         runtime.close().await;
                         (Ok(()), reply, true)
                     }
-                    Request::Profile(kind, reply) => {
-                        runtime.request_profile(kind, reply).await;
+                    Request::Profile(player, kind, reply) => {
+                        runtime.request_profile(player, kind, reply).await;
                         publish.send_replace(runtime.update.clone());
                         continue;
                     }
@@ -464,7 +469,16 @@ impl Client {
     }
     /// This account's official profile under `RatingTypes` ordinal `kind`.
     pub(crate) async fn profile(&self, kind: i32) -> Result<PlayerProfile, String> {
-        self.ask(|reply| Request::Profile(kind, reply)).await
+        self.ask(|reply| Request::Profile(None, kind, reply)).await
+    }
+    /// Player `player`'s official profile under `RatingTypes` ordinal `kind`.
+    pub(crate) async fn player_profile(
+        &self,
+        player: i32,
+        kind: i32,
+    ) -> Result<PlayerProfile, String> {
+        self.ask(|reply| Request::Profile(Some(player), kind, reply))
+            .await
     }
     /// This account's recent official results under `RatingTypes` ordinal `kind`.
     pub(crate) async fn results(&self, kind: i32) -> Result<Vec<ProfileResult>, String> {
@@ -536,8 +550,8 @@ struct Runtime {
     queue_status: Option<bool>,
     outbox: Vec<Vec<u8>>,
     pending_match: Vec<Message>,
-    profiles: Waiting<PlayerProfile>,
-    results: Waiting<Vec<ProfileResult>>,
+    profiles: Waiting<(i32, i32), PlayerProfile>,
+    results: Waiting<i32, Vec<ProfileResult>>,
     update: Update,
     store: Store,
 }
@@ -599,6 +613,7 @@ impl Runtime {
                 acknowledgements += 1;
             }
         }
+        self.update.bots.clone_from(&self.bots);
         if self.request_game {
             self.safe_table()?;
             self.request_game = false;
@@ -941,8 +956,9 @@ impl Runtime {
             }
             Message::Ancillary(dominion_online::transport::ancillary::Message::PlayerProfile(
                 profile,
-            )) if profile.player.id == reducer.player_id => {
-                self.profiles.answer(Some(profile.rating_type), Ok(profile));
+            )) => {
+                let key = (profile.player.id, profile.rating_type);
+                self.profiles.answer(Some(key), Ok(profile));
             }
             Message::Ancillary(dominion_online::transport::ancillary::Message::PlayerResults {
                 rating_type,
@@ -982,18 +998,24 @@ impl Runtime {
         }
         Ok(false)
     }
-    async fn request_profile(&mut self, kind: i32, reply: Reply<PlayerProfile>) {
+    async fn request_profile(
+        &mut self,
+        player: Option<i32>,
+        kind: i32,
+        reply: Reply<PlayerProfile>,
+    ) {
+        let player = player.unwrap_or(self.update.reducer.player_id);
         if let Err(e) = self.connected() {
             let _ = reply.send(Err(e));
-        } else if self.profiles.wait(kind, reply) {
+        } else if self.profiles.wait((player, kind), reply) {
             let command = Command::RequestPlayerProfile {
-                player: self.update.reducer.player_id,
+                player,
                 rating: kind,
                 period: PROFILE_PERIOD,
                 offset: PROFILE_HISTORY,
             };
             if let Err(e) = self.send_command(command).await {
-                self.profiles.answer(Some(kind), Err(e));
+                self.profiles.answer(Some((player, kind)), Err(e));
             }
         }
     }

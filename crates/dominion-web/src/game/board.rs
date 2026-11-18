@@ -79,6 +79,7 @@ impl Board {
     pub fn with_meta(mut self, m: &GameMeta) -> Board {
         for p in self.you.iter_mut().chain(&mut self.opponents) {
             p.account = meta::account(m, p.seat);
+            p.level = meta::level(m, p.seat);
         }
         self.rated = m.rated;
         self.timed = m.timed || m.clock.is_some();
@@ -255,6 +256,8 @@ pub struct PlayerEntry {
     pub counters: Vec<(String, i64)>,
     /// The account playing the seat ([`Board::with_meta`]).
     pub account: Option<SeatAccount>,
+    /// In a dominion.games game: the player's level there ([`Board::with_meta`]).
+    pub level: Option<f64>,
 }
 
 impl PlayerEntry {
@@ -469,6 +472,21 @@ pub fn card_order(cards: &CardDb, a: &str, b: &str) -> Ordering {
         (sort_group(cards, n), cost.coins, cost.potions, cost.debt)
     };
     key(a).cmp(&key(b)).then_with(|| a.cmp(b))
+}
+
+/// Every card any of `players` is known to own, in [`card_order`], with how many of it
+/// each owns.
+pub fn owned_side_by_side(players: &[&PlayerEntry], cards: &CardDb) -> Vec<(String, Vec<u32>)> {
+    let mut rows: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+    for (i, p) in players.iter().enumerate() {
+        for s in &p.owned.known {
+            rows.entry(&s.card)
+                .or_insert_with(|| vec![0; players.len()])[i] += s.count;
+        }
+    }
+    let mut out: Vec<_> = rows.into_iter().map(|(c, n)| (c.to_string(), n)).collect();
+    out.sort_by(|a, b| card_order(cards, &a.0, &b.0));
+    out
 }
 
 pub fn stacks(known: &CardCount, cards: &CardDb) -> Vec<Stack> {
@@ -758,6 +776,7 @@ fn player_entry(
             .collect(),
         counters: counters(&p.counters),
         account: None,
+        level: None,
     }
 }
 
