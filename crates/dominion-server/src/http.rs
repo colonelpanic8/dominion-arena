@@ -23,7 +23,7 @@ use dominion_protocol::api::{
 use dominion_protocol::lobby::{
     BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable,
     Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable,
-    Profile, QueueStatus, Ready, Records, Say, SeatEdit, TableInfo, TableSpec,
+    Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -110,7 +110,6 @@ pub fn router(
         .route("/users/{name}", get(profile))
         .route("/leaderboard", get(leaderboard))
         .route("/history", get(history))
-        .route("/records", get(records))
         .fallback(|| async { Error::new(StatusCode::NOT_FOUND, "no such route") })
         .method_not_allowed_fallback(|| async {
             Error::new(StatusCode::METHOD_NOT_ALLOWED, "method not allowed")
@@ -1469,21 +1468,4 @@ async fn leaderboard(State(api): State<Api>, list: Queried<ListQuery>) -> Json<L
 
 async fn history(State(api): State<Api>, q: Queried<HistoryQuery>) -> Json<History> {
     Ok(axum::Json(api.arena.history(&query(q)?)?))
-}
-
-#[derive(Deserialize, Default)]
-struct RecordsQuery {
-    user: Option<String>,
-    before: Option<u64>,
-    limit: Option<usize>,
-}
-
-async fn records(State(api): State<Api>, q: Queried<RecordsQuery>) -> Json<Records> {
-    let q = query(q)?;
-    let limit = q.limit.unwrap_or(20);
-    Ok(axum::Json(api.arena.records(
-        q.user.as_deref(),
-        q.before,
-        limit,
-    )?))
 }

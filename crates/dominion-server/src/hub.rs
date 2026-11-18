@@ -1298,8 +1298,21 @@ impl Hub {
         &self,
         game: &Hosted,
         table: &mut Table,
+        next: Option<Table>,
+        edit: impl FnOnce(&mut Meta, &Table),
+    ) -> Result<(), HubError> {
+        self.commit_meta(game, table, next, edit, false)
+    }
+
+    /// [`Hub::commit`]; with `noted`, an edit to the meta that can't be saved is still made
+    /// in memory.
+    fn commit_meta(
+        &self,
+        game: &Hosted,
+        table: &mut Table,
         mut next: Option<Table>,
         edit: impl FnOnce(&mut Meta, &Table),
+        noted: bool,
     ) -> Result<(), HubError> {
         let mut meta = lock(&game.meta);
         let mut edited = meta.clone();
@@ -1311,6 +1324,9 @@ impl Hub {
                 .and_then(|bytes| store.save_bytes(&id, &bytes).map_err(|e| e.to_string()));
             if let Err(e) = saved {
                 eprintln!("dominion: saving game {id}: {e}");
+                if noted {
+                    *meta = edited;
+                }
                 return Err(HubError::Unsaved(e));
             }
         }
@@ -2569,20 +2585,13 @@ impl Hub {
         }
     }
 
-    /// Changes game `id`'s meta without counting as a change to the game.
+    /// Changes game `id`'s meta without counting as a change to the game. Not saved, it
+    /// is still noted, so that a record isn't written twice.
     fn note(&self, game: &Hosted, f: impl FnOnce(&mut Meta, usize)) {
         let mut table = lock(&game.table);
+        let seats = table.names().len();
         let changed = game.changed.load(Ordering::Relaxed);
-        let mut noted = lock(&game.meta).clone();
-        f(&mut noted, table.names().len());
-        // Not saved, it is still noted: a record isn't written twice, an attempt is kept.
-        let kept = noted.clone();
-        if self
-            .commit(game, &mut table, None, |meta, _| *meta = kept)
-            .is_err()
-        {
-            *lock(&game.meta) = noted;
-        }
+        let _ = self.commit_meta(game, &mut table, None, |meta, _| f(meta, seats), true);
         game.changed.store(changed, Ordering::Relaxed);
     }
 

@@ -974,6 +974,9 @@ pub enum Arranged {
     Table,
     /// Every seat played by its token.
     Tokens,
+    /// Made with the server's agents seated (`create_game`); any other seat played by its
+    /// token.
+    Agents,
 }
 
 /// A finished game as the history shows it.
@@ -1007,6 +1010,13 @@ pub struct PastGame {
     pub others: Vec<String>,
     /// By seat.
     pub players: Vec<PastPlayer>,
+    /// An Arena game's seed: the same setup and seed deal each seat the same starting
+    /// cards. Absent for games recorded before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    /// The commit of the `dominion` build that hosted or recorded it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1028,6 +1038,10 @@ pub struct PastPlayer {
     /// Its rating here before and after a rated game.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<(f64, f64)>,
+    /// For one of the server's agents in an Arena game: what played the seat, as its
+    /// runner reported it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentRun>,
 }
 
 /// What played a seat.
@@ -1048,17 +1062,6 @@ pub enum PlayedBy {
     Agent(SeatAgent),
     /// Someone on dominion.games, not from here.
     Official,
-}
-
-/// `GET /api/records`: finished games' records as they are kept, newest first: for
-/// whoever studies them (seeds, versions, agents' runs), not for the history page.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Records {
-    pub games: Vec<GameRecord>,
-    /// Ask again with this as `before` for more; none when there are no more.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next: Option<u64>,
 }
 
 /// `GET /api/history`: finished games, newest first.

@@ -227,6 +227,7 @@ fn how(game: &PastGame) -> String {
         (Some(Arranged::Automatch), _) => parts.push("Automatch".into()),
         (Some(Arranged::Table), _) => parts.push("Table".into()),
         (Some(Arranged::Tokens), _) => parts.push("By token".into()),
+        (Some(Arranged::Agents), _) => parts.push("Agents".into()),
         (None, Some(p)) => parts.push(format!("as {}", p.name)),
         (None, None) => {}
     }

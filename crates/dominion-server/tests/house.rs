@@ -446,9 +446,17 @@ fn a_record_names_what_played_each_agent_seat_and_why_an_attempt_stopped() {
         .unwrap();
     end(&arena, &game);
 
-    let records = arena.records(None, None, 10).unwrap();
-    let record = records.games.iter().find(|r| r.game_id == game).unwrap();
+    let rated = dominion_protocol::lobby::HistoryQuery {
+        rated: true,
+        ..Default::default()
+    };
+    let history = arena.history(&rated).unwrap();
+    let record = history.games.iter().find(|r| r.id == game).unwrap();
     assert!(record.rated);
+    assert_eq!(
+        record.arranged,
+        Some(dominion_protocol::lobby::Arranged::Agents)
+    );
     assert_eq!(record.seed, Some(7));
     let opus = record.players.iter().find(|p| p.seat == 0).unwrap();
     assert!(opus.rating.is_some());

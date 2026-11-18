@@ -327,7 +327,6 @@ will) or 500.
 | `GET /api/users/{name}` | | a player's page: rating, tallies and latest games |
 | `GET /api/leaderboard[?limit=N]` | | the rated players, best first |
 | `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&q=text][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; `q` matches a player, the account behind a seat, an agent's model or program, or a card; ask again with `before=next` for more |
-| `GET /api/records[?user=name][&before=ended][&limit=N]` | | finished games' records as they are kept, newest first: `{games, next?}`, with seeds, versions and agents' runs |
 
 `POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
 and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
@@ -378,18 +377,19 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   disconnects.
 - **Ratings and records.** A game counts for ratings (Glicko-2, a game a rating period,
   a day unplayed another) when it says so and every seat is a different registered
-  account or bot; a bot against its owner, or two bots of one owner, play for nothing,
-  and so does any game with a guest or a token seat. Every finished lobby game leaves a
-  record (`GET /api/records`; the history page's `GET /api/history` shows them), which
-  stays when the game itself is deleted, and so does
-  every finished game of an official account (`source: official`, id
-  `dominion.games-<id>`), which counts for no rating or tally here. A record holds the
-  game's `seed` and the `version` (commit) of the server that hosted it, and for each
-  seat one of the server's agents played, its `agent`: the setup its runner reported
-  (agent, program, model, effort, the runner's `version`, and the `playbook` it was given:
-  path, git `commit` and `dirty` where git can tell, and `digest`, a SHA-256 of its
-  files), and every `attempt` (when it started, its archive's directory name, the
-  `error` that stopped it, and its `setup` where that changed since the first).
+  account or bot (one made with `rated: true` has a different one of the server's agents
+  in every seat; the history lists it as `arranged: agents`); a bot against its owner, or
+  two bots of one owner, play for nothing, and so does any game with a guest or a token
+  seat. Every finished lobby game leaves a record (`GET /api/history`), which stays when
+  the game itself is deleted, and so does every finished game of an official account
+  (`venue: official`, with dominion.games' `officialId`), which counts for no rating or
+  tally here. A game in the history holds its `seed` and the `version` (commit) of the
+  server that hosted it, and for each seat one of the server's agents played, its
+  `agent`: the setup its runner reported (agent, program, model, effort, the runner's
+  `version`, and the `playbook` it was given: path, git `commit` and `dirty` where git
+  can tell, and `digest`, a SHA-256 of its files), and every `attempt` (when it started,
+  its archive's directory name, the `error` that stopped it, and its `setup` where that
+  changed since the first).
 - **dominion.games' scale.** `[[official_skill_anchors]]` names players also rated on
   dominion.games, each with its skill there (mu, not the level, which also folds in how
   sure it is): agents that play enough rated games on both. Once two or more anchors have

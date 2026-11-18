@@ -8,8 +8,7 @@ use crate::hub::{Ended, Hub, lock, now_ms};
 use crate::rating::{self, Scale};
 use dominion_protocol::lobby::{
     AgentRun, AgentSetup, Arranged, GameRecord, History, HistoryQuery, Leader, Leaderboard,
-    PastGame, PastPlayer, PlayedBy, Profile, RecordPlayer, Records, SeatAgent, Source, UserKind,
-    Venue,
+    PastGame, PastPlayer, PlayedBy, Profile, RecordPlayer, SeatAgent, Source, UserKind, Venue,
 };
 use rusqlite::Transaction;
 use std::sync::Arc;
@@ -181,32 +180,6 @@ impl Arena {
         })
     }
 
-    /// Finished games' records as they are kept, newest first: `user`'s, or everyone's,
-    /// that ended before `before`.
-    pub fn records(
-        &self,
-        user: Option<&str>,
-        before: Option<u64>,
-        limit: usize,
-    ) -> Result<Records> {
-        let user = user.map(|name| self.named(name)).transpose()?;
-        let user = user.as_ref().map(|u| u.id.as_str());
-        let before = before.unwrap_or(u64::MAX);
-        let limit = limit.clamp(1, 100);
-        let mut games = vec![];
-        for venue in [Venue::Arena, Venue::Official] {
-            games.extend(self.db.games(venue, user, before, limit)?);
-        }
-        games.sort_by(|a, b| {
-            b.ended
-                .cmp(&a.ended)
-                .then_with(|| a.game_id.cmp(&b.game_id))
-        });
-        let next = (games.len() > limit).then(|| games[limit - 1].ended);
-        games.truncate(limit);
-        Ok(Records { games, next })
-    }
-
     /// Finished games, newest first, as `q` asks.
     pub fn history(&self, q: &HistoryQuery) -> Result<History> {
         let user = q.user.as_deref().map(|name| self.named(name)).transpose()?;
@@ -294,11 +267,14 @@ pub(super) fn recall(db: &Db, name: &str) -> Option<PlayedBy> {
 /// A stored record as the history shows it.
 pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) -> PastGame {
     let official = venue == Venue::Official;
+    // A game made directly has accounts only in the seats the server's agents played.
+    let agents = record.players.iter().any(|p| p.kind.is_some());
     PastGame {
         venue,
         arranged: match record.source {
             Source::Automatch => Some(Arranged::Automatch),
             Source::Table => Some(Arranged::Table),
+            Source::Direct if agents => Some(Arranged::Agents),
             Source::Direct => Some(Arranged::Tokens),
             Source::Official => None,
         },
@@ -317,7 +293,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
                 // account's, whatever played it here.
                 let account =
                     (p.user.clone()).or((p.kind.is_some() && !official).then(|| p.name.clone()));
-                let played_by = match (p.agent, p.kind) {
+                let played_by = match (&p.agent, p.kind) {
                     (Some(run), _) => PlayedBy::Agent(SeatAgent::from(&run.setup)),
                     (None, Some(UserKind::Registered)) => PlayedBy::Person,
                     (None, Some(UserKind::Guest)) => PlayedBy::Guest,
@@ -340,9 +316,12 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
                     turns: p.turns,
                     resigned: p.resigned,
                     rating: p.rating,
+                    agent: p.agent,
                 }
             })
             .collect(),
+        seed: record.seed,
+        version: record.version,
         id: record.game_id,
     }
 }
