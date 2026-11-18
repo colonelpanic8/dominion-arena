@@ -4,7 +4,7 @@ use dominion_agent::Answer;
 use dominion_engine::PlayerId;
 use dominion_protocol::lobby::{
     Arranged, Beyond, Credentials, History, HistoryQuery, MatchRequest, NewTable, Opponents,
-    QueueState, SeatEdit, SeatKind, Source, TableSpec, UndoRule, UserKind, Venue,
+    PlayedBy, QueueState, SeatEdit, SeatKind, Source, TableSpec, UndoRule, UserKind, Venue,
 };
 use dominion_server::arena::{Arena, Error, Ident, Settings, SkillAnchor};
 use dominion_server::hub::{Hub, Seat, Timing};
@@ -429,6 +429,32 @@ fn automatch_pairs_searches_that_fit_each_other() {
     ));
     arena.cancel_search(&ada);
     assert_eq!(arena.queue_status(&ada), None);
+}
+
+#[test]
+fn a_users_bot_is_recorded_with_its_owner() {
+    let arena = arena();
+    let (ada, bo) = (register(&arena, "Ada"), register(&arena, "Bo"));
+    let bot = {
+        let key = arena.new_bot(&ada, "Adabot").unwrap().key;
+        arena.identify(&key).unwrap()
+    };
+    arena.search(&bot, &MatchRequest::default()).unwrap();
+    let game = (arena.search(&bo, &MatchRequest::default()).unwrap())
+        .game_id
+        .unwrap();
+    arena
+        .hub
+        .resign(&my_seat(&arena, &bot, &game), "resigned")
+        .unwrap();
+    let record = &finished(&arena, Some("Bo"), 10).unwrap().games[0];
+    let by_name = |name: &str| {
+        let seat = record.players.iter().find(|p| p.name == name).unwrap();
+        seat.played_by.clone()
+    };
+    let owner = Some("Ada".to_string());
+    assert_eq!(by_name("Adabot"), PlayedBy::Bot { owner });
+    assert_eq!(by_name("Bo"), PlayedBy::Person);
 }
 
 #[test]

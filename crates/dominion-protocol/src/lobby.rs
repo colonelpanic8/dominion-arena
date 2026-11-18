@@ -773,9 +773,13 @@ pub struct RecordPlayer {
     /// In a rated game: their rating before and after it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<(f64, f64)>,
-    /// For one of the server's agents: what played the seat, as its runner reported it.
+    /// For one of the server's agents: what played the seat, as its runner reported it,
+    /// else as the agent was last offered (an official account's seat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentRun>,
+    /// For a user's own bot: its owner's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 /// What played a seat for one of the server's agents: its setup when it first started,
@@ -797,6 +801,9 @@ pub struct AgentSetup {
     pub program: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// The model's name ("Opus 5.5").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
     /// The commit of the `dominion` build running it.
@@ -837,6 +844,38 @@ pub struct Playbook {
     pub digest: String,
 }
 
+/// One of the server's agents as the history shows it played a seat.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatAgent {
+    /// Its account's name ("Opus 5.5 High").
+    pub agent: String,
+    /// What runs it ("Claude Code").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    /// The provider's id for its model ("claude-opus-5-5").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Its model's name ("Opus 5.5").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Its reasoning effort.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+}
+
+impl From<&AgentSetup> for SeatAgent {
+    fn from(s: &AgentSetup) -> SeatAgent {
+        SeatAgent {
+            agent: s.agent.clone(),
+            program: Some(s.program.clone()).filter(|p| !p.is_empty()),
+            model: s.model.clone(),
+            name: s.model_name.clone(),
+            effort: s.effort.clone(),
+        }
+    }
+}
+
 /// A finished game.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -873,6 +912,9 @@ pub struct Profile {
     /// Games they played on dominion.games, which `stats` doesn't count.
     #[serde(default)]
     pub official_games: u32,
+    /// For one of the server's agents: what it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<SeatAgent>,
     /// Their latest games, newest first.
     pub recent: Vec<PastGame>,
 }
@@ -986,8 +1028,7 @@ pub struct PastPlayer {
     /// The account here that played it, if one did: its page is `/user/{account}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub kind: Option<UserKind>,
+    pub played_by: PlayedBy,
     pub vp: i32,
     /// Lower is better; ties share a rank.
     pub rank: u32,
@@ -1001,6 +1042,26 @@ pub struct PastPlayer {
     /// runner reported it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentRun>,
+}
+
+/// What played a seat.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum PlayedBy {
+    /// A registered player.
+    Person,
+    Guest,
+    /// Its seat token, with no account.
+    Token,
+    /// A user's own bot.
+    Bot {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        owner: Option<String>,
+    },
+    /// One of the server's agents.
+    Agent(SeatAgent),
+    /// Someone on dominion.games, not from here.
+    Official,
 }
 
 /// `GET /api/history`: finished games, newest first.
