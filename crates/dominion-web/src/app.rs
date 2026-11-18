@@ -25,6 +25,8 @@ pub enum Route {
     Cardlists {},
     #[route("/leaderboard")]
     Leaderboard {},
+    #[route("/history")]
+    History {},
     #[route("/account")]
     Account {},
     #[route("/user/:name")]
@@ -144,6 +146,11 @@ fn Cardlists() -> Element {
 #[component]
 fn Leaderboard() -> Element {
     rsx! { crate::lobby::LeaderboardTab {} }
+}
+
+#[component]
+fn History() -> Element {
+    rsx! { crate::lobby::HistoryTab {} }
 }
 
 #[component]

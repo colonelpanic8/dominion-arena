@@ -3,8 +3,8 @@
 use dominion_agent::Answer;
 use dominion_engine::PlayerId;
 use dominion_protocol::lobby::{
-    Beyond, Credentials, MatchRequest, NewTable, Opponents, QueueState, SeatEdit, SeatKind, Source,
-    TableSpec, UndoRule, UserKind,
+    Arranged, Beyond, Credentials, History, HistoryQuery, MatchRequest, NewTable, Opponents,
+    QueueState, SeatEdit, SeatKind, Source, TableSpec, UndoRule, UserKind, Venue,
 };
 use dominion_server::arena::{Arena, Error, Ident, Settings, SkillAnchor};
 use dominion_server::hub::{Hub, Seat, Timing};
@@ -62,6 +62,14 @@ fn play_out(arena: &Arena, game: &str) {
         hub.answer(&seat, &Answer::indices(&d.id, picks)).unwrap();
     }
     panic!("the game never ended");
+}
+
+fn finished(arena: &Arena, user: Option<&str>, limit: usize) -> Result<History, Error> {
+    arena.history(&HistoryQuery {
+        user: user.map(str::to_string),
+        limit: Some(limit),
+        ..HistoryQuery::default()
+    })
 }
 
 fn my_seat(arena: &Arena, ident: &Ident, game: &str) -> Seat {
@@ -446,24 +454,29 @@ fn a_rated_game_moves_ratings_and_is_recorded() {
         winner.user.rating,
         Some(winner.rating.rating.round() as i32)
     );
-    let history = arena.history(Some("bo"), None, 10).unwrap();
+    let history = finished(&arena, Some("bo"), 10).unwrap();
     let [record] = history.games.as_slice() else {
         panic!("{history:?}");
     };
     assert_eq!(
-        (record.game_id.as_str(), record.reason.as_str()),
+        (record.id.as_str(), record.reason.as_str()),
         (game.as_str(), "resigned")
     );
-    assert!(record.rated);
+    assert!(record.rated && record.open);
+    assert_eq!(
+        (record.venue, record.arranged),
+        (Venue::Arena, Some(Arranged::Automatch))
+    );
     let bo_row = record.players.iter().find(|p| p.name == "Bo").unwrap();
     assert!(bo_row.resigned && bo_row.rank == 2);
+    assert_eq!(bo_row.account.as_deref(), Some("Bo"));
     let (before, after) = bo_row.rating.unwrap();
     assert_eq!((before, after), (1500.0, loser.rating.rating));
     let board = arena.leaderboard(10).unwrap();
     let names: Vec<&str> = board.players.iter().map(|p| p.user.name.as_str()).collect();
     assert_eq!(names, ["Ada", "Bo"]);
     assert_eq!(arena.profile("ADA").unwrap().recent.len(), 1);
-    assert!(arena.history(Some("Nobody"), None, 10).is_err());
+    assert!(finished(&arena, Some("Nobody"), 10).is_err());
     // Free to search again.
     assert!(arena.search(&ada, &MatchRequest::default()).is_ok());
 }
@@ -533,7 +546,7 @@ fn a_guests_game_is_recorded_and_moves_no_rating() {
         (me.rating.games, me.rating.rating, me.stats.games),
         (0, 1500.0, 1)
     );
-    let record = &arena.history(None, None, 10).unwrap().games[0];
+    let record = &finished(&arena, None, 10).unwrap().games[0];
     assert_eq!(
         (record.rated, record.reason.as_str()),
         (false, "turn-limit")
@@ -592,7 +605,7 @@ fn a_player_who_takes_too_long_in_a_timed_game_forfeits() {
     std::thread::sleep(Duration::from_millis(40));
     arena.sweep();
     assert!(!running(&timed));
-    let record = &arena.history(None, None, 1).unwrap().games[0];
+    let record = &finished(&arena, None, 1).unwrap().games[0];
     assert_eq!(record.reason, "abandoned");
     let quitter = record.players.iter().find(|p| p.resigned).unwrap();
     assert_eq!(quitter.seat, deciding);
@@ -677,13 +690,13 @@ fn accounts_sessions_and_records_outlive_the_server() {
     assert_eq!(me.user.name, "Ada");
     assert!(me.rating.rating > 1500.0);
     assert_eq!((me.rating.games, me.stats.games, me.stats.wins), (1, 1, 1));
-    let history = arena.history(Some("Ada"), None, 10).unwrap();
+    let history = finished(&arena, Some("Ada"), 10).unwrap();
     assert_eq!(
         history.games.len(),
         1,
         "recorded once, not again on reopening"
     );
-    assert_eq!(history.games[0].game_id, game);
+    assert_eq!(history.games[0].id, game);
     let login = Credentials {
         name: "Bo".into(),
         password: "correct horse".into(),
@@ -769,7 +782,7 @@ fn answers_are_taken_back_only_where_the_table_allows_it() {
     assert!(!arena.hub.seat_view(&last, None).unwrap().can_undo);
     let refused = arena.hub.undo(&last, None);
     assert!(matches!(refused, Err(HubError::Forbidden(_))));
-    assert_eq!(arena.history(Some("Ada"), None, 10).unwrap().games.len(), 2);
+    assert_eq!(finished(&arena, Some("Ada"), 10).unwrap().games.len(), 2);
 }
 
 #[test]
