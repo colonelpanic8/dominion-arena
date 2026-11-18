@@ -598,8 +598,13 @@ them.
   discard, shuffle) is marked `Step::Occurred` right after its step and stays open for
   as long as the frame it belongs to (`journal_opens` in that frame; `run` closes it when
   the frame finishes, a window when its ability has); `Step::Within` says which open
-  occurrence the steps after it happen inside. A phase or the turn's end takes over the
-  Turn frame's occurrence, so what the turn does directly is inside its current phase.
+  occurrence the steps after it happen inside, and `Step::Closed` that one is over. A move
+  event is one occurrence, or cards moved together within one: the recorder merges a move
+  into the event before it only while that event's occurrence is open, so two gains are two
+  events, while cards trashed or discarded together (all moved before their occurrences
+  open) are one. Close occurrences only through `journal_close`. A phase or the turn's end
+  takes over the Turn frame's occurrence (closing the phase before it), so what the turn
+  does directly is inside its current phase.
   Everything read at every record is also read at every open and close, so a change made
   inside an occurrence must not wait to be read until after it has closed. A new
   occurrence opens with `journal_opens` (several together: `journal_occurred` for each,

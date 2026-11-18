@@ -41,6 +41,9 @@ pub struct Recorder {
     within: Option<u32>,
     /// Whether the last step that was no marker wrote an event.
     wrote: bool,
+    /// An event that was an occurrence now over: no later move joins it.
+    #[serde(default)]
+    closed: Option<u64>,
 }
 
 impl Recorder {
@@ -110,6 +113,13 @@ impl Recorder {
                 }
                 Step::Within(occ) => {
                     self.within = occ;
+                    continue;
+                }
+                Step::Closed(n) => {
+                    // Only the last event can take more cards.
+                    if let Some(seq) = self.event_of(Some(n)).filter(|&s| s + 1 == self.seq) {
+                        self.closed = Some(seq);
+                    }
                     continue;
                 }
                 _ => self.wrote = false,
@@ -346,7 +356,9 @@ impl Recorder {
                 } => self.resolve(player, card, occasion, origin),
                 // Who saw what is not in the full stream.
                 Step::Trace { .. } => continue,
-                Step::Occurred(_) | Step::Within(_) => unreachable!("handled above"),
+                Step::Occurred(_) | Step::Within(_) | Step::Closed(_) => {
+                    unreachable!("handled above")
+                }
             };
             self.push(&mut out, what)?;
         }
@@ -483,9 +495,11 @@ impl Recorder {
         };
         self.table.apply(&event)?;
         self.wrote = true;
-        // Cards moving the same way one after the other, for the same cause, are one event.
+        // Cards moving the same way one after the other, for the same cause, are one event,
+        // unless that event was an occurrence that is over: the move is another one.
         if let (Some(last), Some((verb, m))) = (out.last_mut(), event.what.as_move())
             && last.by == event.by
+            && self.closed != Some(last.seq)
             && let Some((v, _)) = last.what.as_move()
             && v == verb
             && verb != events::Verb::Shuffle

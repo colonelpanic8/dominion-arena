@@ -330,6 +330,9 @@ pub enum Step {
         occasion: Occasion,
         origin: Option<u32>,
     },
+    /// Occurrence `n` is over: nothing more happens inside it. A move after it is another
+    /// occurrence's, even one moving the same way for the same cause.
+    Closed(u32),
 }
 
 /// What the journal reads of the table besides counters, each time it records.
@@ -416,10 +419,13 @@ impl Journal {
     /// happens inside it.
     fn occur_for_turn(&mut self) {
         let occ = self.occur();
-        if let Some((depth, _)) = self.turn
+        if let Some((depth, turn)) = self.turn
             && let Some(o) = self.open.iter_mut().find(|o| o.depth == depth)
         {
-            o.occ = occ;
+            let was = std::mem::replace(&mut o.occ, occ);
+            if was != turn {
+                self.steps.push(Step::Closed(was));
+            }
         }
     }
 }
@@ -970,9 +976,20 @@ impl Game {
         // What changed was done inside them.
         self.sync_journal();
         let journal = self.journal.as_mut().expect("checked above");
-        journal.open.retain(|o| o.depth < depth);
-        if journal.turn.is_some_and(|(d, _)| d >= depth) {
+        let (closed, open) = (std::mem::take(&mut journal.open).into_iter())
+            .partition::<Vec<_>, _>(|o| o.depth >= depth);
+        journal.open = open;
+        // Innermost first.
+        for o in closed.iter().rev() {
+            journal.steps.push(Step::Closed(o.occ));
+        }
+        if let Some((d, turn)) = journal.turn
+            && d >= depth
+        {
             journal.turn = None;
+            if !closed.iter().any(|o| o.occ == turn) {
+                journal.steps.push(Step::Closed(turn));
+            }
         }
     }
 

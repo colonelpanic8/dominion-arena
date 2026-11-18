@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::game::Phase;
+use std::collections::BTreeMap;
 
 /// A journal's steps, markers taken out, each with the index of the step recording the
 /// occurrence it happened inside.
@@ -9,6 +10,8 @@ struct Journal {
     steps: Vec<(Step, Option<usize>)>,
     /// Each occurrence's step, by its number.
     occurrences: Vec<usize>,
+    /// Each closed occurrence's step, with how many steps came before it closed.
+    closed: BTreeMap<usize, usize>,
 }
 
 impl Journal {
@@ -16,6 +19,7 @@ impl Journal {
         let mut j = Journal {
             steps: vec![],
             occurrences: vec![],
+            closed: BTreeMap::new(),
         };
         let mut within = None;
         for step in g.take_journal() {
@@ -25,6 +29,10 @@ impl Journal {
                     j.occurrences.push(j.steps.len() - 1);
                 }
                 Step::Within(occ) => within = occ.map(|n| j.occurrences[n as usize]),
+                Step::Closed(n) => {
+                    let closed = j.closed.insert(j.occurrences[n as usize], j.steps.len());
+                    assert_eq!(closed, None, "closed twice");
+                }
                 step => j.steps.push((step, within)),
             }
         }
@@ -428,4 +436,38 @@ fn a_hex_received_by_another_player_is_inside_its_receiving() {
         )
     });
     assert_eq!(j.by(deluded), Some(received));
+}
+
+#[test]
+fn gains_one_after_the_other_are_each_over_before_the_next() {
+    let mut g = super::empires::setup_landscapes(&[Card::TreasureMap], &[Card::Labyrinth]);
+    hand(&mut g, P0, &[Card::TreasureMap, Card::TreasureMap]);
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    g.enable_journal();
+    g.start();
+    play(&mut g, Card::TreasureMap);
+    let j = Journal::of(&mut g);
+    let map = j.only(played(&g, Card::TreasureMap));
+    // Trashed together: both are trashed before either is over.
+    let trashed = j.all(moved(&g, Verb::Trash, Card::TreasureMap));
+    assert_eq!(trashed.len(), 2);
+    assert!(j.closed[&trashed[0]] > trashed[1]);
+    let gains = j.all(moved(&g, Verb::Gain, Card::Gold));
+    assert_eq!(gains.len(), 4);
+    for pair in gains.windows(2) {
+        assert_eq!(j.by(pair[1]), Some(map));
+        assert!(j.closed[&pair[0]] <= pair[1]);
+    }
+    let labyrinth = j.only(resolved(Card::Labyrinth));
+    assert_eq!(j.by(labyrinth), Some(gains[1]));
+    let vp = j.only(|s| {
+        matches!(
+            s,
+            Step::Gauge {
+                gauge: Gauge::VpTokens(P0),
+                ..
+            }
+        )
+    });
+    assert_eq!(j.by(vp), Some(labyrinth));
 }

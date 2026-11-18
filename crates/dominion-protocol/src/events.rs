@@ -1044,9 +1044,8 @@ pub enum What {
         /// For an Attack: the player it is played against.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target: Option<u8>,
-        /// When `by` is a move of several cards, each its own occurrence (cards trashed
-        /// together, or gained one after the other): which of its `cards` it answers,
-        /// from 0.
+        /// When `by` is a move of several cards, each its own occurrence (cards trashed or
+        /// discarded together): which of its `cards` it answers, from 0.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<u32>,
         /// The event that made the lasting effect the ability belongs to (a Duration's

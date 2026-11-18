@@ -23,7 +23,7 @@ fn random_empires_games_keep_invariants() {
     });
 }
 
-fn setup_landscapes(kingdom: &[Card], landscapes: &[Card]) -> Game {
+pub(super) fn setup_landscapes(kingdom: &[Card], landscapes: &[Card]) -> Game {
     setup_with(GameConfig {
         colonies: Some(false),
         shelters: Some(false),

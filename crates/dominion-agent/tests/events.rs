@@ -834,6 +834,20 @@ fn check_causes(events: &[Event], what: &str) {
         }
         let by = e.by.map(at);
         let by_phase = by.and_then(phase_in);
+        // Each gain is its own occurrence.
+        if let What::Gain(m) = &e.what
+            && m.cards.len() != 1
+        {
+            fail("a gain of several cards");
+        }
+        // Inside cards trashed or discarded together, each its own occurrence, only an
+        // ability can say which card it is about.
+        if let Some(What::Trash(m) | What::Discard(m)) = by
+            && m.cards.len() > 1
+            && !matches!(e.what, What::Resolve { .. })
+        {
+            fail("inside several cards' occurrences, not saying which");
+        }
         match &e.what {
             What::Resolve {
                 when,
@@ -853,10 +867,9 @@ fn check_causes(events: &[Event], what: &str) {
                         }
                     })
                 };
-                if index.is_some()
-                    && !matches!(when, Moment::Gain | Moment::Trash | Moment::Discard)
-                {
-                    fail("an index for a moment no move is");
+                // Only cards trashed or discarded together share an event.
+                if index.is_some() && !matches!(when, Moment::Trash | Moment::Discard) {
+                    fail("an index for a moment that is no move of several cards");
                 }
                 let right = match when {
                     Moment::GameStart => by.is_none(),
