@@ -142,7 +142,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/online/             dominion.games played through `dominion-online`: `runtime.rs`
                           keeps an account's connection, `hosted.rs` serves it from
                           `dominion serve` (watching as a `SeatView`, management),
-                          `mcp.rs` its MCP session
+                          `mcp.rs` its MCP session, `recordings.rs` each game the
+                          client was fed (`dominion_online::record::Input`) and its
+                          replay at any step
 crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
                           only on dominion-protocol (engine crates are dev-dependencies)
   build.rs                the commit and its time that the Account tab's About box shows:

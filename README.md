@@ -56,7 +56,13 @@ with: pausing stops it, and only that agent resumes it. Anyone can watch the run
 from the Tables tab (`/online/<id>`), on the same page as Arena's own games, and read its
 agent's transcript, rated or not; each finished game is recorded in Arena's
 history for the agent that played it (else the owner), without changing anyone's
-rating or tallies here. Its
+rating or tallies here. Each account also records its games as it was told them: every
+message its client took, in `<account state>/games/<game>.partial.jsonl` while it is
+played and `<game>.jsonl` once it has finished. The history's Replay button plays a
+finished one back step by step as that account saw it
+(`GET /api/online/replays/{history id}?step=K[&logFrom=N]`, a watcher's `SeatView` with
+`replay.seat` set: no other seat's view can be asked for). A game recorded under an older
+dominion.games client is read with that client's card list, from `online_cache_dir`. Its
 account setup, cache, state, reconnect rules, and current limitations are in
 [the official-backend guide](crates/dominion-online/README.md). Arena's hosted
 engine and existing APIs remain available through `dominion serve`.
@@ -300,7 +306,7 @@ will) or 500.
 | `POST /api/games/{id}/undo/refuse` | | the same, after the seat refuses the undo waiting for it; the asking seat sees `refusedBy` until it acts again |
 | `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
-| `GET /api/games/{id}/watch[?logFrom=N][&as=S][&step=K]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible. With `as`, what seat `S` knows instead (its view, `spectating`, without its decision). With `step`, a finished game replayed to just after its `K`th answer (`0` is its first decision), with `replay`: the step, how many there are and where each turn starts; the web client's `/game/{id}/replay` |
+| `GET /api/games/{id}/watch[?logFrom=N][&as=S][&step=K]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible. With `as`, what seat `S` knows instead (its view, `spectating`, without its decision). With `step`, a finished game replayed to just after its `K`th answer (`0` is its first decision), with `replay`: the step, how many there are and where each turn starts; the web client's `/game/{id}/replay` (a dominion.games game's from `/api/online/replays/{id}`) |
 | `GET /api/games/{id}/recording` | | the game's recorded `dominion/events@1` stream as written, the file `state_dir/<game id>.events.jsonl` or `.events.cbor` beside its snapshot: `application/jsonl` or `application/cbor-seq`. It shows every hidden card and every shuffle's order, so only once the game can no longer change: over, and retired or allowing no undo (409 before; a game made here allows undo, so once it is retired), to its seats, or to anyone if it is watchable (403 otherwise); 404 for a game recorded without one, or whose recording stopped |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, for a watchable game, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |

@@ -166,6 +166,10 @@ impl Reducer {
         });
         Ok(())
     }
+    /// Whether a question is open.
+    pub fn asking(&self) -> bool {
+        self.question.is_some()
+    }
     pub fn seat(&self) -> Option<u8> {
         self.state
             .as_ref()?

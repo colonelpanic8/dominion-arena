@@ -1,6 +1,8 @@
+use super::recordings::{self, Recorder};
 use crate::store::Store;
 use dominion_online::{
     catalog::{Catalog, VERSION},
+    record::Input,
     reducer::Reducer,
     transport::{
         Endpoint, Group, Message, RequiredSlot, RuleValue, TableDetails, TableRule, TimerUpdate,
@@ -301,6 +303,7 @@ impl Client {
                 bots: Vec::new(),
                 mode,
             },
+            recorder: Recorder::new(recordings::dir(store.dir())),
             store,
         };
         tokio::time::timeout(Duration::from_secs(20), async {
@@ -326,7 +329,7 @@ impl Client {
                         request=rx.recv()=>request,
                         received=runtime.receive()=>{
                             if let Err(error)=received{runtime.fail(error).await;}
-                            publish.send_replace(runtime.update.clone());
+                            publish.send_replace(runtime.published());
                             continue;
                         }
                     }
@@ -406,16 +409,16 @@ impl Client {
                     }
                     Request::Profile(player, kind, reply) => {
                         runtime.request_profile(player, kind, reply).await;
-                        publish.send_replace(runtime.update.clone());
+                        publish.send_replace(runtime.published());
                         continue;
                     }
                     Request::Results(kind, reply) => {
                         runtime.request_results(kind, reply).await;
-                        publish.send_replace(runtime.update.clone());
+                        publish.send_replace(runtime.published());
                         continue;
                     }
                 };
-                publish.send_replace(runtime.update.clone());
+                publish.send_replace(runtime.published());
                 let _ = reply.send(result);
                 if stop {
                     break;
@@ -554,8 +557,14 @@ struct Runtime {
     results: Waiting<i32, Vec<ProfileResult>>,
     update: Update,
     store: Store,
+    recorder: Recorder,
 }
 impl Runtime {
+    /// What to publish now that everything taken together has been: the recorder's frame.
+    fn published(&mut self) -> Update {
+        self.recorder.frame(&self.update.reducer);
+        self.update.clone()
+    }
     async fn close(&mut self) {
         if let Some(options) = &self.search
             && let Ok(bytes) = matching::criteria(self.update.mode, options, false)
@@ -738,11 +747,16 @@ impl Runtime {
                 if reducer.game_id != Some(snapshot.game_id) {
                     self.update.timers.clear();
                 }
+                let recorded = snapshot.clone();
                 reducer.replace(snapshot).map_err(|e| e.to_string())?;
+                self.recorder.snapshot(reducer, recorded);
                 self.needs_snapshot = false;
                 self.update.searching = false;
             }
-            Message::Event(event) => reducer.apply(event).map_err(|e| e.to_string())?,
+            Message::Event(event) => {
+                reducer.apply(event.clone()).map_err(|e| e.to_string())?;
+                self.recorder.input(Input::Event { event });
+            }
             Message::Timers(timers) => {
                 let at = crate::hub::now_ms();
                 for timer in timers {
@@ -754,9 +768,15 @@ impl Runtime {
                 if self.needs_snapshot {
                     return Err("question arrived before reconnect snapshot".into());
                 }
-                reducer.ask(question).map_err(|e| e.to_string())?;
+                reducer.ask(question.clone()).map_err(|e| e.to_string())?;
+                self.recorder.input(Input::Question {
+                    question: Box::new(question),
+                });
             }
-            Message::Log(change) => reducer.log(&change).map_err(|e| e.to_string())?,
+            Message::Log(change) => {
+                reducer.log(&change).map_err(|e| e.to_string())?;
+                self.recorder.input(Input::Log { change });
+            }
             // Details of a table other than ours are not ours: the official client ignores them too.
             Message::TableDetails(table)
                 if self.table.as_ref().map(|t| t.table_id) != Some(table.table_id) => {}
@@ -870,6 +890,7 @@ impl Runtime {
             }
             Message::GameFinished { table, result, .. } => {
                 reducer.finish(&result).map_err(|e| e.to_string())?;
+                self.recorder.finish(result);
                 self.store.remove("own-table").map_err(|e| e.to_string())?;
                 self.store.remove("own-match").map_err(|e| e.to_string())?;
                 self.completed_table = Some(table.table_id);

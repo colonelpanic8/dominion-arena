@@ -1,8 +1,9 @@
+use super::recordings::{Refused, Replays};
 use super::{Client, mcp, runtime::Update};
 use crate::{arena::Arena, config::Config};
 use axum::{
     Router,
-    extract::{Query, Request, State},
+    extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode, header},
     middleware::{self, Next},
     response::{
@@ -24,7 +25,7 @@ use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, UserKind
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
-use std::{collections::HashMap, convert::Infallible, sync::Arc, time::Duration};
+use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 /// How long a rating read from dominion.games is served before it is asked again.
@@ -47,6 +48,10 @@ pub struct Hosted {
     control: Arc<tokio::sync::Mutex<()>>,
     ratings: Arc<std::sync::Mutex<HashMap<OnlineRatingType, OnlineRating>>>,
     levels: Arc<tokio::sync::watch::Sender<Levels>>,
+    /// Where its games are recorded.
+    recordings: Option<PathBuf>,
+    /// Where official clients' code is cached (`online_cache_dir`).
+    cache: Option<PathBuf>,
 }
 
 /// The dominion.games levels of a game's players by seat, asked of the official server as
@@ -83,7 +88,20 @@ pub fn router(
         .position(|h| h.id == super::LEGACY_ID)
         .unwrap_or(0);
     let list: Vec<Hosted> = hosted.to_vec();
-    let mut router = Router::new()
+    let dirs: Vec<PathBuf> = hosted.iter().filter_map(|h| h.recordings.clone()).collect();
+    let replays = match hosted.first() {
+        Some(first) if !dirs.is_empty() => {
+            let catalog = first.client.current().reducer.catalog.clone();
+            let replays = Arc::new(Replays::new(dirs, first.cache.clone(), catalog));
+            let has = replays.clone();
+            arena.set_official_replays(Arc::new(move |id| has.has(id)));
+            Router::new()
+                .route("/api/online/replays/{id}", get(replay))
+                .with_state(replays)
+        }
+        _ => Router::new(),
+    };
+    let mut router = replays
         .route(
             "/api/online/accounts",
             get(move || {
@@ -125,7 +143,17 @@ impl Hosted {
             control: Arc::new(tokio::sync::Mutex::new(())),
             ratings: Arc::default(),
             levels: Arc::new(tokio::sync::watch::Sender::new(Levels::default())),
+            recordings: None,
+            cache: None,
         }
+    }
+
+    /// The account records its games in `recordings`; official clients' code is cached
+    /// in `cache`.
+    pub(crate) fn recording(mut self, recordings: PathBuf, cache: Option<PathBuf>) -> Self {
+        self.recordings = Some(recordings);
+        self.cache = cache;
+        self
     }
 
     /// The levels of `update`'s game's players.
@@ -184,7 +212,12 @@ impl Hosted {
         let mut errors = Vec::new();
         for (account, owner) in accounts.into_iter().zip(owners) {
             match super::start(config, &account).await {
-                Ok(client) => hosted.push(Self::new(client, account.id, account.account, owner)),
+                Ok(client) => hosted.push(
+                    Self::new(client, account.id, account.account, owner).recording(
+                        super::recordings::dir(&account.state_dir),
+                        config.online_cache_dir(),
+                    ),
+                ),
                 Err(e) => {
                     eprintln!("dominion: official account {}: {e}", account.id);
                     errors.push(format!("{}: {e}", account.id));
@@ -377,6 +410,34 @@ async fn authorize(State(access): State<Access>, request: Request, next: Next) -
         }
     }
     next.run(request).await
+}
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplayQuery {
+    step: usize,
+    #[serde(default)]
+    log_from: usize,
+}
+
+/// A recorded game at a step, as its account saw it.
+async fn replay(
+    State(replays): State<Arc<Replays>>,
+    Path(id): Path<String>,
+    Query(q): Query<ReplayQuery>,
+) -> Response {
+    let shown = tokio::task::spawn_blocking(move || replays.view(&id, q.step, q.log_from)).await;
+    let (status, error) = match shown {
+        Ok(Ok(view)) => return axum::Json(view).into_response(),
+        Ok(Err(Refused::Missing(e))) => (StatusCode::NOT_FOUND, e),
+        Ok(Err(Refused::BadRequest(e))) => (StatusCode::BAD_REQUEST, e),
+        Ok(Err(Refused::Failed(e))) => (StatusCode::INTERNAL_SERVER_ERROR, e),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+    (
+        status,
+        axum::Json(dominion_protocol::api::ApiError { error }),
+    )
+        .into_response()
 }
 async fn no_cache(request: Request, next: Next) -> Response {
     let mut r = next.run(request).await;

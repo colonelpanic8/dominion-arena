@@ -1015,6 +1015,10 @@ pub struct PastGame {
     /// The server still hosts it: the game page at `/game/{id}` opens it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub open: bool,
+    /// It isn't hosted, but its recording replays at `/game/{id}/replay`: a dominion.games
+    /// game an account here recorded.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub replayable: bool,
     /// Milliseconds since the Unix epoch.
     pub started: u64,
     pub ended: u64,

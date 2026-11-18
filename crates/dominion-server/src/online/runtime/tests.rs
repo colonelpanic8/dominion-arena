@@ -100,6 +100,7 @@ fn runtime() -> (TempDir, Runtime) {
             finished_at: None,
             bots: Vec::new(),
         },
+        recorder: Recorder::new(recordings::dir(directory.path())),
         store,
     };
     (directory, runtime)
@@ -1966,4 +1967,107 @@ fn a_resumed_match_the_server_no_longer_has_is_forgotten() {
     runtime.process(Message::Login(login(false))).unwrap();
     assert!(runtime.human.is_none() && runtime.table.is_none());
     assert!(!directory.path().join("own-match.json").exists());
+}
+
+#[tokio::test]
+async fn a_finished_game_replays_at_each_step_as_the_account_saw_it() {
+    let (directory, mut runtime) = runtime();
+    runtime.process(Message::Login(login(false))).unwrap();
+    let replays =
+        recordings::Replays::new(vec![recordings::dir(directory.path())], None, catalog());
+    let game = "dominion.games-dominion.games:123";
+    let seen = |runtime: &Runtime| {
+        let mut view = runtime.update.reducer.view().unwrap();
+        view.decision = None;
+        view.spectating = true;
+        serde_json::to_value(view).unwrap()
+    };
+    let mut views = vec![];
+    runtime.process(Message::Snapshot(snapshot())).unwrap();
+    runtime.published();
+    views.push(seen(&runtime));
+    runtime.process(Message::Question(question(7))).unwrap();
+    runtime.published();
+    views.push(seen(&runtime));
+    let id = decision_id(&runtime);
+    // There is no server to send it to, but the client has taken it.
+    let _ = runtime.answer(Answer::indices(id, vec![0]), None).await;
+    runtime.published();
+    let turn = model::TurnDescription {
+        owner_id: 1,
+        turn_number: 1,
+        turn_type: 0,
+        controller_id: 1,
+    };
+    runtime
+        .process(Message::Event(model::Event::TurnDescription(turn)))
+        .unwrap();
+    runtime.published();
+    runtime
+        .process(Message::Log(model::LogChange {
+            start_index: 0,
+            entries: vec![model::LogEntry::Decision {
+                decision_index: 1,
+                player: 1,
+                decision: vec![0],
+                autoplayed: false,
+            }],
+        }))
+        .unwrap();
+    runtime.published();
+    views.push(seen(&runtime));
+    assert!(
+        !replays.has(game),
+        "a game still being played isn't replayed"
+    );
+    let player = |player_id, rank| model::PlayerResult {
+        player_id,
+        rank,
+        score: model::Score {
+            total_points: 3,
+            used_turns: 1,
+            parts: vec![],
+        },
+        card_names: vec![],
+        resign_index: -1,
+        resignation_type: None,
+    };
+    runtime
+        .process(Message::GameFinished {
+            table: table(),
+            result: model::GameResult {
+                table_id: 10,
+                game_id: 123,
+                rating_type: None,
+                empty_piles: vec![],
+                players: vec![player(42, 1), player(-2, 2)],
+                auto_continue: false,
+            },
+            continue_allowed: false,
+            match_completed: true,
+        })
+        .unwrap();
+    runtime.published();
+    views.push(seen(&runtime));
+    assert!(replays.has(game));
+    for (step, view) in views.iter().enumerate() {
+        let shown = replays.view(game, step, 0).unwrap();
+        assert_eq!(
+            serde_json::to_value(&shown.view).unwrap(),
+            *view,
+            "step {step}"
+        );
+        let replay = shown.replay.unwrap();
+        assert_eq!((replay.step, replay.steps, replay.seat), (step, 3, Some(0)));
+        assert_eq!(
+            replay
+                .turns
+                .iter()
+                .map(|t| (t.step, t.player, t.turn))
+                .collect::<Vec<_>>(),
+            [(0, 0, 1), (2, 1, 1)]
+        );
+    }
+    assert_eq!(replays.view(game, 1, 0).unwrap().deciding, Some(0));
+    assert!(replays.view(game, 4, 0).is_err());
 }

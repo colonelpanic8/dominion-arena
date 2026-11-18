@@ -262,6 +262,10 @@ pub struct Replay {
     pub steps: usize,
     /// Each turn's start, in order.
     pub turns: Vec<ReplayTurn>,
+    /// The only seat it can be seen as: a dominion.games game, recorded as that seat saw
+    /// it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

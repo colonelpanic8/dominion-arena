@@ -2,6 +2,7 @@
 //! Hosted Arena games continue to use `serve` and the local engine.
 mod hosted;
 mod mcp;
+pub mod recordings;
 mod runtime;
 pub use hosted::{Hosted, router};
 

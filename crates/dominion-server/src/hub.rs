@@ -2119,6 +2119,7 @@ impl Hub {
                             turn,
                         })
                         .collect(),
+                    seat: None,
                 }),
             };
             let replayed = match &replay {

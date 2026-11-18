@@ -8,8 +8,8 @@ use dominion_protocol::api::{
 };
 use dominion_protocol::lobby::{
     BotKey, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable, Leaderboard,
-    Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable, Profile,
-    QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec, Venue,
+    Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable,
+    OFFICIAL_GAME_PREFIX, Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec, Venue,
 };
 use std::fmt;
 
@@ -172,13 +172,21 @@ pub async fn watch_view(
 }
 
 /// Finished game `game` as someone watching saw it after `step` answers, with the log
-/// from `log_from` on.
+/// from `log_from` on. A dominion.games game is seen as the account that recorded it saw
+/// it, at each step of its recording.
 pub async fn replay_view(
     game: &str,
     step: usize,
     log_from: usize,
     as_seat: Option<u8>,
 ) -> Result<SeatView> {
+    if game.starts_with(OFFICIAL_GAME_PREFIX) {
+        let url = format!(
+            "/api/online/replays/{}?step={step}&logFrom={log_from}",
+            encode(game)
+        );
+        return imp::get(&url, None).await;
+    }
     let mut url = format!(
         "/api/games/{}/watch?step={step}&logFrom={log_from}",
         encode(game)
