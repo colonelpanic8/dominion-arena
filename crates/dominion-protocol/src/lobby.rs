@@ -550,6 +550,9 @@ pub struct OfficialGame {
     pub kingdom: Vec<String>,
     #[serde(default)]
     pub landscapes: Vec<String>,
+    /// What it was set up with besides those: Platinum and Colony, Shelters, Heirlooms, ...
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
 }
 
 /// The server's own agents: it starts one on its machine for a table's `agent` seat, or
@@ -758,6 +761,10 @@ pub struct RecordPlayer {
     /// Absent for a seat played by token.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<UserKind>,
+    /// The account that played it, where that isn't `name`: the agent playing an
+    /// official account. Absent from records written before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
     pub vp: i32,
     pub rank: u32,
     pub turns: u32,
@@ -844,6 +851,9 @@ pub struct GameRecord {
     pub reason: String,
     pub kingdom: Vec<String>,
     pub landscapes: Vec<String>,
+    /// What it was set up with besides those: Platinum and Colony, Shelters, Heirlooms, ...
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
     pub players: Vec<RecordPlayer>,
     /// The game's seed: the same setup and seed deal each seat the same starting cards.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -860,8 +870,11 @@ pub struct Profile {
     pub user: UserRef,
     pub rating: RatingInfo,
     pub stats: Stats,
+    /// Games they played on dominion.games, which `stats` doesn't count.
+    #[serde(default)]
+    pub official_games: u32,
     /// Their latest games, newest first.
-    pub recent: Vec<GameRecord>,
+    pub recent: Vec<PastGame>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -880,9 +893,122 @@ pub struct Leaderboard {
     pub players: Vec<Leader>,
 }
 
-/// `GET /api/history[?user=name][&before=ended][&limit=n]`: finished games, newest first.
+/// Where a game was played.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Venue {
+    Arena,
+    /// dominion.games, by an official account.
+    Official,
+}
+
+/// `GET /api/history`'s query: which finished games, newest first.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryQuery {
+    /// Games this account played.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// Games that ended before this, in milliseconds since the Unix epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub venue: Option<Venue>,
+    /// Rated games only.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub rated: bool,
+    /// Games with a player, the account behind a seat or a card whose name contains this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub q: Option<String>,
+}
+
+/// How an Arena game's players came together.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Arranged {
+    Automatch,
+    Table,
+    /// Every seat played by its token.
+    Tokens,
+    /// Made with the server's agents seated (`create_game`); any other seat played by its
+    /// token.
+    Agents,
+}
+
+/// A finished game as the history shows it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastGame {
+    /// Its id in the history.
+    pub id: String,
+    pub venue: Venue,
+    /// How an Arena game's players came together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arranged: Option<Arranged>,
+    /// dominion.games' own number for a game played there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official_id: Option<String>,
+    /// The server still hosts it: the game page at `/game/{id}` opens it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub open: bool,
+    /// Milliseconds since the Unix epoch.
+    pub started: u64,
+    pub ended: u64,
+    pub rated: bool,
+    /// How it ended: `provinces-gone`, `resigned`, `abandoned`, ...
+    pub reason: String,
+    pub kingdom: Vec<String>,
+    pub landscapes: Vec<String>,
+    /// What it was set up with besides its Kingdom piles and landscapes: Supply piles
+    /// beyond the base cards (Platinum, Colony, Potion, ...), Shelters, Heirlooms.
+    /// Empty for games recorded before it was kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
+    /// By seat.
+    pub players: Vec<PastPlayer>,
+    /// An Arena game's seed: the same setup and seed deal each seat the same starting
+    /// cards. Absent for games recorded before it was kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+    /// The commit of the `dominion` build that hosted or recorded it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastPlayer {
+    pub seat: u8,
+    /// Its name in the game.
+    pub name: String,
+    /// The account here that played it, if one did: its page is `/user/{account}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<UserKind>,
+    pub vp: i32,
+    /// Lower is better; ties share a rank.
+    pub rank: u32,
+    pub turns: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub resigned: bool,
+    /// Its rating here before and after a rated game.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rating: Option<(f64, f64)>,
+    /// For one of the server's agents in an Arena game: what played the seat, as its
+    /// runner reported it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentRun>,
+}
+
+/// `GET /api/history`: finished games, newest first.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct History {
-    pub games: Vec<GameRecord>,
+    pub games: Vec<PastGame>,
+    /// Ask again with this as `before` for more; none when there are no more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<u64>,
 }

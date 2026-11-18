@@ -7,6 +7,7 @@ mod account;
 pub mod agent_picker;
 mod cardlists;
 mod chat;
+mod history;
 mod home;
 mod leaderboard;
 pub mod my_table;
@@ -32,6 +33,7 @@ use rules::TableRules;
 
 pub use account::AccountTab;
 pub use cardlists::CardlistsTab;
+pub use history::HistoryTab;
 pub use home::AutomatchTab;
 pub use leaderboard::{LeaderboardTab, UserPage};
 pub use my_table::MyTableTab;
@@ -44,6 +46,7 @@ pub enum Tab {
     Tables,
     Cardlists,
     Leaderboard,
+    History,
     Account,
 }
 
@@ -636,6 +639,7 @@ pub fn LobbyFrame(tab: Tab, children: Element) -> Element {
         Tab::Tables => "lb-window lb-tables",
         Tab::Cardlists => "lb-window lb-cardlists",
         Tab::Leaderboard => "lb-window lb-leaderboard",
+        Tab::History => "lb-window lb-history-window",
         Tab::Account => "lb-window lb-account",
     };
     let tabs = [
@@ -659,6 +663,7 @@ pub fn LobbyFrame(tab: Tab, children: Element) -> Element {
             "Leaderboard",
             Route::Leaderboard {},
         ),
+        (Tab::History, "history", "History", Route::History {}),
         (Tab::Account, "account", "Account", Route::Account {}),
     ];
     rsx! {
@@ -795,5 +800,39 @@ pub fn date(ms: u64) -> String {
 
 #[cfg(not(all(feature = "web", target_arch = "wasm32")))]
 pub fn date(_ms: u64) -> String {
+    String::new()
+}
+
+/// The day of a moment: "Today", "Yesterday", else as the reader's calendar writes it.
+#[cfg(all(feature = "web", target_arch = "wasm32"))]
+pub fn day(ms: u64) -> String {
+    use js_sys::Date;
+    let at = |ms: f64| Date::new(&wasm_bindgen::JsValue::from_f64(ms));
+    let (then, now) = (at(ms as f64), Date::new_0());
+    let same = |a: &Date, b: &Date| a.to_date_string() == b.to_date_string();
+    if same(&then, &now) {
+        "Today".into()
+    } else if same(&then, &at(now.get_time() - 86_400_000.0)) {
+        "Yesterday".into()
+    } else {
+        then.to_locale_date_string("default", &wasm_bindgen::JsValue::UNDEFINED)
+            .into()
+    }
+}
+
+#[cfg(not(all(feature = "web", target_arch = "wasm32")))]
+pub fn day(_ms: u64) -> String {
+    String::new()
+}
+
+/// The time of day of a moment, to the minute: "21:42".
+#[cfg(all(feature = "web", target_arch = "wasm32"))]
+pub fn clock(ms: u64) -> String {
+    let at = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ms as f64));
+    format!("{:02}:{:02}", at.get_hours(), at.get_minutes())
+}
+
+#[cfg(not(all(feature = "web", target_arch = "wasm32")))]
+pub fn clock(_ms: u64) -> String {
     String::new()
 }

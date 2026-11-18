@@ -11,11 +11,13 @@
 mod agent;
 mod card;
 mod cards;
+mod chance;
 mod decision;
 mod event;
 mod frame;
 mod game;
 mod ids;
+mod journal;
 mod knowledge;
 mod scribe;
 mod setup;
@@ -30,6 +32,7 @@ pub use agent::{
     Agent, CardDeckView, Note, PileView, PlayError, PlayerView, SetupRole, View, play,
 };
 pub use card::{Card, CardDef, CardRelations, Cost, Kind, Plus, Set, TYPE_NAMES, Types};
+pub use chance::{Given, Outcomes, Refused, Site};
 pub use decision::{Decision, DecisionKind, Move, Opt, Purpose, Response, ResponseError};
 pub use event::{Counter, Dest, Event, Marker};
 pub use game::{
@@ -37,6 +40,10 @@ pub use game::{
     PileGroup, PileKind, PileStructure, Player, Scratch, Token, Turn, Until, Zone,
 };
 pub use ids::{CardId, PileId, PlayerId};
+pub use journal::{
+    EffectEnd, EffectState, Gauge, PileProps, Spot, Step, TokenAt, TokenKind, TurnKind, TurnLimits,
+    Verb, table_note,
+};
 pub use knowledge::{CardCount, GroupView, Knowledge, KnownCards, UncertainCards, ZoneKnowledge};
 pub use setup::{
     ANY_SLOT_KIND, DEFAULT_SLOTS, DealRules, GameConfig, KINGDOM_PILES, LandscapeSlot, SLOT_KINDS,

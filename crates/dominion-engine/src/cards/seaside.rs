@@ -14,7 +14,7 @@ use super::{
 use crate::decision::{DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, Mat, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, Mat, Pos, Scratch, Until, Zone};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, PileId, PlayerId, Set, Types};
 use serde::{Deserialize, Serialize};
@@ -675,12 +675,13 @@ fn outpost(g: &mut Game, f: &mut CardFrame) -> Flow {
         Until::ExtraTurn,
         Scratch::default(),
     );
-    g.extra_turns.push_back(ExtraTurn {
-        player: p,
-        source: Card::Outpost,
-        limit: ExtraLimit::ThirdInARow,
-        lasting: Some(lasting),
-    });
+    g.queue_extra_turn(
+        p,
+        Card::Outpost,
+        ExtraLimit::ThirdInARow,
+        Some(lasting),
+        false,
+    );
     Flow::done()
 }
 

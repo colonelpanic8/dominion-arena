@@ -1,0 +1,1523 @@
+//! A game's `dominion/events@1` stream, written from the engine's journal.
+
+use dominion_engine::{
+    Card, CardId, EffectEnd, EffectState, EndReason, ExtraLimit, Game, Gauge, Kind, Mat, Occasion,
+    Phase, PileId, PileKind, PileProps, PlayerId, SetupRole, Spot, Step, Token, TokenAt, TokenKind,
+    Trace, TurnKind, Until, Verb, Zone,
+};
+use dominion_protocol::events::{
+    self, At, CardRef, Choice, CounterChange, CounterKey, CounterName, CounterOf, Effect, Ending,
+    Event, ExtraTurnQueued, Face, FoldError, GameEnd, Moment, Move, Pack, PileChange, PileRole,
+    PileState, Play, Recipe, RecipeGroup, RecipeKind, Role, Rules, SeatResult, SeatZone, Setup,
+    SetupConfig, Table, TurnLimits, TurnStart, What,
+};
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Writes the full stream of a game started with [`Game::new_journaled`]: every card's
+/// face, every shuffle's order. Saved with the game, it goes on where it left off.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct Recorder {
+    /// The table after the events written so far.
+    table: Table,
+    /// What each card is called now.
+    names: Vec<String>,
+    /// Where each card is, by id: what the stream has by name. Ordered zones top first.
+    ids: BTreeMap<events::Zone, Vec<CardId>>,
+    /// The cards lying face up in a set-aside zone or `looking`.
+    up: BTreeSet<CardId>,
+    /// Each pile's zone, once it has been seen.
+    piles: Vec<Option<events::Zone>>,
+    seq: u64,
+    set_up: bool,
+    ended: bool,
+    /// The player of the latest turn: whose its phases are.
+    turn: u8,
+    /// The event each of the journal's occurrences that can still be named became, by
+    /// its number, and which of its cards it is about when it is a move.
+    occurrences: BTreeMap<u32, (u64, u32)>,
+    /// How many cards each move event moved, of those occurrences' events.
+    moved: BTreeMap<u64, u32>,
+    /// The occurrence the journal's steps happen inside now.
+    within: Option<u32>,
+    /// Whether the last step that was no marker wrote an event.
+    wrote: bool,
+    /// An event that was an occurrence now over: no later move joins it.
+    #[serde(default)]
+    closed: Option<u64>,
+    /// Whose each of those occurrences is, by its number: who moves a card between zones
+    /// nobody owns inside it.
+    #[serde(default)]
+    actors: BTreeMap<u32, u8>,
+    /// What the options of the question last asked answer with, until it is answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    asked: Option<(u8, Vec<crate::project::Target>)>,
+    /// The cards lying face down in a zone whose cards lie face up (the trash).
+    #[serde(default)]
+    down: BTreeSet<CardId>,
+}
+
+impl Recorder {
+    pub fn new() -> Recorder {
+        Recorder::default()
+    }
+
+    /// The table after everything recorded so far.
+    pub fn table(&self) -> &Table {
+        &self.table
+    }
+
+    /// How many events it has written.
+    pub fn written(&self) -> u64 {
+        self.seq
+    }
+
+    /// Takes what `game` has journaled since the last call and returns it as events.
+    /// `seats` names the players. An error means the journal doesn't describe one game:
+    /// a bug in the engine or here.
+    pub fn record(&mut self, game: &mut Game, seats: &[String]) -> Result<Vec<Event>, FoldError> {
+        let mut steps = Steps(game.take_journal().into());
+        let mut out: Vec<Event> = vec![];
+        if !self.set_up {
+            self.set_up = true;
+            // What setup drew by chance comes first.
+            let mut chance = vec![];
+            while let Some(Step::Chance { .. }) = steps.peek() {
+                if let Some(Step::Chance { site, cards }) = steps.next() {
+                    chance.extend(chance_of(site, cards));
+                }
+            }
+            let mut created = vec![];
+            while let Some(Step::Trace {
+                entry: Trace::Created { .. },
+                ..
+            }) = steps.peek()
+            {
+                if let Some(Step::Trace {
+                    entry: Trace::Created { card, is, zone },
+                    ..
+                }) = steps.next()
+                {
+                    created.push((card, is, zone));
+                }
+            }
+            // What setup made besides cards: Boons and Hexes, counters, the rest of the table.
+            let mut made = vec![];
+            while let Some(
+                Step::FateAdded { .. }
+                | Step::Gauge { .. }
+                | Step::Token { .. }
+                | Step::Holding { .. }
+                | Step::Pile { .. }
+                | Step::Landscape { .. }
+                | Step::Notes(_)
+                | Step::Derived { .. },
+            ) = steps.peek()
+            {
+                let step = steps.next().expect("peeked");
+                if let Some(what) = self.state_change(game, step) {
+                    made.push(what);
+                }
+            }
+            for what in self.set_up(game, seats, created, made, chance) {
+                self.push(&mut out, what)?;
+            }
+        }
+        while let Some(step) = steps.next() {
+            match step {
+                Step::Occurred(n) => {
+                    self.occurred(n, &out);
+                    continue;
+                }
+                Step::Within(occ) => {
+                    self.within = occ;
+                    continue;
+                }
+                Step::Closed(n) => {
+                    // Only the last event can take more cards.
+                    if let Some(seq) = self.event_of(Some(n)).filter(|&s| s + 1 == self.seq) {
+                        self.closed = Some(seq);
+                    }
+                    continue;
+                }
+                _ => self.wrote = false,
+            }
+            let what = match step {
+                Step::Trace {
+                    entry: Trace::Created { card, is, zone },
+                    ..
+                } => {
+                    self.name(card, is);
+                    let to = self.zone(game, zone);
+                    self.arrive(&to, card, At::Top);
+                    What::Add {
+                        cards: vec![self.card(card)],
+                        to,
+                    }
+                }
+                Step::Trace {
+                    entry:
+                        Trace::Moved {
+                            from, to, under, ..
+                        },
+                    verb: Some(Verb::Shuffle),
+                } => {
+                    // Its cards are journaled bottom first.
+                    let mut ids = vec![];
+                    let mut step = Some(step);
+                    while let Some(Step::Trace {
+                        entry: Trace::Moved { card, .. },
+                        verb: Some(Verb::Shuffle),
+                    }) = step
+                    {
+                        ids.push(card);
+                        step = steps.next_if(|next| {
+                            matches!(next, Step::Trace { entry: Trace::Moved { from: f, to: t, .. }, verb: Some(Verb::Shuffle) } if *f == from && *t == to)
+                        });
+                    }
+                    ids.reverse();
+                    let (from, to) = (self.zone(game, from), self.zone(game, to));
+                    // Into its own zone, some of a deck's cards shuffled again where they
+                    // lay go back under the cards over them.
+                    let at = match (from == to, under) {
+                        (false, _) => At::Bottom,
+                        (true, 0) => At::Top,
+                        (true, n) => At::Under(n as u32),
+                    };
+                    What::Shuffle(self.shuffle(&from, &to, &ids, at))
+                }
+                Step::Trace {
+                    entry:
+                        Trace::Moved {
+                            card,
+                            from,
+                            to,
+                            bottom,
+                            under,
+                            ..
+                        },
+                    verb,
+                } => {
+                    let (from, to) = (self.zone(game, from), self.zone(game, to));
+                    let cards = vec![self.card(card)];
+                    // The engine puts a card that should go under more cards than there
+                    // are at the bottom.
+                    let there = self.table.zone(&to).len() - usize::from(from == to);
+                    let at = match (to.ordered(), bottom, under.min(there)) {
+                        (false, ..) | (true, false, 0) => At::Top,
+                        (true, true, _) => At::Bottom,
+                        (true, false, n) => At::Under(n as u32),
+                    };
+                    let (pos, from_face) = self.leave(&from, card);
+                    self.arrive(&to, card, at);
+                    let face = to.has_faces().then(|| {
+                        match steps.next_if(|next| matches!(next, Step::FaceUp(c) if *c == card)) {
+                            Some(_) => {
+                                self.up.insert(card);
+                                Face::Up
+                            }
+                            None => Face::Down,
+                        }
+                    });
+                    let played = (verb == Some(Verb::Play))
+                        .then(|| {
+                            steps.next_past_reads(
+                                |next| matches!(next, Step::Played { card: c, .. } if *c == card),
+                            )
+                        })
+                        .flatten();
+                    if let Some((Step::Played { player, .. }, occ)) = played {
+                        let what = What::Play(Play {
+                            player: player.0,
+                            card: self.card(card),
+                            from: Some(from),
+                            to: Some(to),
+                            pos,
+                            from_face,
+                        });
+                        self.push(&mut out, what)?;
+                        if let Some(n) = occ {
+                            self.occurred(n, &out);
+                        }
+                        continue;
+                    }
+                    What::moved(
+                        verb_of(verb.unwrap_or(Verb::Put)),
+                        Move {
+                            player: self.mover(&from, &to),
+                            cards,
+                            from,
+                            to,
+                            at,
+                            pos: pos.into_iter().collect(),
+                            face,
+                            from_face,
+                        },
+                    )
+                }
+                Step::Trace {
+                    entry: Trace::Changed { card, to, .. },
+                    ..
+                } => {
+                    let was = self.card(card);
+                    let zone = (self.ids.iter())
+                        .find(|(_, ids)| ids.contains(&card))
+                        .map(|(z, _)| z.clone())
+                        .ok_or_else(|| FoldError {
+                            seq: self.seq,
+                            why: format!("{was} changes but is nowhere"),
+                        })?;
+                    // Exactly which card: its place, not the topmost of its name's run.
+                    let pos = (zone.ordered())
+                        .then(|| self.ids[&zone].iter().position(|&c| c == card))
+                        .flatten()
+                        .map(|i| i as u32);
+                    let face = (zone.has_faces() && self.up.contains(&card)).then_some(Face::Up);
+                    self.name(card, to);
+                    What::Rename {
+                        card: was,
+                        name: to.name().to_string(),
+                        zone,
+                        pos: pos.filter(|&p| p > 0),
+                        face,
+                    }
+                }
+                Step::Turn {
+                    player,
+                    number,
+                    kind,
+                    limits,
+                } => {
+                    self.turn = player.0;
+                    let (kind, extra, extra_turn) = turn_kind(kind);
+                    What::Turn(TurnStart {
+                        player: player.0,
+                        number,
+                        extra,
+                        kind,
+                        extra_turn,
+                        limits: TurnLimits {
+                            no_card_buys: limits.no_card_buys,
+                            hand_plays: limits.hand_plays,
+                        },
+                    })
+                }
+                Step::TurnSkipped { player, kind, lost } => {
+                    let (kind, extra, extra_turn) = turn_kind(kind);
+                    What::TurnSkipped {
+                        player: player.0,
+                        extra,
+                        lost,
+                        kind,
+                        extra_turn,
+                    }
+                }
+                Step::TurnEnded { player } => What::TurnEnd { player: player.0 },
+                Step::EffectBegan(e) => What::Effect(self.effect(e)),
+                Step::EffectChanged(e) => {
+                    let e = self.effect(e);
+                    // Changed only in which copies it keeps or holds.
+                    if self.table.effects.contains(&e) {
+                        continue;
+                    }
+                    What::EffectChange(e)
+                }
+                Step::EffectEnded { id, why } => What::EffectEnd {
+                    id,
+                    why: match why {
+                        EffectEnd::Resolved => events::EffectEnd::Resolved,
+                        EffectEnd::Expired => events::EffectEnd::Expired,
+                        EffectEnd::LeftPlay => events::EffectEnd::LeftPlay,
+                        EffectEnd::ExtraTurn => events::EffectEnd::ExtraTurn,
+                    },
+                },
+                Step::ExtraTurnQueued { turn, front } => What::ExtraTurn(ExtraTurnQueued {
+                    id: turn.id,
+                    player: turn.player.0,
+                    card: turn.source.name().to_string(),
+                    limit: match turn.limit {
+                        ExtraLimit::None => events::ExtraLimit::None,
+                        ExtraLimit::ThirdInARow => events::ExtraLimit::ThirdInARow,
+                    },
+                    effect: turn.lasting,
+                    front,
+                }),
+                Step::ExtraTurnRemoved { id } => What::ExtraTurnRemoved { id },
+                Step::GameEnding {
+                    reason,
+                    final_round,
+                } => What::GameEnding(Ending {
+                    reason: reason_of(reason).into(),
+                    final_round: final_round.iter().map(|p| p.0).collect(),
+                }),
+                // Read with the move it follows; alone, the move was no placement.
+                Step::FaceUp(_) => continue,
+                Step::Phase(phase) => What::Phase {
+                    phase: phase_of(phase),
+                },
+                step @ (Step::Gauge { .. }
+                | Step::Fate { .. }
+                | Step::FateShuffled { .. }
+                | Step::FateAdded { .. }
+                | Step::Token { .. }
+                | Step::Holding { .. }
+                | Step::Pile { .. }
+                | Step::Landscape { .. }
+                | Step::Notes(_)
+                | Step::Derived { .. }) => match self.state_change(game, step) {
+                    Some(what) => what,
+                    None => continue,
+                },
+                // Played where it lies: again, or from where it isn't put into play.
+                Step::Played { player, card } => What::Play(Play {
+                    player: player.0,
+                    card: self.card(card),
+                    from: None,
+                    to: None,
+                    pos: None,
+                    from_face: None,
+                }),
+                Step::Logged { index } => match &game.log()[index] {
+                    dominion_engine::Event::RevealedHand { player, .. } => {
+                        let zone = events::Zone::Seat(player.0, SeatZone::Hand);
+                        let cards = self.ids.get(&zone).cloned().unwrap_or_default();
+                        match self.show(Some(zone), &cards, None) {
+                            Some(what) => what,
+                            None => continue,
+                        }
+                    }
+                    entry => match occurrence(entry) {
+                        Some(what) => what,
+                        None => continue,
+                    },
+                },
+                Step::Resolve {
+                    player,
+                    card,
+                    occasion,
+                    origin,
+                } => self.resolve(player, card, occasion, origin),
+                Step::Trace {
+                    entry: Trace::Shown { card, to },
+                    ..
+                } => {
+                    // Cards of one zone shown to the same eyes one after the other are
+                    // shown together.
+                    let mut cards = vec![card];
+                    let zone = self.zone_of(card);
+                    while let Some(Step::Trace {
+                        entry: Trace::Shown { card: next, .. },
+                        ..
+                    }) = steps.next_if(|next| {
+                        matches!(next, Step::Trace { entry: Trace::Shown { card: c, to: t }, .. } if *t == to && self.zone_of(*c) == zone && !cards.contains(c))
+                    }) {
+                        cards.push(next);
+                    }
+                    match self.show(zone, &cards, to.map(|p| p.0)) {
+                        Some(what) => what,
+                        None => continue,
+                    }
+                }
+                Step::Trace {
+                    entry: Trace::LookedOver { player, cards },
+                    ..
+                } => {
+                    let Some(&first) = cards.first() else {
+                        continue;
+                    };
+                    match self.show(self.zone_of(first), &cards, Some(player.0)) {
+                        Some(what) => what,
+                        None => continue,
+                    }
+                }
+                Step::Trace {
+                    entry: Trace::Mixed { cards },
+                    ..
+                } => {
+                    // A shuffle of just these cards says as much.
+                    let shuffled = steps.shuffle_after();
+                    let mut same = shuffled.clone();
+                    let mut mixed = cards.clone();
+                    same.sort();
+                    mixed.sort();
+                    if same == mixed {
+                        continue;
+                    }
+                    for what in self.mixes(&cards) {
+                        self.push(&mut out, what)?;
+                    }
+                    continue;
+                }
+                // Positions within a deck are followed by its moves.
+                Step::Trace { .. } => continue,
+                Step::Chance { site, cards } => match chance_of(site, cards) {
+                    Some(chance) => What::Chance(chance),
+                    None => continue,
+                },
+                Step::Asked => {
+                    let fail = |why: &str| FoldError {
+                        seq: self.seq,
+                        why: why.into(),
+                    };
+                    // Asked of the game as it is now: it must still be waiting.
+                    if steps.peek().is_some() {
+                        return Err(fail("a question that isn't the journal's last step"));
+                    }
+                    let d = game
+                        .pending()
+                        .ok_or_else(|| fail("asked, but nothing waits"))?;
+                    let (ask, targets) = crate::project::question(game, d, seats);
+                    self.asked = Some((ask.seat, targets));
+                    What::Ask(ask)
+                }
+                Step::Answered(response) => {
+                    // A question asked before the stream wrote questions has no answer.
+                    let Some((player, targets)) = self.asked.take() else {
+                        continue;
+                    };
+                    let (indices, name) = crate::project::answer_of(&response, &targets)
+                        .ok_or_else(|| FoldError {
+                            seq: self.seq,
+                            why: format!("{response:?} answers none of the options asked"),
+                        })?;
+                    What::Answer(events::Answer {
+                        seat: player,
+                        indices,
+                        name,
+                    })
+                }
+                Step::Face { card, down } => {
+                    let zone = events::Zone::Trash;
+                    let pos = (self.ids.get(&zone).into_iter().flatten())
+                        .position(|&c| c == card)
+                        .map(|i| i as u32);
+                    match down {
+                        true => self.down.insert(card),
+                        false => self.down.remove(&card),
+                    };
+                    What::Face {
+                        card: self.card(card),
+                        zone,
+                        face: if down { Face::Down } else { Face::Up },
+                        pos: pos.filter(|&p| p > 0),
+                    }
+                }
+                Step::Kept { player, cards } => {
+                    let zone = events::Zone::Seat(player.0, SeatZone::Play);
+                    let cards = self.bag(&cards);
+                    if self.table.kept.get(&zone).map_or(&[][..], Vec::as_slice) == cards {
+                        continue;
+                    }
+                    What::Kept { zone, cards }
+                }
+                Step::Occurred(_) | Step::Within(_) | Step::Closed(_) => {
+                    unreachable!("handled above")
+                }
+            };
+            self.push(&mut out, what)?;
+        }
+        if let (false, Some(outcome)) = (self.ended, game.outcome()) {
+            self.ended = true;
+            let result = (0..game.num_players())
+                .map(|i| SeatResult {
+                    seat: i as u8,
+                    vp: outcome.scores[i],
+                    turns: outcome.turns[i],
+                    rank: 1
+                        + (0..game.num_players())
+                            .filter(|&j| ahead(outcome, j, i))
+                            .count() as u32,
+                    resigned: outcome.resigned.contains(&PlayerId(i as u8)),
+                })
+                .collect();
+            let reason = reason_of(outcome.reason);
+            self.within = None;
+            self.push(
+                &mut out,
+                What::GameEnd(GameEnd {
+                    reason: reason.into(),
+                    result,
+                }),
+            )?;
+        }
+        self.forget(game);
+        Ok(out)
+    }
+
+    /// Forgets the occurrences no later step of the journal can name, so that what it keeps
+    /// doesn't grow with the game.
+    fn forget(&mut self, game: &Game) {
+        let mut live = game.journal_live();
+        live.extend(self.within);
+        let live: BTreeSet<u32> = live.into_iter().collect();
+        self.occurrences.retain(|n, _| live.contains(n));
+        self.actors.retain(|n, _| live.contains(n));
+        let events: BTreeSet<u64> = self.occurrences.values().map(|&(seq, _)| seq).collect();
+        let last = self.seq.checked_sub(1);
+        self.moved
+            .retain(|seq, _| events.contains(seq) || Some(*seq) == last);
+    }
+
+    /// The setup event, then each player's opening shuffle and draw: the engine deals
+    /// the opening hands before it journals anything.
+    fn set_up(
+        &mut self,
+        game: &Game,
+        seats: &[String],
+        created: Vec<(CardId, Card, Zone)>,
+        made: Vec<What>,
+        chance: Vec<events::Chance>,
+    ) -> Vec<What> {
+        let mut table = Table::default();
+        for i in 0..game.piles().len() {
+            let zone = self.zone(game, Zone::Pile(PileId(i as u8)));
+            table.zones.insert(zone, vec![]);
+        }
+        for what in &made {
+            table.change(what).expect("setup's own state folds");
+        }
+        let n = game.num_players();
+        // Per seat: the deck as shuffled, top first, and how many of it were drawn.
+        let mut opening: Vec<(Vec<CardId>, usize)> = vec![(vec![], 0); n];
+        for (id, is, zone) in created {
+            self.name(id, is);
+            match zone {
+                // Journaled bottom first; the hand in the order drawn.
+                Zone::Deck(p) => opening[p.index()].0.insert(0, id),
+                Zone::Hand(p) => {
+                    let (deck, drawn) = &mut opening[p.index()];
+                    deck.insert(*drawn, id);
+                    *drawn += 1;
+                }
+                zone => {
+                    let zone = self.zone(game, zone);
+                    let cards = table.zones.entry(zone.clone()).or_default();
+                    match zone.ordered() {
+                        true => cards.insert(0, self.card(id)),
+                        false => events::bag_insert(cards, self.card(id)),
+                    }
+                    self.arrive(&zone, id, At::Top);
+                }
+            }
+        }
+        for zone in table.zones.keys() {
+            self.ids.entry(zone.clone()).or_default();
+        }
+        let mut after = vec![];
+        for (seat, (deck, drawn)) in opening.into_iter().enumerate() {
+            let seat = seat as u8;
+            let zone = events::Zone::Seat(seat, SeatZone::Deck);
+            // Before the shuffle the deck is in no order anyone chose: by name.
+            let mut unshuffled = deck.clone();
+            unshuffled.sort_by_key(|&id| (self.card(id), id));
+            table.zones.insert(
+                zone.clone(),
+                unshuffled.iter().map(|&id| self.card(id)).collect(),
+            );
+            self.ids.insert(zone.clone(), unshuffled);
+            after.push(What::Shuffle(self.shuffle(&zone, &zone, &deck, At::Top)));
+            if drawn > 0 {
+                let hand = events::Zone::Seat(seat, SeatZone::Hand);
+                for &id in &deck[..drawn] {
+                    self.leave(&zone, id);
+                    self.arrive(&hand, id, At::Top);
+                }
+                after.push(What::Draw(Move {
+                    player: Some(seat),
+                    cards: deck[..drawn].iter().map(|&id| self.card(id)).collect(),
+                    from: zone,
+                    to: hand,
+                    at: At::Top,
+                    pos: vec![],
+                    face: None,
+                    from_face: None,
+                }));
+            }
+        }
+        let names = |cards: &[Card]| cards.iter().map(|c| c.name().to_string()).collect();
+        let setup = Setup {
+            rules: Rules {
+                implementation: "dominion-engine".into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+            },
+            seats: (0..n)
+                .map(|i| (seats.get(i).cloned()).unwrap_or_else(|| PlayerId(i as u8).to_string()))
+                .collect(),
+            kingdom: names(&game.config().kingdom),
+            landscapes: names(game.landscapes()),
+            table,
+            config: game.colonies_and_shelters().map(|(colonies, shelters)| {
+                let config = game.config();
+                SetupConfig {
+                    landscapes: names(&config.landscapes),
+                    colonies,
+                    shelters,
+                    turn_limit: config.turn_limit,
+                    choices: (config.setup_choices.iter())
+                        .map(|(by, cards)| (by.name().to_string(), names(cards)))
+                        .collect(),
+                    seed: Some(config.seed),
+                }
+            }),
+            chance,
+        };
+        let mut out = vec![What::Setup(Box::new(setup))];
+        out.extend(after);
+        out
+    }
+
+    fn push(&mut self, out: &mut Vec<Event>, what: What) -> Result<(), FoldError> {
+        let event = Event {
+            seq: self.seq,
+            by: self.event_of(self.within),
+            what,
+        };
+        // Cards moving the same way one after the other, for the same cause, are one event,
+        // unless that event was an occurrence that is over: the move is another one.
+        if let (Some(last), Some((verb, m))) = (out.last_mut(), event.what.as_move())
+            && last.by == event.by
+            && self.closed != Some(last.seq)
+            && let Some((v, _)) = last.what.as_move()
+            && v == verb
+            && verb != events::Verb::Shuffle
+            && let Some(l) = last.what.as_move_mut()
+            && (l.player, &l.from, &l.to, l.at, l.face, l.from_face)
+                == (m.player, &m.from, &m.to, m.at, m.face, m.from_face)
+        {
+            let fail = |why| FoldError { seq: last.seq, why };
+            self.table.change(&event.what).map_err(fail)?;
+            self.wrote = true;
+            if !(l.pos.is_empty() && m.pos.is_empty()) {
+                l.pos.resize(l.cards.len(), 0);
+                l.pos.extend(if m.pos.is_empty() {
+                    vec![0; m.cards.len()]
+                } else {
+                    m.pos.clone()
+                });
+            }
+            l.cards.extend(m.cards.iter().cloned());
+            self.moved.insert(last.seq, l.cards.len() as u32);
+            return Ok(());
+        }
+        self.table.apply(&event)?;
+        self.wrote = true;
+        if let Some((_, m)) = event.what.as_move() {
+            self.moved.insert(event.seq, m.cards.len() as u32);
+        }
+        self.seq += 1;
+        out.push(event);
+        Ok(())
+    }
+
+    /// Occurrence `n` is the step that wrote the last event, if it wrote one.
+    fn occurred(&mut self, n: u32, out: &[Event]) {
+        let card = (out.last())
+            .and_then(|e| e.what.as_move())
+            .map_or(0, |(_, m)| m.cards.len() as u32 - 1);
+        let event = self.wrote.then(|| (self.seq - 1, card));
+        let actor = (out.last())
+            .filter(|_| self.wrote)
+            .and_then(|e| self.actor(&e.what));
+        match event {
+            Some(event) => self.occurrences.insert(n, event),
+            None => self.occurrences.remove(&n),
+        };
+        match actor {
+            Some(actor) => self.actors.insert(n, actor),
+            None => self.actors.remove(&n),
+        };
+    }
+
+    /// Whose an occurrence is: its player's; a phase is its turn's.
+    fn actor(&self, what: &What) -> Option<u8> {
+        match what {
+            What::Turn(TurnStart { player, .. })
+            | What::TurnEnd { player }
+            | What::Play(Play { player, .. })
+            | What::Buy { player, .. }
+            | What::Resolve { player, .. }
+            | What::Receive { player, .. } => Some(*player),
+            What::Phase { .. } => Some(self.turn),
+            what => what.as_move().and_then(|(_, m)| m.player),
+        }
+    }
+
+    /// The event occurrence `occ` became.
+    fn event_of(&self, occ: Option<u32>) -> Option<u64> {
+        self.occurrence(occ).map(|(seq, _)| seq)
+    }
+
+    fn occurrence(&self, occ: Option<u32>) -> Option<(u64, u32)> {
+        occ.and_then(|n| self.occurrences.get(&n).copied())
+    }
+
+    fn resolve(
+        &mut self,
+        player: PlayerId,
+        card: Card,
+        occasion: Occasion,
+        origin: Option<u32>,
+    ) -> What {
+        let (when, about, target) = match occasion {
+            Occasion::GameStart => (Moment::GameStart, None, None),
+            Occasion::StartTurn { .. } => (Moment::StartTurn, None, None),
+            Occasion::StartBuyPhase { .. } => (Moment::StartBuyPhase, None, None),
+            Occasion::EndBuyPhase { .. } => (Moment::EndBuyPhase, None, None),
+            Occasion::StartNight { .. } => (Moment::StartNight, None, None),
+            Occasion::StartCleanup { .. } => (Moment::StartCleanup, None, None),
+            Occasion::DiscardFromPlay { .. } => (Moment::DiscardFromPlay, None, None),
+            Occasion::EndTurn { .. } => (Moment::EndTurn, None, None),
+            Occasion::Play { .. } => (Moment::Play, None, None),
+            Occasion::AfterPlay { .. } => (Moment::AfterPlay, None, None),
+            Occasion::Attack { target, .. } => (Moment::Attack, None, Some(target.0)),
+            Occasion::Buy { card, .. } => (Moment::Buy, Some(card), None),
+            Occasion::BuyLandscape { .. } => (Moment::Buy, None, None),
+            Occasion::WouldGain { card, .. } => (Moment::WouldGain, Some(card), None),
+            Occasion::Gain { card, .. } => (Moment::Gain, Some(card), None),
+            Occasion::Trash { card, .. } => (Moment::Trash, Some(card), None),
+            Occasion::LeaveSupply { card, .. } => (Moment::LeaveSupply, Some(card), None),
+            Occasion::Discard { card, .. } => (Moment::Discard, Some(card), None),
+            Occasion::WouldShuffle { .. } => (Moment::WouldShuffle, None, None),
+            Occasion::Shuffled { .. } => (Moment::Shuffle, None, None),
+        };
+        // Written now, the move it answers can take no more cards.
+        let index = (self.occurrence(self.within))
+            .filter(|&(seq, _)| about.is_some() && self.moved.get(&seq) > Some(&1))
+            .map(|(_, i)| i);
+        What::Resolve {
+            player: player.0,
+            card: card.name().to_string(),
+            when,
+            about: about.map(|id| self.card(id)),
+            target,
+            origin: self.event_of(origin),
+            index,
+        }
+    }
+
+    fn name(&mut self, id: CardId, is: Card) {
+        if self.names.len() <= id.index() {
+            self.names.resize(id.index() + 1, String::new());
+        }
+        self.names[id.index()] = is.name().to_string();
+    }
+
+    fn card(&self, id: CardId) -> CardRef {
+        CardRef::named(self.names[id.index()].clone())
+    }
+
+    /// `ids` as a bag.
+    fn bag(&self, ids: &[CardId]) -> Vec<CardRef> {
+        let mut cards: Vec<CardRef> = ids.iter().map(|&c| self.card(c)).collect();
+        cards.sort();
+        cards
+    }
+
+    /// How many cards lie over each of `cards` in `zone` as they leave it one after the
+    /// other; nothing when each comes off the top. For Boons and Hexes, each of a name.
+    fn depths(&self, zone: &events::Zone, cards: &[CardRef]) -> Vec<u32> {
+        if !zone.ordered() {
+            return vec![];
+        }
+        sequential_depths(self.table.zone(zone), cards)
+    }
+
+    /// How many cards lie over `id` in the ordered `zone`, as the stream says it: the
+    /// topmost of the run of cards of its name it lies in, which are all the same to it.
+    fn pos_of(&self, zone: &events::Zone, id: CardId) -> Option<u32> {
+        let ids = self.ids.get(zone)?;
+        let mut i = ids.iter().position(|&c| c == id)?;
+        while i > 0 && self.names[ids[i - 1].index()] == self.names[id.index()] {
+            i -= 1;
+        }
+        Some(i as u32)
+    }
+
+    /// `id` leaves `zone`: where it lay (when under other cards in an ordered zone), and
+    /// `up` if it lay face up.
+    fn leave(&mut self, zone: &events::Zone, id: CardId) -> (Option<u32>, Option<Face>) {
+        let pos = match zone.ordered() {
+            true => self.pos_of(zone, id).filter(|&p| p > 0),
+            false => None,
+        };
+        if let Some(ids) = self.ids.get_mut(zone) {
+            ids.retain(|&c| c != id);
+        }
+        let face = match (self.up.remove(&id), self.down.remove(&id)) {
+            (true, _) => Some(Face::Up),
+            (_, true) => Some(Face::Down),
+            _ => None,
+        };
+        (pos, face)
+    }
+
+    /// The zone `id` is in, as the stream has it.
+    fn zone_of(&self, id: CardId) -> Option<events::Zone> {
+        (self.ids.iter())
+            .find(|(_, ids)| ids.contains(&id))
+            .map(|(z, _)| z.clone())
+    }
+
+    /// Exactly how many cards lie over each of `ids` in the ordered `zone`.
+    fn exact(&self, zone: &events::Zone, ids: &[CardId]) -> Vec<u32> {
+        let there = self.ids.get(zone).map_or(&[][..], Vec::as_slice);
+        match zone.ordered() {
+            true => (ids.iter())
+                .filter_map(|id| there.iter().position(|c| c == id))
+                .map(|i| i as u32)
+                .collect(),
+            false => vec![],
+        }
+    }
+
+    /// `ids`, lying in `zone`, shown to `to` (everyone when `None`). Ordered zones list
+    /// them top first.
+    fn show(&self, zone: Option<events::Zone>, ids: &[CardId], to: Option<u8>) -> Option<What> {
+        let zone = zone?;
+        if ids.is_empty() {
+            return None;
+        }
+        let mut ids = ids.to_vec();
+        let there = self.ids.get(&zone).map_or(&[][..], Vec::as_slice);
+        match zone.ordered() {
+            true => ids.sort_by_key(|id| there.iter().position(|c| c == id)),
+            false => ids.sort_by_key(|&id| self.card(id)),
+        }
+        Some(What::Show(events::Show {
+            player: self.mover(&zone, &zone),
+            cards: ids.iter().map(|&id| self.card(id)).collect(),
+            pos: self.exact(&zone, &ids),
+            zone,
+            to,
+        }))
+    }
+
+    /// `ids` mixed where nobody can follow them: an event per zone they lie in.
+    fn mixes(&self, ids: &[CardId]) -> Vec<What> {
+        let mut by_zone: BTreeMap<events::Zone, Vec<CardId>> = BTreeMap::new();
+        for &id in ids {
+            if let Some(zone) = self.zone_of(id) {
+                by_zone.entry(zone).or_default().push(id);
+            }
+        }
+        (by_zone.into_iter())
+            .map(|(zone, mut ids)| {
+                let there = self.ids.get(&zone).map_or(&[][..], Vec::as_slice);
+                match zone.ordered() {
+                    true => ids.sort_by_key(|id| there.iter().position(|c| c == id)),
+                    false => ids.sort_by_key(|&id| self.card(id)),
+                }
+                What::Mix {
+                    cards: ids.iter().map(|&id| self.card(id)).collect(),
+                    pos: self.exact(&zone, &ids),
+                    zone,
+                }
+            })
+            .collect()
+    }
+
+    /// `id` arrives in `zone` at `at`.
+    fn arrive(&mut self, zone: &events::Zone, id: CardId, at: At) {
+        let ids = self.ids.entry(zone.clone()).or_default();
+        let i = match (zone.ordered(), at) {
+            (false, _) | (true, At::Bottom) => ids.len(),
+            (true, At::Top) => 0,
+            (true, At::Under(n)) => (n as usize).min(ids.len()),
+        };
+        ids.insert(i, id);
+    }
+
+    /// The cards `ids` (listed top first as they end up) shuffled from `from` into `to`.
+    /// Which copy went where is no outcome of a shuffle: each card is said to leave as the
+    /// topmost of its name among the cards shuffled.
+    fn shuffle(&mut self, from: &events::Zone, to: &events::Zone, ids: &[CardId], at: At) -> Move {
+        let cards: Vec<CardRef> = ids.iter().map(|&id| self.card(id)).collect();
+        let mut there: Vec<(CardRef, bool)> = (self.ids.get(from).into_iter().flatten())
+            .map(|&id| (self.card(id), ids.contains(&id)))
+            .collect();
+        let depths: Vec<u32> = (cards.iter())
+            .map(|card| {
+                let i = (there.iter())
+                    .position(|(c, shuffled)| *shuffled && c == card)
+                    .unwrap_or(0);
+                if i < there.len() {
+                    there.remove(i);
+                }
+                i as u32
+            })
+            .collect();
+        let pos = match depths.iter().all(|&d| d == 0) {
+            true => vec![],
+            false => depths,
+        };
+        for &id in ids {
+            self.leave(from, id);
+        }
+        let block = self.ids.entry(to.clone()).or_default();
+        let i = match at {
+            At::Top => 0,
+            At::Bottom => block.len(),
+            At::Under(n) => (n as usize).min(block.len()),
+        };
+        block.splice(i..i, ids.iter().copied());
+        Move {
+            player: self.mover(from, to),
+            cards: ids.iter().map(|&id| self.card(id)).collect(),
+            from: from.clone(),
+            to: to.clone(),
+            at,
+            pos,
+            face: None,
+            from_face: None,
+        }
+    }
+
+    /// Whose action a move between `from` and `to` is: the owner of `from`, else of `to`,
+    /// else the player of the occurrence it happens in.
+    fn mover(&self, from: &events::Zone, to: &events::Zone) -> Option<u8> {
+        match (from, to) {
+            (events::Zone::Seat(p, _), _) | (_, events::Zone::Seat(p, _)) => Some(*p),
+            _ => (self.within).and_then(|n| self.actors.get(&n).copied()),
+        }
+    }
+
+    fn zone(&mut self, game: &Game, zone: Zone) -> events::Zone {
+        let seat = |p: PlayerId, z| events::Zone::Seat(p.0, z);
+        match zone {
+            Zone::Deck(p) => seat(p, SeatZone::Deck),
+            Zone::Hand(p) => seat(p, SeatZone::Hand),
+            Zone::Discard(p) => seat(p, SeatZone::Discard),
+            Zone::InPlay(p) => seat(p, SeatZone::Play),
+            Zone::SetAside(p) => seat(p, SeatZone::Aside),
+            Zone::Looking(p) => seat(p, SeatZone::Looking),
+            Zone::Mat(p, Mat::Tavern) => seat(p, SeatZone::Tavern),
+            Zone::Mat(p, Mat::Island) => seat(p, SeatZone::Island),
+            Zone::Mat(p, Mat::NativeVillage) => seat(p, SeatZone::NativeVillage),
+            Zone::Mat(p, Mat::Exile) => seat(p, SeatZone::Exile),
+            Zone::Trash => events::Zone::Trash,
+            Zone::Pile(id) => self.pile(game, id),
+        }
+    }
+
+    /// A pile's zone: named after its card, and told apart from an earlier pile of the
+    /// same name (one Divine Wind removed) by a number.
+    fn pile(&mut self, game: &Game, id: PileId) -> events::Zone {
+        if self.piles.len() <= id.index() {
+            self.piles.resize(id.index() + 1, None);
+        }
+        if let Some(zone) = &self.piles[id.index()] {
+            return zone.clone();
+        }
+        let pile = game.pile(id);
+        let named = |name: String| match pile.holder {
+            true => events::Zone::Aside(name),
+            false => events::Zone::Pile(name),
+        };
+        let base = pile.card.name().to_string();
+        let taken = |zone: &events::Zone| self.piles.iter().flatten().any(|z| z == zone);
+        let zone = (1..)
+            .map(|n| match n {
+                1 => named(base.clone()),
+                n => named(format!("{base} ({n})")),
+            })
+            .find(|zone| !taken(zone))
+            .expect("some number is free");
+        self.piles[id.index()] = Some(zone.clone());
+        zone
+    }
+
+    fn counter(&mut self, game: &Game, gauge: Gauge) -> CounterKey {
+        use CounterName as N;
+        let seat = |p: PlayerId, name| CounterKey::seat(p.0, name);
+        let mut pile = |id, name| CounterKey::new(CounterOf::Pile(self.pile(game, id)), name);
+        match gauge {
+            Gauge::Actions => CounterKey::global(N::Actions),
+            Gauge::Buys => CounterKey::global(N::Buys),
+            Gauge::Coins => CounterKey::global(N::Coins),
+            Gauge::Potions => CounterKey::global(N::Potions),
+            Gauge::TradeRouteMat => CounterKey::global(N::TradeRouteMat),
+            Gauge::Sun => CounterKey::global(N::Sun),
+            Gauge::Coffers(p) => seat(p, N::Coffers),
+            Gauge::Villagers(p) => seat(p, N::Villagers),
+            Gauge::Favors(p) => seat(p, N::Favors),
+            Gauge::Debt(p) => seat(p, N::Debt),
+            Gauge::VpTokens(p) => seat(p, N::VpTokens),
+            Gauge::PirateShip(p) => seat(p, N::PirateShip),
+            Gauge::SinisterPlot(p) => seat(p, N::SinisterPlot),
+            Gauge::PileVp(id) => pile(id, N::Vp),
+            Gauge::PileDebt(id) => pile(id, N::Debt),
+            Gauge::Embargo(id) => pile(id, N::Embargo),
+            Gauge::TradeRoute(id) => pile(id, N::TradeRoute),
+            Gauge::PileFavors(id) => pile(id, N::Favors),
+            Gauge::LandscapeVp(card) => {
+                CounterKey::new(CounterOf::Landscape(card.name().to_string()), N::Vp)
+            }
+            Gauge::NextHand => CounterKey::global(N::NextHand),
+            Gauge::Bought => CounterKey::global(N::Bought),
+            Gauge::HandPlays => CounterKey::global(N::HandPlays),
+            Gauge::SkipTurns(p) => seat(p, N::SkipTurns),
+            Gauge::TurnsSkipped(p) => seat(p, N::TurnsSkipped),
+        }
+    }
+
+    fn effect(&self, e: EffectState) -> Effect {
+        Effect {
+            id: e.id,
+            card: e.card.name().to_string(),
+            source: e.source.map(|c| self.card(c)),
+            owner: e.owner.0,
+            until: match e.until {
+                Until::EndOfTurn => events::Until::EndOfTurn,
+                Until::StartOfTurn(p) => events::Until::StartOfTurn(p.0),
+                Until::ExtraTurn => events::Until::ExtraTurn,
+                Until::Removed => events::Until::Removed,
+            },
+            ending: e.ending,
+            keeps: self.bag(&e.keeps),
+            holds: self.bag(&e.holds),
+            tokens: e.tokens,
+            face_up: self.bag(
+                &(e.holds.iter().copied())
+                    .filter(|c| self.up.contains(c))
+                    .collect::<Vec<_>>(),
+            ),
+        }
+    }
+
+    /// The event a step that changes the table besides cards says, if any.
+    fn state_change(&mut self, game: &Game, step: Step) -> Option<What> {
+        let name = |c: Card| c.name().to_string();
+        Some(match step {
+            Step::Gauge { gauge, was, now } => What::Counter(CounterChange {
+                counter: self.counter(game, gauge),
+                delta: now - was,
+                value: now,
+            }),
+            Step::Fate { card, to } => {
+                let card = CardRef::named(name(card));
+                let to = fate_zone(&card, to);
+                // Not found, the fold refuses the move: the journal is not one game's.
+                let from = (self.table.zones.iter())
+                    .find(|(z, cards)| is_fate_zone(z) && cards.contains(&card))
+                    .map_or_else(|| fate_zone(&card, Spot::Deck), |(z, _)| z.clone());
+                let verb = match to {
+                    events::Zone::Boons(Pack::Discard) | events::Zone::Hexes(Pack::Discard) => {
+                        events::Verb::Discard
+                    }
+                    events::Zone::Boons(Pack::Druid) => events::Verb::SetAside,
+                    _ => events::Verb::Take,
+                };
+                let cards = vec![card];
+                let pos = self.depths(&from, &cards);
+                What::moved(
+                    verb,
+                    Move {
+                        player: self.mover(&from, &to),
+                        cards,
+                        from,
+                        to,
+                        at: At::Top,
+                        pos,
+                        face: None,
+                        from_face: None,
+                    },
+                )
+            }
+            Step::FateShuffled { hexes, cards } => {
+                let zone = |pack| match hexes {
+                    true => events::Zone::Hexes(pack),
+                    false => events::Zone::Boons(pack),
+                };
+                let cards: Vec<CardRef> =
+                    cards.into_iter().map(|c| CardRef::named(name(c))).collect();
+                let from = zone(Pack::Discard);
+                let pos = self.depths(&from, &cards);
+                // Nobody shuffles them: the rules do, when one is needed.
+                What::Shuffle(Move {
+                    player: None,
+                    cards,
+                    from,
+                    to: zone(Pack::Deck),
+                    at: At::Top,
+                    pos,
+                    face: None,
+                    from_face: None,
+                })
+            }
+            Step::FateAdded { cards, to } => {
+                let cards: Vec<CardRef> =
+                    cards.into_iter().map(|c| CardRef::named(name(c))).collect();
+                let to = fate_zone(cards.first()?, to);
+                What::Add { cards, to }
+            }
+            Step::Token { player, token, at } => What::Token {
+                player: player.0,
+                token: token_kind(token),
+                at: at.map(|at| match at {
+                    TokenAt::Pile(id) => events::TokenAt::Pile(self.pile(game, id)),
+                    TokenAt::Player => events::TokenAt::Player,
+                    TokenAt::FaceDown => events::TokenAt::FaceDown,
+                }),
+            },
+            Step::Holding { card, from, to } => What::Holding {
+                card: name(card),
+                from: from.map(|p| p.0),
+                to: to.map(|p| p.0),
+            },
+            Step::Pile { pile, props } => {
+                let zone = self.pile(game, pile);
+                What::Pile(PileChange {
+                    pile: zone,
+                    state: pile_state(game.pile(pile).card, props),
+                })
+            }
+            Step::Landscape { card, prophecy } => What::Landscape {
+                card: name(card),
+                prophecy,
+            },
+            Step::Notes(notes) => What::Notes {
+                notes: (notes.into_iter())
+                    .map(|n| events::Note {
+                        source: name(n.source),
+                        player: n.player.map(|p| p.0),
+                        pile: n.pile.map(|id| self.pile(game, id)),
+                        card: n.card.map(name),
+                        count: n.count,
+                    })
+                    .collect(),
+            },
+            Step::Derived { costs, types } => What::Derived {
+                costs: (costs.into_iter())
+                    .map(|(c, cost)| (name(c), cost.map(cost_of)))
+                    .collect(),
+                types: (types.into_iter())
+                    .map(|(c, t)| (name(c), t.map(type_names)))
+                    .collect(),
+            },
+            _ => return None,
+        })
+    }
+}
+
+/// The journal's steps not yet turned into events.
+struct Steps(std::collections::VecDeque<Step>);
+
+impl Steps {
+    fn peek(&self) -> Option<&Step> {
+        self.0.front()
+    }
+
+    fn next(&mut self) -> Option<Step> {
+        self.0.pop_front()
+    }
+
+    fn next_if(&mut self, wanted: impl Fn(&Step) -> bool) -> Option<Step> {
+        self.0
+            .front()
+            .is_some_and(wanted)
+            .then(|| self.0.pop_front())
+            .flatten()
+    }
+
+    /// The first step that is no reading of the table, if `wanted`, with the occurrence it
+    /// is marked as; the readings before it stay. What a card's move into play changed (a
+    /// cost) is read before its play.
+    fn next_past_reads(&mut self, wanted: impl Fn(&Step) -> bool) -> Option<(Step, Option<u32>)> {
+        let i = self.0.iter().position(|s| !is_reading(s))?;
+        if !wanted(&self.0[i]) {
+            return None;
+        }
+        let step = self.0.remove(i)?;
+        let occ = match self.0.get(i) {
+            Some(&Step::Occurred(n)) if i > 0 => {
+                self.0.remove(i);
+                Some(n)
+            }
+            _ => None,
+        };
+        Some((step, occ))
+    }
+}
+
+impl Steps {
+    /// The cards of the shuffle the next steps are, if they are one.
+    fn shuffle_after(&self) -> Vec<CardId> {
+        let mut cards = vec![];
+        for step in &self.0 {
+            match step {
+                Step::Trace {
+                    entry: Trace::Moved { card, .. },
+                    verb: Some(Verb::Shuffle),
+                } => cards.push(*card),
+                _ if cards.is_empty() && is_reading(step) => {}
+                _ => break,
+            }
+        }
+        cards
+    }
+}
+
+/// Whether `step` is what the journal reads of the table each time it records.
+fn is_reading(step: &Step) -> bool {
+    matches!(
+        step,
+        Step::Gauge { .. }
+            | Step::EffectBegan(_)
+            | Step::EffectChanged(_)
+            | Step::EffectEnded { .. }
+            | Step::Token { .. }
+            | Step::Holding { .. }
+            | Step::Pile { .. }
+            | Step::Landscape { .. }
+            | Step::Notes(_)
+            | Step::Derived { .. }
+            | Step::Face { .. }
+            | Step::Kept { .. }
+    )
+}
+
+/// What a log entry says that no card move or counter does.
+fn occurrence(event: &dominion_engine::Event) -> Option<What> {
+    use dominion_engine::Event as E;
+    let name = |c: &Card| c.name().to_string();
+    Some(match event {
+        E::Received { player, card } => What::Receive {
+            player: player.0,
+            card: name(card),
+        },
+        E::Bought { player, card } | E::BoughtLandscape { player, card } => What::Buy {
+            player: player.0,
+            card: name(card),
+        },
+        E::Named { player, card } => What::Name {
+            player: player.0,
+            card: name(card),
+        },
+        E::UsedWay { player, card, way } => What::Way {
+            player: player.0,
+            card: name(card),
+            way: name(way),
+        },
+        E::Unaffected { player, attack, by } => What::Unaffected {
+            player: player.0,
+            attack: name(attack),
+            card: name(by),
+        },
+        E::Called { player, card } => What::Call {
+            player: player.0,
+            card: name(card),
+        },
+        E::Chosen {
+            player,
+            source,
+            choices,
+        } => What::Choose(Choice {
+            player: player.0,
+            source: source.as_ref().map(name),
+            choices: choices.clone(),
+        }),
+        _ => return None,
+    })
+}
+
+/// The stream's record of a chance outcome, unless a `shuffle` event shows it.
+fn chance_of(site: dominion_engine::Site, cards: Vec<Card>) -> Option<events::Chance> {
+    use dominion_engine::Site;
+    use events::ChanceSite as C;
+    let (site, card) = match site {
+        Site::Deck(_) | Site::Reshuffle { .. } => return None,
+        Site::Fates { hexes: false } => (C::Boons, None),
+        Site::Fates { hexes: true } => (C::Hexes, None),
+        Site::Pile(card) => (C::Pile, Some(card)),
+        Site::Choice(card) => (C::Choice, Some(card)),
+        Site::Ally => (C::Ally, None),
+        Site::Prophecy => (C::Prophecy, None),
+        Site::Kingdom => (C::Kingdom, None),
+    };
+    Some(events::Chance {
+        site,
+        card: card.map(|c| c.name().to_string()),
+        cards: cards.iter().map(|c| c.name().to_string()).collect(),
+    })
+}
+
+fn reason_of(reason: EndReason) -> &'static str {
+    match reason {
+        EndReason::ProvincesGone => "provinces",
+        EndReason::ColoniesGone => "colonies",
+        EndReason::PilesEmpty => "piles",
+        EndReason::TurnLimit => "turn-limit",
+        EndReason::Resigned => "resigned",
+    }
+}
+
+/// A turn's kind, the card that gave it and the extra turn waiting it was.
+fn turn_kind(kind: TurnKind) -> (events::TurnKind, Option<String>, Option<u32>) {
+    match kind {
+        TurnKind::Regular => (events::TurnKind::Regular, None, None),
+        TurnKind::Extra { source, id } => (
+            events::TurnKind::Extra,
+            Some(source.name().to_string()),
+            Some(id),
+        ),
+        TurnKind::Final => (events::TurnKind::Final, None, None),
+    }
+}
+
+/// Whether seat `a` finished ahead of seat `b`.
+fn ahead(outcome: &dominion_engine::Outcome, a: usize, b: usize) -> bool {
+    let key = |i: usize| {
+        (
+            !outcome.resigned.contains(&PlayerId(i as u8)),
+            outcome.scores[i],
+            std::cmp::Reverse(outcome.turns[i]),
+        )
+    };
+    key(a) > key(b)
+}
+
+/// How many cards lie over each of `cards` in `zone` (top first) as they leave it one
+/// after the other, each the first of its name; nothing when each comes off the top.
+fn sequential_depths(zone: &[CardRef], cards: &[CardRef]) -> Vec<u32> {
+    let mut left = zone.to_vec();
+    let depths: Vec<u32> = cards
+        .iter()
+        .map(|card| {
+            let i = left.iter().position(|c| c == card).unwrap_or(0);
+            if i < left.len() {
+                left.remove(i);
+            }
+            i as u32
+        })
+        .collect();
+    if depths.iter().all(|&d| d == 0) {
+        vec![]
+    } else {
+        depths
+    }
+}
+
+fn verb_of(verb: Verb) -> events::Verb {
+    match verb {
+        // Without a play: nothing the engine does.
+        Verb::Play => events::Verb::Put,
+        Verb::Draw => events::Verb::Draw,
+        Verb::Discard => events::Verb::Discard,
+        Verb::Gain => events::Verb::Gain,
+        Verb::Trash => events::Verb::Trash,
+        Verb::Topdeck => events::Verb::Topdeck,
+        Verb::Bottomdeck => events::Verb::Bottomdeck,
+        Verb::Insert => events::Verb::Insert,
+        Verb::Reveal => events::Verb::Reveal,
+        Verb::Look => events::Verb::Look,
+        Verb::SetAside => events::Verb::SetAside,
+        Verb::Exile => events::Verb::Exile,
+        Verb::Put => events::Verb::Put,
+        Verb::Return => events::Verb::Return,
+        Verb::Exchange => events::Verb::Exchange,
+        Verb::Shuffle => events::Verb::Shuffle,
+        Verb::Rotate => events::Verb::Rotate,
+        Verb::Pass => events::Verb::Pass,
+    }
+}
+
+fn phase_of(phase: Phase) -> events::Phase {
+    match phase {
+        Phase::Start => events::Phase::Start,
+        Phase::Action => events::Phase::Action,
+        Phase::Buy => events::Phase::Buy,
+        Phase::Night => events::Phase::Night,
+        Phase::Cleanup => events::Phase::Cleanup,
+        Phase::End => unreachable!("a turn's end is journaled as its own step"),
+    }
+}
+
+fn is_fate_zone(zone: &events::Zone) -> bool {
+    matches!(
+        zone,
+        events::Zone::Boons(_)
+            | events::Zone::Hexes(_)
+            | events::Zone::Seat(_, SeatZone::Boons | SeatZone::Hexes)
+    )
+}
+
+/// The zone a Boon or Hex at `spot` is in.
+fn fate_zone(card: &CardRef, spot: Spot) -> events::Zone {
+    let hex = card
+        .name()
+        .and_then(|n| Card::ALL.iter().find(|c| c.name() == n))
+        .is_some_and(|c| c.kind() == Kind::Hex);
+    match (spot, hex) {
+        (Spot::Deck, false) => events::Zone::Boons(Pack::Deck),
+        (Spot::Deck, true) => events::Zone::Hexes(Pack::Deck),
+        (Spot::Discard, false) => events::Zone::Boons(Pack::Discard),
+        (Spot::Discard, true) => events::Zone::Hexes(Pack::Discard),
+        (Spot::Druid, _) => events::Zone::Boons(Pack::Druid),
+        (Spot::Player(p), false) => events::Zone::Seat(p.0, SeatZone::Boons),
+        (Spot::Player(p), true) => events::Zone::Seat(p.0, SeatZone::Hexes),
+    }
+}
+
+fn token_kind(token: TokenKind) -> events::TokenKind {
+    use events::TokenKind as T;
+    match token {
+        TokenKind::Adventures(Token::PlusCard) => T::PlusCard,
+        TokenKind::Adventures(Token::PlusAction) => T::PlusAction,
+        TokenKind::Adventures(Token::PlusBuy) => T::PlusBuy,
+        TokenKind::Adventures(Token::PlusCoin) => T::PlusCoin,
+        TokenKind::Adventures(Token::MinusCost) => T::MinusCost,
+        TokenKind::Adventures(Token::Trashing) => T::Trashing,
+        TokenKind::Adventures(Token::Estate) => T::Estate,
+        TokenKind::MinusCard => T::MinusCard,
+        TokenKind::MinusCoin => T::MinusCoin,
+        TokenKind::Journey => T::Journey,
+    }
+}
+
+fn pile_state(card: Card, props: PileProps) -> PileState {
+    let name = |c: Card| c.name().to_string();
+    PileState {
+        card: name(card),
+        supply: props.in_supply,
+        hidden: props.hidden,
+        removed: props.removed,
+        roles: (props.roles.into_iter())
+            .map(|(source, role)| PileRole {
+                card: name(source),
+                role: match role {
+                    SetupRole::SetAside => Role::SetAside,
+                    SetupRole::Bane => Role::Bane,
+                    SetupRole::ExtraPile => Role::ExtraPile,
+                    SetupRole::ChosenPile => Role::ChosenPile,
+                    SetupRole::Deck => Role::Deck,
+                },
+            })
+            .collect(),
+        traits: props.traits.into_iter().map(name).collect(),
+        recipe: props.structure.map(|s| Recipe {
+            kind: match s.kind {
+                PileKind::Stacked => RecipeKind::Stacked,
+                PileKind::Rotating => RecipeKind::Rotating,
+                PileKind::Shuffled => RecipeKind::Shuffled,
+            },
+            cards: (s.cards.into_iter())
+                .map(|g| RecipeGroup {
+                    card: name(g.card),
+                    count: g.count,
+                })
+                .collect(),
+            sample: s.sample_size,
+        }),
+    }
+}
+
+fn cost_of(cost: dominion_engine::Cost) -> events::Cost {
+    events::Cost {
+        coins: u32::from(cost.coins),
+        potions: u32::from(cost.potions),
+        debt: u32::from(cost.debt),
+    }
+}
+
+fn type_names(types: dominion_engine::Types) -> Vec<String> {
+    types.names().map(str::to_string).collect()
+}

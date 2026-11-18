@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct State {
     /// VP tokens on the Landmarks that hold them.
-    landmark_vp: Vec<(Card, i32)>,
+    pub(crate) landmark_vp: Vec<(Card, i32)>,
     /// Obelisk's chosen pile.
     obelisk: Option<PileId>,
     /// Someone has gained a Province (Mountain Pass).

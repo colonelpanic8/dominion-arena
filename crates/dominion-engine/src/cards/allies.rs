@@ -16,7 +16,7 @@ use crate::Note;
 use crate::decision::{Decision, DecisionKind, Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input};
-use crate::game::{ExtraLimit, ExtraTurn, Lasting, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, Lasting, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_rotating_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -509,7 +509,7 @@ fn add_random_ally(g: &mut Game) {
     let all: Vec<Card> = Card::in_set(Set::Allies)
         .filter(|c| c.kind() == Kind::Ally)
         .collect();
-    let ally = all[g.random_index(all.len())];
+    let ally = g.chance_pick(crate::chance::Site::Ally, &all);
     g.landscapes.push(ally);
 }
 
@@ -614,7 +614,15 @@ pub(crate) fn rotate(g: &mut Game, p: PlayerId, pile: PileId) {
         .count();
     let cards = &mut g.piles[pile.index()].cards;
     let moved = cards.split_off(cards.len() - run);
+    let rotated: Vec<CardId> = moved.iter().rev().copied().collect();
     cards.splice(0..0, moved);
+    g.journal_within(
+        crate::Verb::Rotate,
+        Zone::Pile(pile),
+        &rotated,
+        true,
+        Pos::Bottom,
+    );
     g.emit(Event::Rotated { player: p, pile });
 }
 
@@ -1287,12 +1295,7 @@ fn ally(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         },
         Card::IslandFolk => {
             spend(g, p, 5);
-            g.extra_turns.push_front(ExtraTurn {
-                player: p,
-                source: Card::IslandFolk,
-                limit: ExtraLimit::ThirdInARow,
-                lasting: None,
-            });
+            g.queue_extra_turn(p, Card::IslandFolk, ExtraLimit::ThirdInARow, None, true);
             Flow::done()
         }
         Card::OrderOfAstrologers | Card::OrderOfMasons => order(g, f, input),
@@ -1316,8 +1319,7 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let astrologers = f.card == Card::OrderOfAstrologers;
     match f.pc {
         0 => {
-            let mut shuffled = g.shuffled(p).to_vec();
-            shuffled.sort();
+            let shuffled = g.shuffled_unordered(p);
             g.look_through_shuffled(p);
             let above = g.look_over_shuffled(p);
             let n = favors(g, p) as usize;
@@ -1340,11 +1342,11 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let k = chosen.len() as u32;
             spend(g, p, if astrologers { k } else { k.div_ceil(2) }.max(1));
             if !astrologers {
-                for c in chosen {
+                for &c in &chosen {
                     g.show_to(c, p);
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
-                g.reshuffle_unplaced(p, &[]);
+                g.reshuffle_unplaced(p, &chosen);
                 return Flow::done();
             }
             f.pc = 2;
@@ -1362,7 +1364,15 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let mut new: Vec<CardId> = rest;
             new.extend(chosen.iter().rev());
             new.extend(deck[base..].iter().copied());
+            let above = deck.len() - base;
             *deck = new;
+            // Each goes under the cards left on the deck, the first chosen last.
+            let placed: Vec<CardId> = chosen.iter().rev().copied().collect();
+            let verb = match above {
+                0 => crate::Verb::Topdeck,
+                _ => crate::Verb::Insert,
+            };
+            g.journal_within(verb, Zone::Deck(p), &placed, false, Pos::Under(above));
             g.reshuffle_unplaced(p, &chosen);
             Flow::done()
         }
@@ -2605,7 +2615,7 @@ fn old_map(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
 }
 
 /// The cards a Voyage turn's player may play from their hand.
-const VOYAGE_HAND_PLAYS: u32 = 3;
+pub(crate) const VOYAGE_HAND_PLAYS: u32 = 3;
 
 fn voyage(g: &mut Game, f: &mut CardFrame) {
     let p = f.player;
@@ -2617,12 +2627,13 @@ fn voyage(g: &mut Game, f: &mut CardFrame) {
         Until::ExtraTurn,
         Scratch::default(),
     );
-    g.extra_turns.push_back(ExtraTurn {
-        player: p,
-        source: Card::Voyage,
-        limit: ExtraLimit::ThirdInARow,
-        lasting: Some(lasting),
-    });
+    g.queue_extra_turn(
+        p,
+        Card::Voyage,
+        ExtraLimit::ThirdInARow,
+        Some(lasting),
+        false,
+    );
 }
 
 fn sunken_treasure(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {

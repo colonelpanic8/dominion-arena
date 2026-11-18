@@ -13,10 +13,12 @@
 
 use super::{Bonus, CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, put_back};
 use crate::Note;
+use crate::chance::Site;
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
 use crate::game::{Lasting, Phase, Pos, Scratch, Until, Zone};
+use crate::journal::Spot;
 use crate::setup::{self, Setup, add_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, PileId, PlayerId, Set, Types};
@@ -435,8 +437,9 @@ impl SetRules for Rules {
         let (boons, druid) = (&g.boons, &g.ext.nocturne.druid);
         if fate && boons.draw.is_empty() && boons.discard.is_empty() && druid.is_empty() {
             let mut boons = BOONS.to_vec();
-            g.shuffle(&mut boons);
-            g.boons.draw = boons;
+            g.shuffle_for(Site::Fates { hexes: false }, &mut boons);
+            g.boons.draw = boons.clone();
+            g.journal_fate_added(boons, Spot::Deck);
         }
         if g.ext.nocturne.druid.is_empty() && uses(g, &[Card::Druid]) {
             // The top 3 Boons: a deck too small for that (Druid joined mid-game) gives all
@@ -444,19 +447,30 @@ impl SetRules for Rules {
             let mut druid = vec![];
             if g.boons.draw.len() < 3 {
                 druid = std::mem::take(&mut g.boons.draw);
+                for &boon in &druid {
+                    g.journal_fate(boon, Spot::Druid);
+                }
                 let mut boons = std::mem::take(&mut g.boons.discard);
-                g.shuffle(&mut boons);
+                g.shuffle_for(Site::Reshuffle { hexes: false }, &mut boons);
                 g.boons.draw = boons;
+                if !g.boons.draw.is_empty() {
+                    g.journal_fate_shuffled(false);
+                }
             }
             let n = 3 - druid.len();
-            druid.extend(s.choose_n(g, Card::Druid, g.boons.draw.clone(), n..=n));
-            g.boons.draw.retain(|b| !druid.contains(b));
+            let chosen = s.choose_n(g, Card::Druid, g.boons.draw.clone(), n..=n);
+            g.boons.draw.retain(|b| !chosen.contains(b));
+            for &boon in &chosen {
+                g.journal_fate(boon, Spot::Druid);
+            }
+            druid.extend(chosen);
             g.ext.nocturne.druid = druid;
         }
         if doom && g.hexes.draw.is_empty() && g.hexes.discard.is_empty() {
             let mut hexes = HEXES.to_vec();
-            g.shuffle(&mut hexes);
-            g.hexes.draw = hexes;
+            g.shuffle_for(Site::Fates { hexes: true }, &mut hexes);
+            g.hexes.draw = hexes.clone();
+            g.journal_fate_added(hexes, Spot::Deck);
         }
         for (card, size) in [
             (Card::WillOWisp, 12),
@@ -713,6 +727,7 @@ fn sift(g: &mut Game, f: &mut CardFrame, input: Input, at: u8, n: usize) -> Flow
 /// Resolves a Boon or Hex for `p` without drawing or discarding it.
 pub(crate) fn receive_raw(g: &mut Game, p: PlayerId, card: Card) -> Frame {
     g.emit(Event::Received { player: p, card });
+    g.journal_opens_call();
     Frame::Card(Box::new(CardFrame::new(card, Hook::Main, p, None)))
 }
 
@@ -720,7 +735,7 @@ pub(crate) fn receive_raw(g: &mut Game, p: PlayerId, card: Card) -> Frame {
 /// keeps it until Clean-up.
 fn release_boon(g: &mut Game, boon: Card) {
     if !g.players.iter().any(|pl| pl.boons_kept.contains(&boon)) {
-        g.boons.discard.push(boon);
+        g.discard_fate(boon);
     }
 }
 
@@ -729,7 +744,7 @@ fn receive_boon(g: &mut Game, f: &mut CardFrame, at: u8, next: u8) -> Flow {
     if f.pc != at {
         return goto(f, next);
     }
-    match g.draw_from(false) {
+    match g.draw_from(f.player, false) {
         Some(boon) => {
             f.pc = next;
             Flow::Call(Frame::receive(f.player, boon))
@@ -743,7 +758,7 @@ fn receive_hex(g: &mut Game, f: &mut CardFrame, at: u8, next: u8) -> Flow {
     if f.pc != at {
         return goto(f, next);
     }
-    match g.draw_from(true) {
+    match g.draw_from(f.player, true) {
         Some(hex) => {
             f.pc = next;
             Flow::Call(Frame::receive(f.player, hex))
@@ -760,7 +775,7 @@ fn hex_others(g: &mut Game, f: &mut CardFrame, at: u8, next: u8) -> Flow {
         if f.targets.is_empty() {
             return goto(f, next);
         }
-        let Some(hex) = g.draw_from(true) else {
+        let Some(hex) = g.draw_from(f.player, true) else {
             return goto(f, next);
         };
         f.s.card = Some(hex);
@@ -774,7 +789,7 @@ fn hex_others(g: &mut Game, f: &mut CardFrame, at: u8, next: u8) -> Flow {
             Flow::Call(receive_raw(g, target, hex))
         }
         None => {
-            g.hexes.discard.push(hex);
+            g.discard_fate(hex);
             f.s.card = None;
             f.s.i = 0;
             goto(f, next)
@@ -1267,7 +1282,7 @@ fn blessed_village_gained(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow
     let p = f.player;
     match f.pc {
         0 => {
-            let Some(boon) = g.draw_from(false) else {
+            let Some(boon) = g.draw_from(p, false) else {
                 return Flow::done();
             };
             g.emit(Event::Revealed {
@@ -1513,7 +1528,7 @@ fn fool(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 pl.states.retain(|&s| s != Card::LostInTheWoods);
             }
             take_state(g, p, Card::LostInTheWoods);
-            let boons: Vec<Card> = (0..3).filter_map(|_| g.draw_from(false)).collect();
+            let boons: Vec<Card> = (0..3).filter_map(|_| g.draw_from(p, false)).collect();
             f.s.m = boon_mask(&boons);
             f.pc = 1;
             Flow::Continue
@@ -1740,16 +1755,21 @@ fn monastery(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+/// See [`Game::face_down_in_trash`].
+pub(crate) fn face_down_in_trash(g: &Game) -> Vec<CardId> {
+    (g.lasting().iter())
+        .filter(|l| l.card == Card::Necromancer)
+        .filter_map(|l| l.data.placed.first().copied())
+        .filter(|&placed| g.still(placed) && g.zone(placed.card) == Zone::Trash)
+        .map(|placed| placed.card)
+        .collect()
+}
+
 fn necromancer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let face_down: Vec<CardId> = g
-                .lasting()
-                .iter()
-                .filter(|l| l.card == Card::Necromancer)
-                .filter_map(|l| l.data.pick)
-                .collect();
+            let face_down = g.face_down_in_trash();
             let candidates: Vec<CardId> = g
                 .trash()
                 .iter()
@@ -1768,8 +1788,10 @@ fn necromancer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
+            // Face down for as long as it stays in the trash this turn.
             let data = Scratch {
                 pick: Some(c),
+                placed: vec![g.placed(c)],
                 ..Scratch::default()
             };
             g.add_lasting(Card::Necromancer, p, f.this, vec![], Until::EndOfTurn, data);
@@ -1784,14 +1806,14 @@ fn pixie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let Some(boon) = g.draw_from(false) else {
+            let Some(boon) = g.draw_from(p, false) else {
                 return Flow::done();
             };
             g.emit(Event::Revealed {
                 player: p,
                 card: boon,
             });
-            g.boons.discard.push(boon);
+            g.discard_fate(boon);
             f.s.card = Some(boon);
             if g.zone(f.this()) != Zone::InPlay(p) {
                 return Flow::done();
@@ -1812,12 +1834,7 @@ fn pixie(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         2 | 3 => {
             let boon = f.s.card.expect("set in step 0");
             if f.pc == 2 {
-                let deck = &mut g.boons;
-                if let Some(i) = deck.discard.iter().rposition(|&b| b == boon) {
-                    deck.discard.remove(i);
-                } else if let Some(i) = deck.draw.iter().position(|&b| b == boon) {
-                    deck.draw.remove(i);
-                }
+                g.retake_fate(p, boon);
             }
             f.pc += 1;
             Flow::Call(receive_raw(g, p, boon))
@@ -1904,7 +1921,7 @@ fn sacred_grove(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let Some(boon) = g.draw_from(false) else {
+            let Some(boon) = g.draw_from(p, false) else {
                 return Flow::done();
             };
             f.s.card = Some(boon);

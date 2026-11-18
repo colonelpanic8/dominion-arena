@@ -7,14 +7,17 @@
 //! Way questions that follow in advance. [`text::render`] renders a view compactly for
 //! language models. The JSON Schema is vendored at `protocol/agent-view.schema.json`.
 
+pub mod events;
 mod project;
+pub mod recording;
+pub mod replay;
 mod table;
 pub mod text;
 pub mod turns;
 
 pub use dominion_protocol::view::*;
 pub use project::WAY_HINT;
-pub use table::{AnswerError, Answered, Table, WayChoice};
+pub use table::{AnswerError, Answered, RECORDING_VERSION, Table, Unreplayed, WayChoice};
 
 use dominion_engine::{Card, Kind};
 

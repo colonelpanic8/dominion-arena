@@ -21,9 +21,9 @@ use dominion_protocol::api::{
     SeatView, UndoAsk, ViewQuery, WebSettings,
 };
 use dominion_protocol::lobby::{
-    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, JoinTable, Leaderboard, Lobby,
-    LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable, Profile, QueueStatus,
-    Ready, Say, SeatEdit, TableInfo, TableSpec,
+    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable,
+    Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable,
+    Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -85,6 +85,7 @@ pub fn router(
             get(transcript).post(publish_transcript),
         )
         .route("/games/{id}/transcript/events", get(transcript_events))
+        .route("/games/{id}/recording", get(recording))
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
         .route("/auth/guest", post(guest))
@@ -575,10 +576,11 @@ impl From<HubError> for Error {
             HubError::BadToken(_) => StatusCode::UNAUTHORIZED,
             HubError::Forbidden(_) => StatusCode::FORBIDDEN,
             HubError::Conflict(_) => StatusCode::CONFLICT,
-            HubError::Busy(_) => StatusCode::SERVICE_UNAVAILABLE,
+            HubError::Busy(_) | HubError::Unsaved(_) => StatusCode::SERVICE_UNAVAILABLE,
             HubError::Answer(AnswerError::Invalid(_)) => StatusCode::UNPROCESSABLE_ENTITY,
             HubError::Answer(_) => StatusCode::CONFLICT,
             HubError::Engine(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            HubError::NotFound(_) => StatusCode::NOT_FOUND,
         };
         Error::new(status, e.to_string())
     }
@@ -1074,6 +1076,33 @@ async fn transcript_events(
     }))
 }
 
+/// A finished game's recorded `dominion/events@1` stream, as written: for its seats, and
+/// for anyone when the game is watchable.
+async fn recording(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    seat: Queried<SeatQuery>,
+) -> Result<Response> {
+    let q = query(seat)?;
+    if api.seat(&id, &headers, q.token.as_deref(), q.seat).is_err() && !api.hub.meta(&id)?.watchable
+    {
+        return Err(Error::new(StatusCode::FORBIDDEN, "this game is private"));
+    }
+    let hub = api.hub.clone();
+    let name = id.clone();
+    let (encoding, bytes) = blocking(move || Ok(hub.recording(&name)?)).await?;
+    let file = format!("attachment; filename=\"{id}{}\"", encoding.suffix());
+    Ok((
+        [
+            (header::CONTENT_TYPE, encoding.media_type().to_string()),
+            (header::CONTENT_DISPOSITION, file),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
 /// Waits for either counter to change. Whether its sender is gone.
 async fn changed(
     version: &mut tokio::sync::watch::Receiver<u64>,
@@ -1429,8 +1458,6 @@ async fn profile(State(api): State<Api>, Path(name): Path<String>) -> Json<Profi
 
 #[derive(Deserialize, Default)]
 struct ListQuery {
-    user: Option<String>,
-    before: Option<u64>,
     limit: Option<usize>,
 }
 
@@ -1439,8 +1466,6 @@ async fn leaderboard(State(api): State<Api>, list: Queried<ListQuery>) -> Json<L
     Ok(axum::Json(api.arena.leaderboard(limit)?))
 }
 
-async fn history(State(api): State<Api>, list: Queried<ListQuery>) -> Json<History> {
-    let q = query(list)?;
-    let games = (api.arena).history(q.user.as_deref(), q.before, q.limit.unwrap_or(20))?;
-    Ok(axum::Json(games))
+async fn history(State(api): State<Api>, q: Queried<HistoryQuery>) -> Json<History> {
+    Ok(axum::Json(api.arena.history(&query(q)?)?))
 }

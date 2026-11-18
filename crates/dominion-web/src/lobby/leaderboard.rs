@@ -1,13 +1,12 @@
 //! The Leaderboard tab (the rated players, best first) and a player's page: their
-//! rating, tallies and latest games.
+//! rating and tallies over their games.
 
-use super::{Fieldset, LobbyFrame, OptionRow, Tab, UserName, date};
+use super::history::{GameBrowser, seat_of};
+use super::{LobbyFrame, Tab, UserName};
 use crate::api;
 use crate::app::Route;
 use dioxus::prelude::*;
-use dominion_protocol::lobby::{
-    Beyond, GameRecord, Leaderboard, OfficialSkill, Profile, RecordPlayer, Source,
-};
+use dominion_protocol::lobby::{Beyond, Leaderboard, OfficialSkill, PastGame, Profile, UserKind};
 
 const OFFICIAL_TITLE: &str =
     "Skill on dominion.games' scale (mu, not level), read off agents rated on both servers";
@@ -38,7 +37,7 @@ pub fn LeaderboardTab() -> Element {
                         }
                         div { class: "lb-board-list",
                             if players.is_empty() {
-                                p { class: "lb-note", "Nobody has played a rated game yet. A game is rated when its table or search says so and every seat is a different registered player or bot." }
+                                p { class: "lb-note", "Nobody has played a rated game yet. A game is rated when its table or search says so and every seat is a different registered player or bot, or when it is made with a different one of the server's agents in every seat." }
                             }
                             for p in players.iter() {
                                 div { key: "{p.user.name}", class: line, "data-leader": "{p.user.name}",
@@ -80,62 +79,105 @@ fn without_rating(user: &dominion_protocol::lobby::UserRef) -> dominion_protocol
     user
 }
 
-/// How a game ended, in words: the server's `provinces-gone` as "Provinces gone".
-pub fn reason(code: &str) -> String {
-    let words = code.replace('-', " ");
-    let mut chars = words.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
-/// One player of a finished game: place, name, points and, in a rated game, how their
-/// rating moved.
-pub fn record_line(p: &RecordPlayer) -> String {
-    let mut line = format!("{}. {} {} VP", p.rank, p.name, p.vp);
-    if p.resigned {
-        line.push_str(", resigned");
-    }
-    if let Some((before, after)) = p.rating {
-        let change = (after - before).round() as i64;
-        line.push_str(&format!(" ({change:+})"));
+/// A player's latest rated games' ratings, oldest first: where the first began, then
+/// where each left it.
+pub fn rating_line(recent: &[PastGame], name: &str) -> Vec<f64> {
+    let ratings = recent.iter().rev().filter_map(|g| seat_of(g, name)?.rating);
+    let mut line = vec![];
+    for (before, after) in ratings {
+        if line.is_empty() {
+            line.push(before);
+        }
+        line.push(after);
     }
     line
 }
 
-#[component]
-fn Record(game: GameRecord) -> Element {
-    let source = match game.source {
-        Source::Automatch => "Automatch",
-        Source::Table => "Table",
-        Source::Direct => "By token",
-        Source::Official => "dominion.games",
-    };
-    let kingdom = game
-        .kingdom
+/// The points of a line through `values`, in a `w` by `h` box.
+fn spark(values: &[f64], w: f64, h: f64) -> String {
+    let (lo, hi) = values
         .iter()
-        .chain(&game.landscapes)
-        .cloned()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+    let span = (hi - lo).max(1.0);
+    let step = w / (values.len() - 1) as f64;
+    (values.iter().enumerate())
+        .map(|(i, v)| format!("{:.1},{:.1}", i as f64 * step, h - (v - lo) / span * h))
         .collect::<Vec<_>>()
-        .join(", ");
-    let mut players = game.players.clone();
-    players.sort_by_key(|p| (p.rank, p.seat));
+        .join(" ")
+}
+
+#[component]
+fn ProfileCard(profile: Profile) -> Element {
+    let Profile {
+        user,
+        rating,
+        stats,
+        official_games,
+        recent,
+    } = profile;
+    let line = rating_line(&recent, &user.name);
+    let mut numbers = vec![
+        (
+            "Rating",
+            format!("{}", rating.rating.round()),
+            format!("± {}", rating.deviation.round()),
+        ),
+        ("Rated games", rating.games.to_string(), String::new()),
+        (
+            "Arena games won",
+            stats.wins.to_string(),
+            format!("of {}", stats.games),
+        ),
+        (
+            "dominion.games games",
+            official_games.to_string(),
+            String::new(),
+        ),
+    ];
+    let what = match (user.kind, &user.owner) {
+        (UserKind::Registered, _) => "Player".to_string(),
+        (UserKind::Guest, _) => "Playing as a guest".to_string(),
+        (UserKind::Bot, Some(owner)) => format!("{owner}'s bot"),
+        (UserKind::Bot, None) => "One of the server's agents".to_string(),
+    };
+    if let Some(o) = &rating.official {
+        numbers.insert(
+            1,
+            (
+                "dominion.games skill",
+                official_skill(o, false),
+                format!("± {:.1}", o.deviation),
+            ),
+        );
+    }
     rsx! {
-        div { class: "lb-record", "data-record": "{game.game_id}", title: "{kingdom}",
-            div { class: "lb-record-head",
-                span { "{date(game.ended)}" }
-                span { "{source}" }
-                span { if game.rated { "Rated" } else { "Unrated" } }
-                span { "{reason(&game.reason)}" }
-                if game.source != Source::Official {
-                    Link { class: "lb-record-replay", "data-replay": "{game.game_id}", to: Route::GameReplay { id: game.game_id.clone() }, "Replay" }
+        div { class: "lb-fieldset lb-profile", "data-profile": "{user.name}",
+            div { class: "lb-fieldset-title",
+                span { "{user.name}" }
+            }
+            div { class: "lb-profile-who",
+                span { "{what}" }
+                Link { class: "lb-note-link", to: Route::Leaderboard {}, "Leaderboard" }
+            }
+            div { class: "lb-profile-numbers",
+                for (label, value, sub) in numbers {
+                    div { key: "{label}", class: "lb-profile-number",
+                        span { class: "lb-profile-label", "{label}" }
+                        span { class: "lb-profile-value", "{value} " span { class: "lb-profile-sub", "{sub}" } }
+                    }
                 }
             }
-            div { class: "lb-record-players",
-                for p in players.iter() {
-                    span { key: "{p.seat}", class: if p.rank == 1 { "lb-record-player won" } else { "lb-record-player" },
-                        "{record_line(p)}"
+            if line.len() >= 2 {
+                div { class: "lb-profile-line",
+                    span { class: "lb-profile-label",
+                        "Rating over the latest rated games: {line[0].round()} → {line[line.len() - 1].round()}"
+                    }
+                    svg {
+                        view_box: "0 0 100 20",
+                        preserve_aspect_ratio: "none",
+                        role: "img",
+                        "aria-label": "Rating over the latest rated games",
+                        polyline { points: spark(&line, 100.0, 20.0) }
                     }
                 }
             }
@@ -150,52 +192,22 @@ pub fn UserPage(name: String) -> Element {
     ));
     rsx! {
         LobbyFrame { tab: Tab::Leaderboard,
-            div { class: "lb-columns lb-user-page",
-                match &*profile.read() {
-                    None => rsx! {},
-                    Some(Err(e)) => rsx! {
-                        div { class: "lb-column",
-                            p { class: "lb-error", "{e.message}" }
-                            Link { class: "lb-note-link", to: Route::Leaderboard {}, "Leaderboard" }
-                        }
-                    },
-                    Some(Ok(Profile { user, rating, stats, recent })) => rsx! {
-                        div { class: "lb-column", "data-profile": "{user.name}",
-                            Fieldset { title: "{user.name}", class: "lb-account-summary",
-                                OptionRow { label: "Player",
-                                    UserName { user: without_rating(user) }
-                                }
-                                OptionRow { label: "Rating",
-                                    span { class: "lb-value", "data-rating": "{rating.rating.round()}", "{rating.rating.round()} ± {rating.deviation.round()}" }
-                                }
-                                if let Some(o) = &rating.official {
-                                    OptionRow { label: "dominion.games skill",
-                                        span { class: "lb-value", title: OFFICIAL_TITLE, "{official_skill(o, true)}" }
-                                    }
-                                }
-                                OptionRow { label: "Rated games",
-                                    span { class: "lb-value", "{rating.games}" }
-                                }
-                                OptionRow { label: "Games won",
-                                    span { class: "lb-value", "{stats.wins} of {stats.games}" }
-                                }
-                            }
-                            Link { class: "lb-note-link", to: Route::Leaderboard {}, "Leaderboard" }
-                        }
-                        div { class: "lb-column",
-                            Fieldset { title: "Latest Games", class: "lb-records",
-                                div { class: "lb-records-list",
-                                    if recent.is_empty() {
-                                        p { class: "lb-note", "No finished games yet." }
-                                    }
-                                    for g in recent.iter() {
-                                        Record { key: "{g.game_id}", game: g.clone() }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                }
+            match &*profile.read() {
+                None => rsx! {},
+                Some(Err(e)) => rsx! {
+                    div { class: "lb-column",
+                        p { class: "lb-error", "{e.message}" }
+                        Link { class: "lb-note-link", to: Route::Leaderboard {}, "Leaderboard" }
+                    }
+                },
+                Some(Ok(p)) => rsx! {
+                    GameBrowser {
+                        key: "{p.user.name}",
+                        title: "Games",
+                        user: Some(p.user.name.clone()),
+                        top: rsx! { ProfileCard { profile: p.clone() } },
+                    }
+                },
             }
         }
     }

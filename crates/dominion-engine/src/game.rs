@@ -5,8 +5,6 @@ use crate::frame::{Flow, Frame, Input};
 use crate::setup::GameConfig;
 use crate::trigger::Occasion;
 use crate::{Card, CardId, Cost, Kind, PileId, PlayerId, Types};
-use rand::Rng;
-use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
@@ -465,6 +463,10 @@ pub struct Lasting {
     /// The place in `Turn::played` of the play of `source` that made it, if one did.
     #[serde(default)]
     pub play: Option<usize>,
+    /// The cards it holds set aside: those of its data set aside when it was made, and
+    /// any it holds later ([`Game::hold`]); each until it leaves the set-aside zone.
+    #[serde(default)]
+    pub holds: Vec<CardId>,
 }
 
 impl Lasting {
@@ -483,6 +485,9 @@ pub struct ExtraTurn {
     /// The lasting effect that keeps its card in play for it (Outpost, Voyage).
     #[serde(default)]
     pub lasting: Option<u32>,
+    /// Tells it apart in a journal ([`Game::queue_extra_turn`]); 0 in a game without one.
+    #[serde(default)]
+    pub id: u32,
 }
 
 /// When an extra turn doesn't happen (each card's own "but not ..." clause).
@@ -604,6 +609,14 @@ pub struct Game {
     pub(crate) outcome: Option<Outcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) trace: Option<Vec<crate::Trace>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) journal: Option<crate::journal::Journal>,
+    /// The rules' word for the move being made (see [`Game::move_as`]).
+    #[serde(skip)]
+    pub(crate) verb: Option<crate::Verb>,
+    /// What a journaled or given game keeps of chance (see [`crate::chance`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) chance: Option<Box<crate::chance::Chance>>,
 }
 
 /// Cards a look or reveal took off `player`'s deck (top first), held in
@@ -1303,6 +1316,9 @@ impl Game {
             scribe: Default::default(),
             outcome: None,
             trace: None,
+            journal: None,
+            verb: None,
+            chance: None,
         };
         g.turn.phase = Phase::End;
         g.lasting.retain(|l| l.until != Until::EndOfTurn);
@@ -1334,6 +1350,7 @@ impl Game {
             .cloned()
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
+        self.journal_answered(&response);
         let player = decision.player;
         if let Response::Name(card) = response {
             self.emit(Event::Named { player, card });
@@ -1370,6 +1387,7 @@ impl Game {
                 Flow::Done(value) => {
                     self.release_holds();
                     self.end_discard_searches();
+                    self.journal_close(self.stack.len());
                     input = Input::Return(value);
                 }
                 Flow::Continue => {
@@ -1397,6 +1415,7 @@ impl Game {
                         self.forget_hidden_shows();
                         self.pending = Some(decision);
                         self.log_actor(None);
+                        self.journal_asked();
                         return;
                     }
                 }
@@ -1427,6 +1446,7 @@ impl Game {
     }
 
     pub(crate) fn create(&mut self, card: Card, zone: Zone) -> CardId {
+        self.sync_journal();
         let id = CardId(self.cards.len() as u32);
         self.cards.push(card);
         self.zones.push(zone);
@@ -1504,6 +1524,11 @@ impl Game {
         if let Zone::SetAside(p) | Zone::Looking(p) = from {
             self.players[p.index()].face_up.retain(|&c| c != id);
         }
+        if let Zone::SetAside(_) = from {
+            for l in &mut self.lasting {
+                l.holds.retain(|&c| c != id);
+            }
+        }
         self.zones[id.index()] = to;
         let dst = self.zone_vec(to);
         let top = dst.last().copied();
@@ -1544,20 +1569,13 @@ impl Game {
         self.sync_log(Some(&event));
         cards::on_event(self, &event);
         self.log.push(event);
+        self.journal_logged(self.log.len() - 1);
     }
 
     /// Records that no one but their owner can follow `cards` any more.
     pub(crate) fn mixed(&mut self, cards: Vec<CardId>) {
         self.note_mixed(&cards);
         self.record(|| crate::Trace::Mixed { cards });
-    }
-
-    pub(crate) fn shuffle<T>(&mut self, items: &mut [T]) {
-        items.shuffle(&mut self.rng);
-    }
-
-    pub(crate) fn random_index(&mut self, n: usize) -> usize {
-        self.rng.random_range(0..n)
     }
 
     /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
@@ -1600,6 +1618,16 @@ impl Game {
             .count();
         let deck = &self.players[p.index()].deck;
         &deck[..left.min(deck.len())]
+    }
+
+    /// [`Game::shuffled`] in an order that says nothing of the deck's: by name, and copies
+    /// of one name from the top down, so that which copy an answer picks is told by
+    /// position, as the event stream tells it, never by id.
+    pub(crate) fn shuffled_unordered(&self, p: PlayerId) -> Vec<CardId> {
+        let mut cards: Vec<(usize, CardId)> =
+            self.shuffled(p).iter().copied().enumerate().collect();
+        cards.sort_by_key(|&(i, c)| (self.cards[c.index()], std::cmp::Reverse(i)));
+        cards.into_iter().map(|(_, c)| c).collect()
     }
 
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {
@@ -1688,6 +1716,7 @@ impl Game {
         self.show(id);
         self.move_unlogged(id, Zone::SetAside(p));
         self.players[p.index()].face_up.push(id);
+        self.journal_face_up(id);
     }
 
     pub(crate) fn put_on_mat(&mut self, id: CardId, p: PlayerId, mat: Mat) {
@@ -1698,10 +1727,13 @@ impl Game {
     /// `new` goes to `p`'s discard pile (nothing is gained). Returns whether it happened.
     pub(crate) fn exchange(&mut self, p: PlayerId, id: CardId, new: CardId) -> bool {
         let card = self.printed(id);
-        if !self.return_to_pile(id) {
+        self.verb = Some(crate::Verb::Exchange);
+        let returned = self.return_to_pile(id);
+        self.verb = None;
+        if !returned {
             return false;
         }
-        self.move_card(new, Zone::Discard(p), Pos::Top);
+        self.move_as(crate::Verb::Exchange, new, Zone::Discard(p), Pos::Top);
         let into = self.card(new);
         self.emit(Event::Exchanged {
             player: p,
@@ -1735,7 +1767,9 @@ impl Game {
         let play = self.plays.last().filter(|st| Some(st.card) == source);
         let tracker = play.and_then(|st| st.tracker);
         let play = play.map(|st| st.index);
-        self.push_lasting(card, owner, source, (tracker, play), keeps, until, data)
+        let id = self.push_lasting(card, owner, source, (tracker, play), keeps, until, data);
+        self.journal_lasting(id, None);
+        id
     }
 
     /// Adds a later part of the effect `from` began (a card set aside by its "once this
@@ -1747,7 +1781,7 @@ impl Game {
         until: Until,
         data: Scratch,
     ) -> u32 {
-        self.push_lasting(
+        let id = self.push_lasting(
             from.card,
             from.owner,
             from.source,
@@ -1755,7 +1789,9 @@ impl Game {
             keeps,
             until,
             data,
-        )
+        );
+        self.journal_lasting(id, Some(from.id));
+        id
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1772,6 +1808,12 @@ impl Game {
         let id = self.next_lasting;
         self.next_lasting += 1;
         let turn = self.players[owner.index()].turns_taken;
+        let mut holds: Vec<CardId> = vec![];
+        for &c in data.pick.iter().chain(&data.cards) {
+            if self.zones[c.index()] == Zone::SetAside(owner) && !holds.contains(&c) {
+                holds.push(c);
+            }
+        }
         self.lasting.push(Lasting {
             id,
             card,
@@ -1784,9 +1826,19 @@ impl Game {
             tracker,
             ending: false,
             play,
+            holds,
         });
         self.keep_in_play(id, keeps);
         id
+    }
+
+    /// Lasting `id` holds `card`, which it just set aside.
+    pub(crate) fn hold(&mut self, id: u32, card: CardId) {
+        if let Some(l) = self.lasting_mut(id)
+            && !l.holds.contains(&card)
+        {
+            l.holds.push(card);
+        }
     }
 
     /// Makes lasting `id` keep `keeps` in play. A Duration's effect (it keeps its own
@@ -1830,24 +1882,54 @@ impl Game {
         self.lasting.iter_mut().find(|l| l.id == id)
     }
 
-    /// Draws a Boon or Hex from its deck, reshuffling its discards if needed.
-    pub(crate) fn draw_from(&mut self, hexes: bool) -> Option<Card> {
-        let mut deck = std::mem::take(if hexes {
-            &mut self.hexes
-        } else {
-            &mut self.boons
-        });
+    /// The cards in the trash lying face down: each card a Necromancer played this turn,
+    /// while it has stayed there.
+    pub fn face_down_in_trash(&self) -> Vec<CardId> {
+        crate::cards::nocturne::face_down_in_trash(self)
+    }
+
+    /// Draws a Boon or Hex from its deck for `p`, reshuffling its discards if needed.
+    pub(crate) fn draw_from(&mut self, p: PlayerId, hexes: bool) -> Option<Card> {
+        let mut deck = std::mem::take(self.fates(hexes));
+        let shuffled = deck.draw.is_empty() && !deck.discard.is_empty();
         if deck.draw.is_empty() {
             deck.draw = std::mem::take(&mut deck.discard);
-            deck.draw.shuffle(&mut self.rng);
+            self.shuffle_for(crate::chance::Site::Reshuffle { hexes }, &mut deck.draw);
         }
-        let card = deck.draw.pop();
-        *(if hexes {
+        *self.fates(hexes) = deck;
+        if shuffled {
+            self.journal_fate_shuffled(hexes);
+        }
+        let card = self.fates(hexes).draw.pop()?;
+        self.journal_fate(card, crate::journal::Spot::Player(p));
+        Some(card)
+    }
+
+    fn fates(&mut self, hexes: bool) -> &mut CardDeck {
+        if hexes {
             &mut self.hexes
         } else {
             &mut self.boons
-        }) = deck;
-        card
+        }
+    }
+
+    /// Puts the Boon or Hex `card` on its discard pile.
+    pub(crate) fn discard_fate(&mut self, card: Card) {
+        self.fates(card.kind() == Kind::Hex).discard.push(card);
+        self.journal_fate(card, crate::journal::Spot::Discard);
+    }
+
+    /// `p` takes the Boon or Hex `card` back from its discard pile or deck, if it is there.
+    pub(crate) fn retake_fate(&mut self, p: PlayerId, card: Card) {
+        let deck = self.fates(card.kind() == Kind::Hex);
+        if let Some(i) = deck.discard.iter().rposition(|&b| b == card) {
+            deck.discard.remove(i);
+        } else if let Some(i) = deck.draw.iter().position(|&b| b == card) {
+            deck.draw.remove(i);
+        } else {
+            return;
+        }
+        self.journal_fate(card, crate::journal::Spot::Player(p));
     }
 
     pub(crate) fn game_over_reason(&self) -> Option<EndReason> {

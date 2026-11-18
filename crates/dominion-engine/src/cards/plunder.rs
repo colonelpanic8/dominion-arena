@@ -18,7 +18,7 @@ use super::{
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
-use crate::game::{ExtraLimit, ExtraTurn, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
+use crate::game::{ExtraLimit, GainState, Lasting, Phase, Pos, Scratch, Until, Zone};
 use crate::setup::{self, Setup, add_shuffled_pile};
 use crate::trigger::{Occasion, Trigger};
 use crate::{Card, CardId, Cost, Game, Kind, Note, PileId, PlayerId, Set, Trace, Types};
@@ -323,12 +323,7 @@ impl SetRules for Rules {
                     Scratch::default(),
                 );
                 if p == g.turn.player {
-                    g.extra_turns.push_back(ExtraTurn {
-                        player: p,
-                        source: Card::Journey,
-                        limit: ExtraLimit::ThirdInARow,
-                        lasting: None,
-                    });
+                    g.queue_extra_turn(p, Card::Journey, ExtraLimit::ThirdInARow, None, false);
                 }
                 Flow::done()
             }
@@ -1336,9 +1331,11 @@ fn quartermaster(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if let Some(c) = input.card()
                 && g.gained(p, c).is_some()
                 && g.zone(c) == Zone::SetAside(p)
-                && let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id))
+                && let Some(id) = f.lasting
+                && let Some(l) = g.lasting_mut(id)
             {
                 l.data.cards.push(c);
+                g.hold(id, c);
             }
             f.pc = 3;
             Flow::Continue
@@ -1605,8 +1602,11 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 && where_gained(g, c)
             {
                 g.set_aside(c, p);
-                if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
+                if let Some(id) = f.lasting
+                    && let Some(l) = g.lasting_mut(id)
+                {
                     l.data.cards.push(c);
+                    g.hold(id, c);
                 }
             }
             Flow::done()
@@ -1659,9 +1659,12 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                     && g.zone(c) == Zone::InPlay(p)
                 {
                     g.set_aside(c, p);
-                    if let Some(l) = f.lasting.and_then(|id| g.lasting_mut(id)) {
+                    if let Some(id) = f.lasting
+                        && let Some(l) = g.lasting_mut(id)
+                    {
                         l.data.n = 1;
                         l.data.cards.push(c);
+                        g.hold(id, c);
                     }
                 }
                 Flow::done()
@@ -1671,19 +1674,19 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if f.pc == 0 {
                 f.end_lasting(g);
                 f.pc = 1;
-                let mut shuffled = g.shuffled(p).to_vec();
-                shuffled.sort();
+                let shuffled = g.shuffled_unordered(p);
                 g.look_through_shuffled(p);
                 return f
                     .ask_cards(shuffled, 0, 3, Purpose::Move)
                     .question("put into your discard pile");
             }
-            for c in input.cards() {
+            let chosen = input.cards();
+            for &c in &chosen {
                 if g.zone(c) == Zone::Deck(p) {
                     g.move_card(c, Zone::Discard(p), Pos::Top);
                 }
             }
-            g.reshuffle_unplaced(p, &[]);
+            g.reshuffle_unplaced(p, &chosen);
             Flow::done()
         }
         Card::Fated => fated(g, f, input),
@@ -1702,14 +1705,9 @@ fn shuffled_fated(g: &Game, p: PlayerId) -> Vec<CardId> {
     if !g.has_landscape(Card::Fated) {
         return vec![];
     }
-    let mut fated: Vec<CardId> = g
-        .shuffled(p)
-        .iter()
-        .copied()
+    (g.shuffled_unordered(p).into_iter())
         .filter(|&c| is_traited(g, c, Card::Fated))
-        .collect();
-    fated.sort();
-    fated
+        .collect()
 }
 
 /// Fated: put any of the Fated cards just shuffled on top of or under the shuffled cards.
@@ -1992,6 +1990,7 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 } else {
                     // The chosen card goes back to the box and the default one comes back.
                     let from = g.cards[x.index()];
+                    g.sync_journal();
                     g.cards[x.index()] = default;
                     g.record(|| Trace::Changed {
                         card: x,
@@ -2001,16 +2000,19 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 }
             }
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-            g.shuffle(&mut deck);
+            g.shuffle_for(crate::chance::Site::Deck(p), &mut deck);
             let mixed = deck.clone();
             g.mixed(mixed);
+            g.journal_within(crate::Verb::Shuffle, Zone::Deck(p), &deck, false, Pos::Top);
             g.players[p.index()].deck = deck;
+            g.verb = Some(crate::Verb::Draw);
             for _ in 0..5 {
                 let Some(&top) = g.players[p.index()].deck.last() else {
                     break;
                 };
                 g.move_unlogged(top, Zone::Hand(p));
             }
+            g.verb = None;
             Flow::done()
         }
     }

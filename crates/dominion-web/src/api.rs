@@ -7,9 +7,9 @@ use dominion_protocol::api::{
     SeatView, WebSettings,
 };
 use dominion_protocol::lobby::{
-    BotKey, ChatLog, Credentials, GuestRequest, History, JoinTable, Leaderboard, Lobby,
-    LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable, Profile, QueueStatus,
-    Ready, Say, SeatEdit, TableInfo, TableSpec,
+    BotKey, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable, Leaderboard,
+    Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable, Profile,
+    QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec, Venue,
 };
 use std::fmt;
 
@@ -328,14 +328,25 @@ pub async fn leaderboard() -> Result<Leaderboard> {
     imp::get("/api/leaderboard", None).await
 }
 
-/// Finished games that ended before `before`, newest first: `user`'s, or everyone's.
-pub async fn history(user: Option<&str>, before: Option<u64>) -> Result<History> {
-    let mut url = "/api/history?limit=20".to_string();
-    if let Some(user) = user {
+/// Finished games, newest first, as `q` asks.
+pub async fn history(q: &HistoryQuery) -> Result<History> {
+    let mut url = format!("/api/history?limit={}", q.limit.unwrap_or(20));
+    if let Some(user) = &q.user {
         url.push_str(&format!("&user={}", encode(user)));
     }
-    if let Some(before) = before {
+    if let Some(before) = q.before {
         url.push_str(&format!("&before={before}"));
+    }
+    match q.venue {
+        Some(Venue::Arena) => url.push_str("&venue=arena"),
+        Some(Venue::Official) => url.push_str("&venue=official"),
+        None => {}
+    }
+    if q.rated {
+        url.push_str("&rated=true");
+    }
+    if let Some(text) = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        url.push_str(&format!("&q={}", encode(text)));
     }
     imp::get(&url, None).await
 }

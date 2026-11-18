@@ -2,7 +2,7 @@
 //! player can know (see [`crate::Knowledge`]). [`Game::new_traced`] turns it on; untraced
 //! games record nothing.
 
-use crate::game::{Player, Zone};
+use crate::game::{Player, Pos, Zone};
 use crate::{Card, CardId, Game, PlayerId};
 use serde::{Deserialize, Serialize};
 
@@ -87,12 +87,18 @@ impl Game {
 
     pub(crate) fn record_turn(&mut self) {
         let player = self.turn.player;
+        self.journal_turn();
         self.record(|| Trace::Turn { player });
     }
 
     pub(crate) fn record(&mut self, entry: impl FnOnce() -> Trace) {
+        if self.trace.is_none() && self.journal.is_none() {
+            return;
+        }
+        let entry = entry();
+        self.journal_trace(&entry);
         if let Some(trace) = &mut self.trace {
-            trace.push(entry());
+            trace.push(entry);
         }
     }
 
@@ -144,7 +150,9 @@ impl Game {
     }
 
     /// After a look through the cards `p` shuffled, the ones still there that no choice
-    /// placed (`placed`, now, or earlier) are shuffled again.
+    /// placed (`placed`, now, or earlier) are shuffled again. A choice picks a name, not a
+    /// copy: once it has placed any, where the others lie must not depend on which copies
+    /// it took, so they are really shuffled.
     pub(crate) fn reshuffle_unplaced(&mut self, p: PlayerId, placed: &[CardId]) {
         self.shuffle_placed.extend_from_slice(placed);
         let rest: Vec<CardId> = self
@@ -153,7 +161,54 @@ impl Game {
             .copied()
             .filter(|c| !self.shuffle_placed.contains(c))
             .collect();
-        self.mixed(rest);
+        self.mixed(rest.clone());
+        if !placed.is_empty() {
+            self.shuffle_again(p, &rest);
+        }
+    }
+
+    /// Shuffles `rest`, cards of `p`'s deck, among the places they lie in. A card with a
+    /// back of its own (Stash, a Shadow card) stays where it is: everyone knows where it
+    /// lies. Journaled as a shuffle of them into a block under the cards over the topmost,
+    /// then each card that lay among them put back where it was.
+    fn shuffle_again(&mut self, p: PlayerId, rest: &[CardId]) {
+        let deck = self.players[p.index()].deck.clone();
+        let slots: Vec<usize> = (0..deck.len())
+            .filter(|&i| {
+                rest.contains(&deck[i]) && !crate::knowledge::marked(self.printed(deck[i]))
+            })
+            .collect();
+        let (Some(&low), Some(&high)) = (slots.first(), slots.last()) else {
+            return;
+        };
+        if slots.len() < 2 {
+            return;
+        }
+        let mut cards: Vec<CardId> = slots.iter().map(|&i| deck[i]).collect();
+        self.shuffle_for(crate::chance::Site::Deck(p), &mut cards);
+        let in_deck = &mut self.players[p.index()].deck;
+        for (&i, &c) in slots.iter().zip(&cards) {
+            in_deck[i] = c;
+        }
+        self.touch_shuffled(&cards);
+        let len = deck.len();
+        let zone = Zone::Deck(p);
+        self.journal_within(
+            crate::Verb::Shuffle,
+            zone,
+            &cards,
+            false,
+            Pos::Under(len - 1 - high),
+        );
+        for i in (low..=high).rev().filter(|i| !slots.contains(i)) {
+            self.journal_within(
+                crate::Verb::Insert,
+                zone,
+                &[deck[i]],
+                false,
+                Pos::Under(len - 1 - i),
+            );
+        }
     }
 
     /// Reveals `card` (one of `p`'s, or one they revealed): logs it and records it shown.

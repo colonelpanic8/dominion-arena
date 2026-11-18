@@ -552,7 +552,7 @@ fn player_view(v: &View<'_>, known: &KnownCards, p: PlayerId, cx: &Context<'_>) 
 }
 
 /// What an option of a decision answers with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Target {
     Move(Move),
     Card(CardId),
@@ -1032,6 +1032,86 @@ pub(crate) fn decision(
         options,
     };
     (decision, targets)
+}
+
+/// What `d` asks its seat, as the event stream writes it: a canonical projection, as
+/// agent-view@2 shows it to that seat but without the seat's knowledge (a name question
+/// offers the visible piles' cards, which is all knowledge changes) or what only Arena's
+/// answer tool takes (the Way pre-answer), with one option group and `min` and `max`
+/// given.
+pub(crate) fn question(
+    game: &Game,
+    d: &Decision,
+    names: &[String],
+) -> (dominion_protocol::events::Ask, Vec<Target>) {
+    let known = KnownCards {
+        zones: Default::default(),
+        uncertain: vec![],
+        owned: vec![],
+    };
+    let (agent, targets) = decision(game, &known, d, "", names);
+    let prompt = agent
+        .prompt
+        .trim_end_matches(WAY_HINT)
+        .trim_end()
+        .to_string();
+    let ask = dominion_protocol::events::Ask {
+        seat: d.player.0,
+        prompt,
+        kind: agent.kind,
+        purpose: agent.purpose,
+        source: agent.source,
+        phase: agent.phase,
+        ordered: agent.ordered,
+        name_any: agent.name_any,
+        min: agent.min.unwrap_or(1),
+        max: agent.max.unwrap_or(1),
+        options: agent.options,
+    };
+    (ask, targets)
+}
+
+/// The answer `response` is to a question whose options answer with `targets`.
+pub(crate) fn answer_of(
+    response: &Response,
+    targets: &[Target],
+) -> Option<(Option<Vec<u32>>, Option<String>)> {
+    let index = |t: Target| (targets.iter().position(|&x| x == t)).map(|i| i as u32);
+    let indices = match response {
+        Response::Name(card) => return Some((None, Some(card.name().to_string()))),
+        Response::Move(m) => vec![index(Target::Move(*m))?],
+        Response::Cards(cards) => (cards.iter())
+            .map(|&c| index(Target::Card(c)))
+            .collect::<Option<_>>()?,
+        Response::Pile(p) => vec![index(Target::Pile(*p))?],
+        Response::Options(opts) => (opts.iter())
+            .map(|&o| index(Target::Opt(o)))
+            .collect::<Option<_>>()?,
+        Response::Number(n) => vec![index(Target::Number(*n))?],
+    };
+    Some((Some(indices), None))
+}
+
+/// The engine response a recorded answer to the question `d` asks stands for.
+pub(crate) fn recorded_response(
+    game: &Game,
+    d: &Decision,
+    names: &[String],
+    indices: Option<Vec<u32>>,
+    name: Option<String>,
+) -> Result<Response, String> {
+    let known = KnownCards {
+        zones: Default::default(),
+        uncertain: vec![],
+        owned: vec![],
+    };
+    let (agent, targets) = decision(game, &known, d, "", names);
+    let answer = Answer {
+        decision: String::new(),
+        indices,
+        name,
+    };
+    response(d, &agent, &targets, &answer)
 }
 
 /// Turns an answer's indices or name into the engine response, checking what the

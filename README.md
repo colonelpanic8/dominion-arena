@@ -299,6 +299,7 @@ will) or 500.
 | `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
 | `GET /api/games/{id}/watch[?logFrom=N][&as=S][&step=K]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible. With `as`, what seat `S` knows instead (its view, `spectating`, without its decision). With `step`, a finished game replayed to just after its `K`th answer (`0` is its first decision), with `replay`: the step, how many there are and where each turn starts; the web client's `/game/{id}/replay` |
+| `GET /api/games/{id}/recording` | | the game's recorded `dominion/events@1` stream as written, the file `state_dir/<game id>.events.jsonl` or `.events.cbor` beside its snapshot: `application/jsonl` or `application/cbor-seq`. It shows every hidden card and every shuffle's order, so only once the game can no longer change: over, and retired or allowing no undo (409 before; a game made here allows undo, so once it is retired), to its seats, or to anyone if it is watchable (403 otherwise); 404 for a game recorded without one, or whose recording stopped |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, for a watchable game, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |
 | `POST /api/auth/login` | `{name, password}` | the account and the session cookie |
@@ -325,7 +326,7 @@ will) or 500.
 | `POST /api/chat/{channel}` | `{text}` | 204 |
 | `GET /api/users/{name}` | | a player's page: rating, tallies and latest games |
 | `GET /api/leaderboard[?limit=N]` | | the rated players, best first |
-| `GET /api/history[?user=name][&before=ended][&limit=N]` | | finished lobby games, newest first |
+| `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&q=text][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; `q` matches a player, the account behind a seat or a card; ask again with `before=next` for more |
 
 `POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
 and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
@@ -376,17 +377,19 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   disconnects.
 - **Ratings and records.** A game counts for ratings (Glicko-2, a game a rating period,
   a day unplayed another) when it says so and every seat is a different registered
-  account or bot; a bot against its owner, or two bots of one owner, play for nothing,
-  and so does any game with a guest or a token seat. Every finished lobby game leaves a
-  record (`GET /api/history`), which stays when the game itself is deleted, and so does
-  every finished game of an official account (`source: official`, id
-  `dominion.games-<id>`), which counts for no rating or tally here. A record holds the
-  game's `seed` and the `version` (commit) of the server that hosted it, and for each
-  seat one of the server's agents played, its `agent`: the setup its runner reported
-  (agent, program, model, effort, the runner's `version`, and the `playbook` it was given:
-  path, git `commit` and `dirty` where git can tell, and `digest`, a SHA-256 of its
-  files), and every `attempt` (when it started, its archive's directory name, the
-  `error` that stopped it, and its `setup` where that changed since the first).
+  account or bot (one made with `rated: true` has a different one of the server's agents
+  in every seat; the history lists it as `arranged: agents`); a bot against its owner, or
+  two bots of one owner, play for nothing, and so does any game with a guest or a token
+  seat. Every finished lobby game leaves a record (`GET /api/history`), which stays when
+  the game itself is deleted, and so does every finished game of an official account
+  (`venue: official`, with dominion.games' `officialId`), which counts for no rating or
+  tally here. A game in the history holds its `seed` and the `version` (commit) of the
+  server that hosted it, and for each seat one of the server's agents played, its
+  `agent`: the setup its runner reported (agent, program, model, effort, the runner's
+  `version`, and the `playbook` it was given: path, git `commit` and `dirty` where git
+  can tell, and `digest`, a SHA-256 of its files), and every `attempt` (when it started,
+  its archive's directory name, the `error` that stopped it, and its `setup` where that
+  changed since the first).
 - **dominion.games' scale.** `[[official_skill_anchors]]` names players also rated on
   dominion.games, each with its skill there (mu, not the level, which also folds in how
   sure it is): agents that play enough rated games on both. Once two or more anchors have
@@ -732,6 +735,31 @@ reused. An expired game can still be opened: its players' seats and anyone allow
 watch it see it as it was left, read from `expired/` when asked for, and nothing more
 can be done in it.
 
+Every game the server saves is also recorded as a `dominion/events@1` stream (every
+card's face and every shuffle's order; the format is the playbook's `protocol/events.md`)
+beside its snapshot: `state_dir/<game id>.events.jsonl`, one JSON object per line, or
+`.events.cbor`, a CBOR sequence, as `events_encoding` says when the game starts. Its first
+record says the schema, the viewer (`full`) and the game. It is appended to as the game
+is played, goes to `expired/` with the snapshot, and holds no undo: after one it is
+rewritten as the stream of the game as it now stands. After a crash the server cuts it
+back to what the snapshot says was written and goes on from there. Recording is a side
+record: whatever goes wrong with it (a recorder fault, a stream file that doesn't hold
+what the snapshot says, a game saved by another build, writes that keep failing) stops
+that game's recording, never the game. Its stream is then renamed
+`<game id>.incomplete.events.<jsonl|cbor>`, as it is, and the game is reported at
+startup. `record_events = false` (or `serve --record-events false`) records no new games,
+so a server can be deployed with recording off and turned on later; games already
+recording go on. Games saved before streams were recorded have none, and neither do
+games started with recording off, until `dominion games backfill` writes one (below); it
+also rebuilds a whole stream for a game whose recording stopped, beside the incomplete
+one. Such a stream's first record says it was `reconstructed`, and when; the server
+checks it at startup and before serving it, and serves it like any other once the game
+can no longer change.
+
+A game's snapshot is written, and synced, before a change to it is acknowledged: a
+change that can't be saved (a full or failing disk) is refused, and the game is as it
+was.
+
 Accounts, sessions and finished games' records are kept in a SQLite database beside the
 games, `dominion.sqlite` under `state_dir` (in memory with `--ephemeral`): a game's
 record and what it does to its players' ratings and tallies are written together or not
@@ -749,6 +777,8 @@ allowed_hosts = []             # serve: extra Host header values to accept
 persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: move finished games this old to state_dir/expired (0: never)
+events_encoding = "jsonl"      # serve: what new games' recorded event streams are written in: jsonl or cbor
+record_events = true           # serve: record new games as event streams (games already recording go on)
 assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
 web_animations = true          # serve: the web client shows cards moving
@@ -842,6 +872,30 @@ at once, moving their files to `expired/` as `keep_idle_days` would. It refuses 
 unfinished game of a lobby table or the server's agents, which ends by resigning. Both
 talk to `control_socket`, which only the server's user can reach; the NixOS module sets
 it and installs `dominion-games` for root: `sudo dominion-games list`.
+
+`dominion games backfill` writes `dominion/events@1` streams for the saved games, in
+`state_dir` and `expired/`, that have no whole stream: saved before the server recorded
+them or while `record_events` was off, or whose recording stopped (its incomplete stream
+is kept as it is, under its `.incomplete` name, and the report says why it stopped). It
+runs whatever `record_events` says: it is run on purpose. Each game is played again from
+its saved config and answers with recording on, and its stream is written only if that
+is the saved game exactly: every log entry, the final state and the outcome, with the
+stream replaying to it. It is written beside the snapshot, atomically and synced, in
+`events_encoding` (`--events-encoding`), never over a stream already there, and its first
+record says it was reconstructed and when; snapshots are never touched. A game the
+server hosts that can still change is left for a later run: one in progress, since its
+table goes on unrecorded, and a finished one whose rules still allow an undo, until it
+is retired. Running it again changes nothing, and stopping it midway loses nothing.
+`--dry-run` converts and checks every game, writes nothing, and can run beside the
+server; a run that writes takes the state directory's lock, so stop the server first.
+Each prints a line per game (converted, has a stream, in progress, can be undone, or not
+convertible and why: answers not all kept, or where the game now plays differently, with
+the log entries that differ) and the totals:
+
+```
+sudo dominion-games backfill --dry-run
+sudo systemctl stop dominion && sudo dominion-games backfill; sudo systemctl start dominion
+```
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;

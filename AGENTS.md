@@ -43,6 +43,9 @@ crates/dominion-engine/
   src/tests/fuzz/unused.rs  games played twice in step, once with unused landscapes added
   src/tests/<set>.rs      each set's card tests
   src/trace.rs            opt-in id-level trace of card moves, shuffles and reveals
+  src/journal.rs          opt-in ordered record of everything that changes on the table:
+                          the trace with each move's verb, the log's entries in place,
+                          turns, phases, counters
   src/knowledge.rs        per-player perfect-recall knowledge built from the trace
 crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; accounts and the
                           lobby in `lobby`) and the asset manifest; engine-free, builds for wasm
@@ -52,14 +55,25 @@ crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; acco
                           reducer (`dominion-online`) are both tested against it; a view
                           convention goes here before either producer or the client relies
                           on it
+  src/events.rs           serde types of events@1 and `Table`, the fold of a stream
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
+  src/events.rs           `Recorder`: a game's events@1 stream from the engine's journal
+  src/table.rs            `Table`: a hosted game, its answers (for undo) and, made with
+                          `new_recorded`, its recorded stream (`Recording`: on, or stopped
+                          for good and why; saved with `RECORDING_VERSION`)
+  src/recording.rs        a recorded stream as bytes: its header, the `Encoding`s (JSON Lines,
+                          CBOR), reading one back
   protocol/               the vendored JSON Schema (`just sync-protocol`)
+  examples/record_cost.rs what recording costs a long 4-seat game, per answer and on disk
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
                           and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
                           came from, the accounts playing it, rated / watchable / timed /
-                          its undo rule, what played its agent seats), who is connected, forfeits, undo requests; calls
-                          back when a game ends
+                          its undo rule, what played its agent seats), who is connected,
+                          forfeits, undo requests; calls back when a game ends; every change
+                          committed by saving its snapshot first (`Hub::commit`), each game's
+                          recorded stream kept in step with it (`Hub::write_events`,
+                          `stream_state`)
   src/arena/              who is playing (README "Accounts and the lobby"); its lock order
                           is in mod.rs
     mod.rs                `Arena`: state, the lobby snapshot, the sweep that runs every 5 s
@@ -67,9 +81,13 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           place they are kept (`state` in mod.rs holds what is live)
     accounts.rs           accounts, passwords, sessions, bots and their API keys
     tables.rs matching.rs lobby tables; the automatch queue
-    chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard
+    chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard;
+                          `ArenaRecords`, the history's source of Arena's own games
     official.rs           the official accounts as the lobby lists them; their finished
-                          games' records (no rating or tally)
+                          games' records (no rating or tally), `OfficialRecords`
+    history.rs            the history read model: `/api/history` and players' pages read
+                          finished games only through it, as `PastGame`s, merged and
+                          filtered over its `GameSource`s (one per place games are kept)
     house.rs              the server's own agents: their accounts, the runner connected,
                           its jobs (every seat they hold in a running game, sent when they
                           change), each player's agent seats a day
@@ -77,6 +95,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
   src/control.rs          the control socket: `dominion games` lists and retires hosted games
+  src/backfill.rs         `dominion games backfill`: streams for games saved before they
+                          were recorded, replayed from their answers and checked against
+                          the snapshot; offline, under the state directory's lock
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
   src/catalog.rs          the models the runner offers: read from each provider's catalog
@@ -92,7 +113,12 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle
   src/steps.rs            named steps (`play A, B; treasures; buy C; next`) for solo and the
                           MCP `steps` tool
-  src/store.rs            the state directory: its lock, a JSON file per game written atomically
+  src/setup_cards.rs      what a finished game was set up with besides its Kingdom piles
+                          and landscapes (Platinum and Colony, Shelters, Heirlooms, ...),
+                          read from its view: kept in its record for the history
+  src/store.rs            the state directory: its lock, a JSON file per game written
+                          atomically and durably (the directory synced too), each game's
+                          event stream appended to, or marked incomplete
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
   src/mcp/play.rs         dominion/play@1: arguments, the text a session is shown
@@ -214,7 +240,13 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     tables.rs             Tables: `listing` (pure) of the lobby's tables, the games
                           without one and the official accounts' running games, with
                           Join / Open / Play / Watch
-    leaderboard.rs        the Leaderboard tab and a player's page (`/user/:name`)
+    leaderboard.rs        the Leaderboard tab and a player's page (`/user/:name`): their
+                          profile over their games
+    history.rs            History: finished games (filtered by where, whose, rated, a
+                          name) beside the picked one's sheet (kingdom, standings, Review
+                          game, Replay, Play this kingdom); `GameBrowser`, shared with a
+                          player's page; a game's kingdom strip shows the whole kingdom
+                          while hovered (`KingdomPeek`)
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
@@ -558,6 +590,146 @@ them.
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
   `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.
+- **Events.** `dominion/events@1` (`dominion-playbook/protocol/events.md`) is a game as a
+  stream of events whose fold is the table, with no rules engine: `events::Table::apply`
+  in dominion-protocol is the reference. `Game::new_journaled` records a journal
+  (`journal.rs`): every trace entry with the rules' word for a move (`Verb`), the log's
+  entries where they were logged, turns, phases, and counters read each time anything is
+  recorded. `events::Recorder` in dominion-agent turns it into the full stream.
+  Cards are written by name only, never by id: ordered zones (decks, discard piles,
+  piles, the trash, Boons' and Hexes') are sequences and a move out of one says the
+  position it left (`pos`, the topmost of a run of one name); the others are bags,
+  written sorted. The recorder keeps ids privately (`Recorder::ids`) to work out
+  positions and faces. Whatever must say which copy (an ability's card among several
+  moved together, the way a set-aside card lies, an effect's cards) says it by position,
+  effect id, an index into an event's cards or a field of its own: never a number per
+  card. `tests/events.rs` holds the fold to the engine's table at every decision of random
+  games: each zone with its order (bags as bags), each counter, the turn, effects (their
+  cards as bags, with which of those set aside lie face up), faces per zone, extra turns
+  waiting and the ending. So a card moves with
+  `move_as(verb, ..)` where the rules have a word for it (a bare `move_card` is a `put`,
+  or by its destination a top-deck, return, set-aside, look or exile), and code that
+  rearranges cards without `move_card` (a shuffle in place, a pile rotated, cards ordered
+  at the bottom of a deck) journals it with `journal_within`. A card given to another
+  player is `Verb::Pass` (the fold test holds every move between two players' zones to
+  it). A move between zones nobody owns is given to the player of the occurrence it
+  happens in, so make it inside the play or ability that does it. A card that enters the
+  game (`Game::create`) or changes identity (`Trace::Changed`, after `sync_journal`) is
+  journaled before what it changes is read, so its cost follows it. A counter the stream
+  should carry is a `Gauge`. Lasting effects are read like gauges (`Game::effects`: what
+  `View::lasting` shows, with `Lasting::holds` as what it holds), so a change to one
+  needs nothing; one removed is `resolved` unless its remover says why
+  (`journal_effect_end` right after removing it, the journal synced before). An effect
+  holds the cards of its data that are set aside when it is made; one that sets a card
+  aside later, after it is made, says so with `g.hold(id, card)` (`continue_lasting`
+  makes a new one, which holds what is set aside then). A holding ends by itself when
+  the card leaves the set-aside zone. Never infer a holding from what an effect's data
+  names: it may name a card for another reason (Necromancer's marker). The fold test
+  holds every effect to holding only cards set aside, a card to at most one holder, and a
+  card nobody holds to being no effect's. The trash's face-down cards
+  (`Game::face_down_in_trash`) and each play area's cards some effect keeps are read at
+  every record too. Phases
+  change only through `set_phase` (never a write to `turn.phase`), a turn ends through
+  `turn_over`, extra turns are queued only through `queue_extra_turn` (it gives each an
+  id), and a card set aside or revealed face up is followed by `journal_face_up`, right
+  after its move. Turns that don't happen (`journal_skipped`) and the game's end
+  condition (`journal_game_ending`) are journaled where the turn loop decides them. The
+  rest of the table (Adventures, −Card, −$1 and Journey tokens; Project cubes, Artifacts
+  and States; pile properties and roles; landscapes and the Prophecy; notes; every card's
+  cost and changed types) is read at every record too (`journal::Holdings`) and journaled
+  where it changed: new state of that kind goes there and into the fold test, never into
+  a card script. Boons and Hexes are cards in zones, named without handles, journaled
+  where they move: draw them with `Game::draw_from(player, ..)`, discard them with
+  `discard_fate`, and never change `Game::boons` / `hexes` directly. `journal::table_note`
+  says which `SetRules::notes` the table keeps as notes: public state with no better
+  place. Each event names its cause (`by`) from the effect stack: an occurrence (turn,
+  phase, turn end, play, buy, triggered ability, Boon or Hex received, gain, trash,
+  discard, shuffle) is marked `Step::Occurred` right after its step and stays open for
+  as long as the frame it belongs to (`journal_opens` in that frame; `run` closes it when
+  the frame finishes, a window when its ability has); `Step::Within` says which open
+  occurrence the steps after it happen inside, and `Step::Closed` that one is over. A move
+  event is one occurrence, or cards moved together within one: the recorder merges a move
+  into the event before it only while that event's occurrence is open, so two gains are two
+  events, while cards trashed or discarded together (all moved before their occurrences
+  open) are one. Close occurrences only through `journal_close`. A phase or the turn's end
+  takes over the Turn frame's occurrence (closing the phase before it), so what the turn
+  does directly is inside its current phase.
+  Everything read at every record is also read at every open and close, so a change made
+  inside an occurrence must not wait to be read until after it has closed. A new
+  occurrence opens with `journal_opens` (several together: `journal_occurred` for each,
+  then `journal_open`); a lasting effect made outside `add_lasting` / `continue_lasting`
+  records its origin with `journal_lasting`. The fold refuses an event out of place (its
+  `seq`, `setup` only first, nothing after `game-end`, a cause that is no occurrence, a
+  turn during a turn) and leaves the table as it was; `Table::change` applies an event's
+  change alone, for building a table. Arena records every game it saves
+  (unless `record_events` is off): `Table::new_recorded` journals the game and keeps a
+  `Recorder`, saved with it, and every change a table makes to its game ends with its
+  new events taken (`Table::record`, in `game_respond` and `resign`: anything new that
+  changes the game must call it too), kept as `Table::unwritten` until the hub has
+  written them. **Recording is a side record**: it never refuses an answer, changes
+  what a seat sees, or loses a position. `Table::record` can't fail: a recorder error or
+  panic stops the table's recording for good (`Table::stop_recording`: `Recording::
+  Stopped(why)`, saved, the game's journal dropped, so a broken recorder never runs
+  again), and the answer stands whole, so an answer is all or nothing (the engine
+  refuses before changing anything; Way pre-answers and Autoplay Treasures runs stop
+  at a play the engine would refuse rather than fail half done). The hub runs a change
+  again without recording if the engine panics while journaling (`Hub::attempt`). What
+  a table saves of its recorder and journal is versioned (`RECORDING_VERSION`: bump it
+  whenever either changes what it keeps or means): a table saved by another build, or
+  whose recorder, journal or unwritten events don't read, loads whole with its recording
+  stopped (`Saved` in table.rs), and the game plays on unjournaled, which plays exactly
+  as journaled (the fold tests hold a never-journaled twin to it). State the snapshot
+  keeps must serialize as JSON: no map keyed by a tuple or other non-string (the
+  journal's tokens are written as pairs); the fold tests save and reload the whole
+  `Table` as JSON throughout each game. The recorder keeps only the occurrences later
+  steps can name (`Game::journal_live`). `Hub::commit` serializes and saves the
+  snapshot first and makes the change only once it is saved: a disk failure refuses
+  the change (`HubError::Unsaved`), and recording state that won't serialize stops the
+  recording rather than the save. Then `Hub::write_events` appends the events to
+  `<game id>.events.<jsonl|cbor>` and marks them written; a failed write is tried again
+  with the next, and after three running the recording stops. A stream that stops is
+  renamed `<game id>.incomplete.events.<encoding>`, as it is, and reported at every
+  start. Loading cuts the stream back to the events the snapshot says were written,
+  and holds them, with those still to write, to the table its recorder keeps
+  (`stream_state`); anything else stops the recording. The full stream is served only
+  once the game can't change: over, and retired or allowing no undo (`Hub::recording`,
+  which checks it is exactly the game's stream before serving it). Games without a whole
+  stream (saved before recording, with `record_events` off, or whose recording stopped)
+  get one from `backfill.rs`: `Table::rerecorded` plays the table's config and `history`
+  again recording, and the stream is written only if that game's log, final state (the
+  saved game's fields as written then) and outcome are the saved ones and the stream
+  replays; an incomplete stream stays beside it. Its header carries `reconstructed`, and
+  the hub never writes to it: `stream_state` checks such a file as a whole
+  (`check_reconstructed`: header, fold, setup, ending) whatever the table's recording
+  says, and so does `Hub::recording` before serving it. The backfill writes one only for
+  a game that can't change (`hub::can_change`: a hosted game in progress or able to be
+  undone waits), so the check needs no engine; the hub refuses one beside a game that can.
+  The stream also holds what caused the game, so that `replay::replay` can play it again
+  from the stream alone (its `setup`'s `config`, its chance outcomes, its answers) and
+  hold the new stream to it event for event; the fold tests replay every game they play.
+  So every random outcome is drawn at a named `chance::Site`: `shuffle_for` (a shuffle;
+  a deck's or the Boons'/Hexes' discard pile's is shown by its `shuffle` event),
+  `chance_of` (a random procedure: what it decided, which a game given its outcomes takes
+  instead if it fits) or `chance_pick`. Never call `rng_shuffle` / `rng_index` outside
+  the procedure of a site. Outcomes no shuffle shows are journaled (`Step::Chance`) and
+  written as `setup`'s `chance` or a `chance` event. A question a seat is asked is
+  journaled when `run` stops at it (`Step::Asked`, always the journal's last step: record
+  after every answer) and its answer by `respond` (`Step::Answered`); the recorder writes
+  them as `ask` (agent-view@2's decision as that seat sees it, `project::question`) and
+  `answer` (indices into it). Replay gives the cards of a shuffle by name, so the engine
+  must do the same for any copies of a name in the same places: never order a choice's
+  options by `CardId` (sort by name, then position: `Game::shuffled_unordered`). Then
+  which copy a "when you shuffle" choice takes must change nothing, so it ends with
+  `g.reshuffle_unplaced(p, placed)`, `placed` being every card it placed or took out
+  (nothing: the order stands): the cards left are shuffled again through the chance seam
+  (a shuffle of the deck into itself, under the cards over them; a card with a back of
+  its own keeps its place, as Stash placed by its own ability must). A site asked to shuffle or draw from fewer than two cards draws,
+  takes and records nothing, and replay reads no outcome from a shuffle of fewer than
+  two: never ask chance for something with one outcome elsewhere. What players are shown
+  without anything moving reaches the stream from the trace (`g.show`, `g.show_to`,
+  `g.reveal`, `look_over_shuffled`: a `show` event; `g.mixed`: a `mix`, unless a shuffle
+  of just those cards follows) and from the log (`RevealedHand`): show and mix through
+  those, never by hand.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The
@@ -579,8 +751,14 @@ them.
   to before any answer by replaying the game from its config, which is exact because a
   game is determined by its config and responses; each step checks the log length and
   deciding seat, so a replay that went differently fails instead of diverging. Anything a
-  table answers must go through a recorded step. Who may undo and whose permission it
-  needs (`UndoRule`, requests waiting) is the hub's.
+  table answers must go through a recorded step. The recorded event stream holds no undo:
+  a recorded table's replay records afresh, so after a rewind `Table::unwritten` is the
+  whole stream of the game as it now stands, from event 0, and replaces the file (only
+  once the snapshot saying so is saved; until it has, the file is not served as the
+  stream). A table whose recording stopped replays unjournaled and stays stopped.
+  `Table::replay` (stepping through a finished game to look at it) never records: its
+  table is never the game, and the hub writes nothing for it. Who
+  may undo and whose permission it needs (`UndoRule`, requests waiting) is the hub's.
 
 ## Writing a set
 
@@ -671,7 +849,7 @@ helpers in `tests/mod.rs` (`setup`, `hand`, `deck`, `play`, `choose_kinds`, `yes
   fuzz test checks this at every decision. Cards held by an effect go in a real zone
   (`SetAside`, a mat), never nowhere.
 - `Game` is `Clone + Serialize` at every point. Frames and state hold plain data only.
-- All randomness comes from `Game::rng`.
+- All randomness comes from `Game::rng`, drawn at a `chance::Site` (see Events).
 - Primitive helpers on `Game` never trigger anything; anything a card can react to goes
   through its frame.
 - One way to play a card: `Frame::play`.

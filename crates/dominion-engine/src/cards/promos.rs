@@ -766,6 +766,12 @@ fn stash_shuffle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 deck.remove(i);
                 let pos = (input.number().unwrap_or(0).max(0) as usize).min(shuffled - 1);
                 deck.insert(shuffled - 1 - pos, stash);
+                let above = deck.len() - shuffled + pos;
+                let verb = match above {
+                    0 => crate::Verb::Topdeck,
+                    _ => crate::Verb::Insert,
+                };
+                g.journal_within(verb, Zone::Deck(p), &[stash], false, Pos::Under(above));
             }
             f.s.i += 1;
             f.pc = 1;
