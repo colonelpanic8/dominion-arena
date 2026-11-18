@@ -1,21 +1,8 @@
 //! Picking one of the server's agents: its model, then its effort.
 
+use super::who::effort_title;
 use dioxus::prelude::*;
 use dominion_protocol::lobby::{HouseModel, house_choice};
-
-/// "high" -> "High", "xhigh" -> "XHigh".
-pub fn effort_label(effort: &str) -> String {
-    match effort {
-        "xhigh" => "XHigh".into(),
-        e => {
-            let mut chars = e.chars();
-            (chars.next().into_iter())
-                .flat_map(char::to_uppercase)
-                .chain(chars)
-                .collect()
-        }
-    }
-}
 
 /// `models` without the agents `taken`, and without the models left with none.
 pub fn without(models: &[HouseModel], taken: &[String]) -> Vec<HouseModel> {
@@ -56,7 +43,7 @@ pub fn AgentPicker(
     let efforts = picked.filter(|(m, _)| m.choices.len() > 1).map(|(m, c)| {
         let options: Vec<(String, String)> = (m.choices.iter())
             .map(|c| {
-                let label = c.effort.as_deref().map_or(c.agent.clone(), effort_label);
+                let label = c.effort.as_deref().map_or(c.agent.clone(), effort_title);
                 (c.agent.clone(), label)
             })
             .collect();

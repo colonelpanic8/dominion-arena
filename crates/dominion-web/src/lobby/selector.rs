@@ -9,7 +9,7 @@ use super::rules::{
     DEPRECATED, EXPANSIONS, expansion_icon, expansions, search, selectable, set_cards,
 };
 use super::store;
-use super::{flash, show_tooltip, use_banned, use_lobby, use_toast, use_tooltip};
+use super::{Fieldset, flash, show_tooltip, use_banned, use_lobby, use_toast, use_tooltip};
 use crate::api;
 use crate::app::use_cards;
 use crate::assets::use_assets;
@@ -113,8 +113,7 @@ pub fn CardSelector(selector: Signal<bool>, study: Signal<Option<String>>) -> El
     };
     rsx! {
         div { class: "lb-selector", onclick: move |e| e.stop_propagation(),
-          div { class: "lb-fieldset lb-card-selector",
-            div { class: "lb-fieldset-title", span { "Select Cards" } }
+          Fieldset { title: "Select Cards", class: "lb-card-selector",
             div { class: "lb-selector-content",
                 div { class: "lb-selector-expansions",
                     for set in sets.iter().cloned() {

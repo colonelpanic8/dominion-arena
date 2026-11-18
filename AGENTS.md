@@ -279,6 +279,10 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           Head to head tab beside it (`Rivals`), whose pick narrows the
                           games to those against that opponent
     cardlists.rs          Cardlists: the account's Banned list
+    who.rs                who played a seat, the same wherever a player is shown: `Face`
+                          (a picture, else what played it on a disc), `SeatIcon` (that
+                          mark alone, inline with text), the caption, an agent's maker,
+                          model and effort in words
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   assets/tokens.css       the palette and fonts the other stylesheets take (see "Web styles")
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
@@ -297,10 +301,16 @@ tools/import_cards.py     one-off importer that produced data/cards (kept for re
   replaced, written out in any other stylesheet; `table.css` and `cards.css` keep
   dominion.games' own colours and are exempt. Add a token only for a colour with a role;
   a stand-in for a missing picture or a material's shading stays where it is used.
-- Buttons: gold (`lb-button lb-gold`) for a screen's one main action, copper for a row's
-  or a secondary action, stone for picking among equal choices. An oval (`lb-oval`) is a
-  toggle or filter, never an action. A tab's content sits in a `Fieldset`, except the
-  Tables list, which keeps dominion.games' open layout.
+- Buttons: gold (`lb-button lb-gold`) for a panel's one main action, copper for a row's
+  or a secondary action, stone for picking among equal choices. A toggle or filter is an
+  `Oval`; a small inline action (Copy, More games) may use its class too.
+- Shared pieces, before writing a new one: `Fieldset` for a tab's panels (a title, or tabs
+  as `after_title`; the Tables list alone keeps dominion.games' open layout), `Face` for a
+  player in a row of players, `SeatIcon` inline with a name, `OptionRow` and `Switch` for
+  options, and in CSS a list's `lb-list-head` (column names, a day), `lb-list` (its
+  scrolling well) and `lb-caption` (the line under a name). An agent is named by
+  `who::caption` under a name and `who::agent_title` in full; an effort reads as
+  `effort_title` gives it ("High", "XHigh").
 
 ## Card data
 

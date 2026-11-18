@@ -24,6 +24,9 @@
   --text-muted: #a9a294;
   --text-faint: #8f8a80;
 
+  /* The dashed rule under a list's heading or a day. */
+  --rule-dashed: 2px dashed color-mix(in srgb, var(--text-soft) 50%, transparent);
+
   --good: #8fd07a;
   --bad: #f17878;
 

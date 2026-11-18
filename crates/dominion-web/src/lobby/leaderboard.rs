@@ -1,14 +1,14 @@
 //! The Leaderboard tab (the rated players, best first) and a player's page: their
 //! rating and tallies over their games.
 
-use super::avatar::Avatar;
-use super::history::{GameBrowser, SeatIcon, effort_title, maker, model_title, seat_of};
-use super::{LobbyFrame, Tab};
+use super::history::{GameBrowser, seat_of};
+use super::who::{Face, agent_title, effort_title, makers_line, model_title};
+use super::{Fieldset, LobbyFrame, Tab};
 use crate::api;
 use crate::app::Route;
 use dioxus::prelude::*;
 use dominion_protocol::lobby::{
-    Beyond, Leader, Leaderboard, OfficialSkill, PastGame, PlayedBy, Profile, SeatAgent, UserKind,
+    Beyond, Leader, Leaderboard, OfficialSkill, PastGame, PlayedBy, Profile, UserKind,
 };
 
 const OFFICIAL_TITLE: &str =
@@ -20,8 +20,7 @@ pub fn LeaderboardTab() -> Element {
     rsx! {
         LobbyFrame { tab: Tab::Leaderboard,
             div { class: "lb-board-page",
-                div { class: "lb-fieldset lb-board",
-                    div { class: "lb-fieldset-title", span { "Leaderboard" } }
+                Fieldset { title: "Leaderboard", class: "lb-board",
                     match &*board.read() {
                         None => rsx! {},
                         Some(Err(e)) => rsx! { p { class: "lb-error", "{e.message}" } },
@@ -44,7 +43,7 @@ fn Standings(players: Vec<Leader>) -> Element {
     };
     let scale = Scale::of(&players);
     rsx! {
-        div { class: "{line} lb-board-head",
+        div { class: "{line} lb-board-head lb-list-head",
             span { class: "lb-board-rank", "#" }
             span { "Player" }
             span { class: "lb-board-rating", "Rating" }
@@ -55,7 +54,7 @@ fn Standings(players: Vec<Leader>) -> Element {
             span { class: "lb-board-num", "Wins" }
             span { class: "lb-board-num", "Win rate" }
         }
-        div { class: "lb-board-list",
+        div { class: "lb-list lb-board-list",
             if players.is_empty() {
                 p { class: "lb-note", "Nobody has played a rated game yet. A game is rated when its table or search says so and every seat is a different registered player or bot, or when it is made with a different one of the server's agents in every seat." }
             }
@@ -150,18 +149,14 @@ fn Standing(leader: Leader, class: &'static str, scale: Scale, official: bool) -
             "data-leader": "{user.name}",
             span { class: place, "{rank}" }
             span { class: "lb-board-who",
-                match &agent {
-                    Some(a) => rsx! {
-                        span { class: "lb-board-badge",
-                            SeatIcon { played_by: PlayedBy::Agent(a.clone()) }
-                        }
+                Face {
+                    user: user.clone(),
+                    played_by: match &agent {
+                        Some(a) => Some(PlayedBy::Agent(a.clone())),
+                        None if user.kind == UserKind::Bot => Some(PlayedBy::Bot { owner: user.owner.clone() }),
+                        None => None,
                     },
-                    None if user.kind == UserKind::Bot && user.avatar.is_none() => rsx! {
-                        span { class: "lb-board-badge",
-                            SeatIcon { played_by: PlayedBy::Bot { owner: user.owner.clone() } }
-                        }
-                    },
-                    None => rsx! { Avatar { user: user.clone(), size: "calc(4.4 * var(--lu))" } },
+                    size: "calc(4.4 * var(--lu))",
                 }
                 span { class: "lb-board-text",
                     span { class: "lb-board-name",
@@ -170,7 +165,7 @@ fn Standing(leader: Leader, class: &'static str, scale: Scale, official: bool) -
                             span { class: "lb-board-effort", title: "Reasoning effort", "{e}" }
                         }
                     }
-                    span { class: "lb-board-caption", "{caption}" }
+                    span { class: "lb-caption lb-board-caption", "{caption}" }
                 }
             }
             span { class: "lb-board-rating", title: "{r} ± {d}",
@@ -192,33 +187,6 @@ fn Standing(leader: Leader, class: &'static str, scale: Scale, official: bool) -
             }
         }
     }
-}
-
-/// Who makes an agent's model and what runs it, where that isn't its maker: "Anthropic ·
-/// Claude Code", "OpenAI".
-fn makers_line(a: &SeatAgent) -> String {
-    let mut parts: Vec<String> = maker(a)
-        .map(|m| m.company().to_string())
-        .into_iter()
-        .collect();
-    if let Some(program) = a.program.as_ref().filter(|p| !parts.contains(p)) {
-        parts.push(program.clone());
-    }
-    parts.join(" · ")
-}
-
-/// One of the server's agents in a line: "Claude Opus 5.5 · High effort · Anthropic ·
-/// Claude Code".
-fn agent_title(a: &SeatAgent) -> String {
-    let mut parts = vec![model_title(a)];
-    parts.extend(
-        a.effort
-            .as_deref()
-            .map(|e| format!("{} effort", effort_title(e))),
-    );
-    parts.push(makers_line(a));
-    parts.retain(|p| !p.is_empty());
-    parts.join(" · ")
 }
 
 /// A rating on dominion.games' scale: "38.2", with its deviation "38.2 ± 1.5", or
@@ -310,10 +278,7 @@ fn ProfileCard(profile: Profile) -> Element {
         );
     }
     rsx! {
-        div { class: "lb-fieldset lb-profile", "data-profile": "{user.name}",
-            div { class: "lb-fieldset-title",
-                span { "{user.name}" }
-            }
+        Fieldset { title: user.name.clone(), class: "lb-profile", "data-profile": "{user.name}",
             div { class: "lb-profile-who",
                 if user.kind != UserKind::Bot || user.avatar.is_some() {
                     super::avatar::Avatar { user: user.clone(), size: "4vh" }
