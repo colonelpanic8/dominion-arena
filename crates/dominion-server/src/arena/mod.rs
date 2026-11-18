@@ -154,6 +154,7 @@ struct User {
     rated_games: u32,
     games: u32,
     wins: u32,
+    rated_wins: u32,
     /// Their own Banned cards list, once they have set one.
     banned_cards: Option<Vec<String>>,
 }
@@ -180,6 +181,7 @@ impl User {
             rating: self.rating.rating,
             deviation,
             games: self.rated_games,
+            wins: self.rated_wins,
             official: (scale.filter(|_| self.rated_games > 0))
                 .map(|s| s.place(self.rating.rating, deviation)),
         }

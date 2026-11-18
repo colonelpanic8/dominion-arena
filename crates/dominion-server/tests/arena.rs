@@ -476,6 +476,7 @@ fn a_rated_game_moves_ratings_and_is_recorded() {
     assert!(winner.rating.deviation < 350.0);
     assert_eq!((winner.stats.games, winner.stats.wins), (1, 1));
     assert_eq!((loser.stats.games, loser.stats.wins), (1, 0));
+    assert_eq!((winner.rating.wins, loser.rating.wins), (1, 0));
     assert_eq!(
         winner.user.rating,
         Some(winner.rating.rating.round() as i32)

@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
     rated_games INTEGER NOT NULL DEFAULT 0,
     games INTEGER NOT NULL DEFAULT 0,
     wins INTEGER NOT NULL DEFAULT 0,
+    rated_wins INTEGER NOT NULL DEFAULT 0,
     -- Their own Banned cards list as a JSON array, once they have set one.
     banned_cards TEXT
 );
@@ -123,11 +124,63 @@ fn add_venues(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Gives a database from before `users.rated_wins` the column, counted from the records
+/// of its rated games.
+fn add_rated_wins(conn: &Connection) -> rusqlite::Result<()> {
+    let has = conn
+        .prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'rated_wins'")?
+        .exists([])?;
+    if has {
+        return Ok(());
+    }
+    conn.execute_batch("ALTER TABLE users ADD COLUMN rated_wins INTEGER NOT NULL DEFAULT 0")?;
+    let mut wins: HashMap<i64, u32> = HashMap::new();
+    {
+        let mut query = conn.prepare(
+            "SELECT u.id, lower(u.name), g.record FROM game_players p \
+             JOIN users u ON u.id = p.user JOIN games g ON g.id = p.game \
+             WHERE g.venue = 'arena'",
+        )?;
+        let rows = query.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (user, name, record) = row?;
+            let Ok(record) = serde_json::from_str::<GameRecord>(&record) else {
+                continue;
+            };
+            if record.rated && rated_win(&record, &name) {
+                *wins.entry(user).or_default() += 1;
+            }
+        }
+    }
+    for (user, n) in wins {
+        conn.execute(
+            "UPDATE users SET rated_wins = ?2 WHERE id = ?1",
+            params![user, n],
+        )?;
+    }
+    Ok(())
+}
+
+/// Whether the account called `name` (lowercased) won `record`: placed first, with
+/// someone placed lower.
+fn rated_win(record: &GameRecord, name: &str) -> bool {
+    let seat = (record.players.iter())
+        .find(|p| p.user.as_deref().unwrap_or(&p.name).to_lowercase() == name);
+    let won = record.players.iter().any(|p| p.rank != 1);
+    won && seat.is_some_and(|p| p.rank == 1)
+}
+
 /// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
-                    rated_at, rated_games, games, wins, banned_cards";
+                    rated_at, rated_games, games, wins, banned_cards, rated_wins";
 
 /// When account `id`'s picture was set, if it has one.
 fn avatar_set(conn: &Connection, id: &str) -> rusqlite::Result<Option<u64>> {
@@ -183,6 +236,7 @@ fn read_user(row: &Row<'_>) -> rusqlite::Result<User> {
         rated_games: row.get(10)?,
         games: row.get(11)?,
         wins: row.get(12)?,
+        rated_wins: row.get(14)?,
         banned_cards: banned.and_then(|b| serde_json::from_str(&b).ok()),
     })
 }
@@ -263,6 +317,7 @@ impl Db {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
         add_venues(&conn)?;
+        add_rated_wins(&conn)?;
         conn.execute_batch("CREATE INDEX IF NOT EXISTS games_venue ON games (venue, ended DESC)")?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db {
@@ -685,13 +740,14 @@ pub(super) fn tally(tx: &Transaction<'_>, t: &Tally<'_>) -> Result<()> {
     if let Some(r) = t.rating {
         tx.execute(
             "UPDATE users SET rating = ?2, deviation = ?3, volatility = ?4, rated_at = ?5, \
-             rated_games = rated_games + 1 WHERE id = ?1",
+             rated_games = rated_games + 1, rated_wins = rated_wins + ?6 WHERE id = ?1",
             params![
                 row_of(t.user),
                 r.rating,
                 r.deviation,
                 r.volatility,
-                r.at as i64
+                r.at as i64,
+                t.win as i64
             ],
         )?;
     }
@@ -769,7 +825,7 @@ mod transcript_tests {
 #[cfg(test)]
 mod venue_tests {
     use super::*;
-    use dominion_protocol::lobby::GameRecord;
+    use dominion_protocol::lobby::{GameRecord, RecordPlayer};
 
     fn record(id: &str, source: Source, ended: u64) -> String {
         serde_json::to_string(&GameRecord {
@@ -787,6 +843,66 @@ mod venue_tests {
             version: None,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn rated_wins_are_counted_from_the_records_of_a_database_kept_without_them() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join(FILE)).unwrap();
+            conn.execute_batch(&SCHEMA.replace("    rated_wins INTEGER NOT NULL DEFAULT 0,\n", ""))
+                .unwrap();
+            for (row, name) in [(1, "Ada"), (2, "Bo")] {
+                conn.execute(
+                    "INSERT INTO users (id, name, name_key, kind, created, rating, deviation, \
+                     volatility, rated_at) VALUES (?1, ?2, lower(?2), 'registered', 0, 1500, \
+                     350, .06, 0)",
+                    params![row, name],
+                )
+                .unwrap();
+            }
+            let seat = |name: &str, rank: u32| RecordPlayer {
+                seat: 0,
+                name: name.into(),
+                kind: Some(UserKind::Registered),
+                user: None,
+                vp: 0,
+                rank,
+                turns: 0,
+                resigned: false,
+                rating: None,
+                level: None,
+                agent: None,
+                owner: None,
+            };
+            let games = [
+                ("g1", true, [("Ada", 1), ("Bo", 2)]),
+                ("g2", true, [("Ada", 1), ("Bo", 1)]),
+                ("g3", false, [("Ada", 1), ("Bo", 2)]),
+                ("g4", true, [("Ada", 2), ("Bo", 1)]),
+            ];
+            for (id, rated, seats) in games {
+                let mut game: GameRecord =
+                    serde_json::from_str(&record(id, Source::Table, 1)).unwrap();
+                game.rated = rated;
+                game.players = seats.iter().map(|&(n, r)| seat(n, r)).collect();
+                conn.execute(
+                    "INSERT INTO games (id, number, ended, record) VALUES (?1, 0, 1, ?2)",
+                    params![id, serde_json::to_string(&game).unwrap()],
+                )
+                .unwrap();
+                for user in [1, 2] {
+                    conn.execute(
+                        "INSERT INTO game_players (user, ended, game) VALUES (?1, 1, ?2)",
+                        params![user, id],
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        let db = Db::open(Some(dir.path())).unwrap();
+        let wins = |name| db.user_by_name(name).unwrap().unwrap().rated_wins;
+        assert_eq!((wins("Ada"), wins("Bo")), (1, 1));
     }
 
     #[test]

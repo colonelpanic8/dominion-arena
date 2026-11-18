@@ -49,6 +49,9 @@ pub struct RatingInfo {
     pub deviation: f64,
     /// Rated games played.
     pub games: u32,
+    /// Rated games won: placed first, with someone placed lower.
+    #[serde(default)]
+    pub wins: u32,
     /// The same rating on dominion.games' scale, once the server has anchors to read it
     /// off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -949,8 +952,11 @@ pub struct Profile {
 pub struct Leader {
     pub rank: u32,
     pub user: UserRef,
+    /// Over rated games only.
     pub rating: RatingInfo,
-    pub stats: Stats,
+    /// For one of the server's agents: what it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<SeatAgent>,
 }
 
 /// `GET /api/leaderboard`: rated players, best first.

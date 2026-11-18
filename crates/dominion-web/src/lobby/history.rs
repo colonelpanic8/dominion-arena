@@ -452,6 +452,44 @@ pub fn maker(a: &SeatAgent) -> Option<Maker> {
         .or(by_word(&a.agent))
 }
 
+impl Maker {
+    /// Who makes the model.
+    pub fn company(self) -> &'static str {
+        match self {
+            Maker::Claude => "Anthropic",
+            Maker::OpenAi => "OpenAI",
+            Maker::Gemini => "Google",
+        }
+    }
+}
+
+/// An agent's model by its name, version and all: "Claude Opus 5.5", "GPT-6.2-Sol".
+pub fn model_title(a: &SeatAgent) -> String {
+    let name = (a.name.clone())
+        .or(a.model.clone())
+        .unwrap_or(a.agent.clone());
+    match maker(a) {
+        Some(Maker::Claude) if !name.to_lowercase().starts_with("claude") => {
+            format!("Claude {name}")
+        }
+        _ => name,
+    }
+}
+
+/// A reasoning effort as the agent picker names it: "High", "XHigh".
+pub fn effort_title(effort: &str) -> String {
+    match effort.to_lowercase().as_str() {
+        "xhigh" => "XHigh".into(),
+        _ => {
+            let mut chars = effort.chars();
+            (chars
+                .next()
+                .map(|c| c.to_uppercase().chain(chars).collect()))
+            .unwrap_or_default()
+        }
+    }
+}
+
 /// The class of the icon before a seat's name.
 fn icon_class(by: &PlayedBy) -> &'static str {
     match by {
