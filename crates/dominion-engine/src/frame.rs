@@ -765,6 +765,7 @@ fn resume_shuffle(
                 return Flow::done();
             }
             g.shuffle_for(crate::chance::Site::Deck(p), &mut cards);
+            // Shadow cards go to the bottom as part of the shuffle: its moves put them there.
             let (mut under, rest): (Vec<CardId>, Vec<CardId>) = cards
                 .iter()
                 .partition(|&&c| cards::bottom_when_shuffled(g, p, c));
@@ -1503,6 +1504,14 @@ fn resume_buy(
             *card = Some(top);
             *pc = 5;
             let kind = g.card(top);
+            g.emit(Event::Bought {
+                player: p,
+                card: kind,
+            });
+            *index = g.log.len();
+            g.journal_opens(Some(top));
+            spend_buy(g);
+            // Paying some other way is part of buying it.
             if cards::pays_otherwise(g, p, kind) {
                 return Flow::Call(Frame::Card(Box::new(CardFrame::new(
                     kind,
@@ -1522,13 +1531,7 @@ fn resume_buy(
                 g.cost_of(top)
             };
             let kind = g.card(top);
-            g.emit(Event::Bought {
-                player: p,
-                card: kind,
-            });
-            *index = g.log.len();
-            g.journal_opens(Some(top));
-            pay(g, p, cost);
+            pay_cost(g, p, cost);
             g.turn.bought_cards.push(kind);
             *pc = 2;
             if kind.def().overpay {
@@ -1635,15 +1638,25 @@ fn resume_overpay(
 }
 
 fn pay(g: &mut Game, p: PlayerId, cost: crate::Cost) {
+    spend_buy(g);
+    pay_cost(g, p, cost);
+}
+
+/// A buy uses a Buy (an Action, where Actions are Buys) and ends the playing of Treasures.
+fn spend_buy(g: &mut Game) {
     let turn = &mut g.turn;
-    turn.coins -= cost.coins as u32;
-    turn.potions -= cost.potions as u32;
     if turn.buys > 0 {
         turn.buys -= 1;
     } else {
         turn.actions -= 1;
     }
     turn.bought = true;
+}
+
+fn pay_cost(g: &mut Game, p: PlayerId, cost: crate::Cost) {
+    let turn = &mut g.turn;
+    turn.coins -= cost.coins as u32;
+    turn.potions -= cost.potions as u32;
     g.add_debt(p, cost.debt as u32);
     // The price is its own change, apart from what the buy goes on to give.
     g.sync_journal();

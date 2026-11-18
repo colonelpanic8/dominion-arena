@@ -690,6 +690,19 @@ fn follow(
         answers += 1;
     }
     assert!(recorder.table().ended.is_some(), "seed {seed}");
+    // A hand revealed where it lies is in the stream, though nothing moves.
+    let revealed = (game.log().iter())
+        .filter(|e| matches!(e, dominion_engine::Event::RevealedHand { cards, .. } if !cards.is_empty()))
+        .count();
+    let shown = (events.iter())
+        .filter(|e| {
+            matches!(&e.what, What::Show(s) if s.to.is_none() && matches!(s.zone, Zone::Seat(_, SeatZone::Hand)))
+        })
+        .count();
+    assert!(
+        shown >= revealed,
+        "seed {seed}: {revealed} hands revealed, {shown} shown"
+    );
     check_causes(&events, &format!("seed {seed}"));
     check_questions(&events, &format!("seed {seed}"));
     // The stream is the record: played again from it alone, the game writes it again.
@@ -854,7 +867,7 @@ const FOCUS: &[(&[&str], &[&str])] = &[
             "Cellar",
             "Laboratory",
             "Sentry",
-            "Gold Mine",
+            "Animal Fair",
         ],
         &["Star Chart", "Avoid", "Fated", "Order of Astrologers"],
     ),
@@ -915,8 +928,16 @@ fn check_causes(events: &[Event], what: &str) {
                 fail("a card passed, or given to another player other than by passing");
             }
         }
-        // Questions stand apart: no other event happens inside one.
+        // Questions stand apart: no other event happens inside one. Inside cards trashed
+        // or discarded together the only question is which of their abilities is next.
         if matches!(e.what, What::Ask(_) | What::Answer(_)) {
+            if let (What::Ask(ask), Some(What::Trash(m) | What::Discard(m))) =
+                (&e.what, by_of(events, e))
+                && m.cards.len() > 1
+                && ask.purpose != "trigger"
+            {
+                fail("inside several cards' occurrences, a question other than their order");
+            }
             table.apply(e).unwrap();
             continue;
         }
@@ -1072,7 +1093,11 @@ fn check_causes(events: &[Event], what: &str) {
                     fail("a buy doesn't spend a Buy");
                 }
             }
-            What::Draw(_) | What::Discard(_) | What::Shuffle(_)
+            What::Draw(_)
+            | What::Discard(_)
+            | What::Shuffle(_)
+            | What::Trash(_)
+            | What::Gain(_)
                 if by_phase.is_some_and(|p| p != Phase::Cleanup) =>
             {
                 fail("moved by a phase other than Clean-up");
@@ -1160,6 +1185,38 @@ fn check_causes(events: &[Event], what: &str) {
                     "{card} priced or not before it is in the game or gone"
                 ));
             }
+        }
+    }
+    // What changed a play's instructions (a Way, Enchantress) is written before what the
+    // play then does: its bonuses, replaced ones too, are the play's.
+    for (seq, e) in events.iter().enumerate() {
+        let Some(play) = e.by.filter(|&b| matches!(at(b), What::Play(_))) else {
+            continue;
+        };
+        let bonus = match &e.what {
+            What::Draw(_) => true,
+            What::Counter(c) => {
+                matches!(
+                    c.counter.name,
+                    CounterName::Actions | CounterName::Buys | CounterName::Coins
+                ) && c.delta > 0
+            }
+            _ => false,
+        };
+        let changed_after = events[seq..].iter().any(|later| {
+            later.by == Some(play)
+                && matches!(
+                    later.what,
+                    What::Way { .. }
+                        | What::Resolve {
+                            when: Moment::Play,
+                            ..
+                        }
+                )
+        });
+        if bonus && changed_after {
+            let json = serde_json::to_string(e).unwrap();
+            panic!("{what}: event {seq}, a bonus of play {play} before what changed it\n{json}");
         }
     }
     // A card's +Cards are drawn by its play, unless something changed what the play does.

@@ -1034,9 +1034,11 @@ pub(crate) fn decision(
     (decision, targets)
 }
 
-/// What `d` asks its seat, as the event stream writes it: as agent-view@2 shows it to that
-/// seat, without the seat's knowledge (a name question offers the visible piles' cards)
-/// or what only Arena's answer tool takes (the Way pre-answer).
+/// What `d` asks its seat, as the event stream writes it: a canonical projection, as
+/// agent-view@2 shows it to that seat but without the seat's knowledge (a name question
+/// offers the visible piles' cards, which is all knowledge changes) or what only Arena's
+/// answer tool takes (the Way pre-answer), with one option group and `min` and `max`
+/// given.
 pub(crate) fn question(
     game: &Game,
     d: &Decision,

@@ -1073,7 +1073,11 @@ pub struct Chance {
     pub cards: Vec<String>,
 }
 
-/// What a seat was asked: an agent-view@2 decision, as that seat was shown it.
+/// What a seat was asked: a canonical projection of the decision onto agent-view@2, the
+/// same whatever the seat knows. It has one option group, and `min` and `max` always.
+/// What the seat was shown can differ only where nothing hangs on an index: a name
+/// question there may suggest cards the seat knows of, here only the visible piles' cards;
+/// and Arena's hint about answering a Way question in advance is not in `prompt`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Ask {
@@ -1100,6 +1104,8 @@ pub struct Ask {
 #[serde(rename_all = "camelCase")]
 pub struct Answer {
     pub seat: u8,
+    /// The options picked, in the order picked: written whenever the answer picks options,
+    /// `[]` when it picks none. Absent only when `name` is given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub indices: Option<Vec<u32>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1211,6 +1217,10 @@ pub enum What {
     Return(Move),
     Exchange(Move),
     Pass(Move),
+    /// `cards` is the order the shuffle gave, top first, Shadow cards already at the
+    /// bottom, where the rules put them: no move of theirs follows, unless their owner
+    /// orders two or more (`bottomdeck`). Into the zone it takes them from (a deck), some
+    /// of its cards shuffled again where they lay go back under `at`.
     Shuffle(Move),
     /// From the top of a pile to its bottom.
     Rotate(Move),
@@ -2784,6 +2794,10 @@ mod tests {
                 "already holds",
             ),
             (
+                r#"{"type":"holding","card":"Flag","from":1,"to":1}"#,
+                "already holds",
+            ),
+            (
                 r#"{"type":"token","player":1,"token":"plus-buy","at":"pile/Smithy"}"#,
                 "no pile pile/Smithy",
             ),
@@ -2791,5 +2805,130 @@ mod tests {
             let err = refused(&t, &next(&t, json));
             assert!(err.why.contains(why), "{}", err.why);
         }
+    }
+
+    #[test]
+    fn a_card_turned_face_down_in_the_trash_leaves_it_face_down() {
+        let mut t = table(&[("trash", &["Village", "Smithy", "Village"])]);
+        let trash = Zone::Trash;
+        t.apply(&next(
+            &t,
+            r#"{"type":"face","card":"Village","zone":"trash","face":"down","pos":2}"#,
+        ))
+        .unwrap();
+        assert_eq!(t.face_down[&trash], cards(&["Village"]));
+        let err = refused(
+            &t,
+            &next(
+                &t,
+                r#"{"type":"face","card":"Smithy","zone":"trash","face":"down"}"#,
+            ),
+        );
+        assert!(
+            err.why.contains("Smithy doesn't lie under 0"),
+            "{}",
+            err.why
+        );
+        let down = r#"{"type":"gain","player":0,"cards":["Village"],"from":"trash","to":"0/discard","fromFace":"down"}"#;
+        let up =
+            r#"{"type":"gain","player":0,"cards":["Village"],"from":"trash","to":"0/discard"}"#;
+        let mut gained = t.clone();
+        gained.apply(&next(&gained, down)).unwrap();
+        assert!(gained.face_down.is_empty());
+        let err = refused(&gained, &next(&gained, down));
+        assert!(err.why.contains("no Village lies face down"), "{}", err.why);
+        t.apply(&next(&t, up)).unwrap();
+        assert_eq!(t.face_down[&trash], cards(&["Village"]));
+        let err = refused(
+            &t,
+            &next(
+                &t,
+                r#"{"type":"gain","player":0,"cards":["Village"],"from":"trash","to":"0/discard","pos":[1]}"#,
+            ),
+        );
+        assert!(err.why.contains("no Village lies face up"), "{}", err.why);
+        t.apply(&next(
+            &t,
+            r#"{"type":"face","card":"Village","zone":"trash","face":"up","pos":1}"#,
+        ))
+        .unwrap();
+        assert!(t.face_down.is_empty());
+    }
+
+    #[test]
+    fn a_rename_says_which_card() {
+        let mut t = table(&[
+            ("0/deck", &["Copper", "Copper", "Estate"]),
+            ("0/hand", &["Copper", "Copper"]),
+        ]);
+        for json in [
+            r#"{"type":"set-aside","player":0,"cards":["Copper"],"from":"0/hand","to":"0/aside","face":"up"}"#,
+            r#"{"type":"set-aside","player":0,"cards":["Copper"],"from":"0/hand","to":"0/aside","face":"down"}"#,
+            r#"{"type":"rename","card":"Copper","name":"Estate","zone":"0/aside","face":"up"}"#,
+            r#"{"type":"rename","card":"Copper","name":"Silver","zone":"0/deck","pos":1}"#,
+        ] {
+            t.apply(&next(&t, json)).unwrap();
+        }
+        let aside: Zone = "0/aside".parse().unwrap();
+        assert_eq!(t.zone(&aside), cards(&["Copper", "Estate"]));
+        assert_eq!(t.face_up(&aside), cards(&["Estate"]));
+        assert_eq!(
+            t.zone(&"0/deck".parse().unwrap()),
+            cards(&["Copper", "Silver", "Estate"])
+        );
+        let err = refused(
+            &t,
+            &next(
+                &t,
+                r#"{"type":"rename","card":"Copper","name":"Gold","zone":"0/aside","face":"up"}"#,
+            ),
+        );
+        assert!(err.why.contains("no Copper lies face up"), "{}", err.why);
+    }
+
+    #[test]
+    fn kept_cards_are_cards_of_a_play_area() {
+        let mut t = table(&[("0/play", &["Wharf", "Wharf"])]);
+        let play: Zone = "0/play".parse().unwrap();
+        t.apply(&next(
+            &t,
+            r#"{"type":"kept","zone":"0/play","cards":["Wharf"]}"#,
+        ))
+        .unwrap();
+        assert_eq!(t.kept[&play], cards(&["Wharf"]));
+        for (json, why) in [
+            (
+                r#"{"type":"kept","zone":"0/hand","cards":[]}"#,
+                "no play area",
+            ),
+            (
+                r#"{"type":"kept","zone":"0/play","cards":["Wharf","Wharf","Wharf"]}"#,
+                "hasn't the cards kept",
+            ),
+        ] {
+            let err = refused(&t, &next(&t, json));
+            assert!(err.why.contains(why), "{}", err.why);
+        }
+        t.apply(&next(&t, r#"{"type":"kept","zone":"0/play","cards":[]}"#))
+            .unwrap();
+        assert!(t.kept.is_empty());
+    }
+
+    #[test]
+    fn empty_lists_that_mean_something_are_written() {
+        let notes = What::Notes { notes: vec![] };
+        assert_eq!(
+            serde_json::to_string(&notes).unwrap(),
+            r#"{"type":"notes","notes":[]}"#
+        );
+        assert!(serde_json::from_str::<What>(r#"{"type":"notes"}"#).is_err());
+        let none = What::Answer(Answer {
+            seat: 0,
+            indices: Some(vec![]),
+            name: None,
+        });
+        let json = serde_json::to_string(&none).unwrap();
+        assert_eq!(json, r#"{"type":"answer","seat":0,"indices":[]}"#);
+        assert_eq!(serde_json::from_str::<What>(&json).unwrap(), none);
     }
 }
