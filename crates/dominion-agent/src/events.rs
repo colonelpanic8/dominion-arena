@@ -13,8 +13,8 @@ use dominion_protocol::events::{
 };
 
 /// Writes the full stream of a game started with [`Game::new_journaled`]: every card's
-/// face, every shuffle's order.
-#[derive(Clone, Debug, Default)]
+/// face, every shuffle's order. Saved with the game, it goes on where it left off.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Recorder {
     /// The table after the events written so far.
     table: Table,
@@ -43,6 +43,11 @@ impl Recorder {
     /// The table after everything recorded so far.
     pub fn table(&self) -> &Table {
         &self.table
+    }
+
+    /// How many events it has written.
+    pub fn written(&self) -> u64 {
+        self.seq
     }
 
     /// Takes what `game` has journaled since the last call and returns it as events.

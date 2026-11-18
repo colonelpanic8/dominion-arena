@@ -56,13 +56,18 @@ crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; acco
   src/events.rs           serde types of events@1 and `Table`, the fold of a stream
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   src/events.rs           `Recorder`: a game's events@1 stream from the engine's journal
+  src/table.rs            `Table`: a hosted game, its answers (for undo) and, made with
+                          `new_recorded`, its recorded stream
+  src/recording.rs        a recorded stream as bytes: its header, the `Encoding`s (JSON Lines,
+                          CBOR), reading one back
   protocol/               the vendored JSON Schema (`just sync-protocol`)
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
                           and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
                           came from, the accounts playing it, rated / watchable / timed /
                           its undo rule), who is connected, forfeits, undo requests; calls
-                          back when a game ends
+                          back when a game ends; each game's recorded stream kept in step
+                          with its snapshot (`Hub::save`, `stream_state`)
   src/arena/              who is playing (README "Accounts and the lobby"); its lock order
                           is in mod.rs
     mod.rs                `Arena`: state, the lobby snapshot, the sweep that runs every 5 s
@@ -91,7 +96,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle
   src/steps.rs            named steps (`play A, B; treasures; buy C; next`) for solo and the
                           MCP `steps` tool
-  src/store.rs            the state directory: its lock, a JSON file per game written atomically
+  src/store.rs            the state directory: its lock, a JSON file per game written
+                          atomically, each game's event stream appended to
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
   src/mcp/play.rs         dominion/play@1: arguments, the text a session is shown
@@ -590,7 +596,14 @@ them.
   inside an occurrence must not wait to be read until after it has closed. A new
   occurrence opens with `journal_opens` (several together: `journal_occurred` for each,
   then `journal_open`); a lasting effect made outside `add_lasting` / `continue_lasting`
-  records its origin with `journal_lasting`.
+  records its origin with `journal_lasting`. Arena records every game it saves:
+  `Table::new_recorded` journals the game and keeps a `Recorder`, saved with it, and
+  every change a table makes to its game ends with its new events taken
+  (`Table::record`, in `game_respond` and `resign`: anything new that changes the game
+  must call it too), kept as `Table::unwritten` until the hub has written them.
+  `Hub::save` saves the snapshot, which carries them, then appends them to
+  `<game id>.events.<jsonl|cbor>` and marks them written; loading cuts the stream back
+  to the events the snapshot says were written (`stream_state`).
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The
@@ -612,7 +625,9 @@ them.
   to before any answer by replaying the game from its config, which is exact because a
   game is determined by its config and responses; each step checks the log length and
   deciding seat, so a replay that went differently fails instead of diverging. Anything a
-  table answers must go through a recorded step. Who may undo and whose permission it
+  table answers must go through a recorded step. The recorded event stream holds no undo:
+  a recorded table's replay records afresh, so after a rewind `Table::unwritten` is the
+  whole stream of the game as it now stands, from event 0, and replaces the file. Who may undo and whose permission it
   needs (`UndoRule`, requests waiting) is the hub's.
 
 ## Writing a set

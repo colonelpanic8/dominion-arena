@@ -85,6 +85,7 @@ pub fn router(
             get(transcript).post(publish_transcript),
         )
         .route("/games/{id}/transcript/events", get(transcript_events))
+        .route("/games/{id}/recording", get(recording))
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
         .route("/auth/guest", post(guest))
@@ -579,6 +580,7 @@ impl From<HubError> for Error {
             HubError::Answer(AnswerError::Invalid(_)) => StatusCode::UNPROCESSABLE_ENTITY,
             HubError::Answer(_) => StatusCode::CONFLICT,
             HubError::Engine(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            HubError::NotFound(_) => StatusCode::NOT_FOUND,
         };
         Error::new(status, e.to_string())
     }
@@ -1057,6 +1059,33 @@ async fn transcript_events(
         version,
         chat: 0,
     }))
+}
+
+/// A finished game's recorded `dominion/events@1` stream, as written: for its seats, and
+/// for anyone when the game is watchable.
+async fn recording(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    seat: Queried<SeatQuery>,
+) -> Result<Response> {
+    let q = query(seat)?;
+    if api.seat(&id, &headers, q.token.as_deref(), q.seat).is_err() && !api.hub.meta(&id)?.watchable
+    {
+        return Err(Error::new(StatusCode::FORBIDDEN, "this game is private"));
+    }
+    let hub = api.hub.clone();
+    let name = id.clone();
+    let (encoding, bytes) = blocking(move || Ok(hub.recording(&name)?)).await?;
+    let file = format!("attachment; filename=\"{id}{}\"", encoding.suffix());
+    Ok((
+        [
+            (header::CONTENT_TYPE, encoding.media_type().to_string()),
+            (header::CONTENT_DISPOSITION, file),
+        ],
+        bytes,
+    )
+        .into_response())
 }
 
 /// Waits for either counter to change. Whether its sender is gone.

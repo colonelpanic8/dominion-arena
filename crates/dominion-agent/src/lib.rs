@@ -9,6 +9,7 @@
 
 pub mod events;
 mod project;
+pub mod recording;
 mod table;
 pub mod text;
 pub mod turns;

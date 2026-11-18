@@ -295,6 +295,7 @@ will) or 500.
 | `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
 | `GET /api/games/{id}/watch[?logFrom=N]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible |
+| `GET /api/games/{id}/recording` | | the game's recorded `dominion/events@1` stream as written, the file `state_dir/<game id>.events.jsonl` or `.events.cbor` beside its snapshot: `application/jsonl` or `application/cbor-seq`. It shows every hidden card and every shuffle's order, so only once the game is over (409 before), to its seats, or to anyone if it is watchable (403 otherwise); 404 for a game recorded without one |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, for a watchable game, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |
 | `POST /api/auth/login` | `{name, password}` | the account and the session cookie |
@@ -686,6 +687,17 @@ reused. An expired game can still be opened: its players' seats and anyone allow
 watch it see it as it was left, read from `expired/` when asked for, and nothing more
 can be done in it.
 
+Every game the server saves is also recorded as a `dominion/events@1` stream (every
+card's face and every shuffle's order; the format is the playbook's `protocol/events.md`)
+beside its snapshot: `state_dir/<game id>.events.jsonl`, one JSON object per line, or
+`.events.cbor`, a CBOR sequence, as `events_encoding` says when the game starts. Its first
+record says the schema, the viewer (`full`) and the game. It is appended to as the game
+is played, goes to `expired/` with the snapshot, and holds no undo: after one it is
+rewritten as the stream of the game as it now stands. After a crash the server cuts it
+back to what the snapshot says was written and goes on from there; one that lacks events
+the snapshot says it holds is reported at startup and the game goes on without
+recording. Games saved before streams were recorded have none.
+
 Accounts, sessions and finished games' records are kept in a SQLite database beside the
 games, `dominion.sqlite` under `state_dir` (in memory with `--ephemeral`): a game's
 record and what it does to its players' ratings and tallies are written together or not
@@ -703,6 +715,7 @@ allowed_hosts = []             # serve: extra Host header values to accept
 persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: move finished games this old to state_dir/expired (0: never)
+events_encoding = "jsonl"      # serve: what new games' recorded event streams are written in: jsonl or cbor
 assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
 web_animations = true          # serve: the web client shows cards moving
