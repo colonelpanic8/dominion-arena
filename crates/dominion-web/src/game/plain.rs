@@ -245,7 +245,12 @@ fn token_list(t: &Tokens) -> Vec<String> {
 }
 
 #[component]
-fn PlayerBox(player: PlayerView, you: bool, account: Option<SeatAccount>) -> Element {
+fn PlayerBox(
+    player: PlayerView,
+    you: bool,
+    account: Option<SeatAccount>,
+    level: Option<f64>,
+) -> Element {
     let p = &player;
     let clock = super::use_clock().and_then(|c| meta::seat_clock(&c, p.index));
     let mut extras = token_list(&p.tokens);
@@ -277,6 +282,9 @@ fn PlayerBox(player: PlayerView, you: bool, account: Option<SeatAccount>) -> Ele
                         "{a.tag()}"
                         if !a.connected { " (away)" }
                     }
+                }
+                if let Some((text, title)) = level.map(meta::level_text) {
+                    span { class: "muted who", title: "{title}", "{text}" }
                 }
                 if let Some(vp) = p.vp { span { class: "vp", "{vp} VP" } }
                 if let Some(c) = &clock {
@@ -419,10 +427,10 @@ pub fn PlainBoard(view: AgentView, #[props(default)] meta: GameMeta) -> Element 
     rsx! {
         div { class: "players",
             if let Some(you) = v.you.clone() {
-                PlayerBox { account: meta::account(&meta, you.index), player: you, you: true }
+                PlayerBox { account: meta::account(&meta, you.index), level: meta::level(&meta, you.index), player: you, you: true }
             }
             for o in v.opponents.iter().cloned() {
-                PlayerBox { key: "{o.index}", account: meta::account(&meta, o.index), player: o, you: false }
+                PlayerBox { key: "{o.index}", account: meta::account(&meta, o.index), level: meta::level(&meta, o.index), player: o, you: false }
             }
         }
         PileTable { title: "Supply", piles: v.supply.clone() }

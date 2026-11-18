@@ -2022,6 +2022,7 @@ impl Hub {
             clock: game.clock(&meta, now).map(|(_, view)| view),
             watchers: game.watchers.load(Ordering::Relaxed),
             ended: meta.ended.clone(),
+            levels: vec![],
             now,
         };
         (shown, meta.owners.clone())

@@ -58,6 +58,19 @@ pub fn account(meta: &GameMeta, seat: u8) -> Option<SeatAccount> {
     })
 }
 
+/// The dominion.games level of the player in `seat`, in a dominion.games game.
+pub fn level(meta: &GameMeta, seat: u8) -> Option<f64> {
+    meta.levels.get(usize::from(seat)).copied().flatten()
+}
+
+/// What a bar says of a dominion.games level, and its tooltip.
+pub fn level_text(level: f64) -> (String, String) {
+    (
+        format!("{level:.2}"),
+        format!("dominion.games level {level:.2}, as the game began"),
+    )
+}
+
 /// A seat's own time is shown once this little is left.
 pub const LOW_SECONDS: u64 = 60;
 

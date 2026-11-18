@@ -88,6 +88,7 @@ impl Arena {
                     turns: p.turns,
                     resigned: p.resigned,
                     rating: rated.then(|| (before[i].rating, after[i].rating)),
+                    level: None,
                     agent: meta.runs.get(usize::from(p.index)).cloned().flatten(),
                 });
             }
@@ -219,6 +220,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue) -> PastGame {
                 turns: p.turns,
                 resigned: p.resigned,
                 rating: p.rating,
+                level: p.level,
                 agent: p.agent,
             })
             .collect(),
