@@ -10,6 +10,7 @@
 pub mod events;
 mod project;
 pub mod recording;
+pub mod replay;
 mod table;
 pub mod text;
 pub mod turns;

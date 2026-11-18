@@ -11,6 +11,7 @@
 mod agent;
 mod card;
 mod cards;
+mod chance;
 mod decision;
 mod event;
 mod frame;
@@ -31,6 +32,7 @@ pub use agent::{
     Agent, CardDeckView, Note, PileView, PlayError, PlayerView, SetupRole, View, play,
 };
 pub use card::{Card, CardDef, CardRelations, Cost, Kind, Plus, Set, TYPE_NAMES, Types};
+pub use chance::{Given, Outcomes, Refused, Site};
 pub use decision::{Decision, DecisionKind, Move, Opt, Purpose, Response, ResponseError};
 pub use event::{Counter, Dest, Event, Marker};
 pub use game::{

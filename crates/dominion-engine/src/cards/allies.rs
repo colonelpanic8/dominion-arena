@@ -509,7 +509,7 @@ fn add_random_ally(g: &mut Game) {
     let all: Vec<Card> = Card::in_set(Set::Allies)
         .filter(|c| c.kind() == Kind::Ally)
         .collect();
-    let ally = all[g.random_index(all.len())];
+    let ally = g.chance_pick(crate::chance::Site::Ally, &all);
     g.landscapes.push(ally);
 }
 
@@ -1319,8 +1319,7 @@ fn order(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let astrologers = f.card == Card::OrderOfAstrologers;
     match f.pc {
         0 => {
-            let mut shuffled = g.shuffled(p).to_vec();
-            shuffled.sort();
+            let shuffled = g.shuffled_unordered(p);
             g.look_through_shuffled(p);
             let above = g.look_over_shuffled(p);
             let n = favors(g, p) as usize;

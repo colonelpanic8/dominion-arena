@@ -39,6 +39,7 @@ fn a_stream_survives_an_encoding_that_is_not_json() {
             game.respond(response).unwrap();
         }
         let mut table = Table::default();
+        let mut read = vec![];
         for event in &events {
             let mut bytes = vec![];
             ciborium::into_writer(event, &mut bytes).unwrap();
@@ -46,7 +47,10 @@ fn a_stream_survives_an_encoding_that_is_not_json() {
                 .unwrap_or_else(|e| panic!("seed {seed}, event {}: {e}", event.seq));
             assert_eq!(&back, event, "seed {seed}");
             table.apply(&back).unwrap();
+            read.push(back);
         }
         assert!(&table == recorder.table(), "seed {seed}");
+        // What was read back is enough to play the game again.
+        dominion_agent::replay::replay(&read).unwrap_or_else(|d| panic!("seed {seed}: {d}"));
     }
 }

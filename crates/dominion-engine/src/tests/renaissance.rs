@@ -1915,7 +1915,7 @@ fn random_renaissance_games_keep_invariants() {
                 g.create(c, Zone::Deck(p));
             }
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-            g.shuffle(&mut deck);
+            g.rng_shuffle(&mut deck);
             g.players[p.index()].deck = deck;
             let mut mine = projects.clone();
             mine.shuffle(&mut rng);

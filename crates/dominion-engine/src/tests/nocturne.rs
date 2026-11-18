@@ -155,7 +155,7 @@ fn random_nocturne_games_keep_invariants() {
                 g.create(c, Zone::Deck(p));
             }
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-            g.shuffle(&mut deck);
+            g.rng_shuffle(&mut deck);
             g.players[p.index()].deck = deck;
         }
         g.start();

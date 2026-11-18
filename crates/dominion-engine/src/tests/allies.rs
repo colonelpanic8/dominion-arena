@@ -2274,7 +2274,7 @@ fn random_games_with_every_allies_card_keep_invariants() {
                 g.create(card, Zone::Deck(PlayerId(p as u8)));
             }
             let mut deck = std::mem::take(&mut g.players[p].deck);
-            g.shuffle(&mut deck);
+            g.rng_shuffle(&mut deck);
             g.players[p].deck = deck;
             g.players[p].favors += 6;
         }

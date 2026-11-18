@@ -138,7 +138,7 @@ fn play_games(cards: &[Card], landscapes: Vec<Card>, players: u8, seed: u64, ext
             }
         }
         let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-        g.shuffle(&mut deck);
+        g.rng_shuffle(&mut deck);
         g.players[p.index()].deck = deck;
     }
     g.start();

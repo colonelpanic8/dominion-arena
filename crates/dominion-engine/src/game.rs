@@ -5,8 +5,6 @@ use crate::frame::{Flow, Frame, Input};
 use crate::setup::GameConfig;
 use crate::trigger::Occasion;
 use crate::{Card, CardId, Cost, Kind, PileId, PlayerId, Types};
-use rand::Rng;
-use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
@@ -612,6 +610,9 @@ pub struct Game {
     /// The rules' word for the move being made (see [`Game::move_as`]).
     #[serde(skip)]
     pub(crate) verb: Option<crate::Verb>,
+    /// What a journaled or given game keeps of chance (see [`crate::chance`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) chance: Option<Box<crate::chance::Chance>>,
 }
 
 /// Cards a look or reveal took off `player`'s deck (top first), held in
@@ -1313,6 +1314,7 @@ impl Game {
             trace: None,
             journal: None,
             verb: None,
+            chance: None,
         };
         g.turn.phase = Phase::End;
         g.lasting.retain(|l| l.until != Until::EndOfTurn);
@@ -1344,6 +1346,7 @@ impl Game {
             .cloned()
             .ok_or(ResponseError::NoPendingDecision)?;
         decision.validate(&response)?;
+        self.journal_answered(&response);
         let player = decision.player;
         if let Response::Name(card) = response {
             self.emit(Event::Named { player, card });
@@ -1408,6 +1411,7 @@ impl Game {
                         self.forget_hidden_shows();
                         self.pending = Some(decision);
                         self.log_actor(None);
+                        self.journal_asked();
                         return;
                     }
                 }
@@ -1565,14 +1569,6 @@ impl Game {
         self.record(|| crate::Trace::Mixed { cards });
     }
 
-    pub(crate) fn shuffle<T>(&mut self, items: &mut [T]) {
-        items.shuffle(&mut self.rng);
-    }
-
-    pub(crate) fn random_index(&mut self, n: usize) -> usize {
-        self.rng.random_range(0..n)
-    }
-
     /// Cards of `types` that `p` may play as if from their hand: their hand, plus cards
     /// elsewhere that can be played as if there (Shadow cards in the deck), less those
     /// `SetRules::can_play` forbids (Warlord, Voyage).
@@ -1613,6 +1609,16 @@ impl Game {
             .count();
         let deck = &self.players[p.index()].deck;
         &deck[..left.min(deck.len())]
+    }
+
+    /// [`Game::shuffled`] in an order that says nothing of the deck's: by name, and copies
+    /// of one name from the top down, so that which copy an answer picks is told by
+    /// position, as the event stream tells it, never by id.
+    pub(crate) fn shuffled_unordered(&self, p: PlayerId) -> Vec<CardId> {
+        let mut cards: Vec<(usize, CardId)> =
+            self.shuffled(p).iter().copied().enumerate().collect();
+        cards.sort_by_key(|&(i, c)| (self.cards[c.index()], std::cmp::Reverse(i)));
+        cards.into_iter().map(|(_, c)| c).collect()
     }
 
     pub(crate) fn cards_in_hand_where(&self, p: PlayerId, types: Types) -> Vec<CardId> {
@@ -1857,7 +1863,7 @@ impl Game {
         let shuffled = deck.draw.is_empty() && !deck.discard.is_empty();
         if deck.draw.is_empty() {
             deck.draw = std::mem::take(&mut deck.discard);
-            deck.draw.shuffle(&mut self.rng);
+            self.shuffle_for(crate::chance::Site::Reshuffle { hexes }, &mut deck.draw);
         }
         *self.fates(hexes) = deck;
         if shuffled {

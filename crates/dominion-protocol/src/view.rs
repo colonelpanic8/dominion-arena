@@ -234,7 +234,7 @@ pub struct PlayerView {
     pub counters: BTreeMap<String, i64>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Cost {
     pub coins: u32,
@@ -437,7 +437,7 @@ pub struct AgentDecision {
     pub options: Vec<AgentOption>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionGroup {
     pub group: u32,
@@ -447,7 +447,7 @@ pub struct DecisionGroup {
     pub max: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentOption {
     pub index: u32,

@@ -599,7 +599,11 @@ fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str)
 
 /// Plays one game to its end, holding the folded stream to the engine's table at every
 /// decision.
-fn follow(config: GameConfig, seed: u64, respond: fn(&Game, &mut ChaCha8Rng) -> Response) {
+fn follow(
+    config: GameConfig,
+    seed: u64,
+    respond: fn(&Game, &mut ChaCha8Rng) -> Response,
+) -> Vec<Event> {
     let mut game = Game::new_journaled(config).unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut recorder = Recorder::new();
@@ -628,12 +632,67 @@ fn follow(config: GameConfig, seed: u64, respond: fn(&Game, &mut ChaCha8Rng) -> 
         if game.outcome().is_some() {
             break;
         }
+        // Now and then a seat resigns, out of turn as often as not.
+        if seed % 13 == 7 && answers == 30 + seed % 50 {
+            game.resign(PlayerId((seed % game.num_players() as u64) as u8));
+            continue;
+        }
         let response = respond(&game, &mut rng);
         game.respond(response).unwrap();
         answers += 1;
     }
     assert!(recorder.table().ended.is_some(), "seed {seed}");
     check_causes(&events, &format!("seed {seed}"));
+    check_questions(&events, &format!("seed {seed}"));
+    // The stream is the record: played again from it alone, the game writes it again.
+    let replayed = dominion_agent::replay::replay(&events)
+        .unwrap_or_else(|d| panic!("seed {seed}: the replay differs at {d}"));
+    assert_eq!(replayed.game.outcome(), game.outcome(), "seed {seed}");
+    assert_eq!(
+        replayed.recorder.written(),
+        events.len() as u64,
+        "seed {seed}"
+    );
+    events
+}
+
+/// Every question is answered by the event after it, by its seat, unless the game ends
+/// there; nothing else is a question's, and every answer answers one.
+fn check_questions(events: &[Event], what: &str) {
+    for (i, e) in events.iter().enumerate() {
+        let next = events.get(i + 1).map(|e| &e.what);
+        match &e.what {
+            What::Ask(ask) => {
+                let options = ask.options.len() as u32;
+                assert!(
+                    options > 0 || ask.name_any,
+                    "{what}: event {i} offers nothing"
+                );
+                match next {
+                    Some(What::Answer(a)) => {
+                        assert_eq!(a.seat, ask.seat, "{what}: event {i}");
+                        let picked = a.indices.as_deref().unwrap_or_default();
+                        assert!(
+                            picked.iter().all(|&o| o < options),
+                            "{what}: event {}",
+                            i + 1
+                        );
+                    }
+                    Some(What::GameEnd(end)) => assert_eq!(end.reason, "resigned", "{what}"),
+                    None => {}
+                    Some(_) => panic!("{what}: event {i} is asked and not answered"),
+                }
+            }
+            What::Answer(_) => assert!(
+                matches!(
+                    i.checked_sub(1).map(|j| &events[j].what),
+                    Some(What::Ask(_))
+                ),
+                "{what}: event {i} answers no question"
+            ),
+            _ => {}
+        }
+    }
 }
 
 /// Kingdoms around what changes the table outside its zones: Boons and Hexes, tokens,
@@ -785,6 +844,11 @@ fn check_causes(events: &[Event], what: &str) {
             if between != (verb == events::Verb::Pass) {
                 fail("a card passed, or given to another player other than by passing");
             }
+        }
+        // Questions stand apart: no other event happens inside one.
+        if matches!(e.what, What::Ask(_) | What::Answer(_)) {
+            table.apply(e).unwrap();
+            continue;
         }
         if let What::Turn(_) = e.what {
             turn = Some(seq);
@@ -991,6 +1055,16 @@ fn check_causes(events: &[Event], what: &str) {
                 at: None,
                 ..
             } if by_phase == Some(Phase::Cleanup) => {}
+            // Spending Coffers, a move with no occurrence of its own, uses up the -$1 token.
+            What::Token {
+                token: events::TokenKind::MinusCoin,
+                at: None,
+                ..
+            } if by_phase.is_some()
+                && matches!(
+                    events.get(seq as usize - 1).map(|e| (&e.what, e.by)),
+                    Some((What::Counter(c), b)) if b == e.by && c.counter.name == CounterName::Coffers
+                ) => {}
             What::Take(_) | What::Token { .. } | What::Holding { .. }
                 if by_phase.is_some() || matches!(by, Some(What::Turn(_))) =>
             {
@@ -1131,5 +1205,204 @@ fn the_fold_keeps_up_with_boons_tokens_holdings_and_derived_values() {
         config.landscapes = landscapes.iter().map(card).collect();
         config.turn_limit = Some(60 + 20 * (seed % 4) as u32);
         follow(config, seed, random_response);
+    }
+}
+
+/// Where a replay of `events` first goes differently, if it does.
+fn differs_at(events: &[Event]) -> Option<u64> {
+    dominion_agent::replay::replay(events).err().map(|d| d.seq)
+}
+
+/// The first event of `events` that doesn't fold.
+fn unfolds_at(events: &[Event]) -> Option<u64> {
+    let mut table = Table::default();
+    events
+        .iter()
+        .find(|e| table.apply(e).is_err())
+        .map(|e| e.seq)
+}
+
+/// The table after `events`.
+fn folded(events: &[Event]) -> Table {
+    let mut table = Table::default();
+    for e in events {
+        table.apply(e).unwrap();
+    }
+    table
+}
+
+/// A stream changed where it records a cause (an answer, a shuffle's cards) or cut short
+/// replays the same up to there and no further.
+#[test]
+fn a_replay_finds_where_a_stream_was_changed() {
+    let sets = released();
+    for seed in 0..seeds(20) {
+        let mut config = GameConfig::random(2 + (seed % 3) as u8, &sets, seed);
+        config.turn_limit = Some(40);
+        let events = follow(config, seed, eager_response);
+        let what = format!("seed {seed}");
+        let pick = |n: usize| (seed as usize * 7919) % n;
+
+        // An answer to a move changed to a different kind of move: the game goes
+        // differently right after it.
+        let answers: Vec<(usize, u32)> = (0..events.len() - 1)
+            .filter_map(|i| match (&events[i].what, &events[i + 1].what) {
+                (What::Ask(ask), What::Answer(a)) if ask.kind == "turn" => {
+                    let k = a.indices.as_ref()?[0] as usize;
+                    let other =
+                        (ask.options.iter()).position(|o| o.action != ask.options[k].action)?;
+                    Some((i + 1, other as u32))
+                }
+                _ => None,
+            })
+            .collect();
+        let (i, other) = answers[pick(answers.len())];
+        let mut changed = events.clone();
+        if let What::Answer(a) = &mut changed[i].what {
+            a.indices = Some(vec![other]);
+        }
+        assert_eq!(
+            differs_at(&changed),
+            Some(i as u64 + 1),
+            "{what}: answer {i}"
+        );
+
+        // A shuffle missing a card is refused where it is recorded.
+        let shuffles: Vec<usize> = (0..events.len())
+            .filter(|&i| matches!(&events[i].what, What::Shuffle(m) if m.cards.len() > 1))
+            .collect();
+        let s = shuffles[pick(shuffles.len())];
+        let mut changed = events.clone();
+        if let What::Shuffle(m) = &mut changed[s].what {
+            m.cards.pop();
+            m.pos.truncate(m.cards.len());
+        }
+        assert_eq!(differs_at(&changed), Some(s as u64), "{what}: shuffle {s}");
+
+        // Two cards of a shuffle swapped are another outcome the game takes: it goes
+        // differently after the shuffle, by the first event that no longer folds (sooner
+        // when an answer picks one of those cards by its place: Order of Astrologers).
+        let into_deck: Vec<usize> = (shuffles.iter().copied())
+            .filter(|&i| match &events[i].what {
+                What::Shuffle(m) => {
+                    matches!(m.to, Zone::Seat(_, SeatZone::Deck))
+                        && m.cards.iter().any(|c| *c != m.cards[0])
+                }
+                _ => false,
+            })
+            .collect();
+        let s = into_deck[pick(into_deck.len())];
+        let mut changed = events.clone();
+        let before = folded(&events[..s]);
+        if let What::Shuffle(m) = &mut changed[s].what {
+            let j = m.cards.iter().position(|c| *c != m.cards[0]).unwrap();
+            m.cards.swap(0, j);
+            m.pos = taken_from(before.zone(&m.from), &m.cards);
+        }
+        let unfolds = unfolds_at(&changed);
+        assert!(unfolds.is_none_or(|e| e > s as u64), "{what}: shuffle {s}");
+        let differs = differs_at(&changed);
+        assert!(
+            differs.is_none_or(|d| d > s as u64),
+            "{what}: shuffle {s} swapped: {differs:?}"
+        );
+        assert!(
+            unfolds.is_none_or(|u| differs.is_some_and(|d| d <= u)),
+            "{what}: shuffle {s} swapped: {differs:?}, unfolds at {unfolds:?}"
+        );
+
+        // Cut after a question, the stream is a game waiting on that question's seat.
+        let asks: Vec<usize> = (0..events.len())
+            .filter(|&i| matches!(events[i].what, What::Ask(_)))
+            .collect();
+        let a = asks[pick(asks.len())];
+        let replay = dominion_agent::replay::replay(&events[..=a])
+            .unwrap_or_else(|d| panic!("{what}: cut after {a}: {d}"));
+        let What::Ask(ask) = &events[a].what else {
+            unreachable!()
+        };
+        assert_eq!(
+            replay.game.pending().map(|d| d.player.0),
+            Some(ask.seat),
+            "{what}"
+        );
+        // Cut anywhere else, it ends where the game goes on.
+        let cuts: Vec<usize> = (1..events.len())
+            .filter(|&c| !matches!(events[c - 1].what, What::Ask(_)))
+            .collect();
+        let cut = cuts[pick(cuts.len())];
+        assert_eq!(
+            differs_at(&events[..cut]),
+            Some(cut as u64),
+            "{what}: cut at {cut}"
+        );
+    }
+}
+
+/// How many cards lie over each of `cards` in `zone` as they leave it one after the
+/// other, each the topmost of its name; nothing when each is the top card.
+fn taken_from(zone: &[CardRef], cards: &[CardRef]) -> Vec<u32> {
+    let mut left = zone.to_vec();
+    let depths: Vec<u32> = (cards.iter())
+        .map(|card| {
+            let i = left.iter().position(|c| c == card).unwrap();
+            left.remove(i);
+            i as u32
+        })
+        .collect();
+    match depths.iter().all(|&d| d == 0) {
+        true => vec![],
+        false => depths,
+    }
+}
+
+/// A game played through a `Table`, with its conveniences (Autoplay Treasures, Way
+/// questions answered in advance), is recorded as the answers they stand for.
+#[test]
+fn a_tables_stream_replays() {
+    use Card::*;
+    use dominion_agent::{Answer, Table, WayChoice};
+    for seed in 0..seeds(10) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let kingdom = vec![
+            Village, Smithy, Militia, Moat, ThroneRoom, Market, Laboratory, Festival, Mine,
+            Bureaucrat,
+        ];
+        let mut config = GameConfig::new(2, kingdom, seed);
+        config.landscapes = vec![WayOfTheOx, WayOfTheSheep];
+        config.turn_limit = Some(30);
+        let names = vec!["Ann".to_string(), "Bo".to_string()];
+        let mut table = Table::new_recorded("g", config, names).unwrap();
+        while !table.is_over() {
+            let seat = table.deciding().unwrap();
+            let view = table.view(seat);
+            let d = view.decision.unwrap();
+            if d.kind == "turn"
+                && d.phase.as_deref() == Some("buy")
+                && rng.random_bool(0.5)
+                && table.play_treasures(seat, &d.id).is_ok()
+            {
+                continue;
+            }
+            let answer = if d.name_any {
+                Answer::name(&d.id, "Copper")
+            } else {
+                let (min, max) = (d.min.unwrap_or(1) as usize, d.max.unwrap_or(1) as usize);
+                let mut picks: Vec<u32> = (0..d.options.len() as u32).collect();
+                picks.shuffle(&mut rng);
+                picks.truncate(rng.random_range(min..=max.min(picks.len())));
+                Answer::indices(&d.id, picks)
+            };
+            let way = match rng.random_range(0..3) {
+                0 => Some(WayChoice::Way(WayOfTheOx)),
+                1 => Some(WayChoice::None),
+                _ => None,
+            };
+            table.answer_with(seat, &answer, way).unwrap();
+        }
+        let events = table.unwritten();
+        let replay =
+            dominion_agent::replay::replay(events).unwrap_or_else(|d| panic!("seed {seed}: {d}"));
+        assert_eq!(replay.game.outcome(), table.game().outcome(), "seed {seed}");
     }
 }

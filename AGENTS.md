@@ -625,6 +625,21 @@ them.
   `Hub::save` saves the snapshot, which carries them, then appends them to
   `<game id>.events.<jsonl|cbor>` and marks them written; loading cuts the stream back
   to the events the snapshot says were written (`stream_state`).
+  The stream also holds what caused the game, so that `replay::replay` can play it again
+  from the stream alone (its `setup`'s `config`, its chance outcomes, its answers) and
+  hold the new stream to it event for event; the fold tests replay every game they play.
+  So every random outcome is drawn at a named `chance::Site`: `shuffle_for` (a shuffle;
+  a deck's or the Boons'/Hexes' discard pile's is shown by its `shuffle` event),
+  `chance_of` (a random procedure: what it decided, which a game given its outcomes takes
+  instead if it fits) or `chance_pick`. Never call `rng_shuffle` / `rng_index` outside
+  the procedure of a site. Outcomes no shuffle shows are journaled (`Step::Chance`) and
+  written as `setup`'s `chance` or a `chance` event. A question a seat is asked is
+  journaled when `run` stops at it (`Step::Asked`, always the journal's last step: record
+  after every answer) and its answer by `respond` (`Step::Answered`); the recorder writes
+  them as `ask` (agent-view@2's decision as that seat sees it, `project::question`) and
+  `answer` (indices into it). Replay gives the cards of a shuffle by name, so the engine
+  must do the same for any copies of a name in the same places: never order a choice's
+  options by `CardId` (sort by name, then position: `Game::shuffled_unordered`).
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The
@@ -740,7 +755,7 @@ helpers in `tests/mod.rs` (`setup`, `hand`, `deck`, `play`, `choose_kinds`, `yes
   fuzz test checks this at every decision. Cards held by an effect go in a real zone
   (`SetAside`, a mat), never nowhere.
 - `Game` is `Clone + Serialize` at every point. Frames and state hold plain data only.
-- All randomness comes from `Game::rng`.
+- All randomness comes from `Game::rng`, drawn at a `chance::Site` (see Events).
 - Primitive helpers on `Game` never trigger anything; anything a card can react to goes
   through its frame.
 - One way to play a card: `Frame::play`.

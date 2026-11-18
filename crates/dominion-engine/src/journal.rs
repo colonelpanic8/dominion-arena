@@ -335,6 +335,16 @@ pub enum Step {
     /// Occurrence `n` is over: nothing more happens inside it. A move after it is another
     /// occurrence's, even one moving the same way for the same cause.
     Closed(u32),
+    /// A chance outcome no shuffle's moves show: `cards` for `site`.
+    Chance {
+        site: crate::chance::Site,
+        cards: Vec<Card>,
+    },
+    /// The game waits on [`Game::pending`], a decision it couldn't answer itself. Always
+    /// the last step taken: the game is still waiting when its journal is taken.
+    Asked,
+    /// The pending decision was answered with this.
+    Answered(crate::Response),
 }
 
 /// What the journal reads of the table besides counters, each time it records.
@@ -436,7 +446,8 @@ impl Game {
     /// Starts a game that records a journal (and a [`Trace`]), beginning with every card
     /// in it.
     pub fn new_journaled(config: crate::GameConfig) -> Result<Game, crate::SetupError> {
-        let mut game = crate::setup::build(config)?;
+        let chance = crate::chance::Chance::default();
+        let mut game = crate::setup::build_with(config, Some(chance))?;
         game.enable_journal();
         game.start();
         Ok(game)
@@ -445,10 +456,18 @@ impl Game {
     /// Starts journaling a game not yet started, beginning with every card in it.
     pub(crate) fn enable_journal(&mut self) {
         self.enable_trace();
-        let steps = (self.trace().unwrap_or_default().iter().cloned())
+        let steps: Vec<Step> = (self.trace().unwrap_or_default().iter().cloned())
             .map(|entry| Step::Trace { entry, verb: None })
             .collect();
         // What setup gave (starting Favors, tokens on piles) is journaled after the cards.
+        // Chance setup drew comes first.
+        let drawn = (self.chance.as_mut())
+            .map(|c| std::mem::take(&mut c.drawn))
+            .unwrap_or_default();
+        let steps = (drawn.into_iter())
+            .map(|(site, cards)| Step::Chance { site, cards })
+            .chain(steps)
+            .collect();
         self.journal = Some(Journal {
             steps,
             readings: (self.gauges().into_iter())
@@ -771,6 +790,30 @@ impl Game {
         if self.journal.is_some() {
             self.sync_journal();
             self.journal_push(Step::Fate { card, to });
+        }
+    }
+
+    /// Records a chance outcome no shuffle's moves show.
+    pub(crate) fn journal_chance(&mut self, site: crate::chance::Site, cards: Vec<Card>) {
+        if self.journal.is_some() {
+            self.sync_journal();
+            self.journal_push(Step::Chance { site, cards });
+        }
+    }
+
+    /// Records that the game waits on the decision just made pending.
+    pub(crate) fn journal_asked(&mut self) {
+        if self.journal.is_some() {
+            self.sync_journal();
+            self.journal_push(Step::Asked);
+        }
+    }
+
+    /// Records the answer to the pending decision, about to be followed.
+    pub(crate) fn journal_answered(&mut self, response: &crate::Response) {
+        if self.journal.is_some() {
+            self.sync_journal();
+            self.journal_push(Step::Answered(response.clone()));
         }
     }
 
