@@ -9,7 +9,7 @@ use dominion_engine::{
 pub use dominion_protocol::api::{
     Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
 };
-use dominion_protocol::api::{UndoRequest, UndoState};
+use dominion_protocol::api::{Replay, ReplayTurn, UndoRequest, UndoState};
 use dominion_protocol::lobby::{Clock, ClockView, GameMeta, MyGame, Source, UndoRule, UserRef};
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
@@ -560,6 +560,9 @@ type Users = Box<dyn Fn(&[Option<String>]) -> Vec<Option<UserRef>> + Send + Sync
 /// How many games read from `expired/` are kept loaded.
 const ARCHIVE_CACHE: usize = 16;
 
+/// How many replayed points of finished games are kept to go on from.
+const REPLAY_CACHE: usize = 8;
+
 /// The most games in progress unless [`Hub::set_max_games`] says otherwise.
 pub const DEFAULT_MAX_GAMES: usize = 1000;
 
@@ -567,6 +570,8 @@ pub struct Hub {
     index: Mutex<Index>,
     /// Games read from `expired/` lately, most recent first: never hosted again.
     archive: Mutex<VecDeque<(String, Arc<Hosted>)>>,
+    /// Points of finished games replayed lately, most recent first.
+    replays: Mutex<VecDeque<(String, Table)>>,
     store: Option<Arc<Store>>,
     timing: Mutex<Timing>,
     max_games: AtomicU64,
@@ -581,6 +586,7 @@ impl Default for Hub {
         Hub {
             index: Mutex::default(),
             archive: Mutex::default(),
+            replays: Mutex::default(),
             store: None,
             timing: Mutex::default(),
             max_games: AtomicU64::new(DEFAULT_MAX_GAMES as u64),
@@ -1609,6 +1615,7 @@ impl Hub {
                 can_undo: self.can_undo(&game, &table, seat.seat),
                 undo: self.undo_state(&game, &table, Some(seat.seat)),
                 meta,
+                replay: None,
             };
             (seat_view, owners)
         };
@@ -1624,21 +1631,80 @@ impl Hub {
         log_from: usize,
         as_seat: Option<u8>,
     ) -> Result<SeatView, HubError> {
+        self.watched(id, None, log_from, as_seat)
+    }
+
+    /// [`Hub::watch_view`] of finished game `id` as it was after `step` answers.
+    pub fn replay_view(
+        &self,
+        id: &str,
+        step: usize,
+        log_from: usize,
+        as_seat: Option<u8>,
+    ) -> Result<SeatView, HubError> {
+        self.watched(id, Some(step), log_from, as_seat)
+    }
+
+    fn watched(
+        &self,
+        id: &str,
+        step: Option<usize>,
+        log_from: usize,
+        as_seat: Option<u8>,
+    ) -> Result<SeatView, HubError> {
         let game = self.read(id)?;
         let refused = || HubError::Forbidden(format!("game {id} can't be watched"));
         let (mut seat_view, owners) = {
-            let table = lock(&game.table);
+            let real = lock(&game.table);
             if !lock(&game.meta).watchable {
                 return Err(refused());
             }
+            if let Some(seat) = as_seat
+                && usize::from(seat) >= real.names().len()
+            {
+                return Err(HubError::BadRequest(format!("there is no seat {seat}")));
+            }
+            let replay = match step {
+                None => None,
+                Some(_) if !real.is_over() => {
+                    return Err(HubError::Conflict(format!(
+                        "game {id} is still being played: only a finished game can be replayed"
+                    )));
+                }
+                Some(_) if !real.replayable() => {
+                    return Err(HubError::Conflict(format!(
+                        "game {id} was saved before games kept their answers, so it can't be \
+                         replayed"
+                    )));
+                }
+                Some(step) if step > real.answers() => {
+                    return Err(HubError::BadRequest(format!(
+                        "game {id} had {} answers",
+                        real.answers()
+                    )));
+                }
+                Some(step) => Some(Replay {
+                    step,
+                    steps: real.answers(),
+                    turns: (real.turn_starts().into_iter())
+                        .map(|(step, player, turn)| ReplayTurn {
+                            step,
+                            player: player.0,
+                            turn,
+                        })
+                        .collect(),
+                }),
+            };
+            let replayed = match &replay {
+                Some(r) if r.step < r.steps => Some(self.replayed(id, &real, r.step)?),
+                _ => None,
+            };
+            let table = replayed.as_ref().unwrap_or(&real);
             let (view, extras) = match as_seat {
                 None => (
                     engine(|| table.watch_view(log_from))?.ok_or_else(refused)?,
                     engine(|| table.watch_extras())?.unwrap_or_default(),
                 ),
-                Some(seat) if usize::from(seat) >= table.names().len() => {
-                    return Err(HubError::BadRequest(format!("there is no seat {seat}")));
-                }
                 Some(seat) => {
                     let seat = PlayerId(seat);
                     let mut view = engine(|| table.view_from(seat, log_from))?;
@@ -1647,21 +1713,50 @@ impl Hub {
                     (view, engine(|| table.extras(seat))?)
                 }
             };
-            let (meta, owners) = self.game_meta(&game, &table);
+            let (meta, owners) = self.game_meta(&game, &real);
             let seat_view = SeatView {
                 view,
                 version: *game.version.borrow(),
                 deciding: table.deciding().map(|p| p.0),
                 table: extras,
-                undos: table.undos(),
+                undos: real.undos(),
                 can_undo: false,
-                undo: self.undo_state(&game, &table, None),
+                undo: self.undo_state(&game, &real, None),
                 meta,
+                replay,
             };
+            if let Some(t) = replayed {
+                self.keep_replay(id, t);
+            }
             (seat_view, owners)
         };
         seat_view.meta.users = self.users(&owners);
         Ok(seat_view)
+    }
+
+    /// Finished game `real` replayed to just before answer `step`, going on from the
+    /// latest earlier point of it replayed lately.
+    fn replayed(&self, id: &str, real: &Table, step: usize) -> Result<Table, HubError> {
+        let from = {
+            let mut replays = lock(&self.replays);
+            let best = (replays.iter().enumerate())
+                .filter(|(_, (k, t))| k == id && t.answers() <= step)
+                .max_by_key(|(_, (_, t))| t.answers())
+                .map(|(i, _)| i);
+            best.and_then(|i| replays.remove(i)).map(|(_, t)| t)
+        };
+        engine(|| real.replay(step, from))?.map_err(|e| match e {
+            AnswerError::Unreplayable(why) => {
+                HubError::Conflict(format!("game {id} doesn't replay as it was played: {why}"))
+            }
+            e => e.into(),
+        })
+    }
+
+    fn keep_replay(&self, id: &str, table: Table) {
+        let mut replays = lock(&self.replays);
+        replays.push_front((id.into(), table));
+        replays.truncate(REPLAY_CACHE);
     }
 
     /// Game `id`'s version, which every change bumps, and its chat's counter.

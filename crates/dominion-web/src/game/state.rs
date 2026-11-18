@@ -38,6 +38,9 @@ pub struct GameState {
     /// How far the server's clock is ahead of this browser's, in milliseconds: times the
     /// server names (`meta.forfeit_at`) are on its clock.
     pub server_ahead: i64,
+    /// Bumped when a replay jumps to another point of the game: nothing animates across
+    /// it.
+    pub jumps: u64,
     /// The game's chat, in order.
     pub chat: Vec<ChatMessage>,
     /// The feed's chat counter the chat was last fetched at, once it has been.

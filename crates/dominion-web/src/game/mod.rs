@@ -11,6 +11,7 @@ mod menu;
 pub mod meta;
 pub mod moves;
 pub mod plain;
+mod replay;
 pub mod state;
 pub mod table;
 mod undo;
@@ -475,6 +476,7 @@ pub fn waiting_for(g: &GameSummary, held: &[HeldSeat]) -> Option<(u8, String)> {
     Some((d, g.names.get(usize::from(d)).cloned().unwrap_or_default()))
 }
 
+pub use replay::ReplayPage;
 pub use undo::{UndoNotice, undo_title};
 
 /// Says the game is waiting for a seat nobody has joined, with what to give its agent

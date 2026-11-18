@@ -407,6 +407,7 @@ fn check_watched(table: &Table, deciding: PlayerId, cards: &CardDb) -> Board {
         can_undo: false,
         undo: Default::default(),
         meta: Default::default(),
+        replay: None,
     });
     assert!(state.watching() && state.decision().is_none());
     watched

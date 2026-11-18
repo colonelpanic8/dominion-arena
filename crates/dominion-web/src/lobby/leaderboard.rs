@@ -128,6 +128,9 @@ fn Record(game: GameRecord) -> Element {
                 span { "{source}" }
                 span { if game.rated { "Rated" } else { "Unrated" } }
                 span { "{reason(&game.reason)}" }
+                if game.source != Source::Official {
+                    Link { class: "lb-record-replay", "data-replay": "{game.game_id}", to: Route::GameReplay { id: game.game_id.clone() }, "Replay" }
+                }
             }
             div { class: "lb-record-players",
                 for p in players.iter() {

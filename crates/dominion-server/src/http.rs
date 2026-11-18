@@ -910,6 +910,14 @@ async fn watch(
     }
     let view_query = query(view_query)?;
     let from = view_query.log_from.unwrap_or(0);
+    if let Some(step) = view_query.step {
+        return Ok(axum::Json(api.hub.replay_view(
+            &id,
+            step,
+            from,
+            view_query.as_seat,
+        )?));
+    }
     let watched = api.hub.watch_view(&id, from, view_query.as_seat)?;
     if watched.view.game.running
         && ident.is_some_and(|ident| !api.hub.owned_in(&id, &ident.user).is_empty())

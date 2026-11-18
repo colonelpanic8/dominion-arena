@@ -502,6 +502,10 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-below-log-loading { right: 0; top: 0; width: 23vw; height: 100vh; }
 .dt-controls { display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; justify-content: flex-end; margin-bottom: 0.5em; flex: none; }
 .dt-controls .seat-bar { margin-bottom: 0; }
+.dt-controls .replay-bar { flex-wrap: nowrap; gap: 0.3em; }
+.dt-controls .replay-bar button.toggle { padding-left: 0.6em; padding-right: 0.6em; }
+.dt-controls .replay-bar.watch-as { flex-wrap: wrap; }
+.replay-slider { flex: 1; min-width: 0; }
 .dt-more { flex: 0 1 auto; max-height: 40%; overflow-y: auto; margin-bottom: 0.5em; }
 .dt-more-head { background: none; border: 0; color: #ddd; cursor: pointer; font: inherit; padding: 0; }
 .dt-more-list { margin: 0.3em 0 0; padding-left: 1.2em; color: #ccc; }

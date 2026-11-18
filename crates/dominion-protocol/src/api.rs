@@ -244,6 +244,30 @@ pub struct SeatView {
     /// Who plays, who is connected, and what kind of game it is.
     #[serde(default)]
     pub meta: GameMeta,
+    /// For a finished game watched at an earlier point (`step`): where it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay: Option<Replay>,
+}
+
+/// Where a replay of a finished game stands.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Replay {
+    /// How many of the game's answers the view comes after.
+    pub step: usize,
+    /// How many answers the game had: after all of them, it is as it ended.
+    pub steps: usize,
+    /// Each turn's start, in order.
+    pub turns: Vec<ReplayTurn>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayTurn {
+    /// The step at which the turn has started.
+    pub step: usize,
+    pub player: u8,
+    pub turn: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -341,6 +365,10 @@ pub struct ViewQuery {
     /// decision, instead of with every player's cards visible.
     #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
     pub as_seat: Option<u8>,
+    /// For `GET /api/games/{id}/watch` of a finished game: the game as it was after this
+    /// many answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<usize>,
 }
 
 /// Every error's body.

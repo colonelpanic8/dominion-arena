@@ -375,6 +375,7 @@ fn observation(update: Update) -> OnlineObservation {
                 now,
                 ..Default::default()
             },
+            replay: None,
         }
     });
     OnlineObservation {

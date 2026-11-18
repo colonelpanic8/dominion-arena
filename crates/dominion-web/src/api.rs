@@ -171,6 +171,24 @@ pub async fn watch_view(
     imp::get(&url, None).await
 }
 
+/// Finished game `game` as someone watching saw it after `step` answers, with the log
+/// from `log_from` on.
+pub async fn replay_view(
+    game: &str,
+    step: usize,
+    log_from: usize,
+    as_seat: Option<u8>,
+) -> Result<SeatView> {
+    let mut url = format!(
+        "/api/games/{}/watch?step={step}&logFrom={log_from}",
+        encode(game)
+    );
+    if let Some(seat) = as_seat {
+        url.push_str(&format!("&as={seat}"));
+    }
+    imp::get(&url, None).await
+}
+
 pub async fn resign(game: &str, token: &str) -> Result<SeatView> {
     let url = format!("/api/games/{}/resign", encode(game));
     imp::send("POST", &url, Some(token), None::<&()>).await
