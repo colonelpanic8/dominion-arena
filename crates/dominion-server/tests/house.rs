@@ -132,6 +132,38 @@ fn a_table_seats_an_agent_and_the_runner_is_told_its_seat_until_the_game_ends() 
 }
 
 #[test]
+fn only_listed_players_and_their_bots_seat_agents_on_the_players_day() {
+    let settings = Settings {
+        agent_seats_per_day: 1,
+        agent_players: vec!["ada".into()],
+        ..Settings::default()
+    };
+    let arena = Arena::open(Arc::new(Hub::default()), settings).unwrap();
+    let mut told = runner(&arena, &["Claude Opus"], 2);
+    let (ada, bo) = (register(&arena, "Ada"), register(&arena, "Bo"));
+    assert_eq!(arena.lobby(Some(&bo)).house.left, None);
+    assert!(matches!(
+        arena.new_table(&bo, &with_agent("Claude Opus")),
+        Err(Error::Forbidden(_))
+    ));
+    let bos_bot = arena.identify(&arena.new_bot(&bo, "Bo Bot").unwrap().key);
+    assert!(matches!(
+        arena.new_table(&bos_bot.unwrap(), &with_agent("Claude Opus")),
+        Err(Error::Forbidden(_))
+    ));
+
+    let bot = arena
+        .identify(&arena.new_bot(&ada, "Ada Bot").unwrap().key)
+        .unwrap();
+    assert_eq!(arena.lobby(Some(&bot)).house.left, Some(1));
+    let table = arena.new_table(&bot, &with_agent("Claude Opus")).unwrap();
+    let game = arena.ready(&bot, &table.id, true).unwrap().game.unwrap();
+    assert_eq!(jobs(&mut told).map(|j| j.len()), Some(1));
+    end(&arena, &game);
+    assert_eq!(arena.lobby(Some(&ada)).house.left, Some(0));
+}
+
+#[test]
 fn agents_play_only_as_many_games_as_the_runner_has_room_for_and_players_have_seats_left() {
     let arena = arena(1);
     let mut told = runner(&arena, &["Claude Opus", "Codex"], 1);

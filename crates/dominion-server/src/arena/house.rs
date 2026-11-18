@@ -159,6 +159,10 @@ impl House {
     }
 }
 
+pub(super) fn no_agents() -> Error {
+    Error::Forbidden("this account may not seat the server's agents".into())
+}
+
 /// Seats filled with the server's agents for a game being set up, released when dropped.
 pub(crate) struct Reservation<'a> {
     arena: &'a Arena,
@@ -226,7 +230,7 @@ impl Arena {
         }
         let who =
             who.ok_or_else(|| Error::Unauthorized("sign in to seat the server's agents".into()))?;
-        if self.user(&who.user)?.kind() == UserKind::Registered {
+        if self.agent_payer(&self.user(&who.user)?).is_some() {
             for name in req.agents.iter().flatten() {
                 self.summon(name)?;
             }
@@ -522,20 +526,16 @@ impl Arena {
     /// Keeps `seats` agent seats for a game `host` is setting up, if they may fill that
     /// many today and the runner has room for them.
     pub(super) fn reserve(&self, host: &str, seats: u32) -> Result<Reservation<'_>> {
-        let reservation = |seats| Reservation {
+        let reservation = |host: &str, seats| Reservation {
             arena: self,
             host: host.to_string(),
             seats,
             kept: false,
         };
         if seats == 0 {
-            return Ok(reservation(0));
+            return Ok(reservation(host, 0));
         }
-        if self.user(host)?.kind() != UserKind::Registered {
-            return Err(Error::Forbidden(
-                "only registered players seat the server's agents".into(),
-            ));
-        }
+        let payer = self.agent_payer(&self.user(host)?).ok_or_else(no_agents)?;
         let per_day = self.settings.agent_seats_per_day;
         let mut state = lock(&self.state);
         let Some(runner) = &state.house.runner else {
@@ -549,7 +549,7 @@ impl Arena {
                 "the server's agents are busy ({busy} of {capacity} playing); try again when a game ends"
             ));
         }
-        let filled = state.house.filled_today(host);
+        let filled = state.house.filled_today(&payer.id);
         if per_day != 0 && filled + seats > per_day {
             return Err(Error::TooMany(
                 format!("you have filled {filled} of your {per_day} agent seats for today"),
@@ -557,17 +557,31 @@ impl Arena {
             ));
         }
         state.house.reserved += seats;
-        Ok(reservation(seats))
+        Ok(reservation(&payer.id, seats))
+    }
+
+    /// Whose day the server's agents count against when `user` seats them: their own, or
+    /// a bot's owner's. None when the settings don't let them seat any.
+    pub(super) fn agent_payer(&self, user: &User) -> Option<User> {
+        let payer = match user.kind() {
+            UserKind::Registered => user.clone(),
+            UserKind::Bot => self.db.user(user.owner()?).ok()??,
+            UserKind::Guest => return None,
+        };
+        let allowed = &self.settings.agent_players;
+        let listed = allowed.is_empty()
+            || (allowed.iter()).any(|name| name.trim().eq_ignore_ascii_case(&payer.name));
+        (payer.kind() == UserKind::Registered && listed).then_some(payer)
     }
 
     /// What the lobby says about the server's agents, for `you`.
     pub(super) fn house_info(&self, state: &mut State, you: Option<&User>) -> lobby::House {
         let per_day = self.settings.agent_seats_per_day;
         let left = you
-            .filter(|u| u.kind() == UserKind::Registered)
-            .map(|u| match per_day {
+            .and_then(|u| self.agent_payer(u))
+            .map(|payer| match per_day {
                 0 => lobby::House::UNLIMITED,
-                _ => per_day.saturating_sub(state.house.filled_today(&u.id)),
+                _ => per_day.saturating_sub(state.house.filled_today(&payer.id)),
             });
         let Some(runner) = &state.house.runner else {
             return lobby::House {

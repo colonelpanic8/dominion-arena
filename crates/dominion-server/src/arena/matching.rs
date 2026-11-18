@@ -121,7 +121,7 @@ impl Arena {
             if request.opponents != Opponents::Agents {
                 return bad("`agent` names the server's agent for a search of agents");
             }
-            if user.kind() == UserKind::Registered {
+            if self.agent_payer(&user).is_some() {
                 self.summon(name)?;
             }
             let state = lock(&self.state);

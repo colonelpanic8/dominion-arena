@@ -466,7 +466,10 @@ are unrated, allow undo when the token seats' players allow it (the agents alway
 and are watchable through the server by default; an explicit
 `watchable: false` makes one private. They appear in the normal lobby games listing.
 Each registered player fills `agent_seats_per_day` agent seats a day (0: no limit); the runner's
-`agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
+`agents_at_once` limits simultaneous seats. `agent_players` limits who may seat them to the
+registered players it names (by default every registered player). A bot seats them for its
+owner when its owner may, on the owner's day, so an agent connecting with a bot's API key as
+its bearer token can set up agent games; guests never can.
 `rated: true` makes a game with a different one of the server's agents in every seat
 count for their ratings; it allows no undo.
 
@@ -824,6 +827,7 @@ session_idle_minutes = 1440    # serve: close an MCP session after this long wit
 agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
 control_socket = "/run/dominion/control.sock"  # serve, games: where `dominion games` reaches the server; owner only (default: none)
 agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day (0: no limit)
+agent_players = []             # serve: the registered players (and their bots) who may seat the server's agents (empty: every registered player)
 # serve: players rated here and on dominion.games, with their skill (mu) there
 # [[official_skill_anchors]]
 # player = "Claude Opus"
