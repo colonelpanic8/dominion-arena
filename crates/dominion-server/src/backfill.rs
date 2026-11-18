@@ -9,13 +9,18 @@
 //! directory's lock, so the server must be stopped; a dry run takes nothing and writes
 //! nothing (snapshots are replaced atomically, so it can read beside a running server).
 //! A stream is written beside its snapshot, atomically and durably, never over another,
-//! and a snapshot is never touched. A game "has a stream" only if it is a whole one: the
-//! one its table records, in step with it as the server checks at startup, or one an
-//! earlier run rebuilt. A game whose recording stopped, or whose stream isn't in step, gets
-//! a rebuilt one beside its incomplete stream, which is kept. A hosted game that can still
-//! change (in progress, or able to be undone) is left alone: a stream written now could
-//! stop being the game's. The server's `record_events` setting doesn't apply: a backfill
-//! is run on purpose.
+//! and a snapshot is never touched. Its header names the history it was built from (the
+//! table's answers and undos, [`Table::history`]), so that it is the game's only while
+//! that is the game's history. A game "has a stream" only if it is a whole one: the one
+//! its table records, in step with it as the server checks at startup, or one an earlier
+//! run rebuilt from the history the game still has. One rebuilt from another (the game was
+//! undone since) is stale: set aside as `<id>.stale.events.<encoding>`, and the game is
+//! backfilled as if it had none. A game whose recording stopped, or whose stream isn't in
+//! step, gets a rebuilt one beside its incomplete stream, which is kept. A hosted game in
+//! progress is left alone: a stream written now would stop where the game went on. A
+//! finished one is written even while its rules let it be undone: the server serves it only
+//! once the game can't change, and sets it aside as stale if it is undone first. The
+//! server's `record_events` setting doesn't apply: a backfill is run on purpose.
 
 use crate::hub::{self, Meta, SavedMeta, Stream, StreamError};
 use crate::store::{self, EXPIRED, Store};
@@ -28,7 +33,7 @@ use serde_json::Value;
 use std::fmt;
 use std::fs;
 use std::io::{self, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Why a saved game can't be converted.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -368,18 +373,107 @@ pub enum Status {
         /// stopped, or isn't in step with the game. Its file, if any, is kept, marked
         /// incomplete.
         replaces: Option<String>,
+        /// Hosted, over, and its rules still let it be undone: the server serves its
+        /// stream only once it can't change, and sets it aside as stale if it is undone
+        /// first.
+        undoable: bool,
     },
-    /// It has a whole stream already, which is left as it is.
-    HasStream(Encoding),
+    /// It has a whole stream already, which is left as it is. `unserved`: hosted and able
+    /// to change, so the server serves it only once the game can't.
+    HasStream {
+        encoding: Encoding,
+        unserved: bool,
+    },
+    /// Beside it is a reconstructed stream built from a history the game no longer has
+    /// (`why`): set aside as `aside` (in a run that writes; `moved` says it was), never the
+    /// game's, and the game backfilled as if it had none: `then`.
+    Stale {
+        why: String,
+        aside: PathBuf,
+        moved: bool,
+        then: Box<Status>,
+    },
     /// Hosted and in progress: nothing written. Its answers so far convert, to this many
     /// events.
     InProgress(usize),
-    /// Hosted, over, and its rules still allow an undo: nothing written until it is
-    /// retired. It converts, to this many events.
-    Undoable(usize),
     NotConvertible(Refusal),
-    /// It converted, but writing its stream failed.
+    /// It converted, but writing its stream failed (or setting a stale one aside did).
     Failed(String),
+}
+
+impl Status {
+    /// What the backfill did, and the detail.
+    fn describe(&self) -> (&'static str, String) {
+        match self {
+            Status::Converted {
+                events,
+                ending,
+                replaces,
+                undoable,
+            } => (
+                if *undoable {
+                    "converted, undoable"
+                } else {
+                    "converted"
+                },
+                format!(
+                    "{}; {ending}{}{}",
+                    dominion_engine::amount(*events as i64, "event", "events"),
+                    match replaces {
+                        Some(why) => format!(
+                            "; stands in for its own recording, which is incomplete ({why}): \
+                             any incomplete stream is kept"
+                        ),
+                        None => String::new(),
+                    },
+                    match undoable {
+                        true =>
+                            "; can still be undone: served once it can't (retired, or \
+                                 no undo allowed), set aside as stale if undone first",
+                        false => "",
+                    }
+                ),
+            ),
+            Status::HasStream { encoding, unserved } => (
+                "has a stream",
+                format!(
+                    "{encoding}, left as it is{}",
+                    match unserved {
+                        true => "; served once the game can't change",
+                        false => "",
+                    }
+                ),
+            ),
+            Status::Stale {
+                why,
+                aside,
+                moved,
+                then,
+            } => {
+                let (label, detail) = then.describe();
+                (
+                    "stale stream",
+                    format!(
+                        "{why}: {} {}, never served; then {label}: {detail}",
+                        if *moved {
+                            "set aside as"
+                        } else {
+                            "would be set aside as"
+                        },
+                        aside.display(),
+                    ),
+                )
+            }
+            Status::InProgress(_) => (
+                "in progress",
+                "not written while the server hosts it: run again once it has ended (its \
+                 answers so far convert)"
+                    .into(),
+            ),
+            Status::NotConvertible(why) => ("not convertible", why.to_string()),
+            Status::Failed(why) => ("failed", why.clone()),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -395,42 +489,8 @@ impl fmt::Display for Entry {
             Place::Hosted => "hosted",
             Place::Expired => "expired",
         };
-        let (status, detail) = match &self.status {
-            Status::Converted {
-                events,
-                ending,
-                replaces,
-            } => (
-                "converted",
-                format!(
-                    "{}; {ending}{}",
-                    dominion_engine::amount(*events as i64, "event", "events"),
-                    match replaces {
-                        Some(why) => format!(
-                            "; stands in for its own recording, which is incomplete ({why}): \
-                             any incomplete stream is kept"
-                        ),
-                        None => String::new(),
-                    }
-                ),
-            ),
-            Status::HasStream(e) => ("has a stream", format!("{e}, left as it is")),
-            Status::InProgress(_) => (
-                "in progress",
-                "not written while the server hosts it: run again once it has ended (its \
-                 answers so far convert)"
-                    .into(),
-            ),
-            Status::Undoable(_) => (
-                "can be undone",
-                "not written while its rules let it be undone: run again once it is retired \
-                 (it converts)"
-                    .into(),
-            ),
-            Status::NotConvertible(why) => ("not convertible", why.to_string()),
-            Status::Failed(why) => ("failed", why.clone()),
-        };
-        write!(f, "{:<7} {place:<8} {status:<16} {detail}", self.id)
+        let (status, detail) = self.status.describe();
+        write!(f, "{:<7} {place:<8} {status:<19} {detail}", self.id)
     }
 }
 
@@ -446,29 +506,37 @@ impl Report {
         self.entries.iter().filter(|e| f(&e.status)).count()
     }
 
-    /// How many games failed to be written.
+    /// How many games failed to be written, a stale stream's included.
     pub fn failed(&self) -> usize {
-        self.count(|s| matches!(s, Status::Failed(_)))
+        let failed = |s: &Status| matches!(s, Status::Failed(_));
+        self.count(|s| match s {
+            Status::Stale { then, .. } => failed(then),
+            s => failed(s),
+        })
     }
 }
 
 impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let converted = self.count(|s| matches!(s, Status::Converted { .. }));
+        let converted = |undoable: bool| move |s: &Status| matches!(s, Status::Converted { undoable: u, .. } if *u == undoable);
+        let (would, aside) = match self.dry_run {
+            true => ("would be ", "would be set aside"),
+            false => ("", "set aside"),
+        };
         write!(
             f,
-            "{}: {} {}, {} already had a stream, {} in progress (left for later), {} able to \
-             be undone (left until retired), {} not convertible",
+            "{}: {} {would}converted, {} {would}converted though they can still be undone \
+             (served once they can't change), {} already had a stream, {} had a stale stream \
+             ({aside}; {} of them {would}written afresh), {} in progress (left for later), {} \
+             not convertible",
             dominion_engine::amount(self.entries.len() as i64, "game", "games"),
-            converted,
-            if self.dry_run {
-                "would be converted"
-            } else {
-                "converted"
-            },
-            self.count(|s| matches!(s, Status::HasStream(_))),
+            self.count(converted(false)),
+            self.count(converted(true)),
+            self.count(|s| matches!(s, Status::HasStream { .. })),
+            self.count(|s| matches!(s, Status::Stale { .. })),
+            self.count(|s| matches!(s, Status::Stale { then, .. }
+                if matches!(**then, Status::Converted { .. }))),
             self.count(|s| matches!(s, Status::InProgress(_))),
-            self.count(|s| matches!(s, Status::Undoable(_))),
             self.count(|s| matches!(s, Status::NotConvertible(_))),
         )?;
         match self.failed() {
@@ -563,33 +631,99 @@ fn backfill(
         Ok(saved) => saved,
         Err(why) => return Status::NotConvertible(why),
     };
+    let undoable = place == Place::Hosted && hub::can_change(&saved.meta, &saved.table);
     // What the server would find at startup.
     let replaces = match hub::stream_state(state, &saved.table) {
         Ok(Stream::File(encoding, _) | Stream::Reconstructed(encoding, _)) => {
-            return Status::HasStream(encoding);
+            return Status::HasStream {
+                encoding,
+                unserved: undoable,
+            };
         }
-        Ok(Stream::New) => Some("it records, but none of its stream is written".into()),
+        Ok(Stream::New) => Some(NONE_WRITTEN.into()),
         Ok(Stream::Off) => None,
         Err(StreamError::Recorded(why)) => Some(why),
+        Err(StreamError::Stale(why)) => {
+            return stale(state, store, dir, id, &saved, why, undoable, options);
+        }
         Err(e @ StreamError::Reconstructed(_)) => {
             return Status::NotConvertible(Refusal::Foreign(e.to_string()));
         }
     };
-    let converted = match convert_read(&saved) {
+    write(state, store, dir, id, &saved, replaces, undoable, options)
+}
+
+const NONE_WRITTEN: &str = "it records, but none of its stream is written";
+
+/// Game `id`, beside which is a reconstructed stream of another history (`why`): sets it
+/// aside, in a run that writes, and backfills the game as if it had none.
+#[allow(clippy::too_many_arguments)]
+fn stale(
+    state: &Path,
+    store: Option<&Store>,
+    dir: &Path,
+    id: &str,
+    saved: &Read,
+    why: String,
+    undoable: bool,
+    options: &Options,
+) -> Status {
+    // Without it, the game has its own recording, if any: with no file.
+    let replaces = match hub::recorded_state(None, &saved.table) {
+        Ok(Stream::Off) => None,
+        Ok(_) => Some(NONE_WRITTEN.into()),
+        Err(why) => Some(why),
+    };
+    let Some((path, encoding)) = store::stream_file(state, id) else {
+        // Set aside meanwhile by a server running beside a dry run.
+        return write(state, store, dir, id, saved, replaces, undoable, options);
+    };
+    let aside = path.with_file_name(store::stale_name(id, encoding));
+    let aside = aside
+        .strip_prefix(state)
+        .map_or(aside.clone(), Path::to_path_buf);
+    let status = |moved, then| Status::Stale {
+        why: why.clone(),
+        aside: aside.clone(),
+        moved,
+        then: Box::new(then),
+    };
+    let moved = match store.map(|s| s.mark_stale(id)) {
+        None => false,
+        Some(Ok(_)) => true,
+        Some(Err(e)) => return status(false, Status::Failed(format!("setting it aside: {e}"))),
+    };
+    status(
+        moved,
+        write(state, store, dir, id, saved, replaces, undoable, options),
+    )
+}
+
+/// Converts game `id` and writes its stream, with no whole stream beside it.
+/// `replaces`: why its own recording, if any, is incomplete.
+#[allow(clippy::too_many_arguments)]
+fn write(
+    state: &Path,
+    store: Option<&Store>,
+    dir: &Path,
+    id: &str,
+    saved: &Read,
+    replaces: Option<String>,
+    undoable: bool,
+    options: &Options,
+) -> Status {
+    let converted = match convert_read(saved) {
         Ok(c) => c,
         Err(why) => return Status::NotConvertible(why),
     };
-    if place == Place::Hosted && hub::can_change(&saved.meta, &saved.table) {
-        let events = converted.events.len();
-        return match saved.table.is_over() {
-            false => Status::InProgress(events),
-            true => Status::Undoable(events),
-        };
+    if undoable && !saved.table.is_over() {
+        return Status::InProgress(converted.events.len());
     }
     let done = Status::Converted {
         events: converted.events.len(),
         ending: converted.ending_text(),
         replaces: replaces.clone(),
+        undoable,
     };
     let Some(store) = store else {
         return done;
@@ -602,10 +736,13 @@ fn backfill(
     {
         return Status::Failed(format!("marking its stream incomplete: {e}"));
     }
-    let header = recording::reconstructed_header(id, &options.at);
+    let header = recording::reconstructed_header(id, &options.at, saved.table.history());
     match write_new(dir, id, options.encoding, &header, &converted.events) {
         Ok(true) => done,
-        Ok(false) => Status::HasStream(options.encoding),
+        Ok(false) => Status::HasStream {
+            encoding: options.encoding,
+            unserved: undoable,
+        },
         Err(e) => Status::Failed(format!("writing its stream: {e}")),
     }
 }
