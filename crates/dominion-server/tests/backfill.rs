@@ -774,22 +774,30 @@ fn snapshots_saved_before_recording_convert() {
     assert_eq!(ending("g2"), "P2 out (abandoned)");
     assert_eq!(ending("g3"), "in progress");
     assert!(matches!(first["g6"].status, Status::InProgress(_)));
-    // Finished games made directly, whose rules allow undo: written once retired.
+    // A finished game made directly, whose rules allow undo: written once retired.
+    assert!(matches!(first["g4"].status, Status::Undoable(_)));
+    // Star Chart and Avoid now shuffle again the cards they leave, so the engine plays
+    // this game differently from its first such choice on: it gets no stream.
+    assert!(matches!(
+        first["g5"].status,
+        Status::NotConvertible(Refusal::Diverged { .. })
+    ));
     for id in ["g4", "g5"] {
-        assert!(matches!(first[id].status, Status::Undoable(_)), "{id}");
         Store::open(dir).unwrap().retire(id).unwrap();
     }
     let second = run(dir, false);
-    for id in ["g4", "g5"] {
-        match &second[id].status {
-            Status::Converted { ending, .. } => assert_eq!(ending, "finished"),
-            other => panic!("{id}: {other:?}"),
-        }
+    match &second["g4"].status {
+        Status::Converted { ending, .. } => assert_eq!(ending, "finished"),
+        other => panic!("g4: {other:?}"),
     }
+    assert!(matches!(
+        second["g5"].status,
+        Status::NotConvertible(Refusal::Diverged { .. })
+    ));
+    assert!(!dir.join("expired/g5.events.cbor").exists());
     for path in [
         "g2.events.cbor",
         "expired/g4.events.cbor",
-        "expired/g5.events.cbor",
         "expired/g1.events.cbor",
         "expired/g3.events.cbor",
     ] {
