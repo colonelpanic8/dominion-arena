@@ -191,6 +191,24 @@ in {
         default = 2;
         description = "Agent seats played at once (`agents_at_once`).";
       };
+      anthropic = {
+        apiKeyCredential = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "/var/lib/private/dominion-anthropic-api-key.cred";
+          description = ''
+            systemd-creds encrypted Anthropic API key (credential name `anthropic-api-key`),
+            for `anthropic` agents: the runner gets it as `ANTHROPIC_API_KEY`. The CLI
+            seats' environment is cleared, so it never reaches them.
+          '';
+        };
+        workspace = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "wrkspc_01...";
+          description = "`ANTHROPIC_WORKSPACE_ID`: the workspace a key not scoped to one bills to.";
+        };
+      };
     };
     syncAssets = lib.mkEnableOption ''
       downloading dominion.games' card art, fonts and sounds into `assets_dir` before the
@@ -310,6 +328,7 @@ in {
       wantedBy = ["multi-user.target"];
       after = ["dominion.service" "network-online.target"];
       wants = ["network-online.target"];
+      environment.ANTHROPIC_WORKSPACE_ID = lib.mkIf (cfg.agents.anthropic.workspace != null) cfg.agents.anthropic.workspace;
       environment.PATH = lib.mkForce (lib.concatStringsSep ":" (
         lib.optional (clis != []) (lib.makeBinPath clis)
         ++ [
@@ -319,7 +338,18 @@ in {
         ]
       ));
       serviceConfig = {
-        ExecStart = "${lib.getExe cfg.package} --config ${agentsFile} agents";
+        ExecStart =
+          if cfg.agents.anthropic.apiKeyCredential == null
+          then "${lib.getExe cfg.package} --config ${agentsFile} agents"
+          else
+            pkgs.writeShellScript "dominion-agents" ''
+              ANTHROPIC_API_KEY="$(< "$CREDENTIALS_DIRECTORY/anthropic-api-key")"
+              export ANTHROPIC_API_KEY
+              exec ${lib.getExe cfg.package} --config ${agentsFile} agents
+            '';
+        LoadCredentialEncrypted =
+          lib.optional (cfg.agents.anthropic.apiKeyCredential != null)
+          "anthropic-api-key:${cfg.agents.anthropic.apiKeyCredential}";
         User = cfg.agents.user;
         SupplementaryGroups = ["dominion"];
         Restart = "always";

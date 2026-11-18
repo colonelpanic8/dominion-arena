@@ -87,7 +87,10 @@ pub fn executable(name: &str) -> Result<PathBuf, String> {
 
 impl Harness {
     pub fn new(spec: &AgentSpec, settings: &Sandbox, archive: &Path) -> Result<Self, String> {
-        if matches!(spec.program, Program::T3Code | Program::OpenAi) {
+        if matches!(
+            spec.program,
+            Program::T3Code | Program::OpenAi | Program::Anthropic
+        ) {
             return Err("only CLI agents have a native harness".into());
         }
         if !cfg!(target_os = "linux") {
@@ -129,7 +132,7 @@ impl Harness {
                 antigravity::settings(&work, playbook)?;
                 antigravity::launch(spec)
             }
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         };
@@ -201,7 +204,7 @@ impl Harness {
                 }
             }
             Program::Antigravity => antigravity::enable_mcp(&self.work, url, self.playbook)?,
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         }
@@ -274,7 +277,7 @@ impl Harness {
                     "antigravity-cli/installation_id",
                 ],
             ),
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         };
@@ -480,7 +483,7 @@ impl Harness {
                 Program::Claude => claude::response(&events),
                 Program::Codex => codex::response(&events),
                 Program::Antigravity => antigravity::response(&events),
-                Program::T3Code | Program::OpenAi => {
+                Program::T3Code | Program::OpenAi | Program::Anthropic => {
                     unreachable!("only CLI agents have a native harness")
                 }
             }
@@ -496,7 +499,7 @@ impl Harness {
             Program::Claude => claude::response(&events),
             Program::Codex => codex::response(&events),
             Program::Antigravity => antigravity::response(&events),
-            Program::T3Code | Program::OpenAi => {
+            Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
         }?;

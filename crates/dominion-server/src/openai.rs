@@ -21,13 +21,13 @@ const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 /// Game results kept verbatim; older ones are replaced by a note, a batch at a time so
 /// the cached prefix of the conversation changes rarely.
-const DEFAULT_KEEP_RESULTS: usize = 60;
+pub(crate) const DEFAULT_KEEP_RESULTS: usize = 60;
 const PRUNE_BATCH: usize = 20;
 /// Times the model may stop calling tools while the game still runs.
-const MAX_NUDGES: u32 = 3;
+pub(crate) const MAX_NUDGES: u32 = 3;
 
-const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries; play_treasures plays every Treasure offered in one call. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
-const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves.";
+pub(crate) const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries; play_treasures plays every Treasure offered in one call. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
+pub(crate) const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves.";
 
 enum Auth {
     ChatGpt { file: PathBuf },
@@ -294,7 +294,7 @@ fn parse_stream(text: &str) -> Result<(Vec<Value>, Value), String> {
 }
 
 /// The function tools the model gets: the game's, and the playbook's when there is one.
-fn tools(playbook: bool) -> Vec<Value> {
+pub(crate) fn tools(playbook: bool) -> Vec<Value> {
     let mut tools: Vec<Value> = crate::harness::GAME_TOOLS
         .iter()
         .map(|name| {
@@ -366,7 +366,7 @@ fn inside(playbook: &Path, path: &str) -> Result<PathBuf, String> {
     }
 }
 
-fn read_file(playbook: &Path, args: &Value) -> Result<String, String> {
+pub(crate) fn read_file(playbook: &Path, args: &Value) -> Result<String, String> {
     let path = inside(playbook, args["path"].as_str().unwrap_or(""))?;
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let offset = args["offset"].as_u64().unwrap_or(1).max(1) as usize - 1;
@@ -382,7 +382,7 @@ fn read_file(playbook: &Path, args: &Value) -> Result<String, String> {
         .join("\n"))
 }
 
-fn list_files(playbook: &Path, args: &Value) -> Result<String, String> {
+pub(crate) fn list_files(playbook: &Path, args: &Value) -> Result<String, String> {
     let root = playbook.canonicalize().map_err(|e| e.to_string())?;
     let start = inside(playbook, args["dir"].as_str().unwrap_or("."))?;
     let mut found = vec![];
@@ -408,7 +408,11 @@ fn list_files(playbook: &Path, args: &Value) -> Result<String, String> {
     Ok(found.join("\n"))
 }
 
-async fn card_ratings(sandbox: &Sandbox, playbook: &Path, args: &Value) -> Result<String, String> {
+pub(crate) async fn card_ratings(
+    sandbox: &Sandbox,
+    playbook: &Path,
+    args: &Value,
+) -> Result<String, String> {
     let names: Vec<String> = (args["names"].as_array().into_iter().flatten())
         .filter_map(|n| n.as_str().map(String::from))
         .collect();
@@ -694,7 +698,7 @@ async fn play_inner(
 
 const PRUNED: &str = "[an earlier game update, left out to save room: state shows the whole game, log rereads its entries]";
 
-fn user_message(text: &str) -> Value {
+pub(crate) fn user_message(text: &str) -> Value {
     json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]})
 }
 
@@ -707,14 +711,14 @@ fn give(archive: &mut Archive, input: &mut Vec<Value>, item: Value) -> Result<()
 
 /// Adds the seat's token to a game tool's arguments, except in an official game, where
 /// the connection is the seat.
-fn token(job: &Job, mut args: Value) -> Value {
+pub(crate) fn token(job: &Job, mut args: Value) -> Value {
     if !job.official {
         args["token"] = json!(job.token);
     }
     args
 }
 
-fn playbook_call(
+pub(crate) fn playbook_call(
     archive: &mut Archive,
     tool: &str,
     args: &Value,

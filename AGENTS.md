@@ -83,6 +83,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           seat under bubblewrap; `sandbox.rs` is its network namespace, the
                           allowlisting proxy and `dominion sandbox-forward`
   src/openai.rs           the direct OpenAI agent: the Responses API, game and playbook tools
+  src/anthropic.rs        the direct Anthropic agent: the Messages API, the same tools, an
+                          append-only history the API clears old game results from
   src/t3.rs               T3 MCP client bridge: per-seat conversations, game tool calls,
                           OAuth sign-in
   src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle

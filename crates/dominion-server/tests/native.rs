@@ -748,7 +748,17 @@ async fn live_native_game() {
         let server = h.config.server();
         let sandbox = h.sandbox.clone();
         tasks.spawn(async move {
-            let result = if spec.program == dominion_server::runner::Program::OpenAi {
+            let result = if spec.program == dominion_server::runner::Program::Anthropic {
+                dominion_server::anthropic::play(
+                    &spec,
+                    &sandbox,
+                    &job,
+                    &server,
+                    &mut archive,
+                    CancellationToken::new(),
+                )
+                .await
+            } else if spec.program == dominion_server::runner::Program::OpenAi {
                 dominion_server::openai::play(
                     &spec,
                     &sandbox,

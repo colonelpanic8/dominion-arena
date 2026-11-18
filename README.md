@@ -555,7 +555,7 @@ login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and res
 `models_cache.json`, populated by starting Codex once after sign-in.
 
 For an opt-in native subscription check, set `DOMINION_LIVE_AGENT` to `claude`, `codex`,
-or `antigravity` (an opponent may also be `openai`) and run `cargo test -p dominion-server --test native live_native_game
+or `antigravity` (an opponent may also be `openai` or `anthropic`) and run `cargo test -p dominion-server --test native live_native_game
 -- --ignored --nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL`
 select the executable and model. This runs a short game through the same isolated
 MCP bridge and writes evidence under `/tmp/dominion-native-live`.
@@ -591,6 +591,30 @@ too. `codex resume` lists only its dated folders, so these never show up there.
 name = "Sol High"
 program = "openai"
 model = "gpt-6.2-sol"
+effort = "high"
+```
+
+#### Direct Anthropic agents
+
+`program = "anthropic"` plays a seat by calling Anthropic's Messages API itself
+(`api.anthropic.com`), with the direct OpenAI agent's system prompt and tools. It signs
+in with an API key named by `api_key_env` (default `ANTHROPIC_API_KEY`); a Claude
+subscription's login doesn't work here. A key not scoped to a workspace (a user key,
+`sk-ant-usr-`) also needs `ANTHROPIC_WORKSPACE_ID`, the workspace to bill. The NixOS
+module sets both from `services.dominion.agents.anthropic`: `apiKeyCredential`, a
+systemd-creds encrypted key, and `workspace`. Claude's thinking blocks are bound to the
+conversation before them, so its history is only appended to: instead of replacing old
+game results, it asks the API to clear them (context editing, `clear_tool_uses`): like
+the OpenAI agent, it keeps the newest `context_results` (default 60) and clears older
+ones 20 at a time, never the playbook's reads. Thinking summaries, replies and usage are archived as
+for the OpenAI agent, and each clearing as `direct_context`. Its models aren't listed
+in a catalog: offer each as an `[[agents]]` profile.
+
+```toml
+[[agents]]
+name = "Fable API High"
+program = "anthropic"
+model = "claude-fable-5-2"
 effort = "high"
 ```
 
@@ -750,7 +774,7 @@ network_allow = []             # agents: hosts seats may reach beyond their prov
 # are optional too
 # [[agents]]
 # name = "Claude Opus"
-# program = "claude"           # claude, codex, antigravity, openai (direct API) or t3code
+# program = "claude"           # claude, codex, antigravity, openai or anthropic (direct API), or t3code
 # model = "opus"
 # effort = "high"
 # instructions = "Prefer engine strategies when the kingdom supports them."

@@ -70,6 +70,7 @@ impl Program {
             Program::Antigravity => "Antigravity",
             Program::T3Code => "T3 Code",
             Program::OpenAi => "OpenAI",
+            Program::Anthropic => "Claude API",
         }
     }
 
@@ -80,6 +81,7 @@ impl Program {
             Program::Codex => &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
             Program::Antigravity => &["low", "medium", "high", "xhigh", "max"],
             Program::OpenAi => &["minimal", "low", "medium", "high", "xhigh"],
+            Program::Anthropic => &["low", "medium", "high", "xhigh", "max"],
             Program::T3Code => &[],
         }
     }
@@ -90,7 +92,7 @@ impl Program {
             Program::Claude => ("CLAUDE_CONFIG_DIR", ".claude"),
             Program::Codex | Program::OpenAi => ("CODEX_HOME", ".codex"),
             Program::Antigravity => ("GEMINI_HOME", ".gemini"),
-            Program::T3Code => return None,
+            Program::T3Code | Program::Anthropic => return None,
         };
         std::env::var_os(var)
             .map(PathBuf::from)
@@ -100,10 +102,11 @@ impl Program {
 
 impl CatalogSpec {
     pub fn validate(&self) -> Result<(), String> {
-        if self.program == Program::T3Code {
-            return Err(
-                "t3code models aren't listed in a catalog: offer them as [[agents]]".into(),
-            );
+        if matches!(self.program, Program::T3Code | Program::Anthropic) {
+            return Err(format!(
+                "{:?} models aren't listed in a catalog: offer them as [[agents]]",
+                self.program
+            ));
         }
         for effort in self.efforts.iter().flatten() {
             if !self.program.efforts().contains(&effort.as_str()) {
@@ -157,7 +160,7 @@ impl CatalogSpec {
                 }
                 antigravity_models(&run(cmd, LIST_TIMEOUT).map_err(|e| format!("agy models: {e}"))?)
             }
-            Program::T3Code => vec![],
+            Program::T3Code | Program::Anthropic => vec![],
         };
         Ok(found.into_iter().filter_map(|m| self.allowed(m)).collect())
     }
