@@ -456,7 +456,8 @@ fn Seated(
 }
 
 /// A kingdom as the table lays it out: its piles in two rows, its landscapes beside them
-/// and what else it was set up with under them; each card in full while hovered.
+/// and what else it was set up with under them, headed "Also in the game"; each card in
+/// full while hovered.
 #[component]
 fn KingdomCards(kingdom: Vec<String>, landscapes: Vec<String>, others: Vec<String>) -> Element {
     rsx! {
@@ -476,9 +477,12 @@ fn KingdomCards(kingdom: Vec<String>, landscapes: Vec<String>, others: Vec<Strin
                 }
             }
             if !others.is_empty() {
-                div { class: "lb-setup-others",
-                    for name in others.iter() {
-                        KingdomCard { key: "{name}", name: name.clone() }
+                div { class: "lb-setup-also",
+                    span { class: "lb-setup-label", "Also in the game" }
+                    div { class: "lb-setup-others",
+                        for name in others.iter() {
+                            KingdomCard { key: "{name}", name: name.clone() }
+                        }
                     }
                 }
             }

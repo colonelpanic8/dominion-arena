@@ -1058,6 +1058,8 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-sheet-piles { display: grid; grid-template-columns: repeat(5, max-content); gap: .4vh; }
 .lb-sheet-landscapes { display: flex; flex-direction: column; gap: .4vh; }
 .lb-setup-cards { display: flex; flex-direction: column; align-items: flex-start; gap: .8vh; }
+.lb-setup-also { display: flex; flex-direction: column; gap: .5vh; margin-top: .4vh; }
+.lb-setup-label { color: #b9b2a3; font: 700 1.3vh var(--ui); letter-spacing: .08em; text-transform: uppercase; }
 .lb-setup-others { display: flex; gap: .4vh; }
 .lb-setup-cards .lb-kcard, .lb-setup-cards .lb-lcard { margin: 0; }
 .lb-sheet-line {
