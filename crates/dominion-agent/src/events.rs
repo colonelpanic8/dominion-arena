@@ -9,7 +9,7 @@ use dominion_protocol::events::{
     self, At, CardRef, Choice, CounterChange, CounterKey, CounterName, CounterOf, Effect, Ending,
     Event, ExtraTurnQueued, Face, FoldError, GameEnd, Moment, Move, Pack, PileChange, PileRole,
     PileState, Play, Recipe, RecipeGroup, RecipeKind, Role, Rules, SeatResult, SeatZone, Setup,
-    Table, TurnLimits, TurnStart, What,
+    SetupConfig, Table, TurnLimits, TurnStart, What,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,6 +44,9 @@ pub struct Recorder {
     /// An event that was an occurrence now over: no later move joins it.
     #[serde(default)]
     closed: Option<u64>,
+    /// What the options of the question last asked answer with, until it is answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    asked: Option<(u8, Vec<crate::project::Target>)>,
 }
 
 impl Recorder {
@@ -69,6 +72,13 @@ impl Recorder {
         let mut out: Vec<Event> = vec![];
         if !self.set_up {
             self.set_up = true;
+            // What setup drew by chance comes first.
+            let mut chance = vec![];
+            while let Some(Step::Chance { .. }) = steps.peek() {
+                if let Some(Step::Chance { site, cards }) = steps.next() {
+                    chance.extend(chance_of(site, cards));
+                }
+            }
             let mut created = vec![];
             while let Some(Step::Trace {
                 entry: Trace::Created { .. },
@@ -101,7 +111,7 @@ impl Recorder {
                     made.push(what);
                 }
             }
-            for what in self.set_up(game, seats, created, made) {
+            for what in self.set_up(game, seats, created, made, chance) {
                 self.push(&mut out, what)?;
             }
         }
@@ -356,6 +366,42 @@ impl Recorder {
                 } => self.resolve(player, card, occasion, origin),
                 // Who saw what is not in the full stream.
                 Step::Trace { .. } => continue,
+                Step::Chance { site, cards } => match chance_of(site, cards) {
+                    Some(chance) => What::Chance(chance),
+                    None => continue,
+                },
+                Step::Asked => {
+                    let fail = |why: &str| FoldError {
+                        seq: self.seq,
+                        why: why.into(),
+                    };
+                    // Asked of the game as it is now: it must still be waiting.
+                    if steps.peek().is_some() {
+                        return Err(fail("a question that isn't the journal's last step"));
+                    }
+                    let d = game
+                        .pending()
+                        .ok_or_else(|| fail("asked, but nothing waits"))?;
+                    let (ask, targets) = crate::project::question(game, d, seats);
+                    self.asked = Some((ask.seat, targets));
+                    What::Ask(ask)
+                }
+                Step::Answered(response) => {
+                    // A question asked before the stream wrote questions has no answer.
+                    let Some((player, targets)) = self.asked.take() else {
+                        continue;
+                    };
+                    let (indices, name) = crate::project::answer_of(&response, &targets)
+                        .ok_or_else(|| FoldError {
+                            seq: self.seq,
+                            why: format!("{response:?} answers none of the options asked"),
+                        })?;
+                    What::Answer(events::Answer {
+                        seat: player,
+                        indices,
+                        name,
+                    })
+                }
                 Step::Occurred(_) | Step::Within(_) | Step::Closed(_) => {
                     unreachable!("handled above")
                 }
@@ -397,6 +443,7 @@ impl Recorder {
         seats: &[String],
         created: Vec<(CardId, Card, Zone)>,
         made: Vec<What>,
+        chance: Vec<events::Chance>,
     ) -> Vec<What> {
         let mut table = Table::default();
         for i in 0..game.piles().len() {
@@ -481,6 +528,20 @@ impl Recorder {
             kingdom: names(&game.config().kingdom),
             landscapes: names(game.landscapes()),
             table,
+            config: game.colonies_and_shelters().map(|(colonies, shelters)| {
+                let config = game.config();
+                SetupConfig {
+                    landscapes: names(&config.landscapes),
+                    colonies,
+                    shelters,
+                    turn_limit: config.turn_limit,
+                    choices: (config.setup_choices.iter())
+                        .map(|(by, cards)| (by.name().to_string(), names(cards)))
+                        .collect(),
+                    seed: Some(config.seed),
+                }
+            }),
+            chance,
         };
         let mut out = vec![What::Setup(Box::new(setup))];
         out.extend(after);
@@ -657,14 +718,16 @@ impl Recorder {
     }
 
     /// The cards `ids` (listed top first as they end up) shuffled from `from` into `to`.
+    /// Which copy went where is no outcome of a shuffle: each card is said to leave as the
+    /// topmost of its name.
     fn shuffle(&mut self, from: &events::Zone, to: &events::Zone, ids: &[CardId], at: At) -> Move {
-        let mut pos = vec![];
+        let cards: Vec<CardRef> = ids.iter().map(|&id| self.card(id)).collect();
+        let there: Vec<CardRef> = (self.ids.get(from).into_iter().flatten())
+            .map(|&id| self.card(id))
+            .collect();
+        let pos = sequential_depths(&there, &cards);
         for &id in ids {
-            pos.push(self.pos_of(from, id).unwrap_or(0));
             self.leave(from, id);
-        }
-        if pos.iter().all(|&p| p == 0) {
-            pos.clear();
         }
         let block = self.ids.entry(to.clone()).or_default();
         let i = if at == At::Bottom { block.len() } else { 0 };
@@ -1005,6 +1068,27 @@ fn occurrence(event: &dominion_engine::Event) -> Option<What> {
             choices: choices.clone(),
         }),
         _ => return None,
+    })
+}
+
+/// The stream's record of a chance outcome, unless a `shuffle` event shows it.
+fn chance_of(site: dominion_engine::Site, cards: Vec<Card>) -> Option<events::Chance> {
+    use dominion_engine::Site;
+    use events::ChanceSite as C;
+    let (site, card) = match site {
+        Site::Deck(_) | Site::Reshuffle { .. } => return None,
+        Site::Fates { hexes: false } => (C::Boons, None),
+        Site::Fates { hexes: true } => (C::Hexes, None),
+        Site::Pile(card) => (C::Pile, Some(card)),
+        Site::Choice(card) => (C::Choice, Some(card)),
+        Site::Ally => (C::Ally, None),
+        Site::Prophecy => (C::Prophecy, None),
+        Site::Kingdom => (C::Kingdom, None),
+    };
+    Some(events::Chance {
+        site,
+        card: card.map(|c| c.name().to_string()),
+        cards: cards.iter().map(|c| c.name().to_string()).collect(),
     })
 }
 

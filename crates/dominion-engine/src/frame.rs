@@ -764,7 +764,7 @@ fn resume_shuffle(
             if cards.is_empty() {
                 return Flow::done();
             }
-            g.shuffle(&mut cards);
+            g.shuffle_for(crate::chance::Site::Deck(p), &mut cards);
             let (mut under, rest): (Vec<CardId>, Vec<CardId>) = cards
                 .iter()
                 .partition(|&&c| cards::bottom_when_shuffled(g, p, c));

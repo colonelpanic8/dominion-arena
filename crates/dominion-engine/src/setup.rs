@@ -1,6 +1,7 @@
 //! Game configuration and setup.
 
 use crate::cards::{self, Ext};
+use crate::chance::Site;
 use crate::event::Event;
 use crate::game::{CardDeck, Pile, Player, Turn, Zone};
 use crate::{
@@ -245,6 +246,14 @@ pub(crate) fn victory_pile_size(players: usize) -> usize {
 
 /// Builds the starting position without running anything.
 pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
+    build_with(config, None)
+}
+
+/// Like [`build`], keeping what `chance` keeps of chance from the start.
+pub(crate) fn build_with(
+    config: GameConfig,
+    chance: Option<crate::chance::Chance>,
+) -> Result<Game, SetupError> {
     let n = config.players;
     if !(2..=6).contains(&n) {
         return Err(SetupError::PlayerCount(n));
@@ -337,6 +346,13 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
         trace: None,
         journal: None,
         verb: None,
+        chance: chance.map(|c| {
+            Box::new(crate::chance::Chance {
+                colonies,
+                shelters,
+                ..c
+            })
+        }),
         config,
     };
 
@@ -409,7 +425,7 @@ pub(crate) fn build(config: GameConfig) -> Result<Game, SetupError> {
             g.create(card, Zone::Deck(p));
         }
         let mut cards = std::mem::take(&mut g.players[p.index()].deck);
-        g.shuffle(&mut cards);
+        g.shuffle_for(Site::Deck(p), &mut cards);
         g.players[p.index()].deck = cards;
         for _ in 0..5 {
             let top = g.players[p.index()].deck.pop().expect("10 starting cards");
@@ -558,9 +574,14 @@ impl Setup {
             }
         }
         pool.retain(|&c| !never_at_random(g, c));
-        g.shuffle(&mut pool);
-        pool.truncate(*n.end());
-        pool
+        let want = pool.len().min(*n.end());
+        let eligible = pool.clone();
+        let fits = |out: &[Card]| crate::chance::picks(out, &eligible, want);
+        g.chance_of(Site::Choice(by), fits, eligible.clone(), move |g| {
+            g.rng_shuffle(&mut pool);
+            pool.truncate(want);
+            pool
+        })
     }
 }
 
@@ -746,7 +767,23 @@ pub(crate) fn add_shuffled_pile(
 ) -> PileId {
     let mut structure = PileStructure::new(PileKind::Shuffled, &pool);
     structure.sample_size = (size < pool.len()).then_some(size as u32);
-    g.shuffle(&mut pool);
-    pool.truncate(size);
+    let want = size.min(pool.len());
+    let drawing = pool.clone();
+    let fits = |out: &[Card]| {
+        let mut left = drawing.clone();
+        out.len() == want
+            && out.iter().all(|c| match left.iter().position(|l| l == c) {
+                Some(i) => {
+                    left.remove(i);
+                    true
+                }
+                None => false,
+            })
+    };
+    let pool = g.chance_of(Site::Pile(name), fits, drawing.clone(), move |g| {
+        g.rng_shuffle(&mut pool);
+        pool.truncate(want);
+        pool
+    });
     add_pile_of(g, name, &pool, in_supply, Some(structure))
 }

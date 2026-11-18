@@ -1666,8 +1666,7 @@ fn this_turn(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if f.pc == 0 {
                 f.end_lasting(g);
                 f.pc = 1;
-                let mut shuffled = g.shuffled(p).to_vec();
-                shuffled.sort();
+                let shuffled = g.shuffled_unordered(p);
                 g.look_through_shuffled(p);
                 return f
                     .ask_cards(shuffled, 0, 3, Purpose::Move)
@@ -1697,14 +1696,9 @@ fn shuffled_fated(g: &Game, p: PlayerId) -> Vec<CardId> {
     if !g.has_landscape(Card::Fated) {
         return vec![];
     }
-    let mut fated: Vec<CardId> = g
-        .shuffled(p)
-        .iter()
-        .copied()
+    (g.shuffled_unordered(p).into_iter())
         .filter(|&c| is_traited(g, c, Card::Fated))
-        .collect();
-    fated.sort();
-    fated
+        .collect()
 }
 
 /// Fated: put any of the Fated cards just shuffled on top of or under the shuffled cards.
@@ -1996,7 +1990,7 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 }
             }
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-            g.shuffle(&mut deck);
+            g.shuffle_for(crate::chance::Site::Deck(p), &mut deck);
             let mixed = deck.clone();
             g.mixed(mixed);
             g.journal_within(crate::Verb::Shuffle, Zone::Deck(p), &deck, false, Pos::Top);

@@ -999,6 +999,102 @@ pub struct Setup {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub landscapes: Vec<String>,
     pub table: Table,
+    /// What the game was set up from besides `seats` and `kingdom`. Absent from a stream
+    /// recorded before it was written, which can't be replayed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<SetupConfig>,
+    /// What setup decided by chance, in the order drawn, besides the opening shuffles (the
+    /// `shuffle` events after this one).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chance: Vec<Chance>,
+}
+
+/// What a game was set up from: with the seats, the kingdom and the chance outcomes, enough
+/// to set up the same game again.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupConfig {
+    /// The landscapes given; setup may add more (an Ally or Prophecy: `chance`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub landscapes: Vec<String>,
+    /// Platinum and Colony are in the game, as decided.
+    pub colonies: bool,
+    /// Shelters replace the starting Estates, as decided.
+    pub shelters: bool,
+    /// The game ends once this many turns have been taken in all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_limit: Option<u32>,
+    /// Choices setup makes that were given rather than drawn, by the card making them.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub choices: BTreeMap<String, Vec<String>>,
+    /// The engine's seed. It reproduces the chance outcomes only in the build that drew
+    /// them; nothing needs it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+}
+
+/// What a chance outcome decided.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChanceSite {
+    /// The Boons' deck as it was made, top first.
+    Boons,
+    /// The Hexes' deck as it was made, top first.
+    Hexes,
+    /// A shuffled pile as it was made (named by `card`), top first.
+    Pile,
+    /// A choice setup made at random, by `card`, in its order.
+    Choice,
+    /// The game's Ally.
+    Ally,
+    /// The game's Prophecy.
+    Prophecy,
+    /// The Kingdom piles Divine Wind set up, in order.
+    Kingdom,
+}
+
+/// A chance outcome no `shuffle` event shows: what was drawn, by name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Chance {
+    pub site: ChanceSite,
+    /// The pile's card, or the card making the choice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<String>,
+    pub cards: Vec<String>,
+}
+
+/// What a seat was asked: an agent-view@2 decision, as that seat was shown it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ask {
+    pub seat: u8,
+    pub prompt: String,
+    pub kind: String,
+    pub purpose: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ordered: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub name_any: bool,
+    pub min: u32,
+    pub max: u32,
+    pub options: Vec<crate::view::AgentOption>,
+}
+
+/// What a seat answered the question just asked: option indices, or a card's name where
+/// any card may be named.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Answer {
+    pub seat: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indices: Option<Vec<u32>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1193,6 +1289,13 @@ pub enum What {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         types: BTreeMap<String, Option<Vec<String>>>,
     },
+    /// A seat is asked something: the game waits on its answer.
+    Ask(Ask),
+    /// The seat asked answers.
+    Answer(Answer),
+    /// A chance outcome during play that no `shuffle` shows (Divine Wind's new piles and
+    /// what their setup draws).
+    Chance(Chance),
 }
 
 impl What {
@@ -1427,6 +1530,7 @@ impl Table {
                 (None, None) => {}
                 _ => return Err(fail("a play goes from somewhere to somewhere".into())),
             },
+            What::Ask(_) | What::Answer(_) | What::Chance(_) => {}
             What::Buy { .. }
             | What::Resolve { .. }
             | What::Name { .. }

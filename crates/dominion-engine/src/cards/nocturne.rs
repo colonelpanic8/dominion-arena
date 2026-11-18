@@ -13,6 +13,7 @@
 
 use super::{Bonus, CardFrame, Hook, SetRules, due_durations, duration_trigger, looking, put_back};
 use crate::Note;
+use crate::chance::Site;
 use crate::decision::{Opt, Purpose};
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -436,7 +437,7 @@ impl SetRules for Rules {
         let (boons, druid) = (&g.boons, &g.ext.nocturne.druid);
         if fate && boons.draw.is_empty() && boons.discard.is_empty() && druid.is_empty() {
             let mut boons = BOONS.to_vec();
-            g.shuffle(&mut boons);
+            g.shuffle_for(Site::Fates { hexes: false }, &mut boons);
             g.boons.draw = boons.clone();
             g.journal_fate_added(boons, Spot::Deck);
         }
@@ -450,7 +451,7 @@ impl SetRules for Rules {
                     g.journal_fate(boon, Spot::Druid);
                 }
                 let mut boons = std::mem::take(&mut g.boons.discard);
-                g.shuffle(&mut boons);
+                g.shuffle_for(Site::Reshuffle { hexes: false }, &mut boons);
                 g.boons.draw = boons;
                 if !g.boons.draw.is_empty() {
                     g.journal_fate_shuffled(false);
@@ -467,7 +468,7 @@ impl SetRules for Rules {
         }
         if doom && g.hexes.draw.is_empty() && g.hexes.discard.is_empty() {
             let mut hexes = HEXES.to_vec();
-            g.shuffle(&mut hexes);
+            g.shuffle_for(Site::Fates { hexes: true }, &mut hexes);
             g.hexes.draw = hexes.clone();
             g.journal_fate_added(hexes, Spot::Deck);
         }

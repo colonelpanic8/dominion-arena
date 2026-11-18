@@ -1021,7 +1021,7 @@ pub(crate) fn random_games_with_copies(
                 g.create(c, Zone::Deck(p));
             }
             let mut deck = std::mem::take(&mut g.players[p.index()].deck);
-            g.shuffle(&mut deck);
+            g.rng_shuffle(&mut deck);
             g.players[p.index()].deck = deck;
         }
         g.start();

@@ -906,8 +906,7 @@ fn star_chart(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let mut shuffled = g.shuffled(p).to_vec();
-            shuffled.sort();
+            let shuffled = g.shuffled_unordered(p);
             g.look_through_shuffled(p);
             let above = g.look_over_shuffled(p);
             f.pc = 1;

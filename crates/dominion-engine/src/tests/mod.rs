@@ -1180,7 +1180,7 @@ pub(crate) fn random_game_with_kingdom_decks(config: GameConfig, seed: u64) -> G
             g.create(card, Zone::Deck(PlayerId(p as u8)));
         }
         let mut deck = std::mem::take(&mut g.players[p].deck);
-        g.shuffle(&mut deck);
+        g.rng_shuffle(&mut deck);
         g.players[p].deck = deck;
     }
     g.start();

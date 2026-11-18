@@ -10,6 +10,7 @@
 
 use super::{CardFrame, Hook, SUN, SetRules, due_durations, duration_trigger, turn_durations};
 use crate::Note;
+use crate::chance::Site;
 use crate::decision::Purpose;
 use crate::event::{Dest, Event};
 use crate::frame::{Flow, Frame, Input, Value};
@@ -502,7 +503,7 @@ impl SetRules for Rules {
                         .copied()
                         .filter(|c| c.kind() == Kind::Prophecy)
                         .collect();
-                    let card = all[g.random_index(all.len())];
+                    let card = g.chance_pick(Site::Prophecy, &all);
                     g.landscapes.push(card);
                     card
                 })
@@ -603,7 +604,9 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
     // of its $5 Knights.
     let home = |c: Card| c.def().pile.unwrap_or(c);
     let mut random: Vec<Card> = vec![];
-    for &c in &pool {
+    // Given its outcomes, the game takes Riverboat's card as given, from any pile.
+    let given = g.given_chance();
+    for &c in pool.iter().filter(|_| !given) {
         if random.iter().any(|&r| home(r) == home(c)) {
             continue;
         }
@@ -613,14 +616,16 @@ fn set_aside_riverboat_card(g: &mut Game, s: &mut Setup) {
             .filter(|&d| home(d) == home(c))
             .collect();
         let i = if cards.len() > 1 {
-            g.random_index(cards.len())
+            g.rng_index(cards.len())
         } else {
             0
         };
         random.push(cards[i]);
     }
     let Some(card) = s
-        .choose_or_random(g, Card::Riverboat, pool, 1..=1, |c| random.contains(&c))
+        .choose_or_random(g, Card::Riverboat, pool, 1..=1, |c| {
+            given || random.contains(&c)
+        })
         .pop()
     else {
         return;
@@ -690,8 +695,14 @@ fn divine_wind(g: &mut Game) {
         g.ext.allies.inventors.retain(|&(pile, _)| pile != id);
     }
     let mut pool = unused_kingdom_cards(g);
-    g.shuffle(&mut pool);
-    pool.truncate(10);
+    let want = pool.len().min(10);
+    let eligible = pool.clone();
+    let fits = |out: &[Card]| crate::chance::picks(out, &eligible, want);
+    let pool = g.chance_of(Site::Kingdom, fits, eligible.clone(), move |g| {
+        g.rng_shuffle(&mut pool);
+        pool.truncate(want);
+        pool
+    });
     let since = setup::mark(g);
     for card in pool {
         setup::add_kingdom_pile(g, card);
