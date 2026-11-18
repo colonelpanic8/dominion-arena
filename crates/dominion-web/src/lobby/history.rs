@@ -359,17 +359,17 @@ pub fn maker(a: &SeatAgent) -> Option<Maker> {
 /// The class of the icon before a seat's name.
 fn icon_class(by: &PlayedBy) -> &'static str {
     match by {
-        PlayedBy::Person => "lb-seat-icon person",
-        PlayedBy::Guest => "lb-seat-icon guest",
-        PlayedBy::Token => "lb-seat-icon token",
-        PlayedBy::Bot { .. } => "lb-seat-icon bot",
+        PlayedBy::Person => "lb-seat-mark person",
+        PlayedBy::Guest => "lb-seat-mark guest",
+        PlayedBy::Token => "lb-seat-mark token",
+        PlayedBy::Bot { .. } => "lb-seat-mark bot",
         PlayedBy::Agent(a) => match maker(a) {
-            Some(Maker::Claude) => "lb-seat-icon logo claude",
-            Some(Maker::OpenAi) => "lb-seat-icon logo openai",
-            Some(Maker::Gemini) => "lb-seat-icon logo gemini",
-            None => "lb-seat-icon agent",
+            Some(Maker::Claude) => "lb-seat-mark logo claude",
+            Some(Maker::OpenAi) => "lb-seat-mark logo openai",
+            Some(Maker::Gemini) => "lb-seat-mark logo gemini",
+            None => "lb-seat-mark agent",
         },
-        PlayedBy::Official => "lb-seat-icon official",
+        PlayedBy::Official => "lb-seat-mark official",
     }
 }
 

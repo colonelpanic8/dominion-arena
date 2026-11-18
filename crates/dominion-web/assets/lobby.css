@@ -1011,7 +1011,7 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-seat-name { font-weight: 500; color: #eee8dc; overflow: hidden; text-overflow: ellipsis; }
 .lb-seat.won .lb-seat-name { font-weight: 700; color: #fff; }
 .lb-seat-caption { font: 1.25vh var(--ui); color: #a9a294; overflow: hidden; text-overflow: ellipsis; }
-.lb-seat-icon {
+.lb-seat-mark {
   flex-shrink: 0;
   width: 2vh;
   height: 2vh;
@@ -1022,15 +1022,15 @@ a.lb-user-name:hover { text-decoration: underline; }
   stroke-linejoin: round;
   color: #cfc8b8;
 }
-.lb-seat-icon.guest { color: #8f8a80; stroke-dasharray: 2 1.5; }
-.lb-seat-icon.token { color: #8f8a80; }
-.lb-seat-icon.bot { color: #9fb6c8; }
-.lb-seat-icon.agent { color: #e0b06a; }
-.lb-seat-icon.logo { fill: currentColor; stroke: none; }
-.lb-seat-icon.claude { color: #d97757; }
-.lb-seat-icon.openai { color: #e6e6e6; }
-.lb-seat-icon.gemini { color: #8ab4f8; }
-.lb-seat-icon.official { color: #7fa6c9; }
+.lb-seat-mark.guest { color: #8f8a80; stroke-dasharray: 2 1.5; }
+.lb-seat-mark.token { color: #8f8a80; }
+.lb-seat-mark.bot { color: #9fb6c8; }
+.lb-seat-mark.agent { color: #e0b06a; }
+.lb-seat-mark.logo { fill: currentColor; stroke: none; }
+.lb-seat-mark.claude { color: #d97757; }
+.lb-seat-mark.openai { color: #e6e6e6; }
+.lb-seat-mark.gemini { color: #8ab4f8; }
+.lb-seat-mark.official { color: #7fa6c9; }
 .lb-history-time { flex-shrink: 0; font: 1.3vh var(--ui); color: #a9a294; }
 .lb-history-how { display: flex; justify-content: space-between; gap: 1vh; font: 1.3vh var(--ui); color: #a9a294; }
 .lb-history-more { align-self: center; width: max-content; margin: 1.5vh auto; }
