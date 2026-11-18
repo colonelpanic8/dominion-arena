@@ -555,8 +555,16 @@ them.
   (`journal.rs`): every trace entry with the rules' word for a move (`Verb`), the log's
   entries where they were logged, turns, phases, and counters read each time anything is
   recorded. `events::Recorder` in dominion-agent turns it into the full stream.
-  `tests/events.rs` holds the fold to the engine's table at every decision of random
-  games: each zone with its order, each counter, the turn, effects, faces, extra turns
+  Cards are written by name only, never by id: ordered zones (decks, discard piles,
+  piles, the trash, Boons' and Hexes') are sequences and a move out of one says the
+  position it left (`pos`, the topmost of a run of one name); the others are bags,
+  written sorted. The recorder keeps ids privately (`Recorder::ids`) to work out
+  positions and faces. Whatever must say which copy (an ability's card among several
+  moved together, the way a set-aside card lies, an effect's cards) says it by position,
+  effect id, an index into an event's cards or a field of its own: never a number per
+  card. `tests/events.rs` holds the fold to the engine's table at every decision of random
+  games: each zone with its order (bags as bags), each counter, the turn, effects (their
+  cards as bags, with which of those set aside lie face up), faces per zone, extra turns
   waiting and the ending. So a card moves with
   `move_as(verb, ..)` where the rules have a word for it (a bare `move_card` is a `put`,
   or by its destination a top-deck, return, set-aside, look or exile), and code that

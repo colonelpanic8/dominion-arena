@@ -111,35 +111,37 @@ fn eager_response(game: &Game, rng: &mut ChaCha8Rng) -> Response {
 
 /// The table as the engine has it.
 fn engine_table(game: &Game) -> Table {
-    let card = |id: &CardId| CardRef::seen(game.printed(*id).name(), id.0);
+    let card = |id: &CardId| CardRef::named(game.printed(*id).name());
     let top_first = |cards: &[CardId]| cards.iter().rev().map(card).collect::<Vec<_>>();
-    let as_arrived = |cards: &[CardId]| cards.iter().map(card).collect::<Vec<_>>();
+    let bag = |cards: &[CardId]| {
+        let mut cards: Vec<CardRef> = cards.iter().map(card).collect();
+        cards.sort();
+        cards
+    };
     let mut zones = BTreeMap::new();
     for i in 0..game.num_players() {
         let p = game.player(PlayerId(i as u8));
         let seat = |z| Zone::Seat(i as u8, z);
         zones.insert(seat(SeatZone::Deck), top_first(&p.deck));
         zones.insert(seat(SeatZone::Discard), top_first(&p.discard));
-        zones.insert(seat(SeatZone::Hand), as_arrived(&p.hand));
-        zones.insert(seat(SeatZone::Play), as_arrived(&p.in_play));
-        zones.insert(seat(SeatZone::Aside), as_arrived(&p.set_aside));
-        zones.insert(seat(SeatZone::Looking), as_arrived(&p.looking));
+        zones.insert(seat(SeatZone::Hand), bag(&p.hand));
+        zones.insert(seat(SeatZone::Play), bag(&p.in_play));
+        zones.insert(seat(SeatZone::Aside), bag(&p.set_aside));
+        zones.insert(seat(SeatZone::Looking), bag(&p.looking));
         for (mat, zone) in [
             (Mat::Tavern, SeatZone::Tavern),
             (Mat::Island, SeatZone::Island),
             (Mat::NativeVillage, SeatZone::NativeVillage),
             (Mat::Exile, SeatZone::Exile),
         ] {
-            zones.insert(seat(zone), as_arrived(p.mat(mat)));
+            zones.insert(seat(zone), bag(p.mat(mat)));
         }
     }
     zones.insert(Zone::Trash, top_first(game.trash()));
     zones.retain(|_, cards| !cards.is_empty());
     let notes = game.watch().notes();
     let named = |cards: &mut dyn Iterator<Item = &Card>| {
-        cards
-            .map(|c| CardRef::Named(c.name().to_string()))
-            .collect::<Vec<_>>()
+        cards.map(|c| CardRef::named(c.name())).collect::<Vec<_>>()
     };
     let druid: Vec<Card> = (notes.iter())
         .filter(|n| n.source == Card::Druid)
@@ -159,10 +161,9 @@ fn engine_table(game: &Game) -> Table {
     for i in 0..game.num_players() {
         let kept = &game.player(PlayerId(i as u8)).boons_kept;
         if !kept.is_empty() {
-            zones.insert(
-                Zone::Seat(i as u8, SeatZone::Boons),
-                named(&mut kept.iter()),
-            );
+            let mut kept = named(&mut kept.iter());
+            kept.sort();
+            zones.insert(Zone::Seat(i as u8, SeatZone::Boons), kept);
         }
     }
     let mut counters = BTreeMap::new();
@@ -374,6 +375,9 @@ fn engine_table(game: &Game) -> Table {
     }
     counters.retain(|_, value| *value != 0);
     let aside = |c: &CardId| matches!(game.zone(*c), EngineZone::SetAside(_));
+    let up: Vec<CardId> = (0..game.num_players())
+        .flat_map(|i| game.player(PlayerId(i as u8)).face_up.iter().copied())
+        .collect();
     let effects = (game.lasting().iter())
         .map(|l| {
             let view = game.view(l.owner);
@@ -395,15 +399,30 @@ fn engine_table(game: &Game) -> Table {
                     Until::Removed => events::Until::Removed,
                 },
                 ending: l.ending,
-                keeps: as_arrived(&l.keeps),
-                holds: as_arrived(&holds),
+                keeps: bag(&l.keeps),
+                face_up: bag(&(holds.iter().copied())
+                    .filter(|c| up.contains(c))
+                    .collect::<Vec<_>>()),
+                holds: bag(&holds),
                 tokens: view.lasting_tokens(l),
             }
         })
         .collect();
-    let face_up = (0..game.num_players())
-        .flat_map(|i| game.player(PlayerId(i as u8)).face_up.iter().map(card))
-        .collect();
+    let mut face_up = BTreeMap::new();
+    for i in 0..game.num_players() {
+        let p = game.player(PlayerId(i as u8));
+        for (zone, cards) in [
+            (SeatZone::Aside, &p.set_aside),
+            (SeatZone::Looking, &p.looking),
+        ] {
+            let up: Vec<CardId> = (cards.iter().copied())
+                .filter(|c| p.face_up.contains(c))
+                .collect();
+            if !up.is_empty() {
+                face_up.insert(Zone::Seat(i as u8, zone), bag(&up));
+            }
+        }
+    }
     let extra_turns = (game.extra_turns().iter())
         .map(|e| ExtraTurn {
             id: e.id,
@@ -711,6 +730,18 @@ const FOCUS: &[(&[&str], &[&str])] = &[
         ],
         &["Enlightenment", "Cheap", "Arena", "Basilica"],
     ),
+    (
+        &[
+            "Hermit",
+            "Rats",
+            "Marauder",
+            "Fortress",
+            "Procession",
+            "Quartermaster",
+            "Grotto",
+        ],
+        &["Inherited"],
+    ),
 ];
 
 /// Whether `e` is an occurrence: something other events can happen inside.
@@ -809,13 +840,24 @@ fn check_causes(events: &[Event], what: &str) {
                 about,
                 target,
                 origin,
+                index,
                 ..
             } => {
+                // The card it answers, said by its index when the move has several.
                 let holds = |event: Option<&What>, card: &CardRef| {
-                    event
-                        .and_then(What::as_move)
-                        .is_some_and(|(_, m)| m.cards.contains(card))
+                    event.and_then(What::as_move).is_some_and(|(_, m)| {
+                        match (m.cards.len(), index) {
+                            (1, None) => m.cards[0] == *card,
+                            (1, Some(_)) | (_, None) => false,
+                            (_, Some(i)) => m.cards.get(*i as usize) == Some(card),
+                        }
+                    })
                 };
+                if index.is_some()
+                    && !matches!(when, Moment::Gain | Moment::Trash | Moment::Discard)
+                {
+                    fail("an index for a moment no move is");
+                }
                 let right = match when {
                     Moment::GameStart => by.is_none(),
                     Moment::StartTurn => matches!(by, Some(What::Turn(_))),

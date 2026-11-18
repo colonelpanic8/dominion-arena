@@ -8,7 +8,7 @@
 //! map.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -35,41 +35,28 @@ pub enum Viewer {
     Seat(u8),
 }
 
-/// A card as the stream's viewer sees it: `Name#handle`, or `?` face down.
+/// A card as the stream's viewer sees it: its name, or `?` face down.
 ///
-/// A handle names one physical card for as long as the viewer keeps seeing its face. In
-/// a full stream that is always.
+/// Copies of a card are interchangeable, so nothing numbers them: what can tell two
+/// copies apart is something attached to one (its position in an ordered zone, the effect
+/// that keeps or holds it, its face), and each of those is said where it applies.
+///
+/// Ordered by `?` first, then by name: the order of a bag ([`Zone::ordered`]).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CardRef {
     Hidden,
-    Seen {
-        name: String,
-        handle: u32,
-    },
-    /// A card that is no physical card and the only one of its name: a Boon or Hex,
-    /// written by its name alone.
-    Named(String),
+    Name(String),
 }
 
 impl CardRef {
-    pub fn seen(name: impl Into<String>, handle: u32) -> CardRef {
-        CardRef::Seen {
-            name: name.into(),
-            handle,
-        }
+    pub fn named(name: impl Into<String>) -> CardRef {
+        CardRef::Name(name.into())
     }
 
     pub fn name(&self) -> Option<&str> {
         match self {
             CardRef::Hidden => None,
-            CardRef::Seen { name, .. } | CardRef::Named(name) => Some(name),
-        }
-    }
-
-    pub fn handle(&self) -> Option<u32> {
-        match self {
-            CardRef::Seen { handle, .. } => Some(*handle),
-            CardRef::Hidden | CardRef::Named(_) => None,
+            CardRef::Name(name) => Some(name),
         }
     }
 }
@@ -78,8 +65,7 @@ impl fmt::Display for CardRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CardRef::Hidden => f.write_str("?"),
-            CardRef::Seen { name, handle } => write!(f, "{name}#{handle}"),
-            CardRef::Named(name) => f.write_str(name),
+            CardRef::Name(name) => f.write_str(name),
         }
     }
 }
@@ -88,24 +74,34 @@ impl FromStr for CardRef {
     type Err = String;
 
     fn from_str(s: &str) -> Result<CardRef, String> {
-        if s == "?" {
-            return Ok(CardRef::Hidden);
+        match s {
+            "?" => Ok(CardRef::Hidden),
+            "" => Err("a card has a name or is \"?\"".into()),
+            _ => Ok(CardRef::Name(s.to_string())),
         }
-        let bad = || format!("{s:?} is neither \"?\", \"Name#handle\" nor \"Name\"");
-        let Some((name, handle)) = s.rsplit_once('#') else {
-            return match s.is_empty() {
-                true => Err(bad()),
-                false => Ok(CardRef::Named(s.to_string())),
-            };
-        };
-        if name.is_empty() {
-            return Err(bad());
-        }
-        Ok(CardRef::Seen {
-            name: name.to_string(),
-            handle: handle.parse().map_err(|_| bad())?,
-        })
     }
+}
+
+/// Puts `card` into `bag`, a list sorted in [`CardRef`]'s order.
+pub fn bag_insert(bag: &mut Vec<CardRef>, card: CardRef) {
+    let i = bag.partition_point(|c| *c <= card);
+    bag.insert(i, card);
+}
+
+/// Takes one `card` out of `bag`; whether there was one.
+pub fn bag_remove(bag: &mut Vec<CardRef>, card: &CardRef) -> bool {
+    match bag.binary_search(card) {
+        Ok(i) => {
+            bag.remove(i);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// How many of `card` `cards` has.
+fn count(cards: &[CardRef], card: &CardRef) -> usize {
+    cards.iter().filter(|c| *c == card).count()
 }
 
 /// A player's zone, by its name in a [`Zone`].
@@ -198,8 +194,8 @@ pub enum Zone {
 }
 
 impl Zone {
-    /// Whether its cards have positions: `cards[0]` is the top. The others list their
-    /// cards in the order they arrived.
+    /// Whether its cards have positions: `cards[0]` is the top. The others are bags: how
+    /// many of each card, written sorted in [`CardRef`]'s order.
     pub fn ordered(&self) -> bool {
         matches!(
             self,
@@ -210,6 +206,11 @@ impl Zone {
                 | Zone::Boons(_)
                 | Zone::Hexes(_)
         )
+    }
+
+    /// Whether its cards lie face up or face down: a seat's set-aside zone and `looking`.
+    pub fn has_faces(&self) -> bool {
+        matches!(self, Zone::Seat(_, SeatZone::Aside | SeatZone::Looking))
     }
 
     /// Whether it is there in every game, empty or not: a seat's zones, the trash, and
@@ -324,13 +325,17 @@ pub struct Move {
     #[serde(default, skip_serializing_if = "At::is_top")]
     pub at: At,
     /// For an ordered `from`: how many cards lay over each card as it left, when any
-    /// did. Absent: each came off the top.
+    /// did. Absent: each came off the top. Of a run of cards of one name, the topmost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pos: Vec<u32>,
     /// Into a set-aside zone or `looking`: whether the cards lie face up (everyone sees
     /// them) or face down (their owner does).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face: Option<Face>,
+    /// Out of a set-aside zone or `looking`: `up` when the cards lay face up there.
+    /// Absent (or `down`): face down.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_face: Option<Face>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -354,6 +359,9 @@ pub struct Play {
     /// For an ordered `from`: how many cards lay over it, when any did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pos: Option<u32>,
+    /// As [`Move::from_face`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_face: Option<Face>,
 }
 
 /// A choice announced to everyone.
@@ -509,7 +517,8 @@ pub struct Effect {
     pub id: u32,
     /// The card (or landscape, Boon, State) it is of.
     pub card: String,
-    /// The physical card it came from.
+    /// The card it came from, when a card made it: the card played (a Way's effect is the
+    /// Way's, its source the card played), the Estate playing an inherited card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<CardRef>,
     pub owner: u8,
@@ -517,15 +526,19 @@ pub struct Effect {
     /// Its card left play: it works to the end of this turn and ends then.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ending: bool,
-    /// Cards it keeps in play past Clean-up.
+    /// Cards it keeps in play past Clean-up: a bag of its owner's play area.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keeps: Vec<CardRef>,
-    /// Cards it holds set aside.
+    /// Cards it holds set aside: a bag of its owner's set-aside zone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub holds: Vec<CardRef>,
     /// Tokens on its card (Garrison).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tokens: Option<u32>,
+    /// Of `holds`, those lying face up: a bag. The zone's face-up cards don't say whose
+    /// they are when it has cards of one name lying both ways.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub face_up: Vec<CardRef>,
 }
 
 /// Why an effect ended.
@@ -1024,12 +1037,18 @@ pub enum What {
         card: String,
         when: Moment,
         /// The card the moment is about, where it is about one: the card gained, trashed,
-        /// discarded, bought or about to be gained.
+        /// discarded, bought or about to be gained. For a gain, trash or discard, one of
+        /// the cards of the move `by` names; which copy is no matter.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         about: Option<CardRef>,
         /// For an Attack: the player it is played against.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         target: Option<u8>,
+        /// When `by` is a move of several cards, each its own occurrence (cards trashed
+        /// together, or gained one after the other): which of its `cards` it answers,
+        /// from 0.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u32>,
         /// The event that made the lasting effect the ability belongs to (a Duration's
         /// play, turns ago).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1097,10 +1116,14 @@ pub enum What {
         cards: Vec<CardRef>,
         to: Zone,
     },
-    /// `card` is now a card called `name`, with the same handle.
+    /// The card `card` in `zone` (under `pos` cards, in an ordered zone) is now a card
+    /// called `name`.
     Rename {
         card: CardRef,
         name: String,
+        zone: Zone,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pos: Option<u32>,
     },
     Turn(TurnStart),
     Phase {
@@ -1162,11 +1185,12 @@ pub enum What {
     Notes {
         notes: Vec<Note>,
     },
-    /// What the rules derive changed: what cards cost now, and their types where they are
-    /// not the printed ones (`null`: printed again).
+    /// What the rules derive changed: what cards cost now (`null`: no card of that name is
+    /// in the game any more), and their types where they are not the printed ones (`null`:
+    /// printed again).
     Derived {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-        costs: BTreeMap<String, Cost>,
+        costs: BTreeMap<String, Option<Cost>>,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         types: BTreeMap<String, Option<Vec<String>>>,
     },
@@ -1279,7 +1303,7 @@ pub struct TurnState {
 #[serde(rename_all = "camelCase")]
 pub struct Table {
     /// Every zone that exists, empty piles included. An ordered zone's cards are top
-    /// first; another's are in the order they arrived.
+    /// first; another's are a bag, sorted.
     pub zones: BTreeMap<Zone, Vec<CardRef>>,
     /// Counters that are not zero.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -1292,9 +1316,10 @@ pub struct Table {
     /// Lasting effects, in the order they began.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<Effect>,
-    /// The cards in set-aside zones and `looking` that lie face up.
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub face_up: BTreeSet<CardRef>,
+    /// Of the cards in each set-aside zone and `looking`, those that lie face up: a bag.
+    /// The rest of the zone lies face down.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub face_up: BTreeMap<Zone, Vec<CardRef>>,
     /// Extra turns waiting, in the order the engine keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_turns: Vec<ExtraTurn>,
@@ -1361,12 +1386,9 @@ impl Table {
         self.counters.get(key).copied().unwrap_or(0)
     }
 
-    /// How many cards lie over the card with `handle` in `zone`.
-    pub fn depth(&self, zone: &Zone, handle: u32) -> Option<u32> {
-        self.zone(zone)
-            .iter()
-            .position(|c| c.handle() == Some(handle))
-            .map(|i| i as u32)
+    /// The cards of `zone` that lie face up.
+    pub fn face_up(&self, zone: &Zone) -> &[CardRef] {
+        self.face_up.get(zone).map_or(&[], Vec::as_slice)
     }
 
     /// The table after `event`.
@@ -1399,6 +1421,7 @@ impl Table {
                         at: At::Top,
                         pos: play.pos.into_iter().collect(),
                         face: None,
+                        from_face: play.from_face,
                     };
                     self.apply_move(Verb::Put, &m).map_err(fail)?;
                 }
@@ -1450,19 +1473,18 @@ impl Table {
             What::Add { cards, to } => {
                 let zone = self.zones.entry(to.clone()).or_default();
                 for card in cards {
-                    let at = if to.ordered() { 0 } else { zone.len() };
-                    zone.insert(at, card.clone());
+                    match to.ordered() {
+                        true => zone.insert(0, card.clone()),
+                        false => bag_insert(zone, card.clone()),
+                    }
                 }
             }
-            What::Rename { card, name } => {
-                let handle = card.handle();
-                let found = (self.zones.values_mut().flatten())
-                    .find(|c| handle.is_some() && c.handle() == handle);
-                match found {
-                    Some(c) => *c = CardRef::seen(name.clone(), handle.expect("found by it")),
-                    None => return Err(fail(format!("{card} is nowhere"))),
-                }
-            }
+            What::Rename {
+                card,
+                name,
+                zone,
+                pos,
+            } => self.rename(card, name, zone, *pos).map_err(fail)?,
             What::GameEnd(end) => self.ended = Some(end.clone()),
             What::Effect(e) => {
                 if self.effects.iter().any(|x| x.id == e.id) {
@@ -1562,7 +1584,10 @@ impl Table {
             What::Notes { notes } => self.notes = notes.clone(),
             What::Derived { costs, types } => {
                 for (card, cost) in costs {
-                    self.costs.insert(card.clone(), *cost);
+                    match cost {
+                        Some(cost) => self.costs.insert(card.clone(), *cost),
+                        None => self.costs.remove(card),
+                    };
                 }
                 for (card, now) in types {
                     match now {
@@ -1617,15 +1642,13 @@ impl Table {
             return Err(format!("there is no zone {}", m.to));
         }
         self.zones.entry(m.to.clone()).or_default();
+        let up = m.from_face == Some(Face::Up);
         let mut block = vec![];
         for (i, card) in m.cards.iter().enumerate() {
             let said = m.pos.get(i).copied();
-            self.take(&m.from, card, said)?;
-            self.face_up.remove(card);
-            if m.face == Some(Face::Up)
-                && matches!(m.to, Zone::Seat(_, SeatZone::Aside | SeatZone::Looking))
-            {
-                self.face_up.insert(card.clone());
+            self.take(&m.from, card, said, up)?;
+            if m.face == Some(Face::Up) && m.to.has_faces() {
+                bag_insert(self.face_up.entry(m.to.clone()).or_default(), card.clone());
             }
             if verb == Verb::Shuffle {
                 block.push(card.clone());
@@ -1635,6 +1658,9 @@ impl Table {
         }
         if verb == Verb::Shuffle {
             let to = self.zones.get_mut(&m.to).expect("checked above");
+            if !m.to.ordered() {
+                return Err(format!("{} has no order to shuffle into", m.to));
+            }
             let at = insertion(to.len(), m.at, &m.to)?;
             to.splice(at..at, block);
         }
@@ -1648,49 +1674,99 @@ impl Table {
         if zone.standing() && self.zone(zone).is_empty() {
             self.zones.remove(zone);
         }
+        if self.face_up(zone).is_empty() {
+            self.face_up.remove(zone);
+        }
     }
 
-    /// Takes `card` out of `zone`: the one with its handle, or for a face-down card the
-    /// one under `said` cards (the top one when not said).
-    fn take(&mut self, zone: &Zone, card: &CardRef, said: Option<u32>) -> Result<(), String> {
-        let ordered = zone.ordered();
+    /// Takes `card` out of `zone`: in an ordered zone the one under `said` cards (the top
+    /// one when not said), in a bag one of its name, lying face up if `up`.
+    fn take(
+        &mut self,
+        zone: &Zone,
+        card: &CardRef,
+        said: Option<u32>,
+        up: bool,
+    ) -> Result<(), String> {
         let cards = self
             .zones
             .get_mut(zone)
             .ok_or_else(|| format!("there is no zone {zone}"))?;
-        let found = match card {
-            CardRef::Seen { handle, .. } => cards.iter().position(|c| c.handle() == Some(*handle)),
-            CardRef::Named(_) => cards.iter().position(|c| c == card),
-            CardRef::Hidden => None,
-        };
-        let index = match (found, said) {
-            (Some(i), Some(p)) if ordered && i != p as usize => {
-                return Err(format!("{card} lies under {i} cards in {zone}, not {p}"));
-            }
-            (Some(i), _) => i,
-            // A card the viewer sees only as it leaves: one of the face-down ones.
-            (None, _) if ordered => said.unwrap_or(0) as usize,
-            (None, _) => cards
-                .iter()
-                .position(|c| *c == CardRef::Hidden)
-                .ok_or_else(|| format!("{card} is not in {zone}"))?,
-        };
-        match cards.get(index) {
-            None => Err(format!("{zone} has no card under {index} others")),
-            Some(there) if found.is_none() && *there != CardRef::Hidden => {
-                Err(format!("{card} is not in {zone}: {there} lies there"))
-            }
-            Some(_) => {
-                cards.remove(index);
-                Ok(())
-            }
+        if zone.ordered() {
+            let i = said.unwrap_or(0) as usize;
+            return match cards.get(i) {
+                None => Err(format!("{zone} has no card under {i} others")),
+                // A card the viewer sees only as it leaves: one of the face-down ones.
+                Some(there) if there == card || *there == CardRef::Hidden => {
+                    cards.remove(i);
+                    Ok(())
+                }
+                Some(there) => Err(format!("{card} is not in {zone}: {there} lies there")),
+            };
+        }
+        if said.is_some() {
+            return Err(format!("{zone} has no positions"));
+        }
+        let ups = self.face_up.entry(zone.clone()).or_default();
+        if up && !bag_remove(ups, card) {
+            return Err(format!("no {card} lies face up in {zone}"));
+        }
+        let had_up = count(ups, card);
+        if !up && had_up > 0 && count(cards, card) <= had_up {
+            return Err(format!("no {card} lies face down in {zone}"));
+        }
+        if bag_remove(cards, card) || bag_remove(cards, &CardRef::Hidden) {
+            Ok(())
+        } else {
+            Err(format!("{card} is not in {zone}"))
         }
     }
 
     fn place(&mut self, zone: &Zone, card: CardRef, at: At) -> Result<(), String> {
         let cards = self.zones.get_mut(zone).expect("checked by apply_move");
+        if !zone.ordered() && at == At::Top {
+            bag_insert(cards, card);
+            return Ok(());
+        }
         let i = insertion(cards.len(), at, zone)?;
         cards.insert(i, card);
+        Ok(())
+    }
+
+    /// The card `card` in `zone` (under `pos` cards) is now called `name`. In a zone with
+    /// faces, a face-down one when there is one.
+    fn rename(
+        &mut self,
+        card: &CardRef,
+        name: &str,
+        zone: &Zone,
+        pos: Option<u32>,
+    ) -> Result<(), String> {
+        let now = CardRef::named(name);
+        let ups = count(self.face_up(zone), card);
+        let cards = (self.zones.get_mut(zone)).ok_or_else(|| format!("there is no zone {zone}"))?;
+        if zone.ordered() {
+            let i = pos.unwrap_or(0) as usize;
+            return match cards.get_mut(i) {
+                Some(there) if there == card => {
+                    *there = now;
+                    Ok(())
+                }
+                _ => Err(format!("{card} doesn't lie under {i} cards in {zone}")),
+            };
+        }
+        if pos.is_some() {
+            return Err(format!("{zone} has no positions"));
+        }
+        if !bag_remove(cards, card) {
+            return Err(format!("{card} is not in {zone}"));
+        }
+        let down = count(cards, card) + 1 > ups;
+        bag_insert(cards, now.clone());
+        if !down && let Some(ups) = self.face_up.get_mut(zone) {
+            bag_remove(ups, card);
+            bag_insert(ups, now);
+        }
         Ok(())
     }
 }
@@ -1737,7 +1813,7 @@ mod tests {
 
     #[test]
     fn cards_and_zones_are_written_as_text() {
-        for text in ["?", "Copper#12", "King's Court#0", "The Sea's Gift"] {
+        for text in ["?", "Copper", "King's Court", "The Sea's Gift"] {
             assert_eq!(text.parse::<CardRef>().unwrap().to_string(), text);
         }
         for text in [
@@ -1769,9 +1845,7 @@ mod tests {
                 CounterName::Vp
             )
         );
-        for text in ["", "#3", "Copper#x"] {
-            assert!(text.parse::<CardRef>().is_err(), "{text}");
-        }
+        assert!("".parse::<CardRef>().is_err());
         for text in ["hand", "0/lap", "pile/", "x/hand", "hexes/druid", "boons/"] {
             assert!(text.parse::<Zone>().is_err(), "{text}");
         }
@@ -1784,65 +1858,83 @@ mod tests {
     fn an_event_is_one_flat_object() {
         let e = event(
             7,
-            r#"{"type":"topdeck","player":1,"cards":["Gold#4"],"from":"1/hand","to":"1/deck"}"#,
+            r#"{"type":"topdeck","player":1,"cards":["Gold"],"from":"1/hand","to":"1/deck"}"#,
         );
         assert_eq!(
             serde_json::to_string(&e).unwrap(),
-            r#"{"seq":7,"type":"topdeck","player":1,"cards":["Gold#4"],"from":"1/hand","to":"1/deck"}"#
+            r#"{"seq":7,"type":"topdeck","player":1,"cards":["Gold"],"from":"1/hand","to":"1/deck"}"#
         );
     }
 
     #[test]
     fn moves_take_and_place_cards_one_after_the_other() {
         let mut t = table(&[
-            ("0/deck", &["Copper#1", "Estate#2", "Gold#3"]),
-            ("0/hand", &["Silver#4"]),
+            ("0/deck", &["Copper", "Estate", "Gold"]),
+            ("0/hand", &["Silver"]),
             ("0/discard", &[]),
         ]);
         t.apply(&event(
             1,
-            r#"{"type":"draw","player":0,"cards":["Copper#1","Estate#2"],"from":"0/deck","to":"0/hand"}"#,
+            r#"{"type":"draw","player":0,"cards":["Copper","Estate"],"from":"0/deck","to":"0/hand"}"#,
         ))
         .unwrap();
+        // A hand is a bag: sorted, whatever the order the cards came in.
         assert_eq!(
             t.zone(&"0/hand".parse().unwrap()),
-            cards(&["Silver#4", "Copper#1", "Estate#2"])
+            cards(&["Copper", "Estate", "Silver"])
         );
         t.apply(&event(
             2,
-            r#"{"type":"discard","player":0,"cards":["Silver#4","Estate#2"],"from":"0/hand","to":"0/discard"}"#,
+            r#"{"type":"discard","player":0,"cards":["Silver","Estate"],"from":"0/hand","to":"0/discard"}"#,
         ))
         .unwrap();
         // The last one discarded is on top.
         assert_eq!(
             t.zone(&"0/discard".parse().unwrap()),
-            cards(&["Estate#2", "Silver#4"])
+            cards(&["Estate", "Silver"])
         );
         t.apply(&event(
             3,
-            r#"{"type":"insert","player":0,"cards":["Copper#1"],"from":"0/hand","to":"0/deck","at":{"under":1}}"#,
+            r#"{"type":"insert","player":0,"cards":["Copper"],"from":"0/hand","to":"0/deck","at":{"under":1}}"#,
         ))
         .unwrap();
         assert_eq!(
             t.zone(&"0/deck".parse().unwrap()),
-            cards(&["Gold#3", "Copper#1"])
+            cards(&["Gold", "Copper"])
+        );
+    }
+
+    #[test]
+    fn a_card_leaves_an_ordered_zone_from_its_position() {
+        let mut t = table(&[
+            ("0/discard", &["Estate", "Gold", "Copper"]),
+            ("0/hand", &[]),
+        ]);
+        t.apply(&event(
+            1,
+            r#"{"type":"put","player":0,"cards":["Gold"],"from":"0/discard","to":"0/hand","pos":[1]}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            t.zone(&"0/discard".parse().unwrap()),
+            cards(&["Estate", "Copper"])
         );
     }
 
     #[test]
     fn a_shuffle_puts_its_cards_under_the_deck_in_the_order_listed() {
         let mut t = table(&[
-            ("0/deck", &["Gold#3"]),
-            ("0/discard", &["Copper#1", "Estate#2", "Silver#4"]),
+            ("0/deck", &["Gold"]),
+            ("0/discard", &["Copper", "Estate", "Silver"]),
         ]);
         t.apply(&event(
             1,
-            r#"{"type":"shuffle","player":0,"cards":["Silver#4","Copper#1","Estate#2"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[2,0,0]}"#,
+            r#"{"type":"shuffle","player":0,"cards":["Silver","Copper","Estate"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[2,0,0]}"#,
         ))
         .unwrap();
         assert_eq!(
             t.zone(&"0/deck".parse().unwrap()),
-            cards(&["Gold#3", "Silver#4", "Copper#1", "Estate#2"])
+            cards(&["Gold", "Silver", "Copper", "Estate"])
         );
         assert!(t.zone(&"0/discard".parse().unwrap()).is_empty());
     }
@@ -1862,29 +1954,33 @@ mod tests {
         // Seen as it is played: it was one of the face-down cards in the hand.
         t.apply(&event(
             2,
-            r#"{"type":"play","player":1,"card":"Village#9","from":"1/hand","to":"1/play"}"#,
+            r#"{"type":"play","player":1,"card":"Village","from":"1/hand","to":"1/play"}"#,
         ))
         .unwrap();
         assert_eq!(t.zone(&"1/hand".parse().unwrap()), cards(&["?"]));
-        assert_eq!(t.zone(&"1/play".parse().unwrap()), cards(&["Village#9"]));
+        assert_eq!(t.zone(&"1/play".parse().unwrap()), cards(&["Village"]));
         assert_eq!(t.zone(&"1/deck".parse().unwrap()).len(), 2);
     }
 
     #[test]
     fn a_stream_that_is_not_one_games_is_refused() {
-        let t = table(&[("0/deck", &["Copper#1", "Gold#3"]), ("0/hand", &[])]);
+        let t = table(&[("0/deck", &["Copper", "Gold"]), ("0/hand", &[])]);
         for (json, why) in [
             (
-                r#"{"type":"draw","player":0,"cards":["Silver#8"],"from":"0/deck","to":"0/hand"}"#,
-                "Silver#8 is not in 0/deck",
+                r#"{"type":"draw","player":0,"cards":["Silver"],"from":"0/deck","to":"0/hand"}"#,
+                "Silver is not in 0/deck",
             ),
             (
-                r#"{"type":"draw","player":0,"cards":["Gold#3"],"from":"0/deck","to":"0/hand","pos":[0]}"#,
-                "lies under 1 cards",
+                r#"{"type":"draw","player":0,"cards":["Gold"],"from":"0/deck","to":"0/hand"}"#,
+                "Copper lies there",
             ),
             (
-                r#"{"type":"draw","player":0,"cards":["Copper#1"],"from":"0/deck","to":"pile/Gold"}"#,
+                r#"{"type":"draw","player":0,"cards":["Copper"],"from":"0/deck","to":"pile/Gold"}"#,
                 "no zone pile/Gold",
+            ),
+            (
+                r#"{"type":"put","player":0,"cards":["Copper"],"from":"0/hand","to":"0/deck"}"#,
+                "Copper is not in 0/hand",
             ),
             (
                 r#"{"type":"counter","counter":"coins","delta":2,"value":3}"#,
@@ -1939,19 +2035,52 @@ mod tests {
 
     #[test]
     fn a_card_set_aside_face_up_is_face_up_until_it_moves() {
-        let mut t = table(&[("0/hand", &["Gold#3", "Copper#1"])]);
+        let mut t = table(&[("0/hand", &["Gold", "Gold"])]);
+        let aside: Zone = "0/aside".parse().unwrap();
+        for (seq, json) in [
+            r#"{"type":"set-aside","player":0,"cards":["Gold"],"from":"0/hand","to":"0/aside","face":"up"}"#,
+            r#"{"type":"set-aside","player":0,"cards":["Gold"],"from":"0/hand","to":"0/aside","face":"down"}"#,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.apply(&event(seq as u64, json)).unwrap();
+        }
+        assert_eq!(t.zone(&aside), cards(&["Gold", "Gold"]));
+        assert_eq!(t.face_up(&aside), cards(&["Gold"]));
+        // Of two Golds lying different ways, the move says which way the one leaving lay.
+        let up = r#"{"type":"put","player":0,"cards":["Gold"],"from":"0/aside","to":"0/hand","fromFace":"up"}"#;
+        let mut first = t.clone();
+        first.apply(&event(2, up)).unwrap();
+        assert!(first.face_up.is_empty());
+        let err = first.apply(&event(3, up)).unwrap_err();
+        assert!(err.why.contains("no Gold lies face up"), "{}", err.why);
+        let down = r#"{"type":"put","player":0,"cards":["Gold"],"from":"0/aside","to":"0/hand"}"#;
+        t.apply(&event(2, down)).unwrap();
+        assert_eq!(t.face_up(&aside), cards(&["Gold"]));
+        let err = t.apply(&event(3, down)).unwrap_err();
+        assert!(err.why.contains("no Gold lies face down"), "{}", err.why);
+    }
+
+    #[test]
+    fn a_renamed_card_is_found_where_it_lies() {
+        let mut t = table(&[("0/deck", &["Copper", "Estate", "Copper"])]);
         t.apply(&event(
             1,
-            r#"{"type":"set-aside","player":0,"cards":["Gold#3"],"from":"0/hand","to":"0/aside","face":"up"}"#,
+            r#"{"type":"rename","card":"Copper","name":"Estate","zone":"0/deck","pos":2}"#,
         ))
         .unwrap();
-        assert!(t.face_up.contains(&"Gold#3".parse().unwrap()));
-        t.apply(&event(
-            2,
-            r#"{"type":"put","player":0,"cards":["Gold#3"],"from":"0/aside","to":"0/hand"}"#,
-        ))
-        .unwrap();
-        assert!(t.face_up.is_empty());
+        assert_eq!(
+            t.zone(&"0/deck".parse().unwrap()),
+            cards(&["Copper", "Estate", "Estate"])
+        );
+        let err = (t.clone())
+            .apply(&event(
+                2,
+                r#"{"type":"rename","card":"Copper","name":"Estate","zone":"0/deck","pos":1}"#,
+            ))
+            .unwrap_err();
+        assert!(err.why.contains("doesn't lie under 1"), "{}", err.why);
     }
 
     #[test]

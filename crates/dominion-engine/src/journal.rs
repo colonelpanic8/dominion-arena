@@ -311,10 +311,10 @@ pub enum Step {
     },
     /// The public notes the table keeps (see [`table_note`]) are now these.
     Notes(Vec<Note>),
-    /// Derived values changed: what cards cost, and their types (`None`: the printed ones
-    /// again).
+    /// Derived values changed: what cards cost (`None`: no card of that name is in the game
+    /// any more), and their types (`None`: the printed ones again).
     Derived {
-        costs: Vec<(Card, Cost)>,
+        costs: Vec<(Card, Option<Cost>)>,
         types: Vec<(Card, Option<Types>)>,
     },
     /// The step before this one is occurrence `n` (numbered from 0 in the order marked).
@@ -1173,9 +1173,10 @@ fn holding_changes(was: &Holdings, now: &Holdings, out: &mut Vec<Step>) {
     if was.notes != now.notes {
         out.push(Step::Notes(now.notes.clone()));
     }
-    let costs: Vec<_> = (now.costs.iter())
-        .filter(|(c, cost)| was.costs.get(c) != Some(cost))
-        .map(|(&c, &cost)| (c, cost))
+    let names: std::collections::BTreeSet<_> = was.costs.keys().chain(now.costs.keys()).collect();
+    let costs: Vec<_> = (names.into_iter())
+        .filter(|c| was.costs.get(c) != now.costs.get(c))
+        .map(|&c| (c, now.costs.get(&c).copied()))
         .collect();
     let names: std::collections::BTreeSet<_> = was.types.keys().chain(now.types.keys()).collect();
     let types: Vec<_> = (names.into_iter())

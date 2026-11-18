@@ -11,6 +11,7 @@ use dominion_protocol::events::{
     PileState, Play, Recipe, RecipeGroup, RecipeKind, Role, Rules, SeatResult, SeatZone, Setup,
     Table, TurnLimits, TurnStart, What,
 };
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Writes the full stream of a game started with [`Game::new_journaled`]: every card's
 /// face, every shuffle's order.
@@ -20,6 +21,10 @@ pub struct Recorder {
     table: Table,
     /// What each card is called now.
     names: Vec<String>,
+    /// Where each card is, by id: what the stream has by name. Ordered zones top first.
+    ids: BTreeMap<events::Zone, Vec<CardId>>,
+    /// The cards lying face up in a set-aside zone or `looking`.
+    up: BTreeSet<CardId>,
     /// Each pile's zone, once it has been seen.
     piles: Vec<Option<events::Zone>>,
     seq: u64,
@@ -27,8 +32,11 @@ pub struct Recorder {
     ended: bool,
     /// Whose turn it is: who moves a card that goes between zones nobody owns.
     turn: u8,
-    /// The event each of the journal's occurrences became, by its number.
-    occurrences: Vec<Option<u64>>,
+    /// The event each of the journal's occurrences became, by its number, and which of
+    /// its cards it is about when it is a move.
+    occurrences: Vec<Option<(u64, u32)>>,
+    /// How many cards each move event moved.
+    moved: BTreeMap<u64, u32>,
     /// The occurrence the journal's steps happen inside now.
     within: Option<u32>,
     /// Whether the last step that was no marker wrote an event.
@@ -49,7 +57,7 @@ impl Recorder {
     /// `seats` names the players. An error means the journal doesn't describe one game:
     /// a bug in the engine or here.
     pub fn record(&mut self, game: &mut Game, seats: &[String]) -> Result<Vec<Event>, FoldError> {
-        let mut steps = game.take_journal().into_iter().peekable();
+        let mut steps = Steps(game.take_journal().into());
         let mut out: Vec<Event> = vec![];
         if !self.set_up {
             self.set_up = true;
@@ -92,12 +100,7 @@ impl Recorder {
         while let Some(step) = steps.next() {
             match step {
                 Step::Occurred(n) => {
-                    let event = self.wrote.then(|| self.seq - 1);
-                    let n = n as usize;
-                    if self.occurrences.len() <= n {
-                        self.occurrences.resize(n + 1, None);
-                    }
-                    self.occurrences[n] = event;
+                    self.occurred(n, &out);
                     continue;
                 }
                 Step::Within(occ) => {
@@ -112,9 +115,11 @@ impl Recorder {
                     ..
                 } => {
                     self.name(card, is);
+                    let to = self.zone(game, zone);
+                    self.arrive(&to, card, At::Top);
                     What::Add {
                         cards: vec![self.card(card)],
-                        to: self.zone(game, zone),
+                        to,
                     }
                 }
                 Step::Trace {
@@ -122,31 +127,22 @@ impl Recorder {
                     verb: Some(Verb::Shuffle),
                 } => {
                     // Its cards are journaled bottom first.
-                    let mut cards = vec![];
+                    let mut ids = vec![];
                     let mut step = Some(step);
                     while let Some(Step::Trace {
                         entry: Trace::Moved { card, .. },
                         verb: Some(Verb::Shuffle),
                     }) = step
                     {
-                        cards.push(self.card(card));
+                        ids.push(card);
                         step = steps.next_if(|next| {
                             matches!(next, Step::Trace { entry: Trace::Moved { from: f, to: t, .. }, verb: Some(Verb::Shuffle) } if *f == from && *t == to)
                         });
                     }
-                    cards.reverse();
+                    ids.reverse();
                     let (from, to) = (self.zone(game, from), self.zone(game, to));
                     let at = if from == to { At::Top } else { At::Bottom };
-                    let pos = self.depths(&from, &cards);
-                    What::Shuffle(Move {
-                        player: self.mover(&from, &to),
-                        cards,
-                        from,
-                        to,
-                        at,
-                        pos,
-                        face: None,
-                    })
+                    What::Shuffle(self.shuffle(&from, &to, &ids, at))
                 }
                 Step::Trace {
                     entry:
@@ -170,33 +166,37 @@ impl Recorder {
                         (true, true, _) => At::Bottom,
                         (true, false, n) => At::Under(n as u32),
                     };
-                    let pos = self.depths(&from, &cards);
-                    let face = matches!(
-                        to,
-                        events::Zone::Seat(_, SeatZone::Aside | SeatZone::Looking)
-                    )
-                    .then(|| {
+                    let (pos, from_face) = self.leave(&from, card);
+                    self.arrive(&to, card, at);
+                    let face = to.has_faces().then(|| {
                         match steps.next_if(|next| matches!(next, Step::FaceUp(c) if *c == card)) {
-                            Some(_) => Face::Up,
+                            Some(_) => {
+                                self.up.insert(card);
+                                Face::Up
+                            }
                             None => Face::Down,
                         }
                     });
                     let played = (verb == Some(Verb::Play))
                         .then(|| {
-                            steps.next_if(
+                            steps.next_past_reads(
                                 |next| matches!(next, Step::Played { card: c, .. } if *c == card),
                             )
                         })
                         .flatten();
-                    if let Some(Step::Played { player, .. }) = played {
+                    if let Some((Step::Played { player, .. }, occ)) = played {
                         let what = What::Play(Play {
                             player: player.0,
                             card: self.card(card),
                             from: Some(from),
                             to: Some(to),
-                            pos: pos.first().copied(),
+                            pos,
+                            from_face,
                         });
                         self.push(&mut out, what)?;
+                        if let Some(n) = occ {
+                            self.occurred(n, &out);
+                        }
                         continue;
                     }
                     What::moved(
@@ -207,8 +207,9 @@ impl Recorder {
                             from,
                             to,
                             at,
-                            pos,
+                            pos: pos.into_iter().collect(),
                             face,
+                            from_face,
                         },
                     )
                 }
@@ -217,10 +218,20 @@ impl Recorder {
                     ..
                 } => {
                     let was = self.card(card);
+                    let zone = (self.ids.iter())
+                        .find(|(_, ids)| ids.contains(&card))
+                        .map(|(z, _)| z.clone())
+                        .ok_or_else(|| FoldError {
+                            seq: self.seq,
+                            why: format!("{was} changes but is nowhere"),
+                        })?;
+                    let pos = (zone.ordered()).then(|| self.pos_of(&zone, card)).flatten();
                     self.name(card, to);
                     What::Rename {
                         card: was,
                         name: to.name().to_string(),
+                        zone,
+                        pos: pos.filter(|&p| p > 0),
                     }
                 }
                 Step::Turn {
@@ -255,7 +266,14 @@ impl Recorder {
                 }
                 Step::TurnEnded { player } => What::TurnEnd { player: player.0 },
                 Step::EffectBegan(e) => What::Effect(self.effect(e)),
-                Step::EffectChanged(e) => What::EffectChange(self.effect(e)),
+                Step::EffectChanged(e) => {
+                    let e = self.effect(e);
+                    // Changed only in which copies it keeps or holds.
+                    if self.table.effects.contains(&e) {
+                        continue;
+                    }
+                    What::EffectChange(e)
+                }
                 Step::EffectEnded { id, why } => What::EffectEnd {
                     id,
                     why: match why {
@@ -309,6 +327,7 @@ impl Recorder {
                     from: None,
                     to: None,
                     pos: None,
+                    from_face: None,
                 }),
                 Step::Logged { index } => match occurrence(&game.log()[index]) {
                     Some(what) => what,
@@ -377,53 +396,59 @@ impl Recorder {
         }
         let n = game.num_players();
         // Per seat: the deck as shuffled, top first, and how many of it were drawn.
-        let mut opening: Vec<(Vec<CardRef>, usize)> = vec![(vec![], 0); n];
+        let mut opening: Vec<(Vec<CardId>, usize)> = vec![(vec![], 0); n];
         for (id, is, zone) in created {
             self.name(id, is);
-            let card = self.card(id);
             match zone {
                 // Journaled bottom first; the hand in the order drawn.
-                Zone::Deck(p) => opening[p.index()].0.insert(0, card),
+                Zone::Deck(p) => opening[p.index()].0.insert(0, id),
                 Zone::Hand(p) => {
                     let (deck, drawn) = &mut opening[p.index()];
-                    deck.insert(*drawn, card);
+                    deck.insert(*drawn, id);
                     *drawn += 1;
                 }
                 zone => {
                     let zone = self.zone(game, zone);
                     let cards = table.zones.entry(zone.clone()).or_default();
-                    cards.insert(if zone.ordered() { 0 } else { cards.len() }, card);
+                    match zone.ordered() {
+                        true => cards.insert(0, self.card(id)),
+                        false => events::bag_insert(cards, self.card(id)),
+                    }
+                    self.arrive(&zone, id, At::Top);
                 }
             }
+        }
+        for zone in table.zones.keys() {
+            self.ids.entry(zone.clone()).or_default();
         }
         let mut after = vec![];
         for (seat, (deck, drawn)) in opening.into_iter().enumerate() {
             let seat = seat as u8;
             let zone = events::Zone::Seat(seat, SeatZone::Deck);
-            // Before the shuffle the deck is in no order anyone chose: by handle.
+            // Before the shuffle the deck is in no order anyone chose: by name.
             let mut unshuffled = deck.clone();
-            unshuffled.sort_by_key(CardRef::handle);
-            let pos = sequential_depths(&unshuffled, &deck);
-            table.zones.insert(zone.clone(), unshuffled);
-            let hand = deck[..drawn].to_vec();
-            after.push(What::Shuffle(Move {
-                player: seat,
-                cards: deck,
-                from: zone.clone(),
-                to: zone.clone(),
-                at: At::Top,
-                pos,
-                face: None,
-            }));
-            if !hand.is_empty() {
+            unshuffled.sort_by_key(|&id| (self.card(id), id));
+            table.zones.insert(
+                zone.clone(),
+                unshuffled.iter().map(|&id| self.card(id)).collect(),
+            );
+            self.ids.insert(zone.clone(), unshuffled);
+            after.push(What::Shuffle(self.shuffle(&zone, &zone, &deck, At::Top)));
+            if drawn > 0 {
+                let hand = events::Zone::Seat(seat, SeatZone::Hand);
+                for &id in &deck[..drawn] {
+                    self.leave(&zone, id);
+                    self.arrive(&hand, id, At::Top);
+                }
                 after.push(What::Draw(Move {
                     player: seat,
-                    cards: hand,
+                    cards: deck[..drawn].iter().map(|&id| self.card(id)).collect(),
                     from: zone,
-                    to: events::Zone::Seat(seat, SeatZone::Hand),
+                    to: hand,
                     at: At::Top,
                     pos: vec![],
                     face: None,
+                    from_face: None,
                 }));
             }
         }
@@ -460,7 +485,8 @@ impl Recorder {
             && v == verb
             && verb != events::Verb::Shuffle
             && let Some(l) = last.what.as_move_mut()
-            && (l.player, &l.from, &l.to, l.at, l.face) == (m.player, &m.from, &m.to, m.at, m.face)
+            && (l.player, &l.from, &l.to, l.at, l.face, l.from_face)
+                == (m.player, &m.from, &m.to, m.at, m.face, m.from_face)
         {
             if !(l.pos.is_empty() && m.pos.is_empty()) {
                 l.pos.resize(l.cards.len(), 0);
@@ -471,15 +497,36 @@ impl Recorder {
                 });
             }
             l.cards.extend(m.cards.iter().cloned());
+            self.moved.insert(last.seq, l.cards.len() as u32);
             return Ok(());
+        }
+        if let Some((_, m)) = event.what.as_move() {
+            self.moved.insert(event.seq, m.cards.len() as u32);
         }
         self.seq += 1;
         out.push(event);
         Ok(())
     }
 
+    /// Occurrence `n` is the step that wrote the last event, if it wrote one.
+    fn occurred(&mut self, n: u32, out: &[Event]) {
+        let card = (out.last())
+            .and_then(|e| e.what.as_move())
+            .map_or(0, |(_, m)| m.cards.len() as u32 - 1);
+        let event = self.wrote.then(|| (self.seq - 1, card));
+        let n = n as usize;
+        if self.occurrences.len() <= n {
+            self.occurrences.resize(n + 1, None);
+        }
+        self.occurrences[n] = event;
+    }
+
     /// The event occurrence `occ` became.
     fn event_of(&self, occ: Option<u32>) -> Option<u64> {
+        self.occurrence(occ).map(|(seq, _)| seq)
+    }
+
+    fn occurrence(&self, occ: Option<u32>) -> Option<(u64, u32)> {
         occ.and_then(|n| self.occurrences.get(n as usize).copied().flatten())
     }
 
@@ -512,6 +559,10 @@ impl Recorder {
             Occasion::WouldShuffle { .. } => (Moment::WouldShuffle, None, None),
             Occasion::Shuffled { .. } => (Moment::Shuffle, None, None),
         };
+        // Written now, the move it answers can take no more cards.
+        let index = (self.occurrence(self.within))
+            .filter(|&(seq, _)| about.is_some() && self.moved.get(&seq) > Some(&1))
+            .map(|(_, i)| i);
         What::Resolve {
             player: player.0,
             card: card.name().to_string(),
@@ -519,6 +570,7 @@ impl Recorder {
             about: about.map(|id| self.card(id)),
             target,
             origin: self.event_of(origin),
+            index,
         }
     }
 
@@ -530,16 +582,84 @@ impl Recorder {
     }
 
     fn card(&self, id: CardId) -> CardRef {
-        CardRef::seen(self.names[id.index()].clone(), id.0)
+        CardRef::named(self.names[id.index()].clone())
+    }
+
+    /// `ids` as a bag.
+    fn bag(&self, ids: &[CardId]) -> Vec<CardRef> {
+        let mut cards: Vec<CardRef> = ids.iter().map(|&c| self.card(c)).collect();
+        cards.sort();
+        cards
     }
 
     /// How many cards lie over each of `cards` in `zone` as they leave it one after the
-    /// other; nothing when each comes off the top.
+    /// other; nothing when each comes off the top. For Boons and Hexes, each of a name.
     fn depths(&self, zone: &events::Zone, cards: &[CardRef]) -> Vec<u32> {
         if !zone.ordered() {
             return vec![];
         }
         sequential_depths(self.table.zone(zone), cards)
+    }
+
+    /// How many cards lie over `id` in the ordered `zone`, as the stream says it: the
+    /// topmost of the run of cards of its name it lies in, which are all the same to it.
+    fn pos_of(&self, zone: &events::Zone, id: CardId) -> Option<u32> {
+        let ids = self.ids.get(zone)?;
+        let mut i = ids.iter().position(|&c| c == id)?;
+        while i > 0 && self.names[ids[i - 1].index()] == self.names[id.index()] {
+            i -= 1;
+        }
+        Some(i as u32)
+    }
+
+    /// `id` leaves `zone`: where it lay (when under other cards in an ordered zone), and
+    /// `up` if it lay face up.
+    fn leave(&mut self, zone: &events::Zone, id: CardId) -> (Option<u32>, Option<Face>) {
+        let pos = match zone.ordered() {
+            true => self.pos_of(zone, id).filter(|&p| p > 0),
+            false => None,
+        };
+        if let Some(ids) = self.ids.get_mut(zone) {
+            ids.retain(|&c| c != id);
+        }
+        let up = self.up.remove(&id).then_some(Face::Up);
+        (pos, up)
+    }
+
+    /// `id` arrives in `zone` at `at`.
+    fn arrive(&mut self, zone: &events::Zone, id: CardId, at: At) {
+        let ids = self.ids.entry(zone.clone()).or_default();
+        let i = match (zone.ordered(), at) {
+            (false, _) | (true, At::Bottom) => ids.len(),
+            (true, At::Top) => 0,
+            (true, At::Under(n)) => (n as usize).min(ids.len()),
+        };
+        ids.insert(i, id);
+    }
+
+    /// The cards `ids` (listed top first as they end up) shuffled from `from` into `to`.
+    fn shuffle(&mut self, from: &events::Zone, to: &events::Zone, ids: &[CardId], at: At) -> Move {
+        let mut pos = vec![];
+        for &id in ids {
+            pos.push(self.pos_of(from, id).unwrap_or(0));
+            self.leave(from, id);
+        }
+        if pos.iter().all(|&p| p == 0) {
+            pos.clear();
+        }
+        let block = self.ids.entry(to.clone()).or_default();
+        let i = if at == At::Bottom { block.len() } else { 0 };
+        block.splice(i..i, ids.iter().copied());
+        Move {
+            player: self.mover(from, to),
+            cards: ids.iter().map(|&id| self.card(id)).collect(),
+            from: from.clone(),
+            to: to.clone(),
+            at,
+            pos,
+            face: None,
+            from_face: None,
+        }
     }
 
     /// Whose action a move between `from` and `to` is: the owner of `from`, else of `to`,
@@ -631,7 +751,6 @@ impl Recorder {
     }
 
     fn effect(&self, e: EffectState) -> Effect {
-        let cards = |ids: &[CardId]| ids.iter().map(|&c| self.card(c)).collect();
         Effect {
             id: e.id,
             card: e.card.name().to_string(),
@@ -644,9 +763,14 @@ impl Recorder {
                 Until::Removed => events::Until::Removed,
             },
             ending: e.ending,
-            keeps: cards(&e.keeps),
-            holds: cards(&e.holds),
+            keeps: self.bag(&e.keeps),
+            holds: self.bag(&e.holds),
             tokens: e.tokens,
+            face_up: self.bag(
+                &(e.holds.iter().copied())
+                    .filter(|c| self.up.contains(c))
+                    .collect::<Vec<_>>(),
+            ),
         }
     }
 
@@ -660,7 +784,7 @@ impl Recorder {
                 value: now,
             }),
             Step::Fate { card, to } => {
-                let card = CardRef::Named(name(card));
+                let card = CardRef::named(name(card));
                 let to = fate_zone(&card, to);
                 // Not found, the fold refuses the move: the journal is not one game's.
                 let from = (self.table.zones.iter())
@@ -685,6 +809,7 @@ impl Recorder {
                         at: At::Top,
                         pos,
                         face: None,
+                        from_face: None,
                     },
                 )
             }
@@ -694,7 +819,7 @@ impl Recorder {
                     false => events::Zone::Boons(pack),
                 };
                 let cards: Vec<CardRef> =
-                    cards.into_iter().map(|c| CardRef::Named(name(c))).collect();
+                    cards.into_iter().map(|c| CardRef::named(name(c))).collect();
                 let from = zone(Pack::Discard);
                 let pos = self.depths(&from, &cards);
                 What::Shuffle(Move {
@@ -705,11 +830,12 @@ impl Recorder {
                     at: At::Top,
                     pos,
                     face: None,
+                    from_face: None,
                 })
             }
             Step::FateAdded { cards, to } => {
                 let cards: Vec<CardRef> =
-                    cards.into_iter().map(|c| CardRef::Named(name(c))).collect();
+                    cards.into_iter().map(|c| CardRef::named(name(c))).collect();
                 let to = fate_zone(cards.first()?, to);
                 What::Add { cards, to }
             }
@@ -751,7 +877,7 @@ impl Recorder {
             },
             Step::Derived { costs, types } => What::Derived {
                 costs: (costs.into_iter())
-                    .map(|(c, cost)| (name(c), cost_of(cost)))
+                    .map(|(c, cost)| (name(c), cost.map(cost_of)))
                     .collect(),
                 types: (types.into_iter())
                     .map(|(c, t)| (name(c), t.map(type_names)))
@@ -760,6 +886,63 @@ impl Recorder {
             _ => return None,
         })
     }
+}
+
+/// The journal's steps not yet turned into events.
+struct Steps(std::collections::VecDeque<Step>);
+
+impl Steps {
+    fn peek(&self) -> Option<&Step> {
+        self.0.front()
+    }
+
+    fn next(&mut self) -> Option<Step> {
+        self.0.pop_front()
+    }
+
+    fn next_if(&mut self, wanted: impl Fn(&Step) -> bool) -> Option<Step> {
+        self.0
+            .front()
+            .is_some_and(wanted)
+            .then(|| self.0.pop_front())
+            .flatten()
+    }
+
+    /// The first step that is no reading of the table, if `wanted`, with the occurrence it
+    /// is marked as; the readings before it stay. What a card's move into play changed (a
+    /// cost) is read before its play.
+    fn next_past_reads(&mut self, wanted: impl Fn(&Step) -> bool) -> Option<(Step, Option<u32>)> {
+        let i = self.0.iter().position(|s| !is_reading(s))?;
+        if !wanted(&self.0[i]) {
+            return None;
+        }
+        let step = self.0.remove(i)?;
+        let occ = match self.0.get(i) {
+            Some(&Step::Occurred(n)) if i > 0 => {
+                self.0.remove(i);
+                Some(n)
+            }
+            _ => None,
+        };
+        Some((step, occ))
+    }
+}
+
+/// Whether `step` is what the journal reads of the table each time it records.
+fn is_reading(step: &Step) -> bool {
+    matches!(
+        step,
+        Step::Gauge { .. }
+            | Step::EffectBegan(_)
+            | Step::EffectChanged(_)
+            | Step::EffectEnded { .. }
+            | Step::Token { .. }
+            | Step::Holding { .. }
+            | Step::Pile { .. }
+            | Step::Landscape { .. }
+            | Step::Notes(_)
+            | Step::Derived { .. }
+    )
 }
 
 /// What a log entry says that no card move or counter does.
@@ -842,7 +1025,7 @@ fn ahead(outcome: &dominion_engine::Outcome, a: usize, b: usize) -> bool {
 }
 
 /// How many cards lie over each of `cards` in `zone` (top first) as they leave it one
-/// after the other; nothing when each comes off the top.
+/// after the other, each the first of its name; nothing when each comes off the top.
 fn sequential_depths(zone: &[CardRef], cards: &[CardRef]) -> Vec<u32> {
     let mut left = zone.to_vec();
     let depths: Vec<u32> = cards
