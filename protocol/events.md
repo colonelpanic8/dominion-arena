@@ -63,14 +63,13 @@ was asked (after the first, their options trimmed with `…`) and her answer:
 {"seq":23,"by":22,"type":"counter","counter":"buys","delta":-1,"value":0}
 {"seq":24,"by":22,"type":"counter","counter":"coins","delta":-3,"value":0}
 {"seq":25,"by":22,"type":"counter","counter":"bought","delta":1,"value":1}
-{"seq":26,"by":22,"type":"show","player":0,"cards":["Silver"],"zone":"pile/Silver","pos":[0]}
-{"seq":27,"by":22,"type":"gain","player":0,"cards":["Silver"],"from":"pile/Silver","to":"0/discard"}
-{"seq":28,"by":5,"type":"phase","phase":"night"}
-{"seq":29,"by":5,"type":"phase","phase":"cleanup"}
-{"seq":30,"by":29,"type":"discard","player":0,"cards":["Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":31,"by":29,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
-{"seq":32,"by":29,"type":"draw","player":0,"cards":["Estate","Copper","Copper","Copper","Copper"],"from":"0/deck","to":"0/hand"}
-{"seq":33,"by":5,"type":"turn-end","player":0}
+{"seq":26,"by":22,"type":"gain","player":0,"cards":["Silver"],"from":"pile/Silver","to":"0/discard"}
+{"seq":27,"by":5,"type":"phase","phase":"night"}
+{"seq":28,"by":5,"type":"phase","phase":"cleanup"}
+{"seq":29,"by":28,"type":"discard","player":0,"cards":["Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":30,"by":28,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
+{"seq":31,"by":28,"type":"draw","player":0,"cards":["Estate","Copper","Copper","Copper","Copper"],"from":"0/deck","to":"0/hand"}
+{"seq":32,"by":5,"type":"turn-end","player":0}
 ```
 
 After the header, each line is one event. `seq` numbers the events from 0. `by` names the event this one
@@ -78,9 +77,10 @@ happened inside: Copper's +$1 (11) is inside its play (10), which is inside the 
 (7), which is inside the turn (5). The setup table lists each deck in no particular order;
 the shuffle at seq 1 says which order it is in afterwards. Ann is asked for a move (8) and
 answers with option 1, a Copper to play (9); the play that follows is inside the Buy
-phase, not inside her answer: questions and answers are no causes. Before the Silver she
-bought is gained, a `show` (26) says that everyone saw which card left the pile
-([`show`](#show)).
+phase, not inside her answer: questions and answers are no causes. The `gain` of the
+Silver she bought (26) shows everyone which card it is, so no [`show`](#show) goes with it.
+Clean-up discards her two Estates (30) unseen: nothing shows them to Bo, and only this full
+stream names them.
 
 ## The table
 
@@ -529,12 +529,10 @@ occurrence among them is over before the next card moves:
   `about` and `index`. Only a `resolve`, and the `ask` and `answer` of which ability
   resolves next (purpose `trigger`), happen directly inside such an event. Cards
   discarded from play in Clean-up are one such event.
-- A `show` between two moves keeps them apart, and the engine shows each card that leaves
-  a hand for the trash or a discard pile before it moves (everyone sees which card it
-  is). So cards trashed or discarded together from a hand (Chapel's, a hand discarded to
-  Militia) are today a `show` and a one-card `trash` or `discard` each, every one its own
-  event, with the abilities answering them after the last
-  ([Known gaps](#known-gaps)).
+- Nothing else comes between cards moved together. A `show` some of them need is written
+  once, before the move, for all of them ([Sightings](#sightings)); a counter or cost
+  that changes as one of them lands (Fisherman's cost, once a card is in an empty discard
+  pile) is written after the move.
 - Moves that are no occurrence (a draw, a top-deck, a reveal, a set-aside, a look) are one
   event when adjacent with the same cause: cards drawn by one draw are one `draw`, and so
   are two draws of one play with nothing between them.
@@ -735,13 +733,13 @@ The end of [`outpost-fleet.events.jsonl`](examples/events/outpost-fleet.events.j
 Bo's turn takes the last Province, and Ann, who has Fleet, takes one turn more.
 
 ```jsonl
-{"seq":2287,"by":2232,"type":"turn-end","player":1}
-{"seq":2288,"type":"game-ending","reason":"provinces","finalRound":[0]}
-{"seq":2289,"type":"turn","player":0,"number":27,"kind":"final"}
-{"seq":2290,"by":2289,"type":"resolve","player":0,"card":"Haven","when":"start-turn","origin":2180}
+{"seq":2225,"by":2173,"type":"turn-end","player":1}
+{"seq":2226,"type":"game-ending","reason":"provinces","finalRound":[0]}
+{"seq":2227,"type":"turn","player":0,"number":27,"kind":"final"}
+{"seq":2228,"by":2227,"type":"resolve","player":0,"card":"Haven","when":"start-turn","origin":2122}
 …
-{"seq":2334,"by":2289,"type":"turn-end","player":0}
-{"seq":2335,"type":"game-end","reason":"provinces","result":[{"seat":0,"vp":9,"turns":26,"rank":2},{"seat":1,"vp":42,"turns":26,"rank":1}]}
+{"seq":2271,"by":2227,"type":"turn-end","player":0}
+{"seq":2272,"type":"game-end","reason":"provinces","result":[{"seat":0,"vp":9,"turns":26,"rank":2},{"seat":1,"vp":42,"turns":26,"rank":1}]}
 ```
 
 ### Occurrences
@@ -770,38 +768,38 @@ by the rules: one `play` whose instructions run twice.
 From [`throne-room-wharf.events.jsonl`](examples/events/throne-room-wharf.events.jsonl):
 
 ```jsonl
-{"seq":912,"by":909,"type":"play","player":1,"card":"Throne Room","from":"1/hand","to":"1/play"}
-{"seq":913,"by":912,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":914,"by":912,"type":"ask","seat":1,"prompt":"Throne Room: choose up to 1 card to play","kind":"cards","purpose":"play","source":"Throne Room","min":0,"max":1,"options":[…]}
-{"seq":915,"by":912,"type":"answer","seat":1,"indices":[0]}
-{"seq":916,"by":912,"type":"play","player":1,"card":"Wharf","from":"1/hand","to":"1/play"}
-{"seq":917,"by":916,"type":"counter","counter":"buys","delta":1,"value":2}
-{"seq":918,"by":916,"type":"draw","player":1,"cards":["Copper","Militia"],"from":"1/deck","to":"1/hand"}
-{"seq":919,"by":916,"type":"effect","id":2,"card":"Wharf","source":"Wharf","owner":1,"until":{"start-of-turn":1},"keeps":["Throne Room","Wharf"]}
-{"seq":920,"by":916,"type":"kept","zone":"1/play","cards":["Throne Room","Wharf"]}
-{"seq":921,"by":912,"type":"play","player":1,"card":"Wharf"}
-{"seq":922,"by":921,"type":"counter","counter":"buys","delta":1,"value":3}
-{"seq":923,"by":921,"type":"draw","player":1,"cards":["Estate","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":924,"by":921,"type":"effect","id":3,"card":"Wharf","source":"Wharf","owner":1,"until":{"start-of-turn":1},"keeps":["Throne Room","Wharf"]}
+{"seq":878,"by":875,"type":"play","player":1,"card":"Throne Room","from":"1/hand","to":"1/play"}
+{"seq":879,"by":878,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":880,"by":878,"type":"ask","seat":1,"prompt":"Throne Room: choose up to 1 card to play","kind":"cards","purpose":"play","source":"Throne Room","min":0,"max":1,"options":[…]}
+{"seq":881,"by":878,"type":"answer","seat":1,"indices":[0]}
+{"seq":882,"by":878,"type":"play","player":1,"card":"Wharf","from":"1/hand","to":"1/play"}
+{"seq":883,"by":882,"type":"counter","counter":"buys","delta":1,"value":2}
+{"seq":884,"by":882,"type":"draw","player":1,"cards":["Copper","Militia"],"from":"1/deck","to":"1/hand"}
+{"seq":885,"by":882,"type":"effect","id":2,"card":"Wharf","source":"Wharf","owner":1,"until":{"start-of-turn":1},"keeps":["Throne Room","Wharf"]}
+{"seq":886,"by":882,"type":"kept","zone":"1/play","cards":["Throne Room","Wharf"]}
+{"seq":887,"by":878,"type":"play","player":1,"card":"Wharf"}
+{"seq":888,"by":887,"type":"counter","counter":"buys","delta":1,"value":3}
+{"seq":889,"by":887,"type":"draw","player":1,"cards":["Estate","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":890,"by":887,"type":"effect","id":3,"card":"Wharf","source":"Wharf","owner":1,"until":{"start-of-turn":1},"keeps":["Throne Room","Wharf"]}
 …
-{"seq":994,"type":"turn","player":1,"number":14,"kind":"regular"}
-{"seq":995,"by":994,"type":"resolve","player":1,"card":"Wharf","when":"start-turn","origin":916}
-{"seq":996,"by":995,"type":"effect-end","id":2,"why":"resolved"}
-{"seq":997,"by":995,"type":"counter","counter":"buys","delta":1,"value":2}
-{"seq":998,"by":995,"type":"draw","player":1,"cards":["Estate","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":999,"by":994,"type":"resolve","player":1,"card":"Wharf","when":"start-turn","origin":921}
-{"seq":1000,"by":999,"type":"effect-end","id":3,"why":"resolved"}
-{"seq":1001,"by":999,"type":"counter","counter":"buys","delta":1,"value":3}
-{"seq":1002,"by":999,"type":"kept","zone":"1/play","cards":[]}
-{"seq":1003,"by":999,"type":"draw","player":1,"cards":["Copper","Silver"],"from":"1/deck","to":"1/hand"}
-{"seq":1004,"by":994,"type":"phase","phase":"action"}
+{"seq":956,"type":"turn","player":1,"number":14,"kind":"regular"}
+{"seq":957,"by":956,"type":"resolve","player":1,"card":"Wharf","when":"start-turn","origin":882}
+{"seq":958,"by":957,"type":"effect-end","id":2,"why":"resolved"}
+{"seq":959,"by":957,"type":"counter","counter":"buys","delta":1,"value":2}
+{"seq":960,"by":957,"type":"draw","player":1,"cards":["Estate","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":961,"by":956,"type":"resolve","player":1,"card":"Wharf","when":"start-turn","origin":887}
+{"seq":962,"by":961,"type":"effect-end","id":3,"why":"resolved"}
+{"seq":963,"by":961,"type":"counter","counter":"buys","delta":1,"value":3}
+{"seq":964,"by":961,"type":"kept","zone":"1/play","cards":[]}
+{"seq":965,"by":961,"type":"draw","player":1,"cards":["Copper","Silver"],"from":"1/deck","to":"1/hand"}
+{"seq":966,"by":956,"type":"phase","phase":"action"}
 ```
 
-The second play of Wharf (921) moves nothing. Each play makes its own effect, which keeps
-both cards in play through Clean-up; `kept` (920) counts each card once, and the second
+The second play of Wharf (887) moves nothing. Each play makes its own effect, which keeps
+both cards in play through Clean-up; `kept` (886) counts each card once, and the second
 effect doesn't change it. At the next turn the two abilities have the same `by` (the
 `turn`) and different `origin`s: the two plays. Once the second has ended its effect,
-nothing keeps the cards (1002), and they leave play in this turn's Clean-up.
+nothing keeps the cards (964), and they leave play in this turn's Clean-up.
 
 ##### Necromancer
 
@@ -811,25 +809,24 @@ Ann's Necromancer plays a Village from the trash, which turns face down for the 
 the turn, and her Lurker later gains a face-down Village from the trash.
 
 ```jsonl
-{"seq":533,"by":518,"type":"play","player":0,"card":"Necromancer","from":"0/hand","to":"0/play"}
-{"seq":534,"by":533,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":535,"by":533,"type":"ask","seat":0,"prompt":"Necromancer: choose a card to play","kind":"cards","purpose":"play","source":"Necromancer","min":1,"max":1,"options":[…]}
-{"seq":536,"by":533,"type":"answer","seat":0,"indices":[2]}
-{"seq":537,"by":533,"type":"effect","id":1,"card":"Necromancer","source":"Necromancer","owner":0,"until":"end-of-turn"}
-{"seq":538,"by":533,"type":"face","card":"Village","zone":"trash","face":"down"}
-{"seq":539,"by":533,"type":"play","player":0,"card":"Village"}
+{"seq":512,"by":498,"type":"play","player":0,"card":"Necromancer","from":"0/hand","to":"0/play"}
+{"seq":513,"by":512,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":514,"by":512,"type":"ask","seat":0,"prompt":"Necromancer: choose a card to play","kind":"cards","purpose":"play","source":"Necromancer","min":1,"max":1,"options":[…]}
+{"seq":515,"by":512,"type":"answer","seat":0,"indices":[2]}
+{"seq":516,"by":512,"type":"effect","id":1,"card":"Necromancer","source":"Necromancer","owner":0,"until":"end-of-turn"}
+{"seq":517,"by":512,"type":"face","card":"Village","zone":"trash","face":"down"}
+{"seq":518,"by":512,"type":"play","player":0,"card":"Village"}
 …
-{"seq":573,"by":517,"type":"turn-end","player":0}
-{"seq":574,"by":573,"type":"effect-end","id":1,"why":"expired"}
-{"seq":575,"by":573,"type":"face","card":"Village","zone":"trash","face":"up"}
+{"seq":551,"by":497,"type":"turn-end","player":0}
+{"seq":552,"by":551,"type":"effect-end","id":1,"why":"expired"}
+{"seq":553,"by":551,"type":"face","card":"Village","zone":"trash","face":"up"}
 …
-{"seq":850,"by":843,"type":"answer","seat":0,"indices":[2]}
-{"seq":851,"by":843,"type":"show","player":0,"cards":["Village"],"zone":"trash","pos":[3]}
-{"seq":852,"by":843,"type":"gain","player":0,"cards":["Village"],"from":"trash","to":"0/discard","pos":[3],"fromFace":"down"}
+{"seq":814,"by":807,"type":"answer","seat":0,"indices":[2]}
+{"seq":815,"by":807,"type":"gain","player":0,"cards":["Village"],"from":"trash","to":"0/discard","pos":[3],"fromFace":"down"}
 ```
 
-The Village turns face down (538) before its `play`, which has no `from` or `to`. As the
-turn ends it turns face up again (575). Turns later another Village lies face down when
+The Village turns face down (517) before its `play`, which has no `from` or `to`. As the
+turn ends it turns face up again (553). Turns later another Village lies face down when
 Lurker gains it, so its move says `fromFace` `down`.
 
 #### `buy`
@@ -842,11 +839,11 @@ Inside it: the price (`buys` −1, `coins`, `potions`, `debt`, `bought`), overpa
 on-buy abilities, then the `gain` of the card, or what the Event or Project does:
 
 ```jsonl
-{"seq":84,"by":69,"type":"buy","player":0,"card":"Pageant"}
-{"seq":85,"by":84,"type":"counter","counter":"buys","delta":-1,"value":0}
-{"seq":86,"by":84,"type":"counter","counter":"coins","delta":-3,"value":0}
-{"seq":87,"by":84,"type":"counter","counter":"bought","delta":1,"value":1}
-{"seq":88,"by":84,"type":"holding","card":"Pageant","to":0}
+{"seq":82,"by":67,"type":"buy","player":0,"card":"Pageant"}
+{"seq":83,"by":82,"type":"counter","counter":"buys","delta":-1,"value":0}
+{"seq":84,"by":82,"type":"counter","counter":"coins","delta":-3,"value":0}
+{"seq":85,"by":82,"type":"counter","counter":"bought","delta":1,"value":1}
+{"seq":86,"by":82,"type":"holding","card":"Pageant","to":0}
 ```
 
 #### `resolve`
@@ -896,40 +893,34 @@ it is their Reaction; an ability another player resolves in the same window has 
 A Moat against Militia, from [`moat-chapel.events.jsonl`](examples/events/moat-chapel.events.jsonl):
 
 ```jsonl
-{"seq":927,"by":924,"type":"play","player":0,"card":"Militia","from":"0/hand","to":"0/play"}
-{"seq":928,"by":927,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":929,"by":927,"type":"ask","seat":1,"prompt":"Ann attacks you with Militia: you may use this ability","kind":"choose","purpose":"trigger","min":1,"max":1,"options":[…]}
-{"seq":930,"by":927,"type":"answer","seat":1,"indices":[0]}
-{"seq":931,"by":927,"type":"resolve","player":1,"card":"Moat","when":"attack","target":1}
-{"seq":932,"by":931,"type":"show","player":1,"cards":["Moat"],"zone":"1/hand"}
-{"seq":933,"by":931,"type":"unaffected","player":1,"attack":"Militia","card":"Moat"}
-{"seq":934,"by":927,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":880,"by":877,"type":"play","player":0,"card":"Militia","from":"0/hand","to":"0/play"}
+{"seq":881,"by":880,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":882,"by":880,"type":"ask","seat":1,"prompt":"Ann attacks you with Militia: you may use this ability","kind":"choose","purpose":"trigger","min":1,"max":1,"options":[…]}
+{"seq":883,"by":880,"type":"answer","seat":1,"indices":[0]}
+{"seq":884,"by":880,"type":"resolve","player":1,"card":"Moat","when":"attack","target":1}
+{"seq":885,"by":884,"type":"show","player":1,"cards":["Moat"],"zone":"1/hand"}
+{"seq":886,"by":884,"type":"unaffected","player":1,"attack":"Militia","card":"Moat"}
+{"seq":887,"by":880,"type":"counter","counter":"coins","delta":2,"value":2}
 ```
 
 Chapel trashing four cards, one of them Fortress, from the same game:
 
 ```jsonl
-{"seq":1144,"by":1133,"type":"play","player":0,"card":"Chapel","from":"0/hand","to":"0/play"}
-{"seq":1145,"by":1144,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":1146,"by":1144,"type":"ask","seat":0,"prompt":"Chapel: choose up to 4 cards to trash","kind":"cards","purpose":"trash","source":"Chapel","min":0,"max":4,"options":[…]}
-{"seq":1147,"by":1144,"type":"answer","seat":0,"indices":[2,3,1,4]}
-{"seq":1148,"by":1144,"type":"show","player":0,"cards":["Militia"],"zone":"0/hand"}
-{"seq":1149,"by":1144,"type":"trash","player":0,"cards":["Militia"],"from":"0/hand","to":"trash"}
-{"seq":1150,"by":1144,"type":"show","player":0,"cards":["Copper"],"zone":"0/hand"}
-{"seq":1151,"by":1144,"type":"trash","player":0,"cards":["Copper"],"from":"0/hand","to":"trash"}
-{"seq":1152,"by":1144,"type":"show","player":0,"cards":["Fortress"],"zone":"0/hand"}
-{"seq":1153,"by":1144,"type":"trash","player":0,"cards":["Fortress"],"from":"0/hand","to":"trash"}
-{"seq":1154,"by":1144,"type":"show","player":0,"cards":["Silver"],"zone":"0/hand"}
-{"seq":1155,"by":1144,"type":"trash","player":0,"cards":["Silver"],"from":"0/hand","to":"trash"}
-{"seq":1156,"by":1153,"type":"resolve","player":0,"card":"Fortress","when":"trash","about":"Fortress"}
-{"seq":1157,"by":1156,"type":"put","player":0,"cards":["Fortress"],"from":"trash","to":"0/hand","pos":[1]}
+{"seq":1083,"by":1072,"type":"play","player":0,"card":"Chapel","from":"0/hand","to":"0/play"}
+{"seq":1084,"by":1083,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":1085,"by":1083,"type":"ask","seat":0,"prompt":"Chapel: choose up to 4 cards to trash","kind":"cards","purpose":"trash","source":"Chapel","min":0,"max":4,"options":[…]}
+{"seq":1086,"by":1083,"type":"answer","seat":0,"indices":[2,3,1,4]}
+{"seq":1087,"by":1083,"type":"trash","player":0,"cards":["Militia","Copper","Fortress","Silver"],"from":"0/hand","to":"trash"}
+{"seq":1088,"by":1087,"type":"resolve","player":0,"card":"Fortress","when":"trash","about":"Fortress","index":2}
+{"seq":1089,"by":1088,"type":"put","player":0,"cards":["Fortress"],"from":"trash","to":"0/hand","pos":[1]}
 ```
 
-The four cards went onto the trash one after the other, each shown first, so Silver lies
-on Fortress: it leaves from under one card (`pos` 1). Fortress's ability comes once all
-four are in the trash, inside Fortress's own `trash`. Each card is its own event today, so
-the `resolve` has no `index`; were they one event, as cards trashed together from play
-are, it would say `"index":2` ([One event per occurrence](#one-event-per-occurrence)).
+The four cards are one `trash` (1087), each its own occurrence. They went onto the trash
+one after the other, so Silver lies on Fortress: it leaves from under one card (`pos` 1).
+Fortress's ability comes once all four are in the trash, inside the `trash`, and says which
+of its cards it answers: the third, `"index":2` ([One event per
+occurrence](#one-event-per-occurrence)). No `show` comes with them: everyone sees the cards
+that go into the trash ([Sightings](#sightings)).
 
 An effect's own ability that removes the effect gives `effect-end` (`resolved`) right
 after its `resolve`, before what it does: Haven's ability ends Haven's effect, then puts
@@ -950,24 +941,24 @@ by each other player is discarded once all have) has that `discard` named by the
 Bard's Boon and Skulk's Hex, from [`boons-hexes.events.jsonl`](examples/events/boons-hexes.events.jsonl):
 
 ```jsonl
-{"seq":251,"by":248,"type":"play","player":1,"card":"Bard","from":"1/hand","to":"1/play"}
-{"seq":252,"by":251,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":253,"by":251,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":254,"by":251,"type":"take","player":1,"cards":["The Sky's Gift"],"from":"boons/deck","to":"1/boons"}
-{"seq":255,"by":251,"type":"receive","player":1,"card":"The Sky's Gift"}
-{"seq":256,"by":255,"type":"ask","seat":1,"prompt":"The Sky's Gift: discard 3 cards to gain a Gold?","kind":"choose","purpose":"discard","source":"The Sky's Gift","min":1,"max":1,"options":[…]}
-{"seq":257,"by":255,"type":"answer","seat":1,"indices":[1]}
-{"seq":258,"by":255,"type":"discard","player":1,"cards":["The Sky's Gift"],"from":"1/boons","to":"boons/discard"}
+{"seq":243,"by":240,"type":"play","player":1,"card":"Bard","from":"1/hand","to":"1/play"}
+{"seq":244,"by":243,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":245,"by":243,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":246,"by":243,"type":"take","player":1,"cards":["The Sky's Gift"],"from":"boons/deck","to":"1/boons"}
+{"seq":247,"by":243,"type":"receive","player":1,"card":"The Sky's Gift"}
+{"seq":248,"by":247,"type":"ask","seat":1,"prompt":"The Sky's Gift: discard 3 cards to gain a Gold?","kind":"choose","purpose":"discard","source":"The Sky's Gift","min":1,"max":1,"options":[…]}
+{"seq":249,"by":247,"type":"answer","seat":1,"indices":[1]}
+{"seq":250,"by":247,"type":"discard","player":1,"cards":["The Sky's Gift"],"from":"1/boons","to":"boons/discard"}
 …
-{"seq":422,"by":419,"type":"play","player":1,"card":"Skulk","from":"1/hand","to":"1/play"}
-{"seq":423,"by":422,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":424,"by":422,"type":"counter","counter":"buys","delta":1,"value":2}
-{"seq":425,"by":422,"type":"take","player":1,"cards":["Haunting"],"from":"hexes/deck","to":"1/hexes"}
-{"seq":426,"by":422,"type":"receive","player":0,"card":"Haunting"}
-{"seq":427,"by":426,"type":"ask","seat":0,"prompt":"Haunting: choose a card to put onto your deck","kind":"cards","purpose":"top-deck","source":"Haunting","min":1,"max":1,"options":[…]}
-{"seq":428,"by":426,"type":"answer","seat":0,"indices":[4]}
-{"seq":429,"by":426,"type":"topdeck","player":0,"cards":["Copper"],"from":"0/hand","to":"0/deck"}
-{"seq":430,"by":422,"type":"discard","player":1,"cards":["Haunting"],"from":"1/hexes","to":"hexes/discard"}
+{"seq":407,"by":404,"type":"play","player":1,"card":"Skulk","from":"1/hand","to":"1/play"}
+{"seq":408,"by":407,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":409,"by":407,"type":"counter","counter":"buys","delta":1,"value":2}
+{"seq":410,"by":407,"type":"take","player":1,"cards":["Haunting"],"from":"hexes/deck","to":"1/hexes"}
+{"seq":411,"by":407,"type":"receive","player":0,"card":"Haunting"}
+{"seq":412,"by":411,"type":"ask","seat":0,"prompt":"Haunting: choose a card to put onto your deck","kind":"cards","purpose":"top-deck","source":"Haunting","min":1,"max":1,"options":[…]}
+{"seq":413,"by":411,"type":"answer","seat":0,"indices":[4]}
+{"seq":414,"by":411,"type":"topdeck","player":0,"cards":["Copper"],"from":"0/hand","to":"0/deck"}
+{"seq":415,"by":407,"type":"discard","player":1,"cards":["Haunting"],"from":"1/hexes","to":"hexes/discard"}
 ```
 
 #### `name`, `way`, `unaffected`, `call`, `choose`
@@ -983,7 +974,7 @@ Bard's Boon and Skulk's Hex, from [`boons-hexes.events.jsonl`](examples/events/b
 None changes the table.
 
 ```json
-{"seq":783,"by":780,"type":"choose","player":1,"source":"Quartermaster","choices":["Gain a card costing up to $4, setting it aside on this"]}
+{"seq":763,"by":760,"type":"choose","player":1,"source":"Quartermaster","choices":["Gain a card costing up to $4, setting it aside on this"]}
 ```
 
 ### Moves
@@ -1021,9 +1012,9 @@ another's. A card taken from another player is not passed: it is trashed, then g
 both seats choose, then both cards move:
 
 ```jsonl
-{"seq":1164,"by":1158,"type":"answer","seat":1,"indices":[3]}
-{"seq":1165,"by":1158,"type":"pass","player":0,"cards":["Masquerade"],"from":"0/hand","to":"1/hand"}
-{"seq":1166,"by":1158,"type":"pass","player":1,"cards":["Copper"],"from":"1/hand","to":"0/hand"}
+{"seq":1113,"by":1107,"type":"answer","seat":1,"indices":[3]}
+{"seq":1114,"by":1107,"type":"pass","player":0,"cards":["Masquerade"],"from":"0/hand","to":"1/hand"}
+{"seq":1115,"by":1107,"type":"pass","player":1,"cards":["Copper"],"from":"1/hand","to":"0/hand"}
 ```
 
 Fields:
@@ -1113,27 +1104,27 @@ shuffled cards, picks a Bureaucrat to go on top of them, and the 24 cards neithe
 nor marked are shuffled again under the four over them; Stash goes back where it lay:
 
 ```jsonl
-{"seq":1101,"by":1090,"type":"resolve","player":0,"card":"Star Chart","when":"shuffle"}
-{"seq":1102,"by":1101,"type":"show","player":0,"cards":["Copper","Necropolis",…],"zone":"0/deck","pos":[3,4,5,…,28],"to":0}
-{"seq":1103,"by":1101,"type":"show","player":0,"cards":["Silver","Copper","Overgrown Estate"],"zone":"0/deck","pos":[0,1,2],"to":0}
-{"seq":1104,"by":1101,"type":"ask","seat":0,"prompt":"Star Chart (looking at Silver, Copper, Overgrown Estate): choose a card to put onto your deck","kind":"cards","purpose":"top-deck","source":"Star Chart","min":1,"max":1,"options":[…]}
-{"seq":1105,"by":1101,"type":"answer","seat":0,"indices":[12]}
-{"seq":1106,"by":1101,"type":"insert","player":0,"cards":["Bureaucrat"],"from":"0/deck","to":"0/deck","at":{"under":3},"pos":[18]}
-{"seq":1107,"by":1101,"type":"mix","zone":"0/deck","cards":["Copper","Necropolis","Copper","Stash",…],"pos":[4,5,6,7,…,28]}
-{"seq":1108,"by":1101,"type":"shuffle","player":0,"cards":["Masquerade","Masquerade",…],"from":"0/deck","to":"0/deck","at":{"under":4},"pos":[14,21,…]}
-{"seq":1109,"by":1101,"type":"insert","player":0,"cards":["Stash"],"from":"0/deck","to":"0/deck","at":{"under":7},"pos":[28]}
+{"seq":1053,"by":1042,"type":"resolve","player":0,"card":"Star Chart","when":"shuffle"}
+{"seq":1054,"by":1053,"type":"show","player":0,"cards":["Copper","Necropolis",…],"zone":"0/deck","pos":[3,4,5,…,28],"to":0}
+{"seq":1055,"by":1053,"type":"show","player":0,"cards":["Silver","Copper","Overgrown Estate"],"zone":"0/deck","pos":[0,1,2],"to":0}
+{"seq":1056,"by":1053,"type":"ask","seat":0,"prompt":"Star Chart (looking at Silver, Copper, Overgrown Estate): choose a card to put onto your deck","kind":"cards","purpose":"top-deck","source":"Star Chart","min":1,"max":1,"options":[…]}
+{"seq":1057,"by":1053,"type":"answer","seat":0,"indices":[12]}
+{"seq":1058,"by":1053,"type":"insert","player":0,"cards":["Bureaucrat"],"from":"0/deck","to":"0/deck","at":{"under":3},"pos":[18]}
+{"seq":1059,"by":1053,"type":"mix","zone":"0/deck","cards":["Copper","Necropolis","Copper","Stash",…],"pos":[4,5,6,7,…,28]}
+{"seq":1060,"by":1053,"type":"shuffle","player":0,"cards":["Masquerade","Masquerade",…],"from":"0/deck","to":"0/deck","at":{"under":4},"pos":[14,21,…]}
+{"seq":1061,"by":1053,"type":"insert","player":0,"cards":["Stash"],"from":"0/deck","to":"0/deck","at":{"under":7},"pos":[28]}
 ```
 
-Ann sees the shuffled cards (1102) and the three over them (1103), and only she does
-(`to`). Star Chart's card goes under the three (1106). The `mix` (1107) says that once the
+Ann sees the shuffled cards (1054) and the three over them (1055), and only she does
+(`to`). Star Chart's card goes under the three (1058). The `mix` (1059) says that once the
 choice is made nobody follows which card is which; it lists Stash too, which the
-reshuffle (1108) leaves out, so it is not the reshuffle's own. Stash, its back known to
-everyone, then goes back under seven cards (1109).
+reshuffle (1060) leaves out, so it is not the reshuffle's own. Stash, its back known to
+everyone, then goes back under seven cards (1061).
 
 The Boons' and Hexes' discard piles are shuffled into their empty decks the same way:
 
 ```json
-{"seq":1638,"by":1635,"type":"shuffle","cards":["The Mountain's Gift","The Earth's Gift","The Moon's Gift","The Sky's Gift","The Sun's Gift","The Field's Gift","The Forest's Gift","The Wind's Gift","The River's Gift"],"from":"boons/discard","to":"boons/deck","pos":[3,3,2,5,2,0,0,1,0]}
+{"seq":1569,"by":1566,"type":"shuffle","cards":["The Mountain's Gift","The Earth's Gift","The Moon's Gift","The Sky's Gift","The Sun's Gift","The Field's Gift","The Forest's Gift","The Wind's Gift","The River's Gift"],"from":"boons/discard","to":"boons/deck","pos":[3,3,2,5,2,0,0,1,0]}
 ```
 
 #### `take`
@@ -1154,36 +1145,35 @@ in its `faceUp`.
 Haven, from [`throne-room-wharf.events.jsonl`](examples/events/throne-room-wharf.events.jsonl):
 
 ```jsonl
-{"seq":1253,"by":1247,"type":"set-aside","player":1,"cards":["Province"],"from":"1/hand","to":"1/aside","face":"down"}
-{"seq":1254,"by":1247,"type":"effect","id":4,"card":"Haven","source":"Haven","owner":1,"until":{"start-of-turn":1},"keeps":["Haven"],"holds":["Province"]}
+{"seq":1205,"by":1199,"type":"set-aside","player":1,"cards":["Province"],"from":"1/hand","to":"1/aside","face":"down"}
+{"seq":1206,"by":1199,"type":"effect","id":4,"card":"Haven","source":"Haven","owner":1,"until":{"start-of-turn":1},"keeps":["Haven"],"holds":["Province"]}
 …
-{"seq":1322,"type":"turn","player":1,"number":18,"kind":"regular"}
-{"seq":1323,"by":1322,"type":"resolve","player":1,"card":"Haven","when":"start-turn","origin":1247}
-{"seq":1324,"by":1323,"type":"effect-end","id":4,"why":"resolved"}
-{"seq":1325,"by":1323,"type":"kept","zone":"1/play","cards":[]}
-{"seq":1326,"by":1323,"type":"put","player":1,"cards":["Province"],"from":"1/aside","to":"1/hand"}
+{"seq":1271,"type":"turn","player":1,"number":18,"kind":"regular"}
+{"seq":1272,"by":1271,"type":"resolve","player":1,"card":"Haven","when":"start-turn","origin":1199}
+{"seq":1273,"by":1272,"type":"effect-end","id":4,"why":"resolved"}
+{"seq":1274,"by":1272,"type":"kept","zone":"1/play","cards":[]}
+{"seq":1275,"by":1272,"type":"put","player":1,"cards":["Province"],"from":"1/aside","to":"1/hand"}
 ```
 
 Quartermaster gains a card set aside face up, and later puts it into the hand, from
 [`outpost-fleet.events.jsonl`](examples/events/outpost-fleet.events.jsonl):
 
 ```jsonl
-{"seq":780,"by":773,"type":"resolve","player":1,"card":"Quartermaster","when":"start-turn","origin":702}
-{"seq":781,"by":780,"type":"ask","seat":1,"prompt":"Quartermaster: choose an option","kind":"choose","purpose":"mode","source":"Quartermaster","min":1,"max":1,"options":[…]}
-{"seq":782,"by":780,"type":"answer","seat":1,"indices":[0]}
-{"seq":783,"by":780,"type":"choose","player":1,"source":"Quartermaster","choices":["Gain a card costing up to $4, setting it aside on this"]}
-{"seq":784,"by":780,"type":"ask","seat":1,"prompt":"Quartermaster: choose a pile to gain from","kind":"pile","purpose":"gain","source":"Quartermaster","min":1,"max":1,"options":[…]}
-{"seq":785,"by":780,"type":"answer","seat":1,"indices":[1]}
-{"seq":786,"by":780,"type":"show","player":1,"cards":["Silver"],"zone":"pile/Silver","pos":[0]}
-{"seq":787,"by":780,"type":"gain","player":1,"cards":["Silver"],"from":"pile/Silver","to":"1/aside","face":"up"}
-{"seq":788,"by":780,"type":"effect-change","id":3,"card":"Quartermaster","source":"Quartermaster","owner":1,"until":"removed","keeps":["Quartermaster"],"holds":["Silver"],"faceUp":["Silver"]}
+{"seq":760,"by":753,"type":"resolve","player":1,"card":"Quartermaster","when":"start-turn","origin":684}
+{"seq":761,"by":760,"type":"ask","seat":1,"prompt":"Quartermaster: choose an option","kind":"choose","purpose":"mode","source":"Quartermaster","min":1,"max":1,"options":[…]}
+{"seq":762,"by":760,"type":"answer","seat":1,"indices":[0]}
+{"seq":763,"by":760,"type":"choose","player":1,"source":"Quartermaster","choices":["Gain a card costing up to $4, setting it aside on this"]}
+{"seq":764,"by":760,"type":"ask","seat":1,"prompt":"Quartermaster: choose a pile to gain from","kind":"pile","purpose":"gain","source":"Quartermaster","min":1,"max":1,"options":[…]}
+{"seq":765,"by":760,"type":"answer","seat":1,"indices":[1]}
+{"seq":766,"by":760,"type":"gain","player":1,"cards":["Silver"],"from":"pile/Silver","to":"1/aside","face":"up"}
+{"seq":767,"by":760,"type":"effect-change","id":3,"card":"Quartermaster","source":"Quartermaster","owner":1,"until":"removed","keeps":["Quartermaster"],"holds":["Silver"],"faceUp":["Silver"]}
 …
-{"seq":879,"by":878,"type":"resolve","player":1,"card":"Quartermaster","when":"start-turn","origin":702}
-{"seq":880,"by":879,"type":"ask","seat":1,"prompt":"Quartermaster: choose an option","kind":"choose","purpose":"mode","source":"Quartermaster","min":1,"max":1,"options":[…]}
-{"seq":881,"by":879,"type":"answer","seat":1,"indices":[1]}
-{"seq":882,"by":879,"type":"choose","player":1,"source":"Quartermaster","choices":["Put a card from this into your hand"]}
-{"seq":883,"by":879,"type":"put","player":1,"cards":["Silver"],"from":"1/aside","to":"1/hand","fromFace":"up"}
-{"seq":884,"by":879,"type":"effect-change","id":3,"card":"Quartermaster","source":"Quartermaster","owner":1,"until":"removed","keeps":["Quartermaster"]}
+{"seq":856,"by":855,"type":"resolve","player":1,"card":"Quartermaster","when":"start-turn","origin":684}
+{"seq":857,"by":856,"type":"ask","seat":1,"prompt":"Quartermaster: choose an option","kind":"choose","purpose":"mode","source":"Quartermaster","min":1,"max":1,"options":[…]}
+{"seq":858,"by":856,"type":"answer","seat":1,"indices":[1]}
+{"seq":859,"by":856,"type":"choose","player":1,"source":"Quartermaster","choices":["Put a card from this into your hand"]}
+{"seq":860,"by":856,"type":"put","player":1,"cards":["Silver"],"from":"1/aside","to":"1/hand","fromFace":"up"}
+{"seq":861,"by":856,"type":"effect-change","id":3,"card":"Quartermaster","source":"Quartermaster","owner":1,"until":"removed","keeps":["Quartermaster"]}
 ```
 
 ### Cards entering and changing
@@ -1326,37 +1316,37 @@ Outpost, from [`outpost-fleet.events.jsonl`](examples/events/outpost-fleet.event
 Bo has a Haven holding a Copper and plays Outpost:
 
 ```jsonl
-{"seq":1076,"by":1069,"type":"effect","id":7,"card":"Haven","source":"Haven","owner":1,"until":{"start-of-turn":1},"keeps":["Haven"],"holds":["Copper"]}
-{"seq":1077,"by":1069,"type":"kept","zone":"1/play","cards":["Haven","Quartermaster"]}
-{"seq":1078,"by":1066,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[…]}
-{"seq":1079,"by":1066,"type":"answer","seat":1,"indices":[0]}
-{"seq":1080,"by":1066,"type":"play","player":1,"card":"Outpost","from":"1/hand","to":"1/play"}
-{"seq":1081,"by":1080,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":1082,"by":1080,"type":"effect","id":8,"card":"Outpost","source":"Outpost","owner":1,"until":"end-of-turn"}
-{"seq":1083,"by":1080,"type":"effect","id":9,"card":"Outpost","source":"Outpost","owner":1,"until":"extra-turn","keeps":["Outpost"]}
-{"seq":1084,"by":1080,"type":"counter","counter":"next-hand","delta":-2,"value":3}
-{"seq":1085,"by":1080,"type":"kept","zone":"1/play","cards":["Haven","Outpost","Quartermaster"]}
-{"seq":1086,"by":1080,"type":"extra-turn","id":1,"player":1,"card":"Outpost","limit":"third-in-a-row","effect":9}
-{"seq":1087,"by":1061,"type":"phase","phase":"buy"}
-{"seq":1088,"by":1087,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[…]}
-{"seq":1089,"by":1087,"type":"answer","seat":1,"indices":[3]}
-{"seq":1090,"by":1061,"type":"phase","phase":"night"}
-{"seq":1091,"by":1061,"type":"phase","phase":"cleanup"}
-{"seq":1092,"by":1091,"type":"discard","player":1,"cards":["Curse","Gold","Smithy"],"from":"1/hand","to":"1/discard"}
-{"seq":1093,"by":1091,"type":"draw","player":1,"cards":["Copper","Copper","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":1094,"by":1061,"type":"turn-end","player":1}
-{"seq":1095,"by":1094,"type":"effect-end","id":8,"why":"expired"}
-{"seq":1096,"type":"effect-end","id":9,"why":"extra-turn"}
-{"seq":1097,"type":"kept","zone":"1/play","cards":["Haven","Quartermaster"]}
-{"seq":1098,"type":"turn","player":1,"number":15,"extra":"Outpost","kind":"extra","extraTurn":1}
-{"seq":1099,"by":1098,"type":"ask","seat":1,"prompt":"Start of your turn: choose which of your abilities resolves next (the others stay pending)","kind":"choose","purpose":"trigger","min":1,"max":1,"options":[…]}
-{"seq":1100,"by":1098,"type":"answer","seat":1,"indices":[0]}
-{"seq":1101,"by":1098,"type":"resolve","player":1,"card":"Haven","when":"start-turn","origin":1069}
-{"seq":1102,"by":1101,"type":"effect-end","id":7,"why":"resolved"}
-{"seq":1103,"by":1101,"type":"kept","zone":"1/play","cards":["Quartermaster"]}
-{"seq":1104,"by":1101,"type":"put","player":1,"cards":["Copper"],"from":"1/aside","to":"1/hand"}
+{"seq":1049,"by":1042,"type":"effect","id":7,"card":"Haven","source":"Haven","owner":1,"until":{"start-of-turn":1},"keeps":["Haven"],"holds":["Copper"]}
+{"seq":1050,"by":1042,"type":"kept","zone":"1/play","cards":["Haven","Quartermaster"]}
+{"seq":1051,"by":1039,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[…]}
+{"seq":1052,"by":1039,"type":"answer","seat":1,"indices":[0]}
+{"seq":1053,"by":1039,"type":"play","player":1,"card":"Outpost","from":"1/hand","to":"1/play"}
+{"seq":1054,"by":1053,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":1055,"by":1053,"type":"effect","id":8,"card":"Outpost","source":"Outpost","owner":1,"until":"end-of-turn"}
+{"seq":1056,"by":1053,"type":"effect","id":9,"card":"Outpost","source":"Outpost","owner":1,"until":"extra-turn","keeps":["Outpost"]}
+{"seq":1057,"by":1053,"type":"counter","counter":"next-hand","delta":-2,"value":3}
+{"seq":1058,"by":1053,"type":"kept","zone":"1/play","cards":["Haven","Outpost","Quartermaster"]}
+{"seq":1059,"by":1053,"type":"extra-turn","id":1,"player":1,"card":"Outpost","limit":"third-in-a-row","effect":9}
+{"seq":1060,"by":1034,"type":"phase","phase":"buy"}
+{"seq":1061,"by":1060,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[…]}
+{"seq":1062,"by":1060,"type":"answer","seat":1,"indices":[3]}
+{"seq":1063,"by":1034,"type":"phase","phase":"night"}
+{"seq":1064,"by":1034,"type":"phase","phase":"cleanup"}
+{"seq":1065,"by":1064,"type":"discard","player":1,"cards":["Curse","Gold","Smithy"],"from":"1/hand","to":"1/discard"}
+{"seq":1066,"by":1064,"type":"draw","player":1,"cards":["Copper","Copper","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":1067,"by":1034,"type":"turn-end","player":1}
+{"seq":1068,"by":1067,"type":"effect-end","id":8,"why":"expired"}
+{"seq":1069,"type":"effect-end","id":9,"why":"extra-turn"}
+{"seq":1070,"type":"kept","zone":"1/play","cards":["Haven","Quartermaster"]}
+{"seq":1071,"type":"turn","player":1,"number":15,"extra":"Outpost","kind":"extra","extraTurn":1}
+{"seq":1072,"by":1071,"type":"ask","seat":1,"prompt":"Start of your turn: choose which of your abilities resolves next (the others stay pending)","kind":"choose","purpose":"trigger","min":1,"max":1,"options":[…]}
+{"seq":1073,"by":1071,"type":"answer","seat":1,"indices":[0]}
+{"seq":1074,"by":1071,"type":"resolve","player":1,"card":"Haven","when":"start-turn","origin":1042}
+{"seq":1075,"by":1074,"type":"effect-end","id":7,"why":"resolved"}
+{"seq":1076,"by":1074,"type":"kept","zone":"1/play","cards":["Quartermaster"]}
+{"seq":1077,"by":1074,"type":"put","player":1,"cards":["Copper"],"from":"1/aside","to":"1/hand"}
 …
-{"seq":1137,"by":1136,"type":"discard","player":1,"cards":["Haven","Outpost","Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":1109,"by":1108,"type":"discard","player":1,"cards":["Haven","Outpost","Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
 ```
 
 Clean-up draws 3 (`next-hand`). The Outpost, kept in play by effect 9 until its extra turn
@@ -1371,7 +1361,7 @@ lists it (a token not had any more, the Journey token turned face up).
 at its place in order. Refused if `at` is a pile not in `piles`.
 
 ```json
-{"seq":1807,"by":1804,"type":"token","player":1,"token":"journey","at":"face-down"}
+{"seq":1733,"by":1730,"type":"token","player":1,"token":"journey","at":"face-down"}
 ```
 
 #### `holding`
@@ -1387,9 +1377,9 @@ holders leaves `holdings`). Refused if `from` doesn't hold it, `to` already does
 neither is given.
 
 ```jsonl
-{"seq":1815,"by":1814,"type":"holding","card":"Envious","to":0}
+{"seq":1741,"by":1740,"type":"holding","card":"Envious","to":0}
 …
-{"seq":1870,"by":1868,"type":"holding","card":"Envious","from":0}
+{"seq":1794,"by":1792,"type":"holding","card":"Envious","from":0}
 ```
 
 #### `pile`
@@ -1435,7 +1425,7 @@ ending, Ferry's token placed. Bridge played, from
 [`boons-hexes.events.jsonl`](examples/events/boons-hexes.events.jsonl):
 
 ```json
-{"seq":214,"by":209,"type":"derived","costs":{"Bard":{"coins":3},"Blessed Village":{"coins":3},"Bridge":{"coins":3},"Druid":{"coins":1},"Duchy":{"coins":4},"Estate":{"coins":1},"Flag Bearer":{"coins":3},"Gold":{"coins":5},"Market":{"coins":4},"Province":{"coins":7},"Ranger":{"coins":3},"Silver":{"coins":2},"Skulk":{"coins":3},"Smithy":{"coins":3},"Village":{"coins":2}}}
+{"seq":208,"by":203,"type":"derived","costs":{"Bard":{"coins":3},"Blessed Village":{"coins":3},"Bridge":{"coins":3},"Druid":{"coins":1},"Duchy":{"coins":4},"Estate":{"coins":1},"Flag Bearer":{"coins":3},"Gold":{"coins":5},"Market":{"coins":4},"Province":{"coins":7},"Ranger":{"coins":3},"Silver":{"coins":2},"Skulk":{"coins":3},"Smithy":{"coins":3},"Village":{"coins":2}}}
 ```
 
 ### Questions, answers and chance
@@ -1502,21 +1492,18 @@ followed by `game-end` with reason `resigned`. A named card is said to everyone 
 Chapel, from [`moat-chapel.events.jsonl`](examples/events/moat-chapel.events.jsonl):
 
 ```jsonl
-{"seq":1144,"by":1133,"type":"play","player":0,"card":"Chapel","from":"0/hand","to":"0/play"}
-{"seq":1145,"by":1144,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":1146,"by":1144,"type":"ask","seat":0,"prompt":"Chapel: choose up to 4 cards to trash","kind":"cards","purpose":"trash","source":"Chapel","min":0,"max":4,"options":[{"index":0,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Fortress","card":"Fortress","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Militia","card":"Militia","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"select","label":"Silver","card":"Silver","zone":"hand"}]}
-{"seq":1147,"by":1144,"type":"answer","seat":0,"indices":[2,3,1,4]}
-{"seq":1148,"by":1144,"type":"show","player":0,"cards":["Militia"],"zone":"0/hand"}
-{"seq":1149,"by":1144,"type":"trash","player":0,"cards":["Militia"],"from":"0/hand","to":"trash"}
-{"seq":1150,"by":1144,"type":"show","player":0,"cards":["Copper"],"zone":"0/hand"}
-{"seq":1151,"by":1144,"type":"trash","player":0,"cards":["Copper"],"from":"0/hand","to":"trash"}
+{"seq":1083,"by":1072,"type":"play","player":0,"card":"Chapel","from":"0/hand","to":"0/play"}
+{"seq":1084,"by":1083,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":1085,"by":1083,"type":"ask","seat":0,"prompt":"Chapel: choose up to 4 cards to trash","kind":"cards","purpose":"trash","source":"Chapel","min":0,"max":4,"options":[{"index":0,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Fortress","card":"Fortress","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Militia","card":"Militia","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"select","label":"Silver","card":"Silver","zone":"hand"}]}
+{"seq":1086,"by":1083,"type":"answer","seat":0,"indices":[2,3,1,4]}
+{"seq":1087,"by":1083,"type":"trash","player":0,"cards":["Militia","Copper","Fortress","Silver"],"from":"0/hand","to":"trash"}
 ```
 
 Ann chose Militia, a Copper, Fortress and Silver, in that order, and they are trashed in
 that order ([the rest](#resolve)).
 
 **What they are not.** No event names an `ask` or `answer` in `by` ([Causes](#causes)),
-and nothing else refers to them: the `trash` events above are by Chapel's `play`. A question is
+and nothing else refers to them: the `trash` above is by Chapel's `play`. A question is
 always the last event written before the game waits and its answer the first written
 after, so no move was ever merged across one ([One event per
 occurrence](#one-event-per-occurrence)). So dropping every `ask` and `answer` from a
@@ -1558,22 +1545,22 @@ shows: its new Kingdom and what that Kingdom's setup draws. From
 Mountain Shrine removes the last Sun:
 
 ```jsonl
-{"seq":418,"by":415,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
-{"seq":419,"by":418,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":420,"by":418,"type":"counter","counter":"sun","delta":-1,"value":0}
-{"seq":421,"by":418,"type":"receive","player":1,"card":"Divine Wind"}
-{"seq":422,"by":418,"type":"pile","pile":"pile/Young Witch","card":"Young Witch","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Young Witch","count":10}]}}
+{"seq":411,"by":408,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
+{"seq":412,"by":411,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":413,"by":411,"type":"counter","counter":"sun","delta":-1,"value":0}
+{"seq":414,"by":411,"type":"receive","player":1,"card":"Divine Wind"}
+{"seq":415,"by":411,"type":"pile","pile":"pile/Young Witch","card":"Young Witch","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Young Witch","count":10}]}}
 …
-{"seq":432,"by":418,"type":"pile","pile":"pile/Aristocrat","card":"Aristocrat","removed":true,"roles":[{"card":"Young Witch","role":"bane"}],"recipe":{"kind":"stacked","cards":[{"card":"Aristocrat","count":10}]}}
-{"seq":433,"by":418,"type":"chance","site":"kingdom","cards":["Dismantle","Jack of All Trades","Urchin","Druid","Archive","Settlers","Pilgrim","Raider","Shop","Conspirator"]}
-{"seq":434,"by":418,"type":"pile","pile":"pile/Dismantle","card":"Dismantle","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Dismantle","count":10}]}}
-{"seq":435,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":436,"by":418,"type":"derived","costs":{"Dismantle":{"coins":4}}}
+{"seq":425,"by":411,"type":"pile","pile":"pile/Aristocrat","card":"Aristocrat","removed":true,"roles":[{"card":"Young Witch","role":"bane"}],"recipe":{"kind":"stacked","cards":[{"card":"Aristocrat","count":10}]}}
+{"seq":426,"by":411,"type":"chance","site":"kingdom","cards":["Dismantle","Jack of All Trades","Urchin","Druid","Archive","Settlers","Pilgrim","Raider","Shop","Conspirator"]}
+{"seq":427,"by":411,"type":"pile","pile":"pile/Dismantle","card":"Dismantle","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Dismantle","count":10}]}}
+{"seq":428,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":429,"by":411,"type":"derived","costs":{"Dismantle":{"coins":4}}}
 …
-{"seq":567,"by":418,"type":"chance","site":"boons","cards":["The Sun's Gift","The Sky's Gift","The Earth's Gift","The Forest's Gift","The Wind's Gift","The Field's Gift","The River's Gift","The Sea's Gift","The Mountain's Gift","The Moon's Gift","The Flame's Gift","The Swamp's Gift"]}
-{"seq":568,"by":418,"type":"add","cards":["The Swamp's Gift","The Flame's Gift","The Moon's Gift","The Mountain's Gift","The Sea's Gift","The River's Gift","The Field's Gift","The Wind's Gift","The Forest's Gift","The Earth's Gift","The Sky's Gift","The Sun's Gift"],"to":"boons/deck"}
-{"seq":569,"by":418,"type":"chance","site":"choice","card":"Druid","cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"]}
-{"seq":570,"by":418,"type":"set-aside","player":1,"cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"],"from":"boons/deck","to":"boons/druid","pos":[0,8,0]}
+{"seq":560,"by":411,"type":"chance","site":"boons","cards":["The Sun's Gift","The Sky's Gift","The Earth's Gift","The Forest's Gift","The Wind's Gift","The Field's Gift","The River's Gift","The Sea's Gift","The Mountain's Gift","The Moon's Gift","The Flame's Gift","The Swamp's Gift"]}
+{"seq":561,"by":411,"type":"add","cards":["The Swamp's Gift","The Flame's Gift","The Moon's Gift","The Mountain's Gift","The Sea's Gift","The River's Gift","The Field's Gift","The Wind's Gift","The Forest's Gift","The Earth's Gift","The Sky's Gift","The Sun's Gift"],"to":"boons/deck"}
+{"seq":562,"by":411,"type":"chance","site":"choice","card":"Druid","cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"]}
+{"seq":563,"by":411,"type":"set-aside","player":1,"cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"],"from":"boons/deck","to":"boons/druid","pos":[0,8,0]}
 ```
 
 The Boons' deck is made with Druid in the new Kingdom, then Druid's three Boons are
@@ -1603,6 +1590,53 @@ They are there for the seat and public versions to be made from the full stream
 ([Not specified yet](#the-seat-and-public-versions)): to know when a card was seen, and
 when it can no longer be followed.
 
+#### When a sighting is written
+
+A sighting is written only when it says something no event next to it says. Moves show
+cards too, and who sees the cards of a move follows from the move alone (`What::seen` in
+`dominion_protocol::events`):
+
+| The move | Who sees its cards as they move |
+| --- | --- |
+| a `play`, `gain` or `reveal`; a move with `face` `up`; a move into a play area, the trash, a mat other than the Native Village mat, a player's Boons or Hexes, or a pile (or `aside/<card>` zone) not `hidden` | `everyone` |
+| any other move into a player's hand, or into their `aside`, `looking` or Native Village mat | that player |
+| any other | `nobody`, beyond who saw them already |
+
+A `discard` shows nothing by itself: Clean-up discards a hand unseen, and a discard pile
+shows only its top. So a hand discarded to Militia, which everyone sees, has its `show`.
+
+A `show` is written of the cards shown to its eyes (`to`, or everyone) but those it says
+nothing about:
+
+- cards those eyes see where they lie anyway: face up, in a zone whose cards lie face up (a
+  play area, the trash, a mat other than the Native Village mat, a player's Boons or
+  Hexes), on top of a pile not `hidden`; and, shown to their owner, cards in the owner's
+  hand, `aside`, `looking` or Native Village mat;
+- cards a move next to it shows those eyes: the move that has just brought them where they
+  are shown, or the move that takes them from there next.
+
+So a card trashed, gained, played or revealed, or a card looked at as it is taken off the
+deck, has no `show` of its own: its move says it. What is left is what no move says: cards
+seen where they stay (a hand revealed), cards seen as they go where their faces go out of
+sight (discarded from a hand, put onto a deck), cards shown to one player that their move
+doesn't show them, cards looked at without moving.
+
+**Cards moved together.** A `show` some cards need as they leave in one move (a hand
+discarded to Militia, each card seen as it goes) is written once, before the move, of all
+of them, and the move stays one event ([One event per
+occurrence](#one-event-per-occurrence)). Before it, not after: the cards are seen where
+they lie as they leave, and a reader that keeps what each viewer knows, as a seat's or the
+public version is made, has learned the faces before it writes the move, without looking
+ahead. Not a field of the move: who saw which cards where is what a `show` says, and one
+statement has one form.
+
+`dominion-engine`'s tests hold every stream of random games to this: no `show` is next to a
+move that shows its cards to the same eyes, no sighting repeats the one before it, every
+card the engine records shown that its eyes don't see where it lies and no move beside it
+shows them has its `show` (every hand revealed among them), every `gain` and `reveal` is of
+cards the engine showed, and cards the engine trashes or discards one after the other with
+nothing between that writes an event are one event.
+
 #### `show`
 
 Cards are seen where they lie, nothing moving.
@@ -1617,30 +1651,29 @@ Cards are seen where they lie, nothing moving.
 
 **Fold:** nothing changes. Refused when the cards don't lie where it says.
 
-The engine writes one wherever it records that players saw a card: a hand revealed where it
-lies (Bureaucrat's victim with no Victory card, Rats revealing a hand of Rats); a card
-revealed or looked at where it lies, or taken off a deck to be looked at (`to` its owner);
-cards a player looks at without moving them (the cards left on the deck over a shuffle,
-for Star Chart, Order of Astrologers or Stash; a discard pile looked through); and a card
-about to leave a hidden or stacked place where everyone sees which it is: each card
-trashed or discarded from a hand, the top card of a pile as it is gained, a card taken
-from among others in the trash or a discard pile. Cards of one zone shown to the same eyes
-one after the other are one `show`.
+The engine writes one wherever players see cards that no move beside it shows them
+([When a sighting is written](#when-a-sighting-is-written)): a hand revealed where it lies
+(Bureaucrat's victim with no Victory card, Rats revealing a hand of Rats), a Reaction
+revealed (Moat); cards a player looks at without moving them (the cards left on the deck
+over a shuffle, for Star Chart, Order of Astrologers or Stash; a discard pile looked
+through, `to` its owner); cards everyone sees as a move that hides them takes them (a hand
+discarded to Militia, a card looked at and then discarded, a card revealed from a discard
+pile and put onto the deck). Cards of one zone shown to the same eyes one after the other
+are one `show`, and cards shown twice in a row (revealed, then seen again as they are
+discarded) are shown once.
 
 Bureaucrat played against a hand with no Victory card, from
 [`necromancer-star-chart.events.jsonl`](examples/events/necromancer-star-chart.events.jsonl):
 
 ```jsonl
-{"seq":1068,"by":1065,"type":"play","player":0,"card":"Bureaucrat","from":"0/hand","to":"0/play"}
-{"seq":1069,"by":1068,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":1070,"by":1068,"type":"show","player":0,"cards":["Silver"],"zone":"pile/Silver","pos":[0]}
-{"seq":1071,"by":1068,"type":"gain","player":0,"cards":["Silver"],"from":"pile/Silver","to":"0/deck"}
-{"seq":1072,"by":1068,"type":"show","player":1,"cards":["Copper","Copper","Rats","Rats","Smithy"],"zone":"1/hand"}
-{"seq":1073,"by":1068,"type":"show","player":1,"cards":["Copper","Copper","Rats","Rats","Smithy"],"zone":"1/hand"}
+{"seq":1023,"by":1020,"type":"play","player":0,"card":"Bureaucrat","from":"0/hand","to":"0/play"}
+{"seq":1024,"by":1023,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":1025,"by":1023,"type":"gain","player":0,"cards":["Silver"],"from":"pile/Silver","to":"0/deck"}
+{"seq":1026,"by":1023,"type":"show","player":1,"cards":["Copper","Copper","Rats","Rats","Smithy"],"zone":"1/hand"}
 ```
 
-The hand is shown twice today: once as each card is revealed, once as the hand is
-([Known gaps](#known-gaps)).
+The Silver's `gain` (1025) shows it to everyone; the hand, revealed where it stays, needs
+its `show` (1026).
 
 #### `mix`
 
@@ -1659,9 +1692,9 @@ Survivors' two cards put back in any order, from
 [`inherited.events.jsonl`](examples/events/inherited.events.jsonl):
 
 ```jsonl
-{"seq":205,"by":197,"type":"choose","player":0,"source":"Survivors","choices":["Put them back in any order"]}
-{"seq":206,"by":197,"type":"mix","zone":"0/looking","cards":["Copper","Copper"]}
-{"seq":207,"by":197,"type":"topdeck","player":0,"cards":["Copper","Copper"],"from":"0/looking","to":"0/deck"}
+{"seq":193,"by":188,"type":"choose","player":0,"source":"Survivors","choices":["Put them back in any order"]}
+{"seq":194,"by":188,"type":"mix","zone":"0/looking","cards":["Copper","Copper"]}
+{"seq":195,"by":188,"type":"topdeck","player":0,"cards":["Copper","Copper"],"from":"0/looking","to":"0/deck"}
 ```
 
 ## Replay
@@ -2056,8 +2089,10 @@ not say goes beyond faces. These are known; the versions are not designed in det
 - **What was seen, and when it was lost track of.** The full stream has it now: `show`
   says who saw which cards where, and `mix` when nobody can follow which is which any
   more. A masked version needs both to decide when a card can be written by name for a
-  viewer and when it must become `?`. What a seat's or the public version hides of `show`,
-  `mix`, `face` and `kept` themselves is not decided.
+  viewer and when it must become `?`, together with who sees a move's cards by the move
+  alone ([When a sighting is written](#when-a-sighting-is-written)), which is why the full
+  stream writes no `show` a move already says. What a seat's or the public version hides
+  of `show`, `mix`, `face` and `kept` themselves is not decided.
 - **Deduction stays out.** What a seat can work out is for a knowledge model reading the
   stream, not for the stream.
 
@@ -2122,16 +2157,6 @@ to the game, and no version of the stream will carry them.
   by design ([Causes](#causes)). Spending Coffers and Villagers and paying off Debt have
   no occurrence of their own: their counters are by the phase. The `hand-plays` counter
   changes before the `play` it counts is written, so it names the phase.
-- **A `show` splits moves that belong together.** The engine shows a card leaving a hand,
-  a discard pile or a deck where everyone sees it as it moves, one card at a time, and a
-  `show` between two moves keeps them apart. So cards trashed or discarded together from a
-  hand are an event each, each after its `show` (Chapel's, a hand discarded to Militia),
-  and so are cards a single effect takes one after the other with a `show` or a look
-  between (Bad Omens' Coppers, a look at several cards, each followed by a `show` to its
-  owner). Every card is still placed right and every ability names its card, but `index`
-  is never written for them and the stream has more events than occurrences. The same
-  source writes a `show` of a pile's top card before every gain from it, which says
-  nothing the gain doesn't, and a hand revealed to Bureaucrat twice.
 - **A placed Stash and a later pick.** A Stash placed by its own ability keeps its place
   when a later Star Chart pick has the other cards shuffled again, but which copy the
   pick takes can shift that place by one, which a player looking through the cards would

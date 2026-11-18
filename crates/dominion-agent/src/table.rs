@@ -166,7 +166,7 @@ enum Recording {
 /// Bump it whenever either changes what it keeps or what that means: a table saved with
 /// another version stops recording when it is loaded rather than go on from state this
 /// build would misread.
-pub const RECORDING_VERSION: u32 = 1;
+pub const RECORDING_VERSION: u32 = 2;
 
 impl Serialize for Recording {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {

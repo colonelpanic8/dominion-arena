@@ -1399,7 +1399,66 @@ pub struct Show {
     pub to: Option<u8>,
 }
 
+/// Who sees the faces of the cards a move moves, by the move alone: a `show` of them
+/// beside it, to eyes that see them anyway, says nothing ([`What::seen`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Seen {
+    Everyone,
+    /// That seat only: the owner of a hand, a set-aside zone, `looking` or the Native
+    /// Village mat the cards go to face down.
+    Seat(u8),
+    /// Nobody but who saw them already.
+    Nobody,
+}
+
+impl Seen {
+    /// Whether these eyes include those of a `show` to `to` (everyone when `None`).
+    pub fn covers(self, to: Option<u8>) -> bool {
+        match (self, to) {
+            (Seen::Everyone, _) => true,
+            (Seen::Seat(s), Some(t)) => s == t,
+            _ => false,
+        }
+    }
+}
+
 impl What {
+    /// Who sees the cards of this move as it moves them, `table` being the table before
+    /// or after it: everyone for a `play`, a `gain` and a `reveal`, and for cards that
+    /// arrive face up or where every card lies face up (a play area, the trash, a mat other
+    /// than the Native Village mat, a pile not hidden, a player's Boons or Hexes); the
+    /// owner alone for cards going face down into their hand, set-aside zone, `looking` or
+    /// Native Village mat; otherwise nobody. A discard is no public move: Clean-up
+    /// discards a hand unseen. `None` for an event that is no move.
+    pub fn seen(&self, table: &Table) -> Option<Seen> {
+        if let What::Play(_) = self {
+            return Some(Seen::Everyone);
+        }
+        let (verb, m) = self.as_move()?;
+        let public_pile = |zone: &Zone| table.piles.get(zone).is_some_and(|p| !p.hidden);
+        Some(match &m.to {
+            _ if matches!(verb, Verb::Gain | Verb::Reveal) || m.face == Some(Face::Up) => {
+                Seen::Everyone
+            }
+            Zone::Trash
+            | Zone::Seat(
+                _,
+                SeatZone::Play
+                | SeatZone::Tavern
+                | SeatZone::Island
+                | SeatZone::Exile
+                | SeatZone::Boons
+                | SeatZone::Hexes,
+            ) => Seen::Everyone,
+            to @ (Zone::Pile(_) | Zone::Aside(_)) if public_pile(to) => Seen::Everyone,
+            Zone::Seat(
+                s,
+                SeatZone::Hand | SeatZone::Aside | SeatZone::Looking | SeatZone::NativeVillage,
+            ) => Seen::Seat(*s),
+            _ => Seen::Nobody,
+        })
+    }
+
     pub fn moved(verb: Verb, m: Move) -> What {
         match verb {
             Verb::Draw => What::Draw(m),

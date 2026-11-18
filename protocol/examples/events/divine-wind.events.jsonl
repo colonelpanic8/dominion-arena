@@ -25,709 +25,701 @@
 {"seq":23,"by":22,"type":"counter","counter":"buys","delta":-1,"value":0}
 {"seq":24,"by":22,"type":"counter","counter":"bought","delta":1,"value":1}
 {"seq":25,"by":22,"type":"counter","counter":"0/debt","delta":5,"value":5}
-{"seq":26,"by":22,"type":"show","player":0,"cards":["Mountain Shrine"],"zone":"pile/Mountain Shrine","pos":[0]}
-{"seq":27,"by":22,"type":"gain","player":0,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"0/discard"}
-{"seq":28,"by":7,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":29,"by":7,"type":"answer","seat":0,"indices":[0]}
-{"seq":30,"by":7,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":31,"by":7,"type":"counter","counter":"0/debt","delta":-1,"value":4}
-{"seq":32,"by":7,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":33,"by":7,"type":"answer","seat":0,"indices":[0]}
-{"seq":34,"by":7,"type":"counter","counter":"coins","delta":-1,"value":1}
-{"seq":35,"by":7,"type":"counter","counter":"0/debt","delta":-1,"value":3}
-{"seq":36,"by":7,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":37,"by":7,"type":"answer","seat":0,"indices":[1]}
-{"seq":38,"by":5,"type":"phase","phase":"night"}
-{"seq":39,"by":38,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":40,"by":38,"type":"answer","seat":0,"indices":[0]}
-{"seq":41,"by":38,"type":"counter","counter":"coins","delta":-1,"value":0}
-{"seq":42,"by":38,"type":"counter","counter":"0/debt","delta":-1,"value":2}
-{"seq":43,"by":5,"type":"phase","phase":"cleanup"}
-{"seq":44,"by":43,"type":"discard","player":0,"cards":["Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":45,"by":43,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
-{"seq":46,"by":43,"type":"draw","player":0,"cards":["Copper","Copper","Estate","Copper","Copper"],"from":"0/deck","to":"0/hand"}
-{"seq":47,"by":5,"type":"turn-end","player":0}
-{"seq":48,"type":"turn","player":1,"number":1,"kind":"regular"}
-{"seq":49,"by":48,"type":"phase","phase":"action"}
-{"seq":50,"by":48,"type":"phase","phase":"buy"}
-{"seq":51,"by":50,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":5,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":6,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":52,"by":50,"type":"answer","seat":1,"indices":[0]}
-{"seq":53,"by":50,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":54,"by":53,"type":"counter","counter":"coins","delta":1,"value":1}
-{"seq":55,"by":50,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":56,"by":50,"type":"answer","seat":1,"indices":[0]}
-{"seq":57,"by":50,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":58,"by":57,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":59,"by":50,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":60,"by":50,"type":"answer","seat":1,"indices":[0]}
-{"seq":61,"by":50,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":62,"by":61,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":63,"by":50,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Silver ($3)","card":"Silver","cost":{"coins":3}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"buy","label":"Buy Village ($3)","card":"Village","cost":{"coins":3}},{"index":6,"group":0,"action":"buy","label":"Buy Aristocrat ($3)","card":"Aristocrat","cost":{"coins":3}},{"index":7,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":64,"by":50,"type":"answer","seat":1,"indices":[4]}
-{"seq":65,"by":50,"type":"buy","player":1,"card":"Mountain Shrine"}
-{"seq":66,"by":65,"type":"counter","counter":"buys","delta":-1,"value":0}
-{"seq":67,"by":65,"type":"counter","counter":"bought","delta":1,"value":1}
-{"seq":68,"by":65,"type":"counter","counter":"1/debt","delta":5,"value":5}
-{"seq":69,"by":65,"type":"show","player":1,"cards":["Mountain Shrine"],"zone":"pile/Mountain Shrine","pos":[0]}
-{"seq":70,"by":65,"type":"gain","player":1,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"1/discard"}
-{"seq":71,"by":50,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":72,"by":50,"type":"answer","seat":1,"indices":[0]}
-{"seq":73,"by":50,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":74,"by":50,"type":"counter","counter":"1/debt","delta":-1,"value":4}
-{"seq":75,"by":50,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":76,"by":50,"type":"answer","seat":1,"indices":[0]}
-{"seq":77,"by":50,"type":"counter","counter":"coins","delta":-1,"value":1}
-{"seq":78,"by":50,"type":"counter","counter":"1/debt","delta":-1,"value":3}
-{"seq":79,"by":50,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":80,"by":50,"type":"answer","seat":1,"indices":[0]}
-{"seq":81,"by":50,"type":"counter","counter":"coins","delta":-1,"value":0}
-{"seq":82,"by":50,"type":"counter","counter":"1/debt","delta":-1,"value":2}
-{"seq":83,"by":48,"type":"phase","phase":"night"}
-{"seq":84,"by":48,"type":"phase","phase":"cleanup"}
-{"seq":85,"by":84,"type":"discard","player":1,"cards":["Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":86,"by":84,"type":"discard","player":1,"cards":["Estate","Estate"],"from":"1/hand","to":"1/discard"}
-{"seq":87,"by":84,"type":"draw","player":1,"cards":["Copper","Estate","Copper","Copper","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":88,"by":48,"type":"turn-end","player":1}
-{"seq":89,"type":"turn","player":0,"number":2,"kind":"regular"}
-{"seq":90,"by":89,"type":"phase","phase":"action"}
-{"seq":91,"by":89,"type":"phase","phase":"buy"}
-{"seq":92,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":93,"by":91,"type":"answer","seat":0,"indices":[0]}
-{"seq":94,"by":91,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":95,"by":94,"type":"counter","counter":"coins","delta":1,"value":1}
-{"seq":96,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":97,"by":91,"type":"answer","seat":0,"indices":[1]}
-{"seq":98,"by":91,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":99,"by":98,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":100,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":101,"by":91,"type":"answer","seat":0,"indices":[1]}
-{"seq":102,"by":91,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":103,"by":102,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":104,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":105,"by":91,"type":"answer","seat":0,"indices":[0]}
-{"seq":106,"by":91,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":107,"by":106,"type":"counter","counter":"coins","delta":1,"value":4}
-{"seq":108,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":109,"by":91,"type":"answer","seat":0,"indices":[0]}
-{"seq":110,"by":91,"type":"counter","counter":"coins","delta":-1,"value":3}
-{"seq":111,"by":91,"type":"counter","counter":"0/debt","delta":-1,"value":1}
-{"seq":112,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":113,"by":91,"type":"answer","seat":0,"indices":[0]}
-{"seq":114,"by":91,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":115,"by":91,"type":"counter","counter":"0/debt","delta":-1,"value":0}
-{"seq":116,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":2,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":3,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":117,"by":91,"type":"answer","seat":0,"indices":[3]}
-{"seq":118,"by":91,"type":"buy","player":0,"card":"Mountain Shrine"}
-{"seq":119,"by":118,"type":"counter","counter":"buys","delta":-1,"value":0}
-{"seq":120,"by":118,"type":"counter","counter":"bought","delta":1,"value":1}
-{"seq":121,"by":118,"type":"counter","counter":"0/debt","delta":5,"value":5}
-{"seq":122,"by":118,"type":"show","player":0,"cards":["Mountain Shrine"],"zone":"pile/Mountain Shrine","pos":[0]}
-{"seq":123,"by":118,"type":"gain","player":0,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"0/discard"}
-{"seq":124,"by":91,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":125,"by":91,"type":"answer","seat":0,"indices":[1]}
-{"seq":126,"by":89,"type":"phase","phase":"night"}
-{"seq":127,"by":126,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":128,"by":126,"type":"answer","seat":0,"indices":[0]}
-{"seq":129,"by":126,"type":"counter","counter":"coins","delta":-1,"value":1}
-{"seq":130,"by":126,"type":"counter","counter":"0/debt","delta":-1,"value":4}
-{"seq":131,"by":126,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":132,"by":126,"type":"answer","seat":0,"indices":[1]}
-{"seq":133,"by":89,"type":"phase","phase":"cleanup"}
-{"seq":134,"by":133,"type":"discard","player":0,"cards":["Copper","Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":135,"by":133,"type":"discard","player":0,"cards":["Estate"],"from":"0/hand","to":"0/discard"}
-{"seq":136,"by":133,"type":"shuffle","player":0,"cards":["Copper","Estate","Estate","Copper","Mountain Shrine","Copper","Copper","Copper","Mountain Shrine","Estate","Copper","Copper"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[1,0,4,0,2,0,0,1,3,0,0,0]}
-{"seq":137,"by":133,"type":"draw","player":0,"cards":["Copper","Estate","Estate","Copper","Mountain Shrine"],"from":"0/deck","to":"0/hand"}
-{"seq":138,"by":89,"type":"turn-end","player":0}
-{"seq":139,"type":"turn","player":1,"number":2,"kind":"regular"}
-{"seq":140,"by":139,"type":"phase","phase":"action"}
-{"seq":141,"by":139,"type":"phase","phase":"buy"}
-{"seq":142,"by":141,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":143,"by":141,"type":"answer","seat":1,"indices":[0]}
-{"seq":144,"by":141,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":145,"by":144,"type":"counter","counter":"coins","delta":1,"value":1}
-{"seq":146,"by":141,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":147,"by":141,"type":"answer","seat":1,"indices":[0]}
-{"seq":148,"by":141,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":149,"by":148,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":150,"by":141,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":151,"by":141,"type":"answer","seat":1,"indices":[0]}
-{"seq":152,"by":141,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":153,"by":152,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":154,"by":141,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":155,"by":141,"type":"answer","seat":1,"indices":[0]}
-{"seq":156,"by":141,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":157,"by":156,"type":"counter","counter":"coins","delta":1,"value":4}
-{"seq":158,"by":141,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":159,"by":141,"type":"answer","seat":1,"indices":[1]}
-{"seq":160,"by":139,"type":"phase","phase":"night"}
-{"seq":161,"by":160,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":162,"by":160,"type":"answer","seat":1,"indices":[1]}
-{"seq":163,"by":139,"type":"phase","phase":"cleanup"}
-{"seq":164,"by":163,"type":"discard","player":1,"cards":["Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":165,"by":163,"type":"discard","player":1,"cards":["Estate"],"from":"1/hand","to":"1/discard"}
-{"seq":166,"by":163,"type":"shuffle","player":1,"cards":["Copper","Mountain Shrine","Copper","Copper","Copper","Estate","Copper","Estate","Estate","Copper","Copper"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[1,9,1,1,1,0,2,0,0,0,0]}
-{"seq":167,"by":163,"type":"draw","player":1,"cards":["Copper","Mountain Shrine","Copper","Copper","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":168,"by":139,"type":"turn-end","player":1}
-{"seq":169,"type":"turn","player":0,"number":3,"kind":"regular"}
-{"seq":170,"by":169,"type":"phase","phase":"action"}
-{"seq":171,"by":170,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":172,"by":170,"type":"answer","seat":0,"indices":[0]}
-{"seq":173,"by":170,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
-{"seq":174,"by":173,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":175,"by":173,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":176,"by":173,"type":"counter","counter":"sun","delta":-1,"value":4}
-{"seq":177,"by":173,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"}]}
-{"seq":178,"by":173,"type":"answer","seat":0,"indices":[3]}
-{"seq":179,"by":173,"type":"show","player":0,"cards":["Copper"],"zone":"0/hand"}
-{"seq":180,"by":173,"type":"trash","player":0,"cards":["Copper"],"from":"0/hand","to":"trash"}
-{"seq":181,"by":169,"type":"phase","phase":"buy"}
-{"seq":182,"by":181,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":183,"by":181,"type":"answer","seat":0,"indices":[0]}
-{"seq":184,"by":181,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":185,"by":184,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":186,"by":181,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":187,"by":181,"type":"answer","seat":0,"indices":[1]}
-{"seq":188,"by":169,"type":"phase","phase":"night"}
-{"seq":189,"by":188,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":190,"by":188,"type":"answer","seat":0,"indices":[1]}
-{"seq":191,"by":169,"type":"phase","phase":"cleanup"}
-{"seq":192,"by":191,"type":"discard","player":0,"cards":["Mountain Shrine","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":193,"by":191,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
-{"seq":194,"by":191,"type":"draw","player":0,"cards":["Copper","Copper","Copper","Mountain Shrine","Estate"],"from":"0/deck","to":"0/hand"}
-{"seq":195,"by":169,"type":"turn-end","player":0}
-{"seq":196,"type":"turn","player":1,"number":3,"kind":"regular"}
-{"seq":197,"by":196,"type":"phase","phase":"action"}
-{"seq":198,"by":197,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":199,"by":197,"type":"answer","seat":1,"indices":[0]}
-{"seq":200,"by":197,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
-{"seq":201,"by":200,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":202,"by":200,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":203,"by":200,"type":"counter","counter":"sun","delta":-1,"value":3}
-{"seq":204,"by":200,"type":"ask","seat":1,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"}]}
-{"seq":205,"by":200,"type":"answer","seat":1,"indices":[]}
-{"seq":206,"by":196,"type":"phase","phase":"buy"}
-{"seq":207,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":208,"by":206,"type":"answer","seat":1,"indices":[3]}
-{"seq":209,"by":206,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":210,"by":209,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":211,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":212,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":213,"by":206,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":214,"by":213,"type":"counter","counter":"coins","delta":1,"value":4}
-{"seq":215,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":216,"by":206,"type":"answer","seat":1,"indices":[1]}
-{"seq":217,"by":206,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":218,"by":217,"type":"counter","counter":"coins","delta":1,"value":5}
-{"seq":219,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":220,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":221,"by":206,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":222,"by":221,"type":"counter","counter":"coins","delta":1,"value":6}
-{"seq":223,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":224,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":225,"by":206,"type":"counter","counter":"coins","delta":-1,"value":5}
-{"seq":226,"by":206,"type":"counter","counter":"1/debt","delta":-1,"value":1}
-{"seq":227,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":228,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":229,"by":206,"type":"counter","counter":"coins","delta":-1,"value":4}
-{"seq":230,"by":206,"type":"counter","counter":"1/debt","delta":-1,"value":0}
-{"seq":231,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Silver ($3)","card":"Silver","cost":{"coins":3}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Young Witch ($4)","card":"Young Witch","cost":{"coins":4}},{"index":5,"group":0,"action":"buy","label":"Buy Rustic Village ($4)","card":"Rustic Village","cost":{"coins":4}},{"index":6,"group":0,"action":"buy","label":"Buy Poet ($4)","card":"Poet","cost":{"coins":4}},{"index":7,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":8,"group":0,"action":"buy","label":"Buy River Shrine ($4)","card":"River Shrine","cost":{"coins":4}},{"index":9,"group":0,"action":"buy","label":"Buy Village ($3)","card":"Village","cost":{"coins":3}},{"index":10,"group":0,"action":"buy","label":"Buy Smithy ($4)","card":"Smithy","cost":{"coins":4}},{"index":11,"group":0,"action":"buy","label":"Buy Aristocrat ($3)","card":"Aristocrat","cost":{"coins":3}},{"index":12,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":232,"by":206,"type":"answer","seat":1,"indices":[7]}
-{"seq":233,"by":206,"type":"buy","player":1,"card":"Mountain Shrine"}
-{"seq":234,"by":233,"type":"counter","counter":"buys","delta":-1,"value":0}
-{"seq":235,"by":233,"type":"counter","counter":"bought","delta":1,"value":1}
-{"seq":236,"by":233,"type":"counter","counter":"1/debt","delta":5,"value":5}
-{"seq":237,"by":233,"type":"show","player":1,"cards":["Mountain Shrine"],"zone":"pile/Mountain Shrine","pos":[0]}
-{"seq":238,"by":233,"type":"gain","player":1,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"1/discard"}
-{"seq":239,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":240,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":241,"by":206,"type":"counter","counter":"coins","delta":-1,"value":3}
-{"seq":242,"by":206,"type":"counter","counter":"1/debt","delta":-1,"value":4}
-{"seq":243,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":244,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":245,"by":206,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":246,"by":206,"type":"counter","counter":"1/debt","delta":-1,"value":3}
-{"seq":247,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":248,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":249,"by":206,"type":"counter","counter":"coins","delta":-1,"value":1}
-{"seq":250,"by":206,"type":"counter","counter":"1/debt","delta":-1,"value":2}
-{"seq":251,"by":206,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":252,"by":206,"type":"answer","seat":1,"indices":[0]}
-{"seq":253,"by":206,"type":"counter","counter":"coins","delta":-1,"value":0}
-{"seq":254,"by":206,"type":"counter","counter":"1/debt","delta":-1,"value":1}
-{"seq":255,"by":196,"type":"phase","phase":"night"}
-{"seq":256,"by":196,"type":"phase","phase":"cleanup"}
-{"seq":257,"by":256,"type":"discard","player":1,"cards":["Mountain Shrine","Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":258,"by":256,"type":"draw","player":1,"cards":["Estate","Copper","Estate","Estate","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":259,"by":196,"type":"turn-end","player":1}
-{"seq":260,"type":"turn","player":0,"number":4,"kind":"regular"}
-{"seq":261,"by":260,"type":"phase","phase":"action"}
-{"seq":262,"by":261,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":263,"by":261,"type":"answer","seat":0,"indices":[0]}
-{"seq":264,"by":261,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
-{"seq":265,"by":264,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":266,"by":264,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":267,"by":264,"type":"counter","counter":"sun","delta":-1,"value":2}
-{"seq":268,"by":264,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"}]}
-{"seq":269,"by":264,"type":"answer","seat":0,"indices":[1]}
-{"seq":270,"by":264,"type":"show","player":0,"cards":["Copper"],"zone":"0/hand"}
-{"seq":271,"by":264,"type":"trash","player":0,"cards":["Copper"],"from":"0/hand","to":"trash"}
-{"seq":272,"by":260,"type":"phase","phase":"buy"}
-{"seq":273,"by":272,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":274,"by":272,"type":"answer","seat":0,"indices":[0]}
-{"seq":275,"by":272,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":276,"by":275,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":277,"by":272,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":278,"by":272,"type":"answer","seat":0,"indices":[2]}
-{"seq":279,"by":260,"type":"phase","phase":"night"}
-{"seq":280,"by":279,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":281,"by":279,"type":"answer","seat":0,"indices":[0]}
-{"seq":282,"by":279,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":283,"by":279,"type":"counter","counter":"0/debt","delta":-1,"value":3}
-{"seq":284,"by":279,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":285,"by":279,"type":"answer","seat":0,"indices":[1]}
-{"seq":286,"by":260,"type":"phase","phase":"cleanup"}
-{"seq":287,"by":286,"type":"discard","player":0,"cards":["Mountain Shrine","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":288,"by":286,"type":"discard","player":0,"cards":["Copper","Estate"],"from":"0/hand","to":"0/discard"}
-{"seq":289,"by":286,"type":"shuffle","player":0,"cards":["Estate","Mountain Shrine","Mountain Shrine","Copper","Copper","Estate","Estate","Copper"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[0,2,5,0,0,0,0,0]}
-{"seq":290,"by":286,"type":"draw","player":0,"cards":["Copper","Copper","Estate","Mountain Shrine","Mountain Shrine"],"from":"0/deck","to":"0/hand"}
-{"seq":291,"by":260,"type":"turn-end","player":0}
-{"seq":292,"type":"turn","player":1,"number":4,"kind":"regular"}
-{"seq":293,"by":292,"type":"phase","phase":"action"}
-{"seq":294,"by":292,"type":"phase","phase":"buy"}
-{"seq":295,"by":294,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":296,"by":294,"type":"answer","seat":1,"indices":[0]}
-{"seq":297,"by":294,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":298,"by":297,"type":"counter","counter":"coins","delta":1,"value":1}
-{"seq":299,"by":294,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":300,"by":294,"type":"answer","seat":1,"indices":[0]}
-{"seq":301,"by":294,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":302,"by":301,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":303,"by":294,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":304,"by":294,"type":"answer","seat":1,"indices":[1]}
-{"seq":305,"by":292,"type":"phase","phase":"night"}
-{"seq":306,"by":305,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":307,"by":305,"type":"answer","seat":1,"indices":[0]}
-{"seq":308,"by":305,"type":"counter","counter":"coins","delta":-1,"value":1}
-{"seq":309,"by":305,"type":"counter","counter":"1/debt","delta":-1,"value":0}
-{"seq":310,"by":292,"type":"phase","phase":"cleanup"}
-{"seq":311,"by":310,"type":"discard","player":1,"cards":["Copper","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":312,"by":310,"type":"discard","player":1,"cards":["Estate","Estate","Estate"],"from":"1/hand","to":"1/discard"}
-{"seq":313,"by":310,"type":"shuffle","player":1,"cards":["Estate","Estate","Copper","Copper","Copper","Estate","Copper","Mountain Shrine","Mountain Shrine","Copper","Copper"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[0,0,1,1,1,0,0,2,2,0,0]}
-{"seq":314,"by":310,"type":"draw","player":1,"cards":["Copper","Estate","Estate","Copper","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":315,"by":292,"type":"turn-end","player":1}
-{"seq":316,"type":"turn","player":0,"number":5,"kind":"regular"}
-{"seq":317,"by":316,"type":"phase","phase":"action"}
-{"seq":318,"by":317,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":319,"by":317,"type":"answer","seat":0,"indices":[0]}
-{"seq":320,"by":317,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
-{"seq":321,"by":320,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":322,"by":320,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":323,"by":320,"type":"counter","counter":"sun","delta":-1,"value":1}
-{"seq":324,"by":320,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"}]}
-{"seq":325,"by":320,"type":"answer","seat":0,"indices":[]}
-{"seq":326,"by":317,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":327,"by":317,"type":"answer","seat":0,"indices":[0]}
-{"seq":328,"by":317,"type":"counter","counter":"coins","delta":-1,"value":1}
-{"seq":329,"by":317,"type":"counter","counter":"0/debt","delta":-1,"value":2}
-{"seq":330,"by":317,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":331,"by":317,"type":"answer","seat":0,"indices":[1]}
-{"seq":332,"by":316,"type":"phase","phase":"buy"}
-{"seq":333,"by":332,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":334,"by":332,"type":"answer","seat":0,"indices":[1]}
-{"seq":335,"by":332,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":336,"by":335,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":337,"by":332,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":338,"by":332,"type":"answer","seat":0,"indices":[0]}
-{"seq":339,"by":332,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":340,"by":339,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":341,"by":332,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":342,"by":332,"type":"answer","seat":0,"indices":[1]}
-{"seq":343,"by":316,"type":"phase","phase":"night"}
-{"seq":344,"by":343,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":345,"by":343,"type":"answer","seat":0,"indices":[1]}
-{"seq":346,"by":316,"type":"phase","phase":"cleanup"}
-{"seq":347,"by":346,"type":"discard","player":0,"cards":["Mountain Shrine","Copper","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":348,"by":346,"type":"discard","player":0,"cards":["Estate","Mountain Shrine"],"from":"0/hand","to":"0/discard"}
-{"seq":349,"by":346,"type":"draw","player":0,"cards":["Copper","Copper","Estate","Estate","Copper"],"from":"0/deck","to":"0/hand"}
-{"seq":350,"by":316,"type":"turn-end","player":0}
-{"seq":351,"type":"turn","player":1,"number":5,"kind":"regular"}
-{"seq":352,"by":351,"type":"phase","phase":"action"}
-{"seq":353,"by":351,"type":"phase","phase":"buy"}
-{"seq":354,"by":353,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":5,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":6,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":355,"by":353,"type":"answer","seat":1,"indices":[1]}
-{"seq":356,"by":353,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":357,"by":356,"type":"counter","counter":"coins","delta":1,"value":1}
-{"seq":358,"by":353,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":359,"by":353,"type":"answer","seat":1,"indices":[1]}
-{"seq":360,"by":353,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":361,"by":360,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":362,"by":353,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":363,"by":353,"type":"answer","seat":1,"indices":[0]}
-{"seq":364,"by":353,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":365,"by":364,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":366,"by":353,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Silver ($3)","card":"Silver","cost":{"coins":3}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"buy","label":"Buy Village ($3)","card":"Village","cost":{"coins":3}},{"index":6,"group":0,"action":"buy","label":"Buy Aristocrat ($3)","card":"Aristocrat","cost":{"coins":3}},{"index":7,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":367,"by":353,"type":"answer","seat":1,"indices":[4]}
-{"seq":368,"by":353,"type":"buy","player":1,"card":"Mountain Shrine"}
-{"seq":369,"by":368,"type":"counter","counter":"buys","delta":-1,"value":0}
-{"seq":370,"by":368,"type":"counter","counter":"bought","delta":1,"value":1}
-{"seq":371,"by":368,"type":"counter","counter":"1/debt","delta":5,"value":5}
-{"seq":372,"by":368,"type":"show","player":1,"cards":["Mountain Shrine"],"zone":"pile/Mountain Shrine","pos":[0]}
-{"seq":373,"by":368,"type":"gain","player":1,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"1/discard"}
-{"seq":374,"by":353,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":375,"by":353,"type":"answer","seat":1,"indices":[0]}
-{"seq":376,"by":353,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":377,"by":353,"type":"counter","counter":"1/debt","delta":-1,"value":4}
-{"seq":378,"by":353,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":379,"by":353,"type":"answer","seat":1,"indices":[1]}
-{"seq":380,"by":351,"type":"phase","phase":"night"}
-{"seq":381,"by":380,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":382,"by":380,"type":"answer","seat":1,"indices":[1]}
-{"seq":383,"by":351,"type":"phase","phase":"cleanup"}
-{"seq":384,"by":383,"type":"discard","player":1,"cards":["Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":385,"by":383,"type":"discard","player":1,"cards":["Estate","Estate"],"from":"1/hand","to":"1/discard"}
-{"seq":386,"by":383,"type":"draw","player":1,"cards":["Copper","Estate","Copper","Mountain Shrine","Mountain Shrine"],"from":"1/deck","to":"1/hand"}
-{"seq":387,"by":351,"type":"turn-end","player":1}
-{"seq":388,"type":"turn","player":0,"number":6,"kind":"regular"}
-{"seq":389,"by":388,"type":"phase","phase":"action"}
-{"seq":390,"by":388,"type":"phase","phase":"buy"}
-{"seq":391,"by":390,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":392,"by":390,"type":"answer","seat":0,"indices":[0]}
-{"seq":393,"by":390,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":394,"by":393,"type":"counter","counter":"coins","delta":1,"value":1}
-{"seq":395,"by":390,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":396,"by":390,"type":"answer","seat":0,"indices":[1]}
-{"seq":397,"by":390,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":398,"by":397,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":399,"by":390,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":400,"by":390,"type":"answer","seat":0,"indices":[0]}
-{"seq":401,"by":390,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":402,"by":401,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":403,"by":390,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":404,"by":390,"type":"answer","seat":0,"indices":[1]}
-{"seq":405,"by":388,"type":"phase","phase":"night"}
-{"seq":406,"by":405,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":407,"by":405,"type":"answer","seat":0,"indices":[1]}
-{"seq":408,"by":388,"type":"phase","phase":"cleanup"}
-{"seq":409,"by":408,"type":"discard","player":0,"cards":["Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":410,"by":408,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
-{"seq":411,"by":408,"type":"shuffle","player":0,"cards":["Mountain Shrine","Copper","Estate","Mountain Shrine","Copper","Copper","Estate","Copper","Copper","Estate"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[5,2,0,6,1,1,0,1,1,0]}
-{"seq":412,"by":408,"type":"draw","player":0,"cards":["Mountain Shrine","Copper","Estate","Mountain Shrine","Copper"],"from":"0/deck","to":"0/hand"}
-{"seq":413,"by":388,"type":"turn-end","player":0}
-{"seq":414,"type":"turn","player":1,"number":6,"kind":"regular"}
-{"seq":415,"by":414,"type":"phase","phase":"action"}
-{"seq":416,"by":415,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":417,"by":415,"type":"answer","seat":1,"indices":[0]}
-{"seq":418,"by":415,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
-{"seq":419,"by":418,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":420,"by":418,"type":"counter","counter":"sun","delta":-1,"value":0}
-{"seq":421,"by":418,"type":"receive","player":1,"card":"Divine Wind"}
-{"seq":422,"by":418,"type":"pile","pile":"pile/Young Witch","card":"Young Witch","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Young Witch","count":10}]}}
-{"seq":423,"by":418,"type":"pile","pile":"pile/Rustic Village","card":"Rustic Village","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Rustic Village","count":10}]}}
-{"seq":424,"by":418,"type":"pile","pile":"pile/Poet","card":"Poet","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Poet","count":10}]}}
-{"seq":425,"by":418,"type":"pile","pile":"pile/Tea House","card":"Tea House","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Tea House","count":10}]}}
-{"seq":426,"by":418,"type":"pile","pile":"pile/Kitsune","card":"Kitsune","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Kitsune","count":10}]}}
-{"seq":427,"by":418,"type":"pile","pile":"pile/Mountain Shrine","card":"Mountain Shrine","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Mountain Shrine","count":10}]}}
-{"seq":428,"by":418,"type":"pile","pile":"pile/River Shrine","card":"River Shrine","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"River Shrine","count":10}]}}
-{"seq":429,"by":418,"type":"pile","pile":"pile/Village","card":"Village","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Village","count":10}]}}
-{"seq":430,"by":418,"type":"pile","pile":"pile/Smithy","card":"Smithy","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Smithy","count":10}]}}
-{"seq":431,"by":418,"type":"pile","pile":"pile/Market","card":"Market","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Market","count":10}]}}
-{"seq":432,"by":418,"type":"pile","pile":"pile/Aristocrat","card":"Aristocrat","removed":true,"roles":[{"card":"Young Witch","role":"bane"}],"recipe":{"kind":"stacked","cards":[{"card":"Aristocrat","count":10}]}}
-{"seq":433,"by":418,"type":"chance","site":"kingdom","cards":["Dismantle","Jack of All Trades","Urchin","Druid","Archive","Settlers","Pilgrim","Raider","Shop","Conspirator"]}
-{"seq":434,"by":418,"type":"pile","pile":"pile/Dismantle","card":"Dismantle","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Dismantle","count":10}]}}
-{"seq":435,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":436,"by":418,"type":"derived","costs":{"Dismantle":{"coins":4}}}
-{"seq":437,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":438,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":439,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":440,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":441,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":442,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":443,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":444,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":445,"by":418,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
-{"seq":446,"by":418,"type":"pile","pile":"pile/Jack of All Trades","card":"Jack of All Trades","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Jack of All Trades","count":10}]}}
-{"seq":447,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":448,"by":418,"type":"derived","costs":{"Jack of All Trades":{"coins":4}}}
-{"seq":449,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":450,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":451,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":452,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":453,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":454,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":455,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":456,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":457,"by":418,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
-{"seq":458,"by":418,"type":"pile","pile":"pile/Urchin","card":"Urchin","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Urchin","count":10}]}}
-{"seq":459,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":460,"by":418,"type":"derived","costs":{"Urchin":{"coins":3}}}
-{"seq":461,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":462,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":463,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":464,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":465,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":466,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":467,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":468,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":469,"by":418,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
-{"seq":470,"by":418,"type":"pile","pile":"pile/Druid","card":"Druid","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Druid","count":10}]}}
-{"seq":471,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":472,"by":418,"type":"derived","costs":{"Druid":{"coins":2}}}
-{"seq":473,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":474,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":475,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":476,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":477,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":478,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":479,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":480,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":481,"by":418,"type":"add","cards":["Druid"],"to":"pile/Druid"}
-{"seq":482,"by":418,"type":"pile","pile":"pile/Archive","card":"Archive","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Archive","count":10}]}}
-{"seq":483,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":484,"by":418,"type":"derived","costs":{"Archive":{"coins":5}}}
-{"seq":485,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":486,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":487,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":488,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":489,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":490,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":491,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":492,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":493,"by":418,"type":"add","cards":["Archive"],"to":"pile/Archive"}
-{"seq":494,"by":418,"type":"pile","pile":"pile/Settlers","card":"Settlers","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Settlers","count":5},{"card":"Bustling Village","count":5}]}}
-{"seq":495,"by":418,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
-{"seq":496,"by":418,"type":"derived","costs":{"Bustling Village":{"coins":5}}}
-{"seq":497,"by":418,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
-{"seq":498,"by":418,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
-{"seq":499,"by":418,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
-{"seq":500,"by":418,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
-{"seq":501,"by":418,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
-{"seq":502,"by":418,"type":"derived","costs":{"Settlers":{"coins":2}}}
-{"seq":503,"by":418,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
-{"seq":504,"by":418,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
-{"seq":505,"by":418,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
-{"seq":506,"by":418,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
-{"seq":507,"by":418,"type":"pile","pile":"pile/Pilgrim","card":"Pilgrim","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Pilgrim","count":10}]}}
-{"seq":508,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":509,"by":418,"type":"derived","costs":{"Pilgrim":{"coins":5}}}
-{"seq":510,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":511,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":512,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":513,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":514,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":515,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":516,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":517,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":518,"by":418,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
-{"seq":519,"by":418,"type":"pile","pile":"pile/Raider","card":"Raider","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Raider","count":10}]}}
-{"seq":520,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":521,"by":418,"type":"derived","costs":{"Raider":{"coins":6}}}
-{"seq":522,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":523,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":524,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":525,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":526,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":527,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":528,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":529,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":530,"by":418,"type":"add","cards":["Raider"],"to":"pile/Raider"}
-{"seq":531,"by":418,"type":"pile","pile":"pile/Shop","card":"Shop","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Shop","count":10}]}}
-{"seq":532,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":533,"by":418,"type":"derived","costs":{"Shop":{"coins":3}}}
-{"seq":534,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":535,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":536,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":537,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":538,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":539,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":540,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":541,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":542,"by":418,"type":"add","cards":["Shop"],"to":"pile/Shop"}
-{"seq":543,"by":418,"type":"pile","pile":"pile/Conspirator","card":"Conspirator","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Conspirator","count":10}]}}
-{"seq":544,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":545,"by":418,"type":"derived","costs":{"Conspirator":{"coins":4}}}
-{"seq":546,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":547,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":548,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":549,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":550,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":551,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":552,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":553,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":554,"by":418,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
-{"seq":555,"by":418,"type":"pile","pile":"pile/Mercenary","card":"Mercenary","recipe":{"kind":"stacked","cards":[{"card":"Mercenary","count":10}]}}
-{"seq":556,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":557,"by":418,"type":"derived","costs":{"Mercenary":{"coins":0}}}
-{"seq":558,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":559,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":560,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":561,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":562,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":563,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":564,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":565,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":566,"by":418,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
-{"seq":567,"by":418,"type":"chance","site":"boons","cards":["The Sun's Gift","The Sky's Gift","The Earth's Gift","The Forest's Gift","The Wind's Gift","The Field's Gift","The River's Gift","The Sea's Gift","The Mountain's Gift","The Moon's Gift","The Flame's Gift","The Swamp's Gift"]}
-{"seq":568,"by":418,"type":"add","cards":["The Swamp's Gift","The Flame's Gift","The Moon's Gift","The Mountain's Gift","The Sea's Gift","The River's Gift","The Field's Gift","The Wind's Gift","The Forest's Gift","The Earth's Gift","The Sky's Gift","The Sun's Gift"],"to":"boons/deck"}
-{"seq":569,"by":418,"type":"chance","site":"choice","card":"Druid","cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"]}
-{"seq":570,"by":418,"type":"set-aside","player":1,"cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"],"from":"boons/deck","to":"boons/druid","pos":[0,8,0]}
-{"seq":571,"by":418,"type":"pile","pile":"pile/Will-o'-Wisp","card":"Will-o'-Wisp","recipe":{"kind":"stacked","cards":[{"card":"Will-o'-Wisp","count":12}]}}
-{"seq":572,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":573,"by":418,"type":"derived","costs":{"Will-o'-Wisp":{"coins":0}}}
-{"seq":574,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":575,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":576,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":577,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":578,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":579,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":580,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":581,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":582,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":583,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":584,"by":418,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
-{"seq":585,"by":418,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":586,"by":418,"type":"ask","seat":1,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"}]}
-{"seq":587,"by":418,"type":"answer","seat":1,"indices":[]}
-{"seq":588,"by":415,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":589,"by":415,"type":"answer","seat":1,"indices":[1]}
-{"seq":590,"by":414,"type":"phase","phase":"buy"}
-{"seq":591,"by":590,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":592,"by":590,"type":"answer","seat":1,"indices":[0]}
-{"seq":593,"by":590,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":594,"by":593,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":595,"by":590,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":596,"by":590,"type":"answer","seat":1,"indices":[0]}
-{"seq":597,"by":590,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":598,"by":597,"type":"counter","counter":"coins","delta":1,"value":4}
-{"seq":599,"by":590,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":600,"by":590,"type":"answer","seat":1,"indices":[0]}
-{"seq":601,"by":590,"type":"counter","counter":"coins","delta":-1,"value":3}
-{"seq":602,"by":590,"type":"counter","counter":"1/debt","delta":-1,"value":3}
-{"seq":603,"by":590,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":604,"by":590,"type":"answer","seat":1,"indices":[1]}
-{"seq":605,"by":414,"type":"phase","phase":"night"}
-{"seq":606,"by":605,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":607,"by":605,"type":"answer","seat":1,"indices":[1]}
-{"seq":608,"by":414,"type":"phase","phase":"cleanup"}
-{"seq":609,"by":608,"type":"discard","player":1,"cards":["Mountain Shrine","Copper","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":610,"by":608,"type":"discard","player":1,"cards":["Estate","Mountain Shrine"],"from":"1/hand","to":"1/discard"}
-{"seq":611,"by":608,"type":"shuffle","player":1,"cards":["Estate","Copper","Copper","Estate","Mountain Shrine","Mountain Shrine","Copper","Mountain Shrine","Copper","Copper","Estate"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[1,1,1,2,0,0,1,3,1,1,0]}
-{"seq":612,"by":608,"type":"draw","player":1,"cards":["Copper","Copper","Estate","Copper","Copper"],"from":"1/deck","to":"1/hand"}
-{"seq":613,"by":414,"type":"turn-end","player":1}
-{"seq":614,"type":"turn","player":0,"number":7,"kind":"regular"}
-{"seq":615,"by":614,"type":"phase","phase":"action"}
-{"seq":616,"by":615,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":617,"by":615,"type":"answer","seat":0,"indices":[0]}
-{"seq":618,"by":615,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
-{"seq":619,"by":618,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":620,"by":618,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":621,"by":618,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"}]}
-{"seq":622,"by":618,"type":"answer","seat":0,"indices":[]}
-{"seq":623,"by":615,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":624,"by":615,"type":"answer","seat":0,"indices":[1]}
-{"seq":625,"by":614,"type":"phase","phase":"buy"}
-{"seq":626,"by":625,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":627,"by":625,"type":"answer","seat":0,"indices":[0]}
-{"seq":628,"by":625,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":629,"by":628,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":630,"by":625,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":631,"by":625,"type":"answer","seat":0,"indices":[1]}
-{"seq":632,"by":625,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":633,"by":625,"type":"counter","counter":"0/debt","delta":-1,"value":1}
-{"seq":634,"by":625,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":635,"by":625,"type":"answer","seat":0,"indices":[0]}
-{"seq":636,"by":625,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
-{"seq":637,"by":636,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":638,"by":625,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":639,"by":625,"type":"answer","seat":0,"indices":[1]}
-{"seq":640,"by":614,"type":"phase","phase":"night"}
-{"seq":641,"by":640,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":642,"by":640,"type":"answer","seat":0,"indices":[0]}
-{"seq":643,"by":640,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":644,"by":640,"type":"counter","counter":"0/debt","delta":-1,"value":0}
-{"seq":645,"by":614,"type":"phase","phase":"cleanup"}
-{"seq":646,"by":645,"type":"discard","player":0,"cards":["Mountain Shrine","Copper","Copper"],"from":"0/play","to":"0/discard"}
-{"seq":647,"by":645,"type":"discard","player":0,"cards":["Estate","Mountain Shrine"],"from":"0/hand","to":"0/discard"}
-{"seq":648,"by":645,"type":"draw","player":0,"cards":["Copper","Estate","Copper","Copper","Estate"],"from":"0/deck","to":"0/hand"}
-{"seq":649,"by":614,"type":"turn-end","player":0}
-{"seq":650,"type":"turn","player":1,"number":7,"kind":"regular"}
-{"seq":651,"by":650,"type":"phase","phase":"action"}
-{"seq":652,"by":650,"type":"phase","phase":"buy"}
-{"seq":653,"by":652,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":654,"by":652,"type":"answer","seat":1,"indices":[1]}
-{"seq":655,"by":652,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":656,"by":655,"type":"counter","counter":"coins","delta":1,"value":1}
-{"seq":657,"by":652,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":658,"by":652,"type":"answer","seat":1,"indices":[1]}
-{"seq":659,"by":652,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":660,"by":659,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":661,"by":652,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":662,"by":652,"type":"answer","seat":1,"indices":[2]}
-{"seq":663,"by":652,"type":"counter","counter":"coins","delta":-1,"value":1}
-{"seq":664,"by":652,"type":"counter","counter":"1/debt","delta":-1,"value":2}
-{"seq":665,"by":652,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":666,"by":652,"type":"answer","seat":1,"indices":[1]}
-{"seq":667,"by":652,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":668,"by":667,"type":"counter","counter":"coins","delta":1,"value":2}
-{"seq":669,"by":652,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":670,"by":652,"type":"answer","seat":1,"indices":[0]}
-{"seq":671,"by":652,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":672,"by":671,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":673,"by":652,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":674,"by":652,"type":"answer","seat":1,"indices":[1]}
-{"seq":675,"by":650,"type":"phase","phase":"night"}
-{"seq":676,"by":675,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":677,"by":675,"type":"answer","seat":1,"indices":[0]}
-{"seq":678,"by":675,"type":"counter","counter":"coins","delta":-1,"value":2}
-{"seq":679,"by":675,"type":"counter","counter":"1/debt","delta":-1,"value":1}
-{"seq":680,"by":675,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":681,"by":675,"type":"answer","seat":1,"indices":[1]}
-{"seq":682,"by":650,"type":"phase","phase":"cleanup"}
-{"seq":683,"by":682,"type":"discard","player":1,"cards":["Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":684,"by":682,"type":"discard","player":1,"cards":["Estate"],"from":"1/hand","to":"1/discard"}
-{"seq":685,"by":682,"type":"draw","player":1,"cards":["Estate","Mountain Shrine","Mountain Shrine","Copper","Mountain Shrine"],"from":"1/deck","to":"1/hand"}
-{"seq":686,"by":650,"type":"turn-end","player":1}
-{"seq":687,"type":"turn","player":0,"number":8,"kind":"regular"}
-{"seq":688,"by":687,"type":"phase","phase":"action"}
-{"seq":689,"by":687,"type":"phase","phase":"buy"}
-{"seq":690,"by":689,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":691,"by":689,"type":"answer","seat":0,"indices":[3]}
-{"seq":692,"by":689,"type":"buy","player":0,"card":"Copper"}
-{"seq":693,"by":692,"type":"counter","counter":"buys","delta":-1,"value":0}
-{"seq":694,"by":692,"type":"counter","counter":"bought","delta":1,"value":1}
-{"seq":695,"by":692,"type":"show","player":0,"cards":["Copper"],"zone":"pile/Copper","pos":[0]}
-{"seq":696,"by":692,"type":"gain","player":0,"cards":["Copper"],"from":"pile/Copper","to":"0/discard"}
-{"seq":697,"by":687,"type":"phase","phase":"night"}
-{"seq":698,"by":687,"type":"phase","phase":"cleanup"}
-{"seq":699,"by":698,"type":"discard","player":0,"cards":["Copper","Estate","Copper","Copper","Estate"],"from":"0/hand","to":"0/discard"}
-{"seq":700,"by":698,"type":"shuffle","player":0,"cards":["Copper","Copper","Mountain Shrine","Estate","Estate","Estate","Copper","Mountain Shrine","Copper","Copper","Copper"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[1,1,4,0,0,2,0,3,0,0,0]}
-{"seq":701,"by":698,"type":"draw","player":0,"cards":["Copper","Copper","Mountain Shrine","Estate","Estate"],"from":"0/deck","to":"0/hand"}
-{"seq":702,"by":687,"type":"turn-end","player":0}
-{"seq":703,"type":"turn","player":1,"number":8,"kind":"regular"}
-{"seq":704,"by":703,"type":"phase","phase":"action"}
-{"seq":705,"by":704,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":3,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":706,"by":704,"type":"answer","seat":1,"indices":[1]}
-{"seq":707,"by":704,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
-{"seq":708,"by":707,"type":"counter","counter":"actions","delta":-1,"value":0}
-{"seq":709,"by":707,"type":"counter","counter":"coins","delta":2,"value":2}
-{"seq":710,"by":707,"type":"ask","seat":1,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"}]}
-{"seq":711,"by":707,"type":"answer","seat":1,"indices":[]}
-{"seq":712,"by":704,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
-{"seq":713,"by":704,"type":"answer","seat":1,"indices":[1]}
-{"seq":714,"by":703,"type":"phase","phase":"buy"}
-{"seq":715,"by":714,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":716,"by":714,"type":"answer","seat":1,"indices":[0]}
-{"seq":717,"by":714,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
-{"seq":718,"by":717,"type":"counter","counter":"coins","delta":1,"value":3}
-{"seq":719,"by":714,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
-{"seq":720,"by":714,"type":"answer","seat":1,"indices":[1]}
-{"seq":721,"by":703,"type":"phase","phase":"night"}
-{"seq":722,"by":721,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
-{"seq":723,"by":721,"type":"answer","seat":1,"indices":[1]}
-{"seq":724,"by":703,"type":"phase","phase":"cleanup"}
-{"seq":725,"by":724,"type":"discard","player":1,"cards":["Mountain Shrine","Copper"],"from":"1/play","to":"1/discard"}
-{"seq":726,"by":724,"type":"discard","player":1,"cards":["Estate","Mountain Shrine","Mountain Shrine"],"from":"1/hand","to":"1/discard"}
-{"seq":727,"by":724,"type":"shuffle","player":1,"cards":["Estate","Estate","Copper","Copper","Mountain Shrine","Mountain Shrine","Mountain Shrine","Copper","Copper","Copper"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[2,4,2,3,0,0,0,0,0,0]}
-{"seq":728,"by":724,"type":"draw","player":1,"cards":["Copper","Copper","Estate","Estate","Estate"],"from":"1/deck","to":"1/hand"}
-{"seq":729,"by":703,"type":"turn-end","player":1}
-{"seq":730,"type":"game-ending","reason":"turn-limit"}
-{"seq":731,"type":"game-end","reason":"turn-limit","result":[{"seat":0,"vp":3,"turns":8,"rank":1},{"seat":1,"vp":3,"turns":8,"rank":1}]}
+{"seq":26,"by":22,"type":"gain","player":0,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"0/discard"}
+{"seq":27,"by":7,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":28,"by":7,"type":"answer","seat":0,"indices":[0]}
+{"seq":29,"by":7,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":30,"by":7,"type":"counter","counter":"0/debt","delta":-1,"value":4}
+{"seq":31,"by":7,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":32,"by":7,"type":"answer","seat":0,"indices":[0]}
+{"seq":33,"by":7,"type":"counter","counter":"coins","delta":-1,"value":1}
+{"seq":34,"by":7,"type":"counter","counter":"0/debt","delta":-1,"value":3}
+{"seq":35,"by":7,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":36,"by":7,"type":"answer","seat":0,"indices":[1]}
+{"seq":37,"by":5,"type":"phase","phase":"night"}
+{"seq":38,"by":37,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":39,"by":37,"type":"answer","seat":0,"indices":[0]}
+{"seq":40,"by":37,"type":"counter","counter":"coins","delta":-1,"value":0}
+{"seq":41,"by":37,"type":"counter","counter":"0/debt","delta":-1,"value":2}
+{"seq":42,"by":5,"type":"phase","phase":"cleanup"}
+{"seq":43,"by":42,"type":"discard","player":0,"cards":["Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":44,"by":42,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
+{"seq":45,"by":42,"type":"draw","player":0,"cards":["Copper","Copper","Estate","Copper","Copper"],"from":"0/deck","to":"0/hand"}
+{"seq":46,"by":5,"type":"turn-end","player":0}
+{"seq":47,"type":"turn","player":1,"number":1,"kind":"regular"}
+{"seq":48,"by":47,"type":"phase","phase":"action"}
+{"seq":49,"by":47,"type":"phase","phase":"buy"}
+{"seq":50,"by":49,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":5,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":6,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":51,"by":49,"type":"answer","seat":1,"indices":[0]}
+{"seq":52,"by":49,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":53,"by":52,"type":"counter","counter":"coins","delta":1,"value":1}
+{"seq":54,"by":49,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":55,"by":49,"type":"answer","seat":1,"indices":[0]}
+{"seq":56,"by":49,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":57,"by":56,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":58,"by":49,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":59,"by":49,"type":"answer","seat":1,"indices":[0]}
+{"seq":60,"by":49,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":61,"by":60,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":62,"by":49,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Silver ($3)","card":"Silver","cost":{"coins":3}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"buy","label":"Buy Village ($3)","card":"Village","cost":{"coins":3}},{"index":6,"group":0,"action":"buy","label":"Buy Aristocrat ($3)","card":"Aristocrat","cost":{"coins":3}},{"index":7,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":63,"by":49,"type":"answer","seat":1,"indices":[4]}
+{"seq":64,"by":49,"type":"buy","player":1,"card":"Mountain Shrine"}
+{"seq":65,"by":64,"type":"counter","counter":"buys","delta":-1,"value":0}
+{"seq":66,"by":64,"type":"counter","counter":"bought","delta":1,"value":1}
+{"seq":67,"by":64,"type":"counter","counter":"1/debt","delta":5,"value":5}
+{"seq":68,"by":64,"type":"gain","player":1,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"1/discard"}
+{"seq":69,"by":49,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":70,"by":49,"type":"answer","seat":1,"indices":[0]}
+{"seq":71,"by":49,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":72,"by":49,"type":"counter","counter":"1/debt","delta":-1,"value":4}
+{"seq":73,"by":49,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":74,"by":49,"type":"answer","seat":1,"indices":[0]}
+{"seq":75,"by":49,"type":"counter","counter":"coins","delta":-1,"value":1}
+{"seq":76,"by":49,"type":"counter","counter":"1/debt","delta":-1,"value":3}
+{"seq":77,"by":49,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":78,"by":49,"type":"answer","seat":1,"indices":[0]}
+{"seq":79,"by":49,"type":"counter","counter":"coins","delta":-1,"value":0}
+{"seq":80,"by":49,"type":"counter","counter":"1/debt","delta":-1,"value":2}
+{"seq":81,"by":47,"type":"phase","phase":"night"}
+{"seq":82,"by":47,"type":"phase","phase":"cleanup"}
+{"seq":83,"by":82,"type":"discard","player":1,"cards":["Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":84,"by":82,"type":"discard","player":1,"cards":["Estate","Estate"],"from":"1/hand","to":"1/discard"}
+{"seq":85,"by":82,"type":"draw","player":1,"cards":["Copper","Estate","Copper","Copper","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":86,"by":47,"type":"turn-end","player":1}
+{"seq":87,"type":"turn","player":0,"number":2,"kind":"regular"}
+{"seq":88,"by":87,"type":"phase","phase":"action"}
+{"seq":89,"by":87,"type":"phase","phase":"buy"}
+{"seq":90,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":91,"by":89,"type":"answer","seat":0,"indices":[0]}
+{"seq":92,"by":89,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":93,"by":92,"type":"counter","counter":"coins","delta":1,"value":1}
+{"seq":94,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":95,"by":89,"type":"answer","seat":0,"indices":[1]}
+{"seq":96,"by":89,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":97,"by":96,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":98,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":99,"by":89,"type":"answer","seat":0,"indices":[1]}
+{"seq":100,"by":89,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":101,"by":100,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":102,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":103,"by":89,"type":"answer","seat":0,"indices":[0]}
+{"seq":104,"by":89,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":105,"by":104,"type":"counter","counter":"coins","delta":1,"value":4}
+{"seq":106,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":107,"by":89,"type":"answer","seat":0,"indices":[0]}
+{"seq":108,"by":89,"type":"counter","counter":"coins","delta":-1,"value":3}
+{"seq":109,"by":89,"type":"counter","counter":"0/debt","delta":-1,"value":1}
+{"seq":110,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":111,"by":89,"type":"answer","seat":0,"indices":[0]}
+{"seq":112,"by":89,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":113,"by":89,"type":"counter","counter":"0/debt","delta":-1,"value":0}
+{"seq":114,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":2,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":3,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":115,"by":89,"type":"answer","seat":0,"indices":[3]}
+{"seq":116,"by":89,"type":"buy","player":0,"card":"Mountain Shrine"}
+{"seq":117,"by":116,"type":"counter","counter":"buys","delta":-1,"value":0}
+{"seq":118,"by":116,"type":"counter","counter":"bought","delta":1,"value":1}
+{"seq":119,"by":116,"type":"counter","counter":"0/debt","delta":5,"value":5}
+{"seq":120,"by":116,"type":"gain","player":0,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"0/discard"}
+{"seq":121,"by":89,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":122,"by":89,"type":"answer","seat":0,"indices":[1]}
+{"seq":123,"by":87,"type":"phase","phase":"night"}
+{"seq":124,"by":123,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":125,"by":123,"type":"answer","seat":0,"indices":[0]}
+{"seq":126,"by":123,"type":"counter","counter":"coins","delta":-1,"value":1}
+{"seq":127,"by":123,"type":"counter","counter":"0/debt","delta":-1,"value":4}
+{"seq":128,"by":123,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":129,"by":123,"type":"answer","seat":0,"indices":[1]}
+{"seq":130,"by":87,"type":"phase","phase":"cleanup"}
+{"seq":131,"by":130,"type":"discard","player":0,"cards":["Copper","Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":132,"by":130,"type":"discard","player":0,"cards":["Estate"],"from":"0/hand","to":"0/discard"}
+{"seq":133,"by":130,"type":"shuffle","player":0,"cards":["Copper","Estate","Estate","Copper","Mountain Shrine","Copper","Copper","Copper","Mountain Shrine","Estate","Copper","Copper"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[1,0,4,0,2,0,0,1,3,0,0,0]}
+{"seq":134,"by":130,"type":"draw","player":0,"cards":["Copper","Estate","Estate","Copper","Mountain Shrine"],"from":"0/deck","to":"0/hand"}
+{"seq":135,"by":87,"type":"turn-end","player":0}
+{"seq":136,"type":"turn","player":1,"number":2,"kind":"regular"}
+{"seq":137,"by":136,"type":"phase","phase":"action"}
+{"seq":138,"by":136,"type":"phase","phase":"buy"}
+{"seq":139,"by":138,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":140,"by":138,"type":"answer","seat":1,"indices":[0]}
+{"seq":141,"by":138,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":142,"by":141,"type":"counter","counter":"coins","delta":1,"value":1}
+{"seq":143,"by":138,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":144,"by":138,"type":"answer","seat":1,"indices":[0]}
+{"seq":145,"by":138,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":146,"by":145,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":147,"by":138,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":148,"by":138,"type":"answer","seat":1,"indices":[0]}
+{"seq":149,"by":138,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":150,"by":149,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":151,"by":138,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":152,"by":138,"type":"answer","seat":1,"indices":[0]}
+{"seq":153,"by":138,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":154,"by":153,"type":"counter","counter":"coins","delta":1,"value":4}
+{"seq":155,"by":138,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":156,"by":138,"type":"answer","seat":1,"indices":[1]}
+{"seq":157,"by":136,"type":"phase","phase":"night"}
+{"seq":158,"by":157,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":159,"by":157,"type":"answer","seat":1,"indices":[1]}
+{"seq":160,"by":136,"type":"phase","phase":"cleanup"}
+{"seq":161,"by":160,"type":"discard","player":1,"cards":["Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":162,"by":160,"type":"discard","player":1,"cards":["Estate"],"from":"1/hand","to":"1/discard"}
+{"seq":163,"by":160,"type":"shuffle","player":1,"cards":["Copper","Mountain Shrine","Copper","Copper","Copper","Estate","Copper","Estate","Estate","Copper","Copper"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[1,9,1,1,1,0,2,0,0,0,0]}
+{"seq":164,"by":160,"type":"draw","player":1,"cards":["Copper","Mountain Shrine","Copper","Copper","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":165,"by":136,"type":"turn-end","player":1}
+{"seq":166,"type":"turn","player":0,"number":3,"kind":"regular"}
+{"seq":167,"by":166,"type":"phase","phase":"action"}
+{"seq":168,"by":167,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":169,"by":167,"type":"answer","seat":0,"indices":[0]}
+{"seq":170,"by":167,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
+{"seq":171,"by":170,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":172,"by":170,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":173,"by":170,"type":"counter","counter":"sun","delta":-1,"value":4}
+{"seq":174,"by":170,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"}]}
+{"seq":175,"by":170,"type":"answer","seat":0,"indices":[3]}
+{"seq":176,"by":170,"type":"trash","player":0,"cards":["Copper"],"from":"0/hand","to":"trash"}
+{"seq":177,"by":166,"type":"phase","phase":"buy"}
+{"seq":178,"by":177,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":179,"by":177,"type":"answer","seat":0,"indices":[0]}
+{"seq":180,"by":177,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":181,"by":180,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":182,"by":177,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":183,"by":177,"type":"answer","seat":0,"indices":[1]}
+{"seq":184,"by":166,"type":"phase","phase":"night"}
+{"seq":185,"by":184,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":186,"by":184,"type":"answer","seat":0,"indices":[1]}
+{"seq":187,"by":166,"type":"phase","phase":"cleanup"}
+{"seq":188,"by":187,"type":"discard","player":0,"cards":["Mountain Shrine","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":189,"by":187,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
+{"seq":190,"by":187,"type":"draw","player":0,"cards":["Copper","Copper","Copper","Mountain Shrine","Estate"],"from":"0/deck","to":"0/hand"}
+{"seq":191,"by":166,"type":"turn-end","player":0}
+{"seq":192,"type":"turn","player":1,"number":3,"kind":"regular"}
+{"seq":193,"by":192,"type":"phase","phase":"action"}
+{"seq":194,"by":193,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":195,"by":193,"type":"answer","seat":1,"indices":[0]}
+{"seq":196,"by":193,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
+{"seq":197,"by":196,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":198,"by":196,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":199,"by":196,"type":"counter","counter":"sun","delta":-1,"value":3}
+{"seq":200,"by":196,"type":"ask","seat":1,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"}]}
+{"seq":201,"by":196,"type":"answer","seat":1,"indices":[]}
+{"seq":202,"by":192,"type":"phase","phase":"buy"}
+{"seq":203,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":204,"by":202,"type":"answer","seat":1,"indices":[3]}
+{"seq":205,"by":202,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":206,"by":205,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":207,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":208,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":209,"by":202,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":210,"by":209,"type":"counter","counter":"coins","delta":1,"value":4}
+{"seq":211,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":212,"by":202,"type":"answer","seat":1,"indices":[1]}
+{"seq":213,"by":202,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":214,"by":213,"type":"counter","counter":"coins","delta":1,"value":5}
+{"seq":215,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":216,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":217,"by":202,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":218,"by":217,"type":"counter","counter":"coins","delta":1,"value":6}
+{"seq":219,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":220,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":221,"by":202,"type":"counter","counter":"coins","delta":-1,"value":5}
+{"seq":222,"by":202,"type":"counter","counter":"1/debt","delta":-1,"value":1}
+{"seq":223,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":224,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":225,"by":202,"type":"counter","counter":"coins","delta":-1,"value":4}
+{"seq":226,"by":202,"type":"counter","counter":"1/debt","delta":-1,"value":0}
+{"seq":227,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Silver ($3)","card":"Silver","cost":{"coins":3}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Young Witch ($4)","card":"Young Witch","cost":{"coins":4}},{"index":5,"group":0,"action":"buy","label":"Buy Rustic Village ($4)","card":"Rustic Village","cost":{"coins":4}},{"index":6,"group":0,"action":"buy","label":"Buy Poet ($4)","card":"Poet","cost":{"coins":4}},{"index":7,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":8,"group":0,"action":"buy","label":"Buy River Shrine ($4)","card":"River Shrine","cost":{"coins":4}},{"index":9,"group":0,"action":"buy","label":"Buy Village ($3)","card":"Village","cost":{"coins":3}},{"index":10,"group":0,"action":"buy","label":"Buy Smithy ($4)","card":"Smithy","cost":{"coins":4}},{"index":11,"group":0,"action":"buy","label":"Buy Aristocrat ($3)","card":"Aristocrat","cost":{"coins":3}},{"index":12,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":228,"by":202,"type":"answer","seat":1,"indices":[7]}
+{"seq":229,"by":202,"type":"buy","player":1,"card":"Mountain Shrine"}
+{"seq":230,"by":229,"type":"counter","counter":"buys","delta":-1,"value":0}
+{"seq":231,"by":229,"type":"counter","counter":"bought","delta":1,"value":1}
+{"seq":232,"by":229,"type":"counter","counter":"1/debt","delta":5,"value":5}
+{"seq":233,"by":229,"type":"gain","player":1,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"1/discard"}
+{"seq":234,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":235,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":236,"by":202,"type":"counter","counter":"coins","delta":-1,"value":3}
+{"seq":237,"by":202,"type":"counter","counter":"1/debt","delta":-1,"value":4}
+{"seq":238,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":239,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":240,"by":202,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":241,"by":202,"type":"counter","counter":"1/debt","delta":-1,"value":3}
+{"seq":242,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":243,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":244,"by":202,"type":"counter","counter":"coins","delta":-1,"value":1}
+{"seq":245,"by":202,"type":"counter","counter":"1/debt","delta":-1,"value":2}
+{"seq":246,"by":202,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":247,"by":202,"type":"answer","seat":1,"indices":[0]}
+{"seq":248,"by":202,"type":"counter","counter":"coins","delta":-1,"value":0}
+{"seq":249,"by":202,"type":"counter","counter":"1/debt","delta":-1,"value":1}
+{"seq":250,"by":192,"type":"phase","phase":"night"}
+{"seq":251,"by":192,"type":"phase","phase":"cleanup"}
+{"seq":252,"by":251,"type":"discard","player":1,"cards":["Mountain Shrine","Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":253,"by":251,"type":"draw","player":1,"cards":["Estate","Copper","Estate","Estate","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":254,"by":192,"type":"turn-end","player":1}
+{"seq":255,"type":"turn","player":0,"number":4,"kind":"regular"}
+{"seq":256,"by":255,"type":"phase","phase":"action"}
+{"seq":257,"by":256,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":258,"by":256,"type":"answer","seat":0,"indices":[0]}
+{"seq":259,"by":256,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
+{"seq":260,"by":259,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":261,"by":259,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":262,"by":259,"type":"counter","counter":"sun","delta":-1,"value":2}
+{"seq":263,"by":259,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"}]}
+{"seq":264,"by":259,"type":"answer","seat":0,"indices":[1]}
+{"seq":265,"by":259,"type":"trash","player":0,"cards":["Copper"],"from":"0/hand","to":"trash"}
+{"seq":266,"by":255,"type":"phase","phase":"buy"}
+{"seq":267,"by":266,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":268,"by":266,"type":"answer","seat":0,"indices":[0]}
+{"seq":269,"by":266,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":270,"by":269,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":271,"by":266,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":272,"by":266,"type":"answer","seat":0,"indices":[2]}
+{"seq":273,"by":255,"type":"phase","phase":"night"}
+{"seq":274,"by":273,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":275,"by":273,"type":"answer","seat":0,"indices":[0]}
+{"seq":276,"by":273,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":277,"by":273,"type":"counter","counter":"0/debt","delta":-1,"value":3}
+{"seq":278,"by":273,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":279,"by":273,"type":"answer","seat":0,"indices":[1]}
+{"seq":280,"by":255,"type":"phase","phase":"cleanup"}
+{"seq":281,"by":280,"type":"discard","player":0,"cards":["Mountain Shrine","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":282,"by":280,"type":"discard","player":0,"cards":["Copper","Estate"],"from":"0/hand","to":"0/discard"}
+{"seq":283,"by":280,"type":"shuffle","player":0,"cards":["Estate","Mountain Shrine","Mountain Shrine","Copper","Copper","Estate","Estate","Copper"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[0,2,5,0,0,0,0,0]}
+{"seq":284,"by":280,"type":"draw","player":0,"cards":["Copper","Copper","Estate","Mountain Shrine","Mountain Shrine"],"from":"0/deck","to":"0/hand"}
+{"seq":285,"by":255,"type":"turn-end","player":0}
+{"seq":286,"type":"turn","player":1,"number":4,"kind":"regular"}
+{"seq":287,"by":286,"type":"phase","phase":"action"}
+{"seq":288,"by":286,"type":"phase","phase":"buy"}
+{"seq":289,"by":288,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":290,"by":288,"type":"answer","seat":1,"indices":[0]}
+{"seq":291,"by":288,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":292,"by":291,"type":"counter","counter":"coins","delta":1,"value":1}
+{"seq":293,"by":288,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":294,"by":288,"type":"answer","seat":1,"indices":[0]}
+{"seq":295,"by":288,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":296,"by":295,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":297,"by":288,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":298,"by":288,"type":"answer","seat":1,"indices":[1]}
+{"seq":299,"by":286,"type":"phase","phase":"night"}
+{"seq":300,"by":299,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":301,"by":299,"type":"answer","seat":1,"indices":[0]}
+{"seq":302,"by":299,"type":"counter","counter":"coins","delta":-1,"value":1}
+{"seq":303,"by":299,"type":"counter","counter":"1/debt","delta":-1,"value":0}
+{"seq":304,"by":286,"type":"phase","phase":"cleanup"}
+{"seq":305,"by":304,"type":"discard","player":1,"cards":["Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":306,"by":304,"type":"discard","player":1,"cards":["Estate","Estate","Estate"],"from":"1/hand","to":"1/discard"}
+{"seq":307,"by":304,"type":"shuffle","player":1,"cards":["Estate","Estate","Copper","Copper","Copper","Estate","Copper","Mountain Shrine","Mountain Shrine","Copper","Copper"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[0,0,1,1,1,0,0,2,2,0,0]}
+{"seq":308,"by":304,"type":"draw","player":1,"cards":["Copper","Estate","Estate","Copper","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":309,"by":286,"type":"turn-end","player":1}
+{"seq":310,"type":"turn","player":0,"number":5,"kind":"regular"}
+{"seq":311,"by":310,"type":"phase","phase":"action"}
+{"seq":312,"by":311,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":313,"by":311,"type":"answer","seat":0,"indices":[0]}
+{"seq":314,"by":311,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
+{"seq":315,"by":314,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":316,"by":314,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":317,"by":314,"type":"counter","counter":"sun","delta":-1,"value":1}
+{"seq":318,"by":314,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"}]}
+{"seq":319,"by":314,"type":"answer","seat":0,"indices":[]}
+{"seq":320,"by":311,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":321,"by":311,"type":"answer","seat":0,"indices":[0]}
+{"seq":322,"by":311,"type":"counter","counter":"coins","delta":-1,"value":1}
+{"seq":323,"by":311,"type":"counter","counter":"0/debt","delta":-1,"value":2}
+{"seq":324,"by":311,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":325,"by":311,"type":"answer","seat":0,"indices":[1]}
+{"seq":326,"by":310,"type":"phase","phase":"buy"}
+{"seq":327,"by":326,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":328,"by":326,"type":"answer","seat":0,"indices":[1]}
+{"seq":329,"by":326,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":330,"by":329,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":331,"by":326,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":332,"by":326,"type":"answer","seat":0,"indices":[0]}
+{"seq":333,"by":326,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":334,"by":333,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":335,"by":326,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":336,"by":326,"type":"answer","seat":0,"indices":[1]}
+{"seq":337,"by":310,"type":"phase","phase":"night"}
+{"seq":338,"by":337,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":339,"by":337,"type":"answer","seat":0,"indices":[1]}
+{"seq":340,"by":310,"type":"phase","phase":"cleanup"}
+{"seq":341,"by":340,"type":"discard","player":0,"cards":["Mountain Shrine","Copper","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":342,"by":340,"type":"discard","player":0,"cards":["Estate","Mountain Shrine"],"from":"0/hand","to":"0/discard"}
+{"seq":343,"by":340,"type":"draw","player":0,"cards":["Copper","Copper","Estate","Estate","Copper"],"from":"0/deck","to":"0/hand"}
+{"seq":344,"by":310,"type":"turn-end","player":0}
+{"seq":345,"type":"turn","player":1,"number":5,"kind":"regular"}
+{"seq":346,"by":345,"type":"phase","phase":"action"}
+{"seq":347,"by":345,"type":"phase","phase":"buy"}
+{"seq":348,"by":347,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":5,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":6,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":349,"by":347,"type":"answer","seat":1,"indices":[1]}
+{"seq":350,"by":347,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":351,"by":350,"type":"counter","counter":"coins","delta":1,"value":1}
+{"seq":352,"by":347,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":353,"by":347,"type":"answer","seat":1,"indices":[1]}
+{"seq":354,"by":347,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":355,"by":354,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":356,"by":347,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":357,"by":347,"type":"answer","seat":1,"indices":[0]}
+{"seq":358,"by":347,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":359,"by":358,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":360,"by":347,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":1,"group":0,"action":"buy","label":"Buy Silver ($3)","card":"Silver","cost":{"coins":3}},{"index":2,"group":0,"action":"buy","label":"Buy Estate ($2)","card":"Estate","cost":{"coins":2}},{"index":3,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Mountain Shrine (5D)","card":"Mountain Shrine","cost":{"coins":0,"debt":5}},{"index":5,"group":0,"action":"buy","label":"Buy Village ($3)","card":"Village","cost":{"coins":3}},{"index":6,"group":0,"action":"buy","label":"Buy Aristocrat ($3)","card":"Aristocrat","cost":{"coins":3}},{"index":7,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":361,"by":347,"type":"answer","seat":1,"indices":[4]}
+{"seq":362,"by":347,"type":"buy","player":1,"card":"Mountain Shrine"}
+{"seq":363,"by":362,"type":"counter","counter":"buys","delta":-1,"value":0}
+{"seq":364,"by":362,"type":"counter","counter":"bought","delta":1,"value":1}
+{"seq":365,"by":362,"type":"counter","counter":"1/debt","delta":5,"value":5}
+{"seq":366,"by":362,"type":"gain","player":1,"cards":["Mountain Shrine"],"from":"pile/Mountain Shrine","to":"1/discard"}
+{"seq":367,"by":347,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":368,"by":347,"type":"answer","seat":1,"indices":[0]}
+{"seq":369,"by":347,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":370,"by":347,"type":"counter","counter":"1/debt","delta":-1,"value":4}
+{"seq":371,"by":347,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":372,"by":347,"type":"answer","seat":1,"indices":[1]}
+{"seq":373,"by":345,"type":"phase","phase":"night"}
+{"seq":374,"by":373,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":375,"by":373,"type":"answer","seat":1,"indices":[1]}
+{"seq":376,"by":345,"type":"phase","phase":"cleanup"}
+{"seq":377,"by":376,"type":"discard","player":1,"cards":["Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":378,"by":376,"type":"discard","player":1,"cards":["Estate","Estate"],"from":"1/hand","to":"1/discard"}
+{"seq":379,"by":376,"type":"draw","player":1,"cards":["Copper","Estate","Copper","Mountain Shrine","Mountain Shrine"],"from":"1/deck","to":"1/hand"}
+{"seq":380,"by":345,"type":"turn-end","player":1}
+{"seq":381,"type":"turn","player":0,"number":6,"kind":"regular"}
+{"seq":382,"by":381,"type":"phase","phase":"action"}
+{"seq":383,"by":381,"type":"phase","phase":"buy"}
+{"seq":384,"by":383,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":385,"by":383,"type":"answer","seat":0,"indices":[0]}
+{"seq":386,"by":383,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":387,"by":386,"type":"counter","counter":"coins","delta":1,"value":1}
+{"seq":388,"by":383,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":389,"by":383,"type":"answer","seat":0,"indices":[1]}
+{"seq":390,"by":383,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":391,"by":390,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":392,"by":383,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":393,"by":383,"type":"answer","seat":0,"indices":[0]}
+{"seq":394,"by":383,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":395,"by":394,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":396,"by":383,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":397,"by":383,"type":"answer","seat":0,"indices":[1]}
+{"seq":398,"by":381,"type":"phase","phase":"night"}
+{"seq":399,"by":398,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":400,"by":398,"type":"answer","seat":0,"indices":[1]}
+{"seq":401,"by":381,"type":"phase","phase":"cleanup"}
+{"seq":402,"by":401,"type":"discard","player":0,"cards":["Copper","Copper","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":403,"by":401,"type":"discard","player":0,"cards":["Estate","Estate"],"from":"0/hand","to":"0/discard"}
+{"seq":404,"by":401,"type":"shuffle","player":0,"cards":["Mountain Shrine","Copper","Estate","Mountain Shrine","Copper","Copper","Estate","Copper","Copper","Estate"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[5,2,0,6,1,1,0,1,1,0]}
+{"seq":405,"by":401,"type":"draw","player":0,"cards":["Mountain Shrine","Copper","Estate","Mountain Shrine","Copper"],"from":"0/deck","to":"0/hand"}
+{"seq":406,"by":381,"type":"turn-end","player":0}
+{"seq":407,"type":"turn","player":1,"number":6,"kind":"regular"}
+{"seq":408,"by":407,"type":"phase","phase":"action"}
+{"seq":409,"by":408,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":410,"by":408,"type":"answer","seat":1,"indices":[0]}
+{"seq":411,"by":408,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
+{"seq":412,"by":411,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":413,"by":411,"type":"counter","counter":"sun","delta":-1,"value":0}
+{"seq":414,"by":411,"type":"receive","player":1,"card":"Divine Wind"}
+{"seq":415,"by":411,"type":"pile","pile":"pile/Young Witch","card":"Young Witch","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Young Witch","count":10}]}}
+{"seq":416,"by":411,"type":"pile","pile":"pile/Rustic Village","card":"Rustic Village","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Rustic Village","count":10}]}}
+{"seq":417,"by":411,"type":"pile","pile":"pile/Poet","card":"Poet","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Poet","count":10}]}}
+{"seq":418,"by":411,"type":"pile","pile":"pile/Tea House","card":"Tea House","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Tea House","count":10}]}}
+{"seq":419,"by":411,"type":"pile","pile":"pile/Kitsune","card":"Kitsune","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Kitsune","count":10}]}}
+{"seq":420,"by":411,"type":"pile","pile":"pile/Mountain Shrine","card":"Mountain Shrine","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Mountain Shrine","count":10}]}}
+{"seq":421,"by":411,"type":"pile","pile":"pile/River Shrine","card":"River Shrine","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"River Shrine","count":10}]}}
+{"seq":422,"by":411,"type":"pile","pile":"pile/Village","card":"Village","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Village","count":10}]}}
+{"seq":423,"by":411,"type":"pile","pile":"pile/Smithy","card":"Smithy","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Smithy","count":10}]}}
+{"seq":424,"by":411,"type":"pile","pile":"pile/Market","card":"Market","removed":true,"recipe":{"kind":"stacked","cards":[{"card":"Market","count":10}]}}
+{"seq":425,"by":411,"type":"pile","pile":"pile/Aristocrat","card":"Aristocrat","removed":true,"roles":[{"card":"Young Witch","role":"bane"}],"recipe":{"kind":"stacked","cards":[{"card":"Aristocrat","count":10}]}}
+{"seq":426,"by":411,"type":"chance","site":"kingdom","cards":["Dismantle","Jack of All Trades","Urchin","Druid","Archive","Settlers","Pilgrim","Raider","Shop","Conspirator"]}
+{"seq":427,"by":411,"type":"pile","pile":"pile/Dismantle","card":"Dismantle","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Dismantle","count":10}]}}
+{"seq":428,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":429,"by":411,"type":"derived","costs":{"Dismantle":{"coins":4}}}
+{"seq":430,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":431,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":432,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":433,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":434,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":435,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":436,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":437,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":438,"by":411,"type":"add","cards":["Dismantle"],"to":"pile/Dismantle"}
+{"seq":439,"by":411,"type":"pile","pile":"pile/Jack of All Trades","card":"Jack of All Trades","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Jack of All Trades","count":10}]}}
+{"seq":440,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":441,"by":411,"type":"derived","costs":{"Jack of All Trades":{"coins":4}}}
+{"seq":442,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":443,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":444,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":445,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":446,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":447,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":448,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":449,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":450,"by":411,"type":"add","cards":["Jack of All Trades"],"to":"pile/Jack of All Trades"}
+{"seq":451,"by":411,"type":"pile","pile":"pile/Urchin","card":"Urchin","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Urchin","count":10}]}}
+{"seq":452,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":453,"by":411,"type":"derived","costs":{"Urchin":{"coins":3}}}
+{"seq":454,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":455,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":456,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":457,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":458,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":459,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":460,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":461,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":462,"by":411,"type":"add","cards":["Urchin"],"to":"pile/Urchin"}
+{"seq":463,"by":411,"type":"pile","pile":"pile/Druid","card":"Druid","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Druid","count":10}]}}
+{"seq":464,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":465,"by":411,"type":"derived","costs":{"Druid":{"coins":2}}}
+{"seq":466,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":467,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":468,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":469,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":470,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":471,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":472,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":473,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":474,"by":411,"type":"add","cards":["Druid"],"to":"pile/Druid"}
+{"seq":475,"by":411,"type":"pile","pile":"pile/Archive","card":"Archive","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Archive","count":10}]}}
+{"seq":476,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":477,"by":411,"type":"derived","costs":{"Archive":{"coins":5}}}
+{"seq":478,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":479,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":480,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":481,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":482,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":483,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":484,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":485,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":486,"by":411,"type":"add","cards":["Archive"],"to":"pile/Archive"}
+{"seq":487,"by":411,"type":"pile","pile":"pile/Settlers","card":"Settlers","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Settlers","count":5},{"card":"Bustling Village","count":5}]}}
+{"seq":488,"by":411,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
+{"seq":489,"by":411,"type":"derived","costs":{"Bustling Village":{"coins":5}}}
+{"seq":490,"by":411,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
+{"seq":491,"by":411,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
+{"seq":492,"by":411,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
+{"seq":493,"by":411,"type":"add","cards":["Bustling Village"],"to":"pile/Settlers"}
+{"seq":494,"by":411,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
+{"seq":495,"by":411,"type":"derived","costs":{"Settlers":{"coins":2}}}
+{"seq":496,"by":411,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
+{"seq":497,"by":411,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
+{"seq":498,"by":411,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
+{"seq":499,"by":411,"type":"add","cards":["Settlers"],"to":"pile/Settlers"}
+{"seq":500,"by":411,"type":"pile","pile":"pile/Pilgrim","card":"Pilgrim","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Pilgrim","count":10}]}}
+{"seq":501,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":502,"by":411,"type":"derived","costs":{"Pilgrim":{"coins":5}}}
+{"seq":503,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":504,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":505,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":506,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":507,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":508,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":509,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":510,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":511,"by":411,"type":"add","cards":["Pilgrim"],"to":"pile/Pilgrim"}
+{"seq":512,"by":411,"type":"pile","pile":"pile/Raider","card":"Raider","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Raider","count":10}]}}
+{"seq":513,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":514,"by":411,"type":"derived","costs":{"Raider":{"coins":6}}}
+{"seq":515,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":516,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":517,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":518,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":519,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":520,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":521,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":522,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":523,"by":411,"type":"add","cards":["Raider"],"to":"pile/Raider"}
+{"seq":524,"by":411,"type":"pile","pile":"pile/Shop","card":"Shop","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Shop","count":10}]}}
+{"seq":525,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":526,"by":411,"type":"derived","costs":{"Shop":{"coins":3}}}
+{"seq":527,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":528,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":529,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":530,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":531,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":532,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":533,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":534,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":535,"by":411,"type":"add","cards":["Shop"],"to":"pile/Shop"}
+{"seq":536,"by":411,"type":"pile","pile":"pile/Conspirator","card":"Conspirator","supply":true,"recipe":{"kind":"stacked","cards":[{"card":"Conspirator","count":10}]}}
+{"seq":537,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":538,"by":411,"type":"derived","costs":{"Conspirator":{"coins":4}}}
+{"seq":539,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":540,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":541,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":542,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":543,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":544,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":545,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":546,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":547,"by":411,"type":"add","cards":["Conspirator"],"to":"pile/Conspirator"}
+{"seq":548,"by":411,"type":"pile","pile":"pile/Mercenary","card":"Mercenary","recipe":{"kind":"stacked","cards":[{"card":"Mercenary","count":10}]}}
+{"seq":549,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":550,"by":411,"type":"derived","costs":{"Mercenary":{"coins":0}}}
+{"seq":551,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":552,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":553,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":554,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":555,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":556,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":557,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":558,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":559,"by":411,"type":"add","cards":["Mercenary"],"to":"pile/Mercenary"}
+{"seq":560,"by":411,"type":"chance","site":"boons","cards":["The Sun's Gift","The Sky's Gift","The Earth's Gift","The Forest's Gift","The Wind's Gift","The Field's Gift","The River's Gift","The Sea's Gift","The Mountain's Gift","The Moon's Gift","The Flame's Gift","The Swamp's Gift"]}
+{"seq":561,"by":411,"type":"add","cards":["The Swamp's Gift","The Flame's Gift","The Moon's Gift","The Mountain's Gift","The Sea's Gift","The River's Gift","The Field's Gift","The Wind's Gift","The Forest's Gift","The Earth's Gift","The Sky's Gift","The Sun's Gift"],"to":"boons/deck"}
+{"seq":562,"by":411,"type":"chance","site":"choice","card":"Druid","cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"]}
+{"seq":563,"by":411,"type":"set-aside","player":1,"cards":["The Sun's Gift","The Moon's Gift","The Sky's Gift"],"from":"boons/deck","to":"boons/druid","pos":[0,8,0]}
+{"seq":564,"by":411,"type":"pile","pile":"pile/Will-o'-Wisp","card":"Will-o'-Wisp","recipe":{"kind":"stacked","cards":[{"card":"Will-o'-Wisp","count":12}]}}
+{"seq":565,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":566,"by":411,"type":"derived","costs":{"Will-o'-Wisp":{"coins":0}}}
+{"seq":567,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":568,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":569,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":570,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":571,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":572,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":573,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":574,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":575,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":576,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":577,"by":411,"type":"add","cards":["Will-o'-Wisp"],"to":"pile/Will-o'-Wisp"}
+{"seq":578,"by":411,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":579,"by":411,"type":"ask","seat":1,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"}]}
+{"seq":580,"by":411,"type":"answer","seat":1,"indices":[]}
+{"seq":581,"by":408,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":582,"by":408,"type":"answer","seat":1,"indices":[1]}
+{"seq":583,"by":407,"type":"phase","phase":"buy"}
+{"seq":584,"by":583,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":585,"by":583,"type":"answer","seat":1,"indices":[0]}
+{"seq":586,"by":583,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":587,"by":586,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":588,"by":583,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":589,"by":583,"type":"answer","seat":1,"indices":[0]}
+{"seq":590,"by":583,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":591,"by":590,"type":"counter","counter":"coins","delta":1,"value":4}
+{"seq":592,"by":583,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":593,"by":583,"type":"answer","seat":1,"indices":[0]}
+{"seq":594,"by":583,"type":"counter","counter":"coins","delta":-1,"value":3}
+{"seq":595,"by":583,"type":"counter","counter":"1/debt","delta":-1,"value":3}
+{"seq":596,"by":583,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":597,"by":583,"type":"answer","seat":1,"indices":[1]}
+{"seq":598,"by":407,"type":"phase","phase":"night"}
+{"seq":599,"by":598,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":600,"by":598,"type":"answer","seat":1,"indices":[1]}
+{"seq":601,"by":407,"type":"phase","phase":"cleanup"}
+{"seq":602,"by":601,"type":"discard","player":1,"cards":["Mountain Shrine","Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":603,"by":601,"type":"discard","player":1,"cards":["Estate","Mountain Shrine"],"from":"1/hand","to":"1/discard"}
+{"seq":604,"by":601,"type":"shuffle","player":1,"cards":["Estate","Copper","Copper","Estate","Mountain Shrine","Mountain Shrine","Copper","Mountain Shrine","Copper","Copper","Estate"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[1,1,1,2,0,0,1,3,1,1,0]}
+{"seq":605,"by":601,"type":"draw","player":1,"cards":["Copper","Copper","Estate","Copper","Copper"],"from":"1/deck","to":"1/hand"}
+{"seq":606,"by":407,"type":"turn-end","player":1}
+{"seq":607,"type":"turn","player":0,"number":7,"kind":"regular"}
+{"seq":608,"by":607,"type":"phase","phase":"action"}
+{"seq":609,"by":608,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":610,"by":608,"type":"answer","seat":0,"indices":[0]}
+{"seq":611,"by":608,"type":"play","player":0,"card":"Mountain Shrine","from":"0/hand","to":"0/play"}
+{"seq":612,"by":611,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":613,"by":611,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":614,"by":611,"type":"ask","seat":0,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"}]}
+{"seq":615,"by":611,"type":"answer","seat":0,"indices":[]}
+{"seq":616,"by":608,"type":"ask","seat":0,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":617,"by":608,"type":"answer","seat":0,"indices":[1]}
+{"seq":618,"by":607,"type":"phase","phase":"buy"}
+{"seq":619,"by":618,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":620,"by":618,"type":"answer","seat":0,"indices":[0]}
+{"seq":621,"by":618,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":622,"by":621,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":623,"by":618,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":624,"by":618,"type":"answer","seat":0,"indices":[1]}
+{"seq":625,"by":618,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":626,"by":618,"type":"counter","counter":"0/debt","delta":-1,"value":1}
+{"seq":627,"by":618,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":628,"by":618,"type":"answer","seat":0,"indices":[0]}
+{"seq":629,"by":618,"type":"play","player":0,"card":"Copper","from":"0/hand","to":"0/play"}
+{"seq":630,"by":629,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":631,"by":618,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":632,"by":618,"type":"answer","seat":0,"indices":[1]}
+{"seq":633,"by":607,"type":"phase","phase":"night"}
+{"seq":634,"by":633,"type":"ask","seat":0,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":635,"by":633,"type":"answer","seat":0,"indices":[0]}
+{"seq":636,"by":633,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":637,"by":633,"type":"counter","counter":"0/debt","delta":-1,"value":0}
+{"seq":638,"by":607,"type":"phase","phase":"cleanup"}
+{"seq":639,"by":638,"type":"discard","player":0,"cards":["Mountain Shrine","Copper","Copper"],"from":"0/play","to":"0/discard"}
+{"seq":640,"by":638,"type":"discard","player":0,"cards":["Estate","Mountain Shrine"],"from":"0/hand","to":"0/discard"}
+{"seq":641,"by":638,"type":"draw","player":0,"cards":["Copper","Estate","Copper","Copper","Estate"],"from":"0/deck","to":"0/hand"}
+{"seq":642,"by":607,"type":"turn-end","player":0}
+{"seq":643,"type":"turn","player":1,"number":7,"kind":"regular"}
+{"seq":644,"by":643,"type":"phase","phase":"action"}
+{"seq":645,"by":643,"type":"phase","phase":"buy"}
+{"seq":646,"by":645,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":647,"by":645,"type":"answer","seat":1,"indices":[1]}
+{"seq":648,"by":645,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":649,"by":648,"type":"counter","counter":"coins","delta":1,"value":1}
+{"seq":650,"by":645,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":4,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":651,"by":645,"type":"answer","seat":1,"indices":[1]}
+{"seq":652,"by":645,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":653,"by":652,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":654,"by":645,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":655,"by":645,"type":"answer","seat":1,"indices":[2]}
+{"seq":656,"by":645,"type":"counter","counter":"coins","delta":-1,"value":1}
+{"seq":657,"by":645,"type":"counter","counter":"1/debt","delta":-1,"value":2}
+{"seq":658,"by":645,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":3,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":659,"by":645,"type":"answer","seat":1,"indices":[1]}
+{"seq":660,"by":645,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":661,"by":660,"type":"counter","counter":"coins","delta":1,"value":2}
+{"seq":662,"by":645,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":663,"by":645,"type":"answer","seat":1,"indices":[0]}
+{"seq":664,"by":645,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":665,"by":664,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":666,"by":645,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":667,"by":645,"type":"answer","seat":1,"indices":[1]}
+{"seq":668,"by":643,"type":"phase","phase":"night"}
+{"seq":669,"by":668,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":670,"by":668,"type":"answer","seat":1,"indices":[0]}
+{"seq":671,"by":668,"type":"counter","counter":"coins","delta":-1,"value":2}
+{"seq":672,"by":668,"type":"counter","counter":"1/debt","delta":-1,"value":1}
+{"seq":673,"by":668,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":674,"by":668,"type":"answer","seat":1,"indices":[1]}
+{"seq":675,"by":643,"type":"phase","phase":"cleanup"}
+{"seq":676,"by":675,"type":"discard","player":1,"cards":["Copper","Copper","Copper","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":677,"by":675,"type":"discard","player":1,"cards":["Estate"],"from":"1/hand","to":"1/discard"}
+{"seq":678,"by":675,"type":"draw","player":1,"cards":["Estate","Mountain Shrine","Mountain Shrine","Copper","Mountain Shrine"],"from":"1/deck","to":"1/hand"}
+{"seq":679,"by":643,"type":"turn-end","player":1}
+{"seq":680,"type":"turn","player":0,"number":8,"kind":"regular"}
+{"seq":681,"by":680,"type":"phase","phase":"action"}
+{"seq":682,"by":680,"type":"phase","phase":"buy"}
+{"seq":683,"by":682,"type":"ask","seat":0,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"buy","label":"Buy Copper ($0)","card":"Copper","cost":{"coins":0}},{"index":4,"group":0,"action":"buy","label":"Buy Curse ($0)","card":"Curse","cost":{"coins":0}},{"index":5,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":684,"by":682,"type":"answer","seat":0,"indices":[3]}
+{"seq":685,"by":682,"type":"buy","player":0,"card":"Copper"}
+{"seq":686,"by":685,"type":"counter","counter":"buys","delta":-1,"value":0}
+{"seq":687,"by":685,"type":"counter","counter":"bought","delta":1,"value":1}
+{"seq":688,"by":685,"type":"gain","player":0,"cards":["Copper"],"from":"pile/Copper","to":"0/discard"}
+{"seq":689,"by":680,"type":"phase","phase":"night"}
+{"seq":690,"by":680,"type":"phase","phase":"cleanup"}
+{"seq":691,"by":690,"type":"discard","player":0,"cards":["Copper","Estate","Copper","Copper","Estate"],"from":"0/hand","to":"0/discard"}
+{"seq":692,"by":690,"type":"shuffle","player":0,"cards":["Copper","Copper","Mountain Shrine","Estate","Estate","Estate","Copper","Mountain Shrine","Copper","Copper","Copper"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[1,1,4,0,0,2,0,3,0,0,0]}
+{"seq":693,"by":690,"type":"draw","player":0,"cards":["Copper","Copper","Mountain Shrine","Estate","Estate"],"from":"0/deck","to":"0/hand"}
+{"seq":694,"by":680,"type":"turn-end","player":0}
+{"seq":695,"type":"turn","player":1,"number":8,"kind":"regular"}
+{"seq":696,"by":695,"type":"phase","phase":"action"}
+{"seq":697,"by":696,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":1,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"play","label":"Play Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":3,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":698,"by":696,"type":"answer","seat":1,"indices":[1]}
+{"seq":699,"by":696,"type":"play","player":1,"card":"Mountain Shrine","from":"1/hand","to":"1/play"}
+{"seq":700,"by":699,"type":"counter","counter":"actions","delta":-1,"value":0}
+{"seq":701,"by":699,"type":"counter","counter":"coins","delta":2,"value":2}
+{"seq":702,"by":699,"type":"ask","seat":1,"prompt":"Mountain Shrine: choose up to 1 card to trash","kind":"cards","purpose":"trash","source":"Mountain Shrine","min":0,"max":1,"options":[{"index":0,"group":0,"action":"select","label":"Estate","card":"Estate","zone":"hand"},{"index":1,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"},{"index":2,"group":0,"action":"select","label":"Copper","card":"Copper","zone":"hand"},{"index":3,"group":0,"action":"select","label":"Mountain Shrine","card":"Mountain Shrine","zone":"hand"}]}
+{"seq":703,"by":699,"type":"answer","seat":1,"indices":[]}
+{"seq":704,"by":696,"type":"ask","seat":1,"prompt":"Action phase: choose a move","kind":"turn","purpose":"turn","phase":"action","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Action phase"}]}
+{"seq":705,"by":696,"type":"answer","seat":1,"indices":[1]}
+{"seq":706,"by":695,"type":"phase","phase":"buy"}
+{"seq":707,"by":706,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"play","label":"Play Copper","card":"Copper","zone":"hand"},{"index":1,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":2,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":708,"by":706,"type":"answer","seat":1,"indices":[0]}
+{"seq":709,"by":706,"type":"play","player":1,"card":"Copper","from":"1/hand","to":"1/play"}
+{"seq":710,"by":709,"type":"counter","counter":"coins","delta":1,"value":3}
+{"seq":711,"by":706,"type":"ask","seat":1,"prompt":"Buy phase: choose a move","kind":"turn","purpose":"turn","phase":"buy","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Buy phase"}]}
+{"seq":712,"by":706,"type":"answer","seat":1,"indices":[1]}
+{"seq":713,"by":695,"type":"phase","phase":"night"}
+{"seq":714,"by":713,"type":"ask","seat":1,"prompt":"Night phase: choose a move","kind":"turn","purpose":"turn","phase":"night","min":1,"max":1,"options":[{"index":0,"group":0,"action":"pay-debt","label":"Pay off 1 Debt with $1"},{"index":1,"group":0,"action":"end-phase","label":"End your Night phase"}]}
+{"seq":715,"by":713,"type":"answer","seat":1,"indices":[1]}
+{"seq":716,"by":695,"type":"phase","phase":"cleanup"}
+{"seq":717,"by":716,"type":"discard","player":1,"cards":["Mountain Shrine","Copper"],"from":"1/play","to":"1/discard"}
+{"seq":718,"by":716,"type":"discard","player":1,"cards":["Estate","Mountain Shrine","Mountain Shrine"],"from":"1/hand","to":"1/discard"}
+{"seq":719,"by":716,"type":"shuffle","player":1,"cards":["Estate","Estate","Copper","Copper","Mountain Shrine","Mountain Shrine","Mountain Shrine","Copper","Copper","Copper"],"from":"1/discard","to":"1/deck","at":"bottom","pos":[2,4,2,3,0,0,0,0,0,0]}
+{"seq":720,"by":716,"type":"draw","player":1,"cards":["Copper","Copper","Estate","Estate","Estate"],"from":"1/deck","to":"1/hand"}
+{"seq":721,"by":695,"type":"turn-end","player":1}
+{"seq":722,"type":"game-ending","reason":"turn-limit"}
+{"seq":723,"type":"game-end","reason":"turn-limit","result":[{"seat":0,"vp":3,"turns":8,"rank":1},{"seat":1,"vp":3,"turns":8,"rank":1}]}
