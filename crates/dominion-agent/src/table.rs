@@ -6,7 +6,7 @@ use dominion_engine::{
     Purpose, Response, SetupError, Types, View,
 };
 use dominion_protocol::api::{InPlay, PlayerTable, TableExtras};
-use dominion_protocol::events::Event;
+use dominion_protocol::events::{Event, History};
 use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -425,6 +425,36 @@ impl Table {
     /// How many answers the game has had (every seat's), counting from its start.
     pub fn answers(&self) -> usize {
         self.history.len()
+    }
+
+    /// Which of its histories the game has now: its answers and its undos, digested as
+    /// the snapshot saves them. Two tables have the same one only if they took the same
+    /// answers after the same undos, so it tells a stream built from this game as it
+    /// stands from one built before an undo, however the game went on after it.
+    pub fn history(&self) -> History {
+        use sha2::{Digest, Sha256};
+        use std::fmt::Write;
+        #[derive(Serialize)]
+        struct Kept<'a> {
+            history: &'a [Step],
+            undone_by: &'a [PlayerId],
+            undone_answers: &'a [usize],
+        }
+        let bytes = serde_json::to_vec(&Kept {
+            history: &self.history,
+            undone_by: &self.undone_by,
+            undone_answers: &self.undone_answers,
+        })
+        .expect("answers serialize");
+        let digest = Sha256::digest(&bytes);
+        History {
+            answers: self.history.len() as u64,
+            undos: self.undone_by.len() as u64,
+            digest: digest.iter().fold(String::from("sha256:"), |mut s, b| {
+                let _ = write!(s, "{b:02x}");
+                s
+            }),
+        }
     }
 
     /// Whether the game can go back to an earlier point: it kept every answer, and

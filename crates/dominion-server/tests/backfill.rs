@@ -36,6 +36,54 @@ fn config(seed: u64) -> GameConfig {
 struct Twins {
     old: Table,
     live: Table,
+    /// Every answer given, by seat.
+    given: Vec<(PlayerId, Given)>,
+}
+
+/// An answer, to give again to another decision.
+#[derive(Clone, Debug)]
+enum Given {
+    Treasures,
+    Copper(Option<WayChoice>),
+    Picks(Vec<u32>, Option<WayChoice>),
+}
+
+impl Given {
+    fn answer(&self, decision: &str) -> (Answer, Option<WayChoice>) {
+        match self {
+            Given::Treasures => unreachable!(),
+            Given::Copper(way) => (Answer::name(decision, "Copper"), *way),
+            Given::Picks(picks, way) => (Answer::indices(decision, picks.clone()), *way),
+        }
+    }
+
+    /// Gives it to `table` for `seat`.
+    fn to_table(&self, table: &mut Table, seat: PlayerId) {
+        let d = table.view(seat).decision.unwrap();
+        match self {
+            Given::Treasures => {
+                table.play_treasures(seat, &d.id).unwrap();
+            }
+            given => {
+                let (answer, way) = given.answer(&d.id);
+                table.answer_with(seat, &answer, way).unwrap();
+            }
+        }
+    }
+
+    /// Gives it through `hub` for `seat`.
+    fn to_hub(&self, hub: &Hub, seat: &dominion_server::hub::Seat) {
+        let d = hub.view(seat).unwrap().0.decision.unwrap();
+        match self {
+            Given::Treasures => {
+                hub.play_treasures(seat, &d.id).unwrap();
+            }
+            given => {
+                let (answer, way) = given.answer(&d.id);
+                hub.answer_with(seat, &answer, way).unwrap();
+            }
+        }
+    }
 }
 
 impl Twins {
@@ -44,6 +92,7 @@ impl Twins {
         Twins {
             old: Table::new(id, config(seed), names.clone()).unwrap(),
             live: Table::new_recorded(id, config(seed), names).unwrap(),
+            given: vec![],
         }
     }
 
@@ -62,24 +111,28 @@ impl Twins {
                 && self.old.play_treasures(seat, &d.id).is_ok()
             {
                 self.live.play_treasures(seat, &d.id).unwrap();
+                self.given.push((seat, Given::Treasures));
                 continue;
             }
-            let answer = if d.name_any {
-                Answer::name(&d.id, "Copper")
-            } else {
+            let picks = (!d.name_any).then(|| {
                 let (min, max) = (d.min.unwrap_or(1) as usize, d.max.unwrap_or(1) as usize);
                 let mut picks: Vec<u32> = (0..d.options.len() as u32).collect();
                 picks.shuffle(&mut rng);
                 picks.truncate(rng.random_range(min..=max.min(picks.len())));
-                Answer::indices(&d.id, picks)
-            };
+                picks
+            });
             let way = match rng.random_range(0..4) {
                 0 => Some(WayChoice::Way(Card::WayOfTheOx)),
                 1 => Some(WayChoice::None),
                 _ => None,
             };
-            self.old.answer_with(seat, &answer, way).unwrap();
-            self.live.answer_with(seat, &answer, way).unwrap();
+            let given = match picks {
+                Some(picks) => Given::Picks(picks, way),
+                None => Given::Copper(way),
+            };
+            given.to_table(&mut self.old, seat);
+            given.to_table(&mut self.live, seat);
+            self.given.push((seat, given));
         }
         self
     }
@@ -339,7 +392,8 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
     incomplete.finish(17);
     let mut differs = Twins::new("g8", 18);
     differs.finish(18);
-    // Over, but a game made directly whose rules allow undo: it waits to be retired.
+    // Over, and a game made directly whose rules allow undo: written all the same, and
+    // served once it can't change.
     let mut undoable = Twins::new("g9", 19);
     undoable.finish(19);
     {
@@ -372,10 +426,10 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
             .values()
             .map(|e| {
                 let s = match &e.status {
+                    Status::Converted { undoable: true, .. } => "converted, undoable".into(),
                     Status::Converted { .. } => "converted".into(),
-                    Status::HasStream(e) => format!("stream {e}"),
+                    Status::HasStream { encoding, .. } => format!("stream {encoding}"),
                     Status::InProgress(_) => "in progress".into(),
-                    Status::Undoable(_) => "can be undone".into(),
                     Status::NotConvertible(Refusal::Incomplete) => "incomplete".into(),
                     Status::NotConvertible(Refusal::Diverged { entry: Some(3), .. }) => {
                         "diverged at 3".into()
@@ -386,7 +440,7 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
             })
             .collect()
     };
-    let expected = |g2: &str, g3: &str, g5: &str, g6: &str| {
+    let expected = |g2: &str, g3: &str, g5: &str, g6: &str, g9: &str| {
         [
             ("g1", Place::Hosted, "stream jsonl"),
             ("g2", Place::Hosted, g2),
@@ -396,14 +450,20 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
             ("g6", Place::Expired, g6),
             ("g7", Place::Hosted, "incomplete"),
             ("g8", Place::Hosted, "diverged at 3"),
-            ("g9", Place::Hosted, "can be undone"),
+            ("g9", Place::Hosted, g9),
         ]
         .map(|(id, p, s)| (id.to_string(), p, s.to_string()))
         .to_vec()
     };
     assert_eq!(
         statuses(&dry),
-        expected("converted", "converted", "converted", "converted")
+        expected(
+            "converted",
+            "converted",
+            "converted",
+            "converted",
+            "converted, undoable"
+        )
     );
 
     let wrote = run(dir, false);
@@ -421,12 +481,16 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
         (dir.join("g3.events.cbor"), &resigned),
         (dir.join("expired/g5.events.cbor"), &stopped),
         (dir.join("expired/g6.events.cbor"), &retired),
+        (dir.join("g9.events.cbor"), &undoable),
     ];
     assert_eq!(written, streams.iter().map(|(p, _)| p).collect());
     for (path, twins) in &streams {
         let read = stream(path);
         let id = twins.old.id();
-        assert_eq!(read.header, recording::reconstructed_header(id, AT));
+        assert_eq!(
+            read.header,
+            recording::reconstructed_header(id, AT, twins.old.history())
+        );
         assert_eq!(
             events::Header {
                 reconstructed: None,
@@ -441,14 +505,27 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
     assert_eq!(files(dir), after, "a second run changes nothing");
     assert_eq!(
         statuses(&again),
-        expected("stream cbor", "stream cbor", "stream cbor", "stream cbor")
+        expected(
+            "stream cbor",
+            "stream cbor",
+            "stream cbor",
+            "stream cbor",
+            "stream cbor"
+        )
     );
+    assert!(matches!(
+        again["g9"].status,
+        Status::HasStream { unserved: true, .. }
+    ));
 
-    // The server serves a backfilled stream once the game is over, and goes on with a
-    // game in progress unrecorded; once that has ended, a run converts it too.
+    // The server serves a backfilled stream once the game can't change, and goes on with
+    // a game in progress unrecorded; once that has ended, a run converts it too.
     let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
-    assert_eq!(loaded.unrecorded.len(), 0);
-    assert_eq!(loaded.reconstructed, 2);
+    assert_eq!((loaded.unrecorded.len(), loaded.stale.len()), (0, 0));
+    assert_eq!(
+        (loaded.reconstructed, loaded.reconstructed_unserved),
+        (2, 1)
+    );
     assert_eq!(files(dir), after, "the server starts without touching them");
     let g2 = fs::read(dir.join("g2.events.cbor")).unwrap();
     assert_eq!(hub.recording("g2").unwrap(), (Encoding::Cbor, g2));
@@ -488,7 +565,13 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
     drop(hub);
     let last = run(dir, false);
     assert!(matches!(last["g4"].status, Status::Converted { .. }));
-    assert!(matches!(last["g9"].status, Status::Converted { .. }));
+    assert!(matches!(
+        last["g9"].status,
+        Status::HasStream {
+            unserved: false,
+            ..
+        }
+    ));
     let read = stream(&dir.join("g4.events.cbor"));
     assert!(matches!(read.events.last().unwrap().what, What::GameEnd(_)));
     dominion_agent::replay::replay(&read.events).unwrap();
@@ -499,13 +582,12 @@ fn a_state_directory_is_backfilled_once_with_a_dry_run_first() {
     assert_eq!(hub.recording("g9").unwrap(), (Encoding::Cbor, g9));
 }
 
-/// Writes `events` as game `id`'s reconstructed stream at `path`.
-fn write_reconstructed(path: &Path, id: &str, events: &[Event]) {
+/// Writes `events` as the reconstructed stream of `table`'s game as it stands at `path`.
+fn write_reconstructed(path: &Path, table: &Table, events: &[Event]) {
     let encoding = Encoding::of_file(path.to_str().unwrap()).unwrap();
     let mut bytes = vec![];
-    encoding
-        .write(&mut bytes, &recording::reconstructed_header(id, AT))
-        .unwrap();
+    let header = recording::reconstructed_header(table.id(), AT, table.history());
+    encoding.write(&mut bytes, &header).unwrap();
     for event in events {
         encoding.write(&mut bytes, event).unwrap();
     }
@@ -581,7 +663,10 @@ fn a_stopped_or_lost_recording_gets_a_whole_stream_beside_what_is_left_of_it() {
     for twins in [&stopped, &lost, &wrong] {
         let id = twins.old.id();
         let read = stream(&dir.join(format!("{id}.events.cbor")));
-        assert_eq!(read.header, recording::reconstructed_header(id, AT));
+        assert_eq!(
+            read.header,
+            recording::reconstructed_header(id, AT, twins.old.history())
+        );
         check_stream(&read.events, twins);
     }
 
@@ -596,11 +681,13 @@ fn a_stopped_or_lost_recording_gets_a_whole_stream_beside_what_is_left_of_it() {
     drop(hub);
     assert_eq!(files(dir), after);
     let again = run(dir, false);
-    assert!(
-        again
-            .values()
-            .all(|e| matches!(e.status, Status::HasStream(Encoding::Cbor)))
-    );
+    assert!(again.values().all(|e| matches!(
+        e.status,
+        Status::HasStream {
+            encoding: Encoding::Cbor,
+            unserved: false
+        }
+    )));
     assert_eq!(files(dir), after);
 
     // A damaged one is reported and left as it is, and never served.
@@ -622,6 +709,9 @@ fn a_stopped_or_lost_recording_gets_a_whole_stream_beside_what_is_left_of_it() {
     assert_eq!(files(dir), damaged);
 }
 
+/// Was: such a stream (which no backfill wrote then) was refused at startup. Now one of the
+/// game as it stands is kept and served once the game can't change, and set aside as soon
+/// as the game changes.
 #[test]
 fn a_reconstructed_stream_is_never_served_while_the_game_can_change() {
     let tmp = tempfile::tempdir().unwrap();
@@ -635,26 +725,50 @@ fn a_reconstructed_stream_is_never_served_while_the_game_can_change() {
         store.save("g1", &over.saved(&Meta::default())).unwrap();
         store.save("g2", &playing.saved(&no_undo())).unwrap();
     }
-    // Streams no backfill would write: the games can still change.
-    write_reconstructed(&dir.join("g1.events.jsonl"), "g1", over.expected());
-    write_reconstructed(&dir.join("g2.events.jsonl"), "g2", playing.expected());
+    write_reconstructed(&dir.join("g1.events.jsonl"), &over.old, over.expected());
+    write_reconstructed(
+        &dir.join("g2.events.jsonl"),
+        &playing.old,
+        playing.expected(),
+    );
     let before = files(dir);
     let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
-    assert_eq!(loaded.unrecorded.len(), 2);
-    assert!(
-        loaded
-            .unrecorded
-            .iter()
-            .all(|(_, why)| why.contains("can still change"))
+    assert_eq!((loaded.unrecorded.len(), loaded.stale.len()), (0, 0));
+    assert_eq!(
+        (loaded.reconstructed, loaded.reconstructed_unserved),
+        (0, 2)
     );
     assert!(matches!(hub.recording("g1"), Err(HubError::Conflict(_))));
     assert!(matches!(hub.recording("g2"), Err(HubError::Conflict(_))));
+    assert_eq!(files(dir), before, "neither rejected nor rewritten");
     drop(hub);
-    assert_eq!(files(dir), before);
     let entries = run(dir, false);
-    assert!(matches!(entries["g1"].status, Status::HasStream(_)));
-    assert!(matches!(entries["g2"].status, Status::HasStream(_)));
+    for id in ["g1", "g2"] {
+        assert!(
+            matches!(entries[id].status, Status::HasStream { unserved: true, .. }),
+            "{id}: {:?}",
+            entries[id].status
+        );
+    }
     assert_eq!(files(dir), before);
+
+    // An answer makes g2's stream another history's: set aside, never served.
+    let (hub, _) = Hub::open(dir, KEEP).unwrap();
+    let seats: Vec<_> = (0..2)
+        .map(|i| hub.find(&format!("g2-{i}")).unwrap())
+        .collect();
+    let (seat, d) = seats
+        .iter()
+        .find_map(|s| Some((s, hub.view(s).unwrap().0.decision?)))
+        .unwrap();
+    hub.answer(seat, &Answer::indices(&d.id, vec![d.options[0].index]))
+        .unwrap();
+    assert!(!dir.join("g2.events.jsonl").exists());
+    assert_eq!(
+        fs::read(dir.join("g2.stale.events.jsonl")).unwrap(),
+        before[&dir.join("g2.events.jsonl")]
+    );
+    assert!(dir.join("g1.events.jsonl").exists());
 }
 
 /// Copies saved games `tests/saved/<name>` into `to`.
@@ -688,7 +802,8 @@ fn the_saved_snapshots_of_older_builds_backfill() {
         );
         assert_eq!(files(dir), before);
 
-        // Played to its end by this build; it can still be undone, so it waits.
+        // Played to its end by this build; it can still be undone, and is written all
+        // the same (it used to wait until it was retired).
         let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
         assert_eq!(loaded.unrecorded.len(), usize::from(old_stream.is_some()));
         let seats: Vec<_> = (0..2)
@@ -706,14 +821,19 @@ fn the_saved_snapshots_of_older_builds_backfill() {
             hub.answer(seat, &answer).unwrap();
         }
         drop(hub);
-        assert!(matches!(run(dir, true)["g1"].status, Status::Undoable(_)));
+        assert!(matches!(
+            run(dir, true)["g1"].status,
+            Status::Converted { undoable: true, .. }
+        ));
 
-        // Retired: converted, beside the incomplete stream an older build left.
-        Store::open(dir).unwrap().retire("g1").unwrap();
+        // Converted, beside the incomplete stream an older build left; served once retired.
         let entry = &run(dir, false)["g1"];
         match &entry.status {
             Status::Converted {
-                ending, replaces, ..
+                ending,
+                replaces,
+                undoable: true,
+                ..
             } => {
                 assert_eq!(ending, "finished", "{name}");
                 assert_eq!(
@@ -726,6 +846,10 @@ fn the_saved_snapshots_of_older_builds_backfill() {
             }
             other => panic!("{name}: {other:?}"),
         }
+        let (hub, _) = Hub::open(dir, KEEP).unwrap();
+        assert!(matches!(hub.recording("g1"), Err(HubError::Conflict(_))));
+        drop(hub);
+        Store::open(dir).unwrap().retire("g1").unwrap();
         assert_eq!(
             fs::read(dir.join("expired/g1.incomplete.events.jsonl")).ok(),
             old_stream
@@ -774,8 +898,12 @@ fn snapshots_saved_before_recording_convert() {
     assert_eq!(ending("g2"), "P2 out (abandoned)");
     assert_eq!(ending("g3"), "in progress");
     assert!(matches!(first["g6"].status, Status::InProgress(_)));
-    // A finished game made directly, whose rules allow undo: written once retired.
-    assert!(matches!(first["g4"].status, Status::Undoable(_)));
+    // A finished game made directly, whose rules allow undo: written all the same (it
+    // used to wait until it was retired).
+    assert!(matches!(
+        first["g4"].status,
+        Status::Converted { undoable: true, .. }
+    ));
     // Star Chart and Avoid now shuffle again the cards they leave, so the engine plays
     // this game differently from its first such choice on: it gets no stream.
     assert!(matches!(
@@ -786,10 +914,13 @@ fn snapshots_saved_before_recording_convert() {
         Store::open(dir).unwrap().retire(id).unwrap();
     }
     let second = run(dir, false);
-    match &second["g4"].status {
-        Status::Converted { ending, .. } => assert_eq!(ending, "finished"),
-        other => panic!("g4: {other:?}"),
-    }
+    assert!(matches!(
+        second["g4"].status,
+        Status::HasStream {
+            unserved: false,
+            ..
+        }
+    ));
     assert!(matches!(
         second["g5"].status,
         Status::NotConvertible(Refusal::Diverged { .. })
@@ -805,4 +936,217 @@ fn snapshots_saved_before_recording_convert() {
         assert!(read.header.reconstructed.is_some());
         dominion_agent::replay::replay(&read.events).unwrap_or_else(|d| panic!("{path}: {d}"));
     }
+}
+
+fn saved_table(dir: &Path, id: &str) -> Table {
+    let saved: Value =
+        serde_json::from_slice(&fs::read(dir.join(format!("{id}.json"))).unwrap()).unwrap();
+    serde_json::from_value(saved["table"].clone()).unwrap()
+}
+
+fn seats(hub: &Hub, dir: &Path, id: &str) -> Vec<dominion_server::hub::Seat> {
+    let saved: Value =
+        serde_json::from_slice(&fs::read(dir.join(format!("{id}.json"))).unwrap()).unwrap();
+    (0..2)
+        .map(|i| hub.find(saved["tokens"][i].as_str().unwrap()).unwrap())
+        .collect()
+}
+
+/// The finished game of the pre-recording snapshots that can still be undone (g4): written
+/// on the first run, kept but not served by the server, set aside once it is undone, and
+/// written again, for the game as it then stands, once it is over again.
+#[test]
+fn a_finished_game_that_can_be_undone_converts_and_is_served_once_it_cannot_change() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/backfill/pre-events"),
+        dir,
+    );
+    let first = run(dir, false);
+    assert!(matches!(
+        first["g4"].status,
+        Status::Converted { undoable: true, .. }
+    ));
+    let path = dir.join("g4.events.cbor");
+    let original = fs::read(&path).unwrap();
+    let before_undo = saved_table(dir, "g4");
+    assert_eq!(
+        stream(&path).header.reconstructed.unwrap().history,
+        Some(before_undo.history())
+    );
+
+    // The server hosts it as before, the stream kept as it is and not served.
+    let before = files(dir);
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!((loaded.unrecorded.len(), loaded.stale.len()), (0, 0));
+    assert_eq!(
+        (loaded.reconstructed, loaded.reconstructed_unserved),
+        (1, 1)
+    );
+    assert_eq!(files(dir), before, "neither rejected nor rewritten");
+    assert!(matches!(hub.recording("g4"), Err(HubError::Conflict(_))));
+
+    // Undone, and played on differently: the old stream is set aside, never served.
+    let seats = seats(&hub, dir, "g4");
+    let middle = before_undo.game().log().len() / 2;
+    assert!(hub.undo(&seats[0], Some(middle)).unwrap());
+    assert!(!path.exists());
+    assert_eq!(
+        fs::read(dir.join("g4.stale.events.cbor")).unwrap(),
+        original
+    );
+    assert!(matches!(hub.recording("g4"), Err(HubError::Conflict(_))));
+    while let Some((seat, d)) = seats
+        .iter()
+        .find_map(|s| Some((s, hub.view(s).unwrap().0.decision?)))
+    {
+        let answer = Answer::indices(&d.id, vec![d.options.last().unwrap().index]);
+        hub.answer(seat, &answer).unwrap();
+    }
+    assert!(matches!(hub.recording("g4"), Err(HubError::Conflict(_))));
+    drop(hub);
+    let after_undo = saved_table(dir, "g4");
+    assert!(after_undo.is_over());
+    assert_ne!(after_undo.game().log(), before_undo.game().log());
+    assert!(!path.exists());
+
+    // Over again: the next run writes the stream of the game as it now stands.
+    let second = run(dir, false);
+    assert!(
+        matches!(
+            second["g4"].status,
+            Status::Converted { undoable: true, .. }
+        ),
+        "{:?}",
+        second["g4"].status
+    );
+    let read = stream(&path);
+    assert_eq!(
+        read.header.reconstructed.as_ref().unwrap().history,
+        Some(after_undo.history())
+    );
+    let recorded = after_undo.rerecorded().unwrap();
+    assert!(
+        read.events == recorded.unwritten(),
+        "not the stream recorded"
+    );
+    let replay = dominion_agent::replay::replay(&read.events).unwrap();
+    assert_eq!(replay.game.log(), after_undo.game().log());
+    assert_eq!(replay.game.outcome(), after_undo.game().outcome());
+
+    // Served once retired, whole, beside the stale one.
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!((loaded.stale.len(), loaded.reconstructed_unserved), (0, 1));
+    assert!(matches!(hub.recording("g4"), Err(HubError::Conflict(_))));
+    let bytes = fs::read(&path).unwrap();
+    hub.retire("g4").unwrap();
+    assert_eq!(hub.recording("g4").unwrap(), (Encoding::Cbor, bytes));
+    assert_eq!(
+        fs::read(dir.join("expired/g4.stale.events.cbor")).unwrap(),
+        original
+    );
+}
+
+/// A game undone and finished again the same way takes the same answers, so the stream
+/// it gives is event for event the old one, but its history (an undo since) is another:
+/// the old stream is stale, to the server and the backfill alike, whoever finds it.
+#[test]
+fn a_game_undone_and_finished_the_same_way_has_another_history() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let mut twins = Twins::new("g1", 41);
+    twins.finish(41);
+    Store::open(dir)
+        .unwrap()
+        .save("g1", &twins.saved(&Meta::default()))
+        .unwrap();
+    assert!(matches!(
+        run(dir, false)["g1"].status,
+        Status::Converted { undoable: true, .. }
+    ));
+    let path = dir.join("g1.events.cbor");
+    let stale = dir.join("g1.stale.events.cbor");
+    let original = fs::read(&path).unwrap();
+
+    // The last answer taken back, and given again.
+    let (hub, _) = Hub::open(dir, KEEP).unwrap();
+    let (seat, given) = twins.given.last().cloned().unwrap();
+    let hub_seat = hub.find(&format!("g1-{}", seat.index())).unwrap();
+    assert!(hub.undo(&hub_seat, None).unwrap());
+    twins.live.undo(seat).unwrap();
+    assert_eq!(fs::read(&stale).unwrap(), original);
+    given.to_hub(&hub, &hub_seat);
+    given.to_table(&mut twins.live, seat);
+    assert!(matches!(hub.recording("g1"), Err(HubError::Conflict(_))));
+    drop(hub);
+    let table = saved_table(dir, "g1");
+    assert!(table.is_over());
+    assert_eq!(table.game().log(), twins.old.game().log());
+    let old_header = stream(&stale).header.reconstructed.unwrap();
+    let was = old_header.history.unwrap();
+    let now = table.history();
+    assert_eq!((was.answers, was.undos), (now.answers, 0));
+    assert_eq!(now.undos, 1);
+    assert_ne!(was.digest, now.digest);
+
+    // Put back (a server stopped between the undo's snapshot and setting the stream
+    // aside), it is found stale at startup and set aside.
+    fs::remove_file(&stale).unwrap();
+    fs::write(&path, &original).unwrap();
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!(loaded.stale.len(), 1, "{:?}", loaded.stale);
+    assert_eq!(
+        (loaded.reconstructed, loaded.reconstructed_unserved),
+        (0, 0)
+    );
+    assert!(!path.exists());
+    assert_eq!(fs::read(&stale).unwrap(), original);
+    assert!(hub.recording("g1").is_err());
+    drop(hub);
+
+    // And by the backfill, which sets it aside and writes the game's.
+    fs::remove_file(&stale).unwrap();
+    fs::write(&path, &original).unwrap();
+    let before = files(dir);
+    let is_stale = |status: &Status, set_aside: bool| match status {
+        Status::Stale {
+            why,
+            aside,
+            moved,
+            then,
+        } => {
+            assert!(why.contains("1 undo"), "{why}");
+            assert_eq!(aside, Path::new("g1.stale.events.cbor"));
+            assert_eq!(*moved, set_aside);
+            assert!(matches!(**then, Status::Converted { undoable: true, .. }));
+        }
+        other => panic!("{other:?}"),
+    };
+    is_stale(&run(dir, true)["g1"].status, false);
+    assert_eq!(files(dir), before, "a dry run writes nothing");
+    is_stale(&run(dir, false)["g1"].status, true);
+    assert_eq!(fs::read(&stale).unwrap(), original);
+    let read = stream(&path);
+    assert_eq!(read.header.reconstructed.unwrap().history, Some(now));
+    assert!(read.events == twins.live.unwritten());
+    assert!(
+        read.events == stream(&stale).events,
+        "the same game, event for event"
+    );
+
+    // Once no undo is allowed it can't change, and is served.
+    let mut saved: Value = serde_json::from_slice(&fs::read(dir.join("g1.json")).unwrap()).unwrap();
+    saved["meta"]["undo"] = json!("off");
+    fs::write(dir.join("g1.json"), serde_json::to_vec(&saved).unwrap()).unwrap();
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!(
+        (loaded.reconstructed, loaded.reconstructed_unserved),
+        (1, 0)
+    );
+    assert_eq!(
+        hub.recording("g1").unwrap(),
+        (Encoding::Cbor, fs::read(&path).unwrap())
+    );
+    dominion_agent::replay::replay(&read.events).unwrap();
 }

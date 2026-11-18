@@ -38,6 +38,23 @@ pub struct Reconstructed {
     /// From what: `"history"`, the host's saved game (its setup and every answer it
     /// took) played again by the engine `setup.rules` names and checked against it.
     pub from: String,
+    /// Exactly which of the game's histories it was built from: the stream is the game's
+    /// only while the game's history is this one. Absent in streams rebuilt before it was
+    /// written, which therefore say of no history that it is theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history: Option<History>,
+}
+
+/// A game's history as a host keeps it: every answer it took, and every undo.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct History {
+    /// How many answers it holds.
+    pub answers: u64,
+    /// How many undos the game has had: an undo is never taken back, so this only grows.
+    pub undos: u64,
+    /// `sha256:` and the hex SHA-256 of the answers and undos as the host saves them.
+    pub digest: String,
 }
 
 /// Whose eyes a stream is written for: which cards' faces it shows.

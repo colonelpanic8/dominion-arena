@@ -402,7 +402,7 @@ The header:
 | `schema` | `dominion/events@1` |
 | `viewer` | whose eyes the stream is written for: `full` (every face, every shuffle's order); later `public` or a seat |
 | `game` | the game's id where it has one (Arena's `g12`); optional |
-| `reconstructed` | present only when the stream was not written as the game was played but rebuilt afterwards: `at`, when (an RFC 3339 UTC time), and `from`, what from (`history`: the host's saved game, [Reconstructed streams](#reconstructed-streams)) |
+| `reconstructed` | present only when the stream was not written as the game was played but rebuilt afterwards: `at`, when (an RFC 3339 UTC time); `from`, what from (`history`: the host's saved game); and `history`, which history of the game exactly ([Reconstructed streams](#reconstructed-streams)) |
 
 Each event has:
 
@@ -1832,7 +1832,7 @@ fields.
 | A cost | `{"coins": n}`, with `potions` and `debt` when not 0 |
 | Maps (`zones`, `faceUp`, `counters`, `piles`, `holdings`, `costs`, `types`) | objects keyed by the text form of their keys. Key order carries no meaning |
 | Absence | an optional field that is absent, a `false` flag, an empty list and a note's `count` of 0 are left out. A reader takes a missing field as absent, `false`, empty or 0. Three lists mean something when empty and are always written: a `notes` event's `notes` (`[]`: no notes now; a `notes` event without it is refused when read), an `answer`'s `indices` when it picks options (`[]`: none picked), a `kept` event's `cards` (`[]`: nothing kept) |
-| The header's `reconstructed` | `{"at": "2026-11-18T02:58:49Z", "from": "history"}` |
+| The header's `reconstructed` | `{"at": "2026-11-18T02:58:49Z", "from": "history", "history": {"answers": 212, "undos": 0, "digest": "sha256:6904af91b915…"}}` |
 | An `ask`'s options | objects as in agent-view@2: `{"index": 0, "group": 0, "action": "select", "label": "Estate", "card": "Estate", "zone": "hand"}` |
 | `config.choices` | an object keyed by the card choosing, each a list of names |
 | A chance record | `{"site": "pile", "card": "Ruins", "cards": [...]}`, in `setup`'s `chance` list or as an event's fields |
@@ -1914,6 +1914,7 @@ with the snapshot and is kept.
 | --- | --- |
 | `<game id>.events.jsonl` / `.cbor` | the game's stream as it stands, still recorded, or a [reconstructed](#reconstructed-streams) one |
 | `<game id>.incomplete.events.jsonl` / `.cbor` | a prefix of the game's stream, or of an earlier recording of it: recording stopped, and nothing more will be written to it |
+| `<game id>.stale.events.jsonl` / `.cbor` | a [reconstructed](#reconstructed-streams) stream of a history the game no longer has, set aside as it was. Never served |
 
 **A stream file is the game's stream, or it is marked incomplete.** At every moment the
 server isn't in the middle of writing it, a file named `<game id>.events.<encoding>` is
@@ -1996,14 +1997,37 @@ stream beside it (below).
 A stream is normally written as its game is played. A **reconstructed** stream was
 written afterwards, by playing a game the host had saved again with recording on, and
 must be the stream the game would have recorded had it been recorded from the start. Its
-header says so (`reconstructed`: `at`, when; `from`, `history`). Everything after the
-header is an ordinary stream; `reconstructed` only tells a reader that the stream is no
-evidence of when anything happened, and that its `setup.rules` is the engine that rebuilt
-it, not necessarily the one the game was played on.
+header says so. Everything after the header is an ordinary stream; `reconstructed` only
+tells a reader that the stream is no evidence of when anything happened, and that its
+`setup.rules` is the engine that rebuilt it, not necessarily the one the game was played
+on.
+
+`reconstructed`:
+
+| Field | |
+| --- | --- |
+| `at` | when it was rebuilt, an RFC 3339 UTC time |
+| `from` | what from. `"history"`: the host's saved game, its setup and every answer it took |
+| `history` | exactly which history of the game it was built from. A stream without it claims none, and a host treats it as stale |
+
+`history`:
+
+| Field | |
+| --- | --- |
+| `answers` | how many answers the game had taken |
+| `undos` | how many undos the game had had. An undo is never itself taken back, so this only grows |
+| `digest` | `sha256:` and the lowercase hex SHA-256 of the host's record of both: every answer as it saves it, and every undo |
 
 ```json illustration
-{"schema":"dominion/events@1","viewer":"full","game":"g12","reconstructed":{"at":"2026-11-18T02:58:49Z","from":"history"}}
+{"schema":"dominion/events@1","viewer":"full","game":"g12","reconstructed":{"at":"2026-11-18T02:58:49Z","from":"history","history":{"answers":212,"undos":0,"digest":"sha256:6904af91b915…"}}}
 ```
+
+A game is determined by its setup and its answers, so the answers say which game the
+stream is. The undos make it belong to the game's own timeline: a game undone and
+finished again with the very same answers gives the same stream, event for event, but has
+had an undo since, so the old file is another history's. A reconstructed stream is the
+game's only while the game's history is exactly this one, and that is an equality of two
+small records, never a matter of how alike two streams or two endings are.
 
 Arena writes them with `dominion games backfill` (`crates/dominion-server/src/backfill.rs`),
 offline, for saved games without a whole stream: saved before recording, started with
@@ -2012,12 +2036,18 @@ stays). It plays the game again from the table's config and every answer it kept
 writes the stream only if the game played again **is** the saved game: every log entry
 the same and no more, the final state and the outcome the same, and the stream replays to
 it. A game that can't be played again exactly (answers not all kept, a setup the engine
-can't make any more, a game it now plays differently) gets none, and so does a hosted game
-that can still change (in progress, or able to be undone) until it can't. The server
-never writes to a reconstructed stream; it checks one whole at startup and before serving
-it (its header names the game, every event folds with nothing after, its `setup` has the
-game's seats and seed, and it ends as the game stands), needing no engine, and serves it
-under the same rule as a recorded one.
+can't make any more, a game it now plays differently) gets none. A hosted game still in
+progress waits until it is over. A finished game gets its stream whether or not its
+rules still allow an undo.
+
+The server never writes to a reconstructed stream. It checks one whole at startup and
+before serving it: its header names the game and this history, every event folds with
+nothing after, its `setup` has the game's seats and seed, and it ends as the game stands.
+That needs no engine. It serves one under the same rule as a recorded stream: only once
+the game can no longer change. When a game with a reconstructed stream gets another
+history (an undo, then more play), the stream is no longer the game's: the server sets
+the file aside as `<game id>.stale.events.<encoding>`, as it is, never serves it, and the
+backfill writes the game's stream afresh once it is over again.
 
 ## Not specified yet
 
