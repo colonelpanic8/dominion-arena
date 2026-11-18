@@ -19,9 +19,11 @@ impl HumanTable {
             || !expected.contains(&own)
             || actual != expected
         {
-            return Err(
-                "REFUSED: matched player identities differ from the verified roster".into(),
-            );
+            return Err(format!(
+                "REFUSED: matched player identities differ from the verified roster \
+                 (table {}: expected {expected:?} as {}, got {actual:?} as {own})",
+                self.table.table_id, self.owner
+            ));
         }
         Ok(())
     }

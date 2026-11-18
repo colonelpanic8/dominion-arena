@@ -691,6 +691,8 @@ impl Runtime {
                     // isReconnecting means the server is already sending the game.
                     self.request_game = !login.reconnecting;
                 } else if self.resuming {
+                    self.store.remove("own-table").map_err(|e| e.to_string())?;
+                    self.store.remove("own-match").map_err(|e| e.to_string())?;
                     self.table = None;
                     self.bots.clear();
                     self.resuming = false;
@@ -755,6 +757,9 @@ impl Runtime {
                 reducer.ask(question).map_err(|e| e.to_string())?;
             }
             Message::Log(change) => reducer.log(&change).map_err(|e| e.to_string())?,
+            // Details of a table other than ours are not ours: the official client ignores them too.
+            Message::TableDetails(table)
+                if self.table.as_ref().map(|t| t.table_id) != Some(table.table_id) => {}
             Message::TableJoined { table, .. } | Message::TableDetails(table) => {
                 for player in table.players.iter().chain(&table.bots) {
                     reducer.names.insert(player.id, player.name.clone());

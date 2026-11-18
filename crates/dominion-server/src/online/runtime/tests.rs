@@ -1879,3 +1879,46 @@ fn a_rating_is_asked_again_soon_after_a_game_finishes() {
     // Read once it has been counted.
     assert!(fresh(now - 30_000, Some(now - 60_000), now));
 }
+
+/// An account resuming its human match, saved as it would be, waiting for the server.
+fn resuming_human_match() -> (TempDir, Runtime) {
+    let (directory, mut runtime) = runtime();
+    let human = HumanTable {
+        table: human_table(true),
+        mode: OnlineMode::Rated,
+        owner: 42,
+    };
+    runtime.store.save("own-match", &human).unwrap();
+    runtime.table = Some(human.table.clone());
+    runtime.bots.clear();
+    runtime.human = Some(human);
+    runtime.update.mode = OnlineMode::Rated;
+    runtime.resuming = true;
+    (directory, runtime)
+}
+
+#[test]
+fn another_tables_details_are_not_checked_against_the_match_being_resumed() {
+    let (_directory, mut runtime) = resuming_human_match();
+    let mut reconnect = login(false);
+    reconnect.previous_reconnects = 1;
+    runtime.process(Message::Login(reconnect)).unwrap();
+    assert!(runtime.needs_snapshot);
+    let mut other = human_table(false);
+    other.table_id = 11;
+    other.host_id = 14424;
+    other.players = vec![named(14424), named(15589)];
+    runtime.process(Message::TableDetails(other)).unwrap();
+    assert_eq!(runtime.table.as_ref().unwrap().table_id, 10);
+    let mut changed = human_table(true);
+    changed.players[1].id = 101;
+    assert!(runtime.process(Message::TableDetails(changed)).is_err());
+}
+
+#[test]
+fn a_resumed_match_the_server_no_longer_has_is_forgotten() {
+    let (directory, mut runtime) = resuming_human_match();
+    runtime.process(Message::Login(login(false))).unwrap();
+    assert!(runtime.human.is_none() && runtime.table.is_none());
+    assert!(!directory.path().join("own-match.json").exists());
+}
