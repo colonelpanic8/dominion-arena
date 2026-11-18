@@ -22,6 +22,8 @@ From the repo root (direnv loads the Nix dev shell; otherwise prefix `nix develo
 
 ```
 data/cards/<set>.json     card data, the source of truth (see "Card data")
+protocol/events.md        the `dominion/events@1` specification; its example streams in
+                          protocol/examples/events/, generated (`just events-examples`)
 build/commit.rs           the build scripts' commit and its time (`DOMINION_COMMIT`), from
                           git or the flake
 crates/dominion-engine/
@@ -65,6 +67,10 @@ crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection,
                           CBOR), reading one back
   protocol/               the vendored JSON Schema (`just sync-protocol`)
   examples/record_cost.rs what recording costs a long 4-seat game, per answer and on disk
+  tests/spec_examples.rs  protocol/events.md held to the code: generates its examples and
+                          checks them, its quoted events and that it names every type and
+                          field of the protocol's events module
+  tests/support/          the scripted seats the fold test and the example generator share
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
                           and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
@@ -590,9 +596,12 @@ them.
   logged too: `PileRemoved` before the tokens leaving that pile; `setup::complete` logs
   what joined (`PileAdded`, `Added` for landscapes, Artifacts and cards put elsewhere,
   `Noted` for new `SetRules::notes`: a Bane, Druid's Boons) before what its setup gives.
-- **Events.** `dominion/events@1` (`dominion-playbook/protocol/events.md`) is a game as a
-  stream of events whose fold is the table, with no rules engine: `events::Table::apply`
-  in dominion-protocol is the reference. `Game::new_journaled` records a journal
+- **Events.** `dominion/events@1` ([`protocol/events.md`](protocol/events.md)) is a game as
+  a stream of events whose fold is the table, with no rules engine: `events::Table::apply`
+  in dominion-protocol is the reference. A change to what the stream says or to what the
+  engine does in the example games changes the examples: run `just events-examples`, fix
+  the excerpts `events.md` quotes, and describe any new event, field or table state there
+  (`tests/spec_examples.rs` fails until all three are done). `Game::new_journaled` records a journal
   (`journal.rs`): every trace entry with the rules' word for a move (`Verb`), the log's
   entries where they were logged, turns, phases, and counters read each time anything is
   recorded. `events::Recorder` in dominion-agent turns it into the full stream.

@@ -736,7 +736,7 @@ watch it see it as it was left, read from `expired/` when asked for, and nothing
 can be done in it.
 
 Every game the server saves is also recorded as a `dominion/events@1` stream (every
-card's face and every shuffle's order; the format is the playbook's `protocol/events.md`)
+card's face and every shuffle's order; the format is [`protocol/events.md`](protocol/events.md))
 beside its snapshot: `state_dir/<game id>.events.jsonl`, one JSON object per line, or
 `.events.cbor`, a CBOR sequence, as `events_encoding` says when the game starts. Its first
 record says the schema, the viewer (`full`) and the game. It is appended to as the game

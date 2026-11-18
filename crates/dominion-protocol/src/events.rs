@@ -1,6 +1,7 @@
 //! Serde types for `dominion/events@1`: a game of Dominion as a stream of events, and the
 //! [`Table`] they describe. The table after event *n* is the fold of events `0..=n`
-//! ([`Table::apply`]); no rules engine is needed to follow a game.
+//! ([`Table::apply`]); no rules engine is needed to follow a game. The specification is
+//! `protocol/events.md` at the repository's root.
 //!
 //! The format is these types, not an encoding of them. JSON Lines is what people read;
 //! any self-describing serde format carries the same stream (CBOR is tested). A format
