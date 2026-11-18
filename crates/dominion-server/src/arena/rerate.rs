@@ -406,11 +406,12 @@ mod tests {
         games.into_iter().find(|g| g.game_id == id).unwrap()
     }
 
-    /// The games the history lists, newest first: every one, or only the rated ones; and
-    /// the voided ones among every one.
-    fn listed(arena: &Arena, rated: bool) -> (Vec<String>, Vec<String>) {
+    /// The games the history lists, newest first, asked for only the rated ones or with the
+    /// voided ones too; and the voided ones among them.
+    fn listed(arena: &Arena, rated: bool, voided: bool) -> (Vec<String>, Vec<String>) {
         let q = HistoryQuery {
             rated,
+            voided,
             ..HistoryQuery::default()
         };
         let games = arena.history(&q).unwrap().games;
@@ -465,10 +466,14 @@ mod tests {
             arena.void_ratings(&["g1".into()], VOID),
             Err(Error::Conflict(_))
         ));
-        // Out of the rated games, and marked voided among all of them.
-        assert_eq!(listed(&arena, true).0, ["g3", "g2"]);
+        // Out of the rated games and, unless asked for, every list; marked voided when it is.
+        assert_eq!(listed(&arena, true, true).0, ["g3", "g2"]);
         assert_eq!(
-            listed(&arena, false),
+            listed(&arena, false, false),
+            (vec!["g3".into(), "g2".into()], vec![])
+        );
+        assert_eq!(
+            listed(&arena, false, true),
             (
                 vec!["g3".into(), "g2".into(), "g1".into()],
                 vec!["g1".into()]
@@ -477,8 +482,14 @@ mod tests {
         let ada = arena.profile("Ada").unwrap();
         assert_eq!((ada.rating.games, ada.rating.wins), (1, 1));
         assert_eq!((ada.stats.games, ada.stats.wins), (1, 1));
-        let shown = ada.recent.iter().find(|g| g.id == "g1").unwrap();
-        assert!(shown.voided.is_some() && shown.players.iter().all(|p| p.rating.is_none()));
+        assert!(ada.recent.iter().all(|g| g.id != "g1"));
+        let q = HistoryQuery {
+            voided: true,
+            ..HistoryQuery::default()
+        };
+        let all = arena.history(&q).unwrap().games;
+        let shown = all.iter().find(|g| g.id == "g1").unwrap();
+        assert!(shown.players.iter().all(|p| p.rating.is_none()));
     }
 
     #[test]
@@ -531,7 +542,7 @@ mod tests {
             (tally(&arena, "Ada"), tally(&arena, "Bo")),
             ((2, 2), (2, 1))
         );
-        assert_eq!(listed(&arena, false).1, Vec::<String>::new());
+        assert_eq!(listed(&arena, false, true).1, Vec::<String>::new());
         let before: Vec<_> = ["Ada", "Bo", "Cy"].map(|n| standing(&arena, n)).to_vec();
         let only = VoidHow {
             record_only: true,
@@ -547,7 +558,7 @@ mod tests {
         let marked = arena.void_ratings(&["g1".into()], only).unwrap();
         assert!(marked.ratings.is_empty());
         assert!(record(&arena, "g1").voided.is_some());
-        assert_eq!(listed(&arena, false).1, ["g1"]);
+        assert_eq!(listed(&arena, false, true).1, ["g1"]);
         assert_eq!(
             ["Ada", "Bo", "Cy"].map(|n| standing(&arena, n)).to_vec(),
             before

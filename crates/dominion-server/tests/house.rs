@@ -539,7 +539,15 @@ fn a_rated_game_an_agent_abandons_is_recorded_voided_and_moves_no_rating() {
         seat: dominion_engine::PlayerId(1),
     };
     arena.hub.resign(&seat, "abandoned").unwrap();
-    let all = arena.history(&Default::default()).unwrap();
+    let with_voided = dominion_protocol::lobby::HistoryQuery {
+        voided: true,
+        ..Default::default()
+    };
+    assert!(
+        (arena.history(&Default::default()).unwrap().games.iter()).all(|r| r.id != game),
+        "left out unless asked for"
+    );
+    let all = arena.history(&with_voided).unwrap();
     let record = all.games.iter().find(|r| r.id == game).unwrap();
     assert!(!record.rated && record.voided.is_some());
     assert!(record.players.iter().all(|p| p.rating.is_none()));

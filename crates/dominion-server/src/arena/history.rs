@@ -28,6 +28,8 @@ pub struct Ask<'a> {
     pub venue: Option<Venue>,
     /// Rated games only: none voided.
     pub rated: bool,
+    /// Voided games too.
+    pub voided: bool,
     /// A player, the account behind a seat, an agent's model or program, or a card whose
     /// name contains it, in any case.
     pub text: Option<&'a str>,
@@ -37,7 +39,10 @@ pub struct Ask<'a> {
 
 impl Ask<'_> {
     fn admits(&self, game: &PastGame, text: Option<&str>) -> bool {
-        if self.rated && (!game.rated || game.voided.is_some()) {
+        if game.voided.is_some() && (self.rated || !self.voided) {
+            return false;
+        }
+        if self.rated && !game.rated {
             return false;
         }
         if let Some(vs) = self.vs
@@ -449,5 +454,18 @@ mod tests {
         };
         assert!(vs.admits(&games[6], None));
         assert!(!vs.admits(&games[0], None));
+        let with_voided = Ask {
+            voided: true,
+            ..Ask::default()
+        };
+        let rated = Ask {
+            rated: true,
+            ..with_voided
+        };
+        let mut rated_voided = games[5].clone();
+        rated_voided.rated = true;
+        assert!(!Ask::default().admits(&games[5], None));
+        assert!(with_voided.admits(&games[5], None));
+        assert!(!rated.admits(&rated_voided, None));
     }
 }

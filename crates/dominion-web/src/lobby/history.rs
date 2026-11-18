@@ -46,6 +46,7 @@ pub fn GameBrowser(
     let mut venue = use_signal(|| None::<Venue>);
     let mut mine = use_signal(|| false);
     let mut rated = use_signal(|| false);
+    let mut voided = use_signal(|| false);
     let mut text = use_signal(String::new);
     let mut picked = use_signal(|| None::<String>);
     let mut more = use_signal(Vec::<PastGame>::new);
@@ -62,6 +63,7 @@ pub fn GameBrowser(
         user: fixed.clone().or_else(|| me_now.clone().filter(|_| mine())),
         venue: venue(),
         rated: rated(),
+        voided: voided(),
         q: Some(text()).filter(|t| !t.trim().is_empty()),
         vs: vs().map(|(key, _)| key),
         limit: Some(PAGE),
@@ -175,6 +177,10 @@ pub fn GameBrowser(
                             label { class: "lb-history-rated",
                                 super::Switch { on: rated(), onclick: move |_| rated.toggle() }
                                 "Rated"
+                            }
+                            label { class: "lb-history-rated", title: "Show voided games too",
+                                super::Switch { on: voided(), onclick: move |_| voided.toggle() }
+                                "Voided"
                             }
                             input {
                                 class: "lb-input lb-history-search",
@@ -964,11 +970,6 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
             }
             h2 { class: "lb-sheet-title", "{title}" }
             div { class: "lb-sheet-ending", "{ending}" }
-            if let Some(at) = game.voided {
-                div { class: "lb-sheet-voided",
-                    "Voided ({day(at)}): taken out of the record, it counts for no rating or tally."
-                }
-            }
             KingdomCards {
                 kingdom: game.kingdom.clone(),
                 landscapes: game.landscapes.clone(),

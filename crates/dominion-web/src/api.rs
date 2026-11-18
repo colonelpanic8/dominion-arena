@@ -363,6 +363,9 @@ pub async fn history(q: &HistoryQuery) -> Result<History> {
     if q.rated {
         url.push_str("&rated=true");
     }
+    if q.voided {
+        url.push_str("&voided=true");
+    }
     if let Some(text) = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         url.push_str(&format!("&q={}", encode(text)));
     }

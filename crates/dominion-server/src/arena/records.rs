@@ -175,6 +175,7 @@ impl Arena {
             user: user.as_ref().map(|u| u.id.as_str()),
             venue: q.venue,
             rated: q.rated,
+            voided: q.voided,
             text: q.q.as_deref(),
             vs: q.vs.as_deref(),
         };
