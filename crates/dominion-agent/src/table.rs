@@ -30,10 +30,6 @@ pub enum AnswerError {
     /// The game no longer replays as it was played, so it can't go back.
     #[error("the game can't be undone: {0}")]
     Unreplayable(String),
-    /// What the game did can't be written as events: a bug in the engine or the recorder.
-    /// Nothing was changed.
-    #[error("the game's events can't be recorded ({0}); nothing was changed")]
-    Unrecordable(String),
 }
 
 /// An answer to the Way question ("play it as itself, or use a Way instead") given in
@@ -113,6 +109,7 @@ enum Act {
 /// A hosted game: the engine game, what each seat and someone watching know, decision
 /// ids and each seat's log cursor.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(try_from = "Saved")]
 pub struct Table {
     id: String,
     game: Game,
@@ -144,14 +141,165 @@ pub struct Table {
     /// Someone resigned: nothing before it can be undone.
     #[serde(default)]
     sealed: bool,
-    /// Writes the game's `dominion/events@1` stream; none for a table that doesn't record
-    /// (one saved before tables did).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    recorder: Option<Recorder>,
+    /// Its `dominion/events@1` stream: none for a table that doesn't record (one saved
+    /// before tables did).
+    #[serde(rename = "recorder", skip_serializing_if = "Option::is_none")]
+    recording: Option<Recording>,
     /// The last events recorded, until whoever keeps the stream says they are written.
     /// Saved, so that a table and its stream can always be brought back into step.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     unwritten: Vec<Event>,
+    /// Test hook: the recorder fails at this many records from now.
+    #[serde(skip)]
+    fault: Option<u32>,
+}
+
+/// A table's recording of its stream.
+#[derive(Clone, Debug)]
+enum Recording {
+    On(Box<Recorder>),
+    /// Stopped for good, and why: the game goes on, and its stream ends where it stopped.
+    Stopped(String),
+}
+
+/// The version of what a recording table saves of its recorder and its game's journal.
+/// Bump it whenever either changes what it keeps or what that means: a table saved with
+/// another version stops recording when it is loaded rather than go on from state this
+/// build would misread.
+pub const RECORDING_VERSION: u32 = 1;
+
+impl Serialize for Recording {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(Some(2))?;
+        match self {
+            Recording::On(recorder) => {
+                map.serialize_entry("version", &RECORDING_VERSION)?;
+                map.serialize_entry("state", recorder)?;
+            }
+            Recording::Stopped(why) => map.serialize_entry("stopped", why)?,
+        }
+        map.end()
+    }
+}
+
+impl Recording {
+    /// A recording as saved: one of another version, or that this build can't read, has
+    /// stopped.
+    fn load(saved: serde_json::Value) -> Recording {
+        if let Some(why) = saved.get("stopped").and_then(|w| w.as_str()) {
+            return Recording::Stopped(why.into());
+        }
+        let Some(version) = saved.get("version").and_then(|v| v.as_u64()) else {
+            return Recording::Stopped(
+                "it was recorded by an earlier build, whose recording this one can't go on with"
+                    .into(),
+            );
+        };
+        if version != u64::from(RECORDING_VERSION) {
+            return Recording::Stopped(format!(
+                "it was recorded by a build whose recording is version {version}, which this \
+                 one (version {RECORDING_VERSION}) can't go on with"
+            ));
+        }
+        match serde_json::from_value(saved["state"].clone()) {
+            Ok(recorder) => Recording::On(Box::new(recorder)),
+            Err(e) => Recording::Stopped(format!("its recorder can't be read: {e}")),
+        }
+    }
+}
+
+/// A table as saved. What only a recording table keeps is read leniently: what can't be
+/// read stops its recording, never loses the game.
+#[derive(Deserialize)]
+struct Saved {
+    id: String,
+    game: serde_json::Value,
+    knowledge: Knowledge,
+    names: Vec<String>,
+    seq: u64,
+    log_from: Vec<usize>,
+    #[serde(default)]
+    ways: Vec<PendingWay>,
+    #[serde(default)]
+    undone_by: Vec<PlayerId>,
+    #[serde(default)]
+    undone_answers: Vec<usize>,
+    #[serde(default)]
+    undos_seen: Vec<usize>,
+    #[serde(default)]
+    history: Vec<Step>,
+    #[serde(default)]
+    complete: bool,
+    #[serde(default)]
+    sealed: bool,
+    #[serde(default)]
+    recorder: Option<serde_json::Value>,
+    #[serde(default)]
+    unwritten: Option<serde_json::Value>,
+}
+
+impl TryFrom<Saved> for Table {
+    type Error = String;
+
+    fn try_from(saved: Saved) -> Result<Table, String> {
+        let mut recording = saved.recorder.map(Recording::load);
+        let mut game = saved.game;
+        let parsed: Result<Game, _> = serde_json::from_value(game.clone());
+        let mut game = match parsed {
+            Ok(game) => game,
+            // A journal or chance this build can't read: the game without them.
+            Err(e) => {
+                let obj = game.as_object_mut().ok_or("the game is no object")?;
+                if obj.remove("journal").is_none() & obj.remove("chance").is_none() {
+                    return Err(e.to_string());
+                }
+                let game: Game = serde_json::from_value(game).map_err(|e| e.to_string())?;
+                if let Some(Recording::On(_)) = recording {
+                    recording = Some(Recording::Stopped(format!(
+                        "its game's journal can't be read: {e}"
+                    )));
+                }
+                game
+            }
+        };
+        let mut unwritten = vec![];
+        if let Some(Recording::On(_)) = recording {
+            if !game.journaled() {
+                recording = Some(Recording::Stopped("its game has no journal".into()));
+            } else if let Some(saved) = saved.unwritten {
+                match serde_json::from_value(saved) {
+                    Ok(events) => unwritten = events,
+                    Err(e) => {
+                        recording = Some(Recording::Stopped(format!(
+                            "its unwritten events can't be read: {e}"
+                        )))
+                    }
+                }
+            }
+        }
+        if !matches!(recording, Some(Recording::On(_))) {
+            game.stop_journal();
+        }
+        Ok(Table {
+            id: saved.id,
+            game,
+            knowledge: saved.knowledge,
+            names: saved.names,
+            seq: saved.seq,
+            log_from: saved.log_from,
+            ways: saved.ways,
+            undone_by: saved.undone_by,
+            undone_answers: saved.undone_answers,
+            undos_seen: saved.undos_seen,
+            history: saved.history,
+            complete: saved.complete,
+            sealed: saved.sealed,
+            recording,
+            unwritten,
+            fault: None,
+        })
+    }
 }
 
 impl Table {
@@ -208,12 +356,11 @@ impl Table {
             history: vec![],
             complete: true,
             sealed: false,
-            recorder: record.then(Recorder::new),
+            recording: record.then(|| Recording::On(Box::new(Recorder::new()))),
             unwritten: vec![],
+            fault: None,
         };
-        table
-            .record()
-            .expect("a game's setup is recordable: a bug in the engine or the recorder");
+        table.record();
         Ok(table)
     }
 
@@ -343,9 +490,12 @@ impl Table {
             self.id.clone(),
             self.game.config().clone(),
             self.names.clone(),
-            self.recorder.is_some(),
+            self.records(),
         )
         .map_err(|e| fail(e.to_string()))?;
+        if let Some(why) = self.recording_stopped() {
+            table.recording = Some(Recording::Stopped(why.into()));
+        }
         for (i, step) in self.history[..answers].iter().enumerate() {
             if table.game.log().len() != step.log || table.deciding() != Some(step.seat) {
                 return Err(fail(format!("answer {i} doesn't replay as it was given")));
@@ -464,7 +614,7 @@ impl Table {
             return Err(AnswerError::Invalid(format!("there is no seat {}", seat.0)));
         }
         self.game.resign(seat);
-        self.record()?;
+        self.record();
         self.ways.clear();
         self.sealed = true;
         Ok(())
@@ -603,7 +753,7 @@ impl Table {
             self.ways
                 .extend(card.map(|card| PendingWay { seat, card, choice }));
         }
-        self.answer_ways(seat)
+        Ok(self.answer_ways(seat))
     }
 
     /// Notes that `seat` answered when the log was `log_len` long.
@@ -662,8 +812,13 @@ impl Table {
             .find(|c| left.contains(c))
         {
             left.retain(|&c| c != card);
-            self.game_respond(Response::Move(Move::Play(card)))?;
-            self.answer_ways(seat)?;
+            // Each play stands once made: a refused one ends the run there.
+            match self.game_respond(Response::Move(Move::Play(card))) {
+                Err(e) if played == 0 => return Err(e),
+                Err(_) => break,
+                Ok(()) => {}
+            }
+            self.answer_ways(seat);
             played += 1;
         }
         self.answered(seat, log_len);
@@ -692,7 +847,7 @@ impl Table {
 
     /// Answers the Way questions the pending pre-answers cover, dropping each once its
     /// seat is asked anything else or its card's play is over. What `seat`'s did.
-    fn answer_ways(&mut self, seat: PlayerId) -> Result<Answered, AnswerError> {
+    fn answer_ways(&mut self, seat: PlayerId) -> Answered {
         let mut answered = Answered::default();
         loop {
             let game = &self.game;
@@ -724,38 +879,106 @@ impl Table {
                 self.ways.remove(i);
                 break;
             }
-            self.game_respond(Response::option(w.choice.opt()))?;
+            // Offered, so never refused; if it were, the question stays open.
+            if self.game_respond(Response::option(w.choice.opt())).is_err() {
+                self.ways.remove(i);
+                break;
+            }
             if w.seat == seat {
                 answered.ways_answered += 1;
             }
         }
-        Ok(answered)
+        answered
     }
 
+    /// Answers the open decision: all or nothing, as the engine refuses an answer before
+    /// changing anything, and recording can't fail.
     fn game_respond(&mut self, response: Response) -> Result<(), AnswerError> {
         self.game
             .respond(response)
             .map_err(|e| AnswerError::Invalid(e.to_string()))?;
         self.knowledge.update(&mut self.game);
-        self.record()?;
+        self.record();
         self.seq += 1;
         Ok(())
     }
 
     /// Turns what the game journaled since the last call into events. Every change to
     /// the game ends with it, so the journal never holds more than one change's steps.
-    fn record(&mut self) -> Result<(), AnswerError> {
-        if let Some(recorder) = &mut self.recorder {
-            let events = (recorder.record(&mut self.game, &self.names))
-                .map_err(|e| AnswerError::Unrecordable(e.to_string()))?;
-            self.unwritten.extend(events);
+    /// Recording is a side record: when the recorder fails, recording stops for good and
+    /// the game goes on.
+    fn record(&mut self) {
+        let Some(Recording::On(recorder)) = &mut self.recording else {
+            return;
+        };
+        let fault = match &mut self.fault {
+            Some(0) => true,
+            Some(n) => {
+                *n -= 1;
+                false
+            }
+            None => false,
+        };
+        let (game, names) = (&mut self.game, &self.names);
+        let recorded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if fault {
+                game.take_journal();
+                return Err("a fault injected for a test".to_string());
+            }
+            recorder.record(game, names).map_err(|e| e.to_string())
+        }));
+        match recorded {
+            Ok(Ok(events)) => self.unwritten.extend(events),
+            Ok(Err(e)) => self.stop_recording(format!("its events can't be recorded: {e}")),
+            Err(panic) => {
+                let why = (panic.downcast_ref::<&str>().map(|s| s.to_string()))
+                    .or_else(|| panic.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "panic".into());
+                self.stop_recording(format!("its recorder failed: {why}"))
+            }
         }
-        Ok(())
     }
 
-    /// How many events the table has recorded, if it records its stream.
+    /// Stops recording the stream for good, and says why: the game goes on, its stream
+    /// ending where it was last written, and nothing more is recorded or written.
+    pub fn stop_recording(&mut self, why: impl Into<String>) {
+        if let Some(Recording::On(_)) = self.recording {
+            self.recording = Some(Recording::Stopped(why.into()));
+            self.unwritten.clear();
+            self.game.stop_journal();
+        }
+    }
+
+    /// Whether it records its stream now.
+    pub fn records(&self) -> bool {
+        matches!(self.recording, Some(Recording::On(_)))
+    }
+
+    /// Why its recording stopped, if it did: its stream is incomplete.
+    pub fn recording_stopped(&self) -> Option<&str> {
+        match &self.recording {
+            Some(Recording::Stopped(why)) => Some(why),
+            _ => None,
+        }
+    }
+
+    /// Test hook: the recorder fails `after` records from now (0: the next).
+    #[doc(hidden)]
+    pub fn inject_recording_fault(&mut self, after: u32) {
+        self.fault = Some(after);
+    }
+
+    /// What records its stream, while it does.
+    pub fn recorder(&self) -> Option<&Recorder> {
+        match &self.recording {
+            Some(Recording::On(recorder)) => Some(recorder),
+            _ => None,
+        }
+    }
+
+    /// How many events the table has recorded, while it records its stream.
     pub fn recorded(&self) -> Option<u64> {
-        self.recorder.as_ref().map(Recorder::written)
+        self.recorder().map(|r| r.written())
     }
 
     /// How many of them have been written out: all but [`Table::unwritten`].
@@ -775,8 +998,8 @@ impl Table {
         self.unwritten.clear();
     }
 
-    /// The table the recorded events fold to, if it records its stream.
+    /// The table the recorded events fold to, while it records its stream.
     pub fn recorded_table(&self) -> Option<&dominion_protocol::events::Table> {
-        self.recorder.as_ref().map(Recorder::table)
+        self.recorder().map(Recorder::table)
     }
 }

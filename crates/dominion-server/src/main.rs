@@ -52,6 +52,10 @@ enum Command {
         /// (default: events_encoding, then jsonl).
         #[arg(long)]
         events_encoding: Option<dominion_agent::recording::Encoding>,
+        /// Whether new games are recorded as event streams: true or false
+        /// (default: record_events, then true).
+        #[arg(long)]
+        record_events: Option<bool>,
     },
     /// Play one seat from the terminal against a server.
     Play(PlayArgs),
@@ -413,9 +417,20 @@ async fn serve(config: Config) -> Result<(), String> {
                 eprintln!("dominion: skipping {}: {e}", path.display());
             }
             for (path, e) in &loaded.unrecorded {
-                eprintln!("dominion: {} records no more events: {e}", path.display());
+                eprintln!(
+                    "dominion: {} records no more events, its stream incomplete: {e}",
+                    path.display()
+                );
+            }
+            if loaded.never_recorded > 0 {
+                eprintln!(
+                    "dominion: {} saved games have no event stream (saved before games were \
+                     recorded, or with record_events off)",
+                    loaded.never_recorded
+                );
             }
             hub.set_events_encoding(config.events_encoding.unwrap_or_default());
+            hub.set_record_events(config.record_events.unwrap_or(true));
             eprintln!(
                 "dominion: {} saved games in {} ({} finished games moved to expired/)",
                 loaded.games,
@@ -535,6 +550,7 @@ async fn main() -> ExitCode {
             assets_dir,
             web_dir,
             events_encoding,
+            record_events,
         } => {
             config.assets_dir = assets_dir.or(config.assets_dir);
             config.web_dir = web_dir.or(config.web_dir);
@@ -542,6 +558,7 @@ async fn main() -> ExitCode {
             config.port = port.or(config.port);
             config.state_dir = state_dir.or(config.state_dir);
             config.events_encoding = events_encoding.or(config.events_encoding);
+            config.record_events = record_events.or(config.record_events);
             if ephemeral {
                 config.persist = Some(false);
             }

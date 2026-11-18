@@ -18,6 +18,21 @@ pub struct Store {
     dir: PathBuf,
     /// Held locked while the directory is in use, so two servers never share it.
     _lock: fs::File,
+    /// Test hooks: how many of the next snapshot and stream writes fail.
+    #[cfg(test)]
+    pub(crate) fail_saves: std::sync::atomic::AtomicU32,
+    #[cfg(test)]
+    pub(crate) fail_streams: std::sync::atomic::AtomicU32,
+}
+
+/// Takes one of the failures a test hook has waiting.
+#[cfg(test)]
+fn injected(count: &std::sync::atomic::AtomicU32) -> io::Result<()> {
+    use std::sync::atomic::Ordering;
+    match count.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)) {
+        Ok(_) => Err(io::Error::other("a write failure injected for a test")),
+        Err(_) => Ok(()),
+    }
 }
 
 impl Store {
@@ -46,6 +61,10 @@ impl Store {
         Ok(Store {
             dir: dir.to_path_buf(),
             _lock: lock,
+            #[cfg(test)]
+            fail_saves: Default::default(),
+            #[cfg(test)]
+            fail_streams: Default::default(),
         })
     }
 
@@ -55,14 +74,23 @@ impl Store {
 
     /// Writes `<key>.json`.
     pub fn save(&self, key: &str, value: &impl Serialize) -> io::Result<()> {
+        self.save_bytes(key, &serde_json::to_vec(value)?)
+    }
+
+    /// Writes `<key>.json` holding `bytes`, atomically and durably: once it returns, the
+    /// new file survives a power loss.
+    pub fn save_bytes(&self, key: &str, bytes: &[u8]) -> io::Result<()> {
+        #[cfg(test)]
+        injected(&self.fail_saves)?;
         let tmp = self.dir.join(format!(".{key}.json.tmp"));
         let file = private_file(&tmp)?;
         let mut out = BufWriter::new(&file);
-        serde_json::to_writer(&mut out, value)?;
+        out.write_all(bytes)?;
         out.flush()?;
         drop(out);
         file.sync_all()?;
-        fs::rename(&tmp, self.dir.join(format!("{key}.json")))
+        fs::rename(&tmp, self.dir.join(format!("{key}.json")))?;
+        sync_dir(&self.dir)
     }
 
     /// Deletes `<key>.json`. Never used for a game: see [`Store::retire`].
@@ -88,13 +116,33 @@ impl Store {
         std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
         builder.create(&expired)?;
         let names = Encoding::ALL.map(|e| format!("{key}{}", e.suffix()));
-        for name in [format!("{key}.json")].iter().chain(&names) {
+        let incomplete = Encoding::ALL.map(|e| incomplete_name(key, e));
+        for name in [format!("{key}.json")]
+            .iter()
+            .chain(&names)
+            .chain(&incomplete)
+        {
             match fs::rename(self.dir.join(name), expired.join(name)) {
                 Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
                 _ => {}
             }
         }
-        Ok(())
+        sync_dir(&expired)?;
+        sync_dir(&self.dir)
+    }
+
+    /// Marks game `key`'s stream, here or in `expired/`, as incomplete: renames it to
+    /// `<key>.incomplete.events.<jsonl|cbor>`, as it is, so that nothing reads it as the
+    /// game's stream or writes to it again. Where it was, if there was one.
+    pub fn mark_incomplete(&self, key: &str) -> io::Result<Option<PathBuf>> {
+        let Some((path, encoding)) = self.stream_file(key) else {
+            return Ok(None);
+        };
+        let dir = path.parent().unwrap_or(&self.dir).to_path_buf();
+        let to = dir.join(incomplete_name(key, encoding));
+        fs::rename(&path, &to)?;
+        sync_dir(&dir)?;
+        Ok(Some(to))
     }
 
     /// Game `key`'s event stream, here or in `expired/`, with its encoding: the first
@@ -117,6 +165,8 @@ impl Store {
         len: u64,
         events: &[Event],
     ) -> io::Result<u64> {
+        #[cfg(test)]
+        injected(&self.fail_streams)?;
         let path = self.dir.join(format!("{key}{}", encoding.suffix()));
         if events.first().is_some_and(|e| e.seq == 0) {
             let tmp = self.dir.join(format!(".{key}{}.tmp", encoding.suffix()));
@@ -130,6 +180,7 @@ impl Store {
             drop(out);
             file.sync_all()?;
             fs::rename(&tmp, &path)?;
+            sync_dir(&self.dir)?;
             return file.metadata().map(|m| m.len());
         }
         let mut file = fs::OpenOptions::new().write(true).open(&path)?;
@@ -144,6 +195,20 @@ impl Store {
         file.sync_data()?;
         file.stream_position()
     }
+}
+
+/// The name an incomplete stream is kept under.
+fn incomplete_name(key: &str, encoding: Encoding) -> String {
+    format!("{key}.incomplete{}", encoding.suffix())
+}
+
+/// Makes the entries of `dir` (a rename into it) durable.
+fn sync_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    fs::File::open(dir)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
 }
 
 fn private_file(path: &Path) -> io::Result<fs::File> {

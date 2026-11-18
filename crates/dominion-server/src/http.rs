@@ -576,7 +576,7 @@ impl From<HubError> for Error {
             HubError::BadToken(_) => StatusCode::UNAUTHORIZED,
             HubError::Forbidden(_) => StatusCode::FORBIDDEN,
             HubError::Conflict(_) => StatusCode::CONFLICT,
-            HubError::Busy(_) => StatusCode::SERVICE_UNAVAILABLE,
+            HubError::Busy(_) | HubError::Unsaved(_) => StatusCode::SERVICE_UNAVAILABLE,
             HubError::Answer(AnswerError::Invalid(_)) => StatusCode::UNPROCESSABLE_ENTITY,
             HubError::Answer(_) => StatusCode::CONFLICT,
             HubError::Engine(_) => StatusCode::INTERNAL_SERVER_ERROR,

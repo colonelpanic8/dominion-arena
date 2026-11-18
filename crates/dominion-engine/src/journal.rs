@@ -350,6 +350,8 @@ pub enum Step {
 /// What the journal reads of the table besides counters, each time it records.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Holdings {
+    /// Written as a list of pairs: JSON has no tuple keys.
+    #[serde(with = "pairs")]
     tokens: BTreeMap<(PlayerId, TokenKind), TokenAt>,
     held: BTreeMap<Card, Vec<PlayerId>>,
     piles: Vec<PileProps>,
@@ -1258,5 +1260,70 @@ fn holding_changes(was: &Holdings, now: &Holdings, out: &mut Vec<Step>) {
         .collect();
     if !costs.is_empty() || !types.is_empty() {
         out.push(Step::Derived { costs, types });
+    }
+}
+
+impl Game {
+    /// Stops journaling for good, dropping what the journal holds: the game plays on as
+    /// one that was never journaled.
+    pub fn stop_journal(&mut self) {
+        self.journal = None;
+        if !self.given_chance() {
+            self.chance = None;
+        }
+    }
+
+    /// Whether it journals.
+    pub fn journaled(&self) -> bool {
+        self.journal.is_some()
+    }
+}
+
+/// A map written as a list of `[key, value]` pairs, for keys JSON can't write (tuples).
+/// Read back from that or from a map.
+mod pairs {
+    use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+    use serde::ser::{Serialize, Serializer};
+    use std::collections::BTreeMap;
+    use std::marker::PhantomData;
+
+    pub fn serialize<K: Serialize, V: Serialize, S: Serializer>(
+        map: &BTreeMap<K, V>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.collect_seq(map.iter())
+    }
+
+    pub fn deserialize<'de, K, V, D>(d: D) -> Result<BTreeMap<K, V>, D::Error>
+    where
+        K: Deserialize<'de> + Ord,
+        V: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        struct Pairs<K, V>(PhantomData<(K, V)>);
+        impl<'de, K: Deserialize<'de> + Ord, V: Deserialize<'de>> Visitor<'de> for Pairs<K, V> {
+            type Value = BTreeMap<K, V>;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a list of [key, value] pairs")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut map = BTreeMap::new();
+                while let Some((k, v)) = seq.next_element()? {
+                    map.insert(k, v);
+                }
+                Ok(map)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+                let mut map = BTreeMap::new();
+                while let Some((k, v)) = m.next_entry()? {
+                    map.insert(k, v);
+                }
+                Ok(map)
+            }
+        }
+        d.deserialize_any(Pairs(PhantomData))
     }
 }
