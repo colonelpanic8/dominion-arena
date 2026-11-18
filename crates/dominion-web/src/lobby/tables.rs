@@ -4,11 +4,10 @@
 //! A running game's seats show whose turn it is and, where anyone may watch it, each
 //! seat's VP, and while its seats are hovered, the cards each one owns side by side.
 
-use super::avatar::Avatar;
-use super::history::{SeatIcon, agent_line};
 use super::home::TableStarter;
 use super::rules::TableStatus;
-use super::{LobbyFrame, Tab, join_table, use_lobby, use_toast};
+use super::who::{Face, agent_title};
+use super::{LobbyFrame, Oval, Tab, join_table, use_lobby, use_toast};
 use crate::account::use_account;
 use crate::api;
 use crate::app::{Route, use_cards};
@@ -91,7 +90,7 @@ impl Seat {
         let name = self.name().unwrap_or_default();
         match (&self.mark, &self.agent, &self.user) {
             (SeatMark::Open, _, _) => "Empty Slot".into(),
-            (_, Some(a), _) => format!("{name}: {}", agent_line(a)),
+            (_, Some(a), _) => format!("{name}: {}", agent_title(a)),
             (SeatMark::You, _, _) => "You".into(),
             (_, _, Some(u)) if u.kind == UserKind::Bot => match &u.owner {
                 Some(owner) => format!("{name}: {owner}'s bot"),
@@ -406,17 +405,17 @@ pub fn TablesTab() -> Element {
                     }
                     div { class: sort_class, title: "Sort", onclick: move |_| sort.set((sort() + 1) % 3) }
                     for (i, label) in ["2P", "3P", "4P+"].into_iter().enumerate() {
-                        button {
+                        Oval {
                             key: "{label}",
-                            class: if p[i] { "lb-oval active" } else { "lb-oval" },
+                            active: p[i],
                             onclick: move |_| players.write()[i] ^= true,
                             "{label}"
                         }
                     }
                     for (i, s) in TableStatus::ALL.into_iter().enumerate() {
-                        button {
+                        Oval {
                             key: "{s.label()}",
-                            class: if st[i] { "lb-oval active" } else { "lb-oval" },
+                            active: st[i],
                             onclick: move |_| statuses.write()[i] ^= true,
                             "{s.label()}"
                         }
@@ -534,27 +533,18 @@ fn turn_text(p: &Progress) -> String {
 /// open seat.
 #[component]
 fn SeatFace(seat: Seat) -> Element {
-    let icon = match (&seat.mark, &seat.agent, &seat.user) {
+    let played_by = match (&seat.mark, &seat.agent, &seat.user) {
         (SeatMark::Open, _, _) => None,
         (_, Some(a), _) => Some(PlayedBy::Agent(a.clone())),
         (_, _, Some(u)) if u.kind == UserKind::Bot => Some(PlayedBy::Bot {
             owner: u.owner.clone(),
         }),
-        (_, _, Some(u)) => {
-            return rsx! { Avatar { user: u.clone(), size: "var(--seat-face)" } };
-        }
-        (SeatMark::Token(_), _, _) => Some(PlayedBy::Token),
+        (SeatMark::Token(_), _, None) => Some(PlayedBy::Token),
         _ => Some(PlayedBy::Person),
     };
-    match icon {
-        Some(by) => rsx! {
-            span { class: "lb-tseat-icon", SeatIcon { played_by: by } }
-        },
-        None => rsx! { span { class: "lb-tseat-icon open" } },
-    }
+    rsx! { Face { user: seat.user.clone(), played_by, size: "var(--seat-face)" } }
 }
 
-/// A seat on a line: its face, and in a running game its name, VP and whether it is that
 /// seat's turn.
 #[component]
 fn SeatChip(
