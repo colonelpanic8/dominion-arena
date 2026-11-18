@@ -166,7 +166,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           piles, play row, your hand and piles; status bar, buttons, decision
                           window; log, "more" panel, game end and score screen. Someone
                           watching sees the first player's area with hands face up; deck
-                          clicks show composition by zone, using the viewer's knowledge
+                          clicks show composition by zone, using the viewer's knowledge,
+                          and the zones it can't see into as one (`PlayerEntry::rest`)
   src/game/wording.rs     dominion.games' prompts and button names for a decision (pure)
   assets/table.css        table styles: the frame from --u, the middle row and hand from layout.rs
   src/game/entry.rs       log entries parsed back from their text in every form the agent

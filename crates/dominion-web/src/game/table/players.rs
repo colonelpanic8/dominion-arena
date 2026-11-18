@@ -420,18 +420,25 @@ fn CompositionCards(zone: Zone) -> Element {
 #[component]
 pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
     let ctx = use_table();
-    let mut open = use_signal(|| String::from("deck"));
+    let mut open = use_signal(|| None::<(u8, String)>);
     let Some(p) = board.players().find(|p| p.seat == seat) else {
         return rsx! {};
     };
     let mut sections = p.composition().into_iter();
     let whole = sections.next();
-    let parts: Vec<_> = sections.collect();
-    let shown = parts
-        .iter()
-        .find(|s| s.key == *open.read())
+    let rest = p.rest();
+    let combined = rest.is_some();
+    let parts: Vec<_> = rest.into_iter().chain(sections).collect();
+    // A tab chosen for another player's deck says nothing about this one's.
+    let shown = open
+        .read()
+        .as_ref()
+        .filter(|(of, _)| *of == seat)
+        .and_then(|(_, key)| parts.iter().find(|s| s.key == *key))
         .or(parts.first())
         .cloned();
+    // The combined tab holds the cards known to be owned and seen nowhere else.
+    let unlocated: &[Stack] = if combined { &[] } else { &p.unlocated };
     let uncertain: Vec<_> = p
         .uncertain
         .iter()
@@ -469,9 +476,9 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
                                             class: if key == shown.key { "on" },
                                             role: "tab",
                                             "aria-selected": key == shown.key,
-                                            onmouseenter: move |_| open.set(k1.clone()),
-                                            onfocus: move |_| open.set(k2.clone()),
-                                            onclick: move |_| open.set(key.clone()),
+                                            onmouseenter: move |_| open.set(Some((seat, k1.clone()))),
+                                            onfocus: move |_| open.set(Some((seat, k2.clone()))),
+                                            onclick: move |_| open.set(Some((seat, key.clone()))),
                                             "{s.label} ({s.zone.count})"
                                         }
                                     }
@@ -483,13 +490,13 @@ pub fn DeckComposition(board: Rc<Board>, seat: u8) -> Element {
                         }
                     }
                 }
-                if !p.unlocated.is_empty() || !uncertain.is_empty() {
+                if !unlocated.is_empty() || !uncertain.is_empty() {
                     section { class: "dt-composition-section",
                         h3 { "Uncertain locations" }
-                        if !p.unlocated.is_empty() {
+                        if !unlocated.is_empty() {
                             p { class: "dt-composition-note",
                                 "Known to be owned, location unknown: "
-                                for (i, s) in p.unlocated.iter().enumerate() {
+                                for (i, s) in unlocated.iter().enumerate() {
                                     if i > 0 { "; " }
                                     CardName { name: s.card.clone() }
                                     " × {s.count}"

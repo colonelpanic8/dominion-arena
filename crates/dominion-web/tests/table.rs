@@ -346,14 +346,48 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
     );
 }
 
+/// What a board says the zones it can't see into hold together is there.
+fn check_rest(b: &Board, truth: &Board) {
+    for p in b.players() {
+        let Some(rest) = p.rest() else { continue };
+        assert_eq!(zone_sum(&rest.zone), rest.zone.count);
+        let hidden: BTreeSet<String> = p
+            .composition()
+            .into_iter()
+            .skip(1)
+            .filter(|z| z.zone.unknown > 0)
+            .map(|z| z.key)
+            .collect();
+        let real = truth.players().find(|t| t.seat == p.seat).unwrap();
+        let mut there: BTreeMap<String, u32> = BTreeMap::new();
+        for z in real.composition().into_iter().skip(1) {
+            for s in z.zone.known.iter().filter(|_| hidden.contains(&z.key)) {
+                *there.entry(s.card.clone()).or_default() += s.count;
+            }
+        }
+        assert_eq!(there.values().sum::<u32>(), rest.zone.count);
+        for s in &rest.zone.known {
+            assert!(
+                there.get(&s.card).copied().unwrap_or(0) >= s.count,
+                "{} has {} {} in {}, not {there:?}",
+                p.name,
+                s.count,
+                s.card,
+                rest.label
+            );
+        }
+    }
+}
+
 /// The board of someone watching: every player's, nothing to answer, the first player
 /// where a seat's own would be.
-fn check_watched(table: &Table, deciding: PlayerId, cards: &CardDb) {
+fn check_watched(table: &Table, deciding: PlayerId, cards: &CardDb) -> Board {
     let view = table.watch_view(0).expect("a new table can be watched");
     assert!(view.seat.is_none() && view.you.is_none() && view.decision.is_none());
     let extras = table.watch_extras().expect("extras for someone watching");
     let b = board(&view, Some(deciding.0), &extras, cards);
     check_board(&b, &view, Some(deciding.0));
+    let watched = b.clone();
     assert!(!b.status.you_decide && !b.status.your_turn);
     let seats: Vec<u8> = (0..table.names().len() as u8).collect();
     assert_eq!(b.front().map(|p| p.seat), Some(0));
@@ -375,6 +409,7 @@ fn check_watched(table: &Table, deciding: PlayerId, cards: &CardDb) {
         meta: Default::default(),
     });
     assert!(state.watching() && state.decision().is_none());
+    watched
 }
 
 #[derive(Default)]
@@ -448,12 +483,11 @@ fn play_checked(table: &mut Table, rng: &mut StdRng, cards: &CardDb, stats: &mut
         if rng.random_bool(0.25) {
             let other = PlayerId(((seat.index() + 1) % table.names().len()) as u8);
             let theirs = table.view(other);
-            check_board(
-                &board(&theirs, Some(seat.0), &table.extras(other), cards),
-                &theirs,
-                Some(seat.0),
-            );
-            check_watched(table, seat, cards);
+            let their_board = board(&theirs, Some(seat.0), &table.extras(other), cards);
+            check_board(&their_board, &theirs, Some(seat.0));
+            let truth = check_watched(table, seat, cards);
+            check_rest(&b, &truth);
+            check_rest(&their_board, &truth);
         }
 
         if let Some(mut run) = TreasureRun::start(&view, cards)
@@ -1020,6 +1054,64 @@ fn deck_composition_preserves_deductions_and_uncertainty() {
         other.iter().find(|z| z.key == "owned").unwrap().zone.count,
         10
     );
+    let rest = b.opponents[0].rest().unwrap();
+    assert_eq!(rest.label, "Draw pile + Hand");
+    assert_eq!((rest.zone.count, rest.zone.unknown), (10, 0));
+    assert_eq!(
+        rest.zone
+            .known
+            .iter()
+            .map(|s| (s.card.as_str(), s.count))
+            .collect::<Vec<_>>(),
+        [("Copper", 7), ("Estate", 3)]
+    );
+    assert_eq!(b.you.as_ref().unwrap().rest(), None);
+
+    // A card seen in a third zone is not among them, and an unknown card owned is.
+    let count = |cards: &[(&str, u32)]| -> BTreeMap<String, u32> {
+        cards.iter().map(|&(c, n)| (c.to_string(), n)).collect()
+    };
+    let mut partial = view.clone();
+    let p = &mut partial.opponents[0];
+    p.owned.known = count(&[("Copper", 7), ("Estate", 2)]);
+    p.owned.unknown = 1;
+    (p.deck.count, p.deck.unknown) = (4, 3);
+    p.deck.known = count(&[("Copper", 1)]);
+    p.discard = dominion_protocol::ZoneView {
+        count: 1,
+        known: count(&[("Estate", 1)]),
+        unknown: 0,
+    };
+    let seen = |view: &AgentView| {
+        let b = board(
+            view,
+            t.deciding().map(|p| p.0),
+            &t.extras(PlayerId(0)),
+            &cards,
+        );
+        b.opponents[0].rest().map(|rest| {
+            let known: Vec<_> = rest
+                .zone
+                .known
+                .iter()
+                .cloned()
+                .map(|s| (s.card, s.count))
+                .collect();
+            (rest.label, rest.zone.count, known, rest.zone.unknown)
+        })
+    };
+    assert_eq!(
+        seen(&partial),
+        Some((
+            "Draw pile + Hand".into(),
+            9,
+            vec![("Copper".into(), 7), ("Estate".into(), 1)],
+            1
+        ))
+    );
+    // A zone naming a card the player isn't known to own leaves nothing to subtract from.
+    partial.opponents[0].discard.known = count(&[("Silver", 1)]);
+    assert_eq!(seen(&partial), None);
 
     let watch = t.watch_view(0).unwrap();
     let b = board(
