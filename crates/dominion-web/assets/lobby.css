@@ -1370,6 +1370,10 @@ a.lb-h2h-name:hover { text-decoration: underline; }
 .lb-sheet-title { margin: 0; font: 700 3.2vh var(--ui); }
 .lb-sheet-ending { margin-top: -.8vh; font: 1.7vh var(--ui); color: #ddd; }
 .lb-sheet-voided { font: italic 1.6vh var(--ui); color: #d9a35f; }
+.lb-venue.voided { background: #7a2e2e; }
+/* A voided game's entry: a badge, and a score struck through, since it counts for nothing. */
+.lb-voided { margin-right: .8vh; padding: 0 .6vh; border-radius: .3vh; font: 700 1.2vh var(--ui); letter-spacing: .04em; text-transform: uppercase; color: #fff; background: #7a2e2e; }
+.lb-history-entry[data-voided] .lb-history-score { text-decoration: line-through; opacity: .6; }
 .lb-sheet-kingdom { display: flex; gap: 1.5vh; align-items: flex-start; }
 .lb-sheet-piles { display: grid; grid-template-columns: repeat(5, max-content); gap: .4vh; }
 .lb-sheet-landscapes { display: flex; flex-direction: column; gap: .4vh; }

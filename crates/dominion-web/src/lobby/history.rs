@@ -430,6 +430,8 @@ pub fn reason(code: &str) -> String {
     }
 }
 
+const VOIDED: &str = "Voided: taken out of the record, it counts for no rating or tally";
+
 /// Where and how a game was played, in a few words.
 fn how(game: &PastGame) -> String {
     let mut parts = vec![];
@@ -445,11 +447,12 @@ fn how(game: &PastGame) -> String {
         (None, Some(p)) => parts.push(format!("as {}", p.name)),
         (None, None) => {}
     }
-    parts.push(match (game.rated, game.voided) {
-        (_, Some(_)) => "Voided".into(),
-        (true, None) => "Rated".into(),
-        (false, None) => "Unrated".into(),
-    });
+    // A voided game says so in a badge of its own.
+    match (game.rated, game.voided) {
+        (_, Some(_)) => {}
+        (true, None) => parts.push("Rated".into()),
+        (false, None) => parts.push("Unrated".into()),
+    }
     parts.join(" · ")
 }
 
@@ -479,6 +482,7 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
             tabindex: "0",
             "data-game": "{game.id}",
             "data-venue": venue,
+            "data-voided": game.voided.is_some().then_some("true"),
             onclick: move |_| onpick.call(()),
             onkeydown: move |e: KeyboardEvent| {
                 if matches!(e.key(), Key::Enter) || e.key() == Key::Character(" ".into()) {
@@ -509,7 +513,12 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
                     }
                 }
                 span { class: "lb-history-how",
-                    span { "{how(&game)}" }
+                    span {
+                        if game.voided.is_some() {
+                            span { class: "lb-voided", title: VOIDED, "Voided" }
+                        }
+                        "{how(&game)}"
+                    }
                     span { class: "lb-history-time", "{clock(game.ended)}" }
                 }
                 KingdomPeek {
@@ -948,13 +957,16 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
         div { class: "lb-sheet", "data-sheet": "{game.id}",
             div { class: "lb-sheet-meta",
                 span { class: venue_class, "{venue_name}" }
+                if game.voided.is_some() {
+                    span { class: "lb-venue voided", title: VOIDED, "Voided" }
+                }
                 span { "{meta}" }
             }
             h2 { class: "lb-sheet-title", "{title}" }
             div { class: "lb-sheet-ending", "{ending}" }
             if let Some(at) = game.voided {
                 div { class: "lb-sheet-voided",
-                    "Voided ({day(at)}): taken out of the rated record, it counts for no rating."
+                    "Voided ({day(at)}): taken out of the record, it counts for no rating or tally."
                 }
             }
             KingdomCards {
