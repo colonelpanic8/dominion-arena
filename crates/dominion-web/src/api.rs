@@ -139,11 +139,23 @@ pub async fn watch_unseated(game: &str, on_change: impl FnMut(Change)) {
     follow(&format!("/api/games/{}/events", encode(game)), on_change).await
 }
 
-/// The game as someone watching sees it (the game must be watchable).
-pub async fn watch_view(game: &str, log_from: Option<usize>) -> Result<SeatView> {
-    let mut url = format!("/api/games/{}/watch", encode(game));
+/// The game as someone watching sees it (the game must be watchable): every player's
+/// cards, or with `as_seat` what that seat knows.
+pub async fn watch_view(
+    game: &str,
+    log_from: Option<usize>,
+    as_seat: Option<u8>,
+) -> Result<SeatView> {
+    let mut query = vec![];
     if let Some(n) = log_from {
-        url.push_str(&format!("?logFrom={n}"));
+        query.push(format!("logFrom={n}"));
+    }
+    if let Some(seat) = as_seat {
+        query.push(format!("as={seat}"));
+    }
+    let mut url = format!("/api/games/{}/watch", encode(game));
+    if !query.is_empty() {
+        url.push_str(&format!("?{}", query.join("&")));
     }
     imp::get(&url, None).await
 }

@@ -435,7 +435,7 @@ async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
         assert!(
             h.arena
                 .hub
-                .watch_view(&created.game_id, 0)
+                .watch_view(&created.game_id, 0, None)
                 .unwrap()
                 .view
                 .spectating

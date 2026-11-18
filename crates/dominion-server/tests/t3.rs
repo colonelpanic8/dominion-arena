@@ -376,7 +376,7 @@ async fn normal_game_creation_runs_two_agents_through_t3_with_complete_archives(
     let jobs = dispatched(&mut h.jobs);
     assert_eq!(jobs.len(), 2);
     assert_eq!(jobs[0].configuration.as_ref().unwrap().seed, 42);
-    assert!(h.arena.hub.watch_view(id, 0).unwrap().view.spectating);
+    assert!(h.arena.hub.watch_view(id, 0, None).unwrap().view.spectating);
     let (root, results) =
         tokio::time::timeout(std::time::Duration::from_secs(30), play(&mut h, jobs))
             .await

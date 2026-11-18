@@ -221,6 +221,7 @@ input[type=range] { accent-color: var(--accent-2); padding: 0; border: none; bac
 .seat-bar { display: flex; gap: .6em; align-items: center; flex-wrap: wrap; margin-bottom: 1.6em; }
 .game-page .seat-bar .game-title { font: 700 1.55em var(--title); letter-spacing: .03em; color: #fff; margin-right: .3em; }
 .view-toggle { display: inline-flex; gap: .3em; }
+.watch-as { display: inline-flex; gap: .3em; align-items: center; flex-wrap: wrap; }
 .plain-game { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); gap: 1.4em; align-items: start; }
 @media (max-width: 1000px) { .plain-game { grid-template-columns: 1fr; } }
 .side-col { position: sticky; top: 1em; display: flex; flex-direction: column; max-height: calc(100vh - 2em); }
