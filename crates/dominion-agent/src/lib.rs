@@ -17,7 +17,7 @@ pub mod turns;
 
 pub use dominion_protocol::view::*;
 pub use project::WAY_HINT;
-pub use table::{AnswerError, Answered, RECORDING_VERSION, Table, WayChoice};
+pub use table::{AnswerError, Answered, RECORDING_VERSION, Table, Unreplayed, WayChoice};
 
 use dominion_engine::{Card, Kind};
 

@@ -88,6 +88,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
   src/control.rs          the control socket: `dominion games` lists and retires hosted games
+  src/backfill.rs         `dominion games backfill`: streams for games saved before they
+                          were recorded, replayed from their answers and checked against
+                          the snapshot; offline, under the state directory's lock
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
   src/catalog.rs          the models the runner offers: read from each provider's catalog
@@ -663,7 +666,17 @@ them.
   and holds them, with those still to write, to the table its recorder keeps
   (`stream_state`); anything else stops the recording. The full stream is served only
   once the game can't change: over, and retired or allowing no undo (`Hub::recording`,
-  which checks it is exactly the game's stream before serving it).
+  which checks it is exactly the game's stream before serving it). Games without a whole
+  stream (saved before recording, with `record_events` off, or whose recording stopped)
+  get one from `backfill.rs`: `Table::rerecorded` plays the table's config and `history`
+  again recording, and the stream is written only if that game's log, final state (the
+  saved game's fields as written then) and outcome are the saved ones and the stream
+  replays; an incomplete stream stays beside it. Its header carries `reconstructed`, and
+  the hub never writes to it: `stream_state` checks such a file as a whole
+  (`check_reconstructed`: header, fold, setup, ending) whatever the table's recording
+  says, and so does `Hub::recording` before serving it. The backfill writes one only for
+  a game that can't change (`hub::can_change`: a hosted game in progress or able to be
+  undone waits), so the check needs no engine; the hub refuses one beside a game that can.
   The stream also holds what caused the game, so that `replay::replay` can play it again
   from the stream alone (its `setup`'s `config`, its chance outcomes, its answers) and
   hold the new stream to it event for event; the fold tests replay every game they play.

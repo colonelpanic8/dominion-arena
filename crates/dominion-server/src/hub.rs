@@ -401,7 +401,7 @@ const STREAM_FAILURES: u32 = 3;
 
 /// Where a hosted game's event stream stands on disk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Stream {
+pub(crate) enum Stream {
     /// None is kept: the game doesn't record one, or its file doesn't hold the events its
     /// table says were written ([`Loaded::unrecorded`]).
     Off,
@@ -409,6 +409,28 @@ enum Stream {
     New,
     /// The file's encoding, and its length up to the end of the events written.
     File(Encoding, u64),
+    /// A whole stream `dominion games backfill` rebuilt ([`check_reconstructed`]), its
+    /// encoding and length: never written to, served only once the game can't change.
+    Reconstructed(Encoding, u64),
+}
+
+/// Why a game's stream on disk can't be kept.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum StreamError {
+    /// The stream it records isn't in step with it, or its recording stopped: its
+    /// recording stops for good.
+    Recorded(String),
+    /// The reconstructed stream beside it isn't its own: left as it is, never served.
+    Reconstructed(String),
+}
+
+impl std::fmt::Display for StreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamError::Recorded(why) => f.write_str(why),
+            StreamError::Reconstructed(why) => write!(f, "its reconstructed stream: {why}"),
+        }
+    }
 }
 
 impl Hosted {
@@ -525,12 +547,22 @@ struct Saved {
 }
 
 #[derive(Default, Deserialize)]
-struct SavedMeta {
+pub(crate) struct SavedMeta {
     #[serde(flatten)]
     meta: Meta,
     /// What a game saved before [`Meta::undo`] said instead.
     #[serde(default)]
     no_undo: bool,
+}
+
+impl SavedMeta {
+    pub(crate) fn into_meta(self) -> Meta {
+        let mut meta = self.meta;
+        if self.no_undo {
+            meta.undo = UndoRule::Off;
+        }
+        meta
+    }
 }
 
 /// What [`Hub::open`] found in its directory.
@@ -547,6 +579,8 @@ pub struct Loaded {
     pub unrecorded: Vec<(PathBuf, String)>,
     /// Games saved without a recording: before games were recorded, or with recording off.
     pub never_recorded: usize,
+    /// Games whose stream `dominion games backfill` rebuilt.
+    pub reconstructed: usize,
 }
 
 #[derive(Default)]
@@ -929,11 +963,7 @@ fn id_number(id: &str) -> Option<u64> {
 fn load(path: &Path, stem: &str) -> Result<(Table, Vec<String>, Meta), String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     let saved: Saved = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    let mut meta = saved.meta.meta;
-    if saved.meta.no_undo {
-        meta.undo = UndoRule::Off;
-    }
-    let saved = (saved.table, saved.tokens, meta);
+    let saved = (saved.table, saved.tokens, saved.meta.into_meta());
     let (table, tokens, mut meta) = saved;
     if table.id() != stem {
         return Err(format!("holds game {}, not {stem}", table.id()));
@@ -950,19 +980,39 @@ fn load(path: &Path, stem: &str) -> Result<(Table, Vec<String>, Meta), String> {
     Ok((table, tokens, meta))
 }
 
-/// Where game `table`'s stream stands on disk, checked against the table.
+/// Where game `table`'s stream stands on disk in state directory `dir` (or its
+/// `expired/`), checked against the table.
 ///
-/// The stream is kept in step with the table's snapshot by [`Hub::save`]: whenever the
+/// The stream is kept in step with the table's snapshot by [`Hub::commit`]: whenever the
 /// server stopped, the stream's first [`Table::written`] events are the table's, and
-/// anything after them is cut off by the next write.
-fn stream_state(store: &Store, table: &Table) -> Result<Stream, String> {
+/// anything after them is cut off by the next write. A stream whose header says it was
+/// `reconstructed` is no recording's: it is checked as a whole ([`check_reconstructed`])
+/// whatever the table's recording says, and never written to.
+pub(crate) fn stream_state(dir: &Path, table: &Table) -> Result<Stream, StreamError> {
+    let file = crate::store::stream_file(dir, table.id());
+    if let Some((path, encoding)) = &file {
+        let fail = |e: String| StreamError::Reconstructed(format!("{}: {e}", path.display()));
+        let bytes = fs::read(path).map_err(|e| fail(e.to_string()))?;
+        if recording::read(*encoding, &bytes, Some(0))
+            .is_ok_and(|r| r.header.reconstructed.is_some())
+        {
+            return check_reconstructed(*encoding, &bytes, table)
+                .map(|()| Stream::Reconstructed(*encoding, bytes.len() as u64))
+                .map_err(fail);
+        }
+    }
+    recorded_state(file, table).map_err(StreamError::Recorded)
+}
+
+/// [`stream_state`] of a stream the table recorded, in `file` if it has one.
+fn recorded_state(file: Option<(PathBuf, Encoding)>, table: &Table) -> Result<Stream, String> {
     if let Some(why) = table.recording_stopped() {
         return Err(format!("its recording stopped: {why}"));
     }
     let Some(written) = table.written() else {
         return Ok(Stream::Off);
     };
-    let Some((path, encoding)) = store.stream_file(table.id()) else {
+    let Some((path, encoding)) = file else {
         return match written {
             0 => Ok(Stream::New),
             _ => Err(format!("its event stream, of {written} events, is missing")),
@@ -1122,14 +1172,33 @@ impl Hub {
             }
             let changed = now_ms().saturating_sub(age.as_millis() as u64);
             let mut table = table;
-            let stream = match stream_state(&store, &table) {
+            let stream = match stream_state(store.dir(), &table) {
                 Ok(Stream::Off) => {
                     loaded.never_recorded += 1;
                     Stream::Off
                 }
+                Ok(Stream::Reconstructed(..)) if can_change(&meta, &table) => {
+                    let why = "a reconstructed stream is beside it while it can still change, \
+                               so that stream may not stay its own: it is never served";
+                    table.stop_recording(why);
+                    loaded.unrecorded.push((path.clone(), why.into()));
+                    Stream::Off
+                }
+                Ok(stream @ Stream::Reconstructed(..)) => {
+                    // A recording whose stream was lost and rebuilt: the rebuilt one stands.
+                    table.stop_recording("its stream was rebuilt by `dominion games backfill`");
+                    loaded.reconstructed += 1;
+                    stream
+                }
                 Ok(stream) => stream,
-                Err(e) => {
+                Err(StreamError::Recorded(e)) => {
                     stop_stream(&store, &mut table, &e);
+                    loaded.unrecorded.push((path.clone(), e));
+                    Stream::Off
+                }
+                Err(e @ StreamError::Reconstructed(_)) => {
+                    let e = e.to_string();
+                    table.stop_recording(&e);
                     loaded.unrecorded.push((path.clone(), e));
                     Stream::Off
                 }
@@ -1247,6 +1316,9 @@ impl Hub {
             return;
         };
         let mut stream = lock(&game.stream);
+        if let Stream::Reconstructed(..) = stream.at {
+            return;
+        }
         if let Some(why) = table.recording_stopped() {
             if stream.at != Stream::Off {
                 eprintln!("dominion: game {}'s recording stopped: {why}", table.id());
@@ -1264,7 +1336,7 @@ impl Hub {
             return;
         }
         let (encoding, len) = match stream.at {
-            Stream::Off => {
+            Stream::Off | Stream::Reconstructed(..) => {
                 table.mark_written();
                 return;
             }
@@ -1410,7 +1482,7 @@ impl Hub {
         let changed = modified
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as u64);
-        let stream = stream_state(store, &table)
+        let stream = stream_state(store.dir(), &table)
             .inspect_err(|e| eprintln!("dominion: game {id}: {e}"))
             .unwrap_or(Stream::Off);
         let game = Arc::new(Hosted::new(table, tokens, meta, changed, stream));
@@ -2105,10 +2177,7 @@ impl Hub {
     /// once someone resigned, and never once a game between accounts is over, as it has
     /// been recorded.
     fn may_undo(&self, game: &Hosted, table: &Table) -> bool {
-        let meta = lock(&game.meta);
-        meta.undo != UndoRule::Off
-            && table.can_rewind()
-            && !(table.is_over() && meta.source != Source::Direct)
+        may_undo(&lock(&game.meta), table)
     }
 
     /// Whether `seat` may ask to take back its last answer now.
@@ -2564,17 +2633,25 @@ impl Hub {
     /// those still to write. Checked to be exactly its stream.
     fn stream_bytes(&self, game: &Hosted, table: &Table) -> Result<(Encoding, Vec<u8>), HubError> {
         let id = table.id();
+        let unrecorded = || HubError::NotFound(format!("game {id} has no recorded stream"));
+        let write = |e: io::Error| HubError::Engine(format!("game {id}'s recorded stream: {e}"));
+        let at = lock(&game.stream).at;
+        if let (Stream::Reconstructed(encoding, _), Some(store)) = (at, &self.store) {
+            let (path, _) = store.stream_file(id).ok_or_else(unrecorded)?;
+            let bytes = fs::read(path).map_err(write)?;
+            check_reconstructed(encoding, &bytes, table)
+                .map_err(|e| HubError::Engine(format!("game {id}'s reconstructed stream: {e}")))?;
+            return Ok((encoding, bytes));
+        }
         if let Some(why) = table.recording_stopped() {
             return Err(HubError::NotFound(format!(
                 "game {id}'s recording stopped ({why}): its stream is incomplete"
             )));
         }
-        let unrecorded = || HubError::NotFound(format!("game {id} has no recorded stream"));
-        let write = |e: io::Error| HubError::Engine(format!("game {id}'s recorded stream: {e}"));
-        let encoding = match lock(&game.stream).at {
+        let encoding = match at {
             Stream::File(encoding, len) => Some((encoding, len)),
             Stream::New => None,
-            Stream::Off => return Err(unrecorded()),
+            Stream::Off | Stream::Reconstructed(..) => return Err(unrecorded()),
         };
         // After an undo whose stream hasn't replaced the file yet, the events still to
         // write are the whole stream.
@@ -2623,6 +2700,74 @@ fn check_stream(encoding: Encoding, bytes: &[u8], table: &Table) -> Result<(), S
         return Err("its events are not the game's".into());
     }
     Ok(())
+}
+
+/// Checks that `bytes` are a whole stream `dominion games backfill` rebuilt for `table`:
+/// its header says so and names the game, every event folds in order with nothing after
+/// them, its setup has the game's seats and seed, and it ends as the game stands (its
+/// `game-end` the game's outcome, or none while the game is in progress). The backfill
+/// checked it against the game event for event, and writes it only for a game that can no
+/// longer change, so this needs no engine: it holds the file to being that stream still.
+fn check_reconstructed(encoding: Encoding, bytes: &[u8], table: &Table) -> Result<(), String> {
+    use dominion_protocol::events::What;
+    let read = recording::read(encoding, bytes, None)?;
+    if read.header.game.as_deref() != Some(table.id()) {
+        return Err("its header names another game".into());
+    }
+    if read.header.reconstructed.is_none() {
+        return Err("its header doesn't say it was reconstructed".into());
+    }
+    if read.len_of(read.events.len()) != Some(bytes.len()) {
+        return Err("its last record is cut short".into());
+    }
+    let mut folded = dominion_protocol::events::Table::default();
+    for event in &read.events {
+        folded
+            .apply(event)
+            .map_err(|e| format!("event {}: {e}", event.seq))?;
+    }
+    let config = table.game().config();
+    match read.events.first().map(|e| &e.what) {
+        Some(What::Setup(setup))
+            if setup.seats == table.names()
+                && setup.config.as_ref().and_then(|c| c.seed) == Some(config.seed) => {}
+        _ => return Err("its setup is not the game's".into()),
+    }
+    let end = match read.events.last().map(|e| &e.what) {
+        Some(What::GameEnd(end)) => Some(end),
+        _ => None,
+    };
+    let same = match (table.game().outcome(), end) {
+        (None, None) => true,
+        (Some(o), Some(end)) => {
+            (end.reason == "resigned") == (o.reason == dominion_engine::EndReason::Resigned)
+                && end.result.len() == o.scores.len()
+                && end.result.iter().all(|r| {
+                    let i = r.seat as usize;
+                    o.scores.get(i) == Some(&r.vp)
+                        && o.turns.get(i) == Some(&r.turns)
+                        && o.resigned.contains(&PlayerId(r.seat)) == r.resigned
+                })
+        }
+        _ => false,
+    };
+    if !same {
+        return Err("it doesn't end as the game stands".into());
+    }
+    Ok(())
+}
+
+/// Whether game `table` may still be taken back: its rules allow undo, it kept every
+/// answer, nobody resigned, and it is in progress or a game made directly.
+fn may_undo(meta: &Meta, table: &Table) -> bool {
+    meta.undo != UndoRule::Off
+        && table.can_rewind()
+        && !(table.is_over() && meta.source != Source::Direct)
+}
+
+/// Whether hosted game `table` can still change: in progress, or able to be undone.
+pub(crate) fn can_change(meta: &Meta, table: &Table) -> bool {
+    !table.is_over() || may_undo(meta, table)
 }
 
 #[cfg(test)]
@@ -2841,7 +2986,7 @@ mod recording_safety_tests {
         assert_eq!(live.records(), live.game().journaled());
         if live.records() {
             assert!(live.unwritten().is_empty());
-            let stream = stream_state(&store(hub), &disk).unwrap();
+            let stream = stream_state(store(hub).dir(), &disk).unwrap();
             assert!(matches!(stream, Stream::File(..)));
         } else {
             assert!(!dir.join("g1.events.jsonl").exists());

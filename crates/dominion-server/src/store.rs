@@ -148,10 +148,7 @@ impl Store {
     /// Game `key`'s event stream, here or in `expired/`, with its encoding: the first
     /// found.
     pub fn stream_file(&self, key: &str) -> Option<(PathBuf, Encoding)> {
-        [self.dir.clone(), self.expired_dir()]
-            .iter()
-            .flat_map(|dir| Encoding::ALL.map(|e| (dir.join(format!("{key}{}", e.suffix())), e)))
-            .find(|(path, _)| path.exists())
+        stream_file(&self.dir, key)
     }
 
     /// Writes `events` to game `key`'s stream in `encoding`, after its first `len` bytes,
@@ -197,13 +194,22 @@ impl Store {
     }
 }
 
+/// Game `key`'s event stream in state directory `dir` or its `expired/`, with its
+/// encoding: the first found. Never an incomplete one.
+pub fn stream_file(dir: &Path, key: &str) -> Option<(PathBuf, Encoding)> {
+    [dir.to_path_buf(), dir.join(EXPIRED)]
+        .iter()
+        .flat_map(|dir| Encoding::ALL.map(|e| (dir.join(format!("{key}{}", e.suffix())), e)))
+        .find(|(path, _)| path.exists())
+}
+
 /// The name an incomplete stream is kept under.
 fn incomplete_name(key: &str, encoding: Encoding) -> String {
     format!("{key}.incomplete{}", encoding.suffix())
 }
 
 /// Makes the entries of `dir` (a rename into it) durable.
-fn sync_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn sync_dir(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     fs::File::open(dir)?.sync_all()?;
     #[cfg(not(unix))]
