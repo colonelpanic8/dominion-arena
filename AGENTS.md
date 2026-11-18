@@ -97,7 +97,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/control.rs          the control socket: `dominion games` lists and retires hosted games
   src/backfill.rs         `dominion games backfill`: streams for games saved before they
                           were recorded, replayed from their answers and checked against
-                          the snapshot; offline, under the state directory's lock
+                          the snapshot, each naming the history it was built from;
+                          offline, under the state directory's lock
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
   src/catalog.rs          the models the runner offers: read from each provider's catalog
@@ -118,7 +119,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           read from its view: kept in its record for the history
   src/store.rs            the state directory: its lock, a JSON file per game written
                           atomically and durably (the directory synced too), each game's
-                          event stream appended to, or marked incomplete
+                          event stream appended to, or marked incomplete (or stale, a
+                          reconstructed one of a history the game no longer has)
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
   src/mcp/play.rs         dominion/play@1: arguments, the text a session is shown
@@ -698,12 +700,21 @@ them.
   get one from `backfill.rs`: `Table::rerecorded` plays the table's config and `history`
   again recording, and the stream is written only if that game's log, final state (the
   saved game's fields as written then) and outcome are the saved ones and the stream
-  replays; an incomplete stream stays beside it. Its header carries `reconstructed`, and
-  the hub never writes to it: `stream_state` checks such a file as a whole
-  (`check_reconstructed`: header, fold, setup, ending) whatever the table's recording
-  says, and so does `Hub::recording` before serving it. The backfill writes one only for
-  a game that can't change (`hub::can_change`: a hosted game in progress or able to be
-  undone waits), so the check needs no engine; the hub refuses one beside a game that can.
+  replays; an incomplete stream stays beside it. Its header carries `reconstructed`, with
+  the history it was built from (`Table::history`: answers, undos and a digest of both as
+  the snapshot keeps them), and the hub never writes to it: `stream_state` checks such a
+  file as a whole (`check_reconstructed`: header, that history exactly the table's, fold,
+  setup, ending) whatever the table's recording says, and so does `Hub::recording` before
+  serving it. A game is determined by its config and answers, so the check needs no
+  engine, and since an undo only adds to the undos, a stream of a game undone since, even
+  one finished again the same way, is stale (`StreamError::Stale`). The backfill writes
+  one for every game but a hosted one in progress, a finished game that can still be
+  undone included: the hub keeps it (`StreamFile::built`) and serves it only once the
+  game can't change. A commit that leaves the table another history sets the file aside
+  (`Store::mark_stale`: `<id>.stale.events.<enc>`, as it is), and so do startup and the
+  backfill when they find one stale; the backfill then writes the game's afresh, once it
+  isn't in progress. Anything that changes a table's answers or undos changes its
+  history: keep `Table::history` digesting all of them.
   The stream also holds what caused the game, so that `replay::replay` can play it again
   from the stream alone (its `setup`'s `config`, its chance outcomes, its answers) and
   hold the new stream to it event for event; the fold tests replay every game they play.
