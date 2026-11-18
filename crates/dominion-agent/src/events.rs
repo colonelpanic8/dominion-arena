@@ -30,7 +30,7 @@ pub struct Recorder {
     seq: u64,
     set_up: bool,
     ended: bool,
-    /// Whose turn it is: who moves a card that goes between zones nobody owns.
+    /// The player of the latest turn: whose its phases are.
     turn: u8,
     /// The event each of the journal's occurrences became, by its number, and which of
     /// its cards it is about when it is a move.
@@ -44,6 +44,10 @@ pub struct Recorder {
     /// An event that was an occurrence now over: no later move joins it.
     #[serde(default)]
     closed: Option<u64>,
+    /// Whose each of the journal's occurrences is, by its number: who moves a card between
+    /// zones nobody owns inside it.
+    #[serde(default)]
+    actors: Vec<Option<u8>>,
 }
 
 impl Recorder {
@@ -403,13 +407,8 @@ impl Recorder {
             let zone = self.zone(game, Zone::Pile(PileId(i as u8)));
             table.zones.insert(zone, vec![]);
         }
-        for what in made {
-            let event = Event {
-                seq: 0,
-                by: None,
-                what,
-            };
-            table.apply(&event).expect("setup's own state folds");
+        for what in &made {
+            table.change(what).expect("setup's own state folds");
         }
         let n = game.num_players();
         // Per seat: the deck as shuffled, top first, and how many of it were drawn.
@@ -458,7 +457,7 @@ impl Recorder {
                     self.arrive(&hand, id, At::Top);
                 }
                 after.push(What::Draw(Move {
-                    player: seat,
+                    player: Some(seat),
                     cards: deck[..drawn].iter().map(|&id| self.card(id)).collect(),
                     from: zone,
                     to: hand,
@@ -493,8 +492,6 @@ impl Recorder {
             by: self.event_of(self.within),
             what,
         };
-        self.table.apply(&event)?;
-        self.wrote = true;
         // Cards moving the same way one after the other, for the same cause, are one event,
         // unless that event was an occurrence that is over: the move is another one.
         if let (Some(last), Some((verb, m))) = (out.last_mut(), event.what.as_move())
@@ -507,6 +504,9 @@ impl Recorder {
             && (l.player, &l.from, &l.to, l.at, l.face, l.from_face)
                 == (m.player, &m.from, &m.to, m.at, m.face, m.from_face)
         {
+            let fail = |why| FoldError { seq: last.seq, why };
+            self.table.change(&event.what).map_err(fail)?;
+            self.wrote = true;
             if !(l.pos.is_empty() && m.pos.is_empty()) {
                 l.pos.resize(l.cards.len(), 0);
                 l.pos.extend(if m.pos.is_empty() {
@@ -519,6 +519,8 @@ impl Recorder {
             self.moved.insert(last.seq, l.cards.len() as u32);
             return Ok(());
         }
+        self.table.apply(&event)?;
+        self.wrote = true;
         if let Some((_, m)) = event.what.as_move() {
             self.moved.insert(event.seq, m.cards.len() as u32);
         }
@@ -533,11 +535,32 @@ impl Recorder {
             .and_then(|e| e.what.as_move())
             .map_or(0, |(_, m)| m.cards.len() as u32 - 1);
         let event = self.wrote.then(|| (self.seq - 1, card));
+        let actor = (out.last())
+            .filter(|_| self.wrote)
+            .and_then(|e| self.actor(&e.what));
         let n = n as usize;
         if self.occurrences.len() <= n {
             self.occurrences.resize(n + 1, None);
         }
         self.occurrences[n] = event;
+        if self.actors.len() <= n {
+            self.actors.resize(n + 1, None);
+        }
+        self.actors[n] = actor;
+    }
+
+    /// Whose an occurrence is: its player's; a phase is its turn's.
+    fn actor(&self, what: &What) -> Option<u8> {
+        match what {
+            What::Turn(TurnStart { player, .. })
+            | What::TurnEnd { player }
+            | What::Play(Play { player, .. })
+            | What::Buy { player, .. }
+            | What::Resolve { player, .. }
+            | What::Receive { player, .. } => Some(*player),
+            What::Phase { .. } => Some(self.turn),
+            what => what.as_move().and_then(|(_, m)| m.player),
+        }
     }
 
     /// The event occurrence `occ` became.
@@ -682,11 +705,11 @@ impl Recorder {
     }
 
     /// Whose action a move between `from` and `to` is: the owner of `from`, else of `to`,
-    /// else the turn's player.
-    fn mover(&self, from: &events::Zone, to: &events::Zone) -> u8 {
+    /// else the player of the occurrence it happens in.
+    fn mover(&self, from: &events::Zone, to: &events::Zone) -> Option<u8> {
         match (from, to) {
-            (events::Zone::Seat(p, _), _) | (_, events::Zone::Seat(p, _)) => *p,
-            _ => self.turn,
+            (events::Zone::Seat(p, _), _) | (_, events::Zone::Seat(p, _)) => Some(*p),
+            _ => (self.within).and_then(|n| self.actors.get(n as usize).copied().flatten()),
         }
     }
 
@@ -841,8 +864,9 @@ impl Recorder {
                     cards.into_iter().map(|c| CardRef::named(name(c))).collect();
                 let from = zone(Pack::Discard);
                 let pos = self.depths(&from, &cards);
+                // Nobody shuffles them: the rules do, when one is needed.
                 What::Shuffle(Move {
-                    player: self.turn,
+                    player: None,
                     cards,
                     from,
                     to: zone(Pack::Deck),
@@ -1084,6 +1108,7 @@ fn verb_of(verb: Verb) -> events::Verb {
         Verb::Exchange => events::Verb::Exchange,
         Verb::Shuffle => events::Verb::Shuffle,
         Verb::Rotate => events::Verb::Rotate,
+        Verb::Pass => events::Verb::Pass,
     }
 }
 
@@ -1094,7 +1119,7 @@ fn phase_of(phase: Phase) -> events::Phase {
         Phase::Buy => events::Phase::Buy,
         Phase::Night => events::Phase::Night,
         Phase::Cleanup => events::Phase::Cleanup,
-        Phase::End => events::Phase::End,
+        Phase::End => unreachable!("a turn's end is journaled as its own step"),
     }
 }
 

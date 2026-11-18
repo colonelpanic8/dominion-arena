@@ -1438,6 +1438,7 @@ impl Game {
     }
 
     pub(crate) fn create(&mut self, card: Card, zone: Zone) -> CardId {
+        self.sync_journal();
         let id = CardId(self.cards.len() as u32);
         self.cards.push(card);
         self.zones.push(zone);

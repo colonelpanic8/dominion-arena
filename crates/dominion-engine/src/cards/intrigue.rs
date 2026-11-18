@@ -517,7 +517,7 @@ fn masquerade(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             if picks.len() > 1 {
                 for (k, &c) in picks.iter().enumerate() {
                     let to = owners[(k + 1) % owners.len()];
-                    g.move_card(c, Zone::Hand(to), Pos::Top);
+                    g.move_as(crate::Verb::Pass, c, Zone::Hand(to), Pos::Top);
                 }
             }
             f.pc = 3;

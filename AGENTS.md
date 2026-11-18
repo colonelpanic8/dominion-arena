@@ -575,7 +575,12 @@ them.
   `move_as(verb, ..)` where the rules have a word for it (a bare `move_card` is a `put`,
   or by its destination a top-deck, return, set-aside, look or exile), and code that
   rearranges cards without `move_card` (a shuffle in place, a pile rotated, cards ordered
-  at the bottom of a deck) journals it with `journal_within`. A counter the stream
+  at the bottom of a deck) journals it with `journal_within`. A card given to another
+  player is `Verb::Pass` (the fold test holds every move between two players' zones to
+  it). A move between zones nobody owns is given to the player of the occurrence it
+  happens in, so make it inside the play or ability that does it. A card that enters the
+  game (`Game::create`) or changes identity (`Trace::Changed`, after `sync_journal`) is
+  journaled before what it changes is read, so its cost follows it. A counter the stream
   should carry is a `Gauge`. Lasting effects are read like gauges (`Game::effects`: what
   `View::lasting` shows, with the cards of its data that are set aside as what it holds),
   so a change to one needs nothing; one removed is `resolved` unless its remover says
@@ -609,7 +614,10 @@ them.
   inside an occurrence must not wait to be read until after it has closed. A new
   occurrence opens with `journal_opens` (several together: `journal_occurred` for each,
   then `journal_open`); a lasting effect made outside `add_lasting` / `continue_lasting`
-  records its origin with `journal_lasting`. Arena records every game it saves:
+  records its origin with `journal_lasting`. The fold refuses an event out of place (its
+  `seq`, `setup` only first, nothing after `game-end`, a cause that is no occurrence, a
+  turn during a turn) and leaves the table as it was; `Table::change` applies an event's
+  change alone, for building a table. Arena records every game it saves:
   `Table::new_recorded` journals the game and keeps a `Recorder`, saved with it, and
   every change a table makes to its game ends with its new events taken
   (`Table::record`, in `game_respond` and `resign`: anything new that changes the game

@@ -498,6 +498,7 @@ fn engine_table(game: &Game) -> Table {
         face_up,
         extra_turns,
         ending,
+        progress: Default::default(),
     }
 }
 
@@ -508,7 +509,7 @@ fn phase_of(phase: EnginePhase) -> Phase {
         EnginePhase::Buy => Phase::Buy,
         EnginePhase::Night => Phase::Night,
         EnginePhase::Cleanup => Phase::Cleanup,
-        EnginePhase::End => Phase::End,
+        EnginePhase::End => unreachable!("no turn is in progress"),
     }
 }
 
@@ -576,9 +577,6 @@ fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str)
         assert_eq!(folded.costs, expected.costs, "{what}");
         assert_eq!(folded.types, expected.types, "{what}");
         assert!(folded == expected, "{what}");
-    }
-    if let Some(turn) = &folded.turn {
-        assert_ne!(turn.phase, Phase::End, "{what}");
     }
     // The stream folds to the same table for anyone who reads it as JSON.
     let Some(events) = events else {
@@ -744,24 +742,6 @@ const FOCUS: &[(&[&str], &[&str])] = &[
     ),
 ];
 
-/// Whether `e` is an occurrence: something other events can happen inside.
-fn occurrence(e: &What) -> bool {
-    matches!(
-        e,
-        What::Turn(_)
-            | What::Phase { .. }
-            | What::TurnEnd { .. }
-            | What::Receive { .. }
-            | What::Play(_)
-            | What::Buy { .. }
-            | What::Resolve { .. }
-            | What::Gain(_)
-            | What::Trash(_)
-            | What::Discard(_)
-            | What::Shuffle(_)
-    )
-}
-
 fn phase_in(e: &What) -> Option<Phase> {
     match e {
         What::Phase { phase } => Some(*phase),
@@ -791,9 +771,20 @@ fn check_causes(events: &[Event], what: &str) {
             panic!("{what}: event {seq}: {why}\n{json}\nby {cause:?}")
         };
         if let Some(by) = e.by
-            && !occurrence(at(by))
+            && !at(by).is_occurrence()
         {
             fail("caused by something that is no occurrence");
+        }
+        // A card goes from one player to another only by being passed.
+        if let Some((verb, m)) = e.what.as_move() {
+            let seat = |z: &Zone| match z {
+                Zone::Seat(p, _) => Some(*p),
+                _ => None,
+            };
+            let between = matches!((seat(&m.from), seat(&m.to)), (Some(a), Some(b)) if a != b);
+            if between != (verb == events::Verb::Pass) {
+                fail("a card passed, or given to another player other than by passing");
+            }
         }
         if let What::Turn(_) = e.what {
             turn = Some(seq);
@@ -1007,7 +998,22 @@ fn check_causes(events: &[Event], what: &str) {
             }
             _ => {}
         }
+        // A name is priced once a card of it is in the game, and unpriced once none is.
+        let priced: Vec<(CardRef, bool)> = match &e.what {
+            What::Derived { costs, .. } => (costs.iter())
+                .filter(|(card, cost)| table.costs.contains_key(*card) != cost.is_some())
+                .map(|(card, cost)| (CardRef::named(card.clone()), cost.is_some()))
+                .collect(),
+            _ => vec![],
+        };
         table.apply(e).unwrap();
+        for (card, now) in priced {
+            if table.zones.values().any(|cards| cards.contains(&card)) != now {
+                fail(&format!(
+                    "{card} priced or not before it is in the game or gone"
+                ));
+            }
+        }
     }
     // A card's +Cards are drawn by its play, unless something changed what the play does.
     for play in drawable {

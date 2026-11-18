@@ -1987,6 +1987,7 @@ fn inherited(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 } else {
                     // The chosen card goes back to the box and the default one comes back.
                     let from = g.cards[x.index()];
+                    g.sync_journal();
                     g.cards[x.index()] = default;
                     g.record(|| Trace::Changed {
                         card: x,

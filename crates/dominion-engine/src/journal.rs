@@ -47,6 +47,8 @@ pub enum Verb {
     Shuffle,
     /// From the top of a pile to its bottom.
     Rotate,
+    /// To another player.
+    Pass,
 }
 
 /// A counter the journal follows.
@@ -489,7 +491,11 @@ impl Game {
         if self.journal.is_none() {
             return;
         }
-        self.sync_journal();
+        // A card entering the game or changing is read after it: what it changes (its cost)
+        // follows it. What changed before it was read before it changed.
+        if !matches!(entry, Trace::Created { .. } | Trace::Changed { .. }) {
+            self.sync_journal();
+        }
         let verb = match *entry {
             Trace::Moved {
                 to, bottom, under, ..
@@ -797,6 +803,14 @@ impl Game {
         let now = self.gauges();
         let journal = self.journal.as_mut().expect("checked above");
         let mut out = vec![];
+        // A pile is there before anything is read of it: its tokens, a cost it changes.
+        let was = std::mem::replace(&mut journal.holdings, holdings);
+        let mut held = vec![];
+        holding_changes(&was, &journal.holdings, &mut held);
+        let (piles, held): (Vec<Step>, Vec<Step>) = held
+            .into_iter()
+            .partition(|s| matches!(s, Step::Pile { .. }));
+        out.extend(piles);
         for old in &journal.effects {
             if !effects.iter().any(|e| e.id == old.id) {
                 out.push(Step::EffectEnded {
@@ -832,8 +846,7 @@ impl Game {
             }
         }
         journal.readings = now;
-        let was = std::mem::replace(&mut journal.holdings, holdings);
-        holding_changes(&was, &journal.holdings, &mut out);
+        out.extend(held);
         for step in out {
             journal.push_within(step);
         }

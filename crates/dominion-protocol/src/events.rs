@@ -84,8 +84,14 @@ impl FromStr for CardRef {
 
 /// Puts `card` into `bag`, a list sorted in [`CardRef`]'s order.
 pub fn bag_insert(bag: &mut Vec<CardRef>, card: CardRef) {
+    bag_insert_at(bag, card);
+}
+
+/// Puts `card` into `bag`; where it went.
+fn bag_insert_at(bag: &mut Vec<CardRef>, card: CardRef) -> usize {
     let i = bag.partition_point(|c| *c <= card);
     bag.insert(i, card);
+    i
 }
 
 /// Takes one `card` out of `bag`; whether there was one.
@@ -316,8 +322,11 @@ impl At {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Move {
-    /// Whose action it is.
-    pub player: u8,
+    /// Whose action it is: the owner of `from`, else of `to`; between zones nobody owns,
+    /// the player of the occurrence it happens in. Absent when nobody acts (the Boons
+    /// reshuffled).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub player: Option<u8>,
     pub cards: Vec<CardRef>,
     pub from: Zone,
     pub to: Zone,
@@ -442,7 +451,6 @@ pub enum Phase {
     Buy,
     Night,
     Cleanup,
-    End,
 }
 
 /// A turn beginning. The table's phase becomes `start` and the turn's counters 1 Action,
@@ -1243,6 +1251,24 @@ impl What {
         }
     }
 
+    /// Whether it is an occurrence: something other events can happen inside.
+    pub fn is_occurrence(&self) -> bool {
+        matches!(
+            self,
+            What::Turn(_)
+                | What::Phase { .. }
+                | What::TurnEnd { .. }
+                | What::Receive { .. }
+                | What::Play(_)
+                | What::Buy { .. }
+                | What::Resolve { .. }
+                | What::Gain(_)
+                | What::Trash(_)
+                | What::Discard(_)
+                | What::Shuffle(_)
+        )
+    }
+
     /// The move this is, if it is one.
     pub fn as_move(&self) -> Option<(Verb, &Move)> {
         Some(match self {
@@ -1348,7 +1374,50 @@ pub struct Table {
     /// Derived: the types of the cards whose types are not the printed ones now, by name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub types: BTreeMap<String, Vec<String>>,
+    /// Where the fold that made it is in its stream.
+    #[serde(default, skip_serializing_if = "Progress::is_fresh")]
+    pub progress: Progress,
 }
+
+/// How far a fold has read its stream: what [`Table::apply`] needs to refuse an event out
+/// of place. It is no part of the table, so tables are equal whatever it says.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Progress {
+    /// The `seq` the next event must have; 0 before `setup`.
+    next: u64,
+    /// Which events so far were occurrences, a bit per `seq`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    occurrences: Vec<u64>,
+}
+
+impl Progress {
+    fn is_fresh(&self) -> bool {
+        self.next == 0
+    }
+
+    fn occurrence(&self, seq: u64) -> bool {
+        (self.occurrences.get((seq / 64) as usize)).is_some_and(|bits| bits >> (seq % 64) & 1 == 1)
+    }
+
+    fn applied(&mut self, seq: u64, occurrence: bool) {
+        self.next = seq + 1;
+        if occurrence {
+            let word = (seq / 64) as usize;
+            if self.occurrences.len() <= word {
+                self.occurrences.resize(word + 1, 0);
+            }
+            self.occurrences[word] |= 1 << (seq % 64);
+        }
+    }
+}
+
+impl PartialEq for Progress {
+    fn eq(&self, _: &Progress) -> bool {
+        true
+    }
+}
+
+impl Eq for Progress {}
 
 /// The turn's counters: set as a turn begins, gone when it ends.
 const TURN_COUNTERS: [(CounterName, i64); 7] = [
@@ -1390,30 +1459,69 @@ impl Table {
         self.face_up.get(zone).map_or(&[], Vec::as_slice)
     }
 
-    /// The table after `event`.
+    /// The `seq` the next event must have.
+    pub fn next_seq(&self) -> u64 {
+        self.progress.next
+    }
+
+    /// The table after `event`. Refused, the table is as it was.
     pub fn apply(&mut self, event: &Event) -> Result<(), FoldError> {
         let fail = |why: String| FoldError {
             seq: event.seq,
             why,
         };
+        self.in_place(event).map_err(fail)?;
+        self.change(&event.what).map_err(fail)?;
+        self.progress.applied(event.seq, event.what.is_occurrence());
+        Ok(())
+    }
+
+    /// Whether `event` can come next in the stream so far.
+    fn in_place(&self, event: &Event) -> Result<(), String> {
+        let next = self.progress.next;
+        if event.seq != next {
+            return Err(format!("the next event is {next}"));
+        }
+        match (&event.what, next) {
+            (What::Setup(_), 0) => {}
+            (What::Setup(_), _) => return Err("setup comes only first".into()),
+            (_, 0) => return Err("a stream begins with setup".into()),
+            _ => {}
+        }
+        if self.ended.is_some() {
+            return Err("the game is over".into());
+        }
         let origin = match event.what {
             What::Resolve { origin, .. } => origin,
             _ => None,
         };
         for cause in [event.by, origin].into_iter().flatten() {
             if cause >= event.seq {
-                return Err(fail(format!("event {cause} is not earlier")));
+                return Err(format!("event {cause} is not earlier"));
+            }
+            if !self.progress.occurrence(cause) {
+                return Err(format!("event {cause} is no occurrence"));
             }
         }
-        if let Some((verb, m)) = event.what.as_move() {
-            return self.apply_move(verb, m).map_err(fail);
+        Ok(())
+    }
+
+    /// What `what` does to the table, with no regard to where it stands in a stream: how a
+    /// table is built from changes (a setup's). Refused, the table is as it was.
+    pub fn change(&mut self, what: &What) -> Result<(), String> {
+        if let Some((verb, m)) = what.as_move() {
+            return self.apply_move(verb, m);
         }
-        match &event.what {
-            What::Setup(setup) => *self = setup.table.clone(),
+        match what {
+            What::Setup(setup) => {
+                let progress = std::mem::take(&mut self.progress);
+                *self = setup.table.clone();
+                self.progress = progress;
+            }
             What::Play(play) => match (&play.from, &play.to) {
                 (Some(from), Some(to)) => {
                     let m = Move {
-                        player: play.player,
+                        player: Some(play.player),
                         cards: vec![play.card.clone()],
                         from: from.clone(),
                         to: to.clone(),
@@ -1422,10 +1530,10 @@ impl Table {
                         face: None,
                         from_face: play.from_face,
                     };
-                    self.apply_move(Verb::Put, &m).map_err(fail)?;
+                    self.apply_move(Verb::Put, &m)?;
                 }
                 (None, None) => {}
-                _ => return Err(fail("a play goes from somewhere to somewhere".into())),
+                _ => return Err("a play goes from somewhere to somewhere".into()),
             },
             What::Buy { .. }
             | What::Resolve { .. }
@@ -1439,10 +1547,17 @@ impl Table {
                 kind,
                 extra_turn,
                 ..
-            } => self.turn_taken(*player, *kind, *extra_turn).map_err(fail)?,
+            } => {
+                if let Some(turn) = &self.turn {
+                    return Err(format!("seat {}'s turn is in progress", turn.player));
+                }
+                self.turn_taken(*player, *kind, *extra_turn)?;
+            }
             What::Turn(t) => {
-                self.turn_taken(t.player, t.kind, t.extra_turn)
-                    .map_err(fail)?;
+                if let Some(turn) = &self.turn {
+                    return Err(format!("seat {}'s turn is in progress", turn.player));
+                }
+                self.turn_taken(t.player, t.kind, t.extra_turn)?;
                 self.turn = Some(TurnState {
                     player: t.player,
                     number: t.number,
@@ -1457,15 +1572,20 @@ impl Table {
             }
             What::Phase { phase } => match &mut self.turn {
                 Some(turn) => turn.phase = *phase,
-                None => return Err(fail("a phase with no turn".into())),
+                None => return Err("a phase with no turn".into()),
             },
             What::Counter(c) => {
+                if let CounterOf::Pile(pile) = &c.counter.of
+                    && !self.piles.contains_key(pile)
+                {
+                    return Err(format!("there is no pile {pile}"));
+                }
                 let was = self.counter(&c.counter);
                 if was + c.delta != c.value {
-                    return Err(fail(format!(
+                    return Err(format!(
                         "{} was {was}: {:+} doesn't make it {}",
                         c.counter, c.delta, c.value
-                    )));
+                    ));
                 }
                 self.set_counter(&c.counter, c.value);
             }
@@ -1483,28 +1603,28 @@ impl Table {
                 name,
                 zone,
                 pos,
-            } => self.rename(card, name, zone, *pos).map_err(fail)?,
+            } => self.rename(card, name, zone, *pos)?,
             What::GameEnd(end) => self.ended = Some(end.clone()),
             What::Effect(e) => {
                 if self.effects.iter().any(|x| x.id == e.id) {
-                    return Err(fail(format!("effect {} has begun already", e.id)));
+                    return Err(format!("effect {} has begun already", e.id));
                 }
                 let at = self.effects.partition_point(|x| x.id < e.id);
                 self.effects.insert(at, e.clone());
             }
             What::EffectChange(e) => match self.effects.iter_mut().find(|x| x.id == e.id) {
                 Some(x) => *x = e.clone(),
-                None => return Err(fail(format!("there is no effect {}", e.id))),
+                None => return Err(format!("there is no effect {}", e.id)),
             },
             What::EffectEnd { id, .. } => match self.effects.iter().position(|x| x.id == *id) {
                 Some(i) => {
                     self.effects.remove(i);
                 }
-                None => return Err(fail(format!("there is no effect {id}"))),
+                None => return Err(format!("there is no effect {id}")),
             },
             What::ExtraTurn(q) => {
                 if self.extra_turns.iter().any(|x| x.id == q.id) {
-                    return Err(fail(format!("extra turn {} is waiting already", q.id)));
+                    return Err(format!("extra turn {} is waiting already", q.id));
                 }
                 let turn = ExtraTurn {
                     id: q.id,
@@ -1516,10 +1636,13 @@ impl Table {
                 let at = if q.front { 0 } else { self.extra_turns.len() };
                 self.extra_turns.insert(at, turn);
             }
-            What::ExtraTurnRemoved { id } => self.unqueue(*id).map_err(fail)?,
+            What::ExtraTurnRemoved { id } => {
+                let i = self.waiting(*id)?;
+                self.extra_turns.remove(i);
+            }
             What::TurnEnd { player } => {
                 if self.turn.as_ref().map(|t| t.player) != Some(*player) {
-                    return Err(fail(format!("seat {player} has no turn to end")));
+                    return Err(format!("seat {player} has no turn to end"));
                 }
                 self.turn = None;
                 for (name, _) in TURN_COUNTERS {
@@ -1529,14 +1652,14 @@ impl Table {
             What::GameEnding(ending) => self.ending = Some(ending.clone()),
             What::Receive { .. } => {}
             What::Token { player, token, at } => {
+                if let Some(TokenAt::Pile(pile)) = at
+                    && !self.piles.contains_key(pile)
+                {
+                    return Err(format!("there is no pile {pile}"));
+                }
                 self.tokens
                     .retain(|t| (t.player, t.token) != (*player, *token));
                 if let Some(at) = at {
-                    if let TokenAt::Pile(pile) = at
-                        && !self.piles.contains_key(pile)
-                    {
-                        return Err(fail(format!("there is no pile {pile}")));
-                    }
                     let i = (self.tokens.iter())
                         .position(|t| (t.player, t.token) > (*player, *token))
                         .unwrap_or(self.tokens.len());
@@ -1549,20 +1672,29 @@ impl Table {
                 }
             }
             What::Holding { card, from, to } => {
+                let holders = self.holdings.get(card).map_or(&[][..], Vec::as_slice);
+                if from.is_none() && to.is_none() {
+                    return Err(format!("{card} goes from nobody to nobody"));
+                }
+                if let Some(from) = from
+                    && !holders.contains(from)
+                {
+                    return Err(format!("{from} doesn't hold {card}"));
+                }
+                if let Some(to) = to
+                    && holders.contains(to)
+                    && from != &Some(*to)
+                {
+                    return Err(format!("{to} already holds {card}"));
+                }
                 let holders = self.holdings.entry(card.clone()).or_default();
                 if let Some(from) = from {
-                    let i = (holders.iter().position(|h| h == from))
-                        .ok_or_else(|| fail(format!("{from} doesn't hold {card}")))?;
-                    holders.remove(i);
+                    holders.retain(|h| h != from);
                 }
-                if let Some(to) = to {
-                    match holders.binary_search(to) {
-                        Ok(_) => return Err(fail(format!("{to} already holds {card}"))),
-                        Err(i) => holders.insert(i, *to),
-                    }
-                }
-                if from.is_none() && to.is_none() {
-                    return Err(fail(format!("{card} goes from nobody to nobody")));
+                if let Some(to) = to
+                    && let Err(i) = holders.binary_search(to)
+                {
+                    holders.insert(i, *to);
                 }
                 if holders.is_empty() {
                     self.holdings.remove(card);
@@ -1602,27 +1734,36 @@ impl Table {
 
     /// A turn of `player` begins or is skipped: what it was waiting as stops waiting.
     fn turn_taken(&mut self, player: u8, kind: TurnKind, id: Option<u32>) -> Result<(), String> {
-        if let Some(id) = id {
-            self.unqueue(id)?;
-        }
-        if kind == TurnKind::Final {
-            let next = (self.ending.as_mut())
-                .and_then(|e| (!e.final_round.is_empty()).then(|| e.final_round.remove(0)));
-            if next != Some(player) {
-                return Err(format!("seat {player} has no turn next in the final round"));
+        let extra = match (kind, id) {
+            (TurnKind::Extra, Some(id)) => {
+                let i = self.waiting(id)?;
+                if self.extra_turns[i].player != player {
+                    return Err(format!("extra turn {id} is not seat {player}'s"));
+                }
+                Some(i)
             }
+            (TurnKind::Extra, None) => return Err("an extra turn names no extra turn".into()),
+            (_, Some(id)) => return Err(format!("only an extra turn is extra turn {id}")),
+            (_, None) => None,
+        };
+        if kind == TurnKind::Final {
+            match self.ending.as_mut().map(|e| &mut e.final_round) {
+                Some(round) if round.first() == Some(&player) => {
+                    round.remove(0);
+                }
+                _ => return Err(format!("seat {player} has no turn next in the final round")),
+            }
+        }
+        if let Some(i) = extra {
+            self.extra_turns.remove(i);
         }
         Ok(())
     }
 
-    fn unqueue(&mut self, id: u32) -> Result<(), String> {
-        match self.extra_turns.iter().position(|x| x.id == id) {
-            Some(i) => {
-                self.extra_turns.remove(i);
-                Ok(())
-            }
-            None => Err(format!("there is no extra turn {id} waiting")),
-        }
+    /// Where the extra turn `id` is among those waiting.
+    fn waiting(&self, id: u32) -> Result<usize, String> {
+        (self.extra_turns.iter().position(|x| x.id == id))
+            .ok_or_else(|| format!("there is no extra turn {id} waiting"))
     }
 
     fn set_counter(&mut self, key: &CounterKey, value: i64) {
@@ -1640,32 +1781,80 @@ impl Table {
         if !m.to.standing() && !self.zones.contains_key(&m.to) {
             return Err(format!("there is no zone {}", m.to));
         }
-        self.zones.entry(m.to.clone()).or_default();
-        let up = m.from_face == Some(Face::Up);
-        let mut block = vec![];
-        for (i, card) in m.cards.iter().enumerate() {
-            let said = m.pos.get(i).copied();
-            self.take(&m.from, card, said, up)?;
-            if m.face == Some(Face::Up) && m.to.has_faces() {
-                bag_insert(self.face_up.entry(m.to.clone()).or_default(), card.clone());
-            }
-            if verb == Verb::Shuffle {
-                block.push(card.clone());
-            } else {
-                self.place(&m.to, card.clone(), m.at)?;
-            }
+        if verb == Verb::Shuffle && !m.to.ordered() {
+            return Err(format!("{} has no order to shuffle into", m.to));
         }
-        if verb == Verb::Shuffle {
-            let to = self.zones.get_mut(&m.to).expect("checked above");
-            if !m.to.ordered() {
-                return Err(format!("{} has no order to shuffle into", m.to));
-            }
-            let at = insertion(to.len(), m.at, &m.to)?;
-            to.splice(at..at, block);
+        self.zones.entry(m.to.clone()).or_default();
+        let mut done = vec![];
+        let moved = self.move_cards(verb, m, &mut done);
+        if moved.is_err() {
+            self.undo(m, done);
         }
         self.tidy(&m.from);
         self.tidy(&m.to);
+        moved
+    }
+
+    /// The cards of `m` leave and arrive. What each card did is kept in `done` while a later
+    /// step may be refused: not for the last card once it has arrived.
+    fn move_cards(&mut self, verb: Verb, m: &Move, done: &mut Vec<Done>) -> Result<(), String> {
+        let up = m.from_face == Some(Face::Up);
+        let mark = m.face == Some(Face::Up) && m.to.has_faces();
+        let last = m.cards.len().saturating_sub(1);
+        if last > 0 {
+            done.reserve_exact(m.cards.len());
+        }
+        for (i, card) in m.cards.iter().enumerate() {
+            let said = m.pos.get(i).copied();
+            let mut step = self.take(&m.from, card, said, up)?;
+            if mark {
+                bag_insert(self.face_up.entry(m.to.clone()).or_default(), card.clone());
+            }
+            if verb != Verb::Shuffle {
+                match self.place(&m.to, card.clone(), m.at) {
+                    Ok(at) => step.placed = Some(at),
+                    Err(why) => {
+                        done.push(step);
+                        return Err(why);
+                    }
+                }
+            }
+            if i < last || verb == Verb::Shuffle {
+                done.push(step);
+            }
+        }
+        if verb == Verb::Shuffle {
+            let to = self.zones.get_mut(&m.to).expect("checked by apply_move");
+            let at = insertion(to.len(), m.at, &m.to)?;
+            to.splice(at..at, m.cards.iter().cloned());
+        }
         Ok(())
+    }
+
+    /// Takes back what each card of a refused move did, last first.
+    fn undo(&mut self, m: &Move, done: Vec<Done>) {
+        let mark = m.face == Some(Face::Up) && m.to.has_faces();
+        for (step, card) in done.into_iter().zip(&m.cards).rev() {
+            if let Some(at) = step.placed {
+                self.zones.get_mut(&m.to).expect("placed there").remove(at);
+            }
+            if mark {
+                bag_remove(self.face_up.get_mut(&m.to).expect("marked there"), card);
+            }
+            let back = if step.hidden {
+                CardRef::Hidden
+            } else {
+                card.clone()
+            };
+            let from = self.zones.entry(m.from.clone()).or_default();
+            from.insert(step.at, back);
+            if step.up {
+                bag_insert(
+                    self.face_up.entry(m.from.clone()).or_default(),
+                    card.clone(),
+                );
+            }
+        }
     }
 
     /// An empty zone that is always there is not listed.
@@ -1686,19 +1875,28 @@ impl Table {
         card: &CardRef,
         said: Option<u32>,
         up: bool,
-    ) -> Result<(), String> {
+    ) -> Result<Done, String> {
         let cards = self
             .zones
             .get_mut(zone)
-            .ok_or_else(|| format!("there is no zone {zone}"))?;
+            .ok_or_else(|| match zone.standing() {
+                true => format!("{card} is not in {zone}"),
+                false => format!("there is no zone {zone}"),
+            })?;
         if zone.ordered() {
             let i = said.unwrap_or(0) as usize;
             return match cards.get(i) {
                 None => Err(format!("{zone} has no card under {i} others")),
                 // A card the viewer sees only as it leaves: one of the face-down ones.
                 Some(there) if there == card || *there == CardRef::Hidden => {
+                    let hidden = there != card;
                     cards.remove(i);
-                    Ok(())
+                    Ok(Done {
+                        at: i,
+                        hidden,
+                        up: false,
+                        placed: None,
+                    })
                 }
                 Some(there) => Err(format!("{card} is not in {zone}: {there} lies there")),
             };
@@ -1706,30 +1904,41 @@ impl Table {
         if said.is_some() {
             return Err(format!("{zone} has no positions"));
         }
-        let ups = self.face_up.entry(zone.clone()).or_default();
-        if up && !bag_remove(ups, card) {
+        let had_up = count(self.face_up.get(zone).map_or(&[], Vec::as_slice), card);
+        if up && had_up == 0 {
             return Err(format!("no {card} lies face up in {zone}"));
         }
-        let had_up = count(ups, card);
         if !up && had_up > 0 && count(cards, card) <= had_up {
             return Err(format!("no {card} lies face down in {zone}"));
         }
-        if bag_remove(cards, card) || bag_remove(cards, &CardRef::Hidden) {
-            Ok(())
-        } else {
-            Err(format!("{card} is not in {zone}"))
+        let (at, hidden) = match cards.binary_search(card) {
+            Ok(i) => (i, false),
+            Err(_) => match cards.binary_search(&CardRef::Hidden) {
+                Ok(i) => (i, true),
+                Err(_) => return Err(format!("{card} is not in {zone}")),
+            },
+        };
+        cards.remove(at);
+        if up && let Some(ups) = self.face_up.get_mut(zone) {
+            bag_remove(ups, card);
         }
+        Ok(Done {
+            at,
+            hidden,
+            up,
+            placed: None,
+        })
     }
 
-    fn place(&mut self, zone: &Zone, card: CardRef, at: At) -> Result<(), String> {
+    /// Places `card` in `zone` at `at`; the index it went to.
+    fn place(&mut self, zone: &Zone, card: CardRef, at: At) -> Result<usize, String> {
         let cards = self.zones.get_mut(zone).expect("checked by apply_move");
         if !zone.ordered() && at == At::Top {
-            bag_insert(cards, card);
-            return Ok(());
+            return Ok(bag_insert_at(cards, card));
         }
         let i = insertion(cards.len(), at, zone)?;
         cards.insert(i, card);
-        Ok(())
+        Ok(i)
     }
 
     /// The card `card` in `zone` (under `pos` cards) is now called `name`. In a zone with
@@ -1770,6 +1979,18 @@ impl Table {
     }
 }
 
+/// What a card of a move did, to take back if a later step is refused.
+struct Done {
+    /// It left `from` at this index.
+    at: usize,
+    /// It was a `?` there.
+    hidden: bool,
+    /// It lay face up there.
+    up: bool,
+    /// The index it arrived at in `to`, once it has.
+    placed: Option<usize>,
+}
+
 /// Where a card arriving `at` goes among `len` cards.
 fn insertion(len: usize, at: At, zone: &Zone) -> Result<usize, String> {
     if !zone.ordered() {
@@ -1794,13 +2015,37 @@ mod tests {
         text.iter().map(|c| c.parse().unwrap()).collect()
     }
 
+    /// A table folded from a setup with these zones: its next event is 1.
     fn table(zones: &[(&str, &[&str])]) -> Table {
-        Table {
+        let setup = Table {
             zones: zones
                 .iter()
-                .map(|(z, c)| (z.parse().unwrap(), cards(c)))
+                .map(|(z, c)| (z.parse::<Zone>().unwrap(), cards(c)))
+                .filter(|(z, c)| !z.standing() || !c.is_empty())
                 .collect(),
             ..Table::default()
+        };
+        let mut t = Table::default();
+        t.apply(&setup_event(setup)).unwrap();
+        t
+    }
+
+    fn setup_event(table: Table) -> Event {
+        let rules = Rules {
+            implementation: "test".into(),
+            version: "0".into(),
+        };
+        let setup = Setup {
+            rules,
+            seats: vec!["A".into(), "B".into()],
+            kingdom: vec![],
+            landscapes: vec![],
+            table,
+        };
+        Event {
+            seq: 0,
+            by: None,
+            what: What::Setup(Box::new(setup)),
         }
     }
 
@@ -1808,6 +2053,21 @@ mod tests {
         let mut value: serde_json::Value = serde_json::from_str(json).unwrap();
         value["seq"] = seq.into();
         serde_json::from_value(value).unwrap()
+    }
+
+    /// `json` as the event `t` takes next.
+    fn next(t: &Table, json: &str) -> Event {
+        event(t.next_seq(), json)
+    }
+
+    /// Why `t` refuses `event`, which leaves it as it was.
+    fn refused(t: &Table, event: &Event) -> FoldError {
+        let mut after = t.clone();
+        let err = (after.apply(event)).expect_err(&serde_json::to_string(event).unwrap());
+        assert_eq!(err.seq, event.seq);
+        let json = |t: &Table| serde_json::to_string(t).unwrap();
+        assert_eq!(json(&after), json(t), "refused, {}", err.why);
+        err
     }
 
     #[test]
@@ -1872,8 +2132,7 @@ mod tests {
             ("0/hand", &["Silver"]),
             ("0/discard", &[]),
         ]);
-        t.apply(&event(
-            1,
+        t.apply(&next(&t,
             r#"{"type":"draw","player":0,"cards":["Copper","Estate"],"from":"0/deck","to":"0/hand"}"#,
         ))
         .unwrap();
@@ -1882,8 +2141,7 @@ mod tests {
             t.zone(&"0/hand".parse().unwrap()),
             cards(&["Copper", "Estate", "Silver"])
         );
-        t.apply(&event(
-            2,
+        t.apply(&next(&t,
             r#"{"type":"discard","player":0,"cards":["Silver","Estate"],"from":"0/hand","to":"0/discard"}"#,
         ))
         .unwrap();
@@ -1892,8 +2150,7 @@ mod tests {
             t.zone(&"0/discard".parse().unwrap()),
             cards(&["Estate", "Silver"])
         );
-        t.apply(&event(
-            3,
+        t.apply(&next(&t,
             r#"{"type":"insert","player":0,"cards":["Copper"],"from":"0/hand","to":"0/deck","at":{"under":1}}"#,
         ))
         .unwrap();
@@ -1909,8 +2166,7 @@ mod tests {
             ("0/discard", &["Estate", "Gold", "Copper"]),
             ("0/hand", &[]),
         ]);
-        t.apply(&event(
-            1,
+        t.apply(&next(&t,
             r#"{"type":"put","player":0,"cards":["Gold"],"from":"0/discard","to":"0/hand","pos":[1]}"#,
         ))
         .unwrap();
@@ -1926,8 +2182,7 @@ mod tests {
             ("0/deck", &["Gold"]),
             ("0/discard", &["Copper", "Estate", "Silver"]),
         ]);
-        t.apply(&event(
-            1,
+        t.apply(&next(&t,
             r#"{"type":"shuffle","player":0,"cards":["Silver","Copper","Estate"],"from":"0/discard","to":"0/deck","at":"bottom","pos":[2,0,0]}"#,
         ))
         .unwrap();
@@ -1945,14 +2200,14 @@ mod tests {
             ("1/hand", &["?"]),
             ("1/play", &[]),
         ]);
-        t.apply(&event(
-            1,
+        t.apply(&next(
+            &t,
             r#"{"type":"draw","player":1,"cards":["?"],"from":"1/deck","to":"1/hand"}"#,
         ))
         .unwrap();
         // Seen as it is played: it was one of the face-down cards in the hand.
-        t.apply(&event(
-            2,
+        t.apply(&next(
+            &t,
             r#"{"type":"play","player":1,"card":"Village","from":"1/hand","to":"1/play"}"#,
         ))
         .unwrap();
@@ -1999,29 +2254,132 @@ mod tests {
                 r#"{"type":"turn","player":0,"number":9,"kind":"final"}"#,
                 "no turn next in the final round",
             ),
+            (
+                r#"{"type":"counter","counter":"pile/Gold/embargo","delta":1,"value":1}"#,
+                "no pile pile/Gold",
+            ),
+            (
+                r#"{"type":"turn","player":0,"number":2,"kind":"extra","extra":"Outpost"}"#,
+                "names no extra turn",
+            ),
+            (
+                r#"{"type":"setup","rules":{"implementation":"x","version":"0"},"seats":[],"kingdom":[],"table":{"zones":{}}}"#,
+                "setup comes only first",
+            ),
         ] {
-            let err = t.clone().apply(&event(5, json)).unwrap_err();
-            assert_eq!(err.seq, 5);
+            let err = refused(&t, &next(&t, json));
             assert!(err.why.contains(why), "{}", err.why);
+        }
+        let draw = r#"{"type":"draw","player":0,"cards":["Copper"],"from":"0/deck","to":"0/hand"}"#;
+        for seq in [0, 2] {
+            let err = refused(&t, &event(seq, draw));
+            assert!(err.why.contains("the next event is 1"), "{}", err.why);
+        }
+        let err = refused(&Table::default(), &event(0, draw));
+        assert!(err.why.contains("begins with setup"), "{}", err.why);
+    }
+
+    #[test]
+    fn a_cause_is_an_earlier_occurrence() {
+        let mut t = table(&[("0/deck", &["Copper", "Gold"]), ("0/hand", &[])]);
+        for json in [
+            r#"{"type":"turn","player":0,"number":1}"#,
+            r#"{"type":"counter","counter":"0/coffers","delta":1,"value":1}"#,
+        ] {
+            t.apply(&next(&t, json)).unwrap();
+        }
+        let draw = r#"{"type":"draw","player":0,"cards":["Copper"],"from":"0/deck","to":"0/hand"}"#;
+        let resolve = r#"{"type":"resolve","player":0,"card":"Haven","when":"start-turn"}"#;
+        for (cause, why) in [
+            (0, "no occurrence"),
+            (2, "no occurrence"),
+            (3, "not earlier"),
+        ] {
+            let mut e = next(&t, draw);
+            e.by = Some(cause);
+            assert!(refused(&t, &e).why.contains(why));
+            let mut e = next(&t, resolve);
+            e.by = Some(1);
+            if let What::Resolve { origin, .. } = &mut e.what {
+                *origin = Some(cause);
+            }
+            assert!(refused(&t, &e).why.contains(why));
+        }
+        let mut e = next(&t, draw);
+        e.by = Some(1);
+        t.apply(&e).unwrap();
+    }
+
+    #[test]
+    fn turns_follow_one_another_until_the_game_is_over() {
+        let mut t = table(&[]);
+        let turn = r#"{"type":"turn","player":0,"number":1}"#;
+        t.apply(&next(&t, turn)).unwrap();
+        assert!(
+            refused(&t, &next(&t, turn))
+                .why
+                .contains("turn is in progress")
+        );
+        let skipped = r#"{"type":"turn-skipped","player":1}"#;
+        assert!(
+            refused(&t, &next(&t, skipped))
+                .why
+                .contains("turn is in progress")
+        );
+        for json in [
+            r#"{"type":"extra-turn","id":1,"player":1,"card":"Outpost","limit":"third-in-a-row"}"#,
+            r#"{"type":"turn-end","player":0}"#,
+        ] {
+            t.apply(&next(&t, json)).unwrap();
+        }
+        let theirs = r#"{"type":"turn","player":0,"number":2,"kind":"extra","extra":"Outpost","extraTurn":1}"#;
+        assert!(refused(&t, &next(&t, theirs)).why.contains("not seat 0's"));
+        let regular = r#"{"type":"turn","player":1,"number":1,"extraTurn":1}"#;
+        assert!(
+            refused(&t, &next(&t, regular))
+                .why
+                .contains("only an extra turn")
+        );
+        let end = r#"{"type":"game-end","reason":"resigned","result":[]}"#;
+        t.apply(&next(&t, end)).unwrap();
+        assert!(
+            refused(&t, &next(&t, turn))
+                .why
+                .contains("the game is over")
+        );
+    }
+
+    #[test]
+    fn a_refused_move_takes_nothing() {
+        let t = table(&[
+            ("0/deck", &["Copper", "Gold", "Estate"]),
+            ("0/hand", &["Silver"]),
+            ("0/aside", &[]),
+        ]);
+        for json in [
+            // The third card isn't where the move says, once the first two have left.
+            r#"{"type":"draw","player":0,"cards":["Copper","Gold","Gold"],"from":"0/deck","to":"0/hand"}"#,
+            r#"{"type":"set-aside","player":0,"cards":["Copper","Estate"],"from":"0/deck","to":"0/aside","face":"up","pos":[0,0]}"#,
+            r#"{"type":"insert","player":0,"cards":["Silver","Copper"],"from":"0/hand","to":"0/deck","at":{"under":4}}"#,
+            r#"{"type":"shuffle","player":0,"cards":["Copper","Gold","Estate","Silver"],"from":"0/deck","to":"0/deck"}"#,
+        ] {
+            refused(&t, &next(&t, json));
         }
     }
 
     #[test]
     fn a_final_round_is_taken_in_its_order_and_a_turn_end_clears_the_turn() {
         let mut t = table(&[]);
-        for (seq, json) in [
+        for json in [
             r#"{"type":"game-ending","reason":"provinces","finalRound":[1,2]}"#,
             r#"{"type":"turn-skipped","player":1,"kind":"final"}"#,
             r#"{"type":"turn","player":2,"number":7,"kind":"final"}"#,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            t.apply(&event(seq as u64, json)).unwrap();
+        ] {
+            t.apply(&next(&t, json)).unwrap();
         }
         assert!(t.ending.as_ref().unwrap().final_round.is_empty());
         assert_eq!(t.counter(&CounterKey::global(CounterName::NextHand)), 5);
-        t.apply(&event(3, r#"{"type":"turn-end","player":2}"#))
+        t.apply(&next(&t, r#"{"type":"turn-end","player":2}"#))
             .unwrap();
         assert_eq!(
             (
@@ -2036,36 +2394,33 @@ mod tests {
     fn a_card_set_aside_face_up_is_face_up_until_it_moves() {
         let mut t = table(&[("0/hand", &["Gold", "Gold"])]);
         let aside: Zone = "0/aside".parse().unwrap();
-        for (seq, json) in [
+        for json in [
             r#"{"type":"set-aside","player":0,"cards":["Gold"],"from":"0/hand","to":"0/aside","face":"up"}"#,
             r#"{"type":"set-aside","player":0,"cards":["Gold"],"from":"0/hand","to":"0/aside","face":"down"}"#,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            t.apply(&event(seq as u64, json)).unwrap();
+        ] {
+            t.apply(&next(&t, json)).unwrap();
         }
         assert_eq!(t.zone(&aside), cards(&["Gold", "Gold"]));
         assert_eq!(t.face_up(&aside), cards(&["Gold"]));
         // Of two Golds lying different ways, the move says which way the one leaving lay.
         let up = r#"{"type":"put","player":0,"cards":["Gold"],"from":"0/aside","to":"0/hand","fromFace":"up"}"#;
         let mut first = t.clone();
-        first.apply(&event(2, up)).unwrap();
+        first.apply(&next(&first, up)).unwrap();
         assert!(first.face_up.is_empty());
-        let err = first.apply(&event(3, up)).unwrap_err();
+        let err = refused(&first, &next(&first, up));
         assert!(err.why.contains("no Gold lies face up"), "{}", err.why);
         let down = r#"{"type":"put","player":0,"cards":["Gold"],"from":"0/aside","to":"0/hand"}"#;
-        t.apply(&event(2, down)).unwrap();
+        t.apply(&next(&t, down)).unwrap();
         assert_eq!(t.face_up(&aside), cards(&["Gold"]));
-        let err = t.apply(&event(3, down)).unwrap_err();
+        let err = refused(&t, &next(&t, down));
         assert!(err.why.contains("no Gold lies face down"), "{}", err.why);
     }
 
     #[test]
     fn a_renamed_card_is_found_where_it_lies() {
         let mut t = table(&[("0/deck", &["Copper", "Estate", "Copper"])]);
-        t.apply(&event(
-            1,
+        t.apply(&next(
+            &t,
             r#"{"type":"rename","card":"Copper","name":"Estate","zone":"0/deck","pos":2}"#,
         ))
         .unwrap();
@@ -2073,12 +2428,13 @@ mod tests {
             t.zone(&"0/deck".parse().unwrap()),
             cards(&["Copper", "Estate", "Estate"])
         );
-        let err = (t.clone())
-            .apply(&event(
-                2,
+        let err = refused(
+            &t,
+            &next(
+                &t,
                 r#"{"type":"rename","card":"Copper","name":"Estate","zone":"0/deck","pos":1}"#,
-            ))
-            .unwrap_err();
+            ),
+        );
         assert!(err.why.contains("doesn't lie under 1"), "{}", err.why);
     }
 
@@ -2086,15 +2442,15 @@ mod tests {
     fn a_turn_starts_with_one_action_and_one_buy() {
         let mut t = table(&[]);
         t.counters.insert(CounterKey::global(CounterName::Coins), 5);
-        t.apply(&event(
-            1,
+        t.apply(&next(
+            &t,
             r#"{"type":"turn","player":1,"number":4,"extra":"Outpost"}"#,
         ))
         .unwrap();
-        t.apply(&event(2, r#"{"type":"phase","phase":"action"}"#))
+        t.apply(&next(&t, r#"{"type":"phase","phase":"action"}"#))
             .unwrap();
-        t.apply(&event(
-            3,
+        t.apply(&next(
+            &t,
             r#"{"type":"counter","counter":"actions","delta":2,"value":3}"#,
         ))
         .unwrap();
@@ -2117,10 +2473,13 @@ mod tests {
 
     #[test]
     fn holdings_tokens_and_derived_values_fold() {
-        let mut t = table(&[("pile/Village", &[])]);
-        t.piles
-            .insert("pile/Village".parse().unwrap(), PileState::default());
-        for (seq, json) in [
+        let mut t = table(&[]);
+        t.apply(&next(
+            &t,
+            r#"{"type":"pile","pile":"pile/Village","card":"Village"}"#,
+        ))
+        .unwrap();
+        for json in [
             r#"{"type":"holding","card":"Flag","to":0}"#,
             r#"{"type":"holding","card":"Flag","from":0,"to":1}"#,
             r#"{"type":"holding","card":"Deluded","to":1}"#,
@@ -2130,11 +2489,8 @@ mod tests {
             r#"{"type":"token","player":0,"token":"journey"}"#,
             r#"{"type":"derived","costs":{"Village":{"coins":2}},"types":{"Copper":["Treasure","Action"]}}"#,
             r#"{"type":"derived","types":{"Copper":null}}"#,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            t.apply(&event(seq as u64, json)).unwrap();
+        ] {
+            t.apply(&next(&t, json)).unwrap();
         }
         assert_eq!(t.holdings["Flag"], [1]);
         assert_eq!(t.holdings["Deluded"], [0, 1]);
@@ -2159,7 +2515,7 @@ mod tests {
                 "no pile pile/Smithy",
             ),
         ] {
-            let err = t.clone().apply(&event(9, json)).unwrap_err();
+            let err = refused(&t, &next(&t, json));
             assert!(err.why.contains(why), "{}", err.why);
         }
     }
