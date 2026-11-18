@@ -338,7 +338,7 @@ will) or 500.
 | `GET /api/users/{name}/avatar` | | their picture; `UserRef.avatar` is the `v` that versions its URL |
 | `GET /api/users/{name}/opponents[?venue=arena\|official][&rated=true]` | | their record against everyone they played, most games together first: `{opponents}`, each a `Matchup` (a win is finishing ahead of them, a loss behind) |
 | `GET /api/leaderboard[?limit=N]` | | the rated players, best first |
-| `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&q=text][&vs=key][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; a voided game has `voided` (when) and `rated=true` leaves it out; `q` matches a player, the account behind a seat, an agent's model or program, or a card; `vs` keeps the games against one opponent (a `Matchup`'s `key`); ask again with `before=next` for more |
+| `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&voided=true][&q=text][&vs=key][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; voided games are left out unless `voided=true` (never with `rated=true`), and a voided game has `voided` (when); `q` matches a player, the account behind a seat, an agent's model or program, or a card; `vs` keeps the games against one opponent (a `Matchup`'s `key`); ask again with `before=next` for more |
 
 `POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
 and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
@@ -901,9 +901,11 @@ kept. A rated game is voided as it ends when a seat
 of the server's agents is abandoned: that is an agent failing to play, which says nothing
 of anyone's skill. A voided game's record keeps when it was voided (`voided`, beside
 `rated: false`), so it is told apart from a game that was never rated. It counts toward
-nothing: no rating, the leaderboard, a player's rated or Arena games and wins, or the
-line of their rating, and the History's Rated filter leaves it out. It is still listed
-everywhere else, marked Voided, as the game that was played. Nothing is deleted: the
+nothing: no rating, the leaderboard, a player's rated or Arena games and wins, their
+head-to-head records, or the line of their rating. The History (and a player's games)
+leaves it out unless its Voided switch is on, and then shows it dimmed and badged
+Voided, as the game that was played; the Rated filter leaves it out whatever that
+switch says. Nothing is deleted: the
 game's files and record stay. Games voided before records kept that say only `rated:
 false` and still count among their players' Arena games; `dominion games void
 --record-only ID...` marks them voided (when it is run) and takes them off those
