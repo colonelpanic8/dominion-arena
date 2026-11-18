@@ -1,6 +1,6 @@
 //! Tables: the lobby's tables as dominion.games lists them (host, seats, status, and
-//! Join where a seat is open), then the games played without one, with Play for a seat
-//! held here and Watch where watching is allowed.
+//! Join where a seat is open), then the running games played without one, with Play for a
+//! seat held here and Watch where watching is allowed. Finished games are History's.
 
 use super::home::TableStarter;
 use super::rules::TableStatus;
@@ -93,7 +93,7 @@ pub fn spec_note(spec: &TableSpec) -> String {
 }
 
 /// The Tables tab's lines: every table, then the running games no listed table is
-/// playing and the finished ones this browser holds a seat in (`held` says which).
+/// playing (`held` says which this browser holds a seat in).
 pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool) -> Vec<Line> {
     let me = lobby.you.as_ref().map(|y| y.user.name.as_str());
     let mine = lobby.table.as_ref().map(|t| t.id.as_str());
@@ -133,8 +133,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
         lobby.tables.iter().any(|t| of(&t.game) || of(&t.last_game))
     };
     for g in games {
-        let holds = held(&g.game_id);
-        if at_table(&g.game_id) || !(g.running || holds) {
+        if !g.running || at_table(&g.game_id) {
             continue;
         }
         let seats = (g.names.iter().enumerate())
@@ -156,13 +155,9 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
             table: None,
             game: Some(g.game_id.clone()),
             seats,
-            status: if g.running {
-                TableStatus::Running
-            } else {
-                TableStatus::PostGame
-            },
+            status: TableStatus::Running,
             note: format!("{source} · {rated}"),
-            action: if holds {
+            action: if held(&g.game_id) {
                 Action::Play
             } else if g.watchable {
                 Action::Watch
