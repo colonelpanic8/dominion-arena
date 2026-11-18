@@ -85,6 +85,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
   src/control.rs          the control socket: `dominion games` lists and retires hosted games
+  src/backfill.rs         `dominion games backfill`: streams for games saved before they
+                          were recorded, replayed from their answers and checked against
+                          the snapshot; offline, under the state directory's lock
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
   src/catalog.rs          the models the runner offers: read from each provider's catalog
@@ -634,7 +637,13 @@ them.
   must call it too), kept as `Table::unwritten` until the hub has written them.
   `Hub::save` saves the snapshot, which carries them, then appends them to
   `<game id>.events.<jsonl|cbor>` and marks them written; loading cuts the stream back
-  to the events the snapshot says were written (`stream_state`).
+  to the events the snapshot says were written (`stream_state`). Games saved before that
+  get a stream from `backfill.rs`: `Table::rerecorded` plays the table's config and
+  `history` again recording, and the stream is written only if that game's log, final
+  state (the saved game's fields as written then) and outcome are the saved ones and the
+  stream replays. Its header carries `reconstructed`; the hub serves such a stream for a
+  finished table that doesn't record (`reconstructed` in hub.rs), never for a game in
+  progress, which the backfill leaves alone while it is hosted.
   The stream also holds what caused the game, so that `replay::replay` can play it again
   from the stream alone (its `setup`'s `config`, its chance outcomes, its answers) and
   hold the new stream to it event for event; the fold tests replay every game they play.

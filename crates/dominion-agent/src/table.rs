@@ -779,4 +779,69 @@ impl Table {
     pub fn recorded_table(&self) -> Option<&dominion_protocol::events::Table> {
         self.recorder.as_ref().map(Recorder::table)
     }
+
+    /// Whether the table kept every answer since the game began.
+    pub fn complete(&self) -> bool {
+        self.complete
+    }
+
+    /// The table as it would be had it recorded its stream from the start: the game played
+    /// again from its config with every answer it took, recording, and resigned as it was.
+    /// The host's bookkeeping (decision ids, log cursors, undos) starts afresh. Whether
+    /// it is the same game is for the caller to check.
+    pub fn rerecorded(&self) -> Result<Table, Unreplayed> {
+        let fail = |table: Option<Table>, answer, why: String| Unreplayed {
+            table: table.map(Box::new),
+            answer,
+            why,
+        };
+        if !self.complete {
+            return Err(fail(None, None, "it didn't keep every answer".into()));
+        }
+        let mut table = Table::start(
+            self.id.clone(),
+            self.game.config().clone(),
+            self.names.clone(),
+            true,
+        )
+        .map_err(|e| fail(None, None, format!("its setup fails: {e}")))?;
+        for (i, step) in self.history.iter().enumerate() {
+            if table.game.log().len() != step.log || table.deciding() != Some(step.seat) {
+                let why = format!(
+                    "{} was to answer after log entry {}; the game asks {} after {}",
+                    step.seat,
+                    step.log,
+                    table.deciding().map_or("nobody".into(), |p| p.to_string()),
+                    table.game.log().len(),
+                );
+                return Err(fail(Some(table), Some(i), why));
+            }
+            let replayed = match &step.act {
+                Act::Answer { response, way } => table
+                    .respond_with(step.seat, response.clone(), *way)
+                    .map(|_| ()),
+                Act::Treasures => table.run_treasures(step.seat).map(|_| ()),
+            };
+            if let Err(e) = replayed {
+                return Err(fail(Some(table), Some(i), e.to_string()));
+            }
+            table.history.push(step.clone());
+        }
+        let resigned = self.game.outcome().map_or(&[][..], |o| &o.resigned[..]);
+        for &seat in resigned {
+            if let Err(e) = table.resign(seat) {
+                return Err(fail(Some(table), None, format!("{seat} resigning: {e}")));
+            }
+        }
+        Ok(table)
+    }
+}
+
+/// Where [`Table::rerecorded`] stopped: the table as far as it got, the answer that
+/// didn't replay (none: before the first, or after the last), and why.
+#[derive(Debug)]
+pub struct Unreplayed {
+    pub table: Option<Box<Table>>,
+    pub answer: Option<usize>,
+    pub why: String,
 }

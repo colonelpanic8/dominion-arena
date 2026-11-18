@@ -15,6 +15,7 @@ fn main() {
         schema: SCHEMA.into(),
         viewer: Viewer::Full,
         game: None,
+        reconstructed: None,
     };
     println!("{}", serde_json::to_string(&header).expect("json"));
     loop {

@@ -5,6 +5,7 @@ pub mod anthropic;
 pub mod archive;
 pub mod arena;
 pub mod assets;
+pub mod backfill;
 pub mod catalog;
 pub mod client;
 mod codex_usage;

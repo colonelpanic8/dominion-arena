@@ -22,6 +22,21 @@ pub struct Header {
     pub viewer: Viewer,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game: Option<String>,
+    /// The stream was not written as the game was played but rebuilt afterwards; absent
+    /// for a stream recorded live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reconstructed: Option<Reconstructed>,
+}
+
+/// How a stream not recorded as its game was played was rebuilt.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reconstructed {
+    /// When, as an RFC 3339 UTC time.
+    pub at: String,
+    /// From what: `"history"`, the host's saved game (its setup and every answer it
+    /// took) played again by the engine `setup.rules` names and checked against it.
+    pub from: String,
 }
 
 /// Whose eyes a stream is written for: which cards' faces it shows.

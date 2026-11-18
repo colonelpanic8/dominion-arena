@@ -102,6 +102,21 @@ enum GamesCommand {
         #[arg(required = true)]
         games: Vec<String>,
     },
+    /// Write dominion/events@1 streams for games saved before the server recorded them,
+    /// here and in `expired/`, checking each against its snapshot first. Run it with the
+    /// server stopped: it takes the state directory's lock (a dry run doesn't).
+    Backfill {
+        /// Convert and check every game, report, and write nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// The server's state directory (default: state_dir).
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
+        /// What streams are written in: jsonl or cbor (default: events_encoding, then
+        /// jsonl).
+        #[arg(long)]
+        events_encoding: Option<dominion_agent::recording::Encoding>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -296,6 +311,7 @@ async fn games(
     let asked = match command {
         GamesCommand::List => Request::List,
         GamesCommand::Retire { games } => Request::Retire { games },
+        GamesCommand::Backfill { .. } => unreachable!("run without the server"),
     };
     match request(&socket, &asked).await? {
         Reply::Games { games } => {
@@ -568,6 +584,23 @@ async fn main() -> ExitCode {
         Command::Agents => match config.runner() {
             Ok(settings) => dominion_server::runner::run(settings).await,
             Err(e) => Err(e),
+        },
+        Command::Games {
+            command:
+                GamesCommand::Backfill {
+                    dry_run,
+                    state_dir,
+                    events_encoding,
+                },
+            ..
+        } => match state_dir.or_else(|| config.state_dir()) {
+            None => Err("no state directory: pass --state-dir, or set state_dir".into()),
+            Some(dir) => {
+                let encoding = events_encoding.or(config.events_encoding);
+                let options =
+                    dominion_server::backfill::Options::now(dry_run, encoding.unwrap_or_default());
+                dominion_server::backfill::cli(&dir, &options)
+            }
         },
         Command::Games { socket, command } => games(socket, command, &config).await,
         Command::Solo(args) => solo(args, &config),

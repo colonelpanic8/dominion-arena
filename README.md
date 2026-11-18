@@ -731,7 +731,9 @@ is played, goes to `expired/` with the snapshot, and holds no undo: after one it
 rewritten as the stream of the game as it now stands. After a crash the server cuts it
 back to what the snapshot says was written and goes on from there; one that lacks events
 the snapshot says it holds is reported at startup and the game goes on without
-recording. Games saved before streams were recorded have none.
+recording. Games saved before streams were recorded have none until `dominion games
+backfill` writes one (below); such a stream's first record says it was `reconstructed`,
+and when, and the server serves it like any other once the game is over.
 
 Accounts, sessions and finished games' records are kept in a SQLite database beside the
 games, `dominion.sqlite` under `state_dir` (in memory with `--ephemeral`): a game's
@@ -844,6 +846,26 @@ at once, moving their files to `expired/` as `keep_idle_days` would. It refuses 
 unfinished game of a lobby table or the server's agents, which ends by resigning. Both
 talk to `control_socket`, which only the server's user can reach; the NixOS module sets
 it and installs `dominion-games` for root: `sudo dominion-games list`.
+
+`dominion games backfill` writes `dominion/events@1` streams for the games saved before
+the server recorded them, in `state_dir` and `expired/`. Each game is played again from
+its saved config and answers with recording on, and its stream is written only if that
+is the saved game exactly: every log entry, the final state and the outcome, with the
+stream replaying to it. It is written beside the snapshot, atomically, in
+`events_encoding` (`--events-encoding`), never over a stream already there, and its first
+record says it was reconstructed and when; snapshots are never touched. A game the
+server hosts that is still in progress is left for a later run, since its table goes on
+unrecorded. Running it again changes nothing, and stopping it midway loses nothing.
+`--dry-run` converts and checks every game, writes nothing, and can run beside the
+server; a run that writes takes the state directory's lock, so stop the server first.
+Each prints a line per game (converted, has a stream, in progress, or not convertible
+and why: answers not all kept, or where the game now plays differently, with the log
+entries that differ) and the totals:
+
+```
+sudo dominion-games backfill --dry-run
+sudo systemctl stop dominion && sudo dominion-games backfill; sudo systemctl start dominion
+```
 
 `dominion play --new [--players 2] [--kingdom Village,Smithy,...]` creates a game, takes
 its first seat in the terminal and prints the other seats' tokens;

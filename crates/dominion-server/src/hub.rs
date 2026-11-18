@@ -935,7 +935,7 @@ fn load(path: &Path, stem: &str) -> Result<(Table, Vec<String>, Meta), String> {
 /// anything after them is cut off by the next write.
 fn stream_state(store: &Store, table: &Table) -> Result<Stream, String> {
     let Some(written) = table.written() else {
-        return Ok(Stream::Off);
+        return Ok(reconstructed(store, table).unwrap_or(Stream::Off));
     };
     let Some((path, encoding)) = store.stream_file(table.id()) else {
         return match written {
@@ -957,6 +957,29 @@ fn stream_state(store: &Store, table: &Table) -> Result<Stream, String> {
         )
     })?;
     Ok(Stream::File(encoding, len as u64))
+}
+
+/// The whole stream `dominion games backfill` rebuilt for finished game `table`, which
+/// doesn't record, if one is beside it.
+fn reconstructed(store: &Store, table: &Table) -> Option<Stream> {
+    if !table.is_over() {
+        return None;
+    }
+    let (path, encoding) = store.stream_file(table.id())?;
+    let read = recording::read(encoding, &fs::read(path).ok()?, None).ok()?;
+    let whole = matches!(
+        read.events.last().map(|e| &e.what),
+        Some(dominion_protocol::events::What::GameEnd(_))
+    );
+    (whole
+        && read.header.reconstructed.is_some()
+        && read.header.game.as_deref() == Some(table.id()))
+    .then(|| {
+        Some(Stream::File(
+            encoding,
+            read.len_of(read.events.len())? as u64,
+        ))
+    })?
 }
 
 fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary {
