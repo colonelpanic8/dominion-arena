@@ -1,0 +1,156 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - main:
+      - generic [ref=e2]:
+        - generic "Fullscreen" [ref=e3] [cursor=pointer]
+        - list [ref=e4]:
+          - listitem [ref=e5] [cursor=pointer]:
+            - button "Automatch" [ref=e6]
+          - listitem [ref=e7] [cursor=pointer]:
+            - button "New Table" [ref=e8]
+          - listitem [ref=e9] [cursor=pointer]:
+            - button "Tables" [ref=e10]
+          - listitem [ref=e11] [cursor=pointer]:
+            - button "Cardlists" [ref=e12]
+          - listitem [ref=e13] [cursor=pointer]:
+            - button "Leaderboard" [ref=e14]
+          - listitem [ref=e15] [cursor=pointer]:
+            - button "History" [ref=e16]
+          - listitem [ref=e17] [cursor=pointer]:
+            - button "Account" [ref=e18]
+          - button "Log in" [ref=e20] [cursor=pointer]
+        - generic [ref=e23]:
+          - generic [ref=e25]:
+            - generic [ref=e27]: Game History
+            - generic [ref=e29]:
+              - generic [ref=e30] [cursor=pointer]: All
+              - generic [ref=e31] [cursor=pointer]: Arena
+              - generic [ref=e32] [cursor=pointer]: dominion.games
+            - generic [ref=e33]:
+              - generic [ref=e34] [cursor=pointer]:
+                - switch [ref=e35]
+                - text: Rated
+              - searchbox "Find a player, agent or card" [ref=e37]
+            - generic [ref=e39]:
+              - generic [ref=e40]: Today
+              - button "Played on Arena wonAda Registered 0–0 Bo Registered Arena · Table · Unrated 19:38" [ref=e41] [cursor=pointer]:
+                - generic "Played on Arena" [ref=e42]
+                - generic [ref=e43]:
+                  - generic [ref=e44]:
+                    - generic [ref=e46]:
+                      - img [ref=e47]
+                      - generic [ref=e49]:
+                        - generic [ref=e50]:
+                          - img "won" [ref=e51]
+                          - text: Ada
+                        - generic [ref=e53]: Registered
+                    - generic [ref=e54]:
+                      - generic [ref=e55]: "0"
+                      - generic [ref=e56]: –0
+                    - generic [ref=e58]:
+                      - img [ref=e59]
+                      - generic [ref=e61]:
+                        - generic [ref=e62]: Bo
+                        - generic [ref=e63]: Registered
+                  - generic [ref=e64]:
+                    - generic [ref=e65]: Arena · Table · Unrated
+                    - generic [ref=e66]: 19:38
+          - generic [ref=e67]:
+            - generic [ref=e68]:
+              - generic [ref=e69]: Arena
+              - generic [ref=e70]: Today 19:38 · Arena · Table · Unrated
+            - heading "Ada won, 0 to 0" [level=2] [ref=e71]
+            - generic [ref=e72]: Resigned, turn 1
+            - generic [ref=e73]:
+              - generic [ref=e74]:
+                - generic [ref=e75]:
+                  - generic [ref=e78]:
+                    - generic [ref=e83]: VILLAGE
+                    - generic [ref=e86]: "3"
+                  - generic [ref=e89]:
+                    - generic [ref=e94]: SMITHY
+                    - generic [ref=e97]: "4"
+                  - generic [ref=e100]:
+                    - generic [ref=e105]: MARKET
+                    - generic [ref=e108]: "5"
+                  - generic [ref=e111]:
+                    - generic [ref=e116]: MOAT
+                    - generic [ref=e119]: "2"
+                  - generic [ref=e122]:
+                    - generic [ref=e127]: CELLAR
+                    - generic [ref=e130]: "2"
+                  - generic [ref=e133]:
+                    - generic [ref=e138]: MILITIA
+                    - generic [ref=e141]: "4"
+                  - generic [ref=e144]:
+                    - generic [ref=e149]: MINE
+                    - generic [ref=e152]: "5"
+                  - generic [ref=e155]:
+                    - generic [ref=e160]: WITCH
+                    - generic [ref=e163]: "5"
+                  - generic [ref=e166]:
+                    - generic [ref=e171]: LIBRARY
+                    - generic [ref=e174]: "5"
+                  - generic [ref=e177]:
+                    - generic [ref=e182]: PIXIE
+                    - generic [ref=e185]: "2"
+                - generic [ref=e189]:
+                  - generic [ref=e194]: DELVE
+                  - generic [ref=e196]: EVENT
+                  - generic [ref=e199]: "2"
+              - generic [ref=e200]:
+                - generic [ref=e201]: Also in the game
+                - generic [ref=e202]:
+                  - generic [ref=e205]:
+                    - generic [ref=e210]: PLATINUM
+                    - generic [ref=e213]: "9"
+                  - generic [ref=e216]:
+                    - generic [ref=e221]: COLONY
+                    - generic [ref=e224]: "11"
+                  - generic [ref=e227]:
+                    - generic [ref=e232]: GOAT
+                    - generic [ref=e235]: "2"
+                  - generic [ref=e238]:
+                    - generic [ref=e243]: HOVEL
+                    - generic [ref=e246]: "1"
+                  - generic [ref=e249]:
+                    - generic [ref=e254]: NECROPOLIS
+                    - generic [ref=e257]: "1"
+                  - generic [ref=e260]:
+                    - generic [ref=e265]: OVERGROWN ESTATE
+                    - generic [ref=e268]: "1"
+            - generic [ref=e269]:
+              - generic [ref=e270]: Place
+              - generic [ref=e271]: Player
+              - generic [ref=e272]: Played by
+              - generic [ref=e273]: VP
+              - generic [ref=e274]: Turns
+              - generic [ref=e275]: Rating
+            - generic [ref=e276]:
+              - generic [ref=e277]: "1"
+              - generic [ref=e278]:
+                - img [ref=e279]
+                - img "won" [ref=e281]
+                - link "Ada" [ref=e283] [cursor=pointer]:
+                  - /url: /user/Ada
+              - generic [ref=e284]: Registered player
+              - generic [ref=e285]: "0"
+              - generic [ref=e286]: "1"
+              - generic [ref=e287]: —
+            - generic [ref=e288]:
+              - generic [ref=e289]: "2"
+              - generic [ref=e290]:
+                - img [ref=e291]
+                - link "Bo" [ref=e293] [cursor=pointer]:
+                  - /url: /user/Bo
+                - generic [ref=e294]: resigned
+              - generic [ref=e295]: Registered player
+              - generic [ref=e296]: "0"
+              - generic [ref=e297]: "0"
+              - generic [ref=e298]: —
+            - generic [ref=e299]:
+              - link "Review game" [ref=e300] [cursor=pointer]:
+                - /url: /game/g1
+              - link "Replay" [ref=e301] [cursor=pointer]:
+                - /url: /game/g1/replay
+              - button "Play this kingdom" [ref=e302] [cursor=pointer]
