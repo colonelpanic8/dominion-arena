@@ -53,6 +53,24 @@ impl std::error::Error for Difference {}
 
 /// Plays the game `events` (a full stream, from its `setup`) records again: the game as
 /// it stands after the last event, or the first event where the game goes differently.
+///
+/// A successful replay establishes that this engine build and this recorder, given the
+/// stream's setup, its answers and its chance outcomes, write this stream, event for
+/// event, but for `setup.config.seed`, which is provenance the replay neither uses nor
+/// checks. It does not establish that the stream is what was played: any stream this
+/// build would write for some answers and outcomes replays, whoever wrote it, and a
+/// faithful recording from another build (other wording, option order, merging of moves,
+/// card data) may not.
+///
+/// The game returned is the replayed position, for reading. It has used up the outcomes
+/// it was given and its generator has drawn none of them, so a game continued from it
+/// needs a source of chance of its own; and what a host keeps beside the stream (decision
+/// ids, Way questions answered in advance, where each undoable command began) is not in
+/// it.
+///
+/// Differences are reported in stream order: a malformed outcome is reported at its event
+/// only if the game gets that far. Every round of the loop consumes stream events or
+/// fails, so no stream can hang it.
 pub fn replay(events: &[Event]) -> Result<Replay, Box<Difference>> {
     let differ = |seq: u64, produced: Option<Event>, why: String| {
         Box::new(Difference {
@@ -67,12 +85,13 @@ pub fn replay(events: &[Event]) -> Result<Replay, Box<Difference>> {
         _ => return Err(differ(0, None, "a stream begins with its setup".into())),
     };
     let config = config_of(setup).map_err(|why| differ(0, None, why))?;
-    let outcomes = outcomes_of(events).map_err(|(seq, why)| differ(seq, None, why))?;
+    let (outcomes, malformed) = outcomes_of(events);
     let mut game = Game::new_given(config, outcomes)
         .map_err(|e| differ(0, None, format!("setup fails: {e}")))?;
     let seats = &setup.seats;
     let mut recorder = Recorder::new();
     let mut at = 0u64;
+    let mut acted_at = None;
     loop {
         let produced = recorder
             .record(&mut game, seats)
@@ -91,8 +110,16 @@ pub fn replay(events: &[Event]) -> Result<Replay, Box<Difference>> {
             };
             (seq, why)
         });
+        let bad = |at: u64| {
+            (malformed.as_ref())
+                .filter(|(seq, _)| *seq <= at)
+                .map(|(seq, why)| differ(*seq, None, why.clone()))
+        };
         for event in produced {
-            if events.get(at as usize) != Some(&event) {
+            if let Some(bad) = bad(at) {
+                return Err(bad);
+            }
+            if !same(events.get(at as usize), &event) {
                 return Err(match refused {
                     Some((Some(seq), why)) if seq <= at => differ(seq, None, why),
                     Some((None, why)) => differ(at, Some(event), why),
@@ -100,6 +127,9 @@ pub fn replay(events: &[Event]) -> Result<Replay, Box<Difference>> {
                 });
             }
             at += 1;
+        }
+        if let Some(bad) = bad(at) {
+            return Err(bad);
         }
         if let Some((seq, why)) = refused {
             return Err(differ(seq.unwrap_or(at), None, why));
@@ -113,6 +143,11 @@ pub fn replay(events: &[Event]) -> Result<Replay, Box<Difference>> {
         let Some(next) = events.get(at as usize) else {
             return Ok(Replay { game, recorder });
         };
+        // What was done at the last event must have written it, and more.
+        if acted_at == Some(at) {
+            return Err(differ(at, None, "the game made no progress".into()));
+        }
+        acted_at = Some(at);
         let d = game.pending().expect("a game not over waits on a decision");
         match &next.what {
             What::Answer(a) if a.seat == d.player.0 => {
@@ -125,20 +160,39 @@ pub fn replay(events: &[Event]) -> Result<Replay, Box<Difference>> {
                 game.respond(response).expect("validated");
             }
             What::GameEnd(end) if end.reason == "resigned" => {
-                let Some(seat) = end.result.iter().find(|r| r.resigned) else {
-                    return Err(differ(
-                        at,
-                        None,
-                        "a resignation with nobody resigning".into(),
-                    ));
+                let seats = game.num_players();
+                let seat = match end.result.iter().find(|r| r.resigned) {
+                    Some(r) if usize::from(r.seat) < seats => r.seat,
+                    Some(r) => {
+                        let why = format!("seat {} resigns, of {seats}", r.seat);
+                        return Err(differ(at, None, why));
+                    }
+                    None => {
+                        let why = "a resignation with nobody resigning".into();
+                        return Err(differ(at, None, why));
+                    }
                 };
-                game.resign(PlayerId(seat.seat));
+                game.resign(PlayerId(seat));
             }
             _ => {
                 let why = format!("the game waits on seat {}'s answer", d.player.0);
                 return Err(differ(at, None, why));
             }
         }
+    }
+}
+
+/// Whether the game wrote what the stream recorded there: equal, but for the seed.
+fn same(recorded: Option<&Event>, produced: &Event) -> bool {
+    match (recorded.map(|e| &e.what), &produced.what) {
+        (Some(What::Setup(r)), What::Setup(p)) => {
+            let mut p = p.clone();
+            if let (Some(rc), Some(pc)) = (&r.config, &mut p.config) {
+                pc.seed = rc.seed;
+            }
+            recorded.map(|e| (e.seq, e.by)) == Some((produced.seq, produced.by)) && **r == *p
+        }
+        _ => recorded == Some(produced),
     }
 }
 
@@ -173,45 +227,53 @@ fn config_of(setup: &Setup) -> Result<GameConfig, String> {
     Ok(config)
 }
 
-/// Every chance outcome the stream holds, by what it decides, in the stream's order.
-fn outcomes_of(events: &[Event]) -> Result<Outcomes, (u64, String)> {
+/// Every chance outcome the stream holds, by what it decides, in the stream's order, up to
+/// the first that is malformed: that one's event, and why.
+fn outcomes_of(events: &[Event]) -> (Outcomes, Option<(u64, String)>) {
     let mut outcomes = Outcomes::default();
     for e in events {
-        let fail = |why: String| (e.seq, why);
-        let mut push = |site: Site, names: &[String]| -> Result<(), (u64, String)> {
-            outcomes.push(site, cards(names).map_err(fail)?, Some(e.seq));
-            Ok(())
-        };
-        match &e.what {
-            What::Setup(setup) => {
-                for chance in &setup.chance {
-                    push(site_of(chance).map_err(fail)?, &chance.cards)?;
-                }
-            }
-            What::Chance(chance) => push(site_of(chance).map_err(fail)?, &chance.cards)?,
-            What::Shuffle(m) => {
-                let site = match m.to {
-                    Zone::Seat(p, SeatZone::Deck) => Site::Deck(PlayerId(p)),
-                    Zone::Boons(Pack::Deck) => Site::Reshuffle { hexes: false },
-                    Zone::Hexes(Pack::Deck) => Site::Reshuffle { hexes: true },
-                    ref to => return Err(fail(format!("a shuffle into {to}"))),
-                };
-                let names = (m.cards.iter())
-                    .map(|c| match c {
-                        CardRef::Name(name) => Ok(name.clone()),
-                        CardRef::Hidden => Err(fail(
-                            "a card face down: only a full stream \
-                                                     can be replayed"
-                                .into(),
-                        )),
-                    })
-                    .collect::<Result<Vec<String>, _>>()?;
-                push(site, &names)?;
-            }
-            _ => {}
+        if let Err(why) = outcomes_in(e, &mut outcomes) {
+            return (outcomes, Some((e.seq, why)));
         }
     }
-    Ok(outcomes)
+    (outcomes, None)
+}
+
+/// Adds the chance outcomes event `e` records.
+fn outcomes_in(e: &Event, outcomes: &mut Outcomes) -> Result<(), String> {
+    let mut push = |site: Site, names: &[String]| -> Result<(), String> {
+        outcomes.push(site, cards(names)?, Some(e.seq));
+        Ok(())
+    };
+    match &e.what {
+        What::Setup(setup) => {
+            for chance in &setup.chance {
+                push(site_of(chance)?, &chance.cards)?;
+            }
+        }
+        What::Chance(chance) => push(site_of(chance)?, &chance.cards)?,
+        // Fewer than two cards have one order: no outcome.
+        What::Shuffle(m) if m.cards.len() < 2 => {}
+        What::Shuffle(m) => {
+            let site = match m.to {
+                Zone::Seat(p, SeatZone::Deck) => Site::Deck(PlayerId(p)),
+                Zone::Boons(Pack::Deck) => Site::Reshuffle { hexes: false },
+                Zone::Hexes(Pack::Deck) => Site::Reshuffle { hexes: true },
+                ref to => return Err(format!("a shuffle into {to}")),
+            };
+            let names = (m.cards.iter())
+                .map(|c| match c {
+                    CardRef::Name(name) => Ok(name.clone()),
+                    CardRef::Hidden => {
+                        Err("a card face down: only a full stream can be replayed".to_string())
+                    }
+                })
+                .collect::<Result<Vec<String>, _>>()?;
+            push(site, &names)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn site_of(chance: &Chance) -> Result<Site, String> {

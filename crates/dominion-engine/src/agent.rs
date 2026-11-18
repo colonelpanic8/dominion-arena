@@ -314,6 +314,7 @@ impl<'a> View<'a> {
                 l.data.cards.retain(seen);
                 l.data.pick = l.data.pick.filter(seen);
                 l.data.placed.clear();
+                l.holds.retain(seen);
                 l
             })
             .collect()

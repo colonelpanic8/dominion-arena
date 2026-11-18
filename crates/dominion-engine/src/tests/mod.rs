@@ -22,6 +22,7 @@ mod renaissance;
 mod rising_sun;
 mod seaside;
 mod setup;
+mod shuffle_choices;
 mod turns;
 
 use crate::game::Zone;

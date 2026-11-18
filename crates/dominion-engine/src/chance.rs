@@ -197,8 +197,12 @@ impl Game {
         }
     }
 
-    /// Shuffles `items` (listed bottom first, as the engine keeps decks) for `site`.
+    /// Shuffles `items` (listed bottom first, as the engine keeps decks) for `site`. Fewer
+    /// than two have one order: nothing is drawn, given or recorded.
     pub(crate) fn shuffle_for<T: Named>(&mut self, site: Site, items: &mut [T]) {
+        if items.len() < 2 {
+            return;
+        }
         let names = |g: &Game, items: &[T]| items.iter().rev().map(|i| i.named(g)).collect();
         match self.next_given(site) {
             None => self.rng_shuffle(items),
@@ -232,7 +236,8 @@ impl Game {
     }
 
     /// The outcome of `draw`, a random procedure, for `site`. Given its outcomes, the game
-    /// takes the next one instead if it `fits`.
+    /// takes the next one instead if it `fits`. A procedure on fewer than two cards
+    /// (`drawing`) has one outcome: it is drawn, and neither given nor recorded.
     pub(crate) fn chance_of(
         &mut self,
         site: Site,
@@ -240,6 +245,9 @@ impl Game {
         drawing: Vec<Card>,
         draw: impl FnOnce(&mut Game) -> Vec<Card>,
     ) -> Vec<Card> {
+        if drawing.len() < 2 {
+            return draw(self);
+        }
         let cards = match self.next_given(site) {
             None => draw(self),
             Some(Ok(given)) if fits(&given.cards) => given.cards,
@@ -254,8 +262,11 @@ impl Game {
         cards
     }
 
-    /// One of `cards` at random, for `site`.
+    /// One of `cards` (at least one) at random, for `site`.
     pub(crate) fn chance_pick(&mut self, site: Site, cards: &[Card]) -> Card {
+        if let [card] = cards {
+            return *card;
+        }
         let fits = |out: &[Card]| picks(out, cards, 1);
         let picked = self.chance_of(site, fits, cards.to_vec(), |g| {
             vec![cards[g.rng_index(cards.len())]]

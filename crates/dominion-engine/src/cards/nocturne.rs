@@ -1755,16 +1755,21 @@ fn monastery(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     }
 }
 
+/// See [`Game::face_down_in_trash`].
+pub(crate) fn face_down_in_trash(g: &Game) -> Vec<CardId> {
+    (g.lasting().iter())
+        .filter(|l| l.card == Card::Necromancer)
+        .filter_map(|l| l.data.placed.first().copied())
+        .filter(|&placed| g.still(placed) && g.zone(placed.card) == Zone::Trash)
+        .map(|placed| placed.card)
+        .collect()
+}
+
 fn necromancer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
     let p = f.player;
     match f.pc {
         0 => {
-            let face_down: Vec<CardId> = g
-                .lasting()
-                .iter()
-                .filter(|l| l.card == Card::Necromancer)
-                .filter_map(|l| l.data.pick)
-                .collect();
+            let face_down = g.face_down_in_trash();
             let candidates: Vec<CardId> = g
                 .trash()
                 .iter()
@@ -1783,8 +1788,10 @@ fn necromancer(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let Some(c) = input.card() else {
                 return Flow::done();
             };
+            // Face down for as long as it stays in the trash this turn.
             let data = Scratch {
                 pick: Some(c),
+                placed: vec![g.placed(c)],
                 ..Scratch::default()
             };
             g.add_lasting(Card::Necromancer, p, f.this, vec![], Until::EndOfTurn, data);

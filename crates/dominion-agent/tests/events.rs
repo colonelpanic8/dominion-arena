@@ -374,19 +374,13 @@ fn engine_table(game: &Game) -> Table {
         holders.sort();
     }
     counters.retain(|_, value| *value != 0);
-    let aside = |c: &CardId| matches!(game.zone(*c), EngineZone::SetAside(_));
     let up: Vec<CardId> = (0..game.num_players())
         .flat_map(|i| game.player(PlayerId(i as u8)).face_up.iter().copied())
         .collect();
     let effects = (game.lasting().iter())
         .map(|l| {
             let view = game.view(l.owner);
-            let mut holds: Vec<CardId> = vec![];
-            for &c in l.data.pick.iter().chain(&l.data.cards) {
-                if aside(&c) && !holds.contains(&c) {
-                    holds.push(c);
-                }
-            }
+            let holds = &l.holds;
             Effect {
                 id: l.id,
                 card: l.card.name().to_string(),
@@ -403,7 +397,7 @@ fn engine_table(game: &Game) -> Table {
                 face_up: bag(&(holds.iter().copied())
                     .filter(|c| up.contains(c))
                     .collect::<Vec<_>>()),
-                holds: bag(&holds),
+                holds: bag(holds),
                 tokens: view.lasting_tokens(l),
             }
         })
@@ -499,6 +493,57 @@ fn engine_table(game: &Game) -> Table {
         extra_turns,
         ending,
         progress: Default::default(),
+        face_down: {
+            let down = bag(&game.face_down_in_trash());
+            (!down.is_empty())
+                .then_some((Zone::Trash, down))
+                .into_iter()
+                .collect()
+        },
+        kept: (0..game.num_players())
+            .filter_map(|i| {
+                let kept: Vec<CardId> = (game.player(PlayerId(i as u8)).in_play.iter().copied())
+                    .filter(|c| game.lasting().iter().any(|l| l.keeps.contains(c)))
+                    .collect();
+                (!kept.is_empty()).then(|| (Zone::Seat(i as u8, SeatZone::Play), bag(&kept)))
+            })
+            .collect(),
+    }
+}
+
+/// An effect holds only cards set aside in its owner's zone, a card set aside is held by at
+/// most one effect, and one held by none is no effect's (a card gained to be set aside,
+/// before its effect is made): what the table says of holdings is true of the cards,
+/// however the engine came to it.
+fn check_holdings(game: &Game, what: &str) {
+    for l in game.lasting() {
+        for &c in &l.holds {
+            assert_eq!(
+                game.zone(c),
+                EngineZone::SetAside(l.owner),
+                "{what}: {} holds {} not set aside",
+                l.card,
+                game.card(c)
+            );
+        }
+    }
+    for i in 0..game.num_players() {
+        for &c in &game.player(PlayerId(i as u8)).set_aside {
+            let by: Vec<Card> = (game.lasting().iter())
+                .filter(|l| l.holds.contains(&c))
+                .map(|l| l.card)
+                .collect();
+            assert!(by.len() <= 1, "{what}: {} held by {by:?}", game.card(c));
+            let names: Vec<Card> = (game.lasting().iter())
+                .filter(|l| l.data.pick == Some(c) || l.data.cards.contains(&c))
+                .map(|l| l.card)
+                .collect();
+            assert!(
+                !by.is_empty() || names.is_empty(),
+                "{what}: {} set aside, held by none, named by {names:?}",
+                game.card(c)
+            );
+        }
     }
 }
 
@@ -528,6 +573,7 @@ fn out_of_decks(table: &mut Table) -> Vec<CardRef> {
 }
 
 fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str) {
+    check_holdings(game, what);
     let mut folded = recorder.table().clone();
     folded.ended = None;
     let mut expected = engine_table(game);
@@ -576,6 +622,8 @@ fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str)
         assert_eq!(folded.notes, expected.notes, "{what}");
         assert_eq!(folded.costs, expected.costs, "{what}");
         assert_eq!(folded.types, expected.types, "{what}");
+        assert_eq!(folded.face_down, expected.face_down, "{what}");
+        assert_eq!(folded.kept, expected.kept, "{what}");
         assert!(folded == expected, "{what}");
     }
     // The stream folds to the same table for anyone who reads it as JSON.
@@ -662,6 +710,19 @@ fn follow(
     assert!(
         table.recorded_table().unwrap().ended.is_some(),
         "seed {seed}"
+    );
+    // A hand revealed where it lies is in the stream, though nothing moves.
+    let revealed = (game.log().iter())
+        .filter(|e| matches!(e, dominion_engine::Event::RevealedHand { cards, .. } if !cards.is_empty()))
+        .count();
+    let shown = (events.iter())
+        .filter(|e| {
+            matches!(&e.what, What::Show(s) if s.to.is_none() && matches!(s.zone, Zone::Seat(_, SeatZone::Hand)))
+        })
+        .count();
+    assert!(
+        shown >= revealed,
+        "seed {seed}: {revealed} hands revealed, {shown} shown"
     );
     check_causes(&events, &format!("seed {seed}"));
     check_questions(&events, &format!("seed {seed}"));
@@ -820,6 +881,28 @@ const FOCUS: &[(&[&str], &[&str])] = &[
         ],
         &["Inherited"],
     ),
+    (
+        &[
+            "Smithy",
+            "Stash",
+            "Cellar",
+            "Laboratory",
+            "Sentry",
+            "Animal Fair",
+        ],
+        &["Star Chart", "Avoid", "Fated", "Order of Astrologers"],
+    ),
+    (
+        &[
+            "Necromancer",
+            "Rogue",
+            "Cargo Ship",
+            "Wharf",
+            "Graverobber",
+            "Lurker",
+        ],
+        &["Citadel"],
+    ),
 ];
 
 fn phase_in(e: &What) -> Option<Phase> {
@@ -866,8 +949,16 @@ fn check_causes(events: &[Event], what: &str) {
                 fail("a card passed, or given to another player other than by passing");
             }
         }
-        // Questions stand apart: no other event happens inside one.
+        // Questions stand apart: no other event happens inside one. Inside cards trashed
+        // or discarded together the only question is which of their abilities is next.
         if matches!(e.what, What::Ask(_) | What::Answer(_)) {
+            if let (What::Ask(ask), Some(What::Trash(m) | What::Discard(m))) =
+                (&e.what, by_of(events, e))
+                && m.cards.len() > 1
+                && ask.purpose != "trigger"
+            {
+                fail("inside several cards' occurrences, a question other than their order");
+            }
             table.apply(e).unwrap();
             continue;
         }
@@ -1023,7 +1114,11 @@ fn check_causes(events: &[Event], what: &str) {
                     fail("a buy doesn't spend a Buy");
                 }
             }
-            What::Draw(_) | What::Discard(_) | What::Shuffle(_)
+            What::Draw(_)
+            | What::Discard(_)
+            | What::Shuffle(_)
+            | What::Trash(_)
+            | What::Gain(_)
                 if by_phase.is_some_and(|p| p != Phase::Cleanup) =>
             {
                 fail("moved by a phase other than Clean-up");
@@ -1039,6 +1134,7 @@ fn check_causes(events: &[Event], what: &str) {
                             ..
                         }
                         | What::Derived { .. }
+                        | What::Kept { .. }
                 ) =>
             {
                 fail(
@@ -1053,6 +1149,8 @@ fn check_causes(events: &[Event], what: &str) {
                         | What::ExtraTurnRemoved { .. }
                         | What::Discard(_)
                         | What::Derived { .. }
+                        | What::Face { .. }
+                        | What::Kept { .. }
                 ) =>
             {
                 fail("more than effects, extra turns and kept Boons ending with the turn");
@@ -1110,6 +1208,38 @@ fn check_causes(events: &[Event], what: &str) {
             }
         }
     }
+    // What changed a play's instructions (a Way, Enchantress) is written before what the
+    // play then does: its bonuses, replaced ones too, are the play's.
+    for (seq, e) in events.iter().enumerate() {
+        let Some(play) = e.by.filter(|&b| matches!(at(b), What::Play(_))) else {
+            continue;
+        };
+        let bonus = match &e.what {
+            What::Draw(_) => true,
+            What::Counter(c) => {
+                matches!(
+                    c.counter.name,
+                    CounterName::Actions | CounterName::Buys | CounterName::Coins
+                ) && c.delta > 0
+            }
+            _ => false,
+        };
+        let changed_after = events[seq..].iter().any(|later| {
+            later.by == Some(play)
+                && matches!(
+                    later.what,
+                    What::Way { .. }
+                        | What::Resolve {
+                            when: Moment::Play,
+                            ..
+                        }
+                )
+        });
+        if bonus && changed_after {
+            let json = serde_json::to_string(e).unwrap();
+            panic!("{what}: event {seq}, a bonus of play {play} before what changed it\n{json}");
+        }
+    }
     // A card's +Cards are drawn by its play, unless something changed what the play does.
     for play in drawable {
         let changed = events[play as usize..].iter().any(|e| {
@@ -1125,7 +1255,10 @@ fn check_causes(events: &[Event], what: &str) {
         });
         let drew = (events[play as usize..].iter())
             .any(|e| e.by == Some(play) && matches!(e.what, What::Draw(_)));
-        if !changed && !drew {
+        // A seat resigned before the play could draw.
+        let cut = matches!(events.last().map(|e| &e.what), Some(What::GameEnd(end)) if end.reason == "resigned")
+            && !(events[play as usize..].iter()).any(|e| matches!(e.what, What::Turn(_)));
+        if !changed && !drew && !cut {
             let json = serde_json::to_string(&events[play as usize]).unwrap();
             panic!("{what}: event {play} draws nothing of its own\n{json}");
         }
@@ -1305,8 +1438,10 @@ fn a_replay_finds_where_a_stream_was_changed() {
         // when an answer picks one of those cards by its place: Order of Astrologers).
         let into_deck: Vec<usize> = (shuffles.iter().copied())
             .filter(|&i| match &events[i].what {
+                // Not some of a deck's cards shuffled again where they lay.
                 What::Shuffle(m) => {
                     matches!(m.to, Zone::Seat(_, SeatZone::Deck))
+                        && !matches!(m.at, events::At::Under(_))
                         && m.cards.iter().any(|c| *c != m.cards[0])
                 }
                 _ => false,
@@ -1426,4 +1561,112 @@ fn a_tables_stream_replays() {
             dominion_agent::replay::replay(events).unwrap_or_else(|d| panic!("seed {seed}: {d}"));
         assert_eq!(replay.game.outcome(), table.game().outcome(), "seed {seed}");
     }
+}
+
+/// Buys Star Chart and Stashes, and resolves Stash's ability before Star Chart's: a Stash
+/// placed among the shuffled cards keeps its place when Star Chart's pick has the others
+/// shuffled again.
+fn stash_before_star_chart(game: &Game, rng: &mut ChaCha8Rng) -> Response {
+    let d = game.pending().expect("a decision");
+    match &d.kind {
+        DecisionKind::Choose {
+            options, labels, ..
+        } if d.purpose == dominion_engine::Purpose::Trigger => {
+            if let Some(i) = labels.iter().position(|l| l.contains("Stash")) {
+                return Response::Options(vec![options[i]]);
+            }
+        }
+        DecisionKind::Turn { moves, .. } => {
+            let owns = game.player(d.player).projects.contains(&Card::StarChart);
+            let wanted = [
+                Move::BuyLandscape(Card::StarChart),
+                Move::Buy(game.pile_of(Card::Stash).expect("Stash's pile")),
+            ];
+            for m in wanted.iter().skip(usize::from(owns)) {
+                if moves.contains(m) {
+                    return Response::Move(*m);
+                }
+            }
+        }
+        _ => {}
+    }
+    eager_response(game, rng)
+}
+
+#[test]
+fn a_stash_placed_before_a_reshuffle_keeps_its_place() {
+    use Card::*;
+    let mut among = 0;
+    for seed in 0..seeds(40) {
+        let kingdom = vec![
+            Stash, Smithy, Moat, Cellar, Village, Market, Laboratory, Festival, Mine, Militia,
+        ];
+        let mut config = GameConfig::new(2, kingdom, seed);
+        config.landscapes = vec![StarChart];
+        config.turn_limit = Some(40);
+        let events = follow(config, seed, stash_before_star_chart);
+        among += (1..events.len())
+            .filter(|&i| {
+                matches!(&events[i].what, What::Insert(m) if m.cards == [CardRef::named("Stash")])
+                    && matches!(&events[i - 1].what, What::Shuffle(m) if m.from == m.to && m.at != events::At::Top)
+            })
+            .count();
+    }
+    assert!(among > 0, "no Stash lay among cards shuffled again");
+}
+
+/// Replay fails cleanly on a stream no game wrote, reports differences in stream order, and
+/// neither needs nor checks the seed.
+#[test]
+fn a_replay_fails_cleanly_and_in_order() {
+    let config = GameConfig::random(2, &released(), 5);
+    let events = follow(config, 5, eager_response);
+    let ask = (events.iter())
+        .position(|e| matches!(e.what, What::Ask(_)))
+        .unwrap();
+
+    // A resignation of a seat that doesn't exist.
+    let mut bad = events[..=ask].to_vec();
+    bad.push(Event {
+        seq: ask as u64 + 1,
+        by: None,
+        what: What::GameEnd(events::GameEnd {
+            reason: "resigned".into(),
+            result: vec![events::SeatResult {
+                seat: 9,
+                vp: 0,
+                turns: 0,
+                rank: 2,
+                resigned: true,
+            }],
+        }),
+    });
+    assert_eq!(differs_at(&bad), Some(ask as u64 + 1));
+
+    // The seed is provenance: absent or changed, the stream replays.
+    for seed in [None, Some(11)] {
+        let mut changed = events.clone();
+        if let What::Setup(setup) = &mut changed[0].what {
+            setup.config.as_mut().unwrap().seed = seed;
+        }
+        assert_eq!(differs_at(&changed), None, "seed {seed:?}");
+    }
+
+    // A malformed outcome late in the stream is no reason to fail before an earlier
+    // difference.
+    let shuffle = (events.iter())
+        .rposition(|e| matches!(&e.what, What::Shuffle(m) if m.cards.len() > 1))
+        .unwrap();
+    let answer = (events[..shuffle].iter())
+        .rposition(|e| matches!(&e.what, What::Answer(_)))
+        .unwrap();
+    let mut changed = events.clone();
+    if let What::Shuffle(m) = &mut changed[shuffle].what {
+        m.cards[0] = CardRef::named("No Such Card");
+    }
+    assert_eq!(differs_at(&changed), Some(shuffle as u64));
+    if let What::Answer(a) = &mut changed[answer].what {
+        a.indices = Some(vec![u32::MAX]);
+    }
+    assert_eq!(differs_at(&changed), Some(answer as u64));
 }

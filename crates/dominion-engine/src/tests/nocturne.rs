@@ -2271,3 +2271,67 @@ fn moat_blocks_raider_at_night() {
     next_turn(&mut g);
     assert_eq!(g.turn().coins, 3);
 }
+
+/// A Boon drawn when its deck and discard pile are both empty (Druid's three set aside and
+/// the rest taken for later) draws nothing and asks chance for nothing: the next
+/// reshuffle takes the outcome given for it, as a replay gives it.
+#[test]
+fn a_boon_drawn_from_nothing_draws_no_chance() {
+    let mut g = setup(&[Card::BlessedVillage]);
+    g.start();
+    g.boons.draw.clear();
+    g.boons.discard.clear();
+    let order = vec![Card::TheSeasGift, Card::TheSunsGift];
+    let mut outcomes = crate::chance::Outcomes::default();
+    outcomes.push(
+        crate::chance::Site::Reshuffle { hexes: false },
+        order.clone(),
+        None,
+    );
+    g.chance = Some(Box::new(crate::chance::Chance {
+        given: Some(outcomes),
+        ..Default::default()
+    }));
+    assert_eq!(g.draw_from(P0, false), None);
+    g.boons.discard = vec![Card::TheSunsGift, Card::TheSeasGift];
+    assert_eq!(g.draw_from(P0, false), Some(Card::TheSeasGift));
+    assert!(g.chance_refused().is_none(), "{:?}", g.chance_refused());
+    assert_eq!(g.chance_left().map(|o| o.left()), Some(0));
+}
+
+/// A card Necromancer played stays its marker after it leaves the trash: gained back and
+/// set aside by Cargo Ship, it is Cargo Ship's alone, and no longer face down.
+#[test]
+fn a_card_necromancer_marked_and_cargo_ship_set_aside_is_held_by_cargo_ship_alone() {
+    let mut g = setup(&[
+        Card::Necromancer,
+        Card::CargoShip,
+        Card::Lurker,
+        Card::Village,
+    ]);
+    hand(
+        &mut g,
+        P0,
+        &[Card::Necromancer, Card::CargoShip, Card::Lurker],
+    );
+    deck(&mut g, P0, &[Card::Copper; 5]);
+    let village = g.create(Card::Village, Zone::Trash);
+    g.start();
+    play(&mut g, Card::Necromancer);
+    choose(&mut g, &[village]);
+    assert_eq!(g.face_down_in_trash(), [village]);
+    play(&mut g, Card::CargoShip);
+    play(&mut g, Card::Lurker);
+    respond(&mut g, Response::option(Opt::Mode(1)));
+    choose(&mut g, &[village]);
+    while g.pending().is_some_and(|d| d.purpose == Purpose::Trigger) {
+        respond(&mut g, Response::option(Opt::Trigger(0)));
+    }
+    assert_eq!(g.zone(village), Zone::SetAside(P0));
+    assert!(g.face_down_in_trash().is_empty());
+    let holders: Vec<Card> = (g.effects().into_iter())
+        .filter(|e| e.holds.contains(&village))
+        .map(|e| e.card)
+        .collect();
+    assert_eq!(holders, [Card::CargoShip]);
+}
