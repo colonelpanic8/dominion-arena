@@ -611,6 +611,7 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                 {
                     let t = &u.inter.targets[i];
                     let mark = u.mark_target(&sel, i);
+                    let ways = u.ways_of(Some(i));
                     let label = match (&t.card, &t.zone) {
                         (Some(c), Some(z)) if &t.label == c && !matches!(z.as_str(), "deck" | "hand" | "looking") => {
                             Some(zone_text(z).to_string())
@@ -629,6 +630,7 @@ pub fn DecisionWindow(g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Selection) -> El
                             back: t.card.is_none(),
                             count,
                             mark,
+                            ways,
                             label,
                             at: Rect::new(row.xs[k] - win.x, row.y - win.y + (row.h - h) / 2.0, w, h),
                             class: "dt-tslot",

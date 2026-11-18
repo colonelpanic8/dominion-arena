@@ -3,8 +3,8 @@
 use crate::platform::{self, encode};
 use dominion_protocol::Answer;
 use dominion_protocol::api::{
-    CardInfo, Change, Created, DealRequest, Dealt, GameSummary, NewGame, SeatInfo, SeatView,
-    WebSettings,
+    AnswerRequest, CardInfo, Change, Created, DealRequest, Dealt, GameSummary, NewGame, SeatInfo,
+    SeatView, WebSettings,
 };
 use dominion_protocol::lobby::{
     BotKey, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable, Leaderboard,
@@ -84,9 +84,20 @@ pub async fn view(game: &str, token: &str, log_from: Option<usize>) -> Result<Se
     imp::get(&url, Some(token)).await
 }
 
-pub async fn answer(game: &str, token: &str, answer: &Answer) -> Result<SeatView> {
+/// Sends an answer; with `way` (`none` or a Way's name) the Way question of the card it
+/// plays is answered with it.
+pub async fn answer(
+    game: &str,
+    token: &str,
+    answer: &Answer,
+    way: Option<String>,
+) -> Result<SeatView> {
     let url = format!("/api/games/{}/answer", encode(game));
-    imp::post(&url, Some(token), answer).await
+    let body = AnswerRequest {
+        answer: answer.clone(),
+        way,
+    };
+    imp::post(&url, Some(token), &body).await
 }
 
 /// Asks to take back the seat's last answer; the view returned has the whole log.
@@ -156,6 +167,24 @@ pub async fn watch_view(
     let mut url = format!("/api/games/{}/watch", encode(game));
     if !query.is_empty() {
         url.push_str(&format!("?{}", query.join("&")));
+    }
+    imp::get(&url, None).await
+}
+
+/// Finished game `game` as someone watching saw it after `step` answers, with the log
+/// from `log_from` on.
+pub async fn replay_view(
+    game: &str,
+    step: usize,
+    log_from: usize,
+    as_seat: Option<u8>,
+) -> Result<SeatView> {
+    let mut url = format!(
+        "/api/games/{}/watch?step={step}&logFrom={log_from}",
+        encode(game)
+    );
+    if let Some(seat) = as_seat {
+        url.push_str(&format!("&as={seat}"));
     }
     imp::get(&url, None).await
 }

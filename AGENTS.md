@@ -154,6 +154,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
   src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page
   src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
   src/game/undo.rs        the undo request waiting: withdraw yours, allow or refuse another's
+  src/game/replay.rs      `/game/<id>/replay`: a finished game on the table at any answer, stepped
+                          or played through, as everyone or one seat saw it
   src/game/plain.rs       the plain text-and-buttons page and `DecisionControls`
   src/game/interaction.rs where each option is answered on the table (`Target`, `Place`),
                           "Play Treasures" (`TreasureRun`)

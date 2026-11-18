@@ -18,6 +18,10 @@ pub struct Interaction {
     /// The `play` options of Treasures in a Buy phase `turn` decision, which "Play
     /// Treasures" answers with one at a time.
     pub treasures: Vec<u32>,
+    /// The Ways in the game, when answering may play an Action card: a target that
+    /// [`takes_way`](Target::takes_way) is played with one of them or as itself, and the
+    /// Way question isn't asked after.
+    pub ways: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,6 +35,8 @@ pub struct Target {
     pub zone: Option<String>,
     /// For [`Place::Supply`], the pile.
     pub pile: Option<PileAt>,
+    /// Answering plays this Action card, which may use a Way.
+    pub takes_way: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -71,6 +77,12 @@ fn pile_of(view: &AgentView, card: &str) -> Option<PileAt> {
     PileAt::all(view)
         .find(|(_, p)| !p.hidden && p.top.as_deref().unwrap_or(&p.card) == card)
         .map(|(at, _)| at)
+}
+
+fn is_action(cards: &CardDb, card: &str) -> bool {
+    cards
+        .get(card)
+        .is_some_and(|c| c.types.iter().any(|t| t == "Action"))
 }
 
 fn is_treasure(cards: &CardDb, card: &str) -> bool {
@@ -115,6 +127,21 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
             .iter()
             .filter(|o| o.card.as_deref() == Some(card))
             .count()
+    };
+
+    let ways: Vec<String> = if super::wording::may_ask_way(d) {
+        view.landscapes
+            .iter()
+            .filter(|l| l.kind == "way")
+            .map(|l| l.card.clone())
+            .collect()
+    } else {
+        vec![]
+    };
+    let takes_way = |o: &AgentOption| {
+        !ways.is_empty()
+            && (o.action == "play" || (o.action == "select" && d.purpose == "play"))
+            && o.card.as_deref().is_some_and(|c| is_action(cards, c))
     };
 
     let mut targets: Vec<Target> = vec![];
@@ -181,6 +208,7 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
             card: o.card.clone(),
             zone: o.zone.clone(),
             pile,
+            takes_way: takes_way(o),
         });
     }
 
@@ -202,6 +230,7 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
         name_any: d.name_any,
         targets,
         treasures,
+        ways,
     }
 }
 

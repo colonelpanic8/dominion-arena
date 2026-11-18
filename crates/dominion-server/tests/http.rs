@@ -258,6 +258,50 @@ async fn whole_games_are_played_over_http() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn finished_games_replay_to_every_answer() {
+    let server = start().await;
+    let req = json!({ "players": 2, "seed": 7, "turn_limit": 8, "watchable": true });
+    let created = server.create(req.clone()).await;
+    let id = &created.game_id;
+    let watch = |q: String| format!("/api/games/{id}/watch{q}");
+    let running = server.get(&watch("?step=0".into()), None).await;
+    assert!(running.error(StatusCode::CONFLICT).contains("finished"));
+
+    let mut rng = StdRng::seed_from_u64(3);
+    let mut seen: Vec<SeatView> = vec![];
+    while server.summary(id).await.running {
+        seen.push(server.get(&watch(String::new()), None).await.json());
+        let (token, d) = server.deciding(&created).await;
+        let reply = server
+            .answer(id, &token, &random_answer(&d, &mut rng))
+            .await;
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    }
+    let end: SeatView = server.get(&watch(String::new()), None).await.json();
+    let steps = seen.len();
+    let at = |step: usize| watch(format!("?step={step}"));
+    for step in (0..=steps).chain([steps / 2, 1, steps - 1]) {
+        let replayed: SeatView = server.get(&at(step), None).await.json();
+        let expected = seen.get(step).unwrap_or(&end);
+        assert_eq!(replayed.view, expected.view, "step {step}");
+        assert_eq!(replayed.deciding, expected.deciding, "step {step}");
+        let replay = replayed.replay.unwrap();
+        assert_eq!((replay.step, replay.steps), (step, steps));
+        assert_eq!(replay.turns.first().map(|t| (t.step, t.turn)), Some((0, 1)));
+        assert!(replay.turns.windows(2).all(|w| w[0].step <= w[1].step));
+    }
+    let mine = created.seats[1].token.clone();
+    let as_seat: SeatView = server
+        .get(&format!("{}&as=1", at(3)), Some(&mine))
+        .await
+        .json();
+    assert_eq!(as_seat.view.seat, Some(1));
+    assert!(as_seat.view.decision.is_none());
+    let beyond = server.get(&at(steps + 1), None).await;
+    beyond.error(StatusCode::BAD_REQUEST);
+}
+
 #[tokio::test]
 async fn errors_have_their_status_and_a_message() {
     let server = start().await;
@@ -333,6 +377,64 @@ async fn errors_have_their_status_and_a_message() {
 
     // Nothing above changed the game.
     assert_eq!(server.view(ga, &token).await.version, 0);
+}
+
+#[tokio::test]
+async fn an_answer_may_answer_the_way_question_of_the_card_it_plays() {
+    let server = start().await;
+    let kingdom = [
+        "Village",
+        "Smithy",
+        "Market",
+        "Militia",
+        "Moat",
+        "Cellar",
+        "Chapel",
+        "Festival",
+        "Laboratory",
+        "Witch",
+    ];
+    // Necropolis is an Action in the starting deck: find a seed that starts with it in hand.
+    let (created, token, d, necropolis) = 'found: {
+        for seed in 0..50 {
+            let created = server
+                .create(json!({
+                    "players": 2,
+                    "kingdom": kingdom,
+                    "landscapes": ["Way of the Sheep"],
+                    "shelters": true,
+                    "seed": seed,
+                }))
+                .await;
+            let (token, d) = server.deciding(&created).await;
+            if let Some(o) = d
+                .options
+                .iter()
+                .find(|o| o.action == "play" && o.card.as_deref() == Some("Necropolis"))
+            {
+                let index = o.index;
+                break 'found (created, token, d, index);
+            }
+        }
+        panic!("no seed starts with Necropolis in hand");
+    };
+    let id = &created.game_id;
+    let answer =
+        |way: &str| json!({ "decision": d.id, "indices": [necropolis], "way": way }).to_string();
+    let path = format!("/api/games/{id}/answer");
+    server
+        .post(&path, Some(&token), answer("Village"))
+        .await
+        .error(StatusCode::BAD_REQUEST);
+    let reply = server
+        .post(&path, Some(&token), answer("way of the sheep"))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    let sv: SeatView = reply.json();
+    let next = sv.view.decision.expect("a decision");
+    assert_eq!(next.kind, "turn", "no Way question: {next:?}");
+    assert_eq!(sv.view.turn.coins, Some(2));
+    assert_eq!(sv.view.turn.actions, Some(0));
 }
 
 #[tokio::test]

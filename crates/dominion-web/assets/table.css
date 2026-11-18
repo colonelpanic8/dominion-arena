@@ -145,6 +145,13 @@ body:has(.dt-root) .topbar { display: none; }
   cursor: pointer;
 }
 .dt-all:hover { background: rgba(80, 80, 80, 0.9); }
+/* dominion.games' Way button: a band over the art of a playable Action card. */
+.dt-ways { position: absolute; left: 21%; top: 57%; width: 58%; height: 27%; display: flex; gap: 2cqw; }
+.dt-way { flex: 1; min-width: 0; padding: 0; border: max(1px, 1.5cqw) solid #ccc; border-radius: 4cqw; background: #2a4a5e center / cover no-repeat; color: #fff; font-family: var(--count); font-size: 11cqw; cursor: pointer; opacity: 0.4; }
+.dt-way:hover, .dt-way:focus-visible { opacity: 1; border-color: #84e2ff; outline: none; }
+.dt-way-name { text-shadow: 0 0 3px #000, 0 0 3px #000; }
+.dt-target:has(.dt-way:hover) { --bc: #84e2ff; }
+.dt-mini .dt-ways, .dt-micro .dt-ways { display: none; }
 .dt-inspect-pile { position: absolute; top: 3%; right: 3%; padding: 2cqw 4cqw; border: 1px solid #aaa; border-radius: 3px; background: rgba(0, 0, 0, 0.8); color: #fff; font-family: var(--count); font-size: 10cqw; cursor: pointer; }
 .dt-inspect-pile:hover, .dt-inspect-pile:focus-visible { background: #444; outline: 2px solid #fff; }
 .dt-order-n { position: absolute; top: 2%; right: 2%; min-width: 18cqw; padding: 1cqw; background: #6a5acd; color: #fff; font-family: var(--count); font-size: 12cqw; text-align: center; border-radius: 4px; }
@@ -495,6 +502,10 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-below-log-loading { right: 0; top: 0; width: 23vw; height: 100vh; }
 .dt-controls { display: flex; flex-wrap: wrap; gap: 0.4em; align-items: center; justify-content: flex-end; margin-bottom: 0.5em; flex: none; }
 .dt-controls .seat-bar { margin-bottom: 0; }
+.dt-controls .replay-bar { flex-wrap: nowrap; gap: 0.3em; }
+.dt-controls .replay-bar button.toggle { padding-left: 0.6em; padding-right: 0.6em; }
+.dt-controls .replay-bar.watch-as { flex-wrap: wrap; }
+.replay-slider { flex: 1; min-width: 0; }
 .dt-more { flex: 0 1 auto; max-height: 40%; overflow-y: auto; margin-bottom: 0.5em; }
 .dt-more-head { background: none; border: 0; color: #ddd; cursor: pointer; font: inherit; padding: 0; }
 .dt-more-list { margin: 0.3em 0 0; padding-left: 1.2em; color: #ccc; }

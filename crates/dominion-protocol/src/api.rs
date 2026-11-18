@@ -2,7 +2,7 @@
 //! creation and listing share the MCP tools' snake_case types; the rest are camelCase.
 
 use crate::lobby::{GameMeta, Source, UndoRule, UserRef};
-use crate::view::AgentView;
+use crate::view::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 
 /// What a client asks for when creating a game.
@@ -244,6 +244,30 @@ pub struct SeatView {
     /// Who plays, who is connected, and what kind of game it is.
     #[serde(default)]
     pub meta: GameMeta,
+    /// For a finished game watched at an earlier point (`step`): where it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay: Option<Replay>,
+}
+
+/// Where a replay of a finished game stands.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Replay {
+    /// How many of the game's answers the view comes after.
+    pub step: usize,
+    /// How many answers the game had: after all of them, it is as it ended.
+    pub steps: usize,
+    /// Each turn's start, in order.
+    pub turns: Vec<ReplayTurn>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayTurn {
+    /// The step at which the turn has started.
+    pub step: usize,
+    pub player: u8,
+    pub turn: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -267,6 +291,16 @@ pub struct UndoRequest {
     pub answers: u32,
     /// The seats yet to allow it.
     pub waiting: Vec<u8>,
+}
+
+/// `POST /api/games/{id}/answer`: an answer and, with `way` (`none` or a Way's name),
+/// the Way question of the card it plays answered in advance, for that card's replays too.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AnswerRequest {
+    #[serde(flatten)]
+    pub answer: Answer,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub way: Option<String>,
 }
 
 /// What `POST /api/games/{id}/undo` asks for: by default, to take back the seat's last
@@ -331,6 +365,10 @@ pub struct ViewQuery {
     /// decision, instead of with every player's cards visible.
     #[serde(default, rename = "as", skip_serializing_if = "Option::is_none")]
     pub as_seat: Option<u8>,
+    /// For `GET /api/games/{id}/watch` of a finished game: the game as it was after this
+    /// many answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<usize>,
 }
 
 /// Every error's body.

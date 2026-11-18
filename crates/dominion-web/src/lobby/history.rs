@@ -597,6 +597,7 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
             div { class: "lb-sheet-actions",
                 if game.open {
                     Link { class: "lb-button lb-gold", to: Route::Game { id: game.id.clone() }, "Review game" }
+                    Link { class: "lb-button lb-gold", "data-action": "replay", to: Route::GameReplay { id: game.id.clone() }, "Replay" }
                 }
                 button { class: "lb-button lb-copper", "data-action": "play-kingdom", onclick: replay, "Play this kingdom" }
                 if let Some(number) = game.official_id.clone() {
