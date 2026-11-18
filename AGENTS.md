@@ -735,10 +735,12 @@ them.
   its own keeps its place, as Stash placed by its own ability must). A site asked to shuffle or draw from fewer than two cards draws,
   takes and records nothing, and replay reads no outcome from a shuffle of fewer than
   two: never ask chance for something with one outcome elsewhere. What players are shown
-  without anything moving reaches the stream from the trace (`g.show`, `g.show_to`,
-  `g.reveal`, `look_over_shuffled`: a `show` event; `g.mixed`: a `mix`, unless a shuffle
-  of just those cards follows) and from the log (`RevealedHand`): show and mix through
-  those, never by hand.
+  reaches the stream from the trace (`g.show`, `g.show_to`, `g.reveal`,
+  `look_over_shuffled`, a hand revealed: a `show` event; `g.mixed`: a `mix`, unless a
+  shuffle of just those cards follows): show and mix through those, never by hand. The
+  recorder writes a `show` only of what no move beside it says (`Recorder::sighting`, with
+  `What::seen` saying who sees a move's cards), and one needed for cards moved together
+  before their move, so it never splits them.
 - **Agent protocol.** `dominion-agent` projects a game and a seat's `Knowledge` onto
   agent-view@2 and maps option indices back to `Response`s. The schema is owned by
   `dominion-playbook/protocol/`; change it there first, then `just sync-protocol`. The

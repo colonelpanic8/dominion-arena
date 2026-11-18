@@ -54,6 +54,16 @@ pub struct Recorder {
     /// The cards lying face down in a zone whose cards lie face up (the trash).
     #[serde(default)]
     down: BTreeSet<CardId>,
+    /// The cards of the last event written, when it is a move, and how they moved.
+    #[serde(skip)]
+    last_moved: Vec<CardId>,
+    #[serde(skip)]
+    last_key: Option<MoveKey>,
+    /// The cards of the move about to be written, and how they move.
+    #[serde(skip)]
+    moving: Vec<CardId>,
+    #[serde(skip)]
+    moving_key: Option<MoveKey>,
 }
 
 impl Recorder {
@@ -77,6 +87,9 @@ impl Recorder {
     pub fn record(&mut self, game: &mut Game, seats: &[String]) -> Result<Vec<Event>, FoldError> {
         let mut steps = Steps(game.take_journal().into());
         let mut out: Vec<Event> = vec![];
+        // No move goes on from one record to the next: a question ends each.
+        self.last_moved.clear();
+        self.last_key = None;
         if !self.set_up {
             self.set_up = true;
             // What setup drew by chance comes first.
@@ -136,6 +149,7 @@ impl Recorder {
                     // Only the last event can take more cards.
                     if let Some(seq) = self.event_of(Some(n)).filter(|&s| s + 1 == self.seq) {
                         self.closed = Some(seq);
+                        self.last_key = None;
                     }
                     continue;
                 }
@@ -175,6 +189,7 @@ impl Recorder {
                         });
                     }
                     ids.reverse();
+                    self.moving = ids.clone();
                     let (from, to) = (self.zone(game, from), self.zone(game, to));
                     // Into its own zone, some of a deck's cards shuffled again where they
                     // lay go back under the cards over them.
@@ -197,6 +212,7 @@ impl Recorder {
                         },
                     verb,
                 } => {
+                    let (from_id, to_id) = (from, to);
                     let (from, to) = (self.zone(game, from), self.zone(game, to));
                     let cards = vec![self.card(card)];
                     // The engine puts a card that should go under more cards than there
@@ -218,6 +234,8 @@ impl Recorder {
                             None => Face::Down,
                         }
                     });
+                    let up = face == Some(Face::Up);
+                    self.moving_key = Some((from_id, to_id, bottom, under, verb, up));
                     let played = (verb == Some(Verb::Play))
                         .then(|| {
                             steps.next_past_reads(
@@ -240,6 +258,7 @@ impl Recorder {
                         }
                         continue;
                     }
+                    self.moving = vec![card];
                     What::moved(
                         verb_of(verb.unwrap_or(Verb::Put)),
                         Move {
@@ -354,6 +373,13 @@ impl Recorder {
                 Step::Phase(phase) => What::Phase {
                     phase: phase_of(phase),
                 },
+                // Read between cards moved together: after them, so that they stay one event.
+                step @ (Step::Gauge { .. } | Step::Derived { .. })
+                    if self.last_key.is_some_and(|key| steps.mid_batch(game, key)) =>
+                {
+                    steps.after_batch(game, step, self.last_key.expect("checked"));
+                    continue;
+                }
                 step @ (Step::Gauge { .. }
                 | Step::Fate { .. }
                 | Step::FateShuffled { .. }
@@ -376,19 +402,10 @@ impl Recorder {
                     pos: None,
                     from_face: None,
                 }),
-                Step::Logged { index } => match &game.log()[index] {
-                    dominion_engine::Event::RevealedHand { player, .. } => {
-                        let zone = events::Zone::Seat(player.0, SeatZone::Hand);
-                        let cards = self.ids.get(&zone).cloned().unwrap_or_default();
-                        match self.show(Some(zone), &cards, None) {
-                            Some(what) => what,
-                            None => continue,
-                        }
-                    }
-                    entry => match occurrence(entry) {
-                        Some(what) => what,
-                        None => continue,
-                    },
+                // A hand revealed is shown card by card in the trace, just before.
+                Step::Logged { index } => match occurrence(&game.log()[index]) {
+                    Some(what) => what,
+                    None => continue,
                 },
                 Step::Resolve {
                     player,
@@ -404,15 +421,13 @@ impl Recorder {
                     // shown together.
                     let mut cards = vec![card];
                     let zone = self.zone_of(card);
-                    while let Some(Step::Trace {
-                        entry: Trace::Shown { card: next, .. },
-                        ..
-                    }) = steps.next_if(|next| {
-                        matches!(next, Step::Trace { entry: Trace::Shown { card: c, to: t }, .. } if *t == to && self.zone_of(*c) == zone && !cards.contains(c))
+                    while let Some(next) = steps.next_shown(game, |c, t| {
+                        t == to && self.zone_of(c) == zone && !cards.contains(&c)
                     }) {
                         cards.push(next);
                     }
-                    match self.show(zone, &cards, to.map(|p| p.0)) {
+                    let to = to.map(|p| p.0);
+                    match self.sighting(game, &mut steps, &out, zone, cards, to) {
                         Some(what) => what,
                         None => continue,
                     }
@@ -696,12 +711,19 @@ impl Recorder {
             }
             l.cards.extend(m.cards.iter().cloned());
             self.moved.insert(last.seq, l.cards.len() as u32);
+            self.last_moved.append(&mut self.moving);
+            self.last_key = self.moving_key.take();
             return Ok(());
         }
         self.table.apply(&event)?;
         self.wrote = true;
+        self.last_moved = std::mem::take(&mut self.moving);
+        self.last_key = self.moving_key.take();
         if let Some((_, m)) = event.what.as_move() {
             self.moved.insert(event.seq, m.cards.len() as u32);
+        } else {
+            self.last_moved.clear();
+            self.last_key = None;
         }
         self.seq += 1;
         out.push(event);
@@ -889,6 +911,84 @@ impl Recorder {
             zone,
             to,
         }))
+    }
+
+    /// The `show` of `ids`, shown together to `to` where they lie in `zone`, of those it
+    /// says something about: the one rule for when a sighting is written
+    /// (protocol/events.md, "Sightings"). It says nothing of a card those eyes see where it
+    /// lies anyway ([`Recorder::in_sight`]), nor of cards a move next to it shows them
+    /// ([`What::seen`]): the move that just brought them here, or the move that takes them
+    /// from here next. Cards shown for a move that doesn't show them are shown before it,
+    /// together with the move's other cards shown as they leave, so that the cards it
+    /// moves together stay one event.
+    fn sighting(
+        &mut self,
+        game: &Game,
+        steps: &mut Steps,
+        out: &[Event],
+        zone: Option<events::Zone>,
+        mut ids: Vec<CardId>,
+        to: Option<u8>,
+    ) -> Option<What> {
+        let zone = zone?;
+        if let Some(batch) = steps.batch(game, &ids, to.map(PlayerId))
+            && self.zone(game, batch.from) == zone
+        {
+            let all_move = ids.iter().all(|id| batch.moved.contains(id));
+            for id in batch.shown {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+            let to_zone = self.zone(game, batch.to);
+            let what = What::moved(
+                verb_of(batch.verb),
+                Move {
+                    player: None,
+                    cards: vec![],
+                    from: zone.clone(),
+                    to: to_zone,
+                    at: At::Top,
+                    pos: vec![],
+                    face: batch.face_up.then_some(Face::Up),
+                    from_face: None,
+                },
+            );
+            if all_move && what.seen(&self.table).is_some_and(|s| s.covers(to)) {
+                return None;
+            }
+        }
+        let brought = out.last().and_then(|last| {
+            let (_, m) = last.what.as_move()?;
+            let seen = last.what.seen(&self.table)?;
+            (m.to == zone && seen.covers(to)).then_some(&self.last_moved)
+        });
+        ids.retain(|id| !self.in_sight(&zone, *id, to) && !brought.is_some_and(|b| b.contains(id)));
+        self.show(Some(zone), &ids, to)
+    }
+
+    /// Whether the eyes of `to` (everyone when `None`) see `id`, lying in `zone`, where it
+    /// lies: face up, in a zone whose cards lie face up (a play area, the trash, a mat other
+    /// than the Native Village mat, a player's Boons or Hexes), on top of a pile not hidden;
+    /// or among its owner's own cards they may look at, for its owner.
+    fn in_sight(&self, zone: &events::Zone, id: CardId, to: Option<u8>) -> bool {
+        use SeatZone as S;
+        match zone {
+            _ if self.up.contains(&id) => true,
+            events::Zone::Trash => !self.down.contains(&id),
+            events::Zone::Seat(
+                _,
+                S::Play | S::Tavern | S::Island | S::Exile | S::Boons | S::Hexes,
+            ) => true,
+            events::Zone::Pile(_) | events::Zone::Aside(_) => {
+                self.table.piles.get(zone).is_some_and(|p| !p.hidden)
+                    && self.ids.get(zone).and_then(|ids| ids.first()) == Some(&id)
+            }
+            events::Zone::Seat(s, S::Hand | S::Aside | S::Looking | S::NativeVillage) => {
+                to == Some(*s)
+            }
+            _ => false,
+        }
     }
 
     /// `ids` mixed where nobody can follow them: an event per zone they lie in.
@@ -1238,7 +1338,172 @@ impl Steps {
     }
 }
 
+/// How the journal moves a card: from, to, at the bottom, under how many, the verb, face up.
+type MoveKey = (Zone, Zone, bool, usize, Option<Verb>, bool);
+
+/// Cards the journal moves one after the other from one zone to another, the same way.
+struct Batch {
+    verb: Verb,
+    from: Zone,
+    to: Zone,
+    face_up: bool,
+    moved: Vec<CardId>,
+    /// Those shown just before they moved.
+    shown: Vec<CardId>,
+}
+
+/// Whether `step` writes no event of its own, or none but what reading the table finds
+/// changed: a reading, a marker, a log line that is no occurrence.
+fn quiet(step: &Step, game: &Game) -> bool {
+    is_reading(step)
+        || matches!(step, Step::Occurred(_))
+        || matches!(step, Step::Logged { index } if occurrence(&game.log()[*index]).is_none())
+}
+
 impl Steps {
+    /// The card the `i`th step moves, and how, if it moves one other than by a shuffle.
+    fn moved_at(&self, i: usize) -> Option<(CardId, MoveKey)> {
+        match self.0.get(i) {
+            Some(&Step::Trace {
+                entry:
+                    Trace::Moved {
+                        card,
+                        from,
+                        to,
+                        bottom,
+                        under,
+                        ..
+                    },
+                verb,
+            }) if verb != Some(Verb::Shuffle) => {
+                let up = matches!(self.0.get(i + 1), Some(Step::FaceUp(c)) if *c == card);
+                Some((card, (from, to, bottom, under, verb, up)))
+            }
+            _ => None,
+        }
+    }
+
+    /// The first step from the `i`th that writes no event, or none but a reading's.
+    fn skip_quiet(&self, game: &Game, mut i: usize) -> usize {
+        while self.0.get(i).is_some_and(|s| quiet(s, game)) {
+            i += 1;
+        }
+        i
+    }
+
+    /// The next card shown, past steps that write nothing, if `wanted` (its card, and who
+    /// it is shown to).
+    fn next_shown(
+        &mut self,
+        game: &Game,
+        wanted: impl Fn(CardId, Option<PlayerId>) -> bool,
+    ) -> Option<CardId> {
+        let i = self.skip_quiet(game, 0);
+        match self.0.get(i) {
+            Some(&Step::Trace {
+                entry: Trace::Shown { card, to },
+                ..
+            }) if wanted(card, to) => {
+                self.0.remove(i);
+                Some(card)
+            }
+            _ => None,
+        }
+    }
+
+    /// The move the next steps make, if it is of cards among `shown`: all the cards it
+    /// moves one after the other with nothing between that writes an event, and those of
+    /// them shown to `to` again just before they move, whose steps it takes out.
+    fn batch(&mut self, game: &Game, shown: &[CardId], to: Option<PlayerId>) -> Option<Batch> {
+        let shown_at = |i: usize| match self.0.get(i) {
+            Some(&Step::Trace {
+                entry: Trace::Shown { card, to: t },
+                ..
+            }) if t == to => Some(card),
+            _ => None,
+        };
+        let mut again = vec![];
+        let mut i = self.skip_quiet(game, 0);
+        while let Some(card) = shown_at(i).filter(|c| shown.contains(c)) {
+            again.push((i, card));
+            i = self.skip_quiet(game, i + 1);
+        }
+        let (card, how) = self.moved_at(i)?;
+        if !shown.contains(&card) {
+            return None;
+        }
+        let mut moved = vec![card];
+        i += 1 + usize::from(how.5);
+        loop {
+            let j = self.skip_quiet(game, i);
+            let (k, seen) = match shown_at(j) {
+                Some(card) => (self.skip_quiet(game, j + 1), Some((j, card))),
+                None => (j, None),
+            };
+            match self.moved_at(k) {
+                Some((card, h)) if h == how && seen.is_none_or(|(_, c)| c == card) => {
+                    moved.push(card);
+                    again.extend(seen);
+                    i = k + 1 + usize::from(h.5);
+                }
+                _ => break,
+            }
+        }
+        for &(j, _) in again.iter().rev() {
+            self.0.remove(j);
+        }
+        let (from, to, _, _, verb, face_up) = how;
+        Some(Batch {
+            verb: verb.unwrap_or(Verb::Put),
+            from,
+            to,
+            face_up,
+            moved,
+            shown: again.into_iter().map(|(_, c)| c).collect(),
+        })
+    }
+
+    /// Whether more cards move as `key` says after steps that write nothing but readings.
+    fn mid_batch(&self, game: &Game, key: MoveKey) -> bool {
+        let i = self.skip_quiet(game, 0);
+        self.moved_at(i).is_some_and(|(_, k)| k == key)
+    }
+
+    /// Puts `step`, a reading, after the cards that move next as `key` says, with the
+    /// counters and costs read among them, in their order.
+    fn after_batch(&mut self, game: &Game, step: Step, key: MoveKey) {
+        let mut i = 0;
+        let mut end = 0;
+        let mut reads = vec![];
+        loop {
+            match self.0.get(i) {
+                Some(s) if quiet(s, game) => {
+                    if matches!(s, Step::Gauge { .. } | Step::Derived { .. }) {
+                        reads.push(i);
+                    }
+                    i += 1;
+                }
+                Some(_) if self.moved_at(i).is_some_and(|(_, k)| k == key) => {
+                    i += 1;
+                    while matches!(self.0.get(i), Some(Step::FaceUp(_) | Step::Occurred(_))) {
+                        i += 1;
+                    }
+                    end = i;
+                }
+                _ => break,
+            }
+        }
+        let reads: Vec<usize> = reads.into_iter().filter(|&j| j < end).collect();
+        let mut later = vec![step];
+        for &j in reads.iter().rev() {
+            later.insert(1, self.0.remove(j).expect("there"));
+        }
+        let at = end - reads.len();
+        for (n, step) in later.into_iter().enumerate() {
+            self.0.insert(at + n, step);
+        }
+    }
+
     /// The cards of the shuffle the next steps are, if they are one.
     fn shuffle_after(&self) -> Vec<CardId> {
         let mut cards = vec![];

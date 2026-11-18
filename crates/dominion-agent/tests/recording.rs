@@ -177,6 +177,8 @@ fn a_recording_from_another_version_stops_and_the_game_plays_on() {
     };
     let cases = [
         older(&|j| j["recorder"]["version"] = 0.into()),
+        // Version 1 wrote a `show` before each card trashed, discarded or gained.
+        older(&|j| j["recorder"]["version"] = 1.into()),
         older(&|j| j["recorder"] = j["recorder"]["state"].clone()),
         older(&|j| j["recorder"]["state"]["ids"] = "?".into()),
         older(&|j| j["game"]["journal"] = "?".into()),

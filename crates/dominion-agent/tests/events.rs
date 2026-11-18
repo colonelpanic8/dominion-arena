@@ -3,8 +3,8 @@
 use dominion_agent::events::Recorder;
 use dominion_engine::{
     Card, CardId, DecisionKind, EndReason, ExtraLimit, Game, GameConfig, Kind, Mat, Move,
-    Phase as EnginePhase, PileId, PlayerId, Response, Set, SetupRole, Token, Until,
-    Zone as EngineZone,
+    Phase as EnginePhase, PileId, PlayerId, Response, Set, SetupRole, Step, Token, Trace, Until,
+    Verb, Zone as EngineZone,
 };
 use dominion_protocol::events::{
     self, CardRef, CounterKey, CounterName, CounterOf, Effect, Ending, Event, ExtraTurn, Moment,
@@ -579,6 +579,9 @@ fn follow(
     respond: fn(&Game, &mut ChaCha8Rng) -> Response,
 ) -> Vec<Event> {
     let mut twin = Game::new_traced(config.clone()).unwrap();
+    // The same game journaled: what the engine did, to hold the stream's sightings to.
+    let mut journaled = Game::new_journaled(config.clone()).unwrap();
+    let mut steps = journaled.take_journal();
     let mut table = dominion_agent::Table::new_recorded("g", config, vec![]).unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut events = vec![];
@@ -619,11 +622,15 @@ fn follow(
         if seed % 13 == 7 && answers == 30 + seed % 50 {
             let seat = PlayerId((seed % twin.num_players() as u64) as u8);
             twin.resign(seat);
+            journaled.resign(seat);
+            steps.extend(journaled.take_journal());
             table.resign(seat).unwrap();
             continue;
         }
         let response = respond(&twin, &mut rng);
         twin.respond(response.clone()).unwrap();
+        journaled.respond(response.clone()).unwrap();
+        steps.extend(journaled.take_journal());
         let seat = table.deciding().unwrap();
         let id = table.decision_id().unwrap();
         table.respond(seat, &id, response).unwrap();
@@ -649,6 +656,7 @@ fn follow(
     );
     check_causes(&events, &format!("seed {seed}"));
     check_questions(&events, &format!("seed {seed}"));
+    check_sightings(&steps, journaled.log(), &events, &format!("seed {seed}"));
     // The stream is the record: played again from it alone, the game writes it again.
     let replayed = dominion_agent::replay::replay(&events)
         .unwrap_or_else(|d| panic!("seed {seed}: the replay differs at {d}"));
@@ -659,6 +667,304 @@ fn follow(
         "seed {seed}"
     );
     events
+}
+
+/// Whether the journal's `step` writes no event of its own: a reading of the table (which
+/// writes one only when something changed), a marker, a log line no event comes from.
+fn quiet(step: &Step, log: &[dominion_engine::Event]) -> bool {
+    use dominion_engine::Event as E;
+    match step {
+        Step::Logged { index } => !matches!(
+            log[*index],
+            E::Received { .. }
+                | E::Bought { .. }
+                | E::BoughtLandscape { .. }
+                | E::Named { .. }
+                | E::UsedWay { .. }
+                | E::Unaffected { .. }
+                | E::Called { .. }
+                | E::Chosen { .. }
+        ),
+        Step::Gauge { .. }
+        | Step::EffectBegan(_)
+        | Step::EffectChanged(_)
+        | Step::EffectEnded { .. }
+        | Step::Token { .. }
+        | Step::Holding { .. }
+        | Step::Pile { .. }
+        | Step::Landscape { .. }
+        | Step::Notes(_)
+        | Step::Derived { .. }
+        | Step::Face { .. }
+        | Step::Kept { .. }
+        | Step::Occurred(_)
+        | Step::FaceUp(_) => true,
+        _ => false,
+    }
+}
+
+/// The events around the `i`th, as JSON Lines.
+fn around(events: &[Event], i: usize) -> String {
+    (events[i.saturating_sub(6)..(i + 6).min(events.len())].iter())
+        .map(|e| serde_json::to_string(e).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn fate(zone: &Zone) -> bool {
+    matches!(
+        zone,
+        Zone::Boons(_) | Zone::Hexes(_) | Zone::Seat(_, SeatZone::Boons | SeatZone::Hexes)
+    )
+}
+
+/// How a card moves: from, to, the verb.
+type How = (EngineZone, EngineZone, Option<Verb>);
+
+fn moved(step: &Step) -> Option<(CardId, How)> {
+    match *step {
+        Step::Trace {
+            entry: Trace::Moved { card, from, to, .. },
+            verb,
+        } => Some((card, (from, to, verb))),
+        _ => None,
+    }
+}
+
+fn shown(step: &Step) -> Option<(CardId, Option<u8>)> {
+    match *step {
+        Step::Trace {
+            entry: Trace::Shown { card, to },
+            ..
+        } => Some((card, to.map(|p| p.0))),
+        _ => None,
+    }
+}
+
+/// Holds the stream's sightings and moves to the engine's journal of the same game: cards
+/// the engine moves together are one event; a `show` is written exactly when no move next
+/// to it shows its cards to the same eyes (`What::seen`), and once.
+fn check_sightings(steps: &[Step], log: &[dominion_engine::Event], events: &[Event], what: &str) {
+    // Each card a step moves is the next card of the stream's moves.
+    let mut seen = vec![];
+    let mut cards = vec![];
+    let mut table = Table::default();
+    // The opening shuffles and draws are written from where setup dealt the cards, not
+    // from moves.
+    let dealt = 1
+        + (events.iter().skip(1))
+            .take_while(|e| e.by.is_none() && matches!(e.what, What::Shuffle(_) | What::Draw(_)))
+            .count();
+    for (i, e) in events.iter().enumerate() {
+        seen.push(e.what.seen(&table));
+        if i < dealt {
+            table.apply(e).unwrap();
+            continue;
+        }
+        match &e.what {
+            What::Play(p) if p.from.is_some() => cards.push(i),
+            // Boons and Hexes move by name, not as cards the trace follows.
+            w => match w.as_move() {
+                Some((_, m)) if !fate(&m.from) && !fate(&m.to) => {
+                    cards.extend(vec![i; m.cards.len()])
+                }
+                _ => {}
+            },
+        }
+        table.apply(e).unwrap();
+    }
+    let at: Vec<usize> = (0..steps.len())
+        .filter(|&j| moved(&steps[j]).is_some())
+        .collect();
+    assert_eq!(at.len(), cards.len(), "{what}: moves");
+    let event_of: BTreeMap<usize, usize> = at.iter().copied().zip(cards.iter().copied()).collect();
+    let quiet = |s: &Step| quiet(s, log);
+
+    // Cards trashed or discarded one after the other with nothing between that writes an
+    // event (in one frame: Frame::trash and Frame::discard move them all before any of
+    // their abilities) are one event.
+    for &j in &at {
+        let (_, how) = moved(&steps[j]).unwrap();
+        if !matches!(how.2, Some(Verb::Trash | Verb::Discard)) {
+            continue;
+        }
+        let k = (j + 1..steps.len()).find(|&k| !quiet(&steps[k]) && shown(&steps[k]).is_none());
+        if let Some(k) = k
+            && moved(&steps[k]).is_some_and(|(_, h)| h == how)
+        {
+            assert_eq!(
+                event_of[&j],
+                event_of[&k],
+                "{what}: cards moved together are two events:\n{}",
+                around(events, event_of[&j])
+            );
+        }
+    }
+
+    // No sighting says what a move next to it says, nor what the sighting before it said.
+    let covered = |s: &events::Show, i: usize, zone: &Zone| {
+        let (moved, from_to): (Vec<CardRef>, bool) = match &events[i].what {
+            What::Play(p) => (vec![p.card.clone()], p.from.as_ref() == Some(zone)),
+            w => match w.as_move() {
+                Some((_, m)) => (m.cards.clone(), &m.from == zone || &m.to == zone),
+                None => return false,
+            },
+        };
+        let mut left = moved;
+        from_to
+            && seen[i].is_some_and(|v| v.covers(s.to))
+            && s.cards.iter().all(|c| {
+                let k = left.iter().position(|m| m == c);
+                k.map(|k| left.remove(k)).is_some()
+            })
+    };
+    for i in 0..events.len().saturating_sub(1) {
+        let (a, b) = (&events[i].what, &events[i + 1].what);
+        if let (What::Show(_) | What::Mix { .. }, What::Show(_) | What::Mix { .. }) = (a, b) {
+            assert!(
+                a != b,
+                "{what}: events {i} and {} are the same sighting:\n{}",
+                i + 1,
+                around(events, i)
+            );
+        }
+        if let What::Show(s) = a {
+            let from = b.as_move().map(|(_, m)| &m.from);
+            let play = matches!(b, What::Play(p) if p.from.as_ref() == Some(&s.zone));
+            assert!(
+                !((from == Some(&s.zone) || play) && covered(s, i + 1, &s.zone)),
+                "{what}: the show at {i} says what the move after it says"
+            );
+        }
+        if let What::Show(s) = b
+            && let Some((_, m)) = a.as_move()
+        {
+            assert!(
+                !(m.to == s.zone && covered(s, i, &s.zone)),
+                "{what}: the show at {} says what the move before it says",
+                i + 1
+            );
+        }
+    }
+
+    // And every showing no move beside it discloses has its `show`; every gain and reveal,
+    // which the rule says everyone sees, was shown.
+    let mut names: BTreeMap<CardId, String> = BTreeMap::new();
+    // Where each card lies, and which lie face up, or face down in the trash.
+    let mut zones: BTreeMap<CardId, EngineZone> = BTreeMap::new();
+    let mut up = std::collections::BTreeSet::new();
+    let mut down = std::collections::BTreeSet::new();
+    for (j, step) in steps.iter().enumerate() {
+        match step {
+            Step::Trace {
+                entry: Trace::Created { card, is, zone },
+                ..
+            } => {
+                names.insert(*card, is.name().to_string());
+                zones.insert(*card, *zone);
+            }
+            Step::Trace {
+                entry: Trace::Moved { card, to, .. },
+                ..
+            } => {
+                zones.insert(*card, *to);
+                up.remove(card);
+                down.remove(card);
+            }
+            Step::FaceUp(card) => {
+                up.insert(*card);
+            }
+            Step::Face { card, down: d } => {
+                if *d {
+                    down.insert(*card);
+                } else {
+                    down.remove(card);
+                }
+            }
+            Step::Trace {
+                entry: Trace::Changed { card, to, .. },
+                ..
+            } => {
+                names.insert(*card, to.name().to_string());
+            }
+            _ => {}
+        }
+        if let Some((card, _)) = moved(step)
+            && let i = event_of[&j]
+            && matches!(events[i].what, What::Gain(_) | What::Reveal(_))
+        {
+            let before = (0..j).rev().find(|&k| !quiet(&steps[k]));
+            assert!(
+                before.and_then(|k| shown(&steps[k])) == Some((card, None)),
+                "{what}: event {i} shows {} unseen",
+                names[&card]
+            );
+        }
+        let Some((card, to)) = shown(step) else {
+            continue;
+        };
+        // Seen where it lies already, by those eyes.
+        let in_sight = up.contains(&card)
+            || match zones[&card] {
+                EngineZone::Trash => !down.contains(&card),
+                EngineZone::InPlay(_) => true,
+                EngineZone::Mat(p, mat) => mat != Mat::NativeVillage || to == Some(p.0),
+                EngineZone::Hand(p) | EngineZone::SetAside(p) | EngineZone::Looking(p) => {
+                    to == Some(p.0)
+                }
+                _ => false,
+            };
+        if in_sight {
+            continue;
+        }
+        // Its move: the next move of the cards moved with it, or the move that brought it.
+        let mut next = None;
+        let mut how = None;
+        for (k, step) in steps.iter().enumerate().skip(j + 1) {
+            if quiet(step) || shown(step).is_some() {
+                continue;
+            }
+            match moved(step) {
+                Some((c, h)) if how.is_none_or(|w| w == h) => {
+                    how = Some(h);
+                    if c == card {
+                        next = Some(k);
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        let last = (0..j)
+            .rev()
+            .find(|&k| !quiet(&steps[k]) && shown(&steps[k]).is_none())
+            .filter(|&k| moved(&steps[k]).is_some_and(|(c, _)| c == card));
+        let disclosed = [next, last]
+            .into_iter()
+            .flatten()
+            .any(|k| seen[event_of[&k]].is_some_and(|v| v.covers(to)));
+        if disclosed {
+            continue;
+        }
+        let after = at
+            .iter()
+            .find(|&&k| k > j)
+            .map_or(events.len(), |k| event_of[k]);
+        let before = (at.iter().rev())
+            .filter(|&&k| k < j)
+            .map(|k| event_of[k])
+            .find(|&i| i < after);
+        let name = CardRef::named(names[&card].clone());
+        let written = (before.map_or(0, |i| i + 1)..after).any(
+            |i| matches!(&events[i].what, What::Show(s) if s.to == to && s.cards.contains(&name)),
+        );
+        assert!(
+            written,
+            "{what}: {name} shown before event {after} has no show:\n{}\n{:#?}",
+            around(events, after),
+            &steps[j.saturating_sub(4)..(j + 6).min(steps.len())]
+        );
+    }
 }
 
 /// Every question is answered by the event after it, by its seat, unless the game ends
