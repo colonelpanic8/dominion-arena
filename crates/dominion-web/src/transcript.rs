@@ -3,6 +3,7 @@
 use crate::api;
 use crate::app::Route;
 use dioxus::prelude::*;
+use dominion_protocol::lobby::OFFICIAL_GAME_PREFIX;
 use dominion_protocol::transcript::{
     TranscriptEntry, TranscriptKind as Kind, TranscriptPage as Page,
 };
@@ -194,6 +195,16 @@ pub fn TranscriptPage(id: String) -> Element {
             );
         }
     });
+    // An official account's game is shown on that account's page.
+    let lobby = crate::lobby::use_lobby().lobby;
+    let back = match game().strip_prefix(OFFICIAL_GAME_PREFIX) {
+        None => Route::Game { id: game() },
+        Some(official) => (lobby.read().iter().flat_map(|l| &l.official))
+            .find(|a| a.game.as_ref().is_some_and(|g| g.id == official))
+            .map_or(Route::Lobby {}, |a| Route::OnlineAccount {
+                account: a.id.clone(),
+            }),
+    };
     let state = timeline.read();
     let agents: BTreeMap<u8, String> = state
         .blocks
@@ -220,7 +231,7 @@ pub fn TranscriptPage(id: String) -> Element {
                     h1 { "Agent Transcript" }
                     p { class:"transcript-description", "Everything each model was given and everything it returned, in order: its system prompt, prompts, reasoning, replies, tool calls and what they returned, with the game's events. Long inputs and results are folded; open them, or expand everything. Transcripts may reveal hidden cards. Reasoning appears when the model provides it. Times are UTC." }
                 }
-                Link { class:"button copper",to:Route::Game {id:game()},"Back to game" }
+                Link { class:"button copper",to:back,"Back to game" }
             }
             div { class:"transcript-body",
                 aside { class:"transcript-side",

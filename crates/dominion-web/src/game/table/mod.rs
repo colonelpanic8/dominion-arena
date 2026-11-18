@@ -591,10 +591,9 @@ fn shape(
     }
 }
 
-/// The game page's table. `controls` go under the log; `arena` is a game of this server's,
-/// which has a chat.
+/// The game page's table. `controls` go under the log.
 #[component]
-pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Element {
+pub fn TableGame(controls: Element) -> Element {
     let game = use_game();
     let cards = use_context::<Cards>().0;
     let settings = use_context::<Settings>().0;
@@ -848,7 +847,7 @@ pub fn TableGame(controls: Element, #[props(default = true)] arena: bool) -> Ele
                     sound::MuteToggle { muted }
                 }
                 side::More { board: b.clone() }
-                if arena { super::chat::Chat {} }
+                if game.offers.read().chat { super::chat::Chat {} }
             }
             if b.result.is_some() {
                 side::GameOver { board: b.clone() }

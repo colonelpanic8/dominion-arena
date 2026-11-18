@@ -624,6 +624,9 @@ pub struct OnlineManagement {
     #[serde(default)]
     pub models: Vec<crate::lobby::HouseModel>,
     pub agent: Option<String>,
+    /// The agent that has played the running game: only it may resume it.
+    #[serde(default)]
+    pub game_agent: Option<String>,
     pub running: bool,
     pub searching: bool,
     pub queue_feedback: Vec<String>,

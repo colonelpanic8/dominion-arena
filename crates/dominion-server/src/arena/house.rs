@@ -642,15 +642,16 @@ impl Arena {
     /// Sets official account `account`'s job; the job is marked as that account's.
     pub(crate) fn set_official_job(&self, account: &str, job: Option<Job>) {
         {
-            let official = &mut lock(&self.state).house.official;
+            let state = &mut *lock(&self.state);
             match job {
                 Some(mut job) => {
                     job.official = true;
                     job.official_account = Some(account.into());
-                    official.insert(account.into(), job);
+                    super::official::played_by(state, account, &job);
+                    state.house.official.insert(account.into(), job);
                 }
                 None => {
-                    official.remove(account);
+                    state.house.official.remove(account);
                 }
             }
         }

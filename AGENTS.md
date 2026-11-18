@@ -158,18 +158,23 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     measure.rs            text widths: canvas in the browser, an estimate natively
   assets/cards.css        card styles (cqw units; images through --dc-* variables)
   src/gallery.rs          /gallery: every card through the renderer, with filters
-  src/online.rs           an official account's game watched at /online/<id> on the same
-                          table through the same `GameState`; its owner's panel (the
+  src/online.rs           an official account's game watched at /online/<id>: a source
+                          of `GameCtx` for the same `GameShell`; its owner's panel (the
                           Automatch tab's dominion.games box, under the log) and rating
                           (Account tab)
   src/game/state.rs       the game page's model (view, version, log, `meta`, chat),
                           selection -> Answer; `apply` for Arena's views, `apply_whole`
                           for an official account's
-  src/game/mod.rs         GamePage: the seat shown (one held here, else the account's from
+  src/game/mod.rs         `GameCtx`: a game as every source provides it (state, answer,
+                          resign, say, and `Offers`: the chat and transcript it has), and
+                          `GameShell`, the one page all of them are shown through (`GameBar`,
+                          then the table or the plain page). A source adds only what it
+                          alone has; a page feature goes in the shell, read from `GameCtx`,
+                          never in one source's page. GamePage, this server's games: the
+                          seat shown (one held here, else the account's from
                           `/api/me/games`, else none: watching), keeping state current (the
-                          feed for the game and its chat), `GameCtx` context
-                          (answer, resign, say), `use_forfeit`, the notice when the game
-                          waits on a seat nobody has joined
+                          feed for the game and its chat), `use_forfeit`, the notice when
+                          the game waits on a seat nobody has joined
   src/game/meta.rs        what `SeatView.meta` makes the page say: the account on a bar,
                           the deciding seat's time, how the game ended (pure)
   src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page

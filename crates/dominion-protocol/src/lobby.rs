@@ -559,6 +559,15 @@ pub struct OfficialGame {
     pub levels: Vec<Option<f64>>,
 }
 
+/// The id under which this server keeps dominion.games game `game`: its record and its
+/// agent transcript.
+pub fn official_game_id(game: &str) -> String {
+    format!("{OFFICIAL_GAME_PREFIX}{game}")
+}
+
+/// What starts every [`official_game_id`].
+pub const OFFICIAL_GAME_PREFIX: &str = "dominion.games-";
+
 /// The server's own agents: it starts one on its machine for a table's `agent` seat, or
 /// for a registered player's search of agents that no other agent answers.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

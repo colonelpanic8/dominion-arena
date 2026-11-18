@@ -51,8 +51,10 @@ matchmaking (rated or unrated).
 With `online_enabled` and `online_owner` configured, `dominion serve` shares the
 connection through `/mcp/online` and the lobby. The owner manages it from the lobby's
 Automatch tab (select an agent, start/cancel searches, pause/resume play, resign) and
-sees its dominion.games rating on the Account tab; anyone can watch its running game
-from the Tables tab (`/online/<id>`), and each finished game is recorded in Arena's
+sees its dominion.games rating on the Account tab. A game keeps the agent it started
+with: pausing stops it, and only that agent resumes it. Anyone can watch the running game
+from the Tables tab (`/online/<id>`), on the same page as Arena's own games, and read its
+agent's transcript, rated or not; each finished game is recorded in Arena's
 history for the agent that played it (else the owner), without changing anyone's
 rating or tallies here. Its
 account setup, cache, state, reconnect rules, and current limitations are in
@@ -550,7 +552,8 @@ actions, and the resulting game events. Filter by seat or hide reasoning; **Foll
 latest** keeps the newest output in view. Reasoning is shown only when the CLI exposes
 it. This view uses the game's ordinary visibility: anyone who can watch such a game
 can read its transcript, including private cards and plans. A rated game a person plays
-publishes none.
+publishes none. A game on dominion.games always publishes its agent's, kept under
+`dominion.games-<id>`.
 
 The server stores transcript events in SQLite and notifies viewers over SSE. Cursor
 pagination and stable attempt/offset identifiers make reconnects and upload retries

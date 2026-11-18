@@ -277,6 +277,7 @@ impl Hosted {
             .route("/matchmaking", axum::routing::delete(cancel_matchmaking))
             .route("/reconnect", post(reconnect))
             .route("/resign", post(resign))
+            .route("/transcript", post(publish_transcript))
             .with_state(Web {
                 hosted: self.clone(),
                 access: auth.clone(),
@@ -330,8 +331,12 @@ async fn authorize(State(access): State<Access>, request: Request, next: Next) -
     let watching = request.method() == axum::http::Method::GET
         && path.starts_with("/api/online/")
         && (path.ends_with("/view") || path.ends_with("/events") || path.ends_with("/rating"));
-    // Only this account's job token opens this account's MCP endpoint.
-    let runner = path.starts_with("/mcp/online")
+    // Only this account's job token opens this account's MCP endpoint, or publishes its
+    // transcript.
+    let runner = (path.starts_with("/mcp/online")
+        || (request.method() == axum::http::Method::POST
+            && path.starts_with("/api/online/")
+            && path.ends_with("/transcript")))
         && crate::http::bearer(request.headers()).is_some_and(|token| {
             access
                 .arena
@@ -570,6 +575,10 @@ fn management(web: &Web) -> OnlineManagement {
         agents,
         models,
         agent: web.job().map(|j| j.agent),
+        game_agent: (view.as_ref())
+            .filter(|v| v.game.running)
+            .and_then(|v| v.game.id.as_deref())
+            .and_then(|game| web.access.arena.official_game_agent(&web.hosted.id, game)),
         running: view.is_some_and(|v| v.game.running),
         searching: update.searching || web.job().is_some_and(|j| j.game_id.is_empty()),
         queue_feedback: update.queue_feedback,
@@ -750,15 +759,23 @@ fn assign(web: &Web, agent: String) -> Result<(), String> {
     if !view.game.running {
         return Err("no running official game".into());
     }
+    let game_id = view.game.id.ok_or("game has no id")?;
+    if let Some(playing) = (web.access.arena).official_game_agent(&web.hosted.id, &game_id)
+        && playing != agent
+    {
+        return Err(format!(
+            "{playing} plays this game: its agent can't be changed mid-game"
+        ));
+    }
     web.set_job(Some(crate::house::Job {
         official: true,
         official_account: Some(web.hosted.id.clone()),
-        transcript: false,
+        transcript: true,
         configuration: None,
         agent,
         brief: None,
         debrief: None,
-        game_id: view.game.id.ok_or("game has no id")?,
+        game_id,
         seat: view.seat.ok_or("no playing seat")?,
         name: view.you.ok_or("no playing account")?.name,
         token: format!(
@@ -790,6 +807,13 @@ async fn start_game(
         if !start.kingdom.is_empty() || !start.landscapes.is_empty() {
             return refused("public matchmaking does not accept required cards");
         }
+        if let Some(playing) = management(&web).game_agent
+            && playing != start.agent
+        {
+            return refused(format!(
+                "{playing} plays the running game: its agent can't be changed mid-game"
+            ));
+        }
         if let Err(e) = web
             .hosted
             .client
@@ -807,7 +831,7 @@ async fn start_game(
             web.set_job(Some(crate::house::Job {
                 official: true,
                 official_account: Some(web.hosted.id.clone()),
-                transcript: false,
+                transcript: true,
                 configuration: None,
                 agent: start.agent,
                 brief: None,
@@ -886,6 +910,30 @@ async fn resign(State(web): State<Web>) -> Response {
     }
 }
 
+/// The agent playing as the account adds to its transcript, with its job's token.
+async fn publish_transcript(
+    State(web): State<Web>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let Some(job) = web.job().filter(|job| {
+        !job.token.is_empty() && crate::http::bearer(&headers) == Some(job.token.as_str())
+    }) else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    let input: dominion_protocol::transcript::TranscriptInput = match serde_json::from_slice(&body)
+    {
+        Ok(input) => input,
+        Err(e) => return (StatusCode::BAD_REQUEST, e.to_string()).into_response(),
+    };
+    let arena = web.access.arena.clone();
+    match tokio::task::spawn_blocking(move || arena.append_official_transcript(&job, &input)).await
+    {
+        Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+        Ok(Err(e)) => crate::http::Error::from(e).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
 async fn cancel_matchmaking(State(web): State<Web>) -> Response {
     let _guard = web.hosted.control.lock().await;
     match web.hosted.client.cancel_matchmaking().await {

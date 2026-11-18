@@ -1,7 +1,7 @@
 //! A finished game replayed on the table: any point of it, from its first decision to its
 //! end, as someone watching saw it (every player's cards, or what one seat knew).
 
-use super::{GameCtx, GameState, logfmt, server_ahead, table};
+use super::{GameState, logfmt, server_ahead, table};
 use crate::api;
 use crate::app::Route;
 use crate::platform;
@@ -72,24 +72,7 @@ pub fn ReplayPage(id: String) -> Element {
     let mut shown = use_signal(|| None::<(usize, Option<u8>)>);
     let summary = use_signal(|| None::<GameSummary>);
     use_context_provider(|| summary);
-    let deciding = use_memo(move || state.read().deciding);
-    let seat = use_signal(|| None);
-    let watching = use_memo(|| true);
-    let resigning = use_signal(|| false);
-    use_context_provider(|| GameCtx {
-        game,
-        seat,
-        watching,
-        state,
-        deciding,
-        submit: Callback::new(|_| {}),
-        submit_way: Callback::new(|_| {}),
-        undo: Callback::new(|_| {}),
-        answer_undo: Callback::new(|_| {}),
-        cancel_undo: Callback::new(|_| {}),
-        resign: Callback::new(|_| {}),
-        resigning,
-    });
+    super::use_watched_game(game, state, use_memo(super::Offers::default));
 
     // Fetches the view whenever the step or seat wanted differs from the one shown.
     use_effect(move || {
@@ -245,7 +228,7 @@ pub fn ReplayPage(id: String) -> Element {
         }
     };
     rsx! {
-        table::TableGame { controls, arena: false }
+        table::TableGame { controls }
     }
 }
 

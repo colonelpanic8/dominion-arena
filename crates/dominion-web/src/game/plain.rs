@@ -122,9 +122,11 @@ pub fn PlainGame() -> Element {
                     }
                 }
                 LogPanel { entries: log }
-                section { class: "panel chat-panel",
-                    h3 { "Chat" }
-                    super::chat::Chat {}
+                if ctx.offers.read().chat {
+                    section { class: "panel chat-panel",
+                        h3 { "Chat" }
+                        super::chat::Chat {}
+                    }
                 }
             }
         }
