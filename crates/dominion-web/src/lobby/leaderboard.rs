@@ -37,7 +37,7 @@ pub fn LeaderboardTab() -> Element {
                         }
                         div { class: "lb-board-list",
                             if players.is_empty() {
-                                p { class: "lb-note", "Nobody has played a rated game yet. A game is rated when its table or search says so and every seat is a different registered player or bot." }
+                                p { class: "lb-note", "Nobody has played a rated game yet. A game is rated when its table or search says so and every seat is a different registered player or bot, or when it is made with a different one of the server's agents in every seat." }
                             }
                             for p in players.iter() {
                                 div { key: "{p.user.name}", class: line, "data-leader": "{p.user.name}",

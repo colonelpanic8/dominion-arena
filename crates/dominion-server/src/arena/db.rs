@@ -736,6 +736,8 @@ mod venue_tests {
             landscapes: vec![],
             others: vec![],
             players: vec![],
+            seed: None,
+            version: None,
         })
         .unwrap()
     }
@@ -768,5 +770,38 @@ mod venue_tests {
         };
         assert_eq!(ids(Venue::Arena), ["g1"]);
         assert_eq!(ids(Venue::Official), ["dominion.games-9"]);
+    }
+
+    #[test]
+    fn a_record_kept_before_venues_keeps_its_seed_and_agents() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join(FILE)).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE games (id TEXT PRIMARY KEY, number INTEGER NOT NULL, \
+                 ended INTEGER NOT NULL, record TEXT NOT NULL) WITHOUT ROWID;",
+            )
+            .unwrap();
+            let record = r#"{"gameId":"g1","started":0,"ended":1,"source":"direct",
+                "rated":true,"reason":"","kingdom":[],"landscapes":[],"seed":7,
+                "version":"abc","players":[{"seat":0,"name":"Opus","kind":"bot","vp":3,
+                "rank":1,"turns":9,"agent":{"agent":"Opus","program":"Claude Code",
+                "attempts":[{"started":5,"archive":"a1"}]}}]}"#;
+            conn.execute(
+                "INSERT INTO games (id, number, ended, record) VALUES ('g1', 0, 1, ?1)",
+                [record],
+            )
+            .unwrap();
+        }
+        let db = Db::open(Some(dir.path())).unwrap();
+        let games = db.games(Venue::Arena, None, u64::MAX, 10).unwrap();
+        let game = super::super::records::past_game(games[0].clone(), Venue::Arena);
+        assert_eq!((game.seed, game.version.as_deref()), (Some(7), Some("abc")));
+        let run = game.players[0].agent.as_ref().unwrap();
+        assert_eq!((run.setup.agent.as_str(), run.attempts.len()), ("Opus", 1));
+        assert_eq!(
+            game.arranged,
+            Some(dominion_protocol::lobby::Arranged::Agents)
+        );
     }
 }

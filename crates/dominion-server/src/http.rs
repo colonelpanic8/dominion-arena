@@ -1019,10 +1019,10 @@ struct TranscriptQuery {
 }
 
 fn transcript_access(api: &Api, id: &str, headers: &HeaderMap, q: &SeatQuery) -> Result<()> {
-    if api.hub.meta(id)?.rated {
+    if !api.hub.meta(id)?.live_transcripts() {
         return Err(Error::new(
             StatusCode::FORBIDDEN,
-            "live transcripts are available in unrated games",
+            crate::arena::transcripts::LIVE,
         ));
     }
     if api.seat(id, headers, q.token.as_deref(), q.seat).is_ok() {

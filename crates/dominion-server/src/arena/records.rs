@@ -38,6 +38,7 @@ impl Arena {
         let Ended {
             id,
             meta,
+            seed,
             info,
             setup,
         } = ended;
@@ -87,6 +88,7 @@ impl Arena {
                     turns: p.turns,
                     resigned: p.resigned,
                     rating: rated.then(|| (before[i].rating, after[i].rating)),
+                    agent: meta.runs.get(usize::from(p.index)).cloned().flatten(),
                 });
             }
             let record = GameRecord {
@@ -102,6 +104,8 @@ impl Arena {
                 landscapes: info.landscapes.clone(),
                 others: setup,
                 players,
+                seed: Some(seed),
+                version: crate::commit(),
             };
             let users: Vec<Option<String>> = (accounts.iter())
                 .map(|u| u.as_ref().map(|u| u.id.clone()))
@@ -180,11 +184,14 @@ impl Arena {
 /// A stored record as the history shows it.
 pub(super) fn past_game(record: GameRecord, venue: Venue) -> PastGame {
     let official = venue == Venue::Official;
+    // A game made directly has accounts only in the seats the server's agents played.
+    let agents = record.players.iter().any(|p| p.kind.is_some());
     PastGame {
         venue,
         arranged: match record.source {
             Source::Automatch => Some(Arranged::Automatch),
             Source::Table => Some(Arranged::Table),
+            Source::Direct if agents => Some(Arranged::Agents),
             Source::Direct => Some(Arranged::Tokens),
             Source::Official => None,
         },
@@ -212,8 +219,11 @@ pub(super) fn past_game(record: GameRecord, venue: Venue) -> PastGame {
                 turns: p.turns,
                 resigned: p.resigned,
                 rating: p.rating,
+                agent: p.agent,
             })
             .collect(),
+        seed: record.seed,
+        version: record.version,
         id: record.game_id,
     }
 }

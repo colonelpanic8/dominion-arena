@@ -56,6 +56,9 @@ pub struct NewGame {
     /// A question each server agent answers once the game is over (its debrief), before
     /// it leaves the game. Token seats may answer it with the `debrief` tool.
     pub debrief: Option<String>,
+    /// Count the game for ratings. Only where every seat is a different one of the
+    /// server's agents; such a game allows no undo.
+    pub rated: Option<bool>,
 }
 
 /// `POST /api/deal`: a kingdom dealt by a table's rules without creating a game. Giving

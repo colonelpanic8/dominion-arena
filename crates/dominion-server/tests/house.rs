@@ -345,3 +345,110 @@ fn a_search_for_any_agent_gets_one_when_none_has_an_account_yet() {
     let agents: Vec<_> = jobs.iter().map(|j| j.agent.as_str()).collect();
     assert_eq!(agents, ["Opus 5.5 High"]);
 }
+
+fn setup(agent: &str, version: &str) -> dominion_protocol::lobby::AgentSetup {
+    dominion_protocol::lobby::AgentSetup {
+        agent: agent.into(),
+        program: "Claude Code".into(),
+        model: Some("claude-opus-5-5".into()),
+        effort: Some("high".into()),
+        version: Some(version.into()),
+        playbook: Some(dominion_protocol::lobby::Playbook {
+            path: "/playbook".into(),
+            commit: Some("abc123".into()),
+            dirty: false,
+            digest: "d1".into(),
+        }),
+    }
+}
+
+fn agent_game(rated: bool, agents: &[Option<&str>]) -> dominion_server::hub::NewGame {
+    dominion_server::hub::NewGame {
+        players: agents.len() as u8,
+        agents: agents.iter().map(|a| a.map(String::from)).collect(),
+        seed: Some(7),
+        rated: Some(rated),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_rated_game_has_a_different_server_agent_in_every_seat() {
+    let arena = arena(0);
+    let _told = runner(&arena, &["Opus", "Sol"], 4);
+    let ada = register(&arena, "Ada");
+    for agents in [
+        &[Some("Opus"), None][..],
+        &[Some("Opus"), Some("Opus")],
+        &[None, None],
+    ] {
+        assert!(matches!(
+            arena.create_game(Some(&ada), &agent_game(true, agents)),
+            Err(Error::BadRequest(_))
+        ));
+    }
+    let game = (arena.create_game(Some(&ada), &agent_game(true, &[Some("Opus"), Some("Sol")])))
+        .unwrap()
+        .game_id;
+    let meta = arena.hub.meta(&game).unwrap();
+    assert!(meta.rated && meta.live_transcripts());
+    assert_eq!(meta.undo, dominion_protocol::lobby::UndoRule::Off);
+}
+
+#[test]
+fn a_record_names_what_played_each_agent_seat_and_why_an_attempt_stopped() {
+    let arena = arena(0);
+    let _told = runner(&arena, &["Opus", "Sol"], 4);
+    let ada = register(&arena, "Ada");
+    let mixed = (arena.create_game(Some(&ada), &agent_game(false, &[Some("Opus"), None])))
+        .unwrap()
+        .game_id;
+    assert!(
+        (arena.hub)
+            .agent_attempt(&mixed, 1, "x".into(), setup("Opus", "v1"))
+            .is_err()
+    );
+
+    let game = (arena.create_game(Some(&ada), &agent_game(true, &[Some("Opus"), Some("Sol")])))
+        .unwrap()
+        .game_id;
+    let hub = &arena.hub;
+    hub.agent_attempt(&game, 0, "a1".into(), setup("Opus", "v1"))
+        .unwrap();
+    hub.agent_attempt(&game, 1, "b1".into(), setup("Sol", "v1"))
+        .unwrap();
+    hub.agent_failed(&game, 0, "a1", "429 rate limited")
+        .unwrap();
+    hub.agent_attempt(&game, 0, "a2".into(), setup("Opus", "v2"))
+        .unwrap();
+    end(&arena, &game);
+
+    let rated = dominion_protocol::lobby::HistoryQuery {
+        rated: true,
+        ..Default::default()
+    };
+    let history = arena.history(&rated).unwrap();
+    let record = history.games.iter().find(|r| r.id == game).unwrap();
+    assert!(record.rated);
+    assert_eq!(
+        record.arranged,
+        Some(dominion_protocol::lobby::Arranged::Agents)
+    );
+    assert_eq!(record.seed, Some(7));
+    let opus = record.players.iter().find(|p| p.seat == 0).unwrap();
+    assert!(opus.rating.is_some());
+    let run = opus.agent.as_ref().unwrap();
+    assert_eq!(run.setup, setup("Opus", "v1"));
+    let attempts: Vec<_> = (run.attempts.iter())
+        .map(|a| (a.archive.as_str(), a.error.as_deref(), a.setup.as_ref()))
+        .collect();
+    assert_eq!(
+        attempts,
+        [
+            ("a1", Some("429 rate limited"), None),
+            ("a2", None, Some(&setup("Opus", "v2"))),
+        ]
+    );
+    let sol = record.players.iter().find(|p| p.seat == 1).unwrap();
+    assert_eq!(sol.agent.as_ref().unwrap().attempts.len(), 1);
+}

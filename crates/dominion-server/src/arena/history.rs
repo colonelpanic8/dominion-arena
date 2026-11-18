@@ -179,8 +179,11 @@ mod tests {
                     turns: 1,
                     resigned: false,
                     rating: None,
+                    agent: None,
                 })
                 .collect(),
+            seed: None,
+            version: None,
         }
     }
 
