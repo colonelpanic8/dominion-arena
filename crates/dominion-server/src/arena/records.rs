@@ -35,7 +35,12 @@ impl Arena {
     }
 
     fn write_record(&self, ended: Ended) -> Result<()> {
-        let Ended { id, meta, info } = ended;
+        let Ended {
+            id,
+            meta,
+            info,
+            setup,
+        } = ended;
         let Some(result) = info.result else {
             return Ok(());
         };
@@ -95,6 +100,7 @@ impl Arena {
                     .unwrap_or_default(),
                 kingdom: info.kingdom.clone(),
                 landscapes: info.landscapes.clone(),
+                others: setup,
                 players,
             };
             let users: Vec<Option<String>> = (accounts.iter())
@@ -190,6 +196,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue) -> PastGame {
         reason: record.reason,
         kingdom: record.kingdom,
         landscapes: record.landscapes,
+        others: record.others,
         players: (record.players.into_iter())
             .map(|p| PastPlayer {
                 // An Arena seat's name is its account's; an official one's is the official

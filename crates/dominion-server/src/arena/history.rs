@@ -167,6 +167,7 @@ mod tests {
             reason: String::new(),
             kingdom: vec![card.into()],
             landscapes: vec![],
+            others: vec![],
             players: (players.iter().enumerate())
                 .map(|(i, name)| PastPlayer {
                     seat: i as u8,

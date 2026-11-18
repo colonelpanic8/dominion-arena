@@ -174,6 +174,7 @@ impl Arena {
                 reason: result.reason.clone().unwrap_or_default(),
                 kingdom: game.kingdom.clone(),
                 landscapes: game.landscapes.clone(),
+                others: game.others.clone(),
                 players,
             };
             db::add_record(tx, Venue::Official, &record, &users)?;
@@ -208,6 +209,7 @@ mod tests {
             seat: Some(1),
             kingdom: vec!["Village".into()],
             landscapes: vec![],
+            others: vec!["Colony".into()],
         };
         let mut info = OfficialAccount {
             id: "main".into(),
@@ -244,6 +246,7 @@ mod tests {
         assert_eq!(record.official_id.as_deref(), Some("123"));
         assert!(record.rated && !record.open);
         assert_eq!(record.kingdom, ["Village"]);
+        assert_eq!(record.others, ["Colony"]);
         assert_eq!(record.players[1].account.as_deref(), Some("Owner"));
         assert_eq!(record.players[0].account, None);
         assert!(record.players.iter().all(|p| p.rating.is_none()));

@@ -734,6 +734,7 @@ mod venue_tests {
             reason: String::new(),
             kingdom: vec![],
             landscapes: vec![],
+            others: vec![],
             players: vec![],
         })
         .unwrap()

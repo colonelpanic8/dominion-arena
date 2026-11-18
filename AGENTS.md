@@ -104,6 +104,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/solo.rs             `dominion solo`: a game kept in a file, its other seats idle
   src/steps.rs            named steps (`play A, B; treasures; buy C; next`) for solo and the
                           MCP `steps` tool
+  src/setup_cards.rs      what a finished game was set up with besides its Kingdom piles
+                          and landscapes (Platinum and Colony, Shelters, Heirlooms, ...),
+                          read from its view: kept in its record for the history
   src/store.rs            the state directory: its lock, a JSON file per game written
                           atomically, each game's event stream appended to
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
@@ -230,7 +233,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     history.rs            History: finished games (filtered by where, whose, rated, a
                           name) beside the picked one's sheet (kingdom, standings, Review
                           game, Play this kingdom); `GameBrowser`, shared with a
-                          player's page
+                          player's page; a game's kingdom strip shows the whole kingdom
+                          while hovered (`KingdomPeek`)
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
