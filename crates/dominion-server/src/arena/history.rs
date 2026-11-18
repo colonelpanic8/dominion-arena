@@ -155,10 +155,10 @@ fn key(p: &PastPlayer) -> &str {
 
 /// Account `name`'s record against each opponent in `games` (newest first), most games
 /// together first, then the latest met. A game where they sat more than once counts
-/// their first seat, and none against themselves.
+/// their first seat, and none against themselves; a voided game counts for no one.
 pub fn head_to_head(games: &[PastGame], name: &str) -> Vec<Matchup> {
     let mut by_key: HashMap<String, Matchup> = HashMap::new();
-    for game in games {
+    for game in games.iter().filter(|g| g.voided.is_none()) {
         let mine = |p: &PastPlayer| {
             p.account
                 .as_deref()
@@ -420,12 +420,15 @@ mod tests {
         };
         let mut token = placed(1, &[("Ada", 1), ("Kit", 2)]);
         token.players[1].account = None;
+        let mut voided = placed(4, &[("Ada", 1), ("Bo", 2)]);
+        voided.voided = Some(4);
         let games = [
             placed(9, &[("Ada", 2), ("Bo", 1), ("Cy", 3)]),
             placed(8, &[("Bo", 1), ("Ada", 1)]),
             placed(7, &[("Ada", 1), ("Cy", 2)]),
             placed(6, &[("Ada", 1), ("Ada", 2)]),
             placed(5, &[("Bo", 1), ("Cy", 2)]),
+            voided,
             token,
         ];
         let rows: Vec<_> = head_to_head(&games, "ADA")
@@ -444,7 +447,7 @@ mod tests {
             vs: Some("KIT"),
             ..Ask::default()
         };
-        assert!(vs.admits(&games[5], None));
+        assert!(vs.admits(&games[6], None));
         assert!(!vs.admits(&games[0], None));
     }
 }
