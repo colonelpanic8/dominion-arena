@@ -177,6 +177,9 @@ pub struct Config {
     pub solo_dir: Option<PathBuf>,
     /// Connection and workspace used by T3 Code agents.
     pub t3code: Option<crate::t3::Settings>,
+    /// What `dominion serve` writes new games' recorded event streams in: `jsonl`
+    /// (default) or `cbor`. A game's stream stays in the encoding it began in.
+    pub events_encoding: Option<dominion_agent::recording::Encoding>,
 }
 
 /// One `[[online_accounts]]` table.

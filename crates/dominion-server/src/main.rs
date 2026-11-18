@@ -48,6 +48,10 @@ enum Command {
         /// Directory of the built web client, served at / (default: web_dir, then $DOMINION_WEB_DIR).
         #[arg(long)]
         web_dir: Option<PathBuf>,
+        /// What new games' recorded event streams are written in: jsonl or cbor
+        /// (default: events_encoding, then jsonl).
+        #[arg(long)]
+        events_encoding: Option<dominion_agent::recording::Encoding>,
     },
     /// Play one seat from the terminal against a server.
     Play(PlayArgs),
@@ -408,6 +412,10 @@ async fn serve(config: Config) -> Result<(), String> {
             for (path, e) in &loaded.unreadable {
                 eprintln!("dominion: skipping {}: {e}", path.display());
             }
+            for (path, e) in &loaded.unrecorded {
+                eprintln!("dominion: {} records no more events: {e}", path.display());
+            }
+            hub.set_events_encoding(config.events_encoding.unwrap_or_default());
             eprintln!(
                 "dominion: {} saved games in {} ({} finished games moved to expired/)",
                 loaded.games,
@@ -526,12 +534,14 @@ async fn main() -> ExitCode {
             ephemeral,
             assets_dir,
             web_dir,
+            events_encoding,
         } => {
             config.assets_dir = assets_dir.or(config.assets_dir);
             config.web_dir = web_dir.or(config.web_dir);
             config.listen = listen.or(config.listen);
             config.port = port.or(config.port);
             config.state_dir = state_dir.or(config.state_dir);
+            config.events_encoding = events_encoding.or(config.events_encoding);
             if ephemeral {
                 config.persist = Some(false);
             }

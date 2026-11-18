@@ -1,3 +1,4 @@
+use crate::events::Recorder;
 use crate::project::{self, Context};
 use crate::text;
 use dominion_engine::{
@@ -5,6 +6,7 @@ use dominion_engine::{
     Purpose, Response, SetupError, Types, View,
 };
 use dominion_protocol::api::{InPlay, PlayerTable, TableExtras};
+use dominion_protocol::events::Event;
 use dominion_protocol::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -28,6 +30,10 @@ pub enum AnswerError {
     /// The game no longer replays as it was played, so it can't go back.
     #[error("the game can't be undone: {0}")]
     Unreplayable(String),
+    /// What the game did can't be written as events: a bug in the engine or the recorder.
+    /// Nothing was changed.
+    #[error("the game's events can't be recorded ({0}); nothing was changed")]
+    Unrecordable(String),
 }
 
 /// An answer to the Way question ("play it as itself, or use a Way instead") given in
@@ -138,6 +144,14 @@ pub struct Table {
     /// Someone resigned: nothing before it can be undone.
     #[serde(default)]
     sealed: bool,
+    /// Writes the game's `dominion/events@1` stream; none for a table that doesn't record
+    /// (one saved before tables did).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    recorder: Option<Recorder>,
+    /// The last events recorded, until whoever keeps the stream says they are written.
+    /// Saved, so that a table and its stream can always be brought back into step.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    unwritten: Vec<Event>,
 }
 
 impl Table {
@@ -147,7 +161,28 @@ impl Table {
         config: GameConfig,
         names: Vec<String>,
     ) -> Result<Table, SetupError> {
-        let mut game = Game::new_traced(config)?;
+        Table::start(id.into(), config, names, false)
+    }
+
+    /// Starts a game that records its event stream ([`Table::unwritten`]).
+    pub fn new_recorded(
+        id: impl Into<String>,
+        config: GameConfig,
+        names: Vec<String>,
+    ) -> Result<Table, SetupError> {
+        Table::start(id.into(), config, names, true)
+    }
+
+    fn start(
+        id: String,
+        config: GameConfig,
+        names: Vec<String>,
+        record: bool,
+    ) -> Result<Table, SetupError> {
+        let mut game = match record {
+            true => Game::new_journaled(config)?,
+            false => Game::new_traced(config)?,
+        };
         let n = game.num_players();
         let mut knowledge = Knowledge::with_watcher(n);
         knowledge.update(&mut game);
@@ -159,8 +194,8 @@ impl Table {
                     .unwrap_or_else(|| PlayerId(i as u8).to_string())
             })
             .collect();
-        Ok(Table {
-            id: id.into(),
+        let mut table = Table {
+            id,
             game,
             knowledge,
             names,
@@ -173,7 +208,13 @@ impl Table {
             history: vec![],
             complete: true,
             sealed: false,
-        })
+            recorder: record.then(Recorder::new),
+            unwritten: vec![],
+        };
+        table
+            .record()
+            .expect("a game's setup is recordable: a bug in the engine or the recorder");
+        Ok(table)
     }
 
     pub fn id(&self) -> &str {
@@ -298,10 +339,11 @@ impl Table {
     /// The game replayed from its start up to just before answer `answers`.
     fn replayed(&self, answers: usize) -> Result<Table, AnswerError> {
         let fail = |why: String| AnswerError::Unreplayable(why);
-        let mut table = Table::new(
+        let mut table = Table::start(
             self.id.clone(),
             self.game.config().clone(),
             self.names.clone(),
+            self.recorder.is_some(),
         )
         .map_err(|e| fail(e.to_string()))?;
         for (i, step) in self.history[..answers].iter().enumerate() {
@@ -422,6 +464,7 @@ impl Table {
             return Err(AnswerError::Invalid(format!("there is no seat {}", seat.0)));
         }
         self.game.resign(seat);
+        self.record()?;
         self.ways.clear();
         self.sealed = true;
         Ok(())
@@ -694,7 +737,46 @@ impl Table {
             .respond(response)
             .map_err(|e| AnswerError::Invalid(e.to_string()))?;
         self.knowledge.update(&mut self.game);
+        self.record()?;
         self.seq += 1;
         Ok(())
+    }
+
+    /// Turns what the game journaled since the last call into events. Every change to
+    /// the game ends with it, so the journal never holds more than one change's steps.
+    fn record(&mut self) -> Result<(), AnswerError> {
+        if let Some(recorder) = &mut self.recorder {
+            let events = (recorder.record(&mut self.game, &self.names))
+                .map_err(|e| AnswerError::Unrecordable(e.to_string()))?;
+            self.unwritten.extend(events);
+        }
+        Ok(())
+    }
+
+    /// How many events the table has recorded, if it records its stream.
+    pub fn recorded(&self) -> Option<u64> {
+        self.recorder.as_ref().map(Recorder::written)
+    }
+
+    /// How many of them have been written out: all but [`Table::unwritten`].
+    pub fn written(&self) -> Option<u64> {
+        Some(self.recorded()? - self.unwritten.len() as u64)
+    }
+
+    /// The events recorded since [`Table::mark_written`] was last called, in order. After
+    /// an undo they are the whole stream of the game as it now stands, from event 0: the
+    /// stream holds no undo, and what was taken back never happened.
+    pub fn unwritten(&self) -> &[Event] {
+        &self.unwritten
+    }
+
+    /// Notes that [`Table::unwritten`] have been written out.
+    pub fn mark_written(&mut self) {
+        self.unwritten.clear();
+    }
+
+    /// The table the recorded events fold to, if it records its stream.
+    pub fn recorded_table(&self) -> Option<&dominion_protocol::events::Table> {
+        self.recorder.as_ref().map(Recorder::table)
     }
 }

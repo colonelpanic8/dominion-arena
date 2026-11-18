@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ciborium = "0.2"
 dominion-engine = { path = "../dominion-engine" }
 dominion-protocol = { path = "../dominion-protocol" }
 serde.workspace = true
@@ -14,7 +15,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-ciborium = "0.2"
 jsonschema = { version = "0.61.1", default-features = false }
 rand.workspace = true
 rand_chacha.workspace = true

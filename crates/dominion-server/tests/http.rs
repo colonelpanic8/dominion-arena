@@ -35,9 +35,13 @@ impl Drop for Server {
 }
 
 async fn start_with(options: Options) -> Server {
+    start_hub(Hub::default(), options).await
+}
+
+async fn start_hub(hub: Hub, options: Options) -> Server {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let hub = Arc::new(Hub::default());
+    let hub = Arc::new(hub);
     let stop = CancellationToken::new();
     tokio::spawn(dominion_server::serve(
         listener,
@@ -854,4 +858,31 @@ async fn a_deal_is_what_a_game_with_the_same_rules_and_seed_is_set_up_with() {
         )
         .await;
     assert!(bad.error(StatusCode::BAD_REQUEST).contains("slot kind"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_games_recorded_stream_is_served_to_its_seats() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (hub, _) = Hub::open(tmp.path(), Duration::from_secs(3600)).unwrap();
+    let server = start_hub(hub, Options::default()).await;
+    let created = server
+        .create(json!({ "players": 2, "seed": 3, "turn_limit": 4 }))
+        .await;
+    let id = &created.game_id;
+    let path = format!("/api/games/{id}/recording");
+    let token = Some(created.seats[1].token.as_str());
+    let error = server.get(&path, token).await.error(StatusCode::CONFLICT);
+    assert!(error.contains("once the game is over"), "{error}");
+    while server.summary(id).await.running {
+        server.answer_first(&created).await;
+    }
+    assert_eq!(
+        server.get(&path, None).await.error(StatusCode::FORBIDDEN),
+        "this game is private"
+    );
+    let reply = server.get(&path, token).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    assert_eq!(reply.headers["content-type"], "application/jsonl");
+    let file = std::fs::read_to_string(tmp.path().join(format!("{id}.events.jsonl"))).unwrap();
+    assert_eq!(reply.text, file);
 }

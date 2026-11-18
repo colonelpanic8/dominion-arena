@@ -2,6 +2,7 @@
 
 use crate::steps::Runner;
 use crate::store::Store;
+use dominion_agent::recording::{self, Encoding};
 use dominion_agent::{AgentView, Answer, AnswerError, Answered, Table, WayChoice};
 use dominion_engine::{
     Card, DealRules, Game, GameConfig, LandscapeSlot, PlayerId, SLOT_KINDS, Set,
@@ -52,6 +53,8 @@ pub enum HubError {
     /// The engine panicked. Whatever it was doing was dropped, so the game is as it was.
     #[error("the game engine failed ({0}); nothing was changed. This is a bug in the engine")]
     Engine(String),
+    #[error("{0}")]
+    NotFound(String),
 }
 
 /// What a caught panic said.
@@ -379,6 +382,20 @@ struct Hosted {
     /// Bumped after every chat message.
     chat: watch::Sender<u64>,
     transcript: watch::Sender<u64>,
+    /// Locked after `table`.
+    stream: Mutex<Stream>,
+}
+
+/// Where a hosted game's event stream stands on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stream {
+    /// None is kept: the game doesn't record one, or its file doesn't hold the events its
+    /// table says were written ([`Loaded::unrecorded`]).
+    Off,
+    /// No file yet: the first write makes one, in the hub's encoding.
+    New,
+    /// The file's encoding, and its length up to the end of the events written.
+    File(Encoding, u64),
 }
 
 impl Hosted {
@@ -398,7 +415,7 @@ impl Hosted {
         self.streams.iter().any(|s| s.load(Ordering::Relaxed) > 0)
     }
 
-    fn new(table: Table, tokens: Vec<String>, meta: Meta, changed: u64) -> Hosted {
+    fn new(table: Table, tokens: Vec<String>, meta: Meta, changed: u64, stream: Stream) -> Hosted {
         let now = now_ms();
         let seats = tokens.len();
         Hosted {
@@ -419,6 +436,7 @@ impl Hosted {
             version: watch::channel(0).0,
             chat: watch::channel(0).0,
             transcript: watch::channel(0).0,
+            stream: Mutex::new(stream),
         }
     }
 
@@ -507,6 +525,9 @@ pub struct Loaded {
     pub expired: usize,
     /// Files that couldn't be read, left in place.
     pub unreadable: Vec<(PathBuf, String)>,
+    /// Games whose event stream doesn't hold what their table says was written to it:
+    /// hosted, recording nothing more; the stream file, if any, is left as it is.
+    pub unrecorded: Vec<(PathBuf, String)>,
 }
 
 #[derive(Default)]
@@ -574,6 +595,8 @@ pub struct Hub {
     on_end: OnceLock<OnEnd>,
     /// Account ids to players, called with no lock held.
     users: OnceLock<Users>,
+    /// What new games' event streams are written in.
+    encoding: Mutex<Encoding>,
 }
 
 impl Default for Hub {
@@ -586,6 +609,7 @@ impl Default for Hub {
             max_games: AtomicU64::new(DEFAULT_MAX_GAMES as u64),
             on_end: OnceLock::new(),
             users: OnceLock::new(),
+            encoding: Mutex::default(),
         }
     }
 }
@@ -904,6 +928,37 @@ fn load(path: &Path, stem: &str) -> Result<(Table, Vec<String>, Meta), String> {
     Ok((table, tokens, meta))
 }
 
+/// Where game `table`'s stream stands on disk, checked against the table.
+///
+/// The stream is kept in step with the table's snapshot by [`Hub::save`]: whenever the
+/// server stopped, the stream's first [`Table::written`] events are the table's, and
+/// anything after them is cut off by the next write.
+fn stream_state(store: &Store, table: &Table) -> Result<Stream, String> {
+    let Some(written) = table.written() else {
+        return Ok(Stream::Off);
+    };
+    let Some((path, encoding)) = store.stream_file(table.id()) else {
+        return match written {
+            0 => Ok(Stream::New),
+            _ => Err(format!("its event stream, of {written} events, is missing")),
+        };
+    };
+    let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let read = recording::read(encoding, &bytes, Some(written as usize))
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    if read.header.game.as_deref() != Some(table.id()) {
+        return Err(format!("{} is not its stream", path.display()));
+    }
+    let len = read.len_of(written as usize).ok_or_else(|| {
+        format!(
+            "{} holds {} of the {written} events written",
+            path.display(),
+            read.events.len()
+        )
+    })?;
+    Ok(Stream::File(encoding, len as u64))
+}
+
 fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary {
     GameSummary {
         game_id: table.id().into(),
@@ -955,8 +1010,8 @@ impl Hub {
             let path = entry?.path();
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if name.starts_with('.') {
-                // A write the last server didn't finish; the game's file is intact.
-                if name.ends_with(".json.tmp") {
+                // A write the last server didn't finish; the game's files are intact.
+                if name.ends_with(".tmp") {
                     fs::remove_file(&path)?;
                 }
                 continue;
@@ -983,7 +1038,11 @@ impl Hub {
                 continue;
             }
             let changed = now_ms().saturating_sub(age.as_millis() as u64);
-            index.insert(stem, Hosted::new(table, tokens, meta, changed));
+            let stream = stream_state(&store, &table).unwrap_or_else(|e| {
+                loaded.unrecorded.push((path.clone(), e));
+                Stream::Off
+            });
+            index.insert(stem, Hosted::new(table, tokens, meta, changed, stream));
         }
         loaded.games = index.games.len();
         let hub = Hub {
@@ -1031,18 +1090,53 @@ impl Hub {
         }
     }
 
-    fn save(&self, game: &Hosted, table: &Table) {
+    /// What new games' event streams are written in (JSON Lines unless set).
+    pub fn set_events_encoding(&self, encoding: Encoding) {
+        *lock(&self.encoding) = encoding;
+    }
+
+    /// Saves `table`, then writes the events it recorded since to its stream.
+    ///
+    /// The snapshot goes first and carries those events ([`Table::unwritten`]); they are
+    /// marked written only once the stream holding them is synced. So however the server
+    /// stops, the stream on disk holds at least the events the last snapshot says were
+    /// written, and they are the snapshot's: [`stream_state`] cuts it back to them, and
+    /// the snapshot's unwritten events follow at the next write. After an undo the table's
+    /// unwritten events are its whole stream again, which replaces the file.
+    fn save(&self, game: &Hosted, table: &mut Table) {
         game.changed.store(now_ms(), Ordering::Relaxed);
+        let Some(store) = &self.store else {
+            table.mark_written();
+            return;
+        };
         let meta = lock(&game.meta);
         let saved = SavedRef {
             table,
             tokens: &game.tokens,
             meta: &meta,
         };
-        if let Some(store) = &self.store
-            && let Err(e) = store.save(table.id(), &saved)
-        {
+        if let Err(e) = store.save(table.id(), &saved) {
             eprintln!("dominion: saving game {}: {e}", table.id());
+        }
+        drop(meta);
+        if table.unwritten().is_empty() {
+            return;
+        }
+        let mut stream = lock(&game.stream);
+        let (encoding, len) = match *stream {
+            Stream::Off => {
+                table.mark_written();
+                return;
+            }
+            Stream::New => (*lock(&self.encoding), 0),
+            Stream::File(encoding, len) => (encoding, len),
+        };
+        match store.write_stream(table.id(), encoding, len, table.unwritten()) {
+            Ok(len) => {
+                *stream = Stream::File(encoding, len);
+                table.mark_written();
+            }
+            Err(e) => eprintln!("dominion: writing game {}'s events: {e}", table.id()),
         }
     }
 
@@ -1086,7 +1180,12 @@ impl Hub {
             index.next += 1;
             format!("g{}", index.next)
         };
-        let table = engine(|| Table::new(&id, config, names))?.map_err(|e| bad(e.to_string()))?;
+        let recorded = self.store.is_some();
+        let table = engine(|| match recorded {
+            true => Table::new_recorded(&id, config, names),
+            false => Table::new(&id, config, names),
+        })?
+        .map_err(|e| bad(e.to_string()))?;
         let seats = table.names().len();
         meta.owners.resize(seats, None);
         meta.agents.resize(seats, false);
@@ -1110,8 +1209,9 @@ impl Hub {
                 })
                 .collect(),
         };
-        let hosted = Hosted::new(table, tokens, meta, now_ms());
-        self.save(&hosted, &lock(&hosted.table));
+        let stream = if recorded { Stream::New } else { Stream::Off };
+        let hosted = Hosted::new(table, tokens, meta, now_ms(), stream);
+        self.save(&hosted, &mut lock(&hosted.table));
         lock(&self.index).insert(&id, hosted);
         Ok(created)
     }
@@ -1151,7 +1251,10 @@ impl Hub {
         let changed = modified
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as u64);
-        let game = Arc::new(Hosted::new(table, tokens, meta, changed));
+        let stream = stream_state(store, &table)
+            .inspect_err(|e| eprintln!("dominion: game {id}: {e}"))
+            .unwrap_or(Stream::Off);
+        let game = Arc::new(Hosted::new(table, tokens, meta, changed, stream));
         archive.push_front((id.into(), game.clone()));
         archive.truncate(ARCHIVE_CACHE);
         Some(game)
@@ -1321,7 +1424,7 @@ impl Hub {
     /// Records `seat`'s debrief of its finished game, in place of any earlier one.
     pub fn submit_debrief(&self, seat: &Seat, text: &str) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
-        let table = lock(&game.table);
+        let mut table = lock(&game.table);
         if !table.is_over() {
             return Err(HubError::BadRequest(
                 "a debrief comes once the game is over".into(),
@@ -1341,7 +1444,7 @@ impl Hub {
             meta.debriefs.resize(seats, None);
             meta.debriefs[seat.seat.index()] = Some(text[..end].to_string());
         }
-        self.save(&game, &table);
+        self.save(&game, &mut table);
         game.version.send_modify(|v| *v += 1);
         Ok(())
     }
@@ -1703,7 +1806,7 @@ impl Hub {
 
     /// After a change to `game`, made with `table` locked: saves it and wakes its
     /// followers. What to tell [`Hub::ended`] once the lock is released.
-    fn changed(&self, game: &Hosted, table: &Table) -> Option<Ended> {
+    fn changed(&self, game: &Hosted, table: &mut Table) -> Option<Ended> {
         let now = now_ms();
         if let Some(clock) = &mut lock(&game.meta).clock {
             clock.advance(
@@ -1784,7 +1887,7 @@ impl Hub {
             let answered = engine(|| apply(&mut next))??;
             *table = next;
             self.answered(&game, &table, seat.seat);
-            (answered, self.changed(&game, &table))
+            (answered, self.changed(&game, &mut table))
         };
         self.ended(ended);
         Ok(answered)
@@ -1971,7 +2074,7 @@ impl Hub {
             let played = engine(|| next.play_treasures(seat.seat, decision))??;
             *table = next;
             self.answered(&game, &table, seat.seat);
-            (played, self.changed(&game, &table))
+            (played, self.changed(&game, &mut table))
         };
         self.ended(ended);
         Ok(played)
@@ -1988,7 +2091,7 @@ impl Hub {
             *table = next;
             lock(&game.undo).request = None;
             lock(&game.meta).ended = Some(cause.into());
-            self.changed(&game, &table)
+            self.changed(&game, &mut table)
         };
         self.ended(ended);
         Ok(())
@@ -2063,10 +2166,10 @@ impl Hub {
     /// Notes that game `id`'s record has been written.
     pub fn set_recorded(&self, id: &str) {
         if let Ok(game) = self.game(id) {
-            let table = lock(&game.table);
+            let mut table = lock(&game.table);
             lock(&game.meta).recorded = true;
             let changed = game.changed.load(Ordering::Relaxed);
-            self.save(&game, &table);
+            self.save(&game, &mut table);
             game.changed.store(changed, Ordering::Relaxed);
         }
     }
@@ -2170,7 +2273,7 @@ impl Hub {
         {
             *table = runner.table;
             self.answered(&game, &table, seat.seat);
-            self.changed(&game, &table)
+            self.changed(&game, &mut table)
         } else {
             None
         };
@@ -2204,6 +2307,43 @@ impl Hub {
                 _ => return Ok(ready()),
             }
         }
+    }
+
+    /// Game `id`'s recorded event stream, the full one (every hidden card, every
+    /// shuffle's order), in the encoding it was written in. Only once the game is over: in
+    /// a game in progress it would show what is yet to come.
+    pub fn recording(&self, id: &str) -> Result<(Encoding, Vec<u8>), HubError> {
+        let game = self.read(id)?;
+        let table = lock(&game.table);
+        if !table.is_over() {
+            return Err(HubError::Conflict(format!(
+                "game {id} is in progress: its recorded stream shows every hidden card and \
+                 every shuffle's order, so it is served once the game is over"
+            )));
+        }
+        let unrecorded = || HubError::NotFound(format!("game {id} has no recorded stream"));
+        let write = |e: io::Error| HubError::Engine(format!("game {id}'s recorded stream: {e}"));
+        let (encoding, mut bytes) = match (*lock(&game.stream), &self.store) {
+            (Stream::File(encoding, len), Some(store)) => {
+                let (path, _) = store.stream_file(id).ok_or_else(unrecorded)?;
+                let mut bytes = fs::read(path).map_err(write)?;
+                bytes.truncate(len as usize);
+                (encoding, bytes)
+            }
+            (Stream::New, _) => {
+                let encoding = *lock(&self.encoding);
+                let mut bytes = vec![];
+                encoding
+                    .write(&mut bytes, &recording::header(id))
+                    .map_err(write)?;
+                (encoding, bytes)
+            }
+            _ => return Err(unrecorded()),
+        };
+        for event in table.unwritten() {
+            encoding.write(&mut bytes, event).map_err(write)?;
+        }
+        Ok((encoding, bytes))
     }
 }
 
