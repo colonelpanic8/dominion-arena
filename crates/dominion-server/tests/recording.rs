@@ -4,7 +4,8 @@ use dominion_agent::recording::{self, Encoding};
 use dominion_agent::{Answer, Table};
 use dominion_engine::{PlayerId, Response};
 use dominion_protocol::events::{self, Event};
-use dominion_server::hub::{Hub, HubError, NewGame, Seat};
+use dominion_protocol::lobby::UndoRule;
+use dominion_server::hub::{self, Hub, HubError, Meta, NewGame, Seat};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -36,7 +37,17 @@ fn new_game() -> NewGame {
 }
 
 fn create(hub: &Hub) -> Vec<Seat> {
-    let created = hub.create(&new_game()).unwrap();
+    create_with(hub, UndoRule::Free)
+}
+
+fn create_with(hub: &Hub, undo: UndoRule) -> Vec<Seat> {
+    let req = new_game();
+    let meta = Meta {
+        undo,
+        ..Meta::default()
+    };
+    let config = hub::config(&req).unwrap();
+    let created = hub.host(config, vec![], meta).unwrap();
     (created.seats.iter())
         .map(|s| hub.claim(&created.game_id, &s.token).unwrap())
         .collect()
@@ -132,14 +143,42 @@ fn a_finished_game_leaves_its_stream_beside_its_snapshot() {
     ));
 
     let file = fs::read(dir.join("g1.events.jsonl")).unwrap();
+    // Over, but it can still be undone.
+    assert!(matches!(hub.recording("g1"), Err(HubError::Conflict(_))));
+    hub.retire("g1").unwrap();
+    assert!(!dir.join("g1.events.jsonl").exists());
+    assert_eq!(fs::read(dir.join("expired/g1.events.jsonl")).unwrap(), file);
     assert_eq!(
         hub.recording("g1").unwrap(),
         (Encoding::JsonLines, file.clone())
     );
-    hub.retire("g1").unwrap();
-    assert!(!dir.join("g1.events.jsonl").exists());
-    assert_eq!(fs::read(dir.join("expired/g1.events.jsonl")).unwrap(), file);
-    assert_eq!(hub.recording("g1").unwrap().1, file);
+}
+
+#[test]
+fn the_stream_is_served_only_once_the_game_cant_go_back() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (hub, _) = Hub::open(tmp.path(), KEEP).unwrap();
+    let free = create_with(&hub, UndoRule::Free);
+    advance(&hub, &free, 10_000, false);
+    assert!(matches!(hub.recording("g1"), Err(HubError::Conflict(_))));
+    // What the stream would have shown can be played again.
+    assert!(hub.undo(&free[0], None).unwrap());
+
+    let off = create_with(&hub, UndoRule::Off);
+    advance(&hub, &off, 10_000, false);
+    assert!(hub.recording("g2").is_ok());
+    assert!(matches!(
+        hub.undo(&off[0], None),
+        Err(HubError::Forbidden(_))
+    ));
+
+    // A resignation ends it for good.
+    let resigned = create_with(&hub, UndoRule::Free);
+    advance(&hub, &resigned, 6, false);
+    assert!(matches!(hub.recording("g3"), Err(HubError::Conflict(_))));
+    hub.resign(&resigned[1], "resigned").unwrap();
+    assert!(hub.recording("g3").is_ok());
+    assert!(hub.undo(&resigned[0], None).is_err());
 }
 
 #[test]
@@ -150,7 +189,7 @@ fn the_encoding_is_a_setting_and_both_read_back_the_same() {
         let dir = tmp.path();
         let (hub, _) = Hub::open(dir, KEEP).unwrap();
         hub.set_events_encoding(encoding);
-        let seats = create(&hub);
+        let seats = create_with(&hub, UndoRule::Off);
         advance(&hub, &seats, 10_000, false);
         let other = Encoding::ALL.into_iter().find(|&e| e != encoding).unwrap();
         assert!(!dir.join(format!("g1{}", other.suffix())).exists());
@@ -223,10 +262,23 @@ fn after_a_crash_the_stream_is_cut_back_to_the_snapshot_and_goes_on() {
     fs::write(dir.join("g1.events.jsonl"), short).unwrap();
     let (hub, loaded) = Hub::open(&dir, KEEP).unwrap();
     assert_eq!((loaded.games, loaded.unrecorded.len()), (1, 1));
+    // Marked incomplete as it is, and the game no longer records.
+    assert!(!dir.join("g1.events.jsonl").exists());
+    assert_eq!(
+        fs::read(dir.join("g1.incomplete.events.jsonl")).unwrap(),
+        short
+    );
     let seats = seats(&hub, &dir);
     advance(&hub, &seats, 10_000, false);
+    assert!(saved(&dir)["table"]["recorder"]["stopped"].is_string());
     assert!(!hub.list()[0].running);
-    assert_eq!(fs::read(dir.join("g1.events.jsonl")).unwrap(), short);
+    assert!(!dir.join("g1.events.jsonl").exists());
+    drop(hub);
+    // Reported at every start.
+    let (hub, loaded) = Hub::open(&dir, KEEP).unwrap();
+    assert_eq!((loaded.games, loaded.unrecorded.len()), (1, 1));
+    hub.retire("g1").unwrap();
+    assert!(dir.join("expired/g1.incomplete.events.jsonl").exists());
     assert!(matches!(hub.recording("g1"), Err(HubError::NotFound(_))));
 }
 
@@ -281,5 +333,136 @@ fn a_game_saved_before_streams_still_loads_and_plays() {
     assert!(!hub.list()[0].running);
     assert!(!dir.join("g1.events.jsonl").exists());
     assert!(saved(dir)["table"].get("recorder").is_none());
+    hub.retire("g1").unwrap();
     assert!(matches!(hub.recording("g1"), Err(HubError::NotFound(_))));
+}
+
+/// Buying Borrow puts out the -1 Card token, which the journal once kept where JSON
+/// couldn't write it: every snapshot after it failed while the game went on.
+#[test]
+fn a_game_with_tokens_out_saves_restarts_and_undoes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    let (hub, _) = Hub::open(dir, KEEP).unwrap();
+    let mut req = new_game();
+    req.landscapes = vec!["Borrow".into(), "Training".into()];
+    let created = hub.create(&req).unwrap();
+    let seats: Vec<Seat> = (created.seats.iter())
+        .map(|s| hub.claim(&created.game_id, &s.token).unwrap())
+        .collect();
+    let mut borrowed = false;
+    while !borrowed {
+        let (seat, d) = seats
+            .iter()
+            .find_map(|s| Some((s, hub.view(s).unwrap().0.decision?)))
+            .unwrap();
+        let borrow =
+            (d.options.iter()).find(|o| o.action == "buy-landscape" && o.label.contains("Borrow"));
+        borrowed = borrow.is_some();
+        let option = borrow.unwrap_or(&d.options[0]);
+        hub.answer(seat, &Answer::indices(&d.id, vec![option.index]))
+            .unwrap();
+    }
+    let decision = |hub: &Hub| {
+        (seats.iter())
+            .find_map(|s| hub.view(s).unwrap().0.decision)
+            .unwrap()
+            .id
+    };
+    let before = decision(&hub);
+    assert_eq!(saved(dir)["table"]["recorder"]["version"], 1);
+    drop(hub);
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!((loaded.games, loaded.unrecorded.len()), (1, 0));
+    assert_eq!(decision(&hub), before);
+    let seats = self::seats(&hub, dir);
+    advance(&hub, &seats, 1, false);
+    assert!(hub.undo(&seats[0], None).unwrap());
+    advance(&hub, &seats, 10_000, false);
+    assert!(!hub.list()[0].running);
+    check(dir, Encoding::JsonLines);
+}
+
+/// A copy of saved game `name` (`tests/saved/<name>`) in a new state directory.
+fn saved_copy(name: &str) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    let from = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/saved")
+        .join(name);
+    for entry in fs::read_dir(from).unwrap() {
+        let path = entry.unwrap().path();
+        fs::copy(&path, tmp.path().join(path.file_name().unwrap())).unwrap();
+    }
+    tmp
+}
+
+/// A game saved by the server before games were recorded (commit `cfefa17`) plays on as
+/// it was, unrecorded.
+#[test]
+fn a_game_saved_before_recording_plays_on_unrecorded() {
+    let tmp = saved_copy("before-events");
+    let dir = tmp.path();
+    let before = saved(dir);
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!(
+        (loaded.games, loaded.unrecorded.len(), loaded.never_recorded),
+        (1, 0, 1)
+    );
+    let seats = seats(&hub, dir);
+    let d = (seats.iter())
+        .find_map(|s| hub.view(s).unwrap().0.decision)
+        .unwrap();
+    assert_eq!(d.id, format!("d{}", before["table"]["seq"]));
+    advance(&hub, &seats, 3, false);
+    assert!(hub.undo(&seats[0], None).unwrap());
+    advance(&hub, &seats, 10_000, false);
+    assert!(!hub.list()[0].running);
+    assert!(saved(dir)["table"].get("recorder").is_none());
+    assert!(!dir.join("g1.events.jsonl").exists());
+}
+
+/// A game recorded by a build whose recording state had no version (this branch before
+/// it was versioned, `1be2eff`) plays on as it was; its stream stops where it was and is
+/// marked incomplete, and it is reported.
+#[test]
+fn a_game_recorded_by_an_earlier_build_plays_on_with_its_stream_stopped() {
+    let tmp = saved_copy("events-unversioned");
+    let dir = tmp.path();
+    let before = saved(dir);
+    let stream = fs::read(dir.join("g1.events.jsonl")).unwrap();
+    let (hub, loaded) = Hub::open(dir, KEEP).unwrap();
+    assert_eq!((loaded.games, loaded.unrecorded.len()), (1, 1));
+    assert!(
+        loaded.unrecorded[0].1.contains("earlier build"),
+        "{:?}",
+        loaded.unrecorded
+    );
+    assert!(!dir.join("g1.events.jsonl").exists());
+    assert_eq!(
+        fs::read(dir.join("g1.incomplete.events.jsonl")).unwrap(),
+        stream
+    );
+    let seats = seats(&hub, dir);
+    let d = (seats.iter())
+        .find_map(|s| hub.view(s).unwrap().0.decision)
+        .unwrap();
+    assert_eq!(d.id, format!("d{}", before["table"]["seq"]));
+    advance(&hub, &seats, 1, false);
+    let after = saved(dir);
+    assert!(after["table"]["recorder"]["stopped"].is_string());
+    assert!(after["table"]["game"].get("journal").is_none());
+    let history = after["table"]["history"].as_array().unwrap();
+    assert_eq!(
+        history[..history.len() - 1],
+        before["table"]["history"].as_array().unwrap()[..]
+    );
+    advance(&hub, &seats, 2, false);
+    assert!(hub.undo(&seats[0], None).unwrap());
+    advance(&hub, &seats, 10_000, false);
+    assert!(!hub.list()[0].running);
+    assert!(!dir.join("g1.events.jsonl").exists());
+    assert_eq!(
+        fs::read(dir.join("g1.incomplete.events.jsonl")).unwrap(),
+        stream
+    );
 }

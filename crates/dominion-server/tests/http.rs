@@ -876,6 +876,20 @@ async fn a_finished_games_recorded_stream_is_served_to_its_seats() {
     while server.summary(id).await.running {
         server.answer_first(&created).await;
     }
+    // Over, but a direct game can still be undone: the stream would show a seat what
+    // it could then play again knowing.
+    let error = server.get(&path, token).await.error(StatusCode::CONFLICT);
+    assert!(error.contains("can still be undone"), "{error}");
+    let undo = server
+        .post(&format!("/api/games/{id}/undo"), token, "")
+        .await;
+    assert_eq!(undo.status, StatusCode::OK, "{}", undo.text);
+    assert!(server.summary(id).await.running);
+    while server.summary(id).await.running {
+        server.answer_first(&created).await;
+    }
+    // Retired, it can't change any more.
+    server.hub.retire(id).unwrap();
     assert_eq!(
         server.get(&path, None).await.error(StatusCode::FORBIDDEN),
         "this game is private"
@@ -883,6 +897,7 @@ async fn a_finished_games_recorded_stream_is_served_to_its_seats() {
     let reply = server.get(&path, token).await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
     assert_eq!(reply.headers["content-type"], "application/jsonl");
-    let file = std::fs::read_to_string(tmp.path().join(format!("{id}.events.jsonl"))).unwrap();
+    let file =
+        std::fs::read_to_string(tmp.path().join(format!("expired/{id}.events.jsonl"))).unwrap();
     assert_eq!(reply.text, file);
 }

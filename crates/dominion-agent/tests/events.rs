@@ -645,31 +645,39 @@ fn check(game: &Game, recorder: &Recorder, events: Option<&[Event]>, what: &str)
     );
 }
 
-/// Plays one game to its end, holding the folded stream to the engine's table at every
-/// decision.
+/// Plays one game to its end through a recorded [`dominion_agent::Table`], holding the
+/// folded stream to the engine's table at every decision. Now and then the table is saved
+/// as JSON and play goes on with the copy read back, as a server restarted would: its
+/// game must go on as a twin never saved and never journaled does, decision for decision,
+/// and the stream it records must be the one a replay records afresh.
 fn follow(
     config: GameConfig,
     seed: u64,
     respond: fn(&Game, &mut ChaCha8Rng) -> Response,
 ) -> Vec<Event> {
-    let mut game = Game::new_journaled(config).unwrap();
+    let mut twin = Game::new_traced(config.clone()).unwrap();
+    let mut table = dominion_agent::Table::new_recorded("g", config, vec![]).unwrap();
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let mut recorder = Recorder::new();
     let mut events = vec![];
     let mut answers = 0;
     loop {
         let what = format!("seed {seed}, after {answers} answers");
-        let new = recorder
-            .record(&mut game, &[])
-            .unwrap_or_else(|e| panic!("{what}: {e}"));
+        if let Some(why) = table.recording_stopped() {
+            panic!("{what}: recording stopped: {why}");
+        }
+        let new = table.unwritten().to_vec();
+        table.mark_written();
         let recent: Vec<String> = (new.iter())
             .map(|e| serde_json::to_string(e).unwrap())
             .collect();
         let what = format!("{what}, after\n{}\n", recent.join("\n"));
         events.extend(new);
+        let (game, recorder) = (table.game(), table.recorder().unwrap());
+        assert_eq!(game.log().len(), twin.log().len(), "{what}");
+        assert_eq!(game.pending(), twin.pending(), "{what}");
         // Reading every event back at every decision is quadratic: now and then.
         let all = answers % 97 == 0 || game.outcome().is_some();
-        check(&game, &recorder, all.then_some(&events[..]), &what);
+        check(game, recorder, all.then_some(&events[..]), &what);
         if !all {
             assert_eq!(
                 events.len() as u64,
@@ -680,16 +688,29 @@ fn follow(
         if game.outcome().is_some() {
             break;
         }
+        if answers % 23 == seed % 23 {
+            let json = serde_json::to_string(&table).unwrap_or_else(|e| panic!("{what}: {e}"));
+            table = serde_json::from_str(&json).unwrap_or_else(|e| panic!("{what}: {e}"));
+        }
         // Now and then a seat resigns, out of turn as often as not.
         if seed % 13 == 7 && answers == 30 + seed % 50 {
-            game.resign(PlayerId((seed % game.num_players() as u64) as u8));
+            let seat = PlayerId((seed % twin.num_players() as u64) as u8);
+            twin.resign(seat);
+            table.resign(seat).unwrap();
             continue;
         }
-        let response = respond(&game, &mut rng);
-        game.respond(response).unwrap();
+        let response = respond(&twin, &mut rng);
+        twin.respond(response.clone()).unwrap();
+        let seat = table.deciding().unwrap();
+        let id = table.decision_id().unwrap();
+        table.respond(seat, &id, response).unwrap();
         answers += 1;
     }
-    assert!(recorder.table().ended.is_some(), "seed {seed}");
+    let game = table.game();
+    assert!(
+        table.recorded_table().unwrap().ended.is_some(),
+        "seed {seed}"
+    );
     // A hand revealed where it lies is in the stream, though nothing moves.
     let revealed = (game.log().iter())
         .filter(|e| matches!(e, dominion_engine::Event::RevealedHand { cards, .. } if !cards.is_empty()))

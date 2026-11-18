@@ -361,6 +361,8 @@ pub enum Step {
 /// What the journal reads of the table besides counters, each time it records.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Holdings {
+    /// Written as a list of pairs: JSON has no tuple keys.
+    #[serde(with = "pairs")]
     tokens: BTreeMap<(PlayerId, TokenKind), TokenAt>,
     held: BTreeMap<Card, Vec<PlayerId>>,
     piles: Vec<PileProps>,
@@ -405,6 +407,9 @@ pub(crate) struct Journal {
     /// Each player's cards kept in play as last recorded, for players with any.
     #[serde(default)]
     kept: Vec<(PlayerId, Vec<CardId>)>,
+    /// The names of the game's cards, sorted, while no card has been made or changed.
+    #[serde(skip)]
+    names: Option<(usize, Vec<Card>)>,
 }
 
 /// An occurrence open while the frame at `depth` on the stack is.
@@ -531,6 +536,9 @@ impl Game {
         // follows it. What changed before it was read before it changed.
         if !matches!(entry, Trace::Created { .. } | Trace::Changed { .. }) {
             self.sync_journal();
+        }
+        if let (Trace::Changed { .. }, Some(journal)) = (entry, &mut self.journal) {
+            journal.names = None;
         }
         let verb = match *entry {
             Trace::Moved {
@@ -853,7 +861,8 @@ impl Game {
             return;
         }
         let effects = self.effects();
-        let holdings = self.holdings();
+        let names = self.journal_names();
+        let holdings = self.holdings(&names);
         let now = self.gauges();
         let down = self.face_down_in_trash();
         let kept = self.kept_in_play();
@@ -883,22 +892,36 @@ impl Game {
             }
         }
         journal.effects = effects;
-        for &(gauge, value) in &now {
-            let was = (journal.readings.iter())
-                .find(|(g, _)| *g == gauge)
-                .map_or(0, |&(_, v)| v);
-            if was != value {
-                out.push(Step::Gauge {
-                    gauge,
-                    was,
-                    now: value,
-                });
+        let same_gauges = journal.readings.len() == now.len()
+            && (journal.readings.iter().zip(&now)).all(|(a, b)| a.0 == b.0);
+        if same_gauges {
+            for (&(_, was), &(gauge, value)) in journal.readings.iter().zip(&now) {
+                if was != value {
+                    out.push(Step::Gauge {
+                        gauge,
+                        was,
+                        now: value,
+                    });
+                }
             }
-        }
-        // A gauge that is no longer read (Favors on a pile Divine Wind removed) is 0.
-        for &(gauge, was) in &journal.readings {
-            if was != 0 && !now.iter().any(|(g, _)| *g == gauge) {
-                out.push(Step::Gauge { gauge, was, now: 0 });
+        } else {
+            for &(gauge, value) in &now {
+                let was = (journal.readings.iter())
+                    .find(|(g, _)| *g == gauge)
+                    .map_or(0, |&(_, v)| v);
+                if was != value {
+                    out.push(Step::Gauge {
+                        gauge,
+                        was,
+                        now: value,
+                    });
+                }
+            }
+            // A gauge that is no longer read (Favors on a pile Divine Wind removed) is 0.
+            for &(gauge, was) in &journal.readings {
+                if was != 0 && !now.iter().any(|(g, _)| *g == gauge) {
+                    out.push(Step::Gauge { gauge, was, now: 0 });
+                }
             }
         }
         journal.readings = now;
@@ -958,7 +981,24 @@ impl Game {
         out
     }
 
-    fn holdings(&self) -> Holdings {
+    /// The names of the game's cards, sorted.
+    fn journal_names(&mut self) -> Vec<Card> {
+        let count = self.cards.len();
+        if let Some(Some((n, names))) = self.journal.as_ref().map(|j| &j.names)
+            && *n == count
+        {
+            return names.clone();
+        }
+        let mut names: Vec<Card> = self.cards.clone();
+        names.sort();
+        names.dedup();
+        if let Some(journal) = &mut self.journal {
+            journal.names = Some((count, names.clone()));
+        }
+        names
+    }
+
+    fn holdings(&self, names: &[Card]) -> Holdings {
         let mut tokens = BTreeMap::new();
         let mut held = BTreeMap::<Card, Vec<PlayerId>>::new();
         for (i, pl) in self.players.iter().enumerate() {
@@ -989,13 +1029,15 @@ impl Game {
             holders.sort();
         }
         let notes = crate::cards::notes(self);
+        let roled: Vec<(Card, SetupRole, Option<PileId>)> = (notes.iter())
+            .filter_map(|n| Some((n.source, n.setup?, n.pile.or_else(|| self.held_by(n)))))
+            .collect();
         let piles = (self.piles.iter().enumerate())
             .map(|(i, pile)| {
                 let id = PileId(i as u8);
-                let roles = (notes.iter())
-                    .filter_map(|n| Some((n.source, n.setup?, n.pile.or_else(|| self.held_by(n)))))
-                    .filter(|&(_, _, pile)| pile == Some(id))
-                    .map(|(source, role, _)| (source, role));
+                let roles = (roled.iter())
+                    .filter(|&&(_, _, pile)| pile == Some(id))
+                    .map(|&(source, role, _)| (source, role));
                 let mut roles: Vec<(Card, SetupRole)> = roles.collect();
                 roles.dedup();
                 PileProps {
@@ -1012,9 +1054,6 @@ impl Game {
             .chain(self.artifacts.iter().map(|(card, _)| card))
             .copied()
             .collect();
-        let mut names: Vec<Card> = self.cards.clone();
-        names.sort();
-        names.dedup();
         let costs = names.iter().map(|&c| (c, self.cost(c))).collect();
         let types = (names.iter())
             .map(|&c| (c, self.card_types(c)))
@@ -1262,14 +1301,20 @@ fn holding_changes(was: &Holdings, now: &Holdings, out: &mut Vec<Step>) {
             out.push(Step::Landscape { card, prophecy });
         }
     }
-    let keys: std::collections::BTreeSet<_> = was.tokens.keys().chain(now.tokens.keys()).collect();
+    let keys: std::collections::BTreeSet<_> = match was.tokens == now.tokens {
+        true => Default::default(),
+        false => was.tokens.keys().chain(now.tokens.keys()).collect(),
+    };
     for &(player, token) in keys {
         let at = now.tokens.get(&(player, token)).copied();
         if was.tokens.get(&(player, token)).copied() != at {
             out.push(Step::Token { player, token, at });
         }
     }
-    let cards: std::collections::BTreeSet<_> = was.held.keys().chain(now.held.keys()).collect();
+    let cards: std::collections::BTreeSet<_> = match was.held == now.held {
+        true => Default::default(),
+        false => was.held.keys().chain(now.held.keys()).collect(),
+    };
     for &card in cards {
         let (before, after) = (was.held.get(&card), now.held.get(&card));
         let (before, after) = (before.map_or(&[][..], |v| v), after.map_or(&[][..], |v| v));
@@ -1309,17 +1354,106 @@ fn holding_changes(was: &Holdings, now: &Holdings, out: &mut Vec<Step>) {
     if was.notes != now.notes {
         out.push(Step::Notes(now.notes.clone()));
     }
-    let names: std::collections::BTreeSet<_> = was.costs.keys().chain(now.costs.keys()).collect();
+    let names: std::collections::BTreeSet<_> = match was.costs == now.costs {
+        true => Default::default(),
+        false => was.costs.keys().chain(now.costs.keys()).collect(),
+    };
     let costs: Vec<_> = (names.into_iter())
         .filter(|c| was.costs.get(c) != now.costs.get(c))
         .map(|&c| (c, now.costs.get(&c).copied()))
         .collect();
-    let names: std::collections::BTreeSet<_> = was.types.keys().chain(now.types.keys()).collect();
+    let names: std::collections::BTreeSet<_> = match was.types == now.types {
+        true => Default::default(),
+        false => was.types.keys().chain(now.types.keys()).collect(),
+    };
     let types: Vec<_> = (names.into_iter())
         .filter(|c| was.types.get(c) != now.types.get(c))
         .map(|&c| (c, now.types.get(&c).copied()))
         .collect();
     if !costs.is_empty() || !types.is_empty() {
         out.push(Step::Derived { costs, types });
+    }
+}
+
+impl Game {
+    /// Stops journaling for good, dropping what the journal holds: the game plays on as
+    /// one that was never journaled.
+    pub fn stop_journal(&mut self) {
+        self.journal = None;
+        if !self.given_chance() {
+            self.chance = None;
+        }
+    }
+
+    /// Whether it journals.
+    pub fn journaled(&self) -> bool {
+        self.journal.is_some()
+    }
+
+    /// The occurrences later journal steps may still name: those open, the turn's, and
+    /// those the lasting effects still in the game came from.
+    pub fn journal_live(&self) -> Vec<u32> {
+        let Some(journal) = &self.journal else {
+            return vec![];
+        };
+        let lasting = |id: u32| self.lasting.iter().any(|l| l.id == id);
+        (journal.open.iter().map(|o| o.occ))
+            .chain(journal.turn.map(|(_, occ)| occ))
+            .chain(journal.within)
+            .chain(
+                (journal.lastings.iter())
+                    .filter(|&&(id, _)| lasting(id))
+                    .map(|&(_, occ)| occ),
+            )
+            .collect()
+    }
+}
+
+/// A map written as a list of `[key, value]` pairs, for keys JSON can't write (tuples).
+/// Read back from that or from a map.
+mod pairs {
+    use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+    use serde::ser::{Serialize, Serializer};
+    use std::collections::BTreeMap;
+    use std::marker::PhantomData;
+
+    pub fn serialize<K: Serialize, V: Serialize, S: Serializer>(
+        map: &BTreeMap<K, V>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        s.collect_seq(map.iter())
+    }
+
+    pub fn deserialize<'de, K, V, D>(d: D) -> Result<BTreeMap<K, V>, D::Error>
+    where
+        K: Deserialize<'de> + Ord,
+        V: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        struct Pairs<K, V>(PhantomData<(K, V)>);
+        impl<'de, K: Deserialize<'de> + Ord, V: Deserialize<'de>> Visitor<'de> for Pairs<K, V> {
+            type Value = BTreeMap<K, V>;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a list of [key, value] pairs")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut map = BTreeMap::new();
+                while let Some((k, v)) = seq.next_element()? {
+                    map.insert(k, v);
+                }
+                Ok(map)
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Self::Value, A::Error> {
+                let mut map = BTreeMap::new();
+                while let Some((k, v)) = m.next_entry()? {
+                    map.insert(k, v);
+                }
+                Ok(map)
+            }
+        }
+        d.deserialize_any(Pairs(PhantomData))
     }
 }

@@ -180,6 +180,9 @@ pub struct Config {
     /// What `dominion serve` writes new games' recorded event streams in: `jsonl`
     /// (default) or `cbor`. A game's stream stays in the encoding it began in.
     pub events_encoding: Option<dominion_agent::recording::Encoding>,
+    /// Whether `dominion serve` records new games as event streams (default true). Games
+    /// already recording go on recording; turned back on, it records games that start.
+    pub record_events: Option<bool>,
 }
 
 /// One `[[online_accounts]]` table.
