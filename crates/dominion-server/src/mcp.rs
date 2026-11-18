@@ -511,7 +511,7 @@ impl Session {
     }
 
     #[tool(
-        description = "dominion/play@1: answer decision with indices or name (only for nameAny), then wait for your next decision or game end. Give expect with each selected option's label or card, in index order, to catch mistakes. Ordered indices are top first; [] chooses nothing. timeout_s defaults to 60, at most 600. Returns compact changes and full structured {view, glossary?}. Rejected/stale answers change nothing and include the open decision."
+        description = "dominion/play@1: answer decision with indices or name (only for nameAny), then wait for your next decision or game end. Give expect with each selected option's label or card, in index order, to catch mistakes. Ordered indices are top first; [] chooses nothing. timeout_s defaults to 45, at most 600. Returns compact changes and full structured {view, glossary?}. Rejected/stale answers change nothing and include the open decision."
     )]
     async fn step(
         &self,
@@ -525,7 +525,7 @@ impl Session {
     }
 
     #[tool(
-        description = "dominion/play@1: wait without answering until your next decision, an undo another player asks you to allow (an UNDO line: answer_undo), game end, or timeout_s (default 60, at most 600). Returns compact changes and full structured {view, glossary?}. WAITING means call wait again."
+        description = "dominion/play@1: wait without answering until your next decision, an undo another player asks you to allow (an UNDO line: answer_undo), game end, or timeout_s (default 45, at most 600). Returns compact changes and full structured {view, glossary?}. WAITING means call wait again."
     )]
     async fn wait(
         &self,

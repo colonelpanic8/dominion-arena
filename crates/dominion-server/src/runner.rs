@@ -15,6 +15,10 @@ use tokio_util::sync::CancellationToken;
 
 const RECONNECT: Duration = Duration::from_secs(5);
 const GRACE: Duration = Duration::from_secs(30);
+/// The longest a seat waits between attempts.
+const MAX_RETRY: Duration = Duration::from_secs(60);
+/// An attempt that played this long before failing starts the backoff again.
+const SETTLED: Duration = Duration::from_secs(120);
 /// How often the providers' catalogs are read again.
 const REDISCOVER: Duration = Duration::from_secs(600);
 
@@ -416,9 +420,9 @@ async fn keep_playing(
         ..
     } = settings;
     let mut retry = RECONNECT;
-    let mut failures = 0;
     while !stop.is_cancelled() {
         let mut archived = String::new();
+        let started = std::time::Instant::now();
         let result = async {
             let mut archive = crate::archive::Archive::create(&logs)?;
             eprintln!(
@@ -505,10 +509,11 @@ async fn keep_playing(
                 error: error.clone(),
             });
         }
-        failures += 1;
-        if failures >= 3
-            || error.contains("agent finished without submitting a move")
-            || error.contains("native harness attempted a forbidden tool")
+        // Only a seat that broke its sandbox's rules is stopped. Anything else (a provider
+        // error, the server away, a model that ended its conversation early) is retried
+        // for as long as the game wants the seat: one that never recovers forfeits by the
+        // server's timing, which ends the job.
+        if error.contains("native harness attempted a forbidden tool")
             || error.contains("native harness exposed forbidden tools")
         {
             eprintln!(
@@ -527,7 +532,10 @@ async fn keep_playing(
             _ = stop.cancelled() => return,
             () = tokio::time::sleep(retry) => {},
         }
-        retry = (retry * 2).min(Duration::from_secs(60));
+        retry = match started.elapsed() > SETTLED {
+            true => RECONNECT,
+            false => (retry * 2).min(MAX_RETRY),
+        };
     }
 }
 

@@ -122,7 +122,7 @@ impl Session {
         self.play().step(p).await
     }
     #[tool(
-        description = "Wait for your next official decision without answering. timeout_s defaults to 60, maximum 600. Token is ignored."
+        description = "Wait for your next official decision without answering. timeout_s defaults to 45, maximum 600. Token is ignored."
     )]
     async fn wait(&self, Parameters(p): Parameters<WaitParams>) -> CallToolResult {
         self.play().wait(p.timeout_s).await

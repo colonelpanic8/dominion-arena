@@ -87,6 +87,7 @@ impl Session {
         let mut refreshed = false;
         let mut delay = Duration::from_secs(2);
         let mut attempt = 0;
+        let mut waited = Duration::ZERO;
         loop {
             attempt += 1;
             let (url, headers) = match &self.auth {
@@ -137,6 +138,17 @@ impl Session {
                 }
                 Err(e) => return Err(format!("OpenAI: {e}")),
             };
+            if let Some(wait) = retry_after(status, &text)
+                && waited + wait <= MAX_OVERLOAD_WAIT
+            {
+                eprintln!(
+                    "dominion agents: OpenAI is overloaded; retrying in {} seconds",
+                    wait.as_secs()
+                );
+                tokio::time::sleep(wait).await;
+                waited += wait;
+                continue;
+            }
             match status {
                 200 => {
                     let (items, usage) = parse_stream(&text)?;
@@ -161,6 +173,42 @@ impl Session {
             }
         }
     }
+}
+
+/// The most one request waits out OpenAI's overload in all, under the server's 30 minutes
+/// for a decision.
+const MAX_OVERLOAD_WAIT: Duration = Duration::from_secs(20 * 60);
+
+/// How long OpenAI asks to wait before trying again, when its reply (an HTTP error, or an
+/// error event in a stream) says it is overloaded or rate-limited.
+fn retry_after(status: u16, text: &str) -> Option<Duration> {
+    let errors = (text.lines())
+        .filter_map(|l| l.strip_prefix("data:").map(str::trim).or(Some(l.trim())))
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .map(|v| match v.get("response") {
+            Some(r) => r["error"].clone(),
+            None => v["error"].clone(),
+        });
+    for error in errors {
+        let code = error["code"].as_str().unwrap_or("");
+        if !matches!(
+            code,
+            "server_is_overloaded" | "rate_limit_exceeded" | "slow_down"
+        ) {
+            continue;
+        }
+        let headers = &error["headers"];
+        let seconds = (headers["retry-after"].as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .or_else(|| {
+                (headers["retry-after-ms"].as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                    .map(|ms| ms / 1000.0)
+            })
+            .unwrap_or(30.0);
+        return Some(Duration::from_secs_f64(seconds.clamp(1.0, 600.0)));
+    }
+    (status == 503 && text.contains("overloaded")).then_some(Duration::from_secs(30))
 }
 
 fn snippet(text: &str) -> String {
@@ -335,7 +383,7 @@ fn description(tool: &str) -> &'static str {
     match tool {
         "state" => "The whole game as your seat sees it, and your decision.",
         "step" => {
-            "Answer your decision, then wait for your next one (timeout_s defaults to 60, at most 600). Returns what changed and the next decision."
+            "Answer your decision, then wait for your next one (timeout_s defaults to 45, at most 600). Returns what changed and the next decision."
         }
         "wait" => {
             "Wait without answering until your next decision, an undo request (answer_undo) or the game's end. WAITING means call it again."
@@ -740,6 +788,26 @@ pub(crate) fn playbook_call(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_overloaded_reply_is_waited_out_for_as_long_as_it_asks() {
+        let stream = r#"event: error
+data: {"error":{"code":"server_is_overloaded","headers":{"retry-after":"323","retry-after-ms":"323000"},"message":"Our servers are currently overloaded."},"type":"error"}
+"#;
+        assert_eq!(
+            super::retry_after(200, stream),
+            Some(std::time::Duration::from_secs(323))
+        );
+        let failed = r#"data: {"type":"response.failed","response":{"error":{"code":"server_is_overloaded"}}}"#;
+        assert_eq!(
+            super::retry_after(200, failed),
+            Some(std::time::Duration::from_secs(30))
+        );
+        let other = r#"data: {"type":"error","error":{"code":"invalid_prompt"}}"#;
+        assert_eq!(super::retry_after(200, other), None);
+        assert_eq!(super::retry_after(400, "{}"), None);
+    }
+
     use super::*;
 
     #[test]
