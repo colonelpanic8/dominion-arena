@@ -993,3 +993,66 @@ fn a_landscape_is_named_by_the_card_in_its_zone() {
     assert_eq!(view.game.landscapes, ["Village"]);
     sound(&r);
 }
+
+#[test]
+fn recorded_inputs_fold_to_the_views_they_were_recorded_at() {
+    use crate::record::Input;
+    let mut live = Reducer::new(catalog(), 42);
+    let mut inputs = vec![Input::Begin {
+        game: 1,
+        client: crate::catalog::VERSION.into(),
+        player: 42,
+        names: vec![(42, "Me".into())],
+    }];
+    live.feed(&inputs[0]).unwrap();
+    let mut views = vec![];
+    let mut take = |live: &mut Reducer, input: Input| {
+        live.feed(&input).unwrap();
+        inputs.push(input);
+        inputs.push(Input::Frame);
+        views.push(serde_json::to_value(live.view().unwrap()).unwrap());
+    };
+    take(
+        &mut live,
+        Input::Snapshot {
+            snapshot: Box::new(snapshot()),
+        },
+    );
+    take(
+        &mut live,
+        Input::Event {
+            event: movement(1, 0, vec![-1], vec![2]),
+        },
+    );
+    take(
+        &mut live,
+        Input::Question {
+            question: Box::new(question()),
+        },
+    );
+    let id = decision_id(&live);
+    live.answer(&view::Answer::indices(id, vec![0]), None)
+        .unwrap();
+    take(&mut live, Input::Cleared);
+    take(
+        &mut live,
+        Input::Event {
+            event: movement(0, 3, vec![0], vec![0]),
+        },
+    );
+    let text = inputs
+        .iter()
+        .map(|i| serde_json::to_string(i).unwrap() + "\n")
+        .collect::<String>();
+    let mut replay = Reducer::new(catalog(), -1);
+    let mut seen = vec![];
+    for line in text.lines() {
+        let input: Input = serde_json::from_str(line).unwrap();
+        replay.feed(&input).unwrap();
+        if input == Input::Frame {
+            seen.push(serde_json::to_value(replay.view().unwrap()).unwrap());
+        }
+    }
+    assert_eq!(seen, views);
+    assert!(views[2]["decision"].is_object() && views[3]["decision"].is_null());
+}

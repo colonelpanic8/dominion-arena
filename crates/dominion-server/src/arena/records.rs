@@ -299,6 +299,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
         },
         official_id: None,
         open: false,
+        replayable: false,
         started: record.started,
         ended: record.ended,
         rated: record.rated,

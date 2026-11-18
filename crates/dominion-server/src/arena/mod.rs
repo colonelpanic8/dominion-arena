@@ -32,7 +32,7 @@ use dominion_protocol::lobby::{
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
@@ -277,6 +277,8 @@ pub struct Arena {
     db: Arc<Db>,
     /// Finished games, as the history and players' pages show them.
     history: history::HistoryModel,
+    /// Which of the official accounts' games have recordings to replay.
+    official_replays: Arc<OnceLock<official::Replayable>>,
     settings: Settings,
     state: Mutex<State>,
     /// Bumped whenever what `Arena::lobby` returns may have changed.
@@ -341,17 +343,22 @@ impl Arena {
         hub.set_timing(settings.timing);
         hub.set_max_games(settings.max_games);
         let db = Arc::new(db);
+        let official_replays = Arc::new(OnceLock::new());
         let history = history::HistoryModel::new(vec![
             Box::new(records::ArenaRecords {
                 db: db.clone(),
                 hub: hub.clone(),
             }),
-            Box::new(official::OfficialRecords { db: db.clone() }),
+            Box::new(official::OfficialRecords {
+                db: db.clone(),
+                replayable: official_replays.clone(),
+            }),
         ]);
         let arena = Arc::new(Arena {
             hub: hub.clone(),
             db,
             history,
+            official_replays,
             settings,
             state: Mutex::default(),
             lobby: watch::channel(0).0,

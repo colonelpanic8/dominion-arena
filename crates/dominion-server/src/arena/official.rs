@@ -11,7 +11,7 @@ use dominion_protocol::lobby::{
     Source, Venue, official_game_id,
 };
 use dominion_protocol::view::GameResult;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// What the lobby knows of an official account beyond what it lists.
 #[derive(Default)]
@@ -25,9 +25,13 @@ pub(super) struct Official {
     recorded: Option<String>,
 }
 
+/// Whether the official game a history id names has a recording to replay.
+pub type Replayable = Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
 /// The records of the official accounts' finished games.
 pub(super) struct OfficialRecords {
     pub db: Arc<Db>,
+    pub replayable: Arc<OnceLock<Replayable>>,
 }
 
 impl GameSource for OfficialRecords {
@@ -43,6 +47,7 @@ impl GameSource for OfficialRecords {
                 .id
                 .strip_prefix(OFFICIAL_GAME_PREFIX)
                 .map(str::to_string);
+            game.replayable = self.replayable.get().is_some_and(|has| has(&game.id));
             game
         });
         Ok(games.collect())
@@ -114,6 +119,12 @@ impl Arena {
                 Err(e) => eprintln!("dominion: recording an official game: {e}"),
             }
         }
+    }
+
+    /// Lets the history tell which official games `replayable` can replay. Only the first
+    /// call counts.
+    pub fn set_official_replays(&self, replayable: Replayable) {
+        let _ = self.official_replays.set(replayable);
     }
 
     /// The agent that has played official account `account`'s game `game`: the only one

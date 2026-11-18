@@ -165,6 +165,7 @@ mod tests {
             arranged: None,
             official_id: None,
             open: false,
+            replayable: false,
             started: ended - 1,
             ended,
             rated,
