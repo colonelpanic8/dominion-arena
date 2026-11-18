@@ -2,13 +2,14 @@ use super::{Arena, Error, Login, Result};
 use crate::hub::Seat;
 use dominion_protocol::transcript::{TranscriptInput, TranscriptPage};
 
+pub(crate) const LIVE: &str =
+    "live transcripts are available in unrated games and games among the server's agents";
+
 impl Arena {
     pub fn append_transcript(&self, seat: &Seat, input: &TranscriptInput) -> Result<()> {
         let meta = self.hub.meta(&seat.game)?;
-        if meta.rated {
-            return Err(Error::Forbidden(
-                "live transcripts are available in unrated games".into(),
-            ));
+        if !meta.live_transcripts() {
+            return Err(Error::Forbidden(LIVE.into()));
         }
         let owner = meta
             .owners
@@ -43,10 +44,8 @@ impl Arena {
     }
 
     pub fn transcript(&self, game: &str, after: u64) -> Result<TranscriptPage> {
-        if self.hub.meta(game)?.rated {
-            return Err(Error::Forbidden(
-                "live transcripts are available in unrated games".into(),
-            ));
+        if !self.hub.meta(game)?.live_transcripts() {
+            return Err(Error::Forbidden(LIVE.into()));
         }
         self.db.transcript(game, after)
     }

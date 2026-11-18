@@ -11,7 +11,10 @@ pub use dominion_protocol::api::{
     Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
 };
 use dominion_protocol::api::{Replay, ReplayTurn, UndoRequest, UndoState};
-use dominion_protocol::lobby::{Clock, ClockView, GameMeta, MyGame, Source, UndoRule, UserRef};
+use dominion_protocol::lobby::{
+    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, Source, UndoRule,
+    UserRef,
+};
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -120,7 +123,20 @@ pub struct Meta {
     pub debrief: Option<String>,
     /// Per seat: its answer to `debrief`.
     pub debriefs: Vec<Option<String>>,
+    /// Per seat: what played it for one of the server's agents, as its runner reported.
+    pub runs: Vec<Option<AgentRun>>,
 }
+
+impl Meta {
+    /// Whether the agents' transcripts may be followed while it runs: not in a rated
+    /// game a person plays, whose opponent's reasoning they would read.
+    pub fn live_transcripts(&self) -> bool {
+        !self.rated || (!self.agents.is_empty() && self.agents.iter().all(|&a| a))
+    }
+}
+
+/// The most of an agent's error kept with its game.
+const MAX_AGENT_ERROR: usize = 1000;
 
 /// A game's chess clock, as of its last change.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,6 +272,7 @@ pub struct Report {
 pub struct Ended {
     pub id: String,
     pub meta: Meta,
+    pub seed: u64,
     /// With its result.
     pub info: GameInfo,
     /// What it was set up with besides its Kingdom piles and landscapes.
@@ -2175,6 +2192,7 @@ impl Hub {
             Ended {
                 id: table.id().into(),
                 meta: lock(&game.meta).clone(),
+                seed: table.game().config().seed,
                 setup: crate::setup_cards::setup_cards(&view),
                 info: view.game,
             }
@@ -2535,6 +2553,7 @@ impl Hub {
                     Ended {
                         id: table.id().into(),
                         meta: meta.clone(),
+                        seed: table.game().config().seed,
                         setup: crate::setup_cards::setup_cards(&view),
                         info: view.game,
                     }
@@ -2546,17 +2565,89 @@ impl Hub {
     /// Notes that game `id`'s record has been written.
     pub fn set_recorded(&self, id: &str) {
         if let Ok(game) = self.game(id) {
-            let mut table = lock(&game.table);
-            let changed = game.changed.load(Ordering::Relaxed);
-            // Not saved, it is still noted, so that the record isn't written twice.
-            if self
-                .commit(&game, &mut table, None, |meta, _| meta.recorded = true)
-                .is_err()
-            {
-                lock(&game.meta).recorded = true;
-            }
-            game.changed.store(changed, Ordering::Relaxed);
+            self.note(&game, |meta, _| meta.recorded = true);
         }
+    }
+
+    /// Changes game `id`'s meta without counting as a change to the game.
+    fn note(&self, game: &Hosted, f: impl FnOnce(&mut Meta, usize)) {
+        let mut table = lock(&game.table);
+        let changed = game.changed.load(Ordering::Relaxed);
+        let mut noted = lock(&game.meta).clone();
+        f(&mut noted, table.names().len());
+        // Not saved, it is still noted: a record isn't written twice, an attempt is kept.
+        let kept = noted.clone();
+        if self
+            .commit(game, &mut table, None, |meta, _| *meta = kept)
+            .is_err()
+        {
+            *lock(&game.meta) = noted;
+        }
+        game.changed.store(changed, Ordering::Relaxed);
+    }
+
+    /// Notes that one of the server's agents started playing `seat` of game `id` afresh,
+    /// keeping its archive in `archive`.
+    pub fn agent_attempt(
+        &self,
+        id: &str,
+        seat: u8,
+        archive: String,
+        setup: AgentSetup,
+    ) -> Result<(), HubError> {
+        let game = self.game(id)?;
+        let seat = usize::from(seat);
+        if !lock(&game.meta).agents.get(seat).copied().unwrap_or(false) {
+            return Err(HubError::BadRequest("no agent plays that seat".into()));
+        }
+        self.note(&game, |meta, seats| {
+            meta.runs.resize(seats.max(seat + 1), None);
+            let mut attempt = AgentAttempt {
+                started: now_ms(),
+                archive,
+                error: None,
+                setup: None,
+            };
+            match &mut meta.runs[seat] {
+                Some(run) => {
+                    attempt.setup = (setup != run.setup).then_some(setup);
+                    run.attempts.push(attempt);
+                }
+                slot => {
+                    *slot = Some(AgentRun {
+                        setup,
+                        attempts: vec![attempt],
+                    })
+                }
+            }
+        });
+        Ok(())
+    }
+
+    /// Notes why the attempt keeping `archive` at `seat` of game `id` stopped.
+    pub fn agent_failed(
+        &self,
+        id: &str,
+        seat: u8,
+        archive: &str,
+        error: &str,
+    ) -> Result<(), HubError> {
+        let game = self.game(id)?;
+        let mut end = error.len().min(MAX_AGENT_ERROR);
+        while !error.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.note(&game, |meta, _| {
+            let run = meta
+                .runs
+                .get_mut(usize::from(seat))
+                .and_then(Option::as_mut);
+            let attempts = run.map_or(&mut [][..], |r| &mut r.attempts[..]);
+            if let Some(attempt) = attempts.iter_mut().rev().find(|a| a.archive == archive) {
+                attempt.error = Some(error[..end].to_string());
+            }
+        });
+        Ok(())
     }
 
     /// Stops hosting the finished games that last changed more than `keep_finished` ago,

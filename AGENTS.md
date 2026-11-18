@@ -22,6 +22,8 @@ From the repo root (direnv loads the Nix dev shell; otherwise prefix `nix develo
 
 ```
 data/cards/<set>.json     card data, the source of truth (see "Card data")
+build/commit.rs           the build scripts' commit and its time (`DOMINION_COMMIT`), from
+                          git or the flake
 crates/dominion-engine/
   build.rs                generates Card, Types, Set and the card table from data/cards
   src/card.rs             public card API: Card, CardDef, Cost, Kind, Types
@@ -67,10 +69,11 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
                           came from, the accounts playing it, rated / watchable / timed /
-                          its undo rule), who is connected, forfeits, undo requests; calls
-                          back when a game ends; every change committed by saving its
-                          snapshot first (`Hub::commit`), each game's recorded stream kept
-                          in step with it (`Hub::write_events`, `stream_state`)
+                          its undo rule, what played its agent seats), who is connected,
+                          forfeits, undo requests; calls back when a game ends; every change
+                          committed by saving its snapshot first (`Hub::commit`), each game's
+                          recorded stream kept in step with it (`Hub::write_events`,
+                          `stream_state`)
   src/arena/              who is playing (README "Accounts and the lobby"); its lock order
                           is in mod.rs
     mod.rs                `Arena`: state, the lobby snapshot, the sweep that runs every 5 s
@@ -80,8 +83,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
     tables.rs matching.rs lobby tables; the automatch queue
     chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard;
                           `ArenaRecords`, the history's source of Arena's own games; what
-                          played each seat, kept in its record (an agent's setup as last
-                          offered, a bot's owner) and shown as `PlayedBy`
+                          played each seat, kept in its record (an agent's `AgentRun` as
+                          its runner reported it, else its setup as last offered; a bot's
+                          owner) and shown as `PlayedBy`
     official.rs           the official accounts as the lobby lists them; their finished
                           games' records (no rating or tally), `OfficialRecords`
     history.rs            the history read model: `/api/history` and players' pages read

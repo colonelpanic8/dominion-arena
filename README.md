@@ -327,6 +327,7 @@ will) or 500.
 | `GET /api/users/{name}` | | a player's page: rating, tallies and latest games |
 | `GET /api/leaderboard[?limit=N]` | | the rated players, best first |
 | `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&q=text][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; `q` matches a player, the account behind a seat, an agent's model or program, or a card; ask again with `before=next` for more |
+| `GET /api/records[?user=name][&before=ended][&limit=N]` | | finished games' records as they are kept, newest first: `{games, next?}`, with seeds, versions and agents' runs |
 
 `POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
 and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
@@ -379,9 +380,16 @@ played by token, by whoever holds it. The lobby makes games between accounts:
   a day unplayed another) when it says so and every seat is a different registered
   account or bot; a bot against its owner, or two bots of one owner, play for nothing,
   and so does any game with a guest or a token seat. Every finished lobby game leaves a
-  record (`GET /api/history`), which stays when the game itself is deleted, and so does
+  record (`GET /api/records`; the history page's `GET /api/history` shows them), which
+  stays when the game itself is deleted, and so does
   every finished game of an official account (`source: official`, id
-  `dominion.games-<id>`), which counts for no rating or tally here.
+  `dominion.games-<id>`), which counts for no rating or tally here. A record holds the
+  game's `seed` and the `version` (commit) of the server that hosted it, and for each
+  seat one of the server's agents played, its `agent`: the setup its runner reported
+  (agent, program, model, effort, the runner's `version`, and the `playbook` it was given:
+  path, git `commit` and `dirty` where git can tell, and `digest`, a SHA-256 of its
+  files), and every `attempt` (when it started, its archive's directory name, the
+  `error` that stopped it, and its `setup` where that changed since the first).
 - **dominion.games' scale.** `[[official_skill_anchors]]` names players also rated on
   dominion.games, each with its skill there (mu, not the level, which also folds in how
   sure it is): agents that play enough rated games on both. Once two or more anchors have
@@ -446,6 +454,8 @@ and are watchable through the server by default; an explicit
 `watchable: false` makes one private. They appear in the normal lobby games listing.
 Each registered player fills `agent_seats_per_day` agent seats a day (0: no limit); the runner's
 `agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
+`rated: true` makes a game with a different one of the server's agents in every seat
+count for their ratings; it allows no undo.
 
 #### Briefs, debriefs and reports
 
@@ -511,7 +521,8 @@ first on PATH there (a shell, python3, coreutils). Without `playbook_dir`, seats
 no shell or file tools and the profile's `instructions` carry the guidance.
 
 Every seat attempt gets a private directory under `agents_dir/archives`. Its
-`interactions.jsonl` records resolved game configuration, agent settings, every game
+`interactions.jsonl` starts with the attempt's `setup` (what the runner reports to the
+server, see "Ratings and records"), then records resolved game configuration, agent settings, every game
 request/response, complete prompts, native events, failures, and the final view.
 `response-*.stdout.jsonl` and `.stderr` preserve the CLI's complete output, including
 any reasoning or usage events it exposes. Claude is asked for its thinking summaries
@@ -528,16 +539,18 @@ time limit.
 Transient seat failures retry after 5 seconds, then 10 seconds, with at most three
 failed attempts. A forbidden tool attempt stops
 the seat immediately. Each attempt has a separate archive; completed moves remain
-in the game.
+in the game. A new attempt is a new conversation, which sees the game as it stands and
+the log since the seat's last decision. The runner tells the server of each attempt
+and the error that stopped it, which the game's record keeps.
 
-Unrated agent games also have a live transcript at `/game/<id>/agents`, opened in a
+Unrated games and games among the server's agents also have a live transcript at `/game/<id>/agents`, opened in a
 new tab from **Game menu → Agent transcript**. It combines streamed reasoning and
 replies, collapsible model prompts/observations, the agent's requested Dominion
 actions, and the resulting game events. Filter by seat or hide reasoning; **Follow
 latest** keeps the newest output in view. Reasoning is shown only when the CLI exposes
-it. This view uses the game's ordinary visibility: anyone who can watch an
-unrated game can read its transcript, including private cards and plans. Rated games
-do not publish live transcripts.
+it. This view uses the game's ordinary visibility: anyone who can watch such a game
+can read its transcript, including private cards and plans. A rated game a person plays
+publishes none.
 
 The server stores transcript events in SQLite and notifies viewers over SSE. Cursor
 pagination and stable attempt/offset identifiers make reconnects and upload retries

@@ -7,8 +7,9 @@ use super::{Arena, Error, Login, Result, User};
 use crate::hub::{Ended, Hub, lock, now_ms};
 use crate::rating::{self, Scale};
 use dominion_protocol::lobby::{
-    Arranged, GameRecord, History, HistoryQuery, Leader, Leaderboard, PastGame, PastPlayer,
-    PlayedBy, Profile, RecordPlayer, SeatAgent, Source, UserKind, Venue,
+    AgentRun, AgentSetup, Arranged, GameRecord, History, HistoryQuery, Leader, Leaderboard,
+    PastGame, PastPlayer, PlayedBy, Profile, RecordPlayer, Records, SeatAgent, Source, UserKind,
+    Venue,
 };
 use rusqlite::Transaction;
 use std::sync::Arc;
@@ -40,6 +41,7 @@ impl Arena {
         let Ended {
             id,
             meta,
+            seed,
             info,
             setup,
         } = ended;
@@ -78,8 +80,9 @@ impl Arena {
                     };
                     db::tally(tx, &tally)?;
                 }
+                let reported = meta.runs.get(usize::from(p.index)).cloned().flatten();
                 let (agent, bot_owner) = match &accounts[i] {
-                    Some(user) => who_played(tx, user, &setups)?,
+                    Some(user) => who_played(tx, user, &setups, reported)?,
                     None => (None, None),
                 };
                 players.push(RecordPlayer {
@@ -111,6 +114,8 @@ impl Arena {
                 landscapes: info.landscapes.clone(),
                 others: setup,
                 players,
+                seed: Some(seed),
+                version: crate::commit(),
             };
             let users: Vec<Option<String>> = (accounts.iter())
                 .map(|u| u.as_ref().map(|u| u.id.clone()))
@@ -159,7 +164,7 @@ impl Arena {
                     _ => None,
                 }
             });
-            (setups.get(&user.name.to_lowercase()).cloned())
+            (setups.get(&user.name.to_lowercase()).map(SeatAgent::from))
                 .or(latest)
                 .unwrap_or_else(|| SeatAgent {
                     agent: user.name.clone(),
@@ -174,6 +179,32 @@ impl Arena {
             agent,
             recent,
         })
+    }
+
+    /// Finished games' records as they are kept, newest first: `user`'s, or everyone's,
+    /// that ended before `before`.
+    pub fn records(
+        &self,
+        user: Option<&str>,
+        before: Option<u64>,
+        limit: usize,
+    ) -> Result<Records> {
+        let user = user.map(|name| self.named(name)).transpose()?;
+        let user = user.as_ref().map(|u| u.id.as_str());
+        let before = before.unwrap_or(u64::MAX);
+        let limit = limit.clamp(1, 100);
+        let mut games = vec![];
+        for venue in [Venue::Arena, Venue::Official] {
+            games.extend(self.db.games(venue, user, before, limit)?);
+        }
+        games.sort_by(|a, b| {
+            b.ended
+                .cmp(&a.ended)
+                .then_with(|| a.game_id.cmp(&b.game_id))
+        });
+        let next = (games.len() > limit).then(|| games[limit - 1].ended);
+        games.truncate(limit);
+        Ok(Records { games, next })
     }
 
     /// Finished games, newest first, as `q` asks.
@@ -208,20 +239,33 @@ impl Arena {
 }
 
 /// What played a seat of account `user`'s, to keep in its record: one of the server's
-/// agents as last offered, or a user's bot's owner.
+/// agents as its runner `reported` it (its model's name from `setups`), else as it was last
+/// offered; or a user's bot's owner.
 pub(super) fn who_played(
     tx: &Transaction<'_>,
     user: &User,
     setups: &Setups,
-) -> Result<(Option<SeatAgent>, Option<String>)> {
+    reported: Option<AgentRun>,
+) -> Result<(Option<AgentRun>, Option<String>)> {
     Ok(match &user.login {
         Login::House => {
-            let setup = setups.get(&user.name.to_lowercase()).cloned();
-            let agent = setup.unwrap_or_else(|| SeatAgent {
-                agent: user.name.clone(),
-                ..SeatAgent::default()
-            });
-            (Some(agent), None)
+            let known = setups.get(&user.name.to_lowercase());
+            let run = match reported {
+                Some(mut run) => {
+                    if run.setup.model_name.is_none() {
+                        run.setup.model_name = known.and_then(|k| k.model_name.clone());
+                    }
+                    run
+                }
+                None => AgentRun {
+                    setup: known.cloned().unwrap_or_else(|| AgentSetup {
+                        agent: user.name.clone(),
+                        ..AgentSetup::default()
+                    }),
+                    attempts: vec![],
+                },
+            };
+            (Some(run), None)
         }
         Login::Bot { owner, .. } => (None, db::user_in(tx, owner)?.map(|o| o.name)),
         _ => (None, None),
@@ -274,7 +318,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
                 let account =
                     (p.user.clone()).or((p.kind.is_some() && !official).then(|| p.name.clone()));
                 let played_by = match (p.agent, p.kind) {
-                    (Some(agent), _) => PlayedBy::Agent(agent),
+                    (Some(run), _) => PlayedBy::Agent(SeatAgent::from(&run.setup)),
                     (None, Some(UserKind::Registered)) => PlayedBy::Person,
                     (None, Some(UserKind::Guest)) => PlayedBy::Guest,
                     (None, Some(UserKind::Bot)) => match p.owner {

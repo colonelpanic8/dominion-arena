@@ -149,7 +149,7 @@ impl Arena {
                 return Ok(false);
             }
             let (agent, bot_owner) = match &player {
-                Some(user) => who_played(tx, user, &setups)?,
+                Some(user) => who_played(tx, user, &setups, None)?,
                 None => (None, None),
             };
             let mut users = vec![];
@@ -183,6 +183,8 @@ impl Arena {
                 landscapes: game.landscapes.clone(),
                 others: game.others.clone(),
                 players,
+                seed: None,
+                version: crate::commit(),
             };
             db::add_record(tx, Venue::Official, &record, &users)?;
             Ok(true)

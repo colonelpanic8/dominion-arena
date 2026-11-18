@@ -736,6 +736,8 @@ mod venue_tests {
             landscapes: vec![],
             others: vec![],
             players: vec![],
+            seed: None,
+            version: None,
         })
         .unwrap()
     }

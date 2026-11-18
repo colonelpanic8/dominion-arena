@@ -9,7 +9,7 @@
 use super::{Arena, Error, Login, Result, State, User, conflict};
 use crate::house::{Job, Offer, ToRunner};
 use crate::hub::{lock, now_ms};
-use dominion_protocol::lobby::{self, HouseAgent, HouseChoice, HouseModel, SeatAgent, UserKind};
+use dominion_protocol::lobby::{self, AgentSetup, HouseAgent, HouseChoice, HouseModel, UserKind};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
@@ -31,11 +31,11 @@ pub(super) struct House {
     filled: HashMap<String, VecDeque<u64>>,
     /// What each agent was when last offered, by its name in lower case: kept after it
     /// stops being offered, for the games it plays out.
-    setups: HashMap<String, SeatAgent>,
+    setups: HashMap<String, AgentSetup>,
 }
 
 /// What the runner offers as an agent, by its name in lower case.
-pub(super) type Setups = HashMap<String, SeatAgent>;
+pub(super) type Setups = HashMap<String, AgentSetup>;
 
 struct Runner {
     id: RunnerId,
@@ -88,12 +88,13 @@ impl House {
     fn remember(&mut self, offers: &[Offer]) {
         for offer in offers {
             if let Some(m) = &offer.model {
-                let setup = SeatAgent {
+                let setup = AgentSetup {
                     agent: offer.name.clone(),
-                    program: Some(m.program.clone()),
+                    program: m.program.clone(),
                     model: Some(m.id.clone()),
-                    name: Some(m.name.clone()),
+                    model_name: Some(m.name.clone()),
                     effort: m.effort.clone(),
+                    ..AgentSetup::default()
                 };
                 self.setups.insert(offer.name.trim().to_lowercase(), setup);
             }
@@ -205,6 +206,10 @@ impl Arena {
             return super::bad("agents must have one entry per player (null for a token seat)");
         }
         let count = req.agents.iter().filter(|a| a.is_some()).count();
+        let rated = req.rated.unwrap_or(false);
+        if rated && count != usize::from(req.players) {
+            return super::bad("a rated game has one of the server's agents in every seat");
+        }
         if count == 0 {
             let mut req = req.clone();
             req.agents.clear();
@@ -243,6 +248,11 @@ impl Arena {
                 })
                 .collect::<Result<Vec<_>>>()?
         };
+        let users: std::collections::HashSet<&str> =
+            agents.iter().flatten().map(|a| a.user.as_str()).collect();
+        if rated && users.len() != count {
+            return super::bad("a rated game has a different agent in every seat");
+        }
         let mut req = req.clone();
         if req.names.len() > usize::from(req.players) {
             return super::bad("more names than players");
@@ -274,7 +284,11 @@ impl Arena {
             watchable: req.watchable.unwrap_or(true),
             timed: true,
             clock: req.clock.map(crate::hub::ClockState::new),
-            undo: lobby::UndoRule::Ask,
+            rated,
+            undo: match rated {
+                true => lobby::UndoRule::Off,
+                false => lobby::UndoRule::Ask,
+            },
             agents: agents.iter().map(Option::is_some).collect(),
             ..Default::default()
         };
@@ -304,7 +318,7 @@ impl Arena {
                     Job {
                         official: false,
                         official_account: None,
-                        transcript: !meta.rated,
+                        transcript: meta.live_transcripts(),
                         configuration: self.hub.configuration(&g.game_id),
                         agent: agent.name.clone(),
                         brief: meta.briefs.get(usize::from(g.seat)).cloned().flatten(),
