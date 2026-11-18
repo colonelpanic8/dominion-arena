@@ -921,6 +921,7 @@ mod venue_tests {
             ended,
             source,
             rated: false,
+            voided: None,
             reason: String::new(),
             kingdom: vec![],
             landscapes: vec![],

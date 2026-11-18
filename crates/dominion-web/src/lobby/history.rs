@@ -445,7 +445,11 @@ fn how(game: &PastGame) -> String {
         (None, Some(p)) => parts.push(format!("as {}", p.name)),
         (None, None) => {}
     }
-    parts.push(if game.rated { "Rated" } else { "Unrated" }.into());
+    parts.push(match (game.rated, game.voided) {
+        (_, Some(_)) => "Voided".into(),
+        (true, None) => "Rated".into(),
+        (false, None) => "Unrated".into(),
+    });
     parts.join(" · ")
 }
 
@@ -948,6 +952,11 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
             }
             h2 { class: "lb-sheet-title", "{title}" }
             div { class: "lb-sheet-ending", "{ending}" }
+            if let Some(at) = game.voided {
+                div { class: "lb-sheet-voided",
+                    "Voided ({day(at)}): taken out of the rated record, it counts for no rating."
+                }
+            }
             KingdomCards {
                 kingdom: game.kingdom.clone(),
                 landscapes: game.landscapes.clone(),

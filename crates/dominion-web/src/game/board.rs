@@ -42,6 +42,8 @@ pub struct Board {
     /// Why the game ended early, when it did: `resigned` or `abandoned`.
     pub ended: Option<String>,
     pub rated: bool,
+    /// It was to be rated, and was taken out of the rated record.
+    pub voided: bool,
     pub timed: bool,
     /// People watching now.
     pub watchers: u32,
@@ -82,6 +84,7 @@ impl Board {
             p.level = meta::level(m, p.seat);
         }
         self.rated = m.rated;
+        self.voided = m.voided;
         self.timed = m.timed || m.clock.is_some();
         self.watchers = m.watchers;
         self.ended = m.ended.clone();
@@ -1128,6 +1131,7 @@ pub fn board(
             .and_then(|r| meta::end_reason(r.reason.as_deref(), &r.players, None)),
         ended: None,
         rated: false,
+        voided: false,
         timed: false,
         watchers: 0,
     }

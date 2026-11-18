@@ -1,12 +1,23 @@
-//! Voiding games' ratings: their records become unrated, and every rating is worked out
-//! again from the rated records left, in the order the games ended.
+//! Voiding rated games: their records are marked voided (and so unrated), and every
+//! rating is worked out again from the rated records left, in the order the games ended.
 
 use super::db;
 use super::{Arena, Error, Result};
+use crate::hub::now_ms;
 use crate::rating::{self, Rating};
 use dominion_protocol::lobby::GameRecord;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+/// How to void games.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VoidHow {
+    /// Only say what would change.
+    pub dry_run: bool,
+    /// Only mark games voided that a void made unrated before it kept that: they change
+    /// no rating.
+    pub record_only: bool,
+}
 
 /// What a void changed, or would.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -29,19 +40,45 @@ struct Standing {
 const EPSILON: f64 = 1e-6;
 
 impl Arena {
-    /// Makes `games` unrated and every rating what the other rated games make it. Refuses
-    /// unless the records as they stand give exactly the ratings kept, so that nothing
-    /// the records don't say is lost. With `dry_run`, only says what would change.
-    pub fn void_ratings(&self, games: &[String], dry_run: bool) -> Result<Voided> {
+    /// Voids `games`, rated games: marks them so, and makes every rating what the other
+    /// rated games make it. Refuses unless the records as they stand give exactly the
+    /// ratings kept, so that nothing the records don't say is lost.
+    pub fn void_ratings(&self, games: &[String], how: VoidHow) -> Result<Voided> {
         let void: HashSet<&str> = games.iter().map(String::as_str).collect();
+        let at = now_ms();
+        let dry_run = how.dry_run;
         let voided = self.db.transaction(|tx| {
             let mut played = db::arena_records(tx)?;
             for id in &void {
-                match played.iter().find(|(r, _)| r.game_id == *id) {
-                    Some((r, _)) if r.rated => {}
-                    Some(_) => return Err(Error::Conflict(format!("{id} is not rated"))),
-                    None => return Err(Error::NotFound(format!("no record of game {id}"))),
+                let Some((r, _)) = played.iter_mut().find(|(r, _)| r.game_id == *id) else {
+                    return Err(Error::NotFound(format!("no record of game {id}")));
+                };
+                let refused = match (r.voided, r.rated, how.record_only) {
+                    (Some(_), ..) => Some("is voided already"),
+                    (None, true, false) | (None, false, true) => None,
+                    (None, false, false) => Some("is not rated"),
+                    (None, true, true) => Some("is rated: void it without --record-only"),
+                };
+                if let Some(why) = refused {
+                    return Err(Error::Conflict(format!("{id} {why}")));
                 }
+                if how.record_only {
+                    if r.players.iter().any(|p| p.kind.is_none()) {
+                        return Err(Error::Conflict(format!(
+                            "{id} has a seat of no account: it was never rated"
+                        )));
+                    }
+                    r.voided = Some(at);
+                    if !dry_run {
+                        db::set_record(tx, r)?;
+                    }
+                }
+            }
+            if how.record_only {
+                return Ok(Voided {
+                    games: games.to_vec(),
+                    ratings: vec![],
+                });
             }
             let accounts = db::ratings(tx)?;
             let names: HashMap<&str, &str> = (accounts.iter())
@@ -52,7 +89,7 @@ impl Arena {
                 .collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(Error::Conflict)?;
             let kept =
-                replay(&mut played, &keys, &HashSet::new(), true).map_err(Error::Conflict)?;
+                replay(&mut played, &keys, &HashSet::new(), at, true).map_err(Error::Conflict)?;
             for a in &accounts {
                 let stored = Standing {
                     rating: a.rating,
@@ -68,7 +105,7 @@ impl Arena {
                     )));
                 }
             }
-            let after = replay(&mut played, &keys, &void, false).map_err(Error::Conflict)?;
+            let after = replay(&mut played, &keys, &void, at, false).map_err(Error::Conflict)?;
             let mut voided = Voided {
                 games: games.to_vec(),
                 ratings: vec![],
@@ -96,7 +133,7 @@ impl Arena {
         })?;
         if !dry_run {
             for id in games {
-                self.hub.unrate(id);
+                self.hub.void(id, at);
             }
             self.bump();
         }
@@ -161,13 +198,14 @@ fn seat_keys(
 }
 
 /// Plays the rated records again, but `void`'s, from fresh ratings, giving each its
-/// players' ratings before and after and taking the rating from `void`'s. With `check`,
+/// players' ratings before and after and voiding `void`'s at `at`. With `check`,
 /// changes nothing and fails at the first rating a record keeps that isn't the one
 /// worked out. The standing of each account (and of each account gone, as `gone:name`).
 fn replay(
     played: &mut [(GameRecord, Vec<String>)],
     keys: &[Vec<Option<String>>],
     void: &HashSet<&str>,
+    at: u64,
     check: bool,
 ) -> std::result::Result<HashMap<String, Standing>, String> {
     let mut standings: HashMap<String, Standing> = HashMap::new();
@@ -177,6 +215,7 @@ fn replay(
         }
         if void.contains(record.game_id.as_str()) {
             record.rated = false;
+            record.voided = Some(at);
             for p in &mut record.players {
                 p.rating = None;
             }
@@ -224,7 +263,7 @@ mod tests {
     use super::*;
     use crate::arena::Login;
     use crate::hub::Hub;
-    use dominion_protocol::lobby::{RecordPlayer, Source, UserKind, Venue};
+    use dominion_protocol::lobby::{HistoryQuery, RecordPlayer, Source, UserKind, Venue};
     use std::sync::Arc;
 
     fn seat(name: &str, rank: u32) -> RecordPlayer {
@@ -270,6 +309,7 @@ mod tests {
                         ended,
                         source: Source::Direct,
                         rated: true,
+                        voided: None,
                         reason: String::new(),
                         kingdom: vec![],
                         landscapes: vec![],
@@ -302,13 +342,45 @@ mod tests {
         (u.rating.rating, u.rated_games, u.rated_wins)
     }
 
+    const VOID: VoidHow = VoidHow {
+        dry_run: false,
+        record_only: false,
+    };
+
+    fn record(arena: &Arena, id: &str) -> GameRecord {
+        let games = arena.db.games(Venue::Arena, None, u64::MAX, 10).unwrap();
+        games.into_iter().find(|g| g.game_id == id).unwrap()
+    }
+
+    /// The games the history lists, newest first: every one, or only the rated ones; and
+    /// the voided ones among every one.
+    fn listed(arena: &Arena, rated: bool) -> (Vec<String>, Vec<String>) {
+        let q = HistoryQuery {
+            rated,
+            ..HistoryQuery::default()
+        };
+        let games = arena.history(&q).unwrap().games;
+        let ids = |voided: bool| {
+            (games.iter())
+                .filter(|g| !voided || g.voided.is_some())
+                .map(|g| g.id.clone())
+                .collect()
+        };
+        (ids(false), ids(true))
+    }
+
     #[test]
     fn voiding_a_game_rates_the_rest_as_if_it_never_was() {
         let arena = arena();
         let bo = standing(&arena, "Bo");
-        let dry = arena.void_ratings(&["g1".into()], true).unwrap();
+        let dry = VoidHow {
+            dry_run: true,
+            ..VOID
+        };
+        let dry = arena.void_ratings(&["g1".into()], dry).unwrap();
         assert_eq!(standing(&arena, "Bo"), bo);
-        let voided = arena.void_ratings(&["g1".into()], false).unwrap();
+        assert_eq!(record(&arena, "g1").voided, None);
+        let voided = arena.void_ratings(&["g1".into()], VOID).unwrap();
         assert_eq!(voided, dry);
         // Without g1, Bo's first game is g2, from a fresh rating, and Ada's is g3.
         let (fresh, cy) = (Rating::default(), Rating::default());
@@ -317,15 +389,70 @@ mod tests {
         assert_eq!(standing(&arena, "Bo"), (g2[0].rating, 1, 1));
         assert_eq!(standing(&arena, "Ada"), (g3[0].rating, 1, 1));
         assert_eq!(standing(&arena, "Cy"), (g3[1].rating, 2, 0));
-        let games = arena.db.games(Venue::Arena, None, u64::MAX, 10).unwrap();
-        let g1 = games.iter().find(|g| g.game_id == "g1").unwrap();
-        assert!(!g1.rated && g1.players.iter().all(|p| p.rating.is_none()));
-        let g3r = games.iter().find(|g| g.game_id == "g3").unwrap();
+        let g1 = record(&arena, "g1");
+        assert!(!g1.rated && g1.voided.is_some());
+        assert!(g1.players.iter().all(|p| p.rating.is_none()));
+        let g3r = record(&arena, "g3");
         assert_eq!(g3r.players[0].rating, Some((fresh.rating, g3[0].rating)));
         assert!(matches!(
-            arena.void_ratings(&["g1".into()], false),
+            arena.void_ratings(&["g1".into()], VOID),
             Err(Error::Conflict(_))
         ));
+        // Out of the rated games, and marked voided among all of them.
+        assert_eq!(listed(&arena, true).0, ["g3", "g2"]);
+        assert_eq!(
+            listed(&arena, false),
+            (
+                vec!["g3".into(), "g2".into(), "g1".into()],
+                vec!["g1".into()]
+            )
+        );
+        let ada = arena.profile("Ada").unwrap();
+        assert_eq!((ada.rating.games, ada.rating.wins), (1, 1));
+        let shown = ada.recent.iter().find(|g| g.id == "g1").unwrap();
+        assert!(shown.voided.is_some() && shown.players.iter().all(|p| p.rating.is_none()));
+    }
+
+    #[test]
+    fn a_game_voided_before_voids_were_kept_is_marked_without_rerating() {
+        let arena = arena();
+        arena.void_ratings(&["g1".into()], VOID).unwrap();
+        // As a void left it before it kept when: only unrated.
+        let mut g1 = record(&arena, "g1");
+        g1.voided = None;
+        arena.db.transaction(|tx| db::set_record(tx, &g1)).unwrap();
+        assert_eq!(listed(&arena, false).1, Vec::<String>::new());
+        let before: Vec<_> = ["Ada", "Bo", "Cy"].map(|n| standing(&arena, n)).to_vec();
+        let only = VoidHow {
+            record_only: true,
+            ..VOID
+        };
+        let refused = |id: &str| {
+            matches!(
+                arena.void_ratings(&[id.into()], only),
+                Err(Error::Conflict(_))
+            )
+        };
+        assert!(refused("g2"), "a rated game is voided with its ratings");
+        let marked = arena.void_ratings(&["g1".into()], only).unwrap();
+        assert!(marked.ratings.is_empty());
+        assert!(record(&arena, "g1").voided.is_some());
+        assert_eq!(listed(&arena, false).1, ["g1"]);
+        assert_eq!(
+            ["Ada", "Bo", "Cy"].map(|n| standing(&arena, n)).to_vec(),
+            before
+        );
+        assert!(refused("g1"), "voided already");
+        // A game with a seat of no account was never rated.
+        let mut g4 = record(&arena, "g3");
+        g4.game_id = "g4".into();
+        g4.rated = false;
+        g4.players[1].kind = None;
+        let no_one: [Option<String>; 0] = [];
+        (arena.db)
+            .transaction(|tx| db::add_record(tx, Venue::Arena, &g4, &no_one))
+            .unwrap();
+        assert!(refused("g4"));
     }
 
     #[test]
@@ -339,7 +466,7 @@ mod tests {
             })
             .unwrap();
         assert!(matches!(
-            arena.void_ratings(&["g1".into()], false),
+            arena.void_ratings(&["g1".into()], VOID),
             Err(Error::Conflict(_))
         ));
         assert_eq!(standing(&arena, "Bo").0, Rating::default().rating);

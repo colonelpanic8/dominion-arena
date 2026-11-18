@@ -108,6 +108,7 @@ impl Arena {
                 ended: now,
                 source: meta.source,
                 rated,
+                voided: meta.voided.filter(|_| accounts.iter().all(Option::is_some)),
                 reason: (meta.ended.clone())
                     .or(result.reason.clone())
                     .unwrap_or_default(),
@@ -351,6 +352,7 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
         started: record.started,
         ended: record.ended,
         rated: record.rated,
+        voided: record.voided,
         reason: record.reason,
         kingdom: record.kingdom,
         landscapes: record.landscapes,

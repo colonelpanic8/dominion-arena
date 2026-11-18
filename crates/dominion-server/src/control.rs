@@ -1,6 +1,6 @@
 //! The operator's socket: `dominion games` lists the games a running `dominion serve`
-//! hosts, retires them, and voids finished games' ratings. A connection sends one request line and reads one reply line,
-//! both JSON. Only the socket's owner may connect.
+//! hosts, retires them, and voids finished rated games. A connection sends one request
+//! line and reads one reply line, both JSON. Only the socket's owner may connect.
 
 use crate::arena::Arena;
 use crate::hub::Hosting;
@@ -15,8 +15,15 @@ use tokio_util::sync::CancellationToken;
 #[serde(tag = "op", rename_all = "kebab-case")]
 pub enum Request {
     List,
-    Retire { games: Vec<String> },
-    Void { games: Vec<String>, dry_run: bool },
+    Retire {
+        games: Vec<String>,
+    },
+    Void {
+        games: Vec<String>,
+        dry_run: bool,
+        #[serde(default)]
+        record_only: bool,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -104,12 +111,22 @@ fn handle(arena: &Arena, request: Request) -> Reply {
             }
             Reply::Retired { retired, refused }
         }
-        Request::Void { games, dry_run } => match arena.void_ratings(&games, dry_run) {
-            Ok(voided) => Reply::Voided { voided, dry_run },
-            Err(e) => Reply::Error {
-                message: e.to_string(),
-            },
-        },
+        Request::Void {
+            games,
+            dry_run,
+            record_only,
+        } => {
+            let how = crate::arena::VoidHow {
+                dry_run,
+                record_only,
+            };
+            match arena.void_ratings(&games, how) {
+                Ok(voided) => Reply::Voided { voided, dry_run },
+                Err(e) => Reply::Error {
+                    message: e.to_string(),
+                },
+            }
+        }
     }
 }
 

@@ -525,3 +525,28 @@ fn a_record_names_what_played_each_agent_seat_and_why_an_attempt_stopped() {
     let sol = record.players.iter().find(|p| p.seat == 1).unwrap();
     assert_eq!(sol.agent.as_ref().unwrap().attempts.len(), 1);
 }
+
+#[test]
+fn a_rated_game_an_agent_abandons_is_recorded_voided_and_moves_no_rating() {
+    let arena = arena(0);
+    let _told = runner(&arena, &["Opus", "Sol"], 4);
+    let ada = register(&arena, "Ada");
+    let game = (arena.create_game(Some(&ada), &agent_game(true, &[Some("Opus"), Some("Sol")])))
+        .unwrap()
+        .game_id;
+    let seat = dominion_server::hub::Seat {
+        game: game.clone(),
+        seat: dominion_engine::PlayerId(1),
+    };
+    arena.hub.resign(&seat, "abandoned").unwrap();
+    let all = arena.history(&Default::default()).unwrap();
+    let record = all.games.iter().find(|r| r.id == game).unwrap();
+    assert!(!record.rated && record.voided.is_some());
+    assert!(record.players.iter().all(|p| p.rating.is_none()));
+    let rated = dominion_protocol::lobby::HistoryQuery {
+        rated: true,
+        ..Default::default()
+    };
+    assert!(arena.history(&rated).unwrap().games.is_empty());
+    assert!(arena.leaderboard(10).unwrap().players.is_empty());
+}

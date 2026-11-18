@@ -39,7 +39,7 @@ use tokio::sync::watch;
 
 pub use accounts::SESSION_COOKIE;
 pub use house::RunnerId;
-pub use rerate::Voided;
+pub use rerate::{VoidHow, Voided};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

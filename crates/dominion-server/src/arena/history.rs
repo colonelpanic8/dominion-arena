@@ -26,6 +26,7 @@ pub struct Ask<'a> {
     /// Played by this account (its id).
     pub user: Option<&'a str>,
     pub venue: Option<Venue>,
+    /// Rated games only: none voided.
     pub rated: bool,
     /// A player, the account behind a seat, an agent's model or program, or a card whose
     /// name contains it, in any case.
@@ -36,7 +37,7 @@ pub struct Ask<'a> {
 
 impl Ask<'_> {
     fn admits(&self, game: &PastGame, text: Option<&str>) -> bool {
-        if self.rated && !game.rated {
+        if self.rated && (!game.rated || game.voided.is_some()) {
             return false;
         }
         if let Some(vs) = self.vs
@@ -242,6 +243,7 @@ mod tests {
             started: ended - 1,
             ended,
             rated,
+            voided: None,
             reason: String::new(),
             kingdom: vec![card.into()],
             landscapes: vec![],
