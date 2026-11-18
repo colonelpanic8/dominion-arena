@@ -550,6 +550,9 @@ pub struct OfficialGame {
     pub kingdom: Vec<String>,
     #[serde(default)]
     pub landscapes: Vec<String>,
+    /// What it was set up with besides those: Platinum and Colony, Shelters, Heirlooms, ...
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
 }
 
 /// The server's own agents: it starts one on its machine for a table's `agent` seat, or
@@ -786,6 +789,9 @@ pub struct GameRecord {
     pub reason: String,
     pub kingdom: Vec<String>,
     pub landscapes: Vec<String>,
+    /// What it was set up with besides those: Platinum and Colony, Shelters, Heirlooms, ...
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
     pub players: Vec<RecordPlayer>,
 }
 
@@ -884,6 +890,11 @@ pub struct PastGame {
     pub reason: String,
     pub kingdom: Vec<String>,
     pub landscapes: Vec<String>,
+    /// What it was set up with besides its Kingdom piles and landscapes: Supply piles
+    /// beyond the base cards (Platinum, Colony, Potion, ...), Shelters, Heirlooms.
+    /// Empty for games recorded before it was kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<String>,
     /// By seat.
     pub players: Vec<PastPlayer>,
 }

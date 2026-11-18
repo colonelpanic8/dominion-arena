@@ -255,6 +255,8 @@ pub struct Ended {
     pub meta: Meta,
     /// With its result.
     pub info: GameInfo,
+    /// What it was set up with besides its Kingdom piles and landscapes.
+    pub setup: Vec<String>,
 }
 
 /// When the deciding seat of a timed game forfeits. Zero is never.
@@ -1837,10 +1839,12 @@ impl Hub {
         let ended = table.is_over().then(|| {
             let mut meta = lock(&game.meta);
             meta.ended_at = Some(now_ms());
+            let view = table.view(PlayerId(0));
             Ended {
                 id: table.id().into(),
                 meta: meta.clone(),
-                info: table.view(PlayerId(0)).game,
+                setup: crate::setup_cards::setup_cards(&view),
+                info: view.game,
             }
         });
         self.save(game, table);
@@ -2174,10 +2178,14 @@ impl Hub {
             .filter_map(|g| {
                 let table = lock(&g.table);
                 let meta = lock(&g.meta);
-                (table.is_over() && !meta.recorded).then(|| Ended {
-                    id: table.id().into(),
-                    meta: meta.clone(),
-                    info: table.view(PlayerId(0)).game,
+                (table.is_over() && !meta.recorded).then(|| {
+                    let view = table.view(PlayerId(0));
+                    Ended {
+                        id: table.id().into(),
+                        meta: meta.clone(),
+                        setup: crate::setup_cards::setup_cards(&view),
+                        info: view.game,
+                    }
                 })
             })
             .collect()

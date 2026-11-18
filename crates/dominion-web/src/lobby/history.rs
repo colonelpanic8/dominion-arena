@@ -2,7 +2,7 @@
 //! player's page shares with it. Everything here comes from `/api/history` and
 //! `/api/users/{name}` as the protocol's `PastGame`s.
 
-use super::rules::{Pick, TableRules, is_landscape};
+use super::rules::{Pick, TableRules, Ternary, is_landscape};
 use super::{
     LobbyCtx, LobbyFrame, Tab, clock, create_table, day, flash, store, use_lobby, use_toast,
 };
@@ -278,7 +278,11 @@ fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()
                                 }
                             }
                             span { class: "lb-history-how", "{clock(game.ended)} · {how(&game)}" }
-                            Thumbs { kingdom: game.kingdom.clone(), landscapes: game.landscapes.clone() }
+                            KingdomPeek {
+                                kingdom: game.kingdom.clone(),
+                                landscapes: game.landscapes.clone(),
+                                others: game.others.clone(),
+                            }
                         }
                     }
                 }
@@ -296,7 +300,11 @@ fn Entry(game: PastGame, side: Option<String>, on: bool, onpick: EventHandler<()
                                 span { class: "lb-history-time", "{clock(game.ended)}" }
                             }
                             span { class: "lb-history-how", "{how(&game)}" }
-                            Thumbs { kingdom: game.kingdom.clone(), landscapes: game.landscapes.clone() }
+                            KingdomPeek {
+                                kingdom: game.kingdom.clone(),
+                                landscapes: game.landscapes.clone(),
+                                others: game.others.clone(),
+                            }
                         }
                     }
                 }
@@ -329,14 +337,42 @@ fn tone(card: Option<&CardInfo>) -> &'static str {
     }
 }
 
-/// A kingdom as a strip of tiny pictures of its cards' art.
+/// A kingdom as a strip of tiny pictures of its cards' art, which shows the whole of it
+/// while the pointer is over it.
 #[component]
-fn Thumbs(kingdom: Vec<String>, landscapes: Vec<String>) -> Element {
+fn KingdomPeek(kingdom: Vec<String>, landscapes: Vec<String>, others: Vec<String>) -> Element {
     let cards = use_cards();
     let art = use_assets();
+    let mut at = use_signal(|| None::<(f64, f64)>);
+    let popup = at().map(|(x, y)| {
+        let (vw, vh) = platform::viewport();
+        let lu = (vh / 100.0).min(vw / 200.0);
+        let margin = 8.0;
+        let side = if landscapes.is_empty() {
+            0.0
+        } else {
+            16.5 * lu
+        };
+        let width = 5.0 * 10.6 * lu + side + 3.0 * lu;
+        let rows = 2.0 + if others.is_empty() { 0.0 } else { 1.0 };
+        let height = rows * 10.4 * lu + 3.0 * lu;
+        let mut left = x + 24.0;
+        if left + width > vw - margin {
+            left = x - 24.0 - width;
+        }
+        let left = left.min(vw - width - margin).max(margin);
+        let top = (y - height / 2.0).min(vh - height - margin).max(margin);
+        format!("left:{left:.0}px;top:{top:.0}px;")
+    });
     rsx! {
-        span { class: "lb-thumbs",
-            for name in kingdom.iter().chain(&landscapes) {
+        span {
+            class: "lb-thumbs",
+            onmouseenter: move |e: MouseEvent| {
+                let p = e.client_coordinates();
+                at.set(Some((p.x, p.y)));
+            },
+            onmouseleave: move |_| at.set(None),
+            for name in kingdom.iter().chain(&landscapes).chain(&others) {
                 {
                     let card = cards.get(name);
                     let wide = card.is_some_and(is_landscape);
@@ -345,17 +381,73 @@ fn Thumbs(kingdom: Vec<String>, landscapes: Vec<String>) -> Element {
                         .map(|path| format!("background-image: url('{}');", assets::url(path)))
                         .unwrap_or_default();
                     rsx! {
-                        CardHover { key: "{name}", name: name.clone(),
-                            span {
-                                class: if wide { "lb-thumb wide {tone(card)}" } else { "lb-thumb {tone(card)}" },
-                                title: "{name}",
-                                style: picture,
-                            }
+                        span {
+                            key: "{name}",
+                            class: if wide { "lb-thumb wide {tone(card)}" } else { "lb-thumb {tone(card)}" },
+                            style: picture,
                         }
                     }
                 }
             }
+            if let Some(style) = popup {
+                div { class: "lb-peek-pop", style,
+                    KingdomCards {
+                        kingdom: kingdom.clone(),
+                        landscapes: landscapes.clone(),
+                        others: others.clone(),
+                    }
+                }
+            }
         }
+    }
+}
+
+/// A kingdom as the table lays it out: its piles in two rows, its landscapes beside them
+/// and what else it was set up with under them. `hover` shows each card in full.
+#[component]
+fn KingdomCards(
+    kingdom: Vec<String>,
+    landscapes: Vec<String>,
+    others: Vec<String>,
+    #[props(default)] hover: bool,
+) -> Element {
+    rsx! {
+        div { class: "lb-setup-cards",
+            div { class: "lb-sheet-kingdom",
+                div { class: "lb-sheet-piles",
+                    for name in kingdom.iter() {
+                        KingdomCard { key: "{name}", name: name.clone(), hover }
+                    }
+                }
+                if !landscapes.is_empty() {
+                    div { class: "lb-sheet-landscapes",
+                        for name in landscapes.iter() {
+                            KingdomCard { key: "{name}", name: name.clone(), wide: true, hover }
+                        }
+                    }
+                }
+            }
+            if !others.is_empty() {
+                div { class: "lb-setup-others",
+                    for name in others.iter() {
+                        KingdomCard { key: "{name}", name: name.clone(), hover }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn KingdomCard(name: String, #[props(default)] wide: bool, hover: bool) -> Element {
+    let class = if wide { "lb-lcard" } else { "lb-kcard" };
+    let face = rsx! {
+        div { class, CardView { name: name.clone(), size: CardSize::Mini } }
+    };
+    if hover {
+        rsx! { CardHover { name, {face} } }
+    } else {
+        face
     }
 }
 
@@ -434,10 +526,13 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
         Venue::Official => "dominion.games",
     };
     let replay = {
-        let (kingdom, landscapes) = (game.kingdom.clone(), game.landscapes.clone());
+        let setup = (
+            game.kingdom.clone(),
+            game.landscapes.clone(),
+            game.others.clone(),
+        );
         move |_| {
-            let (kingdom, landscapes) = (kingdom.clone(), landscapes.clone());
-            spawn(play_kingdom(ctx, account, toast, nav, kingdom, landscapes));
+            spawn(play_kingdom(ctx, account, toast, nav, setup.clone()));
         }
     };
     rsx! {
@@ -448,27 +543,11 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
             }
             h2 { class: "lb-sheet-title", "{title}" }
             div { class: "lb-sheet-ending", "{ending}" }
-            div { class: "lb-sheet-kingdom",
-                div { class: "lb-sheet-piles",
-                    for name in game.kingdom.iter() {
-                        CardHover { key: "{name}", name: name.clone(),
-                            div { class: "lb-kcard",
-                                CardView { name: name.clone(), size: CardSize::Mini }
-                            }
-                        }
-                    }
-                }
-                if !game.landscapes.is_empty() {
-                    div { class: "lb-sheet-landscapes",
-                        for name in game.landscapes.iter() {
-                            CardHover { key: "{name}", name: name.clone(),
-                                div { class: "lb-lcard",
-                                    CardView { name: name.clone(), size: CardSize::Mini }
-                                }
-                            }
-                        }
-                    }
-                }
+            KingdomCards {
+                kingdom: game.kingdom.clone(),
+                landscapes: game.landscapes.clone(),
+                others: game.others.clone(),
+                hover: true,
             }
             div { class: "lb-sheet-line lb-sheet-head",
                 span { class: "lb-sheet-place", "#" }
@@ -539,20 +618,24 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
     }
 }
 
-/// Sets up a table with a game's kingdom: the host's own table if it has no game yet,
-/// else a new one from the rules hosted here last.
+/// Sets up a table with a game's kingdom, Colonies and Shelters as it had them: the
+/// host's own table if it has no game yet, else a new one from the rules hosted here last.
 async fn play_kingdom(
     ctx: LobbyCtx,
     account: Account,
     toast: Signal<Option<String>>,
     nav: Navigator,
-    kingdom: Vec<String>,
-    landscapes: Vec<String>,
+    (kingdom, landscapes, others): (Vec<String>, Vec<String>, Vec<String>),
 ) {
+    let has = |names: &[&str]| others.iter().any(|o| names.contains(&o.as_str()));
+    let colonies = Ternary::of(Some(has(&["Platinum", "Colony"])));
+    let shelters = Ternary::of(Some(has(&["Hovel", "Necropolis", "Overgrown Estate"])));
     let take = move |r: &mut TableRules| {
         r.kingdom = kingdom.iter().cloned().map(Pick::Card).collect();
         r.landscapes = landscapes.clone();
         r.slots.clear();
+        r.colonies = colonies;
+        r.shelters = shelters;
     };
     match ctx.table_now() {
         Some(table) if ctx.is_host_now() && table.game.is_none() => {

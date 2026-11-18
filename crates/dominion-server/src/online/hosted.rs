@@ -439,6 +439,7 @@ impl Web {
                 seat: v.seat,
                 kingdom: v.game.kingdom.clone(),
                 landscapes: v.game.landscapes.clone(),
+                others: crate::setup_cards::setup_cards(v),
             })
         });
         let info = OfficialAccount {

@@ -1013,7 +1013,8 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-page .lb-history-entry, .lb-page .lb-thumb { box-sizing: border-box; }
 
 /* A kingdom in tiny pictures: art when the cache has it, else its type's colour. */
-.lb-thumbs { display: flex; gap: .3vh; overflow: hidden; }
+.lb-thumbs { display: flex; gap: .3vh; overflow: hidden; padding: .3vh 0; cursor: zoom-in; }
+.lb-thumbs:hover .lb-thumb { border-color: #fff; }
 .lb-thumb {
   display: block;
   flex-shrink: 0;
@@ -1052,7 +1053,19 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-sheet-kingdom { display: flex; gap: 1.5vh; align-items: flex-start; }
 .lb-sheet-piles { display: grid; grid-template-columns: repeat(5, max-content); gap: .4vh; }
 .lb-sheet-landscapes { display: flex; flex-direction: column; gap: .4vh; }
-.lb-sheet-kingdom .lb-kcard, .lb-sheet-kingdom .lb-lcard { margin: 0; }
+.lb-setup-cards { display: flex; flex-direction: column; align-items: flex-start; gap: .8vh; }
+.lb-setup-others { display: flex; gap: .4vh; }
+.lb-setup-cards .lb-kcard, .lb-setup-cards .lb-lcard { margin: 0; }
+.lb-peek-pop {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  padding: 1.5vh;
+  border: 2px solid #888;
+  border-radius: 1vh;
+  background: rgba(17, 12, 8, .95);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .6);
+}
 .lb-sheet-line {
   display: grid;
   grid-template-columns: 5vh minmax(0, 1fr) minmax(0, 1.2fr) 6vh 7vh 15vh;

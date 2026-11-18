@@ -21,6 +21,7 @@ pub mod online;
 pub mod openai;
 pub mod rating;
 pub mod runner;
+pub mod setup_cards;
 pub mod solo;
 pub mod steps;
 pub mod store;
