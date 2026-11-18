@@ -489,6 +489,29 @@ pub fn owned_side_by_side(players: &[&PlayerEntry], cards: &CardDb) -> Vec<(Stri
     out
 }
 
+/// A column the card counts can be sorted by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CountsKey {
+    /// A player's counts, by their place among the columns.
+    Player(usize),
+    /// The first player's count less the second's.
+    Delta,
+}
+
+/// Orders rows of `owned_side_by_side` by a column, largest first unless `ascending`;
+/// rows that tie keep their order.
+pub fn sort_counts(rows: &mut [(String, Vec<u32>)], key: CountsKey, ascending: bool) {
+    let at = |n: &[u32], i: usize| i64::from(n.get(i).copied().unwrap_or(0));
+    let value = |n: &[u32]| match key {
+        CountsKey::Player(i) => at(n, i),
+        CountsKey::Delta => at(n, 0) - at(n, 1),
+    };
+    rows.sort_by(|a, b| {
+        let o = value(&a.1).cmp(&value(&b.1));
+        if ascending { o } else { o.reverse() }
+    });
+}
+
 pub fn stacks(known: &CardCount, cards: &CardDb) -> Vec<Stack> {
     let mut out: Vec<Stack> = known
         .iter()
@@ -1121,6 +1144,29 @@ mod tests {
             stays,
             holds,
         }
+    }
+
+    #[test]
+    fn counts_sort_by_a_column_keeping_ties_in_order() {
+        let rows = |r: &[(&str, [u32; 2])]| -> Vec<(String, Vec<u32>)> {
+            r.iter().map(|(c, n)| (c.to_string(), n.to_vec())).collect()
+        };
+        let names = |r: &[(String, Vec<u32>)]| r.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>();
+        let start = rows(&[
+            ("Witch", [1, 0]),
+            ("Copper", [7, 7]),
+            ("Silver", [3, 2]),
+            ("Estate", [3, 3]),
+        ]);
+        let mut r = start.clone();
+        sort_counts(&mut r, CountsKey::Player(0), false);
+        assert_eq!(names(&r), ["Copper", "Silver", "Estate", "Witch"]);
+        let mut r = start.clone();
+        sort_counts(&mut r, CountsKey::Delta, false);
+        assert_eq!(names(&r), ["Witch", "Silver", "Copper", "Estate"]);
+        let mut r = start;
+        sort_counts(&mut r, CountsKey::Player(1), true);
+        assert_eq!(names(&r), ["Witch", "Silver", "Estate", "Copper"]);
     }
 
     #[test]

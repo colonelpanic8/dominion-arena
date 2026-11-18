@@ -15,7 +15,7 @@ mod side;
 mod sound;
 mod supply;
 
-use super::board::{Board, Stack, board};
+use super::board::{Board, CountsKey, Stack, board};
 use super::interaction::{Interaction, TreasureRun, interaction, tone};
 use super::state::{Selection, answers_on_click};
 use super::{use_game, wording};
@@ -140,6 +140,30 @@ pub enum DecksView {
     Counts,
 }
 
+/// The order of the card counts' rows: the Supply's, or by a column's numbers.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DecksSort {
+    pub by: Option<CountsKey>,
+    pub ascending: bool,
+}
+
+impl DecksSort {
+    /// Clicking a column: largest first, then smallest first, then the Supply's order.
+    pub fn toggle(self, key: CountsKey) -> Self {
+        match self.by {
+            Some(k) if k == key && !self.ascending => Self {
+                by: Some(key),
+                ascending: true,
+            },
+            Some(k) if k == key => Self::default(),
+            _ => Self {
+                by: Some(key),
+                ascending: false,
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct Run {
     run: TreasureRun,
@@ -157,6 +181,7 @@ pub struct TableCtx {
     /// The opponent whose hand, deck and discard peek in from the top, when chosen.
     pub chosen_opponent: Signal<Option<u8>>,
     pub decks_view: Signal<DecksView>,
+    pub decks_sort: Signal<DecksSort>,
     run: Signal<Option<Run>>,
     cards: Signal<Rc<crate::cards::CardDb>>,
     game: super::GameCtx,
@@ -640,6 +665,7 @@ pub fn TableGame(controls: Element) -> Element {
         popup: Signal::new(None),
         chosen_opponent: Signal::new(None),
         decks_view: Signal::new(DecksView::default()),
+        decks_sort: Signal::new(DecksSort::default()),
         run: Signal::new(None),
         cards,
         game,

@@ -723,6 +723,8 @@ body:has(.dt-root) .topbar { display: none; }
   min-width: 0;
 }
 .dt-decks-player:hover { background: rgb(64, 54, 40); }
+.dt-decks-player.sorted { background: rgb(70, 58, 40); }
+.dt-decks-diff { --pc: rgba(211, 185, 119, 0.6); }
 .dt-decks-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(1.9 * var(--vh)); font-weight: 700; }
 .dt-decks-total { font-size: calc(1.5 * var(--vh)); color: rgba(245, 241, 232, 0.72); }
 .dt-decks-card > .dt-c { width: 100%; }
@@ -730,3 +732,4 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-decks-n { text-align: center; font-size: calc(2.2 * var(--vh)); font-weight: 650; font-variant-numeric: tabular-nums; }
 .dt-decks-n.none { color: rgba(245, 241, 232, 0.3); }
 .dt-decks-n.most { color: rgb(240, 208, 128); font-weight: 800; }
+.dt-decks-delta { color: var(--pc); }
