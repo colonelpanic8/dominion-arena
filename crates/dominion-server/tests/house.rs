@@ -337,6 +337,56 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
 }
 
 #[test]
+fn a_record_kept_with_only_an_agents_name_shows_what_it_is_offered_as_now() {
+    let arena = arena(5);
+    let (send, _told) = unbounded_channel();
+    let bare = Offer {
+        name: "Sol High".into(),
+        about: "OpenAI".into(),
+        ..Default::default()
+    };
+    let runner = arena.runner_connected(vec![bare], 1, send);
+    let ada = register(&arena, "Ada");
+    let table = arena.new_table(&ada, &with_agent("Sol High")).unwrap();
+    let game = arena.ready(&ada, &table.id, true).unwrap().game.unwrap();
+    end(&arena, &game);
+    let sol = || {
+        let games = arena.history(&HistoryQuery::default()).unwrap().games;
+        let player = games[0].players.iter().find(|p| p.name == "Sol High");
+        player.unwrap().played_by.clone()
+    };
+    assert_eq!(
+        sol(),
+        PlayedBy::Agent(SeatAgent {
+            agent: "Sol High".into(),
+            ..SeatAgent::default()
+        })
+    );
+
+    let offered = Offer {
+        name: "Sol High".into(),
+        about: "OpenAI, gpt-6.2-sol, high effort".into(),
+        model: Some(OfferedModel {
+            program: "OpenAI".into(),
+            id: "gpt-6.2-sol".into(),
+            name: "GPT-6.2-Sol".into(),
+            effort: Some("high".into()),
+        }),
+        on_demand: false,
+    };
+    arena.offers_changed(runner, vec![offered]);
+    let full = SeatAgent {
+        agent: "Sol High".into(),
+        program: Some("OpenAI".into()),
+        model: Some("gpt-6.2-sol".into()),
+        name: Some("GPT-6.2-Sol".into()),
+        effort: Some("high".into()),
+    };
+    assert_eq!(sol(), PlayedBy::Agent(full.clone()));
+    assert_eq!(arena.profile("Sol High").unwrap().agent, Some(full));
+}
+
+#[test]
 fn a_search_for_any_agent_gets_one_when_none_has_an_account_yet() {
     let arena = arena(5);
     let offer = |name: &str, effort: &str| Offer {

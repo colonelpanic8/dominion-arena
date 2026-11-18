@@ -258,6 +258,29 @@ impl Arena {
         self.db.end_other_sessions(&ident.user, &sha256(token))
     }
 
+    /// Gives `ident`'s account the picture `image`: a PNG, JPEG or WebP of at most
+    /// `AVATAR_MAX` bytes, kept as it is.
+    pub fn set_avatar(&self, ident: &Ident, image: &[u8]) -> Result<Me> {
+        if image.len() > AVATAR_MAX {
+            return bad("a picture must be at most 64 KB");
+        }
+        let Some(kind) = image_type(image) else {
+            return bad("a picture must be a PNG, JPEG or WebP image");
+        };
+        self.db.set_avatar(&ident.user, kind, image, now_ms())?;
+        self.me(ident)
+    }
+
+    pub fn clear_avatar(&self, ident: &Ident) -> Result<Me> {
+        self.db.clear_avatar(&ident.user)?;
+        self.me(ident)
+    }
+
+    /// The picture of the account called `name`, and its media type.
+    pub fn avatar(&self, name: &str) -> Result<(String, Vec<u8>)> {
+        (self.db.avatar_of(name)?).ok_or_else(|| Error::NotFound(format!("{name} has no picture")))
+    }
+
     /// The id of `ident`'s account, which may own bots.
     fn owner(&self, ident: &Ident) -> Result<String> {
         match self.user(&ident.user)?.kind() {
@@ -381,6 +404,22 @@ impl Arena {
 /// An argon2 hash of nothing anyone knows, verified when a sign-in names no account.
 const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHRzb21lc2FsdA$\
                           bWFkZSB1cCwgbWF0Y2hlcyBubyBwYXNzd29yZCBhdCBhbGw";
+
+/// The largest picture an account may have, in bytes.
+pub const AVATAR_MAX: usize = 64 * 1024;
+
+/// The media type of a PNG, JPEG or WebP image, by its first bytes.
+fn image_type(image: &[u8]) -> Option<&'static str> {
+    if image.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if image.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some("image/jpeg")
+    } else if image.len() > 12 && image.starts_with(b"RIFF") && &image[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
 
 #[cfg(test)]
 mod tests {

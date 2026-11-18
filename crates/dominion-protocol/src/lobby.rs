@@ -34,6 +34,10 @@ pub struct UserRef {
     /// A bot's owner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// When their picture was set (ms), once they have one: served at
+    /// `/api/users/<name>/avatar?v=<this>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<u64>,
 }
 
 /// A Glicko-2 rating on the Glicko scale.

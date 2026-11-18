@@ -5,6 +5,7 @@
 
 mod account;
 pub mod agent_picker;
+pub mod avatar;
 mod cardlists;
 mod chat;
 mod history;
@@ -578,7 +579,7 @@ pub fn UserName(user: UserRef, #[props(default)] link: bool) -> Element {
     }
 }
 
-/// Who is signed in, under the tabs: their name and rating and Log out, or Log in.
+/// Who is signed in, under the tabs: their card and Log out, or Log in.
 #[component]
 fn Who() -> Element {
     let account = use_account();
@@ -602,7 +603,7 @@ fn Who() -> Element {
     let guest = me.user.kind == UserKind::Guest;
     rsx! {
         div { class: "lb-who", "data-me": "{me.user.name}",
-            UserName { user: me.user.clone(), link: true }
+            avatar::ProfileCard { me: me.clone() }
             button {
                 class: "lb-oval lb-who-button",
                 "data-action": "log-out",

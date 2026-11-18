@@ -151,7 +151,8 @@ impl Arena {
             user: Some(&user.id),
             ..Ask::default()
         };
-        let recent = self.history.find(&ask, u64::MAX, 20)?.games;
+        let mut recent = self.history.find(&ask, u64::MAX, 20)?.games;
+        complete_agents(&mut recent, &lock(&self.state).house.setups());
         let agent = matches!(user.login, Login::House).then(|| {
             let setups = lock(&self.state).house.setups();
             let latest = recent.iter().find_map(|g| {
@@ -191,8 +192,9 @@ impl Arena {
             text: q.q.as_deref(),
         };
         let before = q.before.unwrap_or(u64::MAX);
-        self.history
-            .find(&ask, before, q.limit.unwrap_or(20).clamp(1, 100))
+        let mut found = (self.history).find(&ask, before, q.limit.unwrap_or(20).clamp(1, 100))?;
+        complete_agents(&mut found.games, &lock(&self.state).house.setups());
+        Ok(found)
     }
 
     /// The rated players, best first.
@@ -244,6 +246,22 @@ pub(super) fn who_played(
         Login::Bot { owner, .. } => (None, db::user_in(tx, owner)?.map(|o| o.name)),
         _ => (None, None),
     })
+}
+
+/// Fills in an agent seat kept with only its name (an official account's, or one recorded
+/// before its runner offered it) from the agent of that name as it is offered now.
+fn complete_agents(games: &mut [PastGame], setups: &Setups) {
+    for p in games.iter_mut().flat_map(|g| &mut g.players) {
+        if let PlayedBy::Agent(a) = &mut p.played_by
+            && a.model.is_none()
+            && let Some(setup) = setups.get(&a.agent.trim().to_lowercase())
+        {
+            *a = SeatAgent {
+                agent: std::mem::take(&mut a.agent),
+                ..SeatAgent::from(setup)
+            };
+        }
+    }
 }
 
 /// What played a seat with no account here, or one recorded before what played it was

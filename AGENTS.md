@@ -249,6 +249,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     selector.rs           "Select Cards", the card selector
     account.rs            `SignIn` (log in, register, play as guest) and the Account tab:
                           keeping a guest account, the password, bots and their keys
+    avatar.rs             accounts' pictures (`Avatar`: the picture, else the initial), the
+                          signed-in account's card under the tabs, the Account tab's picture
     chat.rs               a chat channel (the lobby's, a table's)
     home.rs               Automatch: the search, Bot Game (a search for agents, with the
                           server's agent to play when none answers), Create

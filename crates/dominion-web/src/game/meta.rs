@@ -255,6 +255,7 @@ mod tests {
             kind,
             rating,
             owner: None,
+            avatar: None,
         })
     }
 
