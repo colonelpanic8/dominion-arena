@@ -1337,7 +1337,11 @@ impl Game {
         (journal.open.iter().map(|o| o.occ))
             .chain(journal.turn.map(|(_, occ)| occ))
             .chain(journal.within)
-            .chain((journal.lastings.iter()).filter(|&&(id, _)| lasting(id)).map(|&(_, occ)| occ))
+            .chain(
+                (journal.lastings.iter())
+                    .filter(|&&(id, _)| lasting(id))
+                    .map(|&(_, occ)| occ),
+            )
             .collect()
     }
 }

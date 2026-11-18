@@ -57,17 +57,20 @@ crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; acco
 crates/dominion-agent/    the dominion/agent-view@2 protocol: Table, projection, text
   src/events.rs           `Recorder`: a game's events@1 stream from the engine's journal
   src/table.rs            `Table`: a hosted game, its answers (for undo) and, made with
-                          `new_recorded`, its recorded stream
+                          `new_recorded`, its recorded stream (`Recording`: on, or stopped
+                          for good and why; saved with `RECORDING_VERSION`)
   src/recording.rs        a recorded stream as bytes: its header, the `Encoding`s (JSON Lines,
                           CBOR), reading one back
   protocol/               the vendored JSON Schema (`just sync-protocol`)
+  examples/record_cost.rs what recording costs a long 4-seat game, per answer and on disk
 crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), terminal client,
                           and solo games kept in files (`solo.rs`)
   src/hub.rs              the games: tables by id, seat tokens, each game's `Meta` (where it
                           came from, the accounts playing it, rated / watchable / timed /
                           its undo rule), who is connected, forfeits, undo requests; calls
-                          back when a game ends; each game's recorded stream kept in step
-                          with its snapshot (`Hub::save`, `stream_state`)
+                          back when a game ends; every change committed by saving its
+                          snapshot first (`Hub::commit`), each game's recorded stream kept
+                          in step with it (`Hub::write_events`, `stream_state`)
   src/arena/              who is playing (README "Accounts and the lobby"); its lock order
                           is in mod.rs
     mod.rs                `Arena`: state, the lobby snapshot, the sweep that runs every 5 s
@@ -101,7 +104,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/steps.rs            named steps (`play A, B; treasures; buy C; next`) for solo and the
                           MCP `steps` tool
   src/store.rs            the state directory: its lock, a JSON file per game written
-                          atomically, each game's event stream appended to
+                          atomically and durably (the directory synced too), each game's
+                          event stream appended to, or marked incomplete
   src/http.rs             the HTTP API (/api), asset cache (/assets) and web client routes
   src/mcp.rs              the MCP tools, one `Session` per MCP session
   src/mcp/play.rs         dominion/play@1: arguments, the text a session is shown
@@ -627,14 +631,39 @@ them.
   records its origin with `journal_lasting`. The fold refuses an event out of place (its
   `seq`, `setup` only first, nothing after `game-end`, a cause that is no occurrence, a
   turn during a turn) and leaves the table as it was; `Table::change` applies an event's
-  change alone, for building a table. Arena records every game it saves:
-  `Table::new_recorded` journals the game and keeps a `Recorder`, saved with it, and
-  every change a table makes to its game ends with its new events taken
-  (`Table::record`, in `game_respond` and `resign`: anything new that changes the game
-  must call it too), kept as `Table::unwritten` until the hub has written them.
-  `Hub::save` saves the snapshot, which carries them, then appends them to
-  `<game id>.events.<jsonl|cbor>` and marks them written; loading cuts the stream back
-  to the events the snapshot says were written (`stream_state`).
+  change alone, for building a table. Arena records every game it saves
+  (unless `record_events` is off): `Table::new_recorded` journals the game and keeps a
+  `Recorder`, saved with it, and every change a table makes to its game ends with its
+  new events taken (`Table::record`, in `game_respond` and `resign`: anything new that
+  changes the game must call it too), kept as `Table::unwritten` until the hub has
+  written them. **Recording is a side record**: it never refuses an answer, changes
+  what a seat sees, or loses a position. `Table::record` can't fail: a recorder error or
+  panic stops the table's recording for good (`Table::stop_recording`: `Recording::
+  Stopped(why)`, saved, the game's journal dropped, so a broken recorder never runs
+  again), and the answer stands whole, so an answer is all or nothing (the engine
+  refuses before changing anything; Way pre-answers and Autoplay Treasures runs stop
+  at a play the engine would refuse rather than fail half done). The hub runs a change
+  again without recording if the engine panics while journaling (`Hub::attempt`). What
+  a table saves of its recorder and journal is versioned (`RECORDING_VERSION`: bump it
+  whenever either changes what it keeps or means): a table saved by another build, or
+  whose recorder, journal or unwritten events don't read, loads whole with its recording
+  stopped (`Saved` in table.rs), and the game plays on unjournaled, which plays exactly
+  as journaled (the fold tests hold a never-journaled twin to it). State the snapshot
+  keeps must serialize as JSON: no map keyed by a tuple or other non-string (the
+  journal's tokens are written as pairs); the fold tests save and reload the whole
+  `Table` as JSON throughout each game. The recorder keeps only the occurrences later
+  steps can name (`Game::journal_live`). `Hub::commit` serializes and saves the
+  snapshot first and makes the change only once it is saved: a disk failure refuses
+  the change (`HubError::Unsaved`), and recording state that won't serialize stops the
+  recording rather than the save. Then `Hub::write_events` appends the events to
+  `<game id>.events.<jsonl|cbor>` and marks them written; a failed write is tried again
+  with the next, and after three running the recording stops. A stream that stops is
+  renamed `<game id>.incomplete.events.<encoding>`, as it is, and reported at every
+  start. Loading cuts the stream back to the events the snapshot says were written,
+  and holds them, with those still to write, to the table its recorder keeps
+  (`stream_state`); anything else stops the recording. The full stream is served only
+  once the game can't change: over, and retired or allowing no undo (`Hub::recording`,
+  which checks it is exactly the game's stream before serving it).
   The stream also holds what caused the game, so that `replay::replay` can play it again
   from the stream alone (its `setup`'s `config`, its chance outcomes, its answers) and
   hold the new stream to it event for event; the fold tests replay every game they play.
@@ -673,8 +702,10 @@ them.
   deciding seat, so a replay that went differently fails instead of diverging. Anything a
   table answers must go through a recorded step. The recorded event stream holds no undo:
   a recorded table's replay records afresh, so after a rewind `Table::unwritten` is the
-  whole stream of the game as it now stands, from event 0, and replaces the file. Who may undo and whose permission it
-  needs (`UndoRule`, requests waiting) is the hub's.
+  whole stream of the game as it now stands, from event 0, and replaces the file (only
+  once the snapshot saying so is saved; until it has, the file is not served as the
+  stream). A table whose recording stopped replays unjournaled and stays stopped. Who
+  may undo and whose permission it needs (`UndoRule`, requests waiting) is the hub's.
 
 ## Writing a set
 

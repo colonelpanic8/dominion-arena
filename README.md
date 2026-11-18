@@ -299,7 +299,7 @@ will) or 500.
 | `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
 | `GET /api/games/{id}/watch[?logFrom=N][&as=S]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible. With `as`, what seat `S` knows instead (its view, `spectating`, without its decision) |
-| `GET /api/games/{id}/recording` | | the game's recorded `dominion/events@1` stream as written, the file `state_dir/<game id>.events.jsonl` or `.events.cbor` beside its snapshot: `application/jsonl` or `application/cbor-seq`. It shows every hidden card and every shuffle's order, so only once the game is over (409 before), to its seats, or to anyone if it is watchable (403 otherwise); 404 for a game recorded without one |
+| `GET /api/games/{id}/recording` | | the game's recorded `dominion/events@1` stream as written, the file `state_dir/<game id>.events.jsonl` or `.events.cbor` beside its snapshot: `application/jsonl` or `application/cbor-seq`. It shows every hidden card and every shuffle's order, so only once the game can no longer change: over, and retired or allowing no undo (409 before; a game made here allows undo, so once it is retired), to its seats, or to anyone if it is watchable (403 otherwise); 404 for a game recorded without one, or whose recording stopped |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, for a watchable game, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |
 | `POST /api/auth/login` | `{name, password}` | the account and the session cookie |
@@ -729,9 +729,18 @@ beside its snapshot: `state_dir/<game id>.events.jsonl`, one JSON object per lin
 record says the schema, the viewer (`full`) and the game. It is appended to as the game
 is played, goes to `expired/` with the snapshot, and holds no undo: after one it is
 rewritten as the stream of the game as it now stands. After a crash the server cuts it
-back to what the snapshot says was written and goes on from there; one that lacks events
-the snapshot says it holds is reported at startup and the game goes on without
-recording. Games saved before streams were recorded have none.
+back to what the snapshot says was written and goes on from there. Recording is a side
+record: whatever goes wrong with it (a recorder fault, a stream file that doesn't hold
+what the snapshot says, a game saved by another build, writes that keep failing) stops
+that game's recording, never the game. Its stream is then renamed
+`<game id>.incomplete.events.<jsonl|cbor>`, as it is, and the game is reported at
+startup. `record_events = false` (or `serve --record-events false`) records no new games,
+so a server can be deployed with recording off and turned on later; games already
+recording go on. Games saved before streams were recorded have none.
+
+A game's snapshot is written, and synced, before a change to it is acknowledged: a
+change that can't be saved (a full or failing disk) is refused, and the game is as it
+was.
 
 Accounts, sessions and finished games' records are kept in a SQLite database beside the
 games, `dominion.sqlite` under `state_dir` (in memory with `--ephemeral`): a game's
@@ -751,6 +760,7 @@ persist = true                 # serve: save games and resume them on restart
 state_dir = "/srv/dominion/games"  # serve: where (absolute; default $XDG_STATE_HOME/dominion/games)
 keep_finished_days = 7         # serve: move finished games this old to state_dir/expired (0: never)
 events_encoding = "jsonl"      # serve: what new games' recorded event streams are written in: jsonl or cbor
+record_events = true           # serve: record new games as event streams (games already recording go on)
 assets_dir = "/srv/dominion/assets"  # assets sync, serve: asset cache (default $XDG_CACHE_HOME/dominion/assets)
 web_dir = "/srv/dominion/web"  # serve: the built web client served at / (default $DOMINION_WEB_DIR, else none)
 web_animations = true          # serve: the web client shows cards moving
