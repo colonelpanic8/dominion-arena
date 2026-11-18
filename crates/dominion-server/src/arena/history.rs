@@ -4,7 +4,8 @@
 //! them) and paging across sources are this model's.
 
 use super::Result;
-use dominion_protocol::lobby::{History, PastGame, PastPlayer, PlayedBy, Venue};
+use dominion_protocol::lobby::{History, Matchup, PastGame, PastPlayer, PlayedBy, Venue};
+use std::collections::HashMap;
 
 /// One place finished games are kept.
 pub trait GameSource: Send + Sync {
@@ -29,11 +30,18 @@ pub struct Ask<'a> {
     /// A player, the account behind a seat, an agent's model or program, or a card whose
     /// name contains it, in any case.
     pub text: Option<&'a str>,
+    /// With this opponent: a `Matchup::key`.
+    pub vs: Option<&'a str>,
 }
 
 impl Ask<'_> {
     fn admits(&self, game: &PastGame, text: Option<&str>) -> bool {
         if self.rated && !game.rated {
+            return false;
+        }
+        if let Some(vs) = self.vs
+            && !game.players.iter().any(|p| key(p).eq_ignore_ascii_case(vs))
+        {
             return false;
         }
         let Some(text) = text else {
@@ -118,11 +126,76 @@ impl HistoryModel {
         Ok(History { games: found, next })
     }
 
+    /// Every game `ask` admits, newest first.
+    pub fn all(&self, ask: &Ask<'_>) -> Result<Vec<PastGame>> {
+        let (mut games, mut before) = (vec![], u64::MAX);
+        loop {
+            let page = self.find(ask, before, PAGE)?;
+            games.extend(page.games);
+            match page.next {
+                Some(next) => before = next,
+                None => return Ok(games),
+            }
+        }
+    }
+
     /// How many games account `user` played at `venue`.
     pub fn count(&self, user: &str, venue: Venue) -> Result<u32> {
         let sources = self.sources.iter().filter(|s| s.venue() == venue);
         sources.map(|s| s.count(user)).sum()
     }
+}
+
+/// Who played a seat, as `Matchup::key` and `Ask::vs` name them: its account, else its
+/// name in the game.
+fn key(p: &PastPlayer) -> &str {
+    p.account.as_deref().unwrap_or(&p.name)
+}
+
+/// Account `name`'s record against each opponent in `games` (newest first), most games
+/// together first, then the latest met. A game where they sat more than once counts
+/// their first seat, and none against themselves.
+pub fn head_to_head(games: &[PastGame], name: &str) -> Vec<Matchup> {
+    let mut by_key: HashMap<String, Matchup> = HashMap::new();
+    for game in games {
+        let mine = |p: &PastPlayer| {
+            p.account
+                .as_deref()
+                .is_some_and(|a| a.eq_ignore_ascii_case(name))
+        };
+        let Some(me) = game.players.iter().find(|p| mine(p)) else {
+            continue;
+        };
+        for them in game.players.iter().filter(|p| !mine(p)) {
+            let m = by_key
+                .entry(key(them).to_lowercase())
+                .or_insert_with(|| Matchup {
+                    key: key(them).to_string(),
+                    seat: PastPlayer {
+                        agent: None,
+                        ..them.clone()
+                    },
+                    games: 0,
+                    wins: 0,
+                    losses: 0,
+                    ties: 0,
+                    last: game.ended,
+                });
+            m.games += 1;
+            match me.rank.cmp(&them.rank) {
+                std::cmp::Ordering::Less => m.wins += 1,
+                std::cmp::Ordering::Greater => m.losses += 1,
+                std::cmp::Ordering::Equal => m.ties += 1,
+            }
+        }
+    }
+    let mut all: Vec<Matchup> = by_key.into_values().collect();
+    all.sort_by(|a, b| {
+        (b.games.cmp(&a.games))
+            .then(b.last.cmp(&a.last))
+            .then(a.key.cmp(&b.key))
+    });
+    all
 }
 
 #[cfg(test)]
@@ -331,5 +404,45 @@ mod tests {
         let rest = model.find(&ask, first.next.unwrap(), 10).unwrap();
         assert_eq!(ended(&rest), [200, 100]);
         assert_eq!(rest.next, None);
+    }
+
+    #[test]
+    fn head_to_head_counts_places_against_each_opponent() {
+        let placed = |ended: u64, seats: &[(&str, u32)]| {
+            let names: Vec<&str> = seats.iter().map(|s| s.0).collect();
+            let mut g = game(Venue::Arena, ended, &names, "Village", false);
+            for (p, (_, rank)) in g.players.iter_mut().zip(seats) {
+                p.rank = *rank;
+            }
+            g
+        };
+        let mut token = placed(1, &[("Ada", 1), ("Kit", 2)]);
+        token.players[1].account = None;
+        let games = [
+            placed(9, &[("Ada", 2), ("Bo", 1), ("Cy", 3)]),
+            placed(8, &[("Bo", 1), ("Ada", 1)]),
+            placed(7, &[("Ada", 1), ("Cy", 2)]),
+            placed(6, &[("Ada", 1), ("Ada", 2)]),
+            placed(5, &[("Bo", 1), ("Cy", 2)]),
+            token,
+        ];
+        let rows: Vec<_> = head_to_head(&games, "ADA")
+            .into_iter()
+            .map(|m| (m.key, m.games, m.wins, m.losses, m.ties, m.last))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("bo".to_string(), 2, 0, 1, 1, 9),
+                ("cy".to_string(), 2, 2, 0, 0, 9),
+                ("Kit".to_string(), 1, 1, 0, 0, 1),
+            ]
+        );
+        let vs = Ask {
+            vs: Some("KIT"),
+            ..Ask::default()
+        };
+        assert!(vs.admits(&games[5], None));
+        assert!(!vs.admits(&games[0], None));
     }
 }

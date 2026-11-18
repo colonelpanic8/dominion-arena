@@ -995,6 +995,46 @@ pub struct HistoryQuery {
     /// Games with a player, the account behind a seat or a card whose name contains this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub q: Option<String>,
+    /// Games against this opponent: a `Matchup::key`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vs: Option<String>,
+}
+
+/// `GET /api/users/{name}/opponents`' query: which of their finished games to count.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadToHeadQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub venue: Option<Venue>,
+    /// Rated games only.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub rated: bool,
+}
+
+/// `GET /api/users/{name}/opponents`: everyone a player has played, most games together
+/// first.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadToHead {
+    pub opponents: Vec<Matchup>,
+}
+
+/// A player's record against one opponent over the finished games both played: a win is
+/// finishing ahead of them, a loss behind, a tie the same place.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Matchup {
+    /// The opponent: their account, else their name in the game (a seat token, a player
+    /// on dominion.games). `HistoryQuery::vs` takes it.
+    pub key: String,
+    /// Their seat in the latest of those games: its name, account and what played it.
+    pub seat: PastPlayer,
+    pub games: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub ties: u32,
+    /// When the latest ended, in milliseconds since the Unix epoch.
+    pub last: u64,
 }
 
 /// How an Arena game's players came together.

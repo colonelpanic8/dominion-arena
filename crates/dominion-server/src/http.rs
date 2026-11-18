@@ -21,9 +21,9 @@ use dominion_protocol::api::{
     SeatView, UndoAsk, ViewQuery, WebSettings,
 };
 use dominion_protocol::lobby::{
-    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable,
-    Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable,
-    Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
+    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, HeadToHead, HeadToHeadQuery, History,
+    HistoryQuery, JoinTable, Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot,
+    NewPassword, NewTable, Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -110,6 +110,7 @@ pub fn router(
         .route("/chat/{channel}", get(chat_log).post(say))
         .route("/users/{name}", get(profile))
         .route("/users/{name}/avatar", get(avatar))
+        .route("/users/{name}/opponents", get(opponents))
         .route("/leaderboard", get(leaderboard))
         .route("/history", get(history))
         .fallback(|| async { Error::new(StatusCode::NOT_FOUND, "no such route") })
@@ -1497,6 +1498,14 @@ struct ListQuery {
 async fn leaderboard(State(api): State<Api>, list: Queried<ListQuery>) -> Json<Leaderboard> {
     let limit = query(list)?.limit.unwrap_or(50);
     Ok(axum::Json(api.arena.leaderboard(limit)?))
+}
+
+async fn opponents(
+    State(api): State<Api>,
+    Path(name): Path<String>,
+    q: Queried<HeadToHeadQuery>,
+) -> Json<HeadToHead> {
+    Ok(axum::Json(api.arena.head_to_head(&name, &query(q)?)?))
 }
 
 async fn history(State(api): State<Api>, q: Queried<HistoryQuery>) -> Json<History> {

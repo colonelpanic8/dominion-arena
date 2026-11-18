@@ -1,14 +1,15 @@
 //! Finished games: each lobby game's record, its players' ratings and tallies.
 
 use super::db::{self, Db, Tally};
-use super::history::{Ask, GameSource};
+use super::history::{self, Ask, GameSource};
 use super::house::Setups;
 use super::{Arena, Error, Login, Result, User};
 use crate::hub::{Ended, Hub, lock, now_ms};
 use crate::rating::{self, Scale};
 use dominion_protocol::lobby::{
-    AgentRun, AgentSetup, Arranged, GameRecord, History, HistoryQuery, Leader, Leaderboard,
-    PastGame, PastPlayer, PlayedBy, Profile, RecordPlayer, SeatAgent, Source, UserKind, Venue,
+    AgentRun, AgentSetup, Arranged, GameRecord, HeadToHead, HeadToHeadQuery, History, HistoryQuery,
+    Leader, Leaderboard, PastGame, PastPlayer, PlayedBy, Profile, RecordPlayer, SeatAgent, Source,
+    UserKind, Venue,
 };
 use rusqlite::Transaction;
 use std::sync::Arc;
@@ -173,11 +174,29 @@ impl Arena {
             venue: q.venue,
             rated: q.rated,
             text: q.q.as_deref(),
+            vs: q.vs.as_deref(),
         };
         let before = q.before.unwrap_or(u64::MAX);
         let mut found = (self.history).find(&ask, before, q.limit.unwrap_or(20).clamp(1, 100))?;
         complete_agents(&mut found.games, &lock(&self.state).house.setups());
         Ok(found)
+    }
+
+    /// A player's record against everyone they played, over their finished games `q`
+    /// picks.
+    pub fn head_to_head(&self, name: &str, q: &HeadToHeadQuery) -> Result<HeadToHead> {
+        let user = self.named(name)?;
+        let ask = Ask {
+            user: Some(&user.id),
+            venue: q.venue,
+            rated: q.rated,
+            ..Ask::default()
+        };
+        let mut games = self.history.all(&ask)?;
+        complete_agents(&mut games, &lock(&self.state).house.setups());
+        Ok(HeadToHead {
+            opponents: history::head_to_head(&games, &user.name),
+        })
     }
 
     /// The rated players, best first.

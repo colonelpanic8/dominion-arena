@@ -16,7 +16,8 @@ use dioxus::prelude::*;
 use dioxus::router::Navigator;
 use dominion_protocol::api::CardInfo;
 use dominion_protocol::lobby::{
-    Arranged, HistoryQuery, PastGame, PastPlayer, PlayedBy, SeatAgent, Venue,
+    Arranged, HeadToHeadQuery, HistoryQuery, Matchup, PastGame, PastPlayer, PlayedBy, SeatAgent,
+    Venue,
 };
 
 /// Games asked for at a time.
@@ -49,6 +50,12 @@ pub fn GameBrowser(
     let mut picked = use_signal(|| None::<String>);
     let mut more = use_signal(Vec::<PastGame>::new);
     let mut more_next = use_signal(|| None::<Option<u64>>);
+    // A player's page only: its Head to head tab, with a Rated switch and search of its
+    // own, and the opponent a pick there narrows the games to (key, name).
+    let mut rivals = use_signal(|| false);
+    let mut rivals_rated = use_signal(|| true);
+    let mut who = use_signal(String::new);
+    let mut vs = use_signal(|| None::<(String, String)>);
     let fixed = user.clone();
     let me_now = me.clone();
     let query = use_memo(move || HistoryQuery {
@@ -56,6 +63,7 @@ pub fn GameBrowser(
         venue: venue(),
         rated: rated(),
         q: Some(text()).filter(|t| !t.trim().is_empty()),
+        vs: vs().map(|(key, _)| key),
         limit: Some(PAGE),
         before: None,
     });
@@ -106,7 +114,24 @@ pub fn GameBrowser(
             div { class: "lb-history-side",
                 {top}
                 div { class: "lb-fieldset lb-history-games",
-                    div { class: "lb-fieldset-title", span { "{title}" } }
+                    if user.is_some() {
+                        div { class: "lb-fieldset-title lb-pane-tabs", role: "tablist",
+                            span {
+                                class: if rivals() { "lb-pane-tab" } else { "lb-pane-tab on" },
+                                role: "tab",
+                                onclick: move |_| rivals.set(false),
+                                "{title}"
+                            }
+                            span {
+                                class: if rivals() { "lb-pane-tab on" } else { "lb-pane-tab" },
+                                role: "tab",
+                                onclick: move |_| rivals.set(true),
+                                "Head to head"
+                            }
+                        }
+                    } else {
+                        div { class: "lb-fieldset-title", span { "{title}" } }
+                    }
                     div { class: "lb-history-filters",
                         div { class: "lb-multibutton",
                             for (v, label) in [(None, "All"), (Some(Venue::Arena), "Arena"), (Some(Venue::Official), "dominion.games")] {
@@ -133,20 +158,66 @@ pub fn GameBrowser(
                                 }
                             }
                         }
-                        label { class: "lb-history-rated",
-                            super::Switch { on: rated(), onclick: move |_| rated.toggle() }
-                            "Rated"
-                        }
-                        input {
-                            class: "lb-input lb-history-search",
-                            r#type: "search",
-                            placeholder: "Player, agent or card",
-                            "aria-label": "Find a player, agent or card",
-                            value: "{text}",
-                            oninput: move |e| text.set(e.value()),
+                        if rivals() {
+                            label { class: "lb-history-rated",
+                                super::Switch { on: rivals_rated(), onclick: move |_| rivals_rated.toggle() }
+                                "Rated"
+                            }
+                            input {
+                                class: "lb-input lb-history-search",
+                                r#type: "search",
+                                placeholder: "Opponent",
+                                "aria-label": "Find an opponent",
+                                value: "{who}",
+                                oninput: move |e| who.set(e.value()),
+                            }
+                        } else {
+                            label { class: "lb-history-rated",
+                                super::Switch { on: rated(), onclick: move |_| rated.toggle() }
+                                "Rated"
+                            }
+                            input {
+                                class: "lb-input lb-history-search",
+                                r#type: "search",
+                                placeholder: "Player, agent or card",
+                                "aria-label": "Find a player, agent or card",
+                                value: "{text}",
+                                oninput: move |e| text.set(e.value()),
+                            }
                         }
                     }
-                    div { class: "lb-history-list",
+                    if let (Some(name), false, Some((_, against))) = (&user, rivals(), vs()) {
+                        div { class: "lb-h2h-chip", "data-vs": "{against}",
+                            "{name} vs "
+                            b { "{against}" }
+                            button {
+                                class: "lb-h2h-clear",
+                                title: "Every game",
+                                "aria-label": "Show every game",
+                                onclick: move |_| {
+                                    vs.set(None);
+                                    picked.set(None);
+                                },
+                                "✕"
+                            }
+                        }
+                    }
+                    if let (Some(name), true) = (&user, rivals()) {
+                        Rivals {
+                            name: name.clone(),
+                            venue: venue(),
+                            rated: rivals_rated(),
+                            who: who(),
+                            onpick: move |m: Matchup| {
+                                vs.set(Some((m.key, m.seat.name)));
+                                rated.set(rivals_rated());
+                                text.set(String::new());
+                                picked.set(None);
+                                rivals.set(false);
+                            },
+                        }
+                    }
+                    div { class: "lb-history-list", display: if rivals() { "none" },
                         if let Some(e) = error {
                             p { class: "lb-error", "{e}" }
                         } else if games.is_empty() && first.read().is_some() {
@@ -177,6 +248,142 @@ pub fn GameBrowser(
                 Some(g) => rsx! { Sheet { key: "{g.id}", game: g, side: user.clone() } },
                 None => rsx! { div { class: "lb-sheet" } },
             }
+        }
+    }
+}
+
+/// Player `name`'s record against each opponent, most games together first; a pick
+/// narrows the Games tab to the games against them.
+#[component]
+fn Rivals(
+    name: String,
+    venue: Option<Venue>,
+    rated: bool,
+    who: String,
+    onpick: EventHandler<Matchup>,
+) -> Element {
+    let found = use_resource(use_reactive!(|name, venue, rated| async move {
+        api::head_to_head(&name, &HeadToHeadQuery { venue, rated }).await
+    }));
+    let who = who.trim().to_lowercase();
+    let shown: Vec<Matchup> = match &*found.read() {
+        Some(Ok(h)) => (h.opponents.iter())
+            .filter(|m| who.is_empty() || m.seat.name.to_lowercase().contains(&who))
+            .cloned()
+            .collect(),
+        _ => vec![],
+    };
+    let total = match &*found.read() {
+        Some(Ok(h)) => h.opponents.len(),
+        _ => 0,
+    };
+    let note = match &*found.read() {
+        None => None,
+        Some(Err(e)) => Some(e.message.clone()),
+        Some(Ok(_)) if total == 0 && rated => {
+            Some("No rated games yet. Turn off Rated to count every game.".to_string())
+        }
+        Some(Ok(_)) if total == 0 => Some("No finished games against anyone yet.".to_string()),
+        Some(Ok(_)) if shown.is_empty() => Some("No opponent matches.".to_string()),
+        Some(Ok(_)) => None,
+    };
+    rsx! {
+        div { class: "lb-h2h-line lb-h2h-head",
+            span {}
+            span { "Opponent" }
+            span { "Won – Lost – Tied" }
+            span { class: "lb-h2h-num", "Win %" }
+            span { class: "lb-h2h-num", "Games" }
+        }
+        div { class: "lb-h2h-list",
+            if let Some(n) = note {
+                p { class: "lb-note", "{n}" }
+            }
+            for m in shown {
+                Rival { key: "{m.key}", matchup: m.clone(), onpick }
+            }
+        }
+        if total > 0 {
+            div { class: "lb-h2h-foot",
+                if total == 1 { "1 opponent" } else { "{total} opponents" }
+            }
+        }
+    }
+}
+
+/// One opponent's row: who they are, the record as numbers and a bar, the share won.
+#[component]
+fn Rival(matchup: Matchup, onpick: EventHandler<Matchup>) -> Element {
+    let Matchup {
+        seat,
+        games,
+        wins,
+        losses,
+        ties,
+        last,
+        ..
+    } = matchup.clone();
+    let share = |n: u32| {
+        format!(
+            "width: {:.2}%",
+            f64::from(n) * 100.0 / f64::from(games.max(1))
+        )
+    };
+    let won = (f64::from(wins) + f64::from(ties) / 2.0) * 100.0 / f64::from(games.max(1));
+    let tone = match won {
+        w if w >= 60.0 => "lb-h2h-num lb-h2h-pct high",
+        w if w <= 40.0 => "lb-h2h-num lb-h2h-pct low",
+        _ => "lb-h2h-num lb-h2h-pct",
+    };
+    let met = format!("Last met {} at {}", day(last).to_lowercase(), clock(last));
+    let pick = matchup.clone();
+    let key = matchup.clone();
+    rsx! {
+        div {
+            class: "lb-h2h-line lb-h2h-row",
+            role: "button",
+            tabindex: "0",
+            title: "{met}",
+            "data-opponent": "{matchup.key}",
+            onclick: move |_| onpick.call(pick.clone()),
+            onkeydown: move |e: KeyboardEvent| {
+                if matches!(e.key(), Key::Enter) || e.key() == Key::Character(" ".into()) {
+                    e.prevent_default();
+                    onpick.call(key.clone());
+                }
+            },
+            SeatIcon { played_by: seat.played_by.clone() }
+            span { class: "lb-h2h-who",
+                match seat.account.clone() {
+                    Some(name) => rsx! {
+                        span {
+                            onclick: |e| e.stop_propagation(),
+                            onkeydown: |e| e.stop_propagation(),
+                            Link { class: "lb-h2h-name", to: Route::User { name }, "{seat.name}" }
+                        }
+                    },
+                    None => rsx! { span { class: "lb-h2h-name", "{seat.name}" } },
+                }
+                span { class: "lb-h2h-caption", "{caption(&seat)}" }
+            }
+            span { class: "lb-h2h-record",
+                span { class: "lb-h2h-score",
+                    span { class: "won", "{wins}" }
+                    span { class: "dash", "–" }
+                    span { class: "lost", "{losses}" }
+                    if ties > 0 {
+                        span { class: "dash", "–" }
+                        span { class: "tied", "{ties}" }
+                    }
+                }
+                span { class: "lb-h2h-bar",
+                    span { class: "won", style: share(wins) }
+                    span { class: "tied", style: share(ties) }
+                    span { class: "lost", style: share(losses) }
+                }
+            }
+            span { class: tone, "{won.round()}%" }
+            span { class: "lb-h2h-num lb-h2h-games", "{games}" }
         }
     }
 }

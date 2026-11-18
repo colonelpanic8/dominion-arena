@@ -7,9 +7,10 @@ use dominion_protocol::api::{
     SeatView, WebSettings,
 };
 use dominion_protocol::lobby::{
-    BotKey, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable, Leaderboard,
-    Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable,
-    OFFICIAL_GAME_PREFIX, Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec, Venue,
+    BotKey, ChatLog, Credentials, GuestRequest, HeadToHead, HeadToHeadQuery, History, HistoryQuery,
+    JoinTable, Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword,
+    NewTable, OFFICIAL_GAME_PREFIX, Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo,
+    TableSpec, Venue,
 };
 use std::fmt;
 
@@ -365,7 +366,24 @@ pub async fn history(q: &HistoryQuery) -> Result<History> {
     if let Some(text) = q.q.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         url.push_str(&format!("&q={}", encode(text)));
     }
+    if let Some(vs) = &q.vs {
+        url.push_str(&format!("&vs={}", encode(vs)));
+    }
     imp::get(&url, None).await
+}
+
+/// Player `name`'s record against everyone they played, over the games `q` picks.
+pub async fn head_to_head(name: &str, q: &HeadToHeadQuery) -> Result<HeadToHead> {
+    let mut url = format!("/api/users/{}/opponents?", encode(name));
+    match q.venue {
+        Some(Venue::Arena) => url.push_str("venue=arena&"),
+        Some(Venue::Official) => url.push_str("venue=official&"),
+        None => {}
+    }
+    if q.rated {
+        url.push_str("rated=true");
+    }
+    imp::get(url.trim_end_matches(['?', '&']), None).await
 }
 
 #[cfg_attr(not(all(feature = "web", target_arch = "wasm32")), allow(dead_code))]

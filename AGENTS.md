@@ -99,7 +99,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           games' records (no rating or tally), `OfficialRecords`
     history.rs            the history read model: `/api/history` and players' pages read
                           finished games only through it, as `PastGame`s, merged and
-                          filtered over its `GameSource`s (one per place games are kept)
+                          filtered over its `GameSource`s (one per place games are kept),
+                          and a player's record against each opponent (`head_to_head`)
     house.rs              the server's own agents: their accounts, the runner connected,
                           its jobs (every seat they hold in a running game, sent when they
                           change), each player's agent seats a day
@@ -272,7 +273,9 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           player's page, which lists its games the same way: players in
                           seat order, the first on the left, the winner crowned, each name with
                           an icon (a person, a bot, a token, an agent's maker's logo) and
-                          a caption of what played it (`PlayedBy`)
+                          a caption of what played it (`PlayedBy`); on a player's page a
+                          Head to head tab beside it (`Rivals`), whose pick narrows the
+                          games to those against that opponent
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
