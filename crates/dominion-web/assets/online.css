@@ -3,7 +3,7 @@
 .online-idle .online-controls { padding-top: 1.2em; }
 .online-controls > strong { font: 700 1.3em var(--ui); color: #fff; }
 .online-controls p { margin: 0; }
-.online-controls label { display: grid; gap: .3em; color: var(--muted, #ccc); font-weight: 600; font-size: .92em; }
+.online-controls label { display: grid; gap: .3em; color: var(--muted, var(--text-soft)); font-weight: 600; font-size: .92em; }
 .online-controls :is(input, select, textarea) { width: 100%; min-width: 0; color: var(--text, #fff); font-weight: 400; font-size: 1.08em; }
 .online-controls textarea { font: inherit; color: inherit; background: rgba(0, 0, 0, .45); min-height: 5em; resize: vertical; }
 .online-controls > button { justify-self: start; }

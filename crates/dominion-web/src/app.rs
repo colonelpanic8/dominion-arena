@@ -7,6 +7,7 @@ use dioxus::prelude::*;
 use dominion_protocol::api::WebSettings;
 use std::rc::Rc;
 
+const TOKENS_CSS: &str = include_str!("../assets/tokens.css");
 const CSS: &str = include_str!("../assets/style.css");
 const CARD_CSS: &str = include_str!("../assets/cards.css");
 const LOBBY_CSS: &str = include_str!("../assets/lobby.css");
@@ -98,6 +99,7 @@ pub fn App() -> Element {
     let asset_css = assets.read().css();
     rsx! {
         document::Title { "Dominion" }
+        document::Style { "{TOKENS_CSS}" }
         document::Style { "{CSS}" }
         document::Style { "{CARD_CSS}" }
         document::Style { "{LOBBY_CSS}" }

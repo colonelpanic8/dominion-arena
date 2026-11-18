@@ -280,13 +280,27 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           games to those against that opponent
     cardlists.rs          Cardlists: the account's Banned list
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
+  assets/tokens.css       the palette and fonts the other stylesheets take (see "Web styles")
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
                           Tables listing
+  tests/style.rs          the stylesheets held to tokens.css
 nix/module.nix            `nixosModules.default`: `services.dominion`, the server and its agents as
                           system services
 nix/agents.nix            the agent profiles the module offers by default
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
+
+## Web styles
+
+- Colours and fonts come from `assets/tokens.css` (`var(--gold)`, `var(--text-soft)`,
+  `var(--ui)`, ...). `tests/style.rs` refuses a token's value, or a near-duplicate it
+  replaced, written out in any other stylesheet; `table.css` and `cards.css` keep
+  dominion.games' own colours and are exempt. Add a token only for a colour with a role;
+  a stand-in for a missing picture or a material's shading stays where it is used.
+- Buttons: gold (`lb-button lb-gold`) for a screen's one main action, copper for a row's
+  or a secondary action, stone for picking among equal choices. An oval (`lb-oval`) is a
+  toggle or filter, never an action. A tab's content sits in a `Fieldset`, except the
+  Tables list, which keeps dominion.games' open layout.
 
 ## Card data
 
