@@ -1,7 +1,11 @@
 use super::process::{Launch, write_json, write_private};
 use crate::runner::AgentSpec;
 use serde_json::{Value, json};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Where `agy` keeps its conversations under `GEMINI_HOME`, one database each: what counts
+/// Antigravity's usage (T3 Code) reads them there.
+const CONVERSATIONS: &str = "antigravity-cli/conversations";
 
 /// The tools a seat started in the playbook may use beyond the game's: reading it and
 /// running its lookups. Antigravity offers `manage_task` with `run_command`, for a command
@@ -83,13 +87,35 @@ fn permissions(work: &Path, playbook: bool, mcp: bool) -> Result<(), String> {
     )
 }
 
-pub fn mounts(cmd: &mut tokio::process::Command, work: &Path) {
+/// The seat's own folder for its conversations, named after its archive and kept after it
+/// ends. One that can't be made is reported and the seat plays on without it.
+pub fn conversations(spec: &AgentSpec, auth: &Path, archive: &Path) -> Option<PathBuf> {
+    let base = (spec.conversations_dir.clone())
+        .unwrap_or_else(|| auth.join(CONVERSATIONS).join("dominion-arena"));
+    let dir = base.join(archive.file_name()?);
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder
+        .create(&dir)
+        .inspect_err(|e| eprintln!("dominion agents: conversations in {}: {e}", dir.display()))
+        .ok()?;
+    Some(dir)
+}
+
+pub fn mounts(cmd: &mut tokio::process::Command, work: &Path, conversations: Option<&Path>) {
     let target = "/home/agent/.gemini";
     cmd.env("GEMINI_HOME", target)
         .env("AGY_ACP_FORCE_FILE_STORAGE", "1");
     cmd.arg("--bind")
         .arg(work.join("config"))
         .arg(format!("{target}/config"));
+    if let Some(dir) = conversations {
+        cmd.arg("--bind")
+            .arg(dir)
+            .arg(format!("{target}/{CONVERSATIONS}"));
+    }
 }
 
 pub fn launch(spec: &AgentSpec) -> Launch {

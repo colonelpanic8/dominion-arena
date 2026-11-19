@@ -54,6 +54,10 @@ pub struct AgentSpec {
     pub history_turns: Option<usize>,
     /// Provider's native credential/config directory (default its standard location).
     pub auth_dir: Option<PathBuf>,
+    /// antigravity: where seats keep their conversations, a folder each, so what counts
+    /// Antigravity's usage from them counts the seats' (default
+    /// `<auth_dir>/antigravity-cli/conversations/dominion-arena`).
+    pub conversations_dir: Option<PathBuf>,
     /// T3 Code's provider instance (account), when program is t3code.
     pub provider_instance: Option<String>,
     /// Options T3 Code advertises for this model, when program is t3code.
@@ -91,6 +95,12 @@ impl AgentSpec {
         {
             return Err(format!(
                 "{}: options and provider_instance require program = \"t3code\"",
+                self.name
+            ));
+        }
+        if self.program != Program::Antigravity && self.conversations_dir.is_some() {
+            return Err(format!(
+                "{}: conversations_dir requires program = \"antigravity\"",
                 self.name
             ));
         }
@@ -133,6 +143,7 @@ pub fn default_agents() -> Vec<AgentSpec> {
         api_key_env: None,
         context_results: None,
         auth_dir: None,
+        conversations_dir: None,
         provider_instance: None,
         options: BTreeMap::new(),
     })

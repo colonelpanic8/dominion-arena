@@ -44,6 +44,8 @@ pub struct Harness {
     _proxy: sandbox::Proxy,
     /// Codex's usage, for what counts it: `--ephemeral` keeps no rollout of its own.
     usage: Option<UsageLog>,
+    /// Antigravity's conversations, kept for what counts its usage from them.
+    conversations: Option<PathBuf>,
 }
 
 pub fn write_json(path: &Path, value: &Value) -> Result<(), String> {
@@ -119,6 +121,7 @@ impl Harness {
             .collect();
         let proxy = sandbox::Proxy::start(&sockets.proxy(), hosts, archive.join("network.jsonl"))?;
         let mut usage = None;
+        let mut conversations = None;
         let mut launch = match spec.program {
             Program::Claude => claude::launch(spec, playbook),
             Program::Codex => {
@@ -130,6 +133,7 @@ impl Harness {
             }
             Program::Antigravity => {
                 antigravity::settings(&work, playbook)?;
+                conversations = antigravity::conversations(spec, &auth, archive);
                 antigravity::launch(spec)
             }
             Program::T3Code | Program::OpenAi | Program::Anthropic => {
@@ -154,6 +158,7 @@ impl Harness {
             sockets,
             _proxy: proxy,
             usage,
+            conversations,
         })
     }
 
@@ -294,7 +299,7 @@ impl Harness {
             cmd.env("CODEX_HOME", home);
         }
         if spec.program == Program::Antigravity {
-            antigravity::mounts(&mut cmd, &self.work);
+            antigravity::mounts(&mut cmd, &self.work, self.conversations.as_deref());
         }
         let workdir = match &self.sandbox.playbook {
             Some(playbook) => {
