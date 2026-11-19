@@ -590,6 +590,13 @@ login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and res
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or `GEMINI_HOME`). Codex needs its native
 `models_cache.json`, populated by starting Codex once after sign-in.
 
+An Antigravity seat keeps its conversation in a folder of its own under
+`conversations_dir` (default `<auth_dir>/antigravity-cli/conversations/dominion-arena`),
+where `agy` would keep it, so anything that counts Antigravity usage from those
+conversations (T3 Code's usage page) counts the seat's too. When `auth_dir` is a copy
+of a login kept elsewhere, point `conversations_dir` into the login's own home
+(`~/.gemini/antigravity-cli/conversations/dominion-arena`) to have it counted there.
+
 For an opt-in native subscription check, set `DOMINION_LIVE_AGENT` to `claude`, `codex`,
 or `antigravity` (an opponent may also be `openai` or `anthropic`) and run `cargo test -p dominion-server --test native live_native_game
 -- --ignored --nocapture`. Optional `DOMINION_LIVE_COMMAND` and `DOMINION_LIVE_MODEL`
@@ -859,7 +866,8 @@ network_allow = []             # agents: hosts seats may reach beyond their prov
 # exclude = ["claude-*-4-*"]
 # efforts = ["high", "max"]    # default: every effort the model has
 # tag = "Codex"                # appended to the agents' names
-# (and command, auth_dir, instructions, response_seconds, api_key_env, context_results)
+# (and command, auth_dir, conversations_dir, instructions, response_seconds, api_key_env,
+#  context_results)
 server = "http://127.0.0.1:7317/mcp"  # play: the endpoint to connect to (default: at listen and port)
 reconnect_seconds = 30         # play: how long to keep trying to reach a server that went away
 solo_dir = "/srv/dominion/solo"    # solo: where its games are kept (default $XDG_STATE_HOME/dominion/solo)

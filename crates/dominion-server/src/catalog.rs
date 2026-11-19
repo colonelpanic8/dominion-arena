@@ -29,6 +29,7 @@ pub struct CatalogSpec {
     pub tag: Option<String>,
     pub command: Option<String>,
     pub auth_dir: Option<PathBuf>,
+    pub conversations_dir: Option<PathBuf>,
     pub instructions: Option<String>,
     pub response_seconds: Option<u32>,
     pub api_key_env: Option<String>,
@@ -118,6 +119,9 @@ impl CatalogSpec {
         {
             return Err("api_key_env and context_results require program = \"openai\"".into());
         }
+        if self.program != Program::Antigravity && self.conversations_dir.is_some() {
+            return Err("conversations_dir requires program = \"antigravity\"".into());
+        }
         Ok(())
     }
 
@@ -179,6 +183,7 @@ impl CatalogSpec {
             response_seconds: self.response_seconds,
             history_turns: None,
             auth_dir: self.auth_dir.clone(),
+            conversations_dir: self.conversations_dir.clone(),
             provider_instance: None,
             options: BTreeMap::new(),
             api_key_env: self.api_key_env.clone(),
@@ -550,6 +555,7 @@ mod tests {
             tag: None,
             command: None,
             auth_dir: None,
+            conversations_dir: None,
             instructions: None,
             response_seconds: None,
             api_key_env: None,
