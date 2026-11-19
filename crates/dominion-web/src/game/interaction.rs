@@ -70,6 +70,7 @@ impl Interaction {
 
 fn is_landscape(view: &AgentView, card: &str) -> bool {
     view.landscapes.iter().any(|l| l.card == card)
+        || crate::game::board::druid_boons(view).any(|b| b == card)
 }
 
 /// The visible pile whose top card is `card`.

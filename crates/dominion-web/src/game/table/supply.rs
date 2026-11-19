@@ -30,11 +30,13 @@ pub fn basic_columns(b: &Board) -> (Vec<PileEntry>, Vec<PileEntry>) {
 }
 
 /// What sits beside the kingdom, in order: landscapes by cost and name, then Boons and
-/// Hexes. Artifacts are no part of it: their holder's bar shows them.
+/// Hexes, then the Boons set aside for Druid. Artifacts are no part of it: their
+/// holder's bar shows them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Wide {
     Landscape(LandscapeEntry),
     Deck(&'static str, CardDeck),
+    Druid(String),
 }
 
 pub fn wides(b: &Board) -> Vec<Wide> {
@@ -51,6 +53,7 @@ pub fn wides(b: &Board) -> Vec<Wide> {
     if let Some(d) = b.hexes.clone() {
         out.push(Wide::Deck("Hexes", d));
     }
+    out.extend(b.druid_boons.iter().cloned().map(Wide::Druid));
     out
 }
 
@@ -90,6 +93,7 @@ pub fn SupplyArea(
                 match w.clone() {
                     Wide::Landscape(l) => rsx! { Landscape { key: "l{l.card}", entry: l, at: *r, ui: ui.clone(), sel: sel.clone() } },
                     Wide::Deck(label, d) => rsx! { Deck { key: "{label}", label, deck: d, at: *r } },
+                    Wide::Druid(card) => rsx! { DruidBoon { key: "d{card}", card, at: *r, ui: ui.clone(), sel: sel.clone() } },
                 }
             }
             for (p, r) in non_supply.iter().zip(g.non_supply.iter()) {
@@ -242,6 +246,32 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
             badges: entry.badges.clone(),
             cubes: entry.owners.iter().map(|w| (w.seat, w.name.clone())).collect::<Vec<_>>(),
             class: "dt-landscape dt-kind-{entry.kind}",
+            at,
+        }
+    }
+}
+
+/// A Boon set aside for Druid, marked with Druid's name; clicked to receive it when Druid
+/// asks.
+#[component]
+fn DruidBoon(card: String, at: Rect, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+    let mark = mark_at(&ui, &sel, Spot::Landscape(card.clone()));
+    let plus = mark.target.is_some();
+    let badge = crate::game::board::Badge {
+        kind: "note".into(),
+        text: format!("Druid: {card}"),
+        count: None,
+        player: None,
+        card: Some("Druid".into()),
+    };
+    rsx! {
+        TableCard {
+            name: card,
+            size: CardSize::Mini,
+            mark,
+            plus,
+            badges: vec![badge],
+            class: "dt-landscape dt-druid-boon",
             at,
         }
     }

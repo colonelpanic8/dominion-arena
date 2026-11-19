@@ -65,6 +65,7 @@ fn check_placement(view: &AgentView, d: &AgentDecision, inter: &Interaction) {
                     view.landscapes
                         .iter()
                         .any(|l| Some(l.card.as_str()) == card)
+                        || dominion_web::game::board::druid_boons(view).any(|b| Some(b) == card)
                 );
             }
             Place::Tray => assert!(t.card.is_some() || t.zone.is_some(), "{t:?}"),
@@ -260,6 +261,7 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
             .notes
             .iter()
             .filter(|n| n.player.is_none() && n.pile.as_ref() != Some(&n.source))
+            .filter(|n| n.source != "Druid")
             .filter(|n| match (&n.pile, &n.card) {
                 (Some(pile), None) => *pile == e.name,
                 (None, Some(_)) => n.source == e.name,
@@ -315,6 +317,13 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
     );
     assert_eq!(b.boons.is_some(), view.boons.is_some());
     assert_eq!(b.hexes.is_some(), view.hexes.is_some());
+    let druid: Vec<&str> = view
+        .notes
+        .iter()
+        .filter(|n| n.source == "Druid")
+        .filter_map(|n| n.card.as_deref())
+        .collect();
+    assert_eq!(b.druid_boons, druid);
     assert_eq!(b.artifacts.len(), view.artifacts.len());
     assert_eq!(b.lasting.len(), view.lasting.len());
     assert_eq!(b.extra_turns.len(), view.extra_turns.len());
@@ -1036,6 +1045,29 @@ fn way_buttons_answer_the_way_question_in_advance() {
         table.answer(seat, &sel.answer(&d).unwrap()).unwrap();
     }
     assert!(used > 10, "used {used}");
+}
+
+#[test]
+fn druids_boons_sit_beside_the_kingdom_and_answer_druid() {
+    let cards = card_db();
+    let mut table = Table::new("g", config(&["Druid"], 2, 7), vec![]).unwrap();
+    let mut rng = StdRng::seed_from_u64(7);
+    while let Some(seat) = table.deciding() {
+        let view = table.view(seat);
+        let d = view.decision.clone().unwrap();
+        let b = board(&view, Some(seat.0), &Default::default(), &cards);
+        assert_eq!(b.druid_boons.len(), 3);
+        if d.source.as_deref() == Some("Druid") {
+            let inter = interaction(&view, &d, &cards);
+            let spots = spots(&b, &inter);
+            let boons: Vec<Spot> = b.druid_boons.iter().cloned().map(Spot::Landscape).collect();
+            assert_eq!(spots, boons);
+            return;
+        }
+        let sel = steer(&view, &cards, &["Druid"], &mut rng);
+        table.answer(seat, &sel.answer(&d).unwrap()).unwrap();
+    }
+    panic!("Druid never asked");
 }
 
 #[test]

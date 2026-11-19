@@ -30,6 +30,8 @@ pub struct Board {
     pub trash: Zone,
     pub boons: Option<CardDeck>,
     pub hexes: Option<CardDeck>,
+    /// The Boons set aside for Druid.
+    pub druid_boons: Vec<String>,
     pub artifacts: Vec<Holding>,
     pub lasting: Vec<Lasting>,
     pub extra_turns: Vec<ExtraTurn>,
@@ -825,8 +827,8 @@ fn kingdom_rows(mut piles: Vec<PileEntry>) -> Vec<Vec<PileEntry>> {
 
 /// Puts a note where it belongs: tokens it counts on the pile or landscape they sit on
 /// (Family of Inventors' Favors, Sinister Plot's), the pile it names (the Bane,
-/// Obelisk's pile), or a card it names on the pile or landscape it comes from (Druid's
-/// Boons, Way of the Mouse's card). Every note is also listed with the other effects.
+/// Obelisk's pile), or a card it names on the pile or landscape it comes from (Way of the
+/// Mouse's card, Riverboat's). Every note is also listed with the other effects.
 fn note_badge(
     n: &dominion_protocol::NoteView,
     names: &Names<'_>,
@@ -878,9 +880,18 @@ fn note_tokens<'a>(
     }
 }
 
+/// The Boons set aside for Druid: shown as cards beside the kingdom, not as a note.
+pub fn druid_boons(view: &AgentView) -> impl Iterator<Item = &str> {
+    view.notes.iter().filter_map(|n| {
+        (n.source == "Druid" && n.player.is_none() && n.pile.is_none())
+            .then_some(n.card.as_deref())
+            .flatten()
+    })
+}
+
 /// A note shown as the card it names, and where it goes.
 fn note_card_badge(n: &dominion_protocol::NoteView) -> Option<(&str, Badge)> {
-    if n.player.is_some() || n.pile.as_ref() == Some(&n.source) {
+    if n.player.is_some() || n.pile.as_ref() == Some(&n.source) || n.source == "Druid" {
         return None;
     }
     let (on, kind, card) = match (&n.pile, &n.card) {
@@ -1042,6 +1053,7 @@ pub fn board(
         trash: zone(&view.trash, cards),
         boons: view.boons.as_ref().map(card_deck),
         hexes: view.hexes.as_ref().map(card_deck),
+        druid_boons: druid_boons(view).map(Into::into).collect(),
         artifacts: view
             .artifacts
             .iter()

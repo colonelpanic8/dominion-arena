@@ -43,7 +43,10 @@ pub fn spots(board: &Board, inter: &Interaction) -> Vec<Spot> {
                 Place::Hand if holds(you.map(|y| &y.hand), &card) => Some(Spot::Hand(card)),
                 Place::InPlay if holds(you.map(|y| &y.in_play), &card) => Some(Spot::InPlay(card)),
                 Place::Supply => t.pile.filter(|p| piles.contains(p)).map(Spot::Pile),
-                Place::Landscape if board.landscapes.iter().any(|l| l.card == card) => {
+                Place::Landscape
+                    if board.landscapes.iter().any(|l| l.card == card)
+                        || board.druid_boons.contains(&card) =>
+                {
                     Some(Spot::Landscape(card))
                 }
                 Place::Button => return Spot::Button,
