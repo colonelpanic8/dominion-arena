@@ -26,7 +26,7 @@ use crate::platform;
 use dioxus::prelude::*;
 use dominion_protocol::{AgentDecision, Answer};
 pub use model::Spot;
-pub use motion::before_change;
+pub use motion::{before_change, reset_motion};
 pub use pieces::seat_class;
 use std::collections::HashMap;
 use std::rc::Rc;
