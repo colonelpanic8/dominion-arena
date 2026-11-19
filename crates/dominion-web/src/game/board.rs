@@ -42,6 +42,8 @@ pub struct Board {
     /// Why the game ended early, when it did: `resigned` or `abandoned`.
     pub ended: Option<String>,
     pub rated: bool,
+    /// It was to be rated, and was taken out of the rated record.
+    pub voided: bool,
     pub timed: bool,
     /// People watching now.
     pub watchers: u32,
@@ -82,6 +84,7 @@ impl Board {
             p.level = meta::level(m, p.seat);
         }
         self.rated = m.rated;
+        self.voided = m.voided;
         self.timed = m.timed || m.clock.is_some();
         self.watchers = m.watchers;
         self.ended = m.ended.clone();
@@ -474,19 +477,41 @@ pub fn card_order(cards: &CardDb, a: &str, b: &str) -> Ordering {
     key(a).cmp(&key(b)).then_with(|| a.cmp(b))
 }
 
-/// Every card any of `players` is known to own, in [`card_order`], with how many of it
-/// each owns.
-pub fn owned_side_by_side(players: &[&PlayerEntry], cards: &CardDb) -> Vec<(String, Vec<u32>)> {
+/// Every card in any of `owned` (a player's cards by name each), in [`card_order`], with
+/// how many of it each has.
+pub fn side_by_side(owned: &[Vec<(&str, u32)>], cards: &CardDb) -> Vec<(String, Vec<u32>)> {
     let mut rows: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
-    for (i, p) in players.iter().enumerate() {
-        for s in &p.owned.known {
-            rows.entry(&s.card)
-                .or_insert_with(|| vec![0; players.len()])[i] += s.count;
+    for (i, p) in owned.iter().enumerate() {
+        for &(card, n) in p {
+            rows.entry(card).or_insert_with(|| vec![0; owned.len()])[i] += n;
         }
     }
     let mut out: Vec<_> = rows.into_iter().map(|(c, n)| (c.to_string(), n)).collect();
     out.sort_by(|a, b| card_order(cards, &a.0, &b.0));
     out
+}
+
+/// A column the card counts can be sorted by.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CountsKey {
+    /// A player's counts, by their place among the columns.
+    Player(usize),
+    /// The first player's count less the second's.
+    Delta,
+}
+
+/// Orders rows of `owned_side_by_side` by a column, largest first unless `ascending`;
+/// rows that tie keep their order.
+pub fn sort_counts(rows: &mut [(String, Vec<u32>)], key: CountsKey, ascending: bool) {
+    let at = |n: &[u32], i: usize| i64::from(n.get(i).copied().unwrap_or(0));
+    let value = |n: &[u32]| match key {
+        CountsKey::Player(i) => at(n, i),
+        CountsKey::Delta => at(n, 0) - at(n, 1),
+    };
+    rows.sort_by(|a, b| {
+        let o = value(&a.1).cmp(&value(&b.1));
+        if ascending { o } else { o.reverse() }
+    });
 }
 
 pub fn stacks(known: &CardCount, cards: &CardDb) -> Vec<Stack> {
@@ -582,6 +607,13 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> Pi
             "embargo",
             format!("{} Embargo token(s)", t.embargo),
             Some(t.embargo as i32),
+        ));
+    }
+    if t.blockade > 0 {
+        badges.push(badge(
+            "blockade",
+            format!("{} Blockade token(s)", t.blockade),
+            Some(t.blockade as i32),
         ));
     }
     if t.trade_route {
@@ -1099,6 +1131,7 @@ pub fn board(
             .and_then(|r| meta::end_reason(r.reason.as_deref(), &r.players, None)),
         ended: None,
         rated: false,
+        voided: false,
         timed: false,
         watchers: 0,
     }
@@ -1114,6 +1147,29 @@ mod tests {
             stays,
             holds,
         }
+    }
+
+    #[test]
+    fn counts_sort_by_a_column_keeping_ties_in_order() {
+        let rows = |r: &[(&str, [u32; 2])]| -> Vec<(String, Vec<u32>)> {
+            r.iter().map(|(c, n)| (c.to_string(), n.to_vec())).collect()
+        };
+        let names = |r: &[(String, Vec<u32>)]| r.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>();
+        let start = rows(&[
+            ("Witch", [1, 0]),
+            ("Copper", [7, 7]),
+            ("Silver", [3, 2]),
+            ("Estate", [3, 3]),
+        ]);
+        let mut r = start.clone();
+        sort_counts(&mut r, CountsKey::Player(0), false);
+        assert_eq!(names(&r), ["Copper", "Silver", "Estate", "Witch"]);
+        let mut r = start.clone();
+        sort_counts(&mut r, CountsKey::Delta, false);
+        assert_eq!(names(&r), ["Witch", "Silver", "Copper", "Estate"]);
+        let mut r = start;
+        sort_counts(&mut r, CountsKey::Player(1), true);
+        assert_eq!(names(&r), ["Witch", "Silver", "Estate", "Copper"]);
     }
 
     #[test]

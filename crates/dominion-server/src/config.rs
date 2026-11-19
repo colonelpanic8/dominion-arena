@@ -152,6 +152,9 @@ pub struct Config {
     /// How many seats one registered player may fill with the server's agents a day
     /// (default 5; 0: no limit).
     pub agent_seats_per_day: Option<u32>,
+    /// The accounts, players' or bots', that may seat the server's agents, by name
+    /// (default: every registered player).
+    pub agent_players: Option<Vec<String>>,
     /// The agents `dominion agents` offers, as `[[agents]]` tables: `name`, `program`
     /// (`claude`, `codex`, or `antigravity`), and optionally `model`, `command`, `about` (default: Claude
     /// Opus, Claude Sonnet and Codex).
@@ -404,6 +407,7 @@ impl Config {
             agent_seats_per_day: self
                 .agent_seats_per_day
                 .unwrap_or(DEFAULT_AGENT_SEATS_PER_DAY),
+            agent_players: self.agent_players.clone(),
             skill_anchors: self.official_skill_anchors.clone().unwrap_or_default(),
         }
     }

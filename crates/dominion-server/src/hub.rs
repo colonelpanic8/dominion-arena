@@ -10,11 +10,11 @@ use dominion_engine::{
 pub use dominion_protocol::api::{
     Created, DealRequest, Dealt, GameSummary, NewGame, SeatToken, SeatView,
 };
-use dominion_protocol::api::{Replay, ReplayTurn, UndoRequest, UndoState};
+use dominion_protocol::api::{Progress, Replay, ReplayTurn, SeatProgress, UndoRequest, UndoState};
 use dominion_protocol::events::History;
 use dominion_protocol::lobby::{
-    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, Source, UndoRule,
-    UserRef,
+    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, SeatAgent, Source,
+    UndoRule, UserRef,
 };
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
@@ -98,6 +98,9 @@ pub struct Meta {
     /// Per seat: the id of the account playing it.
     pub owners: Vec<Option<String>>,
     pub rated: bool,
+    /// When it was taken out of the rated record (milliseconds since the Unix epoch): it
+    /// was rated, and no longer is.
+    pub voided: Option<u64>,
     pub watchable: bool,
     /// The deciding seat forfeits when it is away or takes too long ([`Timing`]).
     pub timed: bool,
@@ -1153,6 +1156,7 @@ fn snapshot(table: &mut Table, tokens: &[String], meta: &Meta) -> Result<Vec<u8>
 }
 
 fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary {
+    let watchable = meta.watchable && table.watchable();
     GameSummary {
         game_id: table.id().into(),
         names: table.names().to_vec(),
@@ -1174,9 +1178,53 @@ fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary 
             .collect(),
         source: meta.source,
         rated: meta.rated,
-        watchable: meta.watchable && table.watchable(),
+        watchable,
         users: vec![],
+        agents: (0..table.names().len())
+            .map(|i| match meta.runs.get(i) {
+                Some(Some(run)) => Some(SeatAgent::from(&run.setup)),
+                _ if meta.agents.get(i).copied().unwrap_or(false) => Some(SeatAgent {
+                    agent: table.names()[i].clone(),
+                    ..SeatAgent::default()
+                }),
+                _ => None,
+            })
+            .collect(),
+        progress: progress(table, watchable),
     }
+}
+
+/// Where `table`'s game stands while it runs; what each seat owns and would score only
+/// when anyone may watch it.
+fn progress(table: &Table, watchable: bool) -> Option<Progress> {
+    let g = table.game();
+    if table.is_over() {
+        return None;
+    }
+    let t = g.turn();
+    let seats = if watchable {
+        (0..g.num_players() as u8)
+            .map(|p| {
+                let p = PlayerId(p);
+                let mut owned = BTreeMap::new();
+                for id in g.player(p).owned() {
+                    *owned.entry(g.card(id).name().to_string()).or_insert(0) += 1;
+                }
+                SeatProgress {
+                    vp: g.score(p),
+                    owned,
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+    Some(Progress {
+        player: t.player.0,
+        turn: g.player(t.player).turns_taken,
+        phase: format!("{:?}", t.phase).to_lowercase(),
+        seats,
+    })
 }
 
 impl Hub {
@@ -2004,6 +2052,7 @@ impl Hub {
         let shown = GameMeta {
             source: meta.source,
             rated: meta.rated,
+            voided: meta.voided.is_some(),
             watchable: meta.watchable && table.watchable(),
             timed: meta.timed,
             users: vec![],
@@ -2119,6 +2168,7 @@ impl Hub {
                             turn,
                         })
                         .collect(),
+                    seat: None,
                 }),
             };
             let replayed = match &replay {
@@ -2550,7 +2600,8 @@ impl Hub {
     }
 
     /// Ends the game with `seat` out of it: `cause` is `resigned`, `abandoned` or
-    /// `timeout`.
+    /// `timeout`. A seat of the server's agents that is abandoned failed to play, which
+    /// says nothing of anyone's skill: a rated game is voided.
     pub fn resign(&self, seat: &Seat, cause: &str) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let ended = {
@@ -2558,6 +2609,11 @@ impl Hub {
             let (next, ()) = self.attempt(&table, |next| next.resign(seat.seat))?;
             let ended = self.changed(&game, &mut table, next, |meta| {
                 meta.ended = Some(cause.into());
+                let agent = meta.agents.get(seat.seat.index()) == Some(&true);
+                if cause == "abandoned" && agent && meta.rated {
+                    meta.rated = false;
+                    meta.voided = Some(now_ms());
+                }
             })?;
             lock(&game.undo).request = None;
             ended
@@ -2635,6 +2691,16 @@ impl Hub {
                 })
             })
             .collect()
+    }
+
+    /// Notes that game `id` was voided at `at`, if it is still hosted.
+    pub fn void(&self, id: &str, at: u64) {
+        if let Ok(game) = self.game(id) {
+            self.note(&game, |meta, _| {
+                meta.rated = false;
+                meta.voided = Some(at);
+            });
+        }
     }
 
     /// Notes that game `id`'s record has been written.
@@ -3175,6 +3241,34 @@ mod shared_response_tests {
 #[cfg(test)]
 mod archive_tests {
     use super::*;
+
+    #[test]
+    fn a_rated_game_an_agent_abandons_is_voided() {
+        let hub = Hub::default();
+        let req = NewGame {
+            players: 2,
+            kingdom: vec!["Village".into()],
+            seed: Some(1),
+            ..NewGame::default()
+        };
+        let after = |rated: bool, seat: u8, cause: &str| {
+            let meta = Meta {
+                rated,
+                agents: vec![false, true],
+                ..Meta::default()
+            };
+            let game = (hub.host(config(&req).unwrap(), names(&req).unwrap(), meta)).unwrap();
+            let seat = hub.claim(&game.game_id, &game.seats[usize::from(seat)].token);
+            hub.resign(&seat.unwrap(), cause).unwrap();
+            let meta = hub.meta(&game.game_id).unwrap();
+            (meta.rated, meta.voided.is_some())
+        };
+        assert_eq!(after(true, 1, "abandoned"), (false, true));
+        assert_eq!(after(true, 0, "abandoned"), (true, false));
+        assert_eq!(after(true, 1, "resigned"), (true, false));
+        assert_eq!(after(true, 1, "timeout"), (true, false));
+        assert_eq!(after(false, 1, "abandoned"), (false, false));
+    }
 
     #[test]
     fn expired_games_can_be_viewed_but_not_played() {

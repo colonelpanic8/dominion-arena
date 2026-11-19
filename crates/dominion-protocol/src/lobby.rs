@@ -34,6 +34,10 @@ pub struct UserRef {
     /// A bot's owner.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// When their picture was set (ms), once they have one: served at
+    /// `/api/users/<name>/avatar?v=<this>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<u64>,
 }
 
 /// A Glicko-2 rating on the Glicko scale.
@@ -45,6 +49,9 @@ pub struct RatingInfo {
     pub deviation: f64,
     /// Rated games played.
     pub games: u32,
+    /// Rated games won: placed first, with someone placed lower.
+    #[serde(default)]
+    pub wins: u32,
     /// The same rating on dominion.games' scale, once the server has anchors to read it
     /// off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,7 +82,7 @@ pub enum Beyond {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {
-    /// Finished games against other players, rated or not.
+    /// Finished games against other players, rated or not; no voided game.
     pub games: u32,
     pub wins: u32,
 }
@@ -724,6 +731,9 @@ pub enum Source {
 pub struct GameMeta {
     pub source: Source,
     pub rated: bool,
+    /// It was to be rated, and was taken out of the rated record.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub voided: bool,
     pub watchable: bool,
     pub timed: bool,
     /// Per seat: the account playing it, if one is.
@@ -866,6 +876,7 @@ pub struct Playbook {
 
 /// One of the server's agents as the history shows it played a seat.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SeatAgent {
     /// Its account's name ("Opus 5.5 High").
@@ -905,7 +916,12 @@ pub struct GameRecord {
     pub started: u64,
     pub ended: u64,
     pub source: Source,
+    /// It counts for its players' ratings. A voided game doesn't.
     pub rated: bool,
+    /// When it was voided, in milliseconds since the Unix epoch: a rated game taken out of
+    /// the record, which changes no rating and counts in no tally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voided: Option<u64>,
     /// The view's end reason (`provinces-gone`, ...), or `resigned` / `abandoned`.
     pub reason: String,
     pub kingdom: Vec<String>,
@@ -944,8 +960,11 @@ pub struct Profile {
 pub struct Leader {
     pub rank: u32,
     pub user: UserRef,
+    /// Over rated games only.
     pub rating: RatingInfo,
-    pub stats: Stats,
+    /// For one of the server's agents: what it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<SeatAgent>,
 }
 
 /// `GET /api/leaderboard`: rated players, best first.
@@ -978,12 +997,55 @@ pub struct HistoryQuery {
     pub limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub venue: Option<Venue>,
-    /// Rated games only.
+    /// Rated games only: no voided game.
     #[serde(default, skip_serializing_if = "is_false")]
     pub rated: bool,
+    /// Voided games too, which are left out otherwise.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub voided: bool,
     /// Games with a player, the account behind a seat or a card whose name contains this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub q: Option<String>,
+    /// Games against this opponent: a `Matchup::key`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vs: Option<String>,
+}
+
+/// `GET /api/users/{name}/opponents`' query: which of their finished games to count.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadToHeadQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub venue: Option<Venue>,
+    /// Rated games only.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub rated: bool,
+}
+
+/// `GET /api/users/{name}/opponents`: everyone a player has played, most games together
+/// first.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadToHead {
+    pub opponents: Vec<Matchup>,
+}
+
+/// A player's record against one opponent over the finished games both played: a win is
+/// finishing ahead of them, a loss behind, a tie the same place.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Matchup {
+    /// The opponent: their account, else their name in the game (a seat token, a player
+    /// on dominion.games). `HistoryQuery::vs` takes it.
+    pub key: String,
+    /// Their seat in the latest of those games: its name, account and what played it.
+    pub seat: PastPlayer,
+    pub games: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub ties: u32,
+    /// When the latest ended, in milliseconds since the Unix epoch.
+    pub last: u64,
 }
 
 /// How an Arena game's players came together.
@@ -1015,10 +1077,17 @@ pub struct PastGame {
     /// The server still hosts it: the game page at `/game/{id}` opens it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub open: bool,
+    /// It isn't hosted, but its recording replays at `/game/{id}/replay`: a dominion.games
+    /// game an account here recorded.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub replayable: bool,
     /// Milliseconds since the Unix epoch.
     pub started: u64,
     pub ended: u64,
     pub rated: bool,
+    /// When it was taken out of the rated record (`GameRecord::voided`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voided: Option<u64>,
     /// How it ended: `provinces-gone`, `resigned`, `abandoned`, ...
     pub reason: String,
     pub kingdom: Vec<String>,

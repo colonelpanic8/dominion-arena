@@ -3,6 +3,7 @@ pub mod catalog;
 mod knowledge;
 pub mod model;
 pub mod questions;
+pub mod record;
 pub mod reducer;
 pub mod server;
 pub mod transport;

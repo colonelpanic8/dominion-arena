@@ -1,0 +1,36 @@
+/* The site's palette and type, loaded before every other stylesheet. A colour another
+   stylesheet writes out is either here or a one-off (a stand-in for a picture, a
+   material's own shading); tests/style.rs refuses these values and their retired
+   near-duplicates anywhere else. Pure black and white, at any opacity, need no token. */
+
+:root {
+  /* Gold, the accent: selected, current, the turn's seat, yours. */
+  --gold: #f5bc34;
+  /* A number worth reading: ratings, scores, records. */
+  --gold-pale: #f0cf7a;
+  /* Rules, rings round faces, dividers, borders that frame. */
+  --gold-deep: #c9a24d;
+  /* What glows under the pointer or when picked. */
+  --gold-glow: #f9c554;
+
+  /* Copper: toggles that are on, and the copper material's edges. */
+  --ember: #ec8929;
+  --copper: #9c5c23;
+  --copper-dark: #8a4f2c;
+
+  /* Light on the dark painting, from names down to what is switched off. */
+  --text: #eee8dc;
+  --text-soft: #cfc8b8;
+  --text-muted: #a9a294;
+  --text-faint: #8f8a80;
+
+  /* The dashed rule under a list's heading or a day. */
+  --rule-dashed: 2px dashed color-mix(in srgb, var(--text-soft) 50%, transparent);
+
+  --good: #8fd07a;
+  --bad: #f17878;
+
+  --ui: DomUi, Raleway, "Segoe UI", sans-serif;
+  --title: DomTitle, "Trajan Pro", "Times New Roman", serif;
+  --num: DomCount, Montserrat, "Segoe UI", sans-serif;
+}

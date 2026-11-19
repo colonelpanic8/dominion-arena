@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
     rated_games INTEGER NOT NULL DEFAULT 0,
     games INTEGER NOT NULL DEFAULT 0,
     wins INTEGER NOT NULL DEFAULT 0,
+    rated_wins INTEGER NOT NULL DEFAULT 0,
     -- Their own Banned cards list as a JSON array, once they have set one.
     banned_cards TEXT
 );
@@ -71,6 +72,14 @@ CREATE TABLE IF NOT EXISTS agent_transcript (
     UNIQUE (game, seat, attempt, offset)
 );
 CREATE INDEX IF NOT EXISTS agent_transcript_game ON agent_transcript (game, sequence);
+-- An account's picture: a small image its owner uploaded, PNG, JPEG or WebP.
+CREATE TABLE IF NOT EXISTS avatars (
+    user INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    image BLOB NOT NULL,
+    -- When it was set (ms): its URL changes with it.
+    updated INTEGER NOT NULL
+);
 -- The accounts that played each game. They outlive a guest's account.
 CREATE TABLE IF NOT EXISTS game_players (
     user INTEGER NOT NULL,
@@ -115,11 +124,72 @@ fn add_venues(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Gives a database from before `users.rated_wins` the column, counted from the records
+/// of its rated games.
+fn add_rated_wins(conn: &Connection) -> rusqlite::Result<()> {
+    let has = conn
+        .prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'rated_wins'")?
+        .exists([])?;
+    if has {
+        return Ok(());
+    }
+    conn.execute_batch("ALTER TABLE users ADD COLUMN rated_wins INTEGER NOT NULL DEFAULT 0")?;
+    let mut wins: HashMap<i64, u32> = HashMap::new();
+    {
+        let mut query = conn.prepare(
+            "SELECT u.id, lower(u.name), g.record FROM game_players p \
+             JOIN users u ON u.id = p.user JOIN games g ON g.id = p.game \
+             WHERE g.venue = 'arena'",
+        )?;
+        let rows = query.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (user, name, record) = row?;
+            let Ok(record) = serde_json::from_str::<GameRecord>(&record) else {
+                continue;
+            };
+            if record.rated && rated_win(&record, &name) {
+                *wins.entry(user).or_default() += 1;
+            }
+        }
+    }
+    for (user, n) in wins {
+        conn.execute(
+            "UPDATE users SET rated_wins = ?2 WHERE id = ?1",
+            params![user, n],
+        )?;
+    }
+    Ok(())
+}
+
+/// Whether the account called `name` (lowercased) won `record`: placed first, with
+/// someone placed lower.
+fn rated_win(record: &GameRecord, name: &str) -> bool {
+    let seat = (record.players.iter())
+        .find(|p| p.user.as_deref().unwrap_or(&p.name).to_lowercase() == name);
+    let won = record.players.iter().any(|p| p.rank != 1);
+    won && seat.is_some_and(|p| p.rank == 1)
+}
+
 /// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
-const SCHEMA_VERSION: i32 = 4;
+const SCHEMA_VERSION: i32 = 6;
 
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
-                    rated_at, rated_games, games, wins, banned_cards";
+                    rated_at, rated_games, games, wins, banned_cards, rated_wins";
+
+/// When account `id`'s picture was set, if it has one.
+fn avatar_set(conn: &Connection, id: &str) -> rusqlite::Result<Option<u64>> {
+    let mut query = conn.prepare_cached("SELECT updated FROM avatars WHERE user = ?1")?;
+    query
+        .query_row([row_of(id)], |r| r.get::<_, i64>(0))
+        .optional()
+        .map(|t| t.map(|t| t as u64))
+}
 
 fn id_of(row: i64) -> String {
     format!("u{row}")
@@ -166,6 +236,7 @@ fn read_user(row: &Row<'_>) -> rusqlite::Result<User> {
         rated_games: row.get(10)?,
         games: row.get(11)?,
         wins: row.get(12)?,
+        rated_wins: row.get(14)?,
         banned_cards: banned.and_then(|b| serde_json::from_str(&b).ok()),
     })
 }
@@ -246,6 +317,7 @@ impl Db {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
         add_venues(&conn)?;
+        add_rated_wins(&conn)?;
         conn.execute_batch("CREATE INDEX IF NOT EXISTS games_venue ON games (venue, ended DESC)")?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         Ok(Db {
@@ -334,6 +406,7 @@ impl Db {
                 kind: u.kind(),
                 rating: (u.rated_games > 0).then(|| u.rating.rating.round() as i32),
                 owner: owner.map(|o| o.name),
+                avatar: avatar_set(&conn, id).ok().flatten(),
                 name: u.name,
             }
         });
@@ -343,6 +416,35 @@ impl Db {
         }
         refs.insert(id.to_string(), found.clone());
         found
+    }
+
+    /// Gives account `id` the picture `image` of media type `kind`, set at `now` (ms).
+    pub fn set_avatar(&self, id: &str, kind: &str, image: &[u8], now: u64) -> Result<()> {
+        lock(&self.conn).execute(
+            "INSERT OR REPLACE INTO avatars (user, type, image, updated) VALUES (?1, ?2, ?3, ?4)",
+            params![row_of(id), kind, image, now as i64],
+        )?;
+        self.changed();
+        Ok(())
+    }
+
+    pub fn clear_avatar(&self, id: &str) -> Result<()> {
+        lock(&self.conn).execute("DELETE FROM avatars WHERE user = ?1", [row_of(id)])?;
+        self.changed();
+        Ok(())
+    }
+
+    /// The picture of the account called `name`, and its media type.
+    pub fn avatar_of(&self, name: &str) -> Result<Option<(String, Vec<u8>)>> {
+        let conn = lock(&self.conn);
+        let mut query = conn.prepare_cached(
+            "SELECT a.type, a.image FROM avatars a JOIN users u ON u.id = a.user \
+             WHERE u.name_key = ?1",
+        )?;
+        let key = name.trim().to_lowercase();
+        Ok(query
+            .query_row([key], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?)
     }
 
     pub fn bots_of(&self, owner: &str) -> Result<Vec<User>> {
@@ -638,16 +740,113 @@ pub(super) fn tally(tx: &Transaction<'_>, t: &Tally<'_>) -> Result<()> {
     if let Some(r) = t.rating {
         tx.execute(
             "UPDATE users SET rating = ?2, deviation = ?3, volatility = ?4, rated_at = ?5, \
-             rated_games = rated_games + 1 WHERE id = ?1",
+             rated_games = rated_games + 1, rated_wins = rated_wins + ?6 WHERE id = ?1",
             params![
                 row_of(t.user),
                 r.rating,
                 r.deviation,
                 r.volatility,
-                r.at as i64
+                r.at as i64,
+                t.win as i64
             ],
         )?;
     }
+    Ok(())
+}
+
+/// Takes a voided game off one of its players' tallies of every game.
+pub(super) fn untally(tx: &Transaction<'_>, user: &str, win: bool) -> Result<()> {
+    tx.execute(
+        "UPDATE users SET games = MAX(games - 1, 0), wins = MAX(wins - ?2, 0) WHERE id = ?1",
+        params![row_of(user), win as i64],
+    )?;
+    Ok(())
+}
+
+/// Every Arena game's record in the order the games ended, with the accounts that
+/// played it.
+pub(super) fn arena_records(tx: &Transaction<'_>) -> Result<Vec<(GameRecord, Vec<String>)>> {
+    let mut query = tx
+        .prepare("SELECT id, record FROM games WHERE venue = 'arena' ORDER BY ended, number, id")?;
+    let rows = query.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut players = tx.prepare_cached("SELECT user FROM game_players WHERE game = ?1")?;
+    let mut out = vec![];
+    for row in rows {
+        let (id, json) = row?;
+        let record = serde_json::from_str(&json)
+            .map_err(|e| Error::Storage(format!("game {id}'s record: {e}")))?;
+        let users = players.query_map([&id], |r| r.get::<_, i64>(0))?;
+        let users = users
+            .map(|u| u.map(id_of))
+            .collect::<rusqlite::Result<_>>()?;
+        out.push((record, users));
+    }
+    Ok(out)
+}
+
+/// An account's rating, rated games and rated wins.
+pub(super) struct Rated {
+    pub id: String,
+    pub name: String,
+    pub rating: Rating,
+    pub games: u32,
+    pub wins: u32,
+}
+
+/// Every account's rating.
+pub(super) fn ratings(tx: &Transaction<'_>) -> Result<Vec<Rated>> {
+    let mut query = tx.prepare(
+        "SELECT id, name, rating, deviation, volatility, rated_at, rated_games, rated_wins \
+         FROM users",
+    )?;
+    let rows = query.query_map([], |r| {
+        Ok(Rated {
+            id: id_of(r.get(0)?),
+            name: r.get(1)?,
+            rating: Rating {
+                rating: r.get(2)?,
+                deviation: r.get(3)?,
+                volatility: r.get(4)?,
+                at: r.get::<_, i64>(5)? as u64,
+            },
+            games: r.get(6)?,
+            wins: r.get(7)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Replaces a game's record.
+pub(super) fn set_record(tx: &Transaction<'_>, record: &GameRecord) -> Result<()> {
+    let json = serde_json::to_string(record).map_err(|e| Error::Storage(e.to_string()))?;
+    tx.execute(
+        "UPDATE games SET record = ?2 WHERE id = ?1",
+        params![record.game_id, json],
+    )?;
+    Ok(())
+}
+
+/// Sets account `user`'s rating, rated games and rated wins.
+pub(super) fn set_rating(
+    tx: &Transaction<'_>,
+    user: &str,
+    r: Rating,
+    games: u32,
+    wins: u32,
+) -> Result<()> {
+    tx.execute(
+        "UPDATE users SET rating = ?2, deviation = ?3, volatility = ?4, rated_at = ?5, \
+         rated_games = ?6, rated_wins = ?7 WHERE id = ?1",
+        params![
+            row_of(user),
+            r.rating,
+            r.deviation,
+            r.volatility,
+            r.at as i64,
+            games,
+            wins
+        ],
+    )?;
     Ok(())
 }
 
@@ -722,7 +921,7 @@ mod transcript_tests {
 #[cfg(test)]
 mod venue_tests {
     use super::*;
-    use dominion_protocol::lobby::GameRecord;
+    use dominion_protocol::lobby::{GameRecord, RecordPlayer};
 
     fn record(id: &str, source: Source, ended: u64) -> String {
         serde_json::to_string(&GameRecord {
@@ -731,6 +930,7 @@ mod venue_tests {
             ended,
             source,
             rated: false,
+            voided: None,
             reason: String::new(),
             kingdom: vec![],
             landscapes: vec![],
@@ -740,6 +940,66 @@ mod venue_tests {
             version: None,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn rated_wins_are_counted_from_the_records_of_a_database_kept_without_them() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = Connection::open(dir.path().join(FILE)).unwrap();
+            conn.execute_batch(&SCHEMA.replace("    rated_wins INTEGER NOT NULL DEFAULT 0,\n", ""))
+                .unwrap();
+            for (row, name) in [(1, "Ada"), (2, "Bo")] {
+                conn.execute(
+                    "INSERT INTO users (id, name, name_key, kind, created, rating, deviation, \
+                     volatility, rated_at) VALUES (?1, ?2, lower(?2), 'registered', 0, 1500, \
+                     350, .06, 0)",
+                    params![row, name],
+                )
+                .unwrap();
+            }
+            let seat = |name: &str, rank: u32| RecordPlayer {
+                seat: 0,
+                name: name.into(),
+                kind: Some(UserKind::Registered),
+                user: None,
+                vp: 0,
+                rank,
+                turns: 0,
+                resigned: false,
+                rating: None,
+                level: None,
+                agent: None,
+                owner: None,
+            };
+            let games = [
+                ("g1", true, [("Ada", 1), ("Bo", 2)]),
+                ("g2", true, [("Ada", 1), ("Bo", 1)]),
+                ("g3", false, [("Ada", 1), ("Bo", 2)]),
+                ("g4", true, [("Ada", 2), ("Bo", 1)]),
+            ];
+            for (id, rated, seats) in games {
+                let mut game: GameRecord =
+                    serde_json::from_str(&record(id, Source::Table, 1)).unwrap();
+                game.rated = rated;
+                game.players = seats.iter().map(|&(n, r)| seat(n, r)).collect();
+                conn.execute(
+                    "INSERT INTO games (id, number, ended, record) VALUES (?1, 0, 1, ?2)",
+                    params![id, serde_json::to_string(&game).unwrap()],
+                )
+                .unwrap();
+                for user in [1, 2] {
+                    conn.execute(
+                        "INSERT INTO game_players (user, ended, game) VALUES (?1, 1, ?2)",
+                        params![user, id],
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        let db = Db::open(Some(dir.path())).unwrap();
+        let wins = |name| db.user_by_name(name).unwrap().unwrap().rated_wins;
+        assert_eq!((wins("Ada"), wins("Bo")), (1, 1));
     }
 
     #[test]

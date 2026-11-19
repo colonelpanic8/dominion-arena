@@ -5,6 +5,7 @@
 
 mod account;
 pub mod agent_picker;
+pub mod avatar;
 mod cardlists;
 mod chat;
 mod history;
@@ -16,6 +17,7 @@ pub mod seat_link;
 mod selector;
 pub mod store;
 pub mod tables;
+pub mod who;
 
 use crate::account::{Account, use_account};
 use crate::api::{self, ApiError};
@@ -578,7 +580,7 @@ pub fn UserName(user: UserRef, #[props(default)] link: bool) -> Element {
     }
 }
 
-/// Who is signed in, under the tabs: their name and rating and Log out, or Log in.
+/// Who is signed in, under the tabs: their card and Log out, or Log in.
 #[component]
 fn Who() -> Element {
     let account = use_account();
@@ -602,7 +604,7 @@ fn Who() -> Element {
     let guest = me.user.kind == UserKind::Guest;
     rsx! {
         div { class: "lb-who", "data-me": "{me.user.name}",
-            UserName { user: me.user.clone(), link: true }
+            avatar::ProfileCard { me: me.clone() }
             button {
                 class: "lb-oval lb-who-button",
                 "data-action": "log-out",
@@ -710,17 +712,24 @@ pub fn LobbyFrame(tab: Tab, children: Element) -> Element {
     }
 }
 
-/// dominion.games' fieldset: a title on a rule, framed left, right and below.
+/// dominion.games' fieldset: a title on a rule, framed left, right and below. Without a
+/// `title`, `after_title` is the whole heading (tabs).
 #[component]
 pub fn Fieldset(
-    title: String,
+    #[props(default)] title: String,
     #[props(default)] class: String,
     #[props(default = VNode::empty())] after_title: Element,
+    #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
     children: Element,
 ) -> Element {
     rsx! {
-        div { class: "lb-fieldset {class}",
-            div { class: "lb-fieldset-title", span { "{title}" } {after_title} }
+        div { class: "lb-fieldset {class}", ..attributes,
+            div { class: "lb-fieldset-title",
+                if !title.is_empty() {
+                    span { "{title}" }
+                }
+                {after_title}
+            }
             {children}
         }
     }
@@ -733,6 +742,25 @@ pub fn OptionRow(label: String, children: Element) -> Element {
         div { class: "lb-row",
             div { class: "lb-row-label", "{label}" }
             div { class: "lb-row-rule" }
+            {children}
+        }
+    }
+}
+
+/// dominion.games' oval: a toggle or filter, lit while `active`.
+#[component]
+pub fn Oval(
+    active: bool,
+    onclick: EventHandler<MouseEvent>,
+    #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
+    children: Element,
+) -> Element {
+    rsx! {
+        button {
+            class: if active { "lb-oval active" } else { "lb-oval" },
+            "aria-pressed": "{active}",
+            onclick: move |e| onclick.call(e),
+            ..attributes,
             {children}
         }
     }

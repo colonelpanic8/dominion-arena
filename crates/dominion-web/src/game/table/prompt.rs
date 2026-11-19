@@ -4,7 +4,8 @@
 //! revealed or looked-at cards, cards in decks and discard piles, named cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, TableCard, seat_class};
+use super::pieces::{CardName, Reminder, TableCard, seat_class};
+use super::supply::Badges;
 use super::{Spot, Ui, use_table};
 use crate::app::use_cards;
 use crate::assets::use_assets;
@@ -65,8 +66,24 @@ pub fn StatusBar(
     let buys = s.buys.unwrap_or(0);
     let coins = s.coins.unwrap_or(0);
     let potions = s.potions.unwrap_or(0);
-    let debt = s.debt.unwrap_or(0);
+    let debt = s.debt.unwrap_or_else(|| token("debt"));
     let (coffers, villagers, favors) = (token("coffers"), token("villagers"), token("favors"));
+    // What else the turn player has, as dominion.games shows it after the counters.
+    let shown = ["coffers", "villagers", "favors", "debt"];
+    let badges: Vec<_> = turn_player
+        .map(|p| {
+            p.badges
+                .iter()
+                .filter(|b| !shown.contains(&b.kind.as_str()))
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    let reminders: Vec<String> = turn_player
+        .map(|p| p.states.iter().chain(&p.artifacts).cloned().collect())
+        .unwrap_or_default();
+    let boons: Vec<String> = turn_player.map(|p| p.boons.clone()).unwrap_or_default();
+    let held = !badges.is_empty() || !reminders.is_empty() || !boons.is_empty();
     let ticker: Element = if starting {
         rsx! { span { "data-prompt": "starting", "Your starting cards:" } }
     } else if !s.running {
@@ -136,6 +153,17 @@ pub fn StatusBar(
                     span { class: "dt-counter dt-icon dt-favors", title: "Favors", "{favors}" }
                 }
                 span { class: "dt-sep" }
+                if held {
+                    span { class: "dt-status-held", "data-held": "1",
+                        Badges { badges }
+                        for c in reminders.iter() {
+                            Reminder { key: "r{c}", name: c.clone() }
+                        }
+                        for c in boons.iter() {
+                            span { key: "b{c}", class: "dt-bar-held", CardName { name: c.clone() } }
+                        }
+                    }
+                }
             }
             div { class: "dt-ticker",
                 {ticker}

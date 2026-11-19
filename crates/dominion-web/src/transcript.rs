@@ -8,7 +8,7 @@ use dominion_protocol::transcript::{
     TranscriptEntry, TranscriptKind as Kind, TranscriptPage as Page,
 };
 use futures_util::StreamExt;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(crate) const CSS: &str = include_str!("../assets/transcript.css");
 
@@ -21,6 +21,8 @@ pub struct Block {
     pub agent: String,
     pub kind: Kind,
     pub text: String,
+    /// A tool call's result block's key, whether or not it has arrived.
+    result: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -47,6 +49,10 @@ impl Timeline {
             } else {
                 format!("{seat}/{}/{:?}/{}", a.attempt, a.kind, a.block)
             };
+            let result = (a.kind == Kind::Call)
+                .then(|| result_block(&a.block))
+                .flatten()
+                .map(|block| format!("{seat}/{}/{:?}/{block}", a.attempt, Kind::Result));
             if let Some(&i) = self.index.get(&key) {
                 if a.kind == Kind::Game {
                     continue;
@@ -66,6 +72,7 @@ impl Timeline {
                     agent,
                     kind: a.kind,
                     text: a.text,
+                    result,
                 });
             }
         }
@@ -77,6 +84,44 @@ impl Timeline {
             .map(|(i, b)| (b.key.clone(), i))
             .collect();
         self.next = self.next.max(page.next);
+    }
+}
+
+/// The block a tool call's result has: the call's with `call` replaced by `result`.
+fn result_block(call: &str) -> Option<String> {
+    if let Some(id) = call.strip_prefix("call/") {
+        return Some(format!("result/{id}"));
+    }
+    let (before, id) = call.rsplit_once("/call/")?;
+    Some(format!("{before}/result/{id}"))
+}
+
+/// Each shown block, a tool call with its result: a result whose call is shown is shown
+/// with it instead of in its own place.
+fn paired(blocks: Vec<Block>) -> Vec<(Block, Option<Block>)> {
+    let calls: HashSet<&str> = blocks.iter().filter_map(|b| b.result.as_deref()).collect();
+    let mut results: HashMap<String, Block> = blocks
+        .iter()
+        .filter(|b| b.kind == Kind::Result && calls.contains(b.key.as_str()))
+        .map(|b| (b.key.clone(), b.clone()))
+        .collect();
+    let with_call: HashSet<String> = results.keys().cloned().collect();
+    let mut shown = vec![];
+    for b in blocks {
+        if b.kind == Kind::Result && with_call.contains(&b.key) {
+            continue;
+        }
+        let result = b.result.as_ref().and_then(|key| results.remove(key));
+        shown.push((b, result));
+    }
+    shown
+}
+
+fn took(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{ms} ms")
+    } else {
+        format!("{:.1} s", ms as f64 / 1000.0)
     }
 }
 
@@ -254,6 +299,7 @@ pub fn TranscriptPage(id: String) -> Element {
         .filter(|b| tools() || !matches!(b.kind, Kind::Call | Kind::Result))
         .cloned()
         .collect();
+    let blocks = paired(blocks);
     rsx! {
         document::Title { "Agent transcript · Dominion" }
         document::Style { "{CSS}" }
@@ -294,7 +340,7 @@ pub fn TranscriptPage(id: String) -> Element {
                     if !ready() && error().is_none() {p {class:"transcript-empty",role:"status","Loading transcript…"}}
                     if ready() && blocks.is_empty() {p {class:"transcript-empty",role:"status","Waiting for agent activity. New output will appear here automatically."}}
                     ol {class:"transcript-timeline", "aria-label":"Agent activity",
-                        for block in blocks {
+                        for (block, result) in blocks {
                             li {key:"{block.sequence}",class:format!("trace-block trace-{:?}",block.kind).to_lowercase(), style:"--seat: var(--seat-{block.seat % 6})",
                                 time {"{clock(block.time)}"}
                                 div { class:"trace-content",
@@ -302,10 +348,23 @@ pub fn TranscriptPage(id: String) -> Element {
                                         p { class:"trace-game-line", span {class:"trace-kind","Game"} "{block.text}" }
                                     } else {
                                         header {
-                                            span {class:"trace-kind","{label(block.kind)}"}
+                                            span {class:"trace-kind", if result.is_some() { "Tool call and result" } else { "{label(block.kind)}" }}
                                             span {class:"trace-agent", span { class:"seat-dot" } "P{block.seat+1} · {block.agent}"}
                                         }
-                                        Body { kind: block.kind, text: block.text.clone(), expand: expand() }
+                                        if block.kind == Kind::Call {
+                                            div { class:"trace-call-body",
+                                                Body { kind: block.kind, text: block.text.clone(), expand: expand() }
+                                            }
+                                        } else {
+                                            Body { kind: block.kind, text: block.text.clone(), expand: expand() }
+                                        }
+                                        if let Some(result) = result {
+                                            div { class:"trace-result trace-paired",
+                                                span { class:"trace-kind", "Result" }
+                                                span { class:"trace-lines", " · {took(result.time.saturating_sub(block.time))}" }
+                                                Body { kind: result.kind, text: result.text.clone(), expand: expand() }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -407,6 +466,38 @@ mod tests {
         assert_eq!(model.blocks.len(), 2);
         assert_eq!(model.blocks[0].text, "Buy Silver");
         assert_eq!(model.blocks[1].kind, Kind::Action);
+    }
+
+    #[test]
+    fn results_are_shown_with_their_calls() {
+        let mut model = Timeline::default();
+        model.merge(Page {
+            entries: vec![
+                entry(1, 1, 0, Kind::Call, "call/c1", "state", false),
+                entry(2, 2, 0, Kind::Action, "action-2", "Play Treasures", false),
+                entry(3, 3, 0, Kind::Result, "result/c1", "STATUS", false),
+                entry(4, 4, 0, Kind::Call, "r1/call/2", "answer", false),
+                entry(5, 5, 0, Kind::Result, "r1/result/2", "GAME", false),
+                entry(6, 6, 0, Kind::Result, "result/orphan", "lost", false),
+                entry(7, 7, 0, Kind::Call, "call/c2", "wait", false),
+            ],
+            next: 7,
+            more: false,
+        });
+        let shown: Vec<_> = paired(model.blocks)
+            .into_iter()
+            .map(|(b, r)| (b.text, r.map(|r| r.text)))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("state".into(), Some("STATUS".into())),
+                ("Play Treasures".into(), None),
+                ("answer".into(), Some("GAME".into())),
+                ("lost".into(), None),
+                ("wait".into(), None),
+            ]
+        );
     }
 
     #[test]

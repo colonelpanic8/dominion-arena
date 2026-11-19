@@ -7,6 +7,7 @@ use crate::app::Route;
 use crate::platform;
 use dioxus::prelude::*;
 use dominion_protocol::api::{GameSummary, Replay, SeatView};
+use dominion_protocol::lobby::OFFICIAL_GAME_PREFIX;
 
 /// How long autoplay shows each step, in milliseconds.
 const AUTOPLAY_MS: u32 = 800;
@@ -61,6 +62,7 @@ fn take(mut state: Signal<GameState>, sv: SeatView, onward: bool) {
 
 #[component]
 pub fn ReplayPage(id: String) -> Element {
+    let official = id.starts_with(OFFICIAL_GAME_PREFIX);
     let game = use_signal(|| id.clone());
     let state = use_signal(GameState::default);
     let mut step = use_signal(|| 0usize);
@@ -135,8 +137,10 @@ pub fn ReplayPage(id: String) -> Element {
                 section { class: "panel", "data-replay-error": "1",
                     h2 { "This game can't be replayed" }
                     p { "The server said: {e}." }
-                    Link { class: "button primary", to: Route::Game { id: id.clone() }, "Open the game" }
-                    " "
+                    if !official {
+                        Link { class: "button primary", to: Route::Game { id: id.clone() }, "Open the game" }
+                        " "
+                    }
                     Link { class: "button", to: Route::Lobby {}, "Back to the lobby" }
                 }
             }
@@ -167,10 +171,21 @@ pub fn ReplayPage(id: String) -> Element {
         Some(format!("Turn {}: {name}", t.turn))
     });
     let steps = r.as_ref().map_or(0, |r| r.steps);
+    // A dominion.games game was recorded as one seat saw it, and isn't hosted here.
+    let recorded_as = r.as_ref().and_then(|r| r.seat);
+    let title = match id.strip_prefix(OFFICIAL_GAME_PREFIX) {
+        Some(official) => match recorded_as.and_then(|s| names.get(usize::from(s))) {
+            Some(name) => format!("Replay of {official}, as {name} saw it"),
+            None => format!("Replay of {official}"),
+        },
+        None => format!("Replay of game {game}"),
+    };
     let controls = rsx! {
         div { class: "seat-bar replay-bar", "data-replay-step": "{now}",
-            span { class: "game-title", "Replay of game {game}" }
-            Link { class: "replay-open", to: Route::Game { id: id.clone() }, "open game" }
+            span { class: "game-title", "{title}" }
+            if !official {
+                Link { class: "replay-open", to: Route::Game { id: id.clone() }, "open game" }
+            }
         }
         div { class: "seat-bar replay-bar",
             button { class: "toggle", title: "First decision", "data-replay": "start", disabled: now == 0, onclick: move |_| go(Go::Start), "⏮" }
@@ -209,6 +224,7 @@ pub fn ReplayPage(id: String) -> Element {
                 }
             }
         }
+        if recorded_as.is_none() {
         div { class: "seat-bar replay-bar watch-as", "data-watch-as": "{watch_as().map(i32::from).unwrap_or(-1)}",
             span { class: "muted", "as:" }
             button {
@@ -231,6 +247,7 @@ pub fn ReplayPage(id: String) -> Element {
                     }
                 }
             }
+        }
         }
         if let Some(e) = failed() {
             p { class: "error", "{e}" }
@@ -257,6 +274,7 @@ mod tests {
             step: 0,
             steps: 30,
             turns: vec![turn(0, 1), turn(10, 1), turn(20, 2)],
+            seat: None,
         };
         assert_eq!(target(&r, 15, Go::PrevTurn), 10);
         assert_eq!(target(&r, 10, Go::PrevTurn), 0);

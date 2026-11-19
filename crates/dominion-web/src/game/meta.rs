@@ -234,8 +234,12 @@ pub fn end_reason(
 }
 
 /// The log's first lines, as dominion.games heads a game's log.
-pub fn log_header(game_id: Option<&str>, rated: bool, timed: bool) -> [String; 2] {
-    let rated = if rated { "rated" } else { "unrated" };
+pub fn log_header(game_id: Option<&str>, rated: bool, voided: bool, timed: bool) -> [String; 2] {
+    let rated = match (rated, voided) {
+        (_, true) => "voided",
+        (true, false) => "rated",
+        (false, false) => "unrated",
+    };
     let game = match game_id {
         Some(id) => format!("Game {id}, {rated}."),
         None => format!("Game, {rated}."),
@@ -255,6 +259,7 @@ mod tests {
             kind,
             rating,
             owner: None,
+            avatar: None,
         })
     }
 

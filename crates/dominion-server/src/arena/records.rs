@@ -1,14 +1,15 @@
 //! Finished games: each lobby game's record, its players' ratings and tallies.
 
 use super::db::{self, Db, Tally};
-use super::history::{Ask, GameSource};
+use super::history::{self, Ask, GameSource};
 use super::house::Setups;
 use super::{Arena, Error, Login, Result, User};
 use crate::hub::{Ended, Hub, lock, now_ms};
 use crate::rating::{self, Scale};
 use dominion_protocol::lobby::{
-    AgentRun, AgentSetup, Arranged, GameRecord, History, HistoryQuery, Leader, Leaderboard,
-    PastGame, PastPlayer, PlayedBy, Profile, RecordPlayer, SeatAgent, Source, UserKind, Venue,
+    AgentRun, AgentSetup, Arranged, GameRecord, HeadToHead, HeadToHeadQuery, History, HistoryQuery,
+    Leader, Leaderboard, PastGame, PastPlayer, PlayedBy, Profile, RecordPlayer, SeatAgent, Source,
+    UserKind, Venue,
 };
 use rusqlite::Transaction;
 use std::sync::Arc;
@@ -62,6 +63,7 @@ impl Arena {
                 });
             }
             let rated = meta.rated && accounts.iter().all(Option::is_some);
+            let voided = meta.voided.filter(|_| accounts.iter().all(Option::is_some));
             let before: Vec<rating::Rating> = (accounts.iter())
                 .map(|u| u.as_ref().map(|u| u.rating).unwrap_or_default())
                 .collect();
@@ -71,7 +73,7 @@ impl Arena {
             let won = ranks.iter().filter(|&&r| r == 1).count() < ranks.len();
             let mut players = vec![];
             for (i, p) in result.players.iter().enumerate() {
-                if let Some(user) = &accounts[i] {
+                if let Some(user) = accounts[i].as_ref().filter(|_| voided.is_none()) {
                     let tally = Tally {
                         user: &user.id,
                         win: p.rank == 1 && won,
@@ -107,6 +109,7 @@ impl Arena {
                 ended: now,
                 source: meta.source,
                 rated,
+                voided,
                 reason: (meta.ended.clone())
                     .or(result.reason.clone())
                     .unwrap_or_default(),
@@ -151,26 +154,10 @@ impl Arena {
             user: Some(&user.id),
             ..Ask::default()
         };
-        let recent = self.history.find(&ask, u64::MAX, 20)?.games;
-        let agent = matches!(user.login, Login::House).then(|| {
-            let setups = lock(&self.state).house.setups();
-            let latest = recent.iter().find_map(|g| {
-                let seat = g
-                    .players
-                    .iter()
-                    .find(|p| p.account.as_deref() == Some(&user.name));
-                match &seat?.played_by {
-                    PlayedBy::Agent(a) if a.model.is_some() => Some(a.clone()),
-                    _ => None,
-                }
-            });
-            (setups.get(&user.name.to_lowercase()).map(SeatAgent::from))
-                .or(latest)
-                .unwrap_or_else(|| SeatAgent {
-                    agent: user.name.clone(),
-                    ..SeatAgent::default()
-                })
-        });
+        let mut recent = self.history.find(&ask, u64::MAX, 20)?.games;
+        complete_agents(&mut recent, &lock(&self.state).house.setups());
+        let agent = matches!(user.login, Login::House)
+            .then(|| agent_of(&user, &lock(&self.state).house.setups(), &recent));
         Ok(Profile {
             user: self.user_ref(&user),
             rating: user.rating_info(self.skill_scale().as_ref()),
@@ -188,28 +175,94 @@ impl Arena {
             user: user.as_ref().map(|u| u.id.as_str()),
             venue: q.venue,
             rated: q.rated,
+            voided: q.voided,
             text: q.q.as_deref(),
+            vs: q.vs.as_deref(),
         };
         let before = q.before.unwrap_or(u64::MAX);
-        self.history
-            .find(&ask, before, q.limit.unwrap_or(20).clamp(1, 100))
+        let mut found = (self.history).find(&ask, before, q.limit.unwrap_or(20).clamp(1, 100))?;
+        complete_agents(&mut found.games, &lock(&self.state).house.setups());
+        Ok(found)
+    }
+
+    /// A player's record against everyone they played, over their finished games `q`
+    /// picks.
+    pub fn head_to_head(&self, name: &str, q: &HeadToHeadQuery) -> Result<HeadToHead> {
+        let user = self.named(name)?;
+        let ask = Ask {
+            user: Some(&user.id),
+            venue: q.venue,
+            rated: q.rated,
+            ..Ask::default()
+        };
+        let mut games = self.history.all(&ask)?;
+        complete_agents(&mut games, &lock(&self.state).house.setups());
+        Ok(HeadToHead {
+            opponents: history::head_to_head(&games, &user.name),
+        })
     }
 
     /// The rated players, best first.
     pub fn leaderboard(&self, limit: usize) -> Result<Leaderboard> {
         let leaders = self.db.leaders(limit.clamp(1, 200))?;
         let scale = self.skill_scale();
-        Ok(Leaderboard {
-            players: (leaders.iter().enumerate())
-                .map(|(i, u)| Leader {
-                    rank: i as u32 + 1,
-                    user: self.user_ref(u),
-                    rating: u.rating_info(scale.as_ref()),
-                    stats: u.stats(),
-                })
-                .collect(),
-        })
+        let setups = lock(&self.state).house.setups();
+        let mut players = vec![];
+        for (i, u) in leaders.iter().enumerate() {
+            let agent = match u.login {
+                Login::House => {
+                    // Their latest games say what played them once they are no longer offered.
+                    let recent = match setups.contains_key(&u.name.to_lowercase()) {
+                        true => vec![],
+                        false => {
+                            let ask = Ask {
+                                user: Some(&u.id),
+                                ..Ask::default()
+                            };
+                            self.history.find(&ask, u64::MAX, 5)?.games
+                        }
+                    };
+                    Some(agent_of(u, &setups, &recent))
+                }
+                _ => None,
+            };
+            players.push(Leader {
+                rank: i as u32 + 1,
+                user: self.user_ref(u),
+                rating: u.rating_info(scale.as_ref()),
+                agent,
+            });
+        }
+        Ok(Leaderboard { players })
     }
+}
+
+/// What one of the server's agents is: as it is offered now, else as it played its latest
+/// of `recent`, else only its name. A model offered without a name of its own takes the
+/// name another offer gives it.
+fn agent_of(user: &User, setups: &Setups, recent: &[PastGame]) -> SeatAgent {
+    let latest = recent.iter().find_map(|g| {
+        let seat = (g.players.iter()).find(|p| p.account.as_deref() == Some(&user.name));
+        match &seat?.played_by {
+            PlayedBy::Agent(a) if a.model.is_some() => Some(a.clone()),
+            _ => None,
+        }
+    });
+    let mut agent = (setups.get(&user.name.to_lowercase()).map(SeatAgent::from))
+        .or(latest)
+        .unwrap_or_else(|| SeatAgent {
+            agent: user.name.clone(),
+            ..SeatAgent::default()
+        });
+    if agent.name.is_none() || agent.name == agent.model {
+        let named = setups.values().find_map(|s| {
+            (s.model.is_some() && s.model == agent.model && s.model_name != s.model)
+                .then(|| s.model_name.clone())
+                .flatten()
+        });
+        agent.name = named.or(agent.name);
+    }
+    agent
 }
 
 /// What played a seat of account `user`'s, to keep in its record: one of the server's
@@ -244,6 +297,22 @@ pub(super) fn who_played(
         Login::Bot { owner, .. } => (None, db::user_in(tx, owner)?.map(|o| o.name)),
         _ => (None, None),
     })
+}
+
+/// Fills in an agent seat kept with only its name (an official account's, or one recorded
+/// before its runner offered it) from the agent of that name as it is offered now.
+fn complete_agents(games: &mut [PastGame], setups: &Setups) {
+    for p in games.iter_mut().flat_map(|g| &mut g.players) {
+        if let PlayedBy::Agent(a) = &mut p.played_by
+            && a.model.is_none()
+            && let Some(setup) = setups.get(&a.agent.trim().to_lowercase())
+        {
+            *a = SeatAgent {
+                agent: std::mem::take(&mut a.agent),
+                ..SeatAgent::from(setup)
+            };
+        }
+    }
 }
 
 /// What played a seat with no account here, or one recorded before what played it was
@@ -281,9 +350,11 @@ pub(super) fn past_game(record: GameRecord, venue: Venue, recall: Recall<'_>) ->
         },
         official_id: None,
         open: false,
+        replayable: false,
         started: record.started,
         ended: record.ended,
         rated: record.rated,
+        voided: record.voided,
         reason: record.reason,
         kingdom: record.kingdom,
         landscapes: record.landscapes,

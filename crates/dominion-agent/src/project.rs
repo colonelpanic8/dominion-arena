@@ -219,6 +219,7 @@ fn view_of(game: &Game, known: &KnownCards, seat: Option<PlayerId>, cx: &Context
             }),
             tokens: PileTokens {
                 embargo: pile.embargo(),
+                blockade: pile.blockades(),
                 trade_route: pile.trade_route(),
                 vp: pile.vp_tokens(),
                 debt: pile.debt_tokens(),

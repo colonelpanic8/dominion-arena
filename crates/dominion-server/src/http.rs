@@ -21,9 +21,9 @@ use dominion_protocol::api::{
     SeatView, UndoAsk, ViewQuery, WebSettings,
 };
 use dominion_protocol::lobby::{
-    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, History, HistoryQuery, JoinTable,
-    Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword, NewTable,
-    Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
+    BotKey, ChatKind, ChatLog, Credentials, GuestRequest, HeadToHead, HeadToHeadQuery, History,
+    HistoryQuery, JoinTable, Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot,
+    NewPassword, NewTable, Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -92,6 +92,7 @@ pub fn router(
         .route("/auth/logout", post(logout))
         .route("/me", get(me))
         .route("/me/password", put(set_password))
+        .route("/me/avatar", put(set_avatar).delete(clear_avatar))
         .route("/me/games", get(my_games))
         .route("/me/bots", post(new_bot))
         .route("/me/bots/{name}", delete(delete_bot))
@@ -108,6 +109,8 @@ pub fn router(
         .route("/automatch", post(search).delete(cancel_search))
         .route("/chat/{channel}", get(chat_log).post(say))
         .route("/users/{name}", get(profile))
+        .route("/users/{name}/avatar", get(avatar))
+        .route("/users/{name}/opponents", get(opponents))
         .route("/leaderboard", get(leaderboard))
         .route("/history", get(history))
         .fallback(|| async { Error::new(StatusCode::NOT_FOUND, "no such route") })
@@ -1256,6 +1259,36 @@ async fn set_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn set_avatar(State(api): State<Api>, headers: HeaderMap, req: Bytes) -> Json<Me> {
+    let ident = api.signed_in(&headers)?;
+    Ok(axum::Json(api.arena.set_avatar(&ident, &req)?))
+}
+
+async fn clear_avatar(State(api): State<Api>, headers: HeaderMap) -> Json<Me> {
+    let ident = api.signed_in(&headers)?;
+    Ok(axum::Json(api.arena.clear_avatar(&ident)?))
+}
+
+/// An account's picture. Its URL names the version, so it is kept for good; and as
+/// something anyone uploaded, it is never read as anything but the image it was checked to
+/// be.
+async fn avatar(State(api): State<Api>, Path(name): Path<String>) -> Result<Response> {
+    let (kind, image) = api.arena.avatar(&name)?;
+    let headers = [
+        (header::CONTENT_TYPE, kind),
+        (
+            header::CACHE_CONTROL,
+            "public, max-age=31536000, immutable".into(),
+        ),
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff".into()),
+        (
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'none'; sandbox".into(),
+        ),
+    ];
+    Ok((headers, image).into_response())
+}
+
 async fn my_games(State(api): State<Api>, headers: HeaderMap) -> Json<Vec<MyGame>> {
     let ident = api.signed_in(&headers)?;
     let games = api.hub.seats_of(&ident.user, Duration::from_secs(3600));
@@ -1465,6 +1498,14 @@ struct ListQuery {
 async fn leaderboard(State(api): State<Api>, list: Queried<ListQuery>) -> Json<Leaderboard> {
     let limit = query(list)?.limit.unwrap_or(50);
     Ok(axum::Json(api.arena.leaderboard(limit)?))
+}
+
+async fn opponents(
+    State(api): State<Api>,
+    Path(name): Path<String>,
+    q: Queried<HeadToHeadQuery>,
+) -> Json<HeadToHead> {
+    Ok(axum::Json(api.arena.head_to_head(&name, &query(q)?)?))
 }
 
 async fn history(State(api): State<Api>, q: Queried<HistoryQuery>) -> Json<History> {

@@ -1051,6 +1051,7 @@ fn a_game_ended_early_says_who_ended_it_to_every_viewer() {
             kind,
             rating: Some(1500),
             owner: None,
+            avatar: None,
         })
     };
     let meta = GameMeta {

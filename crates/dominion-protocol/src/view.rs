@@ -249,6 +249,9 @@ pub struct Cost {
 pub struct PileTokens {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub embargo: u32,
+    /// Blockades whose set-aside card is a copy of this pile's.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub blockade: u32,
     #[serde(default, skip_serializing_if = "is_false")]
     pub trade_route: bool,
     #[serde(default, skip_serializing_if = "is_zero_i32")]

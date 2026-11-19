@@ -1,9 +1,10 @@
 //! Request and response bodies of `dominion serve`'s HTTP API under `/api`. Game
 //! creation and listing share the MCP tools' snake_case types; the rest are camelCase.
 
-use crate::lobby::{GameMeta, Source, UndoRule, UserRef};
+use crate::lobby::{GameMeta, SeatAgent, Source, UndoRule, UserRef};
 use crate::view::{AgentView, Answer};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// What a client asks for when creating a game.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -153,6 +154,36 @@ pub struct GameSummary {
     /// Per seat: the account playing it, if one is.
     #[serde(default)]
     pub users: Vec<Option<UserRef>>,
+    /// Per seat: the server's agent playing it, if one is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agents: Vec<Option<SeatAgent>>,
+    /// Where a running game stands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<Progress>,
+}
+
+/// Where a running game stands.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct Progress {
+    /// The seat whose turn it is.
+    pub player: u8,
+    /// That seat's turns taken, this one included.
+    pub turn: u32,
+    /// `start`, `action`, `buy`, `night` or `cleanup`.
+    pub phase: String,
+    /// Per seat, in a game anyone may watch: what it would score if the game ended now
+    /// and the cards it owns.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seats: Vec<SeatProgress>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct SeatProgress {
+    pub vp: i32,
+    /// Every card it owns, wherever it is, by name.
+    pub owned: BTreeMap<String, u32>,
 }
 
 /// `GET /api/seat`: the seat a token holds.
@@ -262,6 +293,10 @@ pub struct Replay {
     pub steps: usize,
     /// Each turn's start, in order.
     pub turns: Vec<ReplayTurn>,
+    /// The only seat it can be seen as: a dominion.games game, recorded as that seat saw
+    /// it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

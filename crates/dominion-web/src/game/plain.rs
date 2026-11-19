@@ -368,6 +368,9 @@ fn pile_tokens(p: &PileView) -> Vec<String> {
     if t.embargo > 0 {
         out.push(format!("{} Embargo", t.embargo));
     }
+    if t.blockade > 0 {
+        out.push(format!("{} Blockade", t.blockade));
+    }
     if t.trade_route {
         out.push("Trade Route".into());
     }

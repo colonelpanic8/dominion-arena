@@ -753,6 +753,9 @@ fn pile(p: &PileView) -> String {
     if t.embargo > 0 {
         tokens.push(format!("{} embargo", t.embargo));
     }
+    if t.blockade > 0 {
+        tokens.push(format!("{} blockade", t.blockade));
+    }
     if t.trade_route {
         tokens.push("trade route".into());
     }

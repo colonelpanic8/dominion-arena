@@ -56,7 +56,13 @@ with: pausing stops it, and only that agent resumes it. Anyone can watch the run
 from the Tables tab (`/online/<id>`), on the same page as Arena's own games, and read its
 agent's transcript, rated or not; each finished game is recorded in Arena's
 history for the agent that played it (else the owner), without changing anyone's
-rating or tallies here. Its
+rating or tallies here. Each account also records its games as it was told them: every
+message its client took, in `<account state>/games/<game>.partial.jsonl` while it is
+played and `<game>.jsonl` once it has finished. The history's Replay button plays a
+finished one back step by step as that account saw it
+(`GET /api/online/replays/{history id}?step=K[&logFrom=N]`, a watcher's `SeatView` with
+`replay.seat` set: no other seat's view can be asked for). A game recorded under an older
+dominion.games client is read with that client's card list, from `online_cache_dir`. Its
 account setup, cache, state, reconnect rules, and current limitations are in
 [the official-backend guide](crates/dominion-online/README.md). Arena's hosted
 engine and existing APIs remain available through `dominion serve`.
@@ -289,18 +295,18 @@ will) or 500.
 | `GET /api/cards` | | every card-shaped object as printed |
 | `GET /api/settings` | | the web client's settings: `{webAnimations, webAnimationSpeed, webMoveKingdom, webConfirmSingle, webBackground, webSounds, webVolume, bannedCards, registration, guests}`; `bannedCards` is the asker's own list once they have set one |
 | `PUT /api/settings/banned-cards` | `["Witch", ...]` | the settings, after replacing the asker's Banned cards list (signed in) |
-| `GET /api/games` | | the games, as `list_games` gives them, with `joined` (per seat, whether its token has been used since the server started), `source` (`direct`, `table`, `automatch`), `rated`, `watchable` and `users` (per seat, the account playing it) |
+| `GET /api/games` | | the games, as `list_games` gives them, with `joined` (per seat, whether its token has been used since the server started), `source` (`direct`, `table`, `automatch`), `rated`, `watchable`, `users` (per seat, the account playing it), `agents` (per seat, the server's agent playing it) and, while it runs, `progress`: `{player, turn, phase, seats}`, the seat whose turn it is, its turn number and phase, and in a watchable game per seat its `vp` if the game ended now and the cards it `owned` by name |
 | `POST /api/games` | `create_game`'s arguments, including optional `agents` (profile name or `null` per seat) | 201, the game id and tokens for seats without agents |
 | `POST /api/deal` | `{players, sets?, kingdom?, fromSets?, landscapes?, slots?, banned?, seed?}` | `{kingdom, landscapes, seed}`: the kingdom those rules deal, without creating a game |
 | `GET /api/seat` | | `{gameId, seat, name}` of the token |
-| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo, undo, meta}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the undos done: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat may ask to take back its last answer now. `undo`: `{rule, request?, refusedBy?}`, the game's rule (`off`, `ask`, `free`), the undo waiting to be allowed (`{by, answers, waiting}`: the seat asking, how many answers it takes back, the seats yet to allow it), and the seat that refused the viewer's last request. `meta`: `{source, rated, watchable, timed, users, connected, forfeitAt?, clock?, watchers, ended?, now}` (`now`: the server's clock, to read `forfeitAt` and `clock` against; `clock`: see "Chess clocks") |
+| `GET /api/games/{id}/view[?logFrom=N]` | | `{view, version, deciding, table, undos, canUndo, undo, meta}`; with `logFrom`, the log from entry N. `table` holds what the graphical table draws beside the view: each player's cards in play in the order played and the top of their discard pile, as far as the seat may see them. `undos` counts the undos done: when it changes, the log may differ from what was held at any entry. `canUndo`: the seat may ask to take back its last answer now. `undo`: `{rule, request?, refusedBy?}`, the game's rule (`off`, `ask`, `free`), the undo waiting to be allowed (`{by, answers, waiting}`: the seat asking, how many answers it takes back, the seats yet to allow it), and the seat that refused the viewer's last request. `meta`: `{source, rated, voided?, watchable, timed, users, connected, forfeitAt?, clock?, watchers, ended?, now}` (`now`: the server's clock, to read `forfeitAt` and `clock` against; `clock`: see "Chess clocks") |
 | `POST /api/games/{id}/answer` | `{decision, indices}` or `{decision, name}` | the same, after it |
 | `POST /api/games/{id}/undo` | `{logSeq?}` (optional) | the same with the whole log, after asking to take back the seat's last answer, or with `logSeq` the answer that led to that log entry, with every answer after it, every seat's. Under the `free` rule, or when every other seat is played by the server's agents (which allow every undo), it happens at once; under `ask` it waits for the other seats to allow it, and the seat answering withdraws it. The game is replayed from its start to that point, shuffles and all, so it comes back exactly; decision ids are never reused. Every answer is saved with the game, so an undo works across a restart (a request waiting does not survive one). 409 when the seat has nothing to take back or another seat's request is waiting; 403 under `off`, after a resignation, and in any lobby game once it is over |
 | `POST /api/games/{id}/undo/allow` | | the same, after the seat allows the undo waiting for it; the undo happens once every seat asked has |
 | `POST /api/games/{id}/undo/refuse` | | the same, after the seat refuses the undo waiting for it; the asking seat sees `refusedBy` until it acts again |
 | `POST /api/games/{id}/undo/cancel` | | the same, after the seat withdraws its own request |
 | `POST /api/games/{id}/resign` | | the same, after the seat has resigned |
-| `GET /api/games/{id}/watch[?logFrom=N][&as=S][&step=K]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible. With `as`, what seat `S` knows instead (its view, `spectating`, without its decision). With `step`, a finished game replayed to just after its `K`th answer (`0` is its first decision), with `replay`: the step, how many there are and where each turn starts; the web client's `/game/{id}/replay` |
+| `GET /api/games/{id}/watch[?logFrom=N][&as=S][&step=K]` | | the same shape for someone watching (no account needed; the game must be watchable): no seat or decision; every player’s hand, deck and other owned cards visible. With `as`, what seat `S` knows instead (its view, `spectating`, without its decision). With `step`, a finished game replayed to just after its `K`th answer (`0` is its first decision), with `replay`: the step, how many there are and where each turn starts; the web client's `/game/{id}/replay` (a dominion.games game's from `/api/online/replays/{id}`) |
 | `GET /api/games/{id}/recording` | | the game's recorded `dominion/events@1` stream as written, the file `state_dir/<game id>.events.jsonl` or `.events.cbor` beside its snapshot: `application/jsonl` or `application/cbor-seq`. It shows every hidden card and every shuffle's order, so only once the game can no longer change: over, and retired or allowing no undo (409 before; a game made here allows undo, so once it is retired), to its seats, or to anyone if it is watchable (403 otherwise); 404 for a game recorded without one, or whose recording stopped |
 | `GET /api/games/{id}/events` | | server-sent `change` events with `{version, chat}`: on connect, after every change (also, within seconds, when a seat connects or leaves or the number watching changes), and when something is said in the game's chat. With a seat it keeps the seat connected; without one, for a watchable game, it is a watcher's |
 | `POST /api/auth/register` | `{name, password}` | 201, the account (`Me`), and the session cookie. From a guest's session the guest becomes the account (and keeps its name when `name` is left out) |
@@ -309,6 +315,8 @@ will) or 500.
 | `POST /api/auth/logout` | | 204; the session is over |
 | `GET /api/me` | | `{user: {name, kind, rating?, owner?}, rating: {rating, deviation, games, official?}, stats: {games, wins}, bots}` |
 | `PUT /api/me/password` | `{current, new}` | 204; the account's other sessions are over |
+| `PUT /api/me/avatar` | a PNG, JPEG or WebP image, at most 64 KB | `Me`; the account's picture (the web client sends the middle square at 256 px) |
+| `DELETE /api/me/avatar` | | `Me`, without a picture |
 | `GET /api/me/games` | | the seats the account plays, with their tokens |
 | `POST /api/me/bots` | `{name}` | 201, `{bot, key}`: a bot and its API key, shown this once |
 | `POST /api/me/bots/{name}/key` | | a new key for the bot; the old one stops working |
@@ -327,8 +335,10 @@ will) or 500.
 | `GET /api/chat/{channel}[?after=N]` | | `{messages: [{seq, at, from, kind, text}]}`; channels are `lobby`, `table-<id>` and `game-<id>` |
 | `POST /api/chat/{channel}` | `{text}` | 204 |
 | `GET /api/users/{name}` | | a player's page: rating, tallies and latest games |
+| `GET /api/users/{name}/avatar` | | their picture; `UserRef.avatar` is the `v` that versions its URL |
+| `GET /api/users/{name}/opponents[?venue=arena\|official][&rated=true]` | | their record against everyone they played, most games together first: `{opponents}`, each a `Matchup` (a win is finishing ahead of them, a loss behind) |
 | `GET /api/leaderboard[?limit=N]` | | the rated players, best first |
-| `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&q=text][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; `q` matches a player, the account behind a seat, an agent's model or program, or a card; ask again with `before=next` for more |
+| `GET /api/history[?user=name][&venue=arena\|official][&rated=true][&voided=true][&q=text][&vs=key][&before=ended][&limit=N]` | | finished games here and on dominion.games, newest first: `{games, next?}`; voided games are left out unless `voided=true` (never with `rated=true`), and a voided game has `voided` (when); `q` matches a player, the account behind a seat, an agent's model or program, or a card; `vs` keeps the games against one opponent (a `Matchup`'s `key`); ask again with `before=next` for more |
 
 `POST /api/deal` deals the way a dominion.games table does: the required `kingdom` piles
 and `landscapes`, one random pile from each set in `fromSets`, then randomizers from
@@ -456,7 +466,10 @@ are unrated, allow undo when the token seats' players allow it (the agents alway
 and are watchable through the server by default; an explicit
 `watchable: false` makes one private. They appear in the normal lobby games listing.
 Each registered player fills `agent_seats_per_day` agent seats a day (0: no limit); the runner's
-`agents_at_once` limits simultaneous seats. Guests and bot accounts cannot assign them.
+`agents_at_once` limits simultaneous seats. `agent_players` grants seating them to the
+accounts it names, players' or bots', and to no one else; without it every registered player
+may. A bot it names can set up agent games for an agent connecting with its API key as the
+bearer token. Guests never can.
 `rated: true` makes a game with a different one of the server's agents in every seat
 count for their ratings; it allows no undo.
 
@@ -539,9 +552,14 @@ compatibility but no longer affects native sessions. A runner restart starts a f
 archived attempt for each seat still running. `response_seconds` limits model inactivity
 between events, excluding time spent waiting for MCP tools; it is not a whole-game
 time limit.
-Transient seat failures retry after 5 seconds, then 10 seconds, with at most three
-failed attempts. A forbidden tool attempt stops
-the seat immediately. Each attempt has a separate archive; completed moves remain
+A failed attempt is retried for as long as the game wants the seat, after 5 seconds,
+then twice as long each time up to a minute (from 5 seconds again after an attempt that
+played two minutes): a provider error, the server restarting, a model that ended its
+conversation early. A seat that never recovers forfeits by the server's timing. Only a
+forbidden tool, one its CLI offers that the seat may not use, stops the seat at once; a
+call to a tool the CLI doesn't offer (a misspelled name) runs nothing and play goes on.
+The direct OpenAI agent waits out OpenAI's overload and rate limits for as long as it
+asks, up to 20 minutes a request, within the same attempt. Each attempt has a separate archive; completed moves remain
 in the game. A new attempt is a new conversation, which sees the game as it stands and
 the log since the seat's last decision. The runner tells the server of each attempt
 and the error that stopped it, which the game's record keeps.
@@ -816,6 +834,7 @@ session_idle_minutes = 1440    # serve: close an MCP session after this long wit
 agent_socket = "/run/dominion/agents.sock"  # serve, agents: where the runner of the server's agents connects (default: none)
 control_socket = "/run/dominion/control.sock"  # serve, games: where `dominion games` reaches the server; owner only (default: none)
 agent_seats_per_day = 5        # serve: seats one registered player may fill with the server's agents a day (0: no limit)
+agent_players = ["Ada", "Ada Agents"]  # serve: the accounts (players' or bots') that may seat the server's agents (default: every registered player)
 # serve: players rated here and on dominion.games, with their skill (mu) there
 # [[official_skill_anchors]]
 # player = "Claude Opus"
@@ -884,9 +903,27 @@ python3 (`sandbox_path`). `settings` still sets any runner setting directly.
 `dominion games list` shows every game a running server hosts (finished or not, how long
 idle, where it came from, players), and `dominion games retire ID...` stops hosting games
 at once, moving their files to `expired/` as `keep_idle_days` would. It refuses an
-unfinished game of a lobby table or the server's agents, which ends by resigning. Both
-talk to `control_socket`, which only the server's user can reach; the NixOS module sets
-it and installs `dominion-games` for root: `sudo dominion-games list`.
+unfinished game of a lobby table or the server's agents, which ends by resigning.
+`dominion games void ID... [--dry-run]` voids finished rated games: it takes them out of
+the record and off their players' tallies of games and wins, and works every rating out
+again from the rated records left, in the order the games ended, printing each rating and
+tally it changes; it refuses unless the records as they stand give exactly the ratings
+kept. A rated game is voided as it ends when a seat
+of the server's agents is abandoned: that is an agent failing to play, which says nothing
+of anyone's skill. A voided game's record keeps when it was voided (`voided`, beside
+`rated: false`), so it is told apart from a game that was never rated. It counts toward
+nothing: no rating, the leaderboard, a player's rated or Arena games and wins, their
+head-to-head records, or the line of their rating. The History (and a player's games)
+leaves it out unless its Voided switch is on, and then shows it dimmed and badged
+Voided, as the game that was played; the Rated filter leaves it out whatever that
+switch says. Nothing is deleted: the
+game's files and record stay. Games voided before records kept that say only `rated:
+false` and still count among their players' Arena games; `dominion games void
+--record-only ID...` marks them voided (when it is run) and takes them off those
+tallies, changing no rating, and refuses a game that is rated, voided already, or had a
+seat of no account. All three talk to
+`control_socket`, which only the server's user can reach; the NixOS module sets it and
+installs `dominion-games` for root: `sudo dominion-games list`.
 
 `dominion games backfill` writes `dominion/events@1` streams for the saved games, in
 `state_dir` and `expired/`, that have no whole stream: saved before the server recorded

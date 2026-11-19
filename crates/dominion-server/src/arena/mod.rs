@@ -19,6 +19,7 @@ mod house;
 mod matching;
 mod official;
 mod records;
+mod rerate;
 mod tables;
 pub(crate) mod transcripts;
 pub use transcripts::is_official;
@@ -32,12 +33,13 @@ use dominion_protocol::lobby::{
 };
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 pub use accounts::SESSION_COOKIE;
 pub use house::RunnerId;
+pub use rerate::{VoidHow, Voided};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -89,6 +91,9 @@ pub struct Settings {
     pub keep_idle: Duration,
     /// How many seats one account may fill with the server's agents a day (0: no limit).
     pub agent_seats_per_day: u32,
+    /// The accounts, players' or bots', that may seat the server's agents (none: every
+    /// registered player).
+    pub agent_players: Option<Vec<String>>,
     /// Players rated here and on dominion.games, which ratings are read off on its scale.
     pub skill_anchors: Vec<SkillAnchor>,
 }
@@ -114,6 +119,7 @@ impl Default for Settings {
             keep_finished: Duration::from_secs(7 * 86_400),
             keep_idle: Duration::from_secs(30 * 86_400),
             agent_seats_per_day: 5,
+            agent_players: None,
             skill_anchors: vec![],
         }
     }
@@ -154,6 +160,7 @@ struct User {
     rated_games: u32,
     games: u32,
     wins: u32,
+    rated_wins: u32,
     /// Their own Banned cards list, once they have set one.
     banned_cards: Option<Vec<String>>,
 }
@@ -180,6 +187,7 @@ impl User {
             rating: self.rating.rating,
             deviation,
             games: self.rated_games,
+            wins: self.rated_wins,
             official: (scale.filter(|_| self.rated_games > 0))
                 .map(|s| s.place(self.rating.rating, deviation)),
         }
@@ -277,6 +285,8 @@ pub struct Arena {
     db: Arc<Db>,
     /// Finished games, as the history and players' pages show them.
     history: history::HistoryModel,
+    /// Which of the official accounts' games have recordings to replay.
+    official_replays: Arc<OnceLock<official::Replayable>>,
     settings: Settings,
     state: Mutex<State>,
     /// Bumped whenever what `Arena::lobby` returns may have changed.
@@ -341,17 +351,22 @@ impl Arena {
         hub.set_timing(settings.timing);
         hub.set_max_games(settings.max_games);
         let db = Arc::new(db);
+        let official_replays = Arc::new(OnceLock::new());
         let history = history::HistoryModel::new(vec![
             Box::new(records::ArenaRecords {
                 db: db.clone(),
                 hub: hub.clone(),
             }),
-            Box::new(official::OfficialRecords { db: db.clone() }),
+            Box::new(official::OfficialRecords {
+                db: db.clone(),
+                replayable: official_replays.clone(),
+            }),
         ]);
         let arena = Arc::new(Arena {
             hub: hub.clone(),
             db,
             history,
+            official_replays,
             settings,
             state: Mutex::default(),
             lobby: watch::channel(0).0,
@@ -451,6 +466,7 @@ impl Arena {
             kind: user.kind(),
             rating: None,
             owner: None,
+            avatar: None,
         })
     }
 

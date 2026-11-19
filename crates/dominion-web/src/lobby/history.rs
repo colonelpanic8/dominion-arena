@@ -2,19 +2,23 @@
 //! player's page shares with it. Everything here comes from `/api/history` and
 //! `/api/users/{name}` as the protocol's `PastGame`s.
 
-use super::rules::{Pick, TableRules, Ternary};
+use super::rules::{Pick, TableRules, Ternary, is_landscape};
+use super::who::{SeatIcon, agent_title, caption};
 use super::{
-    LobbyCtx, LobbyFrame, Tab, clock, create_table, day, flash, store, use_lobby, use_toast,
+    Fieldset, LobbyCtx, LobbyFrame, Oval, Tab, clock, create_table, day, flash, store, use_lobby,
+    use_toast,
 };
 use crate::account::{Account, use_account};
 use crate::api;
-use crate::app::Route;
+use crate::app::{Route, use_cards};
+use crate::assets::{self, use_assets};
 use crate::card::{CardHover, CardSize, CardView};
 use crate::platform;
 use dioxus::prelude::*;
 use dioxus::router::Navigator;
+use dominion_protocol::api::CardInfo;
 use dominion_protocol::lobby::{
-    Arranged, HistoryQuery, PastGame, PastPlayer, PlayedBy, SeatAgent, Venue,
+    Arranged, HeadToHeadQuery, HistoryQuery, Matchup, PastGame, PastPlayer, PlayedBy, Venue,
 };
 
 /// Games asked for at a time.
@@ -43,17 +47,26 @@ pub fn GameBrowser(
     let mut venue = use_signal(|| None::<Venue>);
     let mut mine = use_signal(|| false);
     let mut rated = use_signal(|| false);
+    let mut voided = use_signal(|| false);
     let mut text = use_signal(String::new);
     let mut picked = use_signal(|| None::<String>);
     let mut more = use_signal(Vec::<PastGame>::new);
     let mut more_next = use_signal(|| None::<Option<u64>>);
+    // A player's page only: its Head to head tab, with a Rated switch and search of its
+    // own, and the opponent a pick there narrows the games to (key, name).
+    let mut rivals = use_signal(|| false);
+    let mut rivals_rated = use_signal(|| true);
+    let mut who = use_signal(String::new);
+    let mut vs = use_signal(|| None::<(String, String)>);
     let fixed = user.clone();
     let me_now = me.clone();
     let query = use_memo(move || HistoryQuery {
         user: fixed.clone().or_else(|| me_now.clone().filter(|_| mine())),
         venue: venue(),
         rated: rated(),
+        voided: voided(),
         q: Some(text()).filter(|t| !t.trim().is_empty()),
+        vs: vs().map(|(key, _)| key),
         limit: Some(PAGE),
         before: None,
     });
@@ -103,14 +116,33 @@ pub fn GameBrowser(
         div { class: "lb-history",
             div { class: "lb-history-side",
                 {top}
-                div { class: "lb-fieldset lb-history-games",
-                    div { class: "lb-fieldset-title", span { "{title}" } }
+                Fieldset {
+                    class: "lb-history-games",
+                    title: if user.is_some() { String::new() } else { title.clone() },
+                    after_title: rsx! {
+                        if user.is_some() {
+                            span { class: "lb-pane-tabs", role: "tablist",
+                                span {
+                                    class: if rivals() { "lb-pane-tab" } else { "lb-pane-tab on" },
+                                    role: "tab",
+                                    onclick: move |_| rivals.set(false),
+                                    "{title}"
+                                }
+                                span {
+                                    class: if rivals() { "lb-pane-tab on" } else { "lb-pane-tab" },
+                                    role: "tab",
+                                    onclick: move |_| rivals.set(true),
+                                    "Head to head"
+                                }
+                            }
+                        }
+                    },
                     div { class: "lb-history-filters",
                         div { class: "lb-multibutton",
                             for (v, label) in [(None, "All"), (Some(Venue::Arena), "Arena"), (Some(Venue::Official), "dominion.games")] {
-                                div {
+                                Oval {
                                     key: "{label}",
-                                    class: if venue() == v { "lb-oval active" } else { "lb-oval" },
+                                    active: venue() == v,
                                     "data-venue": "{label}",
                                     onclick: move |_| venue.set(v),
                                     "{label}"
@@ -122,29 +154,79 @@ pub fn GameBrowser(
                         if user.is_none() && me.is_some() {
                             div { class: "lb-multibutton",
                                 for (m, label) in [(true, "Mine"), (false, "Everyone")] {
-                                    div {
+                                    Oval {
                                         key: "{label}",
-                                        class: if mine() == m { "lb-oval active" } else { "lb-oval" },
+                                        active: mine() == m,
                                         onclick: move |_| mine.set(m),
                                         "{label}"
                                     }
                                 }
                             }
                         }
-                        label { class: "lb-history-rated",
-                            super::Switch { on: rated(), onclick: move |_| rated.toggle() }
-                            "Rated"
-                        }
-                        input {
-                            class: "lb-input lb-history-search",
-                            r#type: "search",
-                            placeholder: "Player, agent or card",
-                            "aria-label": "Find a player, agent or card",
-                            value: "{text}",
-                            oninput: move |e| text.set(e.value()),
+                        if rivals() {
+                            label { class: "lb-history-rated",
+                                super::Switch { on: rivals_rated(), onclick: move |_| rivals_rated.toggle() }
+                                "Rated"
+                            }
+                            input {
+                                class: "lb-input lb-history-search",
+                                r#type: "search",
+                                placeholder: "Opponent",
+                                "aria-label": "Find an opponent",
+                                value: "{who}",
+                                oninput: move |e| who.set(e.value()),
+                            }
+                        } else {
+                            label { class: "lb-history-rated",
+                                super::Switch { on: rated(), onclick: move |_| rated.toggle() }
+                                "Rated"
+                            }
+                            label { class: "lb-history-rated", title: "Show voided games too",
+                                super::Switch { on: voided(), onclick: move |_| voided.toggle() }
+                                "Voided"
+                            }
+                            input {
+                                class: "lb-input lb-history-search",
+                                r#type: "search",
+                                placeholder: "Player, agent or card",
+                                "aria-label": "Find a player, agent or card",
+                                value: "{text}",
+                                oninput: move |e| text.set(e.value()),
+                            }
                         }
                     }
-                    div { class: "lb-history-list",
+                    if let (Some(name), false, Some((_, against))) = (&user, rivals(), vs()) {
+                        div { class: "lb-h2h-chip", "data-vs": "{against}",
+                            "{name} vs "
+                            b { "{against}" }
+                            button {
+                                class: "lb-h2h-clear",
+                                title: "Every game",
+                                "aria-label": "Show every game",
+                                onclick: move |_| {
+                                    vs.set(None);
+                                    picked.set(None);
+                                },
+                                "✕"
+                            }
+                        }
+                    }
+                    if let (Some(name), true) = (&user, rivals()) {
+                        Rivals {
+                            name: name.clone(),
+                            venue: venue(),
+                            rated: rivals_rated(),
+                            who: who(),
+                            onpick: move |m: Matchup| {
+                                vs.set(Some((m.key, m.seat.name)));
+                                rated.set(rivals_rated());
+                                text.set(String::new());
+                                picked.set(None);
+                                rivals.set(false);
+                            },
+                        }
+                    }
+                    div { class: "lb-list lb-history-list", display: if rivals() { "none" },
                         if let Some(e) = error {
                             p { class: "lb-error", "{e}" }
                         } else if games.is_empty() && first.read().is_some() {
@@ -153,7 +235,7 @@ pub fn GameBrowser(
                         for (heading, g, on) in items {
                             div { key: "{g.id}", class: "lb-history-item",
                                 if let Some(h) = heading {
-                                    div { class: "lb-history-day", "{h}" }
+                                    div { class: "lb-list-head lb-history-day", "{h}" }
                                 }
                                 Entry {
                                     game: g.clone(),
@@ -175,6 +257,142 @@ pub fn GameBrowser(
                 Some(g) => rsx! { Sheet { key: "{g.id}", game: g, side: user.clone() } },
                 None => rsx! { div { class: "lb-sheet" } },
             }
+        }
+    }
+}
+
+/// Player `name`'s record against each opponent, most games together first; a pick
+/// narrows the Games tab to the games against them.
+#[component]
+fn Rivals(
+    name: String,
+    venue: Option<Venue>,
+    rated: bool,
+    who: String,
+    onpick: EventHandler<Matchup>,
+) -> Element {
+    let found = use_resource(use_reactive!(|name, venue, rated| async move {
+        api::head_to_head(&name, &HeadToHeadQuery { venue, rated }).await
+    }));
+    let who = who.trim().to_lowercase();
+    let shown: Vec<Matchup> = match &*found.read() {
+        Some(Ok(h)) => (h.opponents.iter())
+            .filter(|m| who.is_empty() || m.seat.name.to_lowercase().contains(&who))
+            .cloned()
+            .collect(),
+        _ => vec![],
+    };
+    let total = match &*found.read() {
+        Some(Ok(h)) => h.opponents.len(),
+        _ => 0,
+    };
+    let note = match &*found.read() {
+        None => None,
+        Some(Err(e)) => Some(e.message.clone()),
+        Some(Ok(_)) if total == 0 && rated => {
+            Some("No rated games yet. Turn off Rated to count every game.".to_string())
+        }
+        Some(Ok(_)) if total == 0 => Some("No finished games against anyone yet.".to_string()),
+        Some(Ok(_)) if shown.is_empty() => Some("No opponent matches.".to_string()),
+        Some(Ok(_)) => None,
+    };
+    rsx! {
+        div { class: "lb-h2h-line lb-h2h-head lb-list-head",
+            span {}
+            span { "Opponent" }
+            span { "Won – Lost – Tied" }
+            span { class: "lb-h2h-num", "Win %" }
+            span { class: "lb-h2h-num", "Games" }
+        }
+        div { class: "lb-list lb-h2h-list",
+            if let Some(n) = note {
+                p { class: "lb-note", "{n}" }
+            }
+            for m in shown {
+                Rival { key: "{m.key}", matchup: m.clone(), onpick }
+            }
+        }
+        if total > 0 {
+            div { class: "lb-h2h-foot",
+                if total == 1 { "1 opponent" } else { "{total} opponents" }
+            }
+        }
+    }
+}
+
+/// One opponent's row: who they are, the record as numbers and a bar, the share won.
+#[component]
+fn Rival(matchup: Matchup, onpick: EventHandler<Matchup>) -> Element {
+    let Matchup {
+        seat,
+        games,
+        wins,
+        losses,
+        ties,
+        last,
+        ..
+    } = matchup.clone();
+    let share = |n: u32| {
+        format!(
+            "width: {:.2}%",
+            f64::from(n) * 100.0 / f64::from(games.max(1))
+        )
+    };
+    let won = (f64::from(wins) + f64::from(ties) / 2.0) * 100.0 / f64::from(games.max(1));
+    let tone = match won {
+        w if w >= 60.0 => "lb-h2h-num lb-h2h-pct high",
+        w if w <= 40.0 => "lb-h2h-num lb-h2h-pct low",
+        _ => "lb-h2h-num lb-h2h-pct",
+    };
+    let met = format!("Last met {} at {}", day(last).to_lowercase(), clock(last));
+    let pick = matchup.clone();
+    let key = matchup.clone();
+    rsx! {
+        div {
+            class: "lb-h2h-line lb-h2h-row",
+            role: "button",
+            tabindex: "0",
+            title: "{met}",
+            "data-opponent": "{matchup.key}",
+            onclick: move |_| onpick.call(pick.clone()),
+            onkeydown: move |e: KeyboardEvent| {
+                if matches!(e.key(), Key::Enter) || e.key() == Key::Character(" ".into()) {
+                    e.prevent_default();
+                    onpick.call(key.clone());
+                }
+            },
+            SeatIcon { played_by: seat.played_by.clone() }
+            span { class: "lb-h2h-who",
+                match seat.account.clone() {
+                    Some(name) => rsx! {
+                        span {
+                            onclick: |e| e.stop_propagation(),
+                            onkeydown: |e| e.stop_propagation(),
+                            Link { class: "lb-h2h-name", to: Route::User { name }, "{seat.name}" }
+                        }
+                    },
+                    None => rsx! { span { class: "lb-h2h-name", "{seat.name}" } },
+                }
+                span { class: "lb-caption", "{caption(&seat)}" }
+            }
+            span { class: "lb-h2h-record",
+                span { class: "lb-h2h-score",
+                    span { class: "won", "{wins}" }
+                    span { class: "dash", "–" }
+                    span { class: "lost", "{losses}" }
+                    if ties > 0 {
+                        span { class: "dash", "–" }
+                        span { class: "tied", "{ties}" }
+                    }
+                }
+                span { class: "lb-h2h-bar",
+                    span { class: "won", style: share(wins) }
+                    span { class: "tied", style: share(ties) }
+                    span { class: "lost", style: share(losses) }
+                }
+            }
+            span { class: tone, "{won.round()}%" }
+            span { class: "lb-h2h-num lb-h2h-games", "{games}" }
         }
     }
 }
@@ -221,6 +439,8 @@ pub fn reason(code: &str) -> String {
     }
 }
 
+const VOIDED: &str = "Voided: taken out of the record, it counts for no rating or tally";
+
 /// Where and how a game was played, in a few words.
 fn how(game: &PastGame) -> String {
     let mut parts = vec![];
@@ -236,7 +456,12 @@ fn how(game: &PastGame) -> String {
         (None, Some(p)) => parts.push(format!("as {}", p.name)),
         (None, None) => {}
     }
-    parts.push(if game.rated { "Rated" } else { "Unrated" }.into());
+    // A voided game says so in a badge of its own.
+    match (game.rated, game.voided) {
+        (_, Some(_)) => {}
+        (true, None) => parts.push("Rated".into()),
+        (false, None) => parts.push("Unrated".into()),
+    }
     parts.join(" · ")
 }
 
@@ -258,14 +483,28 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
         None => (None, vec![]),
     };
     let rest: Vec<PastPlayer> = rest;
+    let arena = game.venue == Venue::Arena;
     rsx! {
-        button { class, "data-game": "{game.id}", "data-venue": venue, onclick: move |_| onpick.call(()),
+        div {
+            class,
+            role: "button",
+            tabindex: "0",
+            "data-game": "{game.id}",
+            "data-venue": venue,
+            "data-voided": game.voided.is_some().then_some("true"),
+            onclick: move |_| onpick.call(()),
+            onkeydown: move |e: KeyboardEvent| {
+                if matches!(e.key(), Key::Enter) || e.key() == Key::Character(" ".into()) {
+                    e.prevent_default();
+                    onpick.call(());
+                }
+            },
             span { class: "lb-history-venue", title: venue_name }
             span { class: "lb-history-entry-body",
                 span { class: "lb-history-entry-line",
                     span { class: "lb-entry-side",
                         if let Some(p) = first {
-                            Seated { won: p.rank == 1, player: p }
+                            Seated { won: p.rank == 1, arena, player: p }
                         }
                     }
                     span { class: "lb-history-score",
@@ -278,141 +517,117 @@ fn Entry(game: PastGame, on: bool, onpick: EventHandler<()>) -> Element {
                     }
                     span { class: "lb-entry-side right",
                         for p in rest.iter() {
-                            Seated { key: "{p.seat}", player: p.clone(), won: p.rank == 1, right: true }
+                            Seated { key: "{p.seat}", player: p.clone(), won: p.rank == 1, arena, right: true }
                         }
                     }
                 }
                 span { class: "lb-history-how",
-                    span { "{how(&game)}" }
+                    span {
+                        if game.voided.is_some() {
+                            span { class: "lb-voided", title: VOIDED, "Voided" }
+                        }
+                        "{how(&game)}"
+                    }
                     span { class: "lb-history-time", "{clock(game.ended)}" }
+                }
+                KingdomPeek {
+                    kingdom: game.kingdom.clone(),
+                    landscapes: game.landscapes.clone(),
+                    others: game.others.clone(),
                 }
             }
         }
     }
 }
 
-/// What played a seat, in a few words under its name: "Claude Code · high", "rook's bot".
-/// An agent whose seat isn't named after its model (an official account's) is named.
-pub fn caption(p: &PastPlayer) -> String {
-    match &p.played_by {
-        PlayedBy::Person => "Registered".into(),
-        PlayedBy::Guest => "Guest".into(),
-        PlayedBy::Token => "Seat token".into(),
-        PlayedBy::Bot { owner: Some(owner) } => format!("{owner}'s bot"),
-        PlayedBy::Bot { owner: None } => "Bot".into(),
-        PlayedBy::Official => "dominion.games".into(),
-        PlayedBy::Agent(a) => {
-            let product = (a.name.clone())
-                .or(a.model.clone())
-                .unwrap_or(a.agent.clone());
-            match &a.effort {
-                Some(effort) => format!("{product} · {effort}"),
-                None => product,
-            }
-        }
+/// The colour a card's thumbnail is framed in without its art: its main type's.
+fn tone(card: Option<&CardInfo>) -> &'static str {
+    let Some(card) = card else {
+        return "action";
+    };
+    if is_landscape(card) {
+        return "landscape";
     }
-}
-
-/// One of the server's agents in full: "Claude Code · claude-opus-5-5 · high effort".
-pub fn agent_line(a: &SeatAgent) -> String {
-    let effort = a.effort.as_ref().map(|e| format!("{e} effort"));
-    let parts: Vec<String> = [a.program.clone(), a.model.clone(), effort]
-        .into_iter()
-        .flatten()
-        .collect();
-    if parts.is_empty() {
-        a.agent.clone()
+    let has = |t: &str| card.types.iter().any(|x| x == t);
+    if has("Night") {
+        "night"
+    } else if has("Duration") {
+        "duration"
+    } else if has("Reaction") {
+        "reaction"
+    } else if has("Treasure") && !has("Action") {
+        "treasure"
+    } else if has("Victory") && !has("Action") {
+        "victory"
     } else {
-        parts.join(" · ")
+        "action"
     }
 }
 
-/// Who makes an agent's model, by its id, else what runs it, else its name: their logo
-/// goes before its seat's name. Claude Code and the Claude API share Claude's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Maker {
-    Claude,
-    OpenAi,
-    Gemini,
-}
-
-pub fn maker(a: &SeatAgent) -> Option<Maker> {
-    let by_word = |text: &str| {
-        let text = text.to_lowercase();
-        let has = |words: &[&str]| words.iter().any(|w| text.contains(w));
-        if has(&["claude", "opus", "sonnet", "haiku", "fable"]) {
-            Some(Maker::Claude)
-        } else if has(&["gpt", "codex", "openai"]) {
-            Some(Maker::OpenAi)
-        } else if has(&["gemini", "antigravity"]) {
-            Some(Maker::Gemini)
-        } else {
-            None
-        }
-    };
-    (a.model.as_deref().and_then(by_word))
-        .or(a.program.as_deref().and_then(by_word))
-        .or(a.name.as_deref().and_then(by_word))
-        .or(by_word(&a.agent))
-}
-
-/// The class of the icon before a seat's name.
-fn icon_class(by: &PlayedBy) -> &'static str {
-    match by {
-        PlayedBy::Person => "lb-seat-icon person",
-        PlayedBy::Guest => "lb-seat-icon guest",
-        PlayedBy::Token => "lb-seat-icon token",
-        PlayedBy::Bot { .. } => "lb-seat-icon bot",
-        PlayedBy::Agent(a) => match maker(a) {
-            Some(Maker::Claude) => "lb-seat-icon logo claude",
-            Some(Maker::OpenAi) => "lb-seat-icon logo openai",
-            Some(Maker::Gemini) => "lb-seat-icon logo gemini",
-            None => "lb-seat-icon agent",
-        },
-        PlayedBy::Official => "lb-seat-icon official",
-    }
-}
-
-/// A person, a machine, a token or an agent's maker's logo, drawn small before a seat's
-/// name: the drawings fill the same box, 2.5 to 13.5 across and 2 to 14.5 down of 16, and
-/// a logo the same share of its own.
+/// A kingdom as a strip of tiny pictures of its cards' art, which shows the whole of it
+/// while the pointer is over it.
 #[component]
-fn SeatIcon(played_by: PlayedBy) -> Element {
-    let class = icon_class(&played_by);
-    let logo = match &played_by {
-        PlayedBy::Agent(a) => maker(a).map(|m| match m {
-            Maker::Claude => CLAUDE,
-            Maker::OpenAi => OPENAI,
-            Maker::Gemini => GEMINI,
-        }),
-        _ => None,
-    };
-    let machine = matches!(played_by, PlayedBy::Bot { .. } | PlayedBy::Agent(_));
-    let token = played_by == PlayedBy::Token;
-    if let Some(d) = logo {
-        return rsx! {
-            svg { class, view_box: "-3 -3 30 30", "aria-hidden": "true",
-                path { d }
-            }
+fn KingdomPeek(kingdom: Vec<String>, landscapes: Vec<String>, others: Vec<String>) -> Element {
+    let cards = use_cards();
+    let art = use_assets();
+    let mut at = use_signal(|| None::<(f64, f64)>);
+    let popup = at().map(|(x, y)| {
+        let (vw, vh) = platform::viewport();
+        let lu = (vh / 100.0).min(vw / 200.0);
+        let margin = 8.0;
+        let side = if landscapes.is_empty() {
+            0.0
+        } else {
+            16.5 * lu
         };
-    }
+        let width = 5.0 * 10.6 * lu + side + 3.0 * lu;
+        let also = if others.is_empty() { 0.0 } else { 12.6 * lu };
+        let height = 2.0 * 10.4 * lu + also + 3.0 * lu;
+        let mut left = x + 24.0;
+        if left + width > vw - margin {
+            left = x - 24.0 - width;
+        }
+        let left = left.min(vw - width - margin).max(margin);
+        let top = (y - height / 2.0).min(vh - height - margin).max(margin);
+        format!("left:{left:.0}px;top:{top:.0}px;")
+    });
     rsx! {
-        svg { class, view_box: "0 0 16 16", "aria-hidden": "true",
-            if machine {
-                path { d: "M8 2v1.5M4 3.5h8a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5H4a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 4 3.5zM6 7v1M10 7v1M5.5 14.5h5" }
-            } else if token {
-                path { d: "M2.5 3.5h11v9h-11zM5.5 8h5" }
-            } else {
-                path { d: "M8 2a3 3 0 1 1 0 6a3 3 0 1 1 0-6zM2.5 14.5c0-3.3 2.5-5.2 5.5-5.2s5.5 1.9 5.5 5.2" }
+        span {
+            class: "lb-thumbs",
+            onmouseenter: move |e: MouseEvent| {
+                let p = e.client_coordinates();
+                at.set(Some((p.x, p.y)));
+            },
+            onmouseleave: move |_| at.set(None),
+            for name in kingdom.iter().chain(&landscapes).chain(&others) {
+                {
+                    let card = cards.get(name);
+                    let wide = card.is_some_and(is_landscape);
+                    let picture = (art.card(name))
+                        .and_then(|f| f.mini_art.as_deref().or(f.art.as_deref()))
+                        .map(|path| format!("background-image: url('{}');", assets::url(path)))
+                        .unwrap_or_default();
+                    rsx! {
+                        span {
+                            key: "{name}",
+                            class: if wide { "lb-thumb wide {tone(card)}" } else { "lb-thumb {tone(card)}" },
+                            style: picture,
+                        }
+                    }
+                }
+            }
+            if let Some(style) = popup {
+                div { class: "lb-peek-pop", style,
+                    KingdomCards {
+                        kingdom: kingdom.clone(),
+                        landscapes: landscapes.clone(),
+                        others: others.clone(),
+                    }
+                }
             }
         }
     }
 }
-
-// The makers' marks, from Simple Icons (CC0), in a 24 by 24 box.
-const CLAUDE: &str = "m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z";
-const OPENAI: &str = "M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z";
-const GEMINI: &str = "M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81";
 
 /// The winner's mark, before their name.
 #[component]
@@ -424,11 +639,13 @@ fn Crown() -> Element {
     }
 }
 
-/// A seat in the list: an icon for what played it, its name, and under it a caption.
+/// A seat in the list: an icon for what played it, its name (linking to its Arena
+/// account's page), and under it a caption.
 #[component]
 fn Seated(
     player: PastPlayer,
     #[props(default)] won: bool,
+    #[props(default)] arena: bool,
     /// On the right of the line: aligned to it, its icon outermost.
     #[props(default)]
     right: bool,
@@ -439,6 +656,7 @@ fn Seated(
         (false, true) => "lb-seat right",
         (false, false) => "lb-seat",
     };
+    let account = player.account.clone().filter(|_| arena);
     rsx! {
         span { class,
             SeatIcon { played_by: player.played_by.clone() }
@@ -447,9 +665,18 @@ fn Seated(
                     if won {
                         Crown {}
                     }
-                    "{player.name}"
+                    match account {
+                        Some(name) => rsx! {
+                            span {
+                                onclick: |e| e.stop_propagation(),
+                                onkeydown: |e| e.stop_propagation(),
+                                Link { class: "lb-seat-link", to: Route::User { name }, "{player.name}" }
+                            }
+                        },
+                        None => rsx! { "{player.name}" },
+                    }
                 }
-                span { class: "lb-seat-caption", "{caption(&player)}" }
+                span { class: "lb-caption lb-seat-caption", "{caption(&player)}" }
             }
         }
     }
@@ -504,7 +731,7 @@ fn KingdomCard(name: String, #[props(default)] wide: bool) -> Element {
 fn played_by(game: &PastGame, p: &PastPlayer) -> (String, Option<String>) {
     let official = game.venue == Venue::Official;
     match &p.played_by {
-        PlayedBy::Agent(a) => (agent_line(a), Some(a.agent.clone())),
+        PlayedBy::Agent(a) => (agent_title(a), Some(a.agent.clone())),
         PlayedBy::Bot { owner: Some(owner) } => (format!("{owner}'s bot"), Some(owner.clone())),
         PlayedBy::Bot { owner: None } => ("A user's bot".into(), None),
         PlayedBy::Person if official => match &p.account {
@@ -578,6 +805,9 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
         div { class: "lb-sheet", "data-sheet": "{game.id}",
             div { class: "lb-sheet-meta",
                 span { class: venue_class, "{venue_name}" }
+                if game.voided.is_some() {
+                    span { class: "lb-venue voided", title: VOIDED, "Voided" }
+                }
                 span { "{meta}" }
             }
             h2 { class: "lb-sheet-title", "{title}" }
@@ -642,7 +872,9 @@ fn Sheet(game: PastGame, side: Option<String>) -> Element {
             div { class: "lb-sheet-actions",
                 if game.open {
                     Link { class: "lb-button lb-gold", to: Route::Game { id: game.id.clone() }, "Review game" }
-                    Link { class: "lb-button lb-gold", "data-action": "replay", to: Route::GameReplay { id: game.id.clone() }, "Replay" }
+                }
+                if game.open || game.replayable {
+                    Link { class: "lb-button lb-copper", "data-action": "replay", to: Route::GameReplay { id: game.id.clone() }, "Replay" }
                 }
                 button { class: "lb-button lb-copper", "data-action": "play-kingdom", onclick: replay, "Play this kingdom" }
                 if let Some(number) = game.official_id.clone() {

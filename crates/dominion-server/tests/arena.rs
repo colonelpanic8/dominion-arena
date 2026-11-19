@@ -476,6 +476,7 @@ fn a_rated_game_moves_ratings_and_is_recorded() {
     assert!(winner.rating.deviation < 350.0);
     assert_eq!((winner.stats.games, winner.stats.wins), (1, 1));
     assert_eq!((loser.stats.games, loser.stats.wins), (1, 0));
+    assert_eq!((winner.rating.wins, loser.rating.wins), (1, 0));
     assert_eq!(
         winner.user.rating,
         Some(winner.rating.rating.round() as i32)
@@ -874,4 +875,28 @@ fn an_automatch_undo_waits_for_the_opponent_to_allow_it() {
         answer_first(&arena, &game);
         assert_eq!(view(&seat).undo.request, None);
     }
+}
+
+#[test]
+fn an_account_has_a_picture_only_when_it_is_an_image_and_others_see_its_version() {
+    let arena = arena();
+    let ada = register(&arena, "Ada");
+    let refused = |image: &[u8]| matches!(arena.set_avatar(&ada, image), Err(Error::BadRequest(_)));
+    assert!(refused(b"<svg xmlns='http://www.w3.org/2000/svg'/>"));
+    let mut big = vec![0xff, 0xd8, 0xff];
+    big.resize(64 * 1024 + 1, 0);
+    assert!(refused(&big));
+    assert_eq!(arena.me(&ada).unwrap().user.avatar, None);
+
+    let jpeg = [0xff, 0xd8, 0xff, 0xe0, 1, 2, 3];
+    let set = arena.set_avatar(&ada, &jpeg).unwrap().user.avatar;
+    assert!(set.is_some());
+    assert_eq!(
+        arena.avatar("ada").unwrap(),
+        ("image/jpeg".into(), jpeg.to_vec())
+    );
+    assert_eq!(arena.profile("Ada").unwrap().user.avatar, set);
+
+    assert_eq!(arena.clear_avatar(&ada).unwrap().user.avatar, None);
+    assert!(matches!(arena.avatar("Ada"), Err(Error::NotFound(_))));
 }

@@ -28,7 +28,7 @@
   transition: .3s background ease;
 }
 .agent-transcript button.transcript-switch.active { background: var(--accent-2); }
-.agent-transcript button.transcript-switch:not(:disabled):hover { box-shadow: 0 0 .4em #f9c554; }
+.agent-transcript button.transcript-switch:not(:disabled):hover { box-shadow: 0 0 .4em var(--gold-glow); }
 .transcript-knob {
   position: absolute;
   left: -.4em;
@@ -37,7 +37,7 @@
   height: 2em;
   border: 2px solid #000;
   border-radius: 50%;
-  background: #8a4f2c var(--dc-lb-copper-round, radial-gradient(circle at 35% 35%, #d39469, #8a4f2c 70%)) center / contain;
+  background: var(--copper-dark) var(--dc-lb-copper-round, radial-gradient(circle at 35% 35%, #d39469, var(--copper-dark) 70%)) center / contain;
   transition: .3s left ease;
 }
 .transcript-switch.active > .transcript-knob { left: 1.5em; }
@@ -52,13 +52,16 @@
 .trace-agent { display: inline-flex; align-items: center; gap: .4em; font-size: .87em; font-weight: 700; color: var(--seat, var(--text)); }
 .trace-block pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: .93em/1.6 var(--ui); color: var(--text); }
 .trace-reasoning pre { padding: .7em .9em; background: rgba(255, 248, 230, .05); border-radius: 2px; color: #ded2bb; }
-.trace-action pre { display: inline-block; padding: .45em .9em; border: 1px solid #a07a2a; border-radius: 2px; background: rgba(245, 188, 52, .08); color: #ffe2a0; font-weight: 700; }
+.trace-action pre { display: inline-block; padding: .45em .9em; border: 1px solid #a07a2a; border-radius: 2px; background: color-mix(in srgb, var(--gold) 8%, transparent); color: #ffe2a0; font-weight: 700; }
 .trace-result pre, .trace-observation pre, .trace-system pre { padding: .6em .8em; background: rgba(0, 0, 0, .45); border: 1px solid var(--line-soft); font: .82em/1.55 ui-monospace, Menlo, monospace; color: #cfc4ae; }
 .trace-content details summary { cursor: pointer; color: #e2d7c2; font-size: .93em; overflow-wrap: anywhere; }
 .trace-result details summary, .trace-call details summary { font: .82em/1.55 ui-monospace, Menlo, monospace; color: #cfc4ae; }
 .trace-content details[open] summary { margin-bottom: .5em; }
 .trace-lines { color: var(--muted); }
-.trace-call pre { display: inline-block; max-width: 100%; padding: .35em .8em; border-left: 3px solid var(--seat, #a07a2a); background: rgba(0, 0, 0, .3); font: .82em/1.55 ui-monospace, Menlo, monospace; color: #e8dcc4; }
+.trace-paired { margin-top: .6em; }
+.trace-paired > .trace-kind { display: inline-block; margin-bottom: .35em; }
+.trace-paired > .trace-lines { font-size: .8em; }
+.trace-call-body pre { display: inline-block; max-width: 100%; padding: .35em .8em; border-left: 3px solid var(--seat, #a07a2a); background: rgba(0, 0, 0, .3); font: .82em/1.55 ui-monospace, Menlo, monospace; color: #e8dcc4; }
 .trace-status pre { display: inline-block; padding: .2em .8em; border: 1px dashed rgba(214, 203, 182, .35); border-radius: 1em; font-size: .85em; color: var(--muted); }
 .trace-game-line { margin: 0; font-size: .93em; color: #e2d7c2; }
 .trace-game-line .trace-kind { margin-right: .8em; }

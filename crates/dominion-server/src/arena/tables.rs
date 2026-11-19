@@ -164,11 +164,9 @@ fn check_seats(seats: &[Seat]) -> Result<()> {
 
 /// A seat for the server's agent `name`, set by `host`: one the runner offers now, or
 /// one of the table's seats already.
-fn agent_seat(state: &State, db: &Db, host: &User, name: &str, old: &[Seat]) -> Result<Seat> {
-    if host.kind() != UserKind::Registered {
-        return Err(Error::Forbidden(
-            "only registered players seat the server's agents".into(),
-        ));
+fn agent_seat(state: &State, db: &Db, may: bool, name: &str, old: &[Seat]) -> Result<Seat> {
+    if !may {
+        return Err(super::house::no_agents());
     }
     if let Some(agent) = state.house.agent_named(name) {
         return Ok(Seat::Agent(agent.user.clone()));
@@ -283,7 +281,7 @@ struct Start {
 impl Arena {
     /// Makes the accounts of the server's agents `host` seats, if they may seat them.
     fn summon_seated(&self, host: &User, edits: &[SeatEdit]) -> Result<()> {
-        if host.kind() != UserKind::Registered {
+        if !self.may_seat_agents(host) {
             return Ok(());
         }
         for edit in edits {
@@ -311,6 +309,7 @@ impl Arena {
         let host = self.user(&ident.user)?;
         let edits = new.seats.as_deref().unwrap_or(&[SeatEdit::Open]);
         self.summon_seated(&host, edits)?;
+        let may = self.may_seat_agents(&host);
         let mut state = lock(&self.state);
         let mut seats = vec![Seat::Player {
             user: ident.user.clone(),
@@ -322,7 +321,7 @@ impl Arena {
                 SeatEdit::Token(name) => Seat::Token(
                     seat_name(name).map_err(|e| Error::BadRequest(format!("a seat's name {e}")))?,
                 ),
-                SeatEdit::Agent(name) => agent_seat(&state, &self.db, &host, name, &[])?,
+                SeatEdit::Agent(name) => agent_seat(&state, &self.db, may, name, &[])?,
                 SeatEdit::Player(_) => return bad("a new table seats only its host"),
             });
         }
@@ -401,6 +400,7 @@ impl Arena {
         check_spec(&spec, edits.len().clamp(2, 6))?;
         let host = self.user(&ident.user)?;
         self.summon_seated(&host, edits)?;
+        let may = self.may_seat_agents(&host);
         let mut state = lock(&self.state);
         let old = state.hosted(id, &ident.user)?.seats.clone();
         let mut seats = vec![];
@@ -410,7 +410,7 @@ impl Arena {
                 SeatEdit::Token(name) => Seat::Token(
                     seat_name(name).map_err(|e| Error::BadRequest(format!("a seat's name {e}")))?,
                 ),
-                SeatEdit::Agent(name) => agent_seat(&state, &self.db, &host, name, &old)?,
+                SeatEdit::Agent(name) => agent_seat(&state, &self.db, may, name, &old)?,
                 SeatEdit::Player(name) => {
                     let user = self.db.user_by_name(name)?.map(|u| u.id);
                     let seat = old.iter().find(

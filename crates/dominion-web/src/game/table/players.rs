@@ -10,7 +10,8 @@ use super::{Composition, DecksView, Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
 use crate::assets::use_assets;
 use crate::card::CardSize;
-use crate::game::board::{Badge, Board, PlayerEntry, Stack, Uncertain, Zone, owned_side_by_side};
+use crate::game::board::{Badge, Board, PlayerEntry, Stack, Uncertain, Zone, side_by_side};
+use crate::game::counts::{CardCounts, CountsColumn};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -583,7 +584,7 @@ pub fn AllDecks(board: Rc<Board>) -> Element {
             div { class: "dt-composition-head",
                 span { "Deck compositions" }
                 div { class: "dt-composition-actions",
-                    for (m, label) in [(DecksView::Columns, "Side by side"), (DecksView::Counts, "Card counts")] {
+                    for (m, label) in [(DecksView::Counts, "Card counts"), (DecksView::Columns, "Side by side")] {
                         button {
                             key: "{label}",
                             class: "dt-composition-tab",
@@ -650,52 +651,43 @@ fn DecksColumns(board: Rc<Board>) -> Element {
     }
 }
 
-/// A row per card any player owns, with how many each owns.
+/// A row per card any player owns, with how many each owns, sortable by any player's
+/// counts; two players also get the difference between them.
 #[component]
 fn DecksCounts(board: Rc<Board>) -> Element {
     let cards = use_cards();
+    let mut sort = use_table().decks_sort;
     let players: Vec<&PlayerEntry> = board.players().collect();
-    let rows = owned_side_by_side(&players, &cards);
-    let unknown: Vec<u32> = players.iter().map(|p| p.owned.unknown).collect();
-    let columns = format!(
-        "grid-template-columns: calc(16 * var(--vh)) repeat({}, minmax(0, 1fr));",
-        players.len()
-    );
-    let cell = |n: u32, most: bool| {
-        rsx! {
-            div {
-                class: "dt-decks-n",
-                class: if n == 0 { "none" },
-                class: if most { "most" },
-                if n == 0 { "–" } else { "{n}" }
-            }
-        }
-    };
-    let most = |counts: &[u32]| {
-        let max = counts.iter().copied().max().unwrap_or(0);
-        let differ = counts.iter().any(|&n| n != max);
-        move |n: u32| differ && n == max
-    };
+    let owned: Vec<Vec<(&str, u32)>> = players
+        .iter()
+        .map(|p| {
+            p.owned
+                .known
+                .iter()
+                .map(|s| (s.card.as_str(), s.count))
+                .collect()
+        })
+        .collect();
+    let rows = side_by_side(&owned, &cards);
+    let columns = players
+        .iter()
+        .map(|p| CountsColumn {
+            seat: p.seat,
+            name: p.name.clone(),
+            cards: p.owned.count,
+            sub: format!("{} cards", p.owned.count),
+            note: None,
+        })
+        .collect();
+    let unknown = players.iter().map(|p| p.owned.unknown).collect();
     rsx! {
-        div { class: "dt-decks-grid", style: "{columns}",
-            div {}
-            for p in players.iter() {
-                DecksPlayer { key: "h{p.seat}", player: (*p).clone() }
-            }
-            for (card, counts) in rows.iter() {
-                div { key: "c{card}", class: "dt-decks-card",
-                    TableCard { name: card.clone(), size: CardSize::Micro }
-                }
-                for (i, &n) in counts.iter().enumerate() {
-                    Fragment { key: "{card}{i}", {cell(n, most(counts)(n))} }
-                }
-            }
-            if unknown.iter().any(|&n| n > 0) {
-                div { class: "dt-decks-card dt-decks-label", "Unknown" }
-                for (i, &n) in unknown.iter().enumerate() {
-                    Fragment { key: "u{i}", {cell(n, false)} }
-                }
-            }
+        CardCounts {
+            columns,
+            rows,
+            unknown,
+            sort: sort(),
+            on_sort: move |key| sort.set(sort().toggle(key)),
+            card: move |name: String| rsx! { TableCard { name, size: CardSize::Micro } },
         }
     }
 }

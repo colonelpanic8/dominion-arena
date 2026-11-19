@@ -259,6 +259,18 @@ fn until_then(g: &Game, card: Card) -> impl Iterator<Item = &crate::Lasting> {
     active(g, card).filter(|l| g.before_next_turn(l))
 }
 
+/// Blockades whose set-aside card belongs to `pile`.
+pub(crate) fn blockades(g: &Game, pile: PileId) -> u32 {
+    active(g, Card::Blockade)
+        .filter_map(|l| {
+            l.data
+                .pick
+                .filter(|&c| g.zone(c) == Zone::SetAside(l.owner))
+        })
+        .filter(|&c| g.home_pile(g.card(c)) == Some(pile))
+        .count() as u32
+}
+
 fn mask(players: &[PlayerId]) -> i32 {
     players.iter().fold(0, |m, p| m | 1 << p.0)
 }

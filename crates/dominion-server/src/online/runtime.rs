@@ -1,6 +1,8 @@
+use super::recordings::{self, Recorder};
 use crate::store::Store;
 use dominion_online::{
     catalog::{Catalog, VERSION},
+    record::Input,
     reducer::Reducer,
     transport::{
         Endpoint, Group, Message, RequiredSlot, RuleValue, TableDetails, TableRule, TimerUpdate,
@@ -277,6 +279,12 @@ impl Client {
             socket: Some(socket),
             endpoint,
             session: None,
+            credentials: Some(Credentials {
+                username: username.to_string(),
+                password: password.to_string(),
+            }),
+            relogin_due: false,
+            relogged: false,
             needs_snapshot: false,
             request_game: false,
             leaving_finished: false,
@@ -301,6 +309,7 @@ impl Client {
                 bots: Vec::new(),
                 mode,
             },
+            recorder: Recorder::new(recordings::dir(store.dir())),
             store,
         };
         tokio::time::timeout(Duration::from_secs(20), async {
@@ -326,7 +335,7 @@ impl Client {
                         request=rx.recv()=>request,
                         received=runtime.receive()=>{
                             if let Err(error)=received{runtime.fail(error).await;}
-                            publish.send_replace(runtime.update.clone());
+                            publish.send_replace(runtime.published());
                             continue;
                         }
                     }
@@ -406,16 +415,16 @@ impl Client {
                     }
                     Request::Profile(player, kind, reply) => {
                         runtime.request_profile(player, kind, reply).await;
-                        publish.send_replace(runtime.update.clone());
+                        publish.send_replace(runtime.published());
                         continue;
                     }
                     Request::Results(kind, reply) => {
                         runtime.request_results(kind, reply).await;
-                        publish.send_replace(runtime.update.clone());
+                        publish.send_replace(runtime.published());
                         continue;
                     }
                 };
-                publish.send_replace(runtime.update.clone());
+                publish.send_replace(runtime.published());
                 let _ = reply.send(result);
                 if stop {
                     break;
@@ -534,10 +543,20 @@ struct SessionSecret {
     player: i32,
     token: String,
 }
+/// Kept in memory only, to log in again once dominion.games has dropped the session.
+struct Credentials {
+    username: String,
+    password: String,
+}
 struct Runtime {
     socket: Option<Transport>,
     endpoint: Endpoint,
     session: Option<SessionSecret>,
+    credentials: Option<Credentials>,
+    /// dominion.games refused the session; log in with the password after this frame.
+    relogin_due: bool,
+    /// The password login has been used since the last explicit reconnect.
+    relogged: bool,
     needs_snapshot: bool,
     request_game: bool,
     leaving_finished: bool,
@@ -554,8 +573,14 @@ struct Runtime {
     results: Waiting<i32, Vec<ProfileResult>>,
     update: Update,
     store: Store,
+    recorder: Recorder,
 }
 impl Runtime {
+    /// What to publish now that everything taken together has been: the recorder's frame.
+    fn published(&mut self) -> Update {
+        self.recorder.frame(&self.update.reducer);
+        self.update.clone()
+    }
     async fn close(&mut self) {
         if let Some(options) = &self.search
             && let Ok(bytes) = matching::criteria(self.update.mode, options, false)
@@ -614,6 +639,9 @@ impl Runtime {
             }
         }
         self.update.bots.clone_from(&self.bots);
+        if std::mem::take(&mut self.relogin_due) {
+            return self.relogin().await;
+        }
         if self.request_game {
             self.safe_table()?;
             self.request_game = false;
@@ -669,6 +697,14 @@ impl Runtime {
                     && !(self.profiles.is_empty() && self.results.is_empty()) =>
             {
                 self.answer_player_page("dominion.games' rating service is down".into());
+            }
+            Message::Failed(f)
+                if f.reason == "LOGIN_REQUIRED"
+                    && self.session.is_some()
+                    && self.credentials.is_some()
+                    && !self.relogged =>
+            {
+                self.relogin_due = true;
             }
             Message::Failed(f) => return Err(f.error().to_string()),
             Message::Login(login) => {
@@ -738,11 +774,16 @@ impl Runtime {
                 if reducer.game_id != Some(snapshot.game_id) {
                     self.update.timers.clear();
                 }
+                let recorded = snapshot.clone();
                 reducer.replace(snapshot).map_err(|e| e.to_string())?;
+                self.recorder.snapshot(reducer, recorded);
                 self.needs_snapshot = false;
                 self.update.searching = false;
             }
-            Message::Event(event) => reducer.apply(event).map_err(|e| e.to_string())?,
+            Message::Event(event) => {
+                reducer.apply(event.clone()).map_err(|e| e.to_string())?;
+                self.recorder.input(Input::Event { event });
+            }
             Message::Timers(timers) => {
                 let at = crate::hub::now_ms();
                 for timer in timers {
@@ -754,9 +795,15 @@ impl Runtime {
                 if self.needs_snapshot {
                     return Err("question arrived before reconnect snapshot".into());
                 }
-                reducer.ask(question).map_err(|e| e.to_string())?;
+                reducer.ask(question.clone()).map_err(|e| e.to_string())?;
+                self.recorder.input(Input::Question {
+                    question: Box::new(question),
+                });
             }
-            Message::Log(change) => reducer.log(&change).map_err(|e| e.to_string())?,
+            Message::Log(change) => {
+                reducer.log(&change).map_err(|e| e.to_string())?;
+                self.recorder.input(Input::Log { change });
+            }
             // Details of a table other than ours are not ours: the official client ignores them too.
             Message::TableDetails(table)
                 if self.table.as_ref().map(|t| t.table_id) != Some(table.table_id) => {}
@@ -870,6 +917,7 @@ impl Runtime {
             }
             Message::GameFinished { table, result, .. } => {
                 reducer.finish(&result).map_err(|e| e.to_string())?;
+                self.recorder.finish(result);
                 self.store.remove("own-table").map_err(|e| e.to_string())?;
                 self.store.remove("own-match").map_err(|e| e.to_string())?;
                 self.completed_table = Some(table.table_id);
@@ -1225,6 +1273,8 @@ impl Runtime {
             .as_ref()
             .ok_or("no session owned by this process; restart the client")?;
         let bytes = command::reconnect_session(session.player, &session.token, VERSION);
+        self.relogged = false;
+        self.relogin_due = false;
         let mut socket = Transport::connect(self.endpoint)
             .await
             .map_err(|e| e.to_string())?;
@@ -1238,6 +1288,27 @@ impl Runtime {
         if self.needs_snapshot {
             self.send(command::reconnect_game()).await?;
         }
+        Ok(())
+    }
+    /// Logs in with the password on a new socket, once per reconnect: the session is
+    /// already this process's, so the login may resume its game (`Message::Login`).
+    async fn relogin(&mut self) -> Result<(), String> {
+        let credentials = self
+            .credentials
+            .as_ref()
+            .ok_or("no password kept by this process; restart the client")?;
+        let bytes = command::login(&credentials.username, &credentials.password, VERSION, 0);
+        self.relogged = true;
+        self.close().await;
+        let mut socket = Transport::connect(self.endpoint)
+            .await
+            .map_err(|e| e.to_string())?;
+        socket.send(bytes).await.map_err(|e| e.to_string())?;
+        self.socket = Some(socket);
+        self.update.error = None;
+        self.update.connected = true;
+        self.needs_snapshot = false;
+        self.request_game = false;
         Ok(())
     }
 }

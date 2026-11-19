@@ -3,11 +3,11 @@
     "dominion-playbook": {
       "flake": false,
       "locked": {
-        "lastModified": 1794869313,
-        "narHash": "sha256-GUFGXvgyD9xA+tPz0I9uJ/o8yZKy7kgaKgL9OeuQh0g=",
+        "lastModified": 1795027005,
+        "narHash": "sha256-aXtTsNnqqeK5kqodGi1zEdQYydXYmZE/Ku1JvrPCT1k=",
         "owner": "colonelpanic8",
         "repo": "dominion-playbook",
-        "rev": "e565fe81df45aa53e17fda541b489d653c5acd14",
+        "rev": "90692f1497bc5ad91157e44a492c9ce0ea9e1647",
         "type": "github"
       },
       "original": {

@@ -92,18 +92,25 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
                           played each seat, kept in its record (an agent's `AgentRun` as
                           its runner reported it, else its setup as last offered; a bot's
                           owner) and shown as `PlayedBy`
+    rerate.rs             voiding rated games (`dominion games void`): their records marked
+                          voided and taken off their players' tallies, every rating worked
+                          out again from the rated records left, refused unless the
+                          records as they stand give the ratings kept; `--record-only`
+                          marks games voided before records kept it
     official.rs           the official accounts as the lobby lists them; their finished
                           games' records (no rating or tally), `OfficialRecords`
     history.rs            the history read model: `/api/history` and players' pages read
                           finished games only through it, as `PastGame`s, merged and
-                          filtered over its `GameSource`s (one per place games are kept)
+                          filtered over its `GameSource`s (one per place games are kept),
+                          and a player's record against each opponent (`head_to_head`)
     house.rs              the server's own agents: their accounts, the runner connected,
                           its jobs (every seat they hold in a running game, sent when they
                           change), each player's agent seats a day
   src/rating.rs           Glicko-2 (pure)
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
-  src/control.rs          the control socket: `dominion games` lists and retires hosted games
+  src/control.rs          the control socket: `dominion games` lists and retires hosted
+                          games and voids finished rated games
   src/backfill.rs         `dominion games backfill`: streams for games saved before they
                           were recorded, replayed from their answers and checked against
                           the snapshot, each naming the history it was built from;
@@ -142,7 +149,9 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/online/             dominion.games played through `dominion-online`: `runtime.rs`
                           keeps an account's connection, `hosted.rs` serves it from
                           `dominion serve` (watching as a `SeatView`, management),
-                          `mcp.rs` its MCP session
+                          `mcp.rs` its MCP session, `recordings.rs` each game the
+                          client was fed (`dominion_online::record::Input`) and its
+                          replay at any step
 crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for wasm32); depends
                           only on dominion-protocol (engine crates are dev-dependencies)
   build.rs                the commit and its time that the Account tab's About box shows:
@@ -251,6 +260,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     selector.rs           "Select Cards", the card selector
     account.rs            `SignIn` (log in, register, play as guest) and the Account tab:
                           keeping a guest account, the password, bots and their keys
+    avatar.rs             accounts' pictures (`Avatar`: the picture, else the initial), the
+                          signed-in account's card under the tabs, the Account tab's picture
     chat.rs               a chat channel (the lobby's, a table's)
     home.rs               Automatch: the search, Bot Game (a search for agents, with the
                           server's agent to play when none answers), Create
@@ -266,16 +277,42 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           player's page, which lists its games the same way: players in
                           seat order, the first on the left, the winner crowned, each name with
                           an icon (a person, a bot, a token, an agent's maker's logo) and
-                          a caption of what played it (`PlayedBy`)
+                          a caption of what played it (`PlayedBy`); on a player's page a
+                          Head to head tab beside it (`Rivals`), whose pick narrows the
+                          games to those against that opponent
     cardlists.rs          Cardlists: the account's Banned list
+    who.rs                who played a seat, the same wherever a player is shown: `Face`
+                          (a picture, else what played it on a disc), `SeatIcon` (that
+                          mark alone, inline with text), the caption, an agent's maker,
+                          model and effort in words
   assets/lobby.css        lobby styles, in dominion.games' vh/vw
+  assets/tokens.css       the palette and fonts the other stylesheets take (see "Web styles")
   tests/lobby.rs          table rules and specs against the engine's cards, seats, the
                           Tables listing
+  tests/style.rs          the stylesheets held to tokens.css
 nix/module.nix            `nixosModules.default`: `services.dominion`, the server and its agents as
                           system services
 nix/agents.nix            the agent profiles the module offers by default
 tools/import_cards.py     one-off importer that produced data/cards (kept for reference)
 ```
+
+## Web styles
+
+- Colours and fonts come from `assets/tokens.css` (`var(--gold)`, `var(--text-soft)`,
+  `var(--ui)`, ...). `tests/style.rs` refuses a token's value, or a near-duplicate it
+  replaced, written out in any other stylesheet; `table.css` and `cards.css` keep
+  dominion.games' own colours and are exempt. Add a token only for a colour with a role;
+  a stand-in for a missing picture or a material's shading stays where it is used.
+- Buttons: gold (`lb-button lb-gold`) for a panel's one main action, copper for a row's
+  or a secondary action, stone for picking among equal choices. A toggle or filter is an
+  `Oval`; a small inline action (Copy, More games) may use its class too.
+- Shared pieces, before writing a new one: `Fieldset` for a tab's panels (a title, or tabs
+  as `after_title`; the Tables list alone keeps dominion.games' open layout), `Face` for a
+  player in a row of players, `SeatIcon` inline with a name, `OptionRow` and `Switch` for
+  options, and in CSS a list's `lb-list-head` (column names, a day), `lb-list` (its
+  scrolling well) and `lb-caption` (the line under a name). An agent is named by
+  `who::caption` under a name and `who::agent_title` in full; an effort reads as
+  `effort_title` gives it ("High", "XHigh").
 
 ## Card data
 

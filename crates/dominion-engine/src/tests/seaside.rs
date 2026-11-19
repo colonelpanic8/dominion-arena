@@ -690,6 +690,12 @@ fn blockade_sets_the_gain_aside_and_curses_copies_gained_on_their_turn() {
     choose_pile(&mut g, Card::Silver);
     assert_eq!(kinds(&g, &g.player(P0).set_aside), [Card::Silver]);
     assert!(discard_kinds(&g, P0).is_empty());
+    let blockades = |g: &Game, card| {
+        let v = g.view(P1);
+        v.pile(g.supply_pile(card).unwrap()).blockades()
+    };
+    assert_eq!(blockades(&g, Card::Silver), 1);
+    assert_eq!(blockades(&g, Card::Gold), 0);
     next_turn(&mut g);
     to_buy(&mut g);
     play(&mut g, Card::Silver);
@@ -698,6 +704,7 @@ fn blockade_sets_the_gain_aside_and_curses_copies_gained_on_their_turn() {
     assert_eq!(g.count_owned(P1, Card::Curse), 1);
     assert_eq!(g.turn().player, P0);
     assert!(hand_kinds(&g, P0).contains(&Card::Silver));
+    assert_eq!(blockades(&g, Card::Silver), 0);
     assert_eq!(g.hand(P0).len(), 6);
     assert_eq!(in_play_kinds(&g, P0), [Card::Blockade]);
 }

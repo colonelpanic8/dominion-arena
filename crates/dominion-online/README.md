@@ -64,6 +64,8 @@ joining arbitrary tables is not exposed.
 
 `online_reconnect` explicitly resumes only the in-memory session owned by this
 process. It invalidates previous decisions and waits for a replacement snapshot.
+If dominion.games has dropped that session (`LOGIN_REQUIRED`), it logs in again once
+with the password the process read at startup, kept in memory only.
 Answers are consumed before transmission and are never automatically retried,
 even when a send fails. To resume after restarting the process, opt into
 `online_resume = true`: only a table recorded in this state directory is

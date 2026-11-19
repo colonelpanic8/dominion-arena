@@ -166,6 +166,10 @@ impl Reducer {
         });
         Ok(())
     }
+    /// Whether a question is open.
+    pub fn asking(&self) -> bool {
+        self.question.is_some()
+    }
     pub fn seat(&self) -> Option<u8> {
         self.state
             .as_ref()?
@@ -863,6 +867,16 @@ impl Reducer {
                                 .filter(|c| c.zone == zone.index && c.kind == 9 && c.is_visible)
                                 .map(|c| c.value.max(0) as u32)
                                 .sum(),
+                            blockade: state
+                                .counters
+                                .iter()
+                                .filter(|c| {
+                                    c.zone == zone.index
+                                        && c.kind == BLOCKADE_TOKENS
+                                        && c.is_visible
+                                })
+                                .map(|c| c.value.max(0) as u32)
+                                .sum(),
                             trade_route: state.counters.iter().any(|c| {
                                 c.zone == zone.index && c.kind == 10 && c.is_visible && c.value > 0
                             }),
@@ -1144,6 +1158,7 @@ impl Reducer {
         let mut out = BTreeMap::new();
         for c in &state.counters {
             let shown = match (c.owner >= 0, c.zone >= 0) {
+                _ if c.kind == BLOCKADE_TOKENS && c.zone >= 0 => true,
                 (true, _) => matches!(c.kind, 0..=8 | 12 | 15),
                 (false, true) => matches!(c.kind, 6 | 7 | 9 | 10 | 18),
                 (false, false) => false,
@@ -1754,6 +1769,9 @@ fn title(name: &str) -> String {
 /// A zone's name in a view, one of `dominion_protocol::contract`'s: cards being revealed
 /// or looked at are `looking`, and those the official client keeps out of sight for a
 /// question are set aside.
+/// The official client's `CounterNames.BLOCKADE_TOKENS`.
+const BLOCKADE_TOKENS: i32 = 14;
+
 fn zone_key(kind: i32) -> &'static str {
     match kind {
         4..=7 | 13 | 20 | 22 | 32 | 34 => "pile",

@@ -16,6 +16,7 @@ mod sound;
 mod supply;
 
 use super::board::{Board, Stack, board};
+use super::counts::DecksSort;
 use super::interaction::{Interaction, TreasureRun, interaction, tone};
 use super::state::{Selection, answers_on_click};
 use super::{use_game, wording};
@@ -134,9 +135,9 @@ pub enum Composition {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum DecksView {
     /// Each player's own deck composition, side by side.
-    #[default]
     Columns,
     /// A row per card, with how many each player owns.
+    #[default]
     Counts,
 }
 
@@ -157,6 +158,7 @@ pub struct TableCtx {
     /// The opponent whose hand, deck and discard peek in from the top, when chosen.
     pub chosen_opponent: Signal<Option<u8>>,
     pub decks_view: Signal<DecksView>,
+    pub decks_sort: Signal<DecksSort>,
     run: Signal<Option<Run>>,
     cards: Signal<Rc<crate::cards::CardDb>>,
     game: super::GameCtx,
@@ -640,6 +642,7 @@ pub fn TableGame(controls: Element) -> Element {
         popup: Signal::new(None),
         chosen_opponent: Signal::new(None),
         decks_view: Signal::new(DecksView::default()),
+        decks_sort: Signal::new(DecksSort::default()),
         run: Signal::new(None),
         cards,
         game,
@@ -857,7 +860,7 @@ pub fn TableGame(controls: Element) -> Element {
                     }
                     button {
                         "data-action": "all-decks",
-                        title: "Every player's deck composition, side by side",
+                        title: "Every player's deck composition",
                         onclick: move |e| { e.stop_propagation(); ctx.open(players::all_decks_popup()); },
                         "Decks"
                     }
