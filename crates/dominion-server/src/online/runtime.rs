@@ -15,7 +15,7 @@ use dominion_online::{
 use dominion_protocol::{
     AgentView, Answer, GlossaryEntry,
     api::{OnlineMatching, OnlineMode},
-    lobby::ClockView,
+    lobby::{ChatKind, ChatMessage, ClockView},
 };
 mod matching;
 use matching::HumanTable;
@@ -116,6 +116,70 @@ pub(crate) struct Update {
     pub finished_at: Option<u64>,
     /// The official server's ids of the bots at the table.
     pub bots: Vec<i32>,
+    pub chat: TableChat,
+}
+/// What has been said at the account's table, its last lines; a table it joins starts it
+/// afresh.
+#[derive(Clone, Default)]
+pub(crate) struct TableChat {
+    table: Option<i64>,
+    pub lines: Vec<ChatMessage>,
+}
+impl TableChat {
+    const KEPT: usize = 200;
+    /// The official client's senders of server lines that are no player.
+    const MATCH_SUMMARY: &str = "!match";
+    const TIEBREAK_STARTER: &str = "!tiebreak";
+
+    fn at(&mut self, table: i64) {
+        if self.table != Some(table) {
+            *self = Self {
+                table: Some(table),
+                lines: Vec::new(),
+            };
+        }
+    }
+    /// A `Chat` message to `table`: `sender` is `p<player id>`, or names a server line.
+    fn said(&mut self, table: &TableDetails, sender: &str, text: String, reducer: &Reducer) {
+        self.at(table.table_id);
+        let (from, kind, text) = match sender {
+            "" | Self::MATCH_SUMMARY => (String::new(), ChatKind::System, text),
+            Self::TIEBREAK_STARTER => (
+                String::new(),
+                ChatKind::System,
+                format!("{text} selected to start game 7"),
+            ),
+            _ => {
+                let Some(id) = sender.strip_prefix('p').and_then(|id| id.parse().ok()) else {
+                    return;
+                };
+                let mut seated = table.players.iter().chain(&table.bots);
+                let member = (seated.clone().chain(&table.spectators)).find(|p| p.id == id);
+                let playing = seated.any(|p| p.id == id)
+                    || (reducer.state().ok())
+                        .is_some_and(|s| s.players.iter().any(|p| p.player_id == id));
+                let name = (reducer.names.get(&id).or(member.map(|p| &p.name)).cloned())
+                    .unwrap_or_else(|| format!("player {id}"));
+                let kind = if playing {
+                    ChatKind::Player
+                } else {
+                    ChatKind::Watcher
+                };
+                (name, kind, text)
+            }
+        };
+        let seq = self.lines.last().map_or(1, |l| l.seq + 1);
+        self.lines.push(ChatMessage {
+            seq,
+            at: crate::hub::now_ms(),
+            from,
+            kind,
+            text,
+        });
+        if self.lines.len() > Self::KEPT {
+            self.lines.remove(0);
+        }
+    }
 }
 impl Update {
     /// The game's timers as they stand at `now`, by seat.
@@ -179,6 +243,8 @@ enum Request {
     CancelMatch(oneshot::Sender<Result<(), String>>),
     Reconnect(oneshot::Sender<Result<(), String>>),
     Resign(oneshot::Sender<Result<(), String>>),
+    /// Says a line at the account's table.
+    Say(String, oneshot::Sender<Result<(), String>>),
     Disconnect(oneshot::Sender<Result<(), String>>),
     /// A player's profile (this account's when none) under a `RatingTypes` ordinal.
     Profile(Option<i32>, i32, Reply<PlayerProfile>),
@@ -307,6 +373,7 @@ impl Client {
                 timers: Vec::new(),
                 finished_at: None,
                 bots: Vec::new(),
+                chat: TableChat::default(),
                 mode,
             },
             recorder: Recorder::new(recordings::dir(store.dir())),
@@ -409,6 +476,10 @@ impl Client {
                         let result = runtime.resign().await;
                         (result, reply, false)
                     }
+                    Request::Say(text, reply) => {
+                        let result = runtime.say(text).await;
+                        (result, reply, false)
+                    }
                     Request::Disconnect(reply) => {
                         runtime.close().await;
                         (Ok(()), reply, true)
@@ -472,6 +543,10 @@ impl Client {
             return Err("NO_GAME: no running official game".into());
         }
         self.call(Request::Resign).await
+    }
+    /// Says `text` at the account's table on dominion.games, as the account.
+    pub async fn say(&self, text: String) -> Result<(), String> {
+        self.call(|r| Request::Say(text, r)).await
     }
     pub async fn disconnect(&self) -> Result<(), String> {
         self.call(Request::Disconnect).await
@@ -579,6 +654,9 @@ impl Runtime {
     /// What to publish now that everything taken together has been: the recorder's frame.
     fn published(&mut self) -> Update {
         self.recorder.frame(&self.update.reducer);
+        if let Some(table) = &self.table {
+            self.update.chat.at(table.table_id);
+        }
         self.update.clone()
     }
     async fn close(&mut self) {
@@ -924,6 +1002,17 @@ impl Runtime {
                 self.table = Some(table);
                 self.update.finished_at = Some(crate::hub::now_ms());
             }
+            Message::Chat {
+                receiver,
+                sender,
+                text,
+            } => {
+                if let Some(table) = &self.table
+                    && receiver == format!("t{}", table.table_id)
+                {
+                    self.update.chat.said(table, &sender, text, reducer);
+                }
+            }
             Message::AnimationCompensation => return Ok(true),
             Message::ReconnectInstruction(_) | Message::TimeoutInstruction => {
                 return Err("official server requested reconnect; pending answers invalidated; call online_reconnect".into());
@@ -1033,7 +1122,6 @@ impl Runtime {
             }
             Message::Ancillary(_)
             | Message::LobbyNotice
-            | Message::Chat { .. }
             | Message::Tables(_)
             | Message::PlayerStatus { .. }
             | Message::GameStarted { .. }
@@ -1091,6 +1179,17 @@ impl Runtime {
             return Err("official connection closed; reconnect first".into());
         }
         Ok(())
+    }
+    async fn say(&mut self, text: String) -> Result<(), String> {
+        let table = (self.table.as_ref())
+            .ok_or("REJECTED: the account is at no table on dominion.games")?
+            .table_id;
+        self.send_command(Command::SendChat {
+            receiver: format!("t{table}"),
+            sender: format!("p{}", self.update.reducer.player_id),
+            text,
+        })
+        .await
     }
     async fn send_command(&mut self, command: Command) -> Result<(), String> {
         let bytes = command.encode().map_err(|e| e.to_string())?;

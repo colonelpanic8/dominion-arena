@@ -718,6 +718,11 @@ pub async fn online_attach(
     )
     .await
 }
+/// Says `text` at official account `account`'s table on dominion.games, as the account.
+pub async fn online_say(account: Option<&str>, text: &str) -> Result<()> {
+    let say = Say { text: text.into() };
+    imp::send_empty("POST", &online_path(account, "chat"), None, Some(&say)).await
+}
 pub async fn online_manage_action(
     account: Option<&str>,
     action: &str,

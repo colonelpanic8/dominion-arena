@@ -38,6 +38,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
 pub use accounts::SESSION_COOKIE;
+pub(crate) use chat::line as chat_line;
 pub use house::RunnerId;
 pub use rerate::{VoidHow, Voided};
 

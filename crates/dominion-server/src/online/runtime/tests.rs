@@ -102,6 +102,7 @@ fn runtime() -> (TempDir, Runtime) {
             timers: Vec::new(),
             finished_at: None,
             bots: Vec::new(),
+            chat: Default::default(),
         },
         recorder: Recorder::new(recordings::dir(directory.path())),
         store,
@@ -673,6 +674,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
             (reqwest::Method::DELETE, "matchmaking"),
             (reqwest::Method::POST, "reconnect"),
             (reqwest::Method::POST, "resign"),
+            (reqwest::Method::POST, "chat"),
         ] {
             let mut request = http.request(method, format!("{base}/api/online/{path}"));
             if let Some(token) = token {
@@ -754,6 +756,32 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+    assert!(requests.try_recv().is_err());
+    // The owner speaks at the account's table: one line, as typed.
+    let backend = tokio::spawn(async move {
+        match requests.recv().await.unwrap() {
+            Request::Say(text, reply) => {
+                assert_eq!(text, "gl hf");
+                reply.send(Ok(())).unwrap();
+            }
+            _ => panic!("expected a chat line"),
+        }
+        requests
+    });
+    for (text, status) in [
+        ("  gl\nhf ", reqwest::StatusCode::NO_CONTENT),
+        ("   ", reqwest::StatusCode::BAD_REQUEST),
+    ] {
+        let response = http
+            .post(format!("{manager}/chat"))
+            .bearer_auth(&owner)
+            .json(&serde_json::json!({ "text": text }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+    }
+    requests = backend.await.unwrap();
     assert!(requests.try_recv().is_err());
     let backend = tokio::spawn(async move {
         match requests.recv().await.unwrap() {
@@ -2098,4 +2126,59 @@ async fn a_finished_game_replays_at_each_step_as_the_account_saw_it() {
     }
     assert_eq!(replays.view(game, 1, 0).unwrap().deciding, Some(0));
     assert!(replays.view(game, 4, 0).is_err());
+}
+
+#[test]
+fn table_chat_names_players_watchers_and_the_server_and_starts_afresh_at_a_new_table() {
+    let (_directory, mut runtime) = active_runtime();
+    runtime
+        .process(Message::PlayerJoined {
+            table_id: 10,
+            player: named(99),
+            is_player: false,
+        })
+        .unwrap();
+    let chat = |receiver: &str, sender: &str, text: &str| Message::Chat {
+        receiver: receiver.into(),
+        sender: sender.into(),
+        text: text.into(),
+    };
+    for message in [
+        chat("t10", "p-2", "gl"),
+        chat("t10", "p99", "hi"),
+        chat("t10", "", "fixture-99 left the table"),
+        chat("t10", "!tiebreak", "fixture-42"),
+        chat("t11", "p-2", "elsewhere"),
+        chat("lobby", "p-2", "elsewhere"),
+        chat("t10", "nobody", "unreadable"),
+    ] {
+        runtime.process(message).unwrap();
+    }
+    let published = runtime.published();
+    let said: Vec<_> = (published.chat.lines.iter())
+        .map(|l| (l.seq, l.from.as_str(), l.kind, l.text.as_str()))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            (1, "fixture--2", ChatKind::Player, "gl"),
+            (2, "fixture-99", ChatKind::Watcher, "hi"),
+            (3, "", ChatKind::System, "fixture-99 left the table"),
+            (
+                4,
+                "",
+                ChatKind::System,
+                "fixture-42 selected to start game 7"
+            ),
+        ]
+    );
+    let mut next = table();
+    next.table_id = 11;
+    runtime
+        .process(Message::TableJoined {
+            table: next,
+            show: true,
+        })
+        .unwrap();
+    assert!(runtime.published().chat.lines.is_empty());
 }

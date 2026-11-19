@@ -63,10 +63,25 @@ pub struct GameCtx {
 /// What a game's source has besides its views. The page draws only what is offered.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Offers {
-    /// The game has a chat (`game-<id>`).
+    /// The game has a chat to show.
     pub chat: bool,
+    /// Where what the page says in it goes; none: it is only read.
+    pub say: Option<Say>,
     /// The id its agents' transcript is kept under.
     pub transcript: Option<String>,
+}
+
+/// Where a game's chat is said in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Say {
+    /// Arena's `game-<id>`, as the seat shown or the account watching.
+    Arena,
+    /// The table of official account `account` (its route id; none: the primary) on
+    /// dominion.games, as that account, `name` there.
+    Official {
+        account: Option<String>,
+        name: String,
+    },
 }
 
 pub fn use_game() -> GameCtx {
@@ -108,8 +123,13 @@ impl GameCtx {
         }
     }
 
-    /// Says `text` in the game's chat: as the seat shown, else as the account watching.
+    /// Says `text` in the game's chat: as the seat shown, else as the account watching;
+    /// in an official account's, as that account (its chat comes back with its view).
     pub async fn say(self, text: &str) -> Result<(), ApiError> {
+        let say = self.offers.peek().say.clone();
+        if let Some(Say::Official { account, .. }) = say {
+            return api::online_say(account.as_deref(), text).await;
+        }
         let Some(via) = self.via() else {
             return Ok(());
         };
@@ -651,6 +671,7 @@ pub fn GamePage(id: String) -> Element {
             .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
         Offers {
             chat: true,
+            say: Some(Say::Arena),
             transcript: agents.then(|| game.read().clone()),
         }
     });

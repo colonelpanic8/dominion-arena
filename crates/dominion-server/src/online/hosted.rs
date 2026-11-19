@@ -310,6 +310,7 @@ impl Hosted {
             .route("/matchmaking", axum::routing::delete(cancel_matchmaking))
             .route("/reconnect", post(reconnect))
             .route("/resign", post(resign))
+            .route("/chat", post(say))
             .route("/transcript", post(publish_transcript))
             .with_state(Web {
                 hosted: self.clone(),
@@ -479,6 +480,7 @@ fn observation(update: Update, ratings: Vec<Option<SeatLevel>>) -> OnlineObserva
         connected: update.connected,
         error: update.error,
         game,
+        chat: update.chat.lines,
     }
 }
 #[derive(Clone)]
@@ -979,6 +981,20 @@ async fn resign(State(web): State<Web>) -> Response {
             web.set_job(None);
             axum::Json(management(&web)).into_response()
         }
+        Err(e) => refused(e),
+    }
+}
+/// Its owner says a line at the account's table on dominion.games.
+async fn say(
+    State(web): State<Web>,
+    axum::Json(say): axum::Json<dominion_protocol::lobby::Say>,
+) -> Response {
+    let text = match crate::arena::chat_line(&say.text) {
+        Ok(text) => text,
+        Err(e) => return crate::http::Error::from(e).into_response(),
+    };
+    match web.hosted.client.say(text).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => refused(e),
     }
 }

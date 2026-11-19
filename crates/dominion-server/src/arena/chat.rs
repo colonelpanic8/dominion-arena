@@ -30,7 +30,7 @@ impl State {
 }
 
 /// One line of what was typed, or why it can't be said.
-fn line(text: &str) -> Result<String> {
+pub(crate) fn line(text: &str) -> Result<String> {
     let text: String = (text.trim().chars())
         .map(|c| if c.is_whitespace() { ' ' } else { c })
         .filter(|c| !c.is_control() && !matches!(c, '\u{2028}' | '\u{2029}'))

@@ -60,7 +60,11 @@ fn ChatLine(message: ChatMessage, names: Vec<String>) -> Element {
 pub fn Chat() -> Element {
     let ctx = use_game();
     let account = crate::account::use_account();
-    let can_speak = ctx.seat.read().is_some() || account.me.read().is_some();
+    let say = ctx.offers.read().say.clone();
+    let can_speak = match &say {
+        Some(super::Say::Official { .. }) => true,
+        _ => ctx.seat.read().is_some() || account.me.read().is_some(),
+    };
     let mut draft = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let mut sending = use_signal(|| false);
@@ -94,10 +98,12 @@ pub fn Chat() -> Element {
             sending.set(false);
         });
     };
-    let hint = if (ctx.watching)() {
-        "Say something (as someone watching)…"
-    } else {
-        "Say something…"
+    let hint = match &say {
+        Some(super::Say::Official { name, .. }) => {
+            format!("Say something at the dominion.games table (as {name})…")
+        }
+        _ if (ctx.watching)() => "Say something (as someone watching)…".to_string(),
+        _ => "Say something…".to_string(),
     };
     rsx! {
         div { class: "game-chat", "data-chat": "{len}",
@@ -109,7 +115,9 @@ pub fn Chat() -> Element {
             if let Some(e) = error() {
                 p { class: "game-chat-error", "data-chat-error": "1", "{e}" }
             }
-            if !can_speak {
+            if say.is_none() {
+                p { class: "muted", "Read only here." }
+            } else if !can_speak {
                 p { class: "muted", "Sign in to chat." }
             } else {
                 input {

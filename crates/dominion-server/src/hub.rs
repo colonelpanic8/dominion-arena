@@ -316,6 +316,8 @@ pub(crate) struct PlayObservation {
     pub note: Option<String>,
     /// The game's chess clock as it stands.
     pub clock: Option<ClockView>,
+    /// What people at the table have said, its last lines in order.
+    pub chat: Vec<dominion_protocol::lobby::ChatMessage>,
 }
 
 fn current_entry(
@@ -2021,6 +2023,7 @@ impl Hub {
                 undos: table.undos(),
                 note: None,
                 clock: None,
+                chat: Vec::new(),
             }
         })
         .map(|mut observation| {

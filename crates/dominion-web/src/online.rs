@@ -8,7 +8,7 @@ use crate::lobby::agent_picker::AgentPicker;
 use crate::lobby::{Fieldset, use_lobby};
 use crate::{
     api,
-    game::{GameShell, GameState, Offers, table, use_watched_game},
+    game::{GameShell, GameState, Offers, Say, table, use_watched_game},
     platform,
 };
 use dioxus::prelude::*;
@@ -62,6 +62,7 @@ fn apply(mut state: Signal<GameState>, mut game: Signal<String>, update: OnlineO
         }
         None => *st = GameState::default(),
     }
+    st.chat = update.chat;
     st.error = update
         .error
         .or_else(|| (!update.connected).then(|| "Official connection is disconnected".into()));
@@ -87,12 +88,20 @@ pub fn OnlinePage(account: Option<String>) -> Element {
     let game = use_signal(String::new);
     let summary = use_signal(|| None::<GameSummary>);
     use_context_provider(|| summary);
-    let offers = use_memo(move || Offers {
-        chat: false,
+    // Its owner speaks at its table, as it.
+    let say = (shown.as_ref())
+        .and_then(|s| owned.iter().find(|a| &a.id == s))
+        .map(|a| Say::Official {
+            account: Some(a.id.clone()),
+            name: a.account.clone(),
+        });
+    let offers = use_memo(use_reactive!(|say| Offers {
+        chat: say.is_some() || !state.read().chat.is_empty(),
+        say,
         transcript: Some(game())
             .filter(|g| !g.is_empty())
             .map(|g| official_game_id(&g)),
-    });
+    }));
     use_watched_game(game, state, offers);
     use_future(move || async move {
         loop {

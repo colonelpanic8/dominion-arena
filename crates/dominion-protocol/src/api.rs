@@ -468,6 +468,9 @@ pub struct OnlineObservation {
     /// under another count shares nothing with one before it. None without a game.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game: Option<SeatView>,
+    /// What has been said at the account's table on dominion.games, its last lines.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chat: Vec<crate::lobby::ChatMessage>,
 }
 
 /// An official account `dominion serve` keeps connected (`GET /api/online/accounts`).
