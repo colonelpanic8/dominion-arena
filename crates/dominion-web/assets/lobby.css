@@ -1119,8 +1119,13 @@ a.lb-board-player:has(.first) { border-left-color: var(--gold); background: line
 .lb-board-score { font: 700 calc(2.3 * var(--lu)) var(--num); color: var(--gold-pale); line-height: 1; white-space: nowrap; }
 .lb-board-dev { font: 400 calc(1.4 * var(--lu)) var(--ui); color: var(--text-muted); }
 .lb-board-bar { position: relative; height: calc(.8 * var(--lu)); border-radius: calc(.4 * var(--lu)); background: rgba(255, 255, 255, .08); }
-.lb-board-span { position: absolute; top: 0; bottom: 0; border-radius: calc(.4 * var(--lu)); background: linear-gradient(90deg, color-mix(in srgb, var(--gold-deep) 25%, transparent), color-mix(in srgb, var(--gold-pale) 55%, transparent), color-mix(in srgb, var(--gold-deep) 25%, transparent)); }
+.lb-board-span { position: absolute; top: 0; bottom: 0; border-radius: calc(.4 * var(--lu)); background: linear-gradient(90deg, color-mix(in srgb, var(--gold-deep) 45%, transparent), color-mix(in srgb, var(--gold-pale) 80%, transparent), color-mix(in srgb, var(--gold-deep) 45%, transparent)); }
 .lb-board-tick { position: absolute; top: calc(-.35 * var(--lu)); bottom: calc(-.35 * var(--lu)); width: calc(.35 * var(--lu)); margin-left: calc(-.175 * var(--lu)); border-radius: calc(.2 * var(--lu)); background: var(--gold); box-shadow: 0 0 calc(.5 * var(--lu)) color-mix(in srgb, var(--gold) 70%, transparent); }
+.lb-board-whisker { position: absolute; top: 50%; height: calc(.2 * var(--lu)); margin-top: calc(-.1 * var(--lu)); background: color-mix(in srgb, var(--gold-pale) 40%, transparent); }
+.lb-board-whisker::before, .lb-board-whisker::after { content: ""; position: absolute; top: calc(-.35 * var(--lu)); height: calc(.9 * var(--lu)); width: 1px; background: color-mix(in srgb, var(--gold-pale) 50%, transparent); }
+.lb-board-whisker::before { left: 0; }
+.lb-board-whisker::after { right: 0; }
+a.lb-board-player.lb-board-provisional .lb-board-rating, a.lb-board-player.lb-board-provisional .lb-board-num { opacity: .55; }
 .lb-board-num { text-align: right; font: 600 calc(2 * var(--lu)) var(--num); color: var(--text); white-space: nowrap; }
 .lb-board-head .lb-board-num, .lb-board-head .lb-board-rating { font: inherit; color: inherit; }
 .lb-board-rate { color: var(--gold-pale); }
@@ -1379,14 +1384,9 @@ a.lb-h2h-name:hover { text-decoration: underline; }
 .lb-profile { flex-shrink: 0; }
 .lb-profile-who { display: flex; align-items: center; gap: 1vh; padding: .6vh 1.5vh 0; font: 1.7vh var(--ui); color: #c9b98f; }
 .lb-profile-who .lb-note-link { margin: 0 0 0 auto; font-size: 1.6vh; }
-.lb-profile-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6vh; padding: 1vh 1.5vh 0; }
-.lb-profile-number { display: flex; flex-direction: column; gap: .3vh; padding: .8vh 1vh; background: rgba(255, 255, 255, .04); }
-.lb-profile-label { font: 1.3vh var(--ui); color: var(--text-soft); }
-.lb-profile-value { font: 2.2vh var(--num); }
 .lb-profile-sub { font-size: 1.4vh; color: var(--text-muted); }
-.lb-profile-line { display: flex; flex-direction: column; gap: .5vh; margin: .6vh 1.5vh 1vh; padding: .8vh 1vh; background: rgba(255, 255, 255, .04); }
-.lb-profile-line svg { width: 100%; height: 5vh; overflow: visible; }
-.lb-profile-line polyline { fill: none; stroke: var(--gold); stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.lb-profile .rt-card { padding: 1.2vh 1.5vh 1.5vh; }
+.lb-profile .rt { --rt: .9vh; }
 
 /* Cardlists. */
 .lb-cardlists-page { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; }

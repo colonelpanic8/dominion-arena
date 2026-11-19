@@ -274,6 +274,18 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-bar-away .dt-pname { opacity: 0.55; }
 .dt-bar-who { margin-left: auto; flex: none; font-family: var(--num); font-size: calc(1.5 * var(--vh)); color: #ddd; text-shadow: 1px 1px 0 #000; white-space: nowrap; }
 .dt-bar-away .dt-bar-who { color: #ffb0a0; }
+button.dt-bar-rating {
+  display: inline-flex; align-items: baseline; gap: calc(0.35 * var(--vh));
+  padding: calc(0.15 * var(--vh)) calc(0.6 * var(--vh)); border: 1px solid rgba(240, 207, 122, 0.45); border-radius: 99px;
+  background: rgba(0, 0, 0, 0.45); cursor: pointer; line-height: 1.1;
+}
+button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 122, 0.14); }
+.dt-bar-rating-value { font-weight: 700; color: #f0cf7a; }
+.dt-bar-rating-sub, .dt-bar-rating-kind { font-size: 0.8em; color: #c9c1b0; }
+.dt-bar-rating-online { border-color: rgba(124, 198, 214, 0.5); }
+.dt-bar-rating-online:hover { border-color: #7cc6d6; background: rgba(124, 198, 214, 0.14); }
+.dt-bar-rating-online .dt-bar-rating-value { color: #9adbe8; }
+.dt-composition.dt-ratings { width: min(calc(110 * var(--vh)), 94%); overflow-y: auto; background: #1f1912; }
 /* The chess clock: each player's time, ticking for whoever must decide. */
 .dt-clock { flex: none; font-family: var(--num); font-size: calc(1.9 * var(--vh)); color: #ccc; text-shadow: 1px 1px 0 #000; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .dt-clock-running { color: #fff; font-weight: 700; }

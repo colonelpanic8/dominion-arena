@@ -52,6 +52,9 @@ pub struct RatingInfo {
     /// Rated games won: placed first, with someone placed lower.
     #[serde(default)]
     pub wins: u32,
+    /// Glicko-2 volatility: how erratic the player's results have been (0.06 to start).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volatility: Option<f64>,
     /// The same rating on dominion.games' scale, once the server has anchors to read it
     /// off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -753,6 +756,13 @@ pub struct GameMeta {
     /// began, once known (none for a bot or an unrated player).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub levels: Vec<Option<f64>>,
+    /// In an Arena game: per seat, the account's rating as it stands, once they have
+    /// played a rated game.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ratings: Vec<Option<RatingInfo>>,
+    /// In a dominion.games game: per seat, the rating `levels` is the level of.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub online_ratings: Vec<Option<SeatLevel>>,
     /// Why the game ended early, when it did: `resigned`, `abandoned` or `timeout`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
@@ -760,6 +770,22 @@ pub struct GameMeta {
     /// `forfeit_at` is to be compared with.
     #[serde(default)]
     pub now: u64,
+}
+
+/// A player's dominion.games rating, as a game's page shows it beside their name.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatLevel {
+    pub level: f64,
+    /// Skill (mu).
+    pub skill: f64,
+    pub deviation: f64,
+    pub games: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<u32>,
+    pub wins: u32,
+    pub losses: u32,
+    pub ties: u32,
 }
 
 /// A game's clock as it stands.

@@ -63,12 +63,12 @@ fn Standings(players: Vec<Leader>) -> Element {
             }
         }
         p { class: "lb-board-foot",
-            "Rated games only. Ratings are Glicko-2: the bar spans each rating ± its deviation, which narrows the more rated games a player has played."
+            "Rated games only. Ratings are Glicko-2: the thick bar spans each rating ± its deviation, the thin line ± twice it (95% likely), and both narrow the more rated games a player has played. Faded players are provisional (deviation over 150)."
         }
     }
 }
 
-/// The span of ratings the bars are drawn on: every rating ± its deviation.
+/// The span of ratings the bars are drawn on: every rating ± twice its deviation.
 #[derive(Clone, Copy, PartialEq)]
 struct Scale {
     lo: f64,
@@ -80,8 +80,8 @@ impl Scale {
         let (lo, hi) = (players.iter()).fold((f64::MAX, f64::MIN), |(lo, hi), p| {
             let r = &p.rating;
             (
-                lo.min(r.rating - r.deviation),
-                hi.max(r.rating + r.deviation),
+                lo.min(r.rating - 2.0 * r.deviation),
+                hi.max(r.rating + 2.0 * r.deviation),
             )
         });
         if lo < hi {
@@ -130,20 +130,21 @@ fn Standing(leader: Leader, class: &'static str, scale: Scale, official: bool) -
             (user.name.clone(), None, caption)
         }
     };
-    let (low, mid, high) = (
-        scale.at(rating.rating - rating.deviation),
-        scale.at(rating.rating),
-        scale.at(rating.rating + rating.deviation),
-    );
-    let span = format!("left: {low:.2}%; width: {:.2}%", high - low);
-    let tick = format!("left: {mid:.2}%");
+    let (r, d) = (rating.rating, rating.deviation);
+    let bar = |lo: f64, hi: f64| {
+        let (lo, hi) = (scale.at(lo), scale.at(hi));
+        format!("left: {lo:.2}%; width: {:.2}%", hi - lo)
+    };
+    let (outer, inner) = (bar(r - 2.0 * d, r + 2.0 * d), bar(r - d, r + d));
+    let tick = format!("left: {:.2}%", scale.at(r));
+    let provisional = d > crate::rating::PROVISIONAL;
     let win_rate =
         (rating.games > 0).then(|| (rating.wins as f64 / rating.games as f64 * 100.0).round());
-    let r = rating.rating.round();
-    let d = rating.deviation.round();
+    let (lo, hi) = crate::rating::interval(r, d);
+    let (r, d) = (r.round(), d.round());
     rsx! {
         Link {
-            class: "{class} lb-board-player",
+            class: if provisional { "{class} lb-board-player lb-board-provisional" } else { "{class} lb-board-player" },
             to: Route::User { name: user.name.clone() },
             title: "{user.name}",
             "data-leader": "{user.name}",
@@ -168,10 +169,13 @@ fn Standing(leader: Leader, class: &'static str, scale: Scale, official: bool) -
                     span { class: "lb-caption lb-board-caption", "{caption}" }
                 }
             }
-            span { class: "lb-board-rating", title: "{r} ± {d}",
-                span { class: "lb-board-score", "{r}" span { class: "lb-board-dev", " ± {d}" } }
+            span { class: "lb-board-rating", title: "{r} ± {d}: 95% likely {lo:.0} – {hi:.0}",
+                span { class: "lb-board-score", "{r}" span { class: "lb-board-dev", " ± {d}" }
+                    if provisional { span { class: "lb-board-dev", " · provisional" } }
+                }
                 span { class: "lb-board-bar",
-                    span { class: "lb-board-span", style: span }
+                    span { class: "lb-board-whisker", style: outer }
+                    span { class: "lb-board-span", style: inner }
                     span { class: "lb-board-tick", style: tick }
                 }
             }
@@ -214,19 +218,6 @@ pub fn rating_line(recent: &[PastGame], name: &str) -> Vec<f64> {
     line
 }
 
-/// The points of a line through `values`, in a `w` by `h` box.
-fn spark(values: &[f64], w: f64, h: f64) -> String {
-    let (lo, hi) = values
-        .iter()
-        .fold((f64::MAX, f64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
-    let span = (hi - lo).max(1.0);
-    let step = w / (values.len() - 1) as f64;
-    (values.iter().enumerate())
-        .map(|(i, v)| format!("{:.1},{:.1}", i as f64 * step, h - (v - lo) / span * h))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 #[component]
 fn ProfileCard(profile: Profile) -> Element {
     let Profile {
@@ -238,28 +229,6 @@ fn ProfileCard(profile: Profile) -> Element {
         recent,
     } = profile;
     let line = rating_line(&recent, &user.name);
-    let mut numbers = vec![
-        (
-            "Rating",
-            format!("{}", rating.rating.round()),
-            format!("± {}", rating.deviation.round()),
-        ),
-        (
-            "Rated games won",
-            rating.wins.to_string(),
-            format!("of {}", rating.games),
-        ),
-        (
-            "Arena games won",
-            stats.wins.to_string(),
-            format!("of {}", stats.games),
-        ),
-        (
-            "dominion.games games",
-            official_games.to_string(),
-            String::new(),
-        ),
-    ];
     let what = match (user.kind, &user.owner, &agent) {
         (_, _, Some(a)) => agent_title(a),
         (UserKind::Registered, _, _) => "Registered player".to_string(),
@@ -267,16 +236,6 @@ fn ProfileCard(profile: Profile) -> Element {
         (UserKind::Bot, Some(owner), _) => format!("{owner}'s bot"),
         (UserKind::Bot, None, _) => "One of the server's agents".to_string(),
     };
-    if let Some(o) = &rating.official {
-        numbers.insert(
-            1,
-            (
-                "dominion.games skill",
-                official_skill(o, false),
-                format!("± {:.1}", o.deviation),
-            ),
-        );
-    }
     rsx! {
         Fieldset { title: user.name.clone(), class: "lb-profile", "data-profile": "{user.name}",
             div { class: "lb-profile-who",
@@ -284,29 +243,15 @@ fn ProfileCard(profile: Profile) -> Element {
                     super::avatar::Avatar { user: user.clone(), size: "4vh" }
                 }
                 span { "{what}" }
+                if official_games > 0 {
+                    span { class: "lb-profile-sub", "· {official_games} dominion.games games" }
+                }
                 Link { class: "lb-note-link", to: Route::Leaderboard {}, "Leaderboard" }
             }
-            div { class: "lb-profile-numbers",
-                for (label, value, sub) in numbers {
-                    div { key: "{label}", class: "lb-profile-number",
-                        span { class: "lb-profile-label", "{label}" }
-                        span { class: "lb-profile-value", "{value} " span { class: "lb-profile-sub", "{sub}" } }
-                    }
-                }
-            }
-            if line.len() >= 2 {
-                div { class: "lb-profile-line",
-                    span { class: "lb-profile-label",
-                        "Rating over the latest rated games: {line[0].round()} → {line[line.len() - 1].round()}"
-                    }
-                    svg {
-                        view_box: "0 0 100 20",
-                        preserve_aspect_ratio: "none",
-                        role: "img",
-                        "aria-label": "Rating over the latest rated games",
-                        polyline { points: spark(&line, 100.0, 20.0) }
-                    }
-                }
+            if rating.games > 0 {
+                crate::rating::ArenaRating { rating, line, stats: Some(stats) }
+            } else {
+                p { class: "lb-note", "No rated games yet: {stats.wins} won of {stats.games} Arena games." }
             }
         }
     }
