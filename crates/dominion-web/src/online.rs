@@ -495,24 +495,10 @@ fn RatingSummary(rating: OnlineRating) -> Element {
     let r = &rating;
     let fetched = crate::lobby::date(r.fetched);
     rsx! {
-        p {
-            strong {"Level {r.level:.2}"}
-            " · skill {r.skill:.2} ± {r.deviation:.2} · {r.games} games"
-            if let Some(rank)=r.rank {" · #{rank}"}
-        }
-        if let Some(period)=&r.period {
-            p {class:"muted",
-                "This period, not yet final: {period.results} games, {period.score} points against {period.expected_score:.2} expected, from level {period.start_level:.2}"
-            }
-        }
-        p {class:"muted",
-            "{r.wins}–{r.losses}–{r.ties} · best level {r.best_level:.2}"
-            if let Some(rank)=r.best_rank {" · best rank #{rank}"}
-            " · longest streaks {r.best_win_streak} won, {r.best_loss_streak} lost"
-        }
+        crate::rating::OnlineRatingCard { rating: rating.clone() }
         if !r.results.is_empty() {
             details {class:"online-results",
-                summary {"Recent games"}
+                summary {"Recent games in detail"}
                 ol {
                     for game in &r.results {
                         li {key:"{game.game}",

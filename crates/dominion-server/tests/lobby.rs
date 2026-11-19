@@ -315,6 +315,17 @@ async fn two_people_are_matched_and_play_through_their_sessions() {
     assert_eq!(over.meta.ended.as_deref(), Some("resigned"));
     let board: Value = server.get("/api/leaderboard", None).await.json();
     assert_eq!(board["players"][0]["user"]["name"], json!("Ada"));
+    // Each rated player's rating in full comes with the game's views.
+    assert!(mine.meta.ratings.iter().all(Option::is_none));
+    let after: SeatView = server.get(&format!("{path}/view"), Some(&ada)).await.json();
+    let ratings: Vec<_> = (after.meta.users.iter().zip(&after.meta.ratings))
+        .map(|(u, r)| (u.as_ref().unwrap().name.clone(), r.unwrap()))
+        .collect();
+    assert_eq!(ratings.len(), 2);
+    for (name, r) in &ratings {
+        assert_eq!((r.games, r.wins), (1, u32::from(name == "Ada")), "{name}");
+        assert!(r.volatility.is_some() && r.deviation < 350.0, "{name}");
+    }
     let profile: Value = server.get("/api/users/bo", None).await.json();
     assert_eq!(profile["recent"][0]["id"], json!(game));
     assert_eq!(profile["stats"], json!({ "games": 1, "wins": 0 }));

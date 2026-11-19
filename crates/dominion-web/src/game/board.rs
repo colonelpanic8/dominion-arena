@@ -4,6 +4,7 @@
 
 use super::meta::{self, SeatAccount};
 use crate::cards::CardDb;
+use crate::rating::SeatRating;
 use dominion_protocol::api::{InPlay, TableExtras};
 use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
@@ -82,6 +83,7 @@ impl Board {
         for p in self.you.iter_mut().chain(&mut self.opponents) {
             p.account = meta::account(m, p.seat);
             p.level = meta::level(m, p.seat);
+            p.rating = meta::rating(m, p.seat);
         }
         self.rated = m.rated;
         self.voided = m.voided;
@@ -261,6 +263,8 @@ pub struct PlayerEntry {
     pub account: Option<SeatAccount>,
     /// In a dominion.games game: the player's level there ([`Board::with_meta`]).
     pub level: Option<f64>,
+    /// The player's rating in full, where the game says it ([`Board::with_meta`]).
+    pub rating: Option<SeatRating>,
 }
 
 impl PlayerEntry {
@@ -809,6 +813,7 @@ fn player_entry(
         counters: counters(&p.counters),
         account: None,
         level: None,
+        rating: None,
     }
 }
 

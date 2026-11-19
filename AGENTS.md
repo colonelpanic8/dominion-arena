@@ -171,6 +171,11 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           of `GameCtx` for the same `GameShell`; its owner's panel (the
                           Automatch tab's dominion.games box, under the log) and rating
                           (Account tab)
+  src/rating.rs           ratings drawn in full (assets/rating.css): Glicko-2 and dominion.games
+                          levels as their numbers, a bell curve of the uncertainty, history,
+                          win chances; a player's page, the Account tab and the table's
+                          ratings window (`SeatRating`, from `GameMeta::ratings` /
+                          `online_ratings`) use it
   src/game/state.rs       the game page's model (view, version, log, `meta`, chat),
                           selection -> Answer; `apply` for Arena's views, `apply_whole`
                           for an official account's

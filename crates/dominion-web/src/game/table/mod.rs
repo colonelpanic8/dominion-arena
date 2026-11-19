@@ -123,12 +123,14 @@ pub struct Popup {
     pub played: bool,
 }
 
-/// Whose deck composition a window shows.
+/// What a window shows other than cards: whose deck composition, or the ratings.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Composition {
     Seat(u8),
     /// Every player's, side by side.
     All,
+    /// The players' ratings in full.
+    Ratings,
 }
 
 /// How the window of every player's deck composition shows them.
@@ -897,6 +899,7 @@ fn PopupView(popup: Popup, g: Rc<layout::Geometry>, board: Rc<Board>) -> Element
     match popup.composition {
         Some(Composition::Seat(seat)) => return rsx! { players::DeckComposition { board, seat } },
         Some(Composition::All) => return rsx! { players::AllDecks { board } },
+        Some(Composition::Ratings) => return rsx! { players::RatingsWindow { board } },
         None => {}
     }
     let ctx = use_table();

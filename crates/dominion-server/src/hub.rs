@@ -13,8 +13,8 @@ pub use dominion_protocol::api::{
 use dominion_protocol::api::{Progress, Replay, ReplayTurn, SeatProgress, UndoRequest, UndoState};
 use dominion_protocol::events::History;
 use dominion_protocol::lobby::{
-    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, SeatAgent, Source,
-    UndoRule, UserRef,
+    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, RatingInfo, SeatAgent,
+    Source, UndoRule, UserRef,
 };
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
@@ -681,6 +681,7 @@ impl Index {
 
 type OnEnd = Box<dyn Fn(Ended) + Send + Sync>;
 type Users = Box<dyn Fn(&[Option<String>]) -> Vec<Option<UserRef>> + Send + Sync>;
+type Ratings = Box<dyn Fn(&[Option<String>]) -> Vec<Option<RatingInfo>> + Send + Sync>;
 
 /// How many games read from `expired/` are kept loaded.
 const ARCHIVE_CACHE: usize = 16;
@@ -704,6 +705,8 @@ pub struct Hub {
     on_end: OnceLock<OnEnd>,
     /// Account ids to players, called with no lock held.
     users: OnceLock<Users>,
+    /// Account ids to their ratings, called with no lock held.
+    ratings: OnceLock<Ratings>,
     /// What new games' event streams are written in.
     encoding: Mutex<Encoding>,
     /// Whether new games are recorded (where games are saved).
@@ -721,6 +724,7 @@ impl Default for Hub {
             max_games: AtomicU64::new(DEFAULT_MAX_GAMES as u64),
             on_end: OnceLock::new(),
             users: OnceLock::new(),
+            ratings: OnceLock::new(),
             encoding: Mutex::default(),
             record: AtomicBool::new(true),
         }
@@ -1352,14 +1356,23 @@ impl Hub {
     }
 
     /// `on_end` is called whenever a game ends, `users` to name the accounts playing a
-    /// game's seats. Neither may be set twice.
+    /// game's seats and `ratings` for their ratings. None may be set twice.
     pub fn set_hooks(
         &self,
         on_end: impl Fn(Ended) + Send + Sync + 'static,
         users: impl Fn(&[Option<String>]) -> Vec<Option<UserRef>> + Send + Sync + 'static,
+        ratings: impl Fn(&[Option<String>]) -> Vec<Option<RatingInfo>> + Send + Sync + 'static,
     ) {
         let _ = self.on_end.set(Box::new(on_end));
         let _ = self.users.set(Box::new(users));
+        let _ = self.ratings.set(Box::new(ratings));
+    }
+
+    fn ratings(&self, owners: &[Option<String>]) -> Vec<Option<RatingInfo>> {
+        match self.ratings.get() {
+            Some(ratings) if owners.iter().any(Option::is_some) => ratings(owners),
+            _ => vec![],
+        }
     }
 
     fn users(&self, owners: &[Option<String>]) -> Vec<Option<UserRef>> {
@@ -2064,6 +2077,8 @@ impl Hub {
             watchers: game.watchers.load(Ordering::Relaxed),
             ended: meta.ended.clone(),
             levels: vec![],
+            ratings: vec![],
+            online_ratings: vec![],
             now,
         };
         (shown, meta.owners.clone())
@@ -2095,6 +2110,7 @@ impl Hub {
             (seat_view, owners)
         };
         seat_view.meta.users = self.users(&owners);
+        seat_view.meta.ratings = self.ratings(&owners);
         Ok(seat_view)
     }
 
@@ -2207,6 +2223,7 @@ impl Hub {
             (seat_view, owners)
         };
         seat_view.meta.users = self.users(&owners);
+        seat_view.meta.ratings = self.ratings(&owners);
         Ok(seat_view)
     }
 

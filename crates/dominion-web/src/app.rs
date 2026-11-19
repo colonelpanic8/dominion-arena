@@ -104,6 +104,7 @@ pub fn App() -> Element {
         document::Style { "{CARD_CSS}" }
         document::Style { "{LOBBY_CSS}" }
         document::Style { "{COUNTS_CSS}" }
+        document::Style { "{crate::rating::CSS}" }
         style { "{asset_css}" }
         Router::<Route> {}
     }

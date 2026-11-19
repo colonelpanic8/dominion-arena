@@ -21,7 +21,7 @@ use dominion_protocol::api::{
     OnlineOutcome, OnlineRating, OnlineRatingPeriod, OnlineRatingPoint, OnlineRatingType,
     OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
 };
-use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, UserKind};
+use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, SeatLevel, UserKind};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -59,12 +59,12 @@ pub struct Hosted {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Levels {
     game: Option<i64>,
-    by_seat: Vec<Option<f64>>,
+    by_seat: Vec<Option<SeatLevel>>,
 }
 
 impl Levels {
     /// Game `game`'s levels, as far as they are known.
-    fn of(&self, game: Option<i64>) -> Vec<Option<f64>> {
+    fn of(&self, game: Option<i64>) -> Vec<Option<SeatLevel>> {
         if game.is_some() && self.game == game {
             self.by_seat.clone()
         } else {
@@ -157,7 +157,7 @@ impl Hosted {
     }
 
     /// The levels of `update`'s game's players.
-    fn levels(&self, update: &Update) -> Vec<Option<f64>> {
+    fn levels(&self, update: &Update) -> Vec<Option<SeatLevel>> {
         self.levels.borrow().of(update.reducer.game_id)
     }
 
@@ -448,7 +448,7 @@ async fn no_cache(request: Request, next: Next) -> Response {
     r
 }
 /// What anyone may watch: the account's view without its decision.
-fn observation(update: Update, levels: Vec<Option<f64>>) -> OnlineObservation {
+fn observation(update: Update, ratings: Vec<Option<SeatLevel>>) -> OnlineObservation {
     let now = crate::hub::now_ms();
     let clock = update.clock(now);
     let game = update.reducer.view().ok().map(|mut view| {
@@ -468,7 +468,8 @@ fn observation(update: Update, levels: Vec<Option<f64>>) -> OnlineObservation {
                 timed: clock.is_some(),
                 clock,
                 now,
-                levels,
+                levels: ratings.iter().map(|r| r.map(|r| r.level)).collect(),
+                online_ratings: ratings,
                 ..Default::default()
             },
             replay: None,
@@ -559,7 +560,16 @@ impl Web {
                     }
                     let profile = client.player_profile(player, kind.ordinal()).await.ok()?;
                     let rating = rating_of(&profile, &[], &catalog, kind, 0);
-                    (rating.games > 0).then_some(rating.level)
+                    (rating.games > 0).then_some(SeatLevel {
+                        level: rating.level,
+                        skill: rating.skill,
+                        deviation: rating.deviation,
+                        games: rating.games,
+                        rank: rating.rank,
+                        wins: rating.wins,
+                        losses: rating.losses,
+                        ties: rating.ties,
+                    })
                 }
             });
             let by_seat = futures_util::future::join_all(asked).await;
@@ -597,7 +607,9 @@ impl Web {
                 seat: v.seat,
                 kingdom: v.game.kingdom.clone(),
                 landscapes: v.game.landscapes.clone(),
-                levels: self.hosted.levels(update),
+                levels: (self.hosted.levels(update).iter())
+                    .map(|r| r.map(|r| r.level))
+                    .collect(),
                 others: crate::setup_cards::setup_cards(v),
             })
         });
