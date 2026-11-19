@@ -35,6 +35,8 @@ pub struct Account {
     pub state_dir: PathBuf,
     /// Kept by `dominion serve`.
     pub serve: bool,
+    /// The lowest dominion.games level its public searches match.
+    pub min_opponent_level: Option<f64>,
 }
 
 pub fn cache_file(config: &Config) -> Result<PathBuf, String> {

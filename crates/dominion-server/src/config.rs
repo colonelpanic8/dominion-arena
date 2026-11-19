@@ -54,6 +54,8 @@ pub struct Config {
     pub online_exclusive: Option<bool>,
     /// Resume only a bot table previously created by this state directory.
     pub online_resume: Option<bool>,
+    /// The lowest dominion.games level its public searches match.
+    pub online_min_opponent_level: Option<f64>,
     /// Official endpoint: auto (default), alpha, or beta.
     pub online_endpoint: Option<String>,
     /// Official-client process lock and non-secret session metadata.
@@ -207,6 +209,8 @@ pub struct OnlineAccountSettings {
     pub state_dir: Option<PathBuf>,
     /// Kept by `dominion serve` (default true).
     pub enabled: Option<bool>,
+    /// The lowest dominion.games level its public searches match.
+    pub min_opponent_level: Option<f64>,
 }
 
 fn xdg_dir(var: &str, fallback: &str) -> Option<PathBuf> {
@@ -244,6 +248,7 @@ impl Config {
                 endpoint: self.online_endpoint.clone(),
                 state_dir: state()?,
                 serve: self.online_enabled.unwrap_or(false),
+                min_opponent_level: self.online_min_opponent_level,
             });
         }
         for a in self.online_accounts.iter().flatten() {
@@ -274,6 +279,7 @@ impl Config {
                     None => state()?.join("accounts").join(&a.id),
                 },
                 serve: a.enabled.unwrap_or(true),
+                min_opponent_level: a.min_opponent_level,
             });
         }
         for (i, a) in all.iter().enumerate() {

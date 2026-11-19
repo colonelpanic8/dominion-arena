@@ -106,7 +106,7 @@ in {
             type = toml.type;
             default = {};
             example = {resume = true;};
-            description = "Other keys of its `[[online_accounts]]` table: `resume`, `endpoint`, `state_dir`, `enabled`.";
+            description = "Other keys of its `[[online_accounts]]` table: `resume`, `endpoint`, `state_dir`, `enabled`, `min_opponent_level`.";
           };
         };
       });

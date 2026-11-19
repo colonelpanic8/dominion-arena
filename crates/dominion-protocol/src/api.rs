@@ -666,6 +666,10 @@ pub struct OnlineManagement {
     pub searching: bool,
     pub queue_feedback: Vec<String>,
     pub mode: OnlineMode,
+    /// The lowest dominion.games level the account's public searches match, set in the
+    /// server's settings: a search's range is raised to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_opponent_level: Option<f64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
