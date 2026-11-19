@@ -993,6 +993,20 @@ impl Runtime {
                     table.host_id = host;
                 }
             }
+            Message::GameFinished { table, result, .. }
+                if !reducer.running && reducer.game_id != Some(result.game_id) =>
+            {
+                // A game that ended while nothing here followed it (sent on logging in):
+                // leave its table rather than refuse the connection.
+                self.outbox.push(
+                    dominion_online::transport::outgoing::Command::LeaveTable {
+                        table: table.table_id,
+                        player: reducer.player_id,
+                    }
+                    .encode()
+                    .map_err(|e| e.to_string())?,
+                );
+            }
             Message::GameFinished { table, result, .. } => {
                 reducer.finish(&result).map_err(|e| e.to_string())?;
                 self.recorder.finish(result);
