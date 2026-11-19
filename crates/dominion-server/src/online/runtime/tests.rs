@@ -517,6 +517,35 @@ fn interrupted_reconnect_requests_one_game_and_requires_owned_authority() {
 }
 
 #[test]
+fn a_game_finished_unfollowed_is_left_without_refusing_the_login() {
+    let (_directory, mut runtime) = runtime();
+    runtime.process(Message::Login(login(false))).unwrap();
+    runtime
+        .process(Message::GameFinished {
+            table: table(),
+            result: model::GameResult {
+                table_id: 10,
+                game_id: 999,
+                rating_type: None,
+                empty_piles: vec![],
+                players: vec![],
+                auto_continue: false,
+            },
+            continue_allowed: false,
+            match_completed: true,
+        })
+        .unwrap();
+    let leave = dominion_online::transport::outgoing::Command::LeaveTable {
+        table: 10,
+        player: 42,
+    }
+    .encode()
+    .unwrap();
+    assert!(runtime.outbox.contains(&leave));
+    assert!(runtime.update.reducer.result.is_none());
+}
+
+#[test]
 fn leaving_own_finished_table_releases_membership_without_erasing_the_result() {
     let (_directory, mut runtime) = active_runtime();
     runtime.update.reducer.running = false;
