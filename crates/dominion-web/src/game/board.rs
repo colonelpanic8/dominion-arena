@@ -4,6 +4,7 @@
 
 use super::meta::{self, SeatAccount};
 use crate::cards::CardDb;
+use crate::rating::SeatRating;
 use dominion_protocol::api::{InPlay, TableExtras};
 use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
@@ -44,6 +45,8 @@ pub struct Board {
     /// Why the game ended early, when it did: `resigned` or `abandoned`.
     pub ended: Option<String>,
     pub rated: bool,
+    /// It was to be rated, and was taken out of the rated record.
+    pub voided: bool,
     pub timed: bool,
     /// People watching now.
     pub watchers: u32,
@@ -82,8 +85,10 @@ impl Board {
         for p in self.you.iter_mut().chain(&mut self.opponents) {
             p.account = meta::account(m, p.seat);
             p.level = meta::level(m, p.seat);
+            p.rating = meta::rating(m, p.seat);
         }
         self.rated = m.rated;
+        self.voided = m.voided;
         self.timed = m.timed || m.clock.is_some();
         self.watchers = m.watchers;
         self.ended = m.ended.clone();
@@ -260,6 +265,8 @@ pub struct PlayerEntry {
     pub account: Option<SeatAccount>,
     /// In a dominion.games game: the player's level there ([`Board::with_meta`]).
     pub level: Option<f64>,
+    /// The player's rating in full, where the game says it ([`Board::with_meta`]).
+    pub rating: Option<SeatRating>,
 }
 
 impl PlayerEntry {
@@ -808,6 +815,7 @@ fn player_entry(
         counters: counters(&p.counters),
         account: None,
         level: None,
+        rating: None,
     }
 }
 
@@ -1140,6 +1148,7 @@ pub fn board(
             .and_then(|r| meta::end_reason(r.reason.as_deref(), &r.players, None)),
         ended: None,
         rated: false,
+        voided: false,
         timed: false,
         watchers: 0,
     }

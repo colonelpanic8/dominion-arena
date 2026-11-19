@@ -132,6 +132,44 @@ fn a_table_seats_an_agent_and_the_runner_is_told_its_seat_until_the_game_ends() 
 }
 
 #[test]
+fn only_the_accounts_granted_agents_seat_them() {
+    let settings = Settings {
+        agent_seats_per_day: 1,
+        agent_players: Some(vec!["ada".into(), "Bo Agents".into()]),
+        ..Settings::default()
+    };
+    let arena = Arena::open(Arc::new(Hub::default()), settings).unwrap();
+    let mut told = runner(&arena, &["Claude Opus"], 2);
+    let (ada, bo) = (register(&arena, "Ada"), register(&arena, "Bo"));
+    let bot = |owner: &Ident, name: &str| {
+        let key = arena.new_bot(owner, name).unwrap().key;
+        arena.identify(&key).unwrap()
+    };
+    assert_eq!(arena.lobby(Some(&bo)).house.left, None);
+    assert!(matches!(
+        arena.new_table(&bo, &with_agent("Claude Opus")),
+        Err(Error::Forbidden(_))
+    ));
+    let adas_bot = bot(&ada, "Ada Bot");
+    assert!(matches!(
+        arena.new_table(&adas_bot, &with_agent("Claude Opus")),
+        Err(Error::Forbidden(_))
+    ));
+    assert_eq!(arena.lobby(Some(&ada)).house.left, Some(1));
+
+    let agents = bot(&bo, "Bo Agents");
+    assert_eq!(arena.lobby(Some(&agents)).house.left, Some(1));
+    let table = arena
+        .new_table(&agents, &with_agent("Claude Opus"))
+        .unwrap();
+    let game = arena.ready(&agents, &table.id, true).unwrap().game.unwrap();
+    assert_eq!(jobs(&mut told).map(|j| j.len()), Some(1));
+    end(&arena, &game);
+    assert_eq!(arena.lobby(Some(&agents)).house.left, Some(0));
+    assert_eq!(arena.lobby(Some(&ada)).house.left, Some(1));
+}
+
+#[test]
 fn agents_play_only_as_many_games_as_the_runner_has_room_for_and_players_have_seats_left() {
     let arena = arena(1);
     let mut told = runner(&arena, &["Claude Opus", "Codex"], 1);
@@ -524,4 +562,41 @@ fn a_record_names_what_played_each_agent_seat_and_why_an_attempt_stopped() {
     );
     let sol = record.players.iter().find(|p| p.seat == 1).unwrap();
     assert_eq!(sol.agent.as_ref().unwrap().attempts.len(), 1);
+}
+
+#[test]
+fn a_rated_game_an_agent_abandons_is_recorded_voided_and_moves_no_rating() {
+    let arena = arena(0);
+    let _told = runner(&arena, &["Opus", "Sol"], 4);
+    let ada = register(&arena, "Ada");
+    let game = (arena.create_game(Some(&ada), &agent_game(true, &[Some("Opus"), Some("Sol")])))
+        .unwrap()
+        .game_id;
+    let seat = dominion_server::hub::Seat {
+        game: game.clone(),
+        seat: dominion_engine::PlayerId(1),
+    };
+    arena.hub.resign(&seat, "abandoned").unwrap();
+    let with_voided = dominion_protocol::lobby::HistoryQuery {
+        voided: true,
+        ..Default::default()
+    };
+    assert!(
+        (arena.history(&Default::default()).unwrap().games.iter()).all(|r| r.id != game),
+        "left out unless asked for"
+    );
+    let all = arena.history(&with_voided).unwrap();
+    let record = all.games.iter().find(|r| r.id == game).unwrap();
+    assert!(!record.rated && record.voided.is_some());
+    assert!(record.players.iter().all(|p| p.rating.is_none()));
+    let rated = dominion_protocol::lobby::HistoryQuery {
+        rated: true,
+        ..Default::default()
+    };
+    assert!(arena.history(&rated).unwrap().games.is_empty());
+    assert!(arena.leaderboard(10).unwrap().players.is_empty());
+    for agent in ["Opus", "Sol"] {
+        let stats = arena.profile(agent).unwrap().stats;
+        assert_eq!((stats.games, stats.wins), (0, 0), "{agent}");
+    }
 }

@@ -2,6 +2,7 @@
 //! `meta`: the account on each player's bar, the deciding seat's time, how the game
 //! ended. Pure.
 
+use crate::rating::SeatRating;
 use dominion_protocol::ResultPlayer;
 use dominion_protocol::lobby::{ClockView, GameMeta, UserKind};
 
@@ -25,6 +26,15 @@ impl SeatAccount {
         };
         let rating = self.rating.map(|r| r.to_string());
         kind.into_iter().chain(rating).collect::<Vec<_>>().join(" ")
+    }
+
+    /// What a bar says of the account's kind: "guest", "bot", or nothing.
+    pub fn kind_tag(&self) -> String {
+        match self.kind {
+            UserKind::Registered => String::new(),
+            UserKind::Guest => "guest".to_string(),
+            UserKind::Bot => "bot".to_string(),
+        }
     }
 
     /// The same in a sentence, for a tooltip.
@@ -61,6 +71,19 @@ pub fn account(meta: &GameMeta, seat: u8) -> Option<SeatAccount> {
 /// The dominion.games level of the player in `seat`, in a dominion.games game.
 pub fn level(meta: &GameMeta, seat: u8) -> Option<f64> {
     meta.levels.get(usize::from(seat)).copied().flatten()
+}
+
+/// The rating of the player in `seat` in full: Arena's, or in a dominion.games game
+/// theirs there.
+pub fn rating(meta: &GameMeta, seat: u8) -> Option<SeatRating> {
+    let i = usize::from(seat);
+    let arena = meta
+        .ratings
+        .get(i)
+        .copied()
+        .flatten()
+        .map(SeatRating::Arena);
+    arena.or_else(|| (meta.online_ratings.get(i).copied().flatten()).map(SeatRating::Online))
 }
 
 /// What a bar says of a dominion.games level, and its tooltip.
@@ -234,8 +257,12 @@ pub fn end_reason(
 }
 
 /// The log's first lines, as dominion.games heads a game's log.
-pub fn log_header(game_id: Option<&str>, rated: bool, timed: bool) -> [String; 2] {
-    let rated = if rated { "rated" } else { "unrated" };
+pub fn log_header(game_id: Option<&str>, rated: bool, voided: bool, timed: bool) -> [String; 2] {
+    let rated = match (rated, voided) {
+        (_, true) => "voided",
+        (true, false) => "rated",
+        (false, false) => "unrated",
+    };
     let game = match game_id {
         Some(id) => format!("Game {id}, {rated}."),
         None => format!("Game, {rated}."),

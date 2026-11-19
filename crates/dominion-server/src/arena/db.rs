@@ -754,6 +754,15 @@ pub(super) fn tally(tx: &Transaction<'_>, t: &Tally<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Takes a voided game off one of its players' tallies of every game.
+pub(super) fn untally(tx: &Transaction<'_>, user: &str, win: bool) -> Result<()> {
+    tx.execute(
+        "UPDATE users SET games = MAX(games - 1, 0), wins = MAX(wins - ?2, 0) WHERE id = ?1",
+        params![row_of(user), win as i64],
+    )?;
+    Ok(())
+}
+
 /// Every Arena game's record in the order the games ended, with the accounts that
 /// played it.
 pub(super) fn arena_records(tx: &Transaction<'_>) -> Result<Vec<(GameRecord, Vec<String>)>> {
@@ -921,6 +930,7 @@ mod venue_tests {
             ended,
             source,
             rated: false,
+            voided: None,
             reason: String::new(),
             kingdom: vec![],
             landscapes: vec![],

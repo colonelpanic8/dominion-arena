@@ -106,7 +106,8 @@ enum GamesCommand {
         #[arg(required = true)]
         games: Vec<String>,
     },
-    /// Make finished games unrated, and every rating what the other rated games make it,
+    /// Void finished rated games: take them out of the record (they stay in the history,
+    /// marked voided) and off their players' tallies, and make every rating what the other rated games make it,
     /// played again in the order they ended. Refused unless the records give exactly
     /// the ratings kept now.
     Void {
@@ -115,6 +116,10 @@ enum GamesCommand {
         /// Say what would change, and change nothing.
         #[arg(long)]
         dry_run: bool,
+        /// Only mark games voided that an earlier void made unrated before voids were
+        /// kept in the record, and take them off their players' tallies; no rating changes.
+        #[arg(long)]
+        record_only: bool,
     },
     /// Write dominion/events@1 streams for games saved before the server recorded them,
     /// here and in `expired/`, checking each against its snapshot first. Run it with the
@@ -325,7 +330,15 @@ async fn games(
     let asked = match command {
         GamesCommand::List => Request::List,
         GamesCommand::Retire { games } => Request::Retire { games },
-        GamesCommand::Void { games, dry_run } => Request::Void { games, dry_run },
+        GamesCommand::Void {
+            games,
+            dry_run,
+            record_only,
+        } => Request::Void {
+            games,
+            dry_run,
+            record_only,
+        },
         GamesCommand::Backfill { .. } => unreachable!("run without the server"),
     };
     match request(&socket, &asked).await? {
@@ -373,6 +386,9 @@ async fn games(
             println!("{verb} {}", voided.games.join(" "));
             for (name, before, after) in &voided.ratings {
                 println!("  {name:<24} {before:>8.1} -> {after:>8.1}");
+            }
+            for (name, games, wins) in &voided.tallies {
+                println!("  {name:<24} games -{games}, wins -{wins}");
             }
             Ok(())
         }

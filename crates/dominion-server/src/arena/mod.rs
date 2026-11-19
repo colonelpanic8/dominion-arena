@@ -39,7 +39,7 @@ use tokio::sync::watch;
 
 pub use accounts::SESSION_COOKIE;
 pub use house::RunnerId;
-pub use rerate::Voided;
+pub use rerate::{VoidHow, Voided};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -91,6 +91,9 @@ pub struct Settings {
     pub keep_idle: Duration,
     /// How many seats one account may fill with the server's agents a day (0: no limit).
     pub agent_seats_per_day: u32,
+    /// The accounts, players' or bots', that may seat the server's agents (none: every
+    /// registered player).
+    pub agent_players: Option<Vec<String>>,
     /// Players rated here and on dominion.games, which ratings are read off on its scale.
     pub skill_anchors: Vec<SkillAnchor>,
 }
@@ -116,6 +119,7 @@ impl Default for Settings {
             keep_finished: Duration::from_secs(7 * 86_400),
             keep_idle: Duration::from_secs(30 * 86_400),
             agent_seats_per_day: 5,
+            agent_players: None,
             skill_anchors: vec![],
         }
     }
@@ -184,6 +188,7 @@ impl User {
             deviation,
             games: self.rated_games,
             wins: self.rated_wins,
+            volatility: Some(self.rating.volatility),
             official: (scale.filter(|_| self.rated_games > 0))
                 .map(|s| s.place(self.rating.rating, deviation)),
         }
@@ -372,7 +377,11 @@ impl Arena {
             swept: Mutex::new(None),
             start_checks: Mutex::default(),
         });
-        let (on_end, users) = (Arc::downgrade(&arena), Arc::downgrade(&arena));
+        let (on_end, users, ratings) = (
+            Arc::downgrade(&arena),
+            Arc::downgrade(&arena),
+            Arc::downgrade(&arena),
+        );
         hub.set_hooks(
             move |ended| {
                 if let Some(arena) = on_end.upgrade() {
@@ -382,6 +391,10 @@ impl Arena {
             move |owners| match users.upgrade() {
                 Some(arena) => arena.user_refs(owners),
                 None => vec![None; owners.len()],
+            },
+            move |owners| match ratings.upgrade() {
+                Some(arena) => arena.seat_ratings(owners),
+                None => vec![],
             },
         );
         for ended in hub.unrecorded() {
@@ -474,6 +487,16 @@ impl Arena {
             stats: user.stats(),
             bots: bots.iter().map(|b| self.user_ref(b)).collect(),
         })
+    }
+
+    /// The ratings of the accounts playing a game's seats, for those who have one.
+    fn seat_ratings(&self, owners: &[Option<String>]) -> Vec<Option<RatingInfo>> {
+        let scale = self.skill_scale();
+        let rated = |owner: &Option<String>| {
+            let user = self.db.user(owner.as_deref()?).ok().flatten()?;
+            (user.rated_games > 0).then(|| user.rating_info(scale.as_ref()))
+        };
+        owners.iter().map(rated).collect()
     }
 
     fn user_refs(&self, owners: &[Option<String>]) -> Vec<Option<UserRef>> {

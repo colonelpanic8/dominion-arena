@@ -202,6 +202,7 @@ impl Arena {
                 ended,
                 source: Source::Official,
                 rated: game.rated,
+                voided: None,
                 reason: result.reason.clone().unwrap_or_default(),
                 kingdom: game.kingdom.clone(),
                 landscapes: game.landscapes.clone(),

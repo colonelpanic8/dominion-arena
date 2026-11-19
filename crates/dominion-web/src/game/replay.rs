@@ -45,11 +45,13 @@ fn target(r: &Replay, step: usize, go: Go) -> usize {
 /// Takes in the view at another point: a step forward adds to the log held, any other
 /// move replaces it.
 fn take(mut state: Signal<GameState>, sv: SeatView, onward: bool) {
-    table::before_change();
+    table::reset_motion();
     let mut st = state.write();
     let ahead = server_ahead(sv.meta.now, st.server_ahead);
     let first = sv.view.since_last_decision.first().map(|e| e.seq);
-    if !(onward && first.is_none_or(|seq| seq == st.log_from())) {
+    if onward && first.is_none_or(|seq| seq == st.log_from()) {
+        table::before_change();
+    } else {
         let jumps = st.jumps + 1;
         *st = GameState {
             jumps,

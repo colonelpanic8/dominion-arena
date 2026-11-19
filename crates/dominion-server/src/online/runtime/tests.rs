@@ -80,6 +80,9 @@ fn runtime() -> (TempDir, Runtime) {
         resuming: false,
         endpoint: Endpoint::Alpha,
         session: None,
+        credentials: None,
+        relogin_due: false,
+        relogged: false,
         table: Some(table()),
         bots: vec![-2],
         human: None,
@@ -468,6 +471,31 @@ fn automatic_reconnect_waits_for_the_server_without_requesting_a_second_snapshot
     runtime.process(Message::Login(login(true))).unwrap();
     assert!(runtime.needs_snapshot);
     assert!(!runtime.request_game);
+}
+
+#[test]
+fn an_expired_session_logs_in_again_with_the_password_once_per_reconnect() {
+    let login_required = || {
+        Message::Failed(dominion_online::transport::Failure {
+            reason: "LOGIN_REQUIRED",
+            card: None,
+        })
+    };
+    let (_directory, mut runtime) = runtime();
+    runtime.process(Message::Login(login(false))).unwrap();
+    assert!(
+        runtime.process(login_required()).is_err(),
+        "no password kept"
+    );
+    runtime.credentials = Some(Credentials {
+        username: "fixture-account".into(),
+        password: "fixture-password".into(),
+    });
+    runtime.process(login_required()).unwrap();
+    assert!(runtime.relogin_due);
+    runtime.relogin_due = false;
+    runtime.relogged = true;
+    assert!(runtime.process(login_required()).is_err(), "already tried");
 }
 
 #[test]

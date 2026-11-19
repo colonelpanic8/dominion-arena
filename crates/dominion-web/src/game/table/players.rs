@@ -13,6 +13,7 @@ use crate::card::CardSize;
 use crate::game::board::{Badge, Board, PlayerEntry, Stack, Uncertain, Zone, side_by_side};
 use crate::game::counts::{CardCounts, CountsColumn};
 use crate::game::state::Selection;
+use crate::rating::{Rated, Ratings, SeatRating};
 use dioxus::prelude::*;
 use std::rc::Rc;
 
@@ -104,16 +105,105 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 for (k, v) in p.counters.iter() {
                     span { key: "c{k}", class: "dt-bar-held", "{k} {v}" }
                 }
-                if let Some(a) = &account {
-                    span { class: "dt-bar-who", title: "{a.title()}",
-                        if away { "away " }
-                        "{a.tag()}"
-                    }
+                match (&p.rating, &account) {
+                    (Some(rating), _) => rsx! {
+                        RatingChip { rating: rating.clone(), seat, away, kind: account.as_ref().map(|a| a.kind_tag()).unwrap_or_default() }
+                    },
+                    (None, Some(a)) => rsx! {
+                        span { class: "dt-bar-who", title: "{a.title()}",
+                            if away { "away " }
+                            "{a.tag()}"
+                        }
+                    },
+                    (None, None) => rsx! {},
                 }
-                if let Some((text, title)) = p.level.map(crate::game::meta::level_text) {
+                if p.rating.is_none() && let Some((text, title)) = p.level.map(crate::game::meta::level_text) {
                     span { class: "dt-bar-who", "data-level": "{seat}", title: "{title}", "{text}" }
                 }
             }
+        }
+    }
+}
+
+/// A player's rating on their bar: the number and its uncertainty, opening the ratings
+/// window.
+#[component]
+fn RatingChip(rating: SeatRating, seat: u8, away: bool, kind: String) -> Element {
+    let ctx = use_table();
+    let (class, value, sub, title) = match &rating {
+        SeatRating::Arena(r) => (
+            "dt-bar-who dt-bar-rating",
+            format!("{:.0}", r.rating),
+            format!("±{:.0}", r.deviation),
+            format!(
+                "Arena rating {:.0} ± {:.0} (Glicko-2), {} rated games. Click for details.",
+                r.rating, r.deviation, r.games
+            ),
+        ),
+        SeatRating::Online(r) => (
+            "dt-bar-who dt-bar-rating dt-bar-rating-online",
+            format!("{:.2}", r.level),
+            r.rank.map(|n| format!("#{n}")).unwrap_or_default(),
+            format!(
+                "dominion.games level {:.2}: skill {:.2} ± {:.2}. Click for details.",
+                r.level, r.skill, r.deviation
+            ),
+        ),
+    };
+    rsx! {
+        button {
+            class,
+            "data-level": if matches!(rating, SeatRating::Online(_)) { "{seat}" },
+            "data-rating": "{seat}",
+            title,
+            onclick: move |e| {
+                e.stop_propagation();
+                ctx.open(ratings_popup());
+            },
+            if away { span { class: "dt-bar-rating-kind", "away" } }
+            if !kind.is_empty() { span { class: "dt-bar-rating-kind", "{kind}" } }
+            span { class: "dt-bar-rating-value", "{value}" }
+            if !sub.is_empty() { span { class: "dt-bar-rating-sub", "{sub}" } }
+        }
+    }
+}
+
+pub fn ratings_popup() -> Popup {
+    Popup {
+        title: "Ratings".into(),
+        stacks: vec![],
+        unknown: 0,
+        note: None,
+        composition: Some(Composition::Ratings),
+        played: false,
+    }
+}
+
+/// Every rated player's rating in full, side by side.
+#[component]
+pub fn RatingsWindow(board: Rc<Board>) -> Element {
+    let ctx = use_table();
+    let players: Vec<Rated> = (board.players())
+        .filter_map(|p| {
+            Some(Rated {
+                name: p.name.clone(),
+                rating: p.rating.clone()?,
+            })
+        })
+        .collect();
+    rsx! {
+        div {
+            class: "dt-composition dt-ratings",
+            role: "dialog",
+            "aria-label": "Ratings",
+            onclick: move |e| e.stop_propagation(),
+            div { class: "dt-composition-head",
+                span { "Ratings" }
+                div { class: "dt-composition-actions",
+                    button { class: "dt-composition-x", "data-close": "popup", onclick: move |_| ctx.close(), "✕" }
+                }
+            }
+            Ratings { players }
         }
     }
 }

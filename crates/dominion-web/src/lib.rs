@@ -12,5 +12,6 @@ pub mod game;
 pub mod lobby;
 pub mod online;
 pub mod platform;
+pub mod rating;
 pub mod session;
 pub mod transcript;

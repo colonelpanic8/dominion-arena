@@ -52,6 +52,9 @@ pub struct RatingInfo {
     /// Rated games won: placed first, with someone placed lower.
     #[serde(default)]
     pub wins: u32,
+    /// Glicko-2 volatility: how erratic the player's results have been (0.06 to start).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volatility: Option<f64>,
     /// The same rating on dominion.games' scale, once the server has anchors to read it
     /// off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,7 +85,7 @@ pub enum Beyond {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stats {
-    /// Finished games against other players, rated or not.
+    /// Finished games against other players, rated or not; no voided game.
     pub games: u32,
     pub wins: u32,
 }
@@ -731,6 +734,9 @@ pub enum Source {
 pub struct GameMeta {
     pub source: Source,
     pub rated: bool,
+    /// It was to be rated, and was taken out of the rated record.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub voided: bool,
     pub watchable: bool,
     pub timed: bool,
     /// Per seat: the account playing it, if one is.
@@ -750,6 +756,13 @@ pub struct GameMeta {
     /// began, once known (none for a bot or an unrated player).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub levels: Vec<Option<f64>>,
+    /// In an Arena game: per seat, the account's rating as it stands, once they have
+    /// played a rated game.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ratings: Vec<Option<RatingInfo>>,
+    /// In a dominion.games game: per seat, the rating `levels` is the level of.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub online_ratings: Vec<Option<SeatLevel>>,
     /// Why the game ended early, when it did: `resigned`, `abandoned` or `timeout`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended: Option<String>,
@@ -757,6 +770,22 @@ pub struct GameMeta {
     /// `forfeit_at` is to be compared with.
     #[serde(default)]
     pub now: u64,
+}
+
+/// A player's dominion.games rating, as a game's page shows it beside their name.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatLevel {
+    pub level: f64,
+    /// Skill (mu).
+    pub skill: f64,
+    pub deviation: f64,
+    pub games: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank: Option<u32>,
+    pub wins: u32,
+    pub losses: u32,
+    pub ties: u32,
 }
 
 /// A game's clock as it stands.
@@ -913,7 +942,12 @@ pub struct GameRecord {
     pub started: u64,
     pub ended: u64,
     pub source: Source,
+    /// It counts for its players' ratings. A voided game doesn't.
     pub rated: bool,
+    /// When it was voided, in milliseconds since the Unix epoch: a rated game taken out of
+    /// the record, which changes no rating and counts in no tally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voided: Option<u64>,
     /// The view's end reason (`provinces-gone`, ...), or `resigned` / `abandoned`.
     pub reason: String,
     pub kingdom: Vec<String>,
@@ -989,9 +1023,12 @@ pub struct HistoryQuery {
     pub limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub venue: Option<Venue>,
-    /// Rated games only.
+    /// Rated games only: no voided game.
     #[serde(default, skip_serializing_if = "is_false")]
     pub rated: bool,
+    /// Voided games too, which are left out otherwise.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub voided: bool,
     /// Games with a player, the account behind a seat or a card whose name contains this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub q: Option<String>,
@@ -1074,6 +1111,9 @@ pub struct PastGame {
     pub started: u64,
     pub ended: u64,
     pub rated: bool,
+    /// When it was taken out of the rated record (`GameRecord::voided`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voided: Option<u64>,
     /// How it ended: `provinces-gone`, `resigned`, `abandoned`, ...
     pub reason: String,
     pub kingdom: Vec<String>,

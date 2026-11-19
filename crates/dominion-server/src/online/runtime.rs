@@ -279,6 +279,12 @@ impl Client {
             socket: Some(socket),
             endpoint,
             session: None,
+            credentials: Some(Credentials {
+                username: username.to_string(),
+                password: password.to_string(),
+            }),
+            relogin_due: false,
+            relogged: false,
             needs_snapshot: false,
             request_game: false,
             leaving_finished: false,
@@ -537,10 +543,20 @@ struct SessionSecret {
     player: i32,
     token: String,
 }
+/// Kept in memory only, to log in again once dominion.games has dropped the session.
+struct Credentials {
+    username: String,
+    password: String,
+}
 struct Runtime {
     socket: Option<Transport>,
     endpoint: Endpoint,
     session: Option<SessionSecret>,
+    credentials: Option<Credentials>,
+    /// dominion.games refused the session; log in with the password after this frame.
+    relogin_due: bool,
+    /// The password login has been used since the last explicit reconnect.
+    relogged: bool,
     needs_snapshot: bool,
     request_game: bool,
     leaving_finished: bool,
@@ -623,6 +639,9 @@ impl Runtime {
             }
         }
         self.update.bots.clone_from(&self.bots);
+        if std::mem::take(&mut self.relogin_due) {
+            return self.relogin().await;
+        }
         if self.request_game {
             self.safe_table()?;
             self.request_game = false;
@@ -678,6 +697,14 @@ impl Runtime {
                     && !(self.profiles.is_empty() && self.results.is_empty()) =>
             {
                 self.answer_player_page("dominion.games' rating service is down".into());
+            }
+            Message::Failed(f)
+                if f.reason == "LOGIN_REQUIRED"
+                    && self.session.is_some()
+                    && self.credentials.is_some()
+                    && !self.relogged =>
+            {
+                self.relogin_due = true;
             }
             Message::Failed(f) => return Err(f.error().to_string()),
             Message::Login(login) => {
@@ -1246,6 +1273,8 @@ impl Runtime {
             .as_ref()
             .ok_or("no session owned by this process; restart the client")?;
         let bytes = command::reconnect_session(session.player, &session.token, VERSION);
+        self.relogged = false;
+        self.relogin_due = false;
         let mut socket = Transport::connect(self.endpoint)
             .await
             .map_err(|e| e.to_string())?;
@@ -1259,6 +1288,27 @@ impl Runtime {
         if self.needs_snapshot {
             self.send(command::reconnect_game()).await?;
         }
+        Ok(())
+    }
+    /// Logs in with the password on a new socket, once per reconnect: the session is
+    /// already this process's, so the login may resume its game (`Message::Login`).
+    async fn relogin(&mut self) -> Result<(), String> {
+        let credentials = self
+            .credentials
+            .as_ref()
+            .ok_or("no password kept by this process; restart the client")?;
+        let bytes = command::login(&credentials.username, &credentials.password, VERSION, 0);
+        self.relogged = true;
+        self.close().await;
+        let mut socket = Transport::connect(self.endpoint)
+            .await
+            .map_err(|e| e.to_string())?;
+        socket.send(bytes).await.map_err(|e| e.to_string())?;
+        self.socket = Some(socket);
+        self.update.error = None;
+        self.update.connected = true;
+        self.needs_snapshot = false;
+        self.request_game = false;
         Ok(())
     }
 }

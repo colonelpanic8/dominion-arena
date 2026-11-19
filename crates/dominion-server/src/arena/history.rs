@@ -26,7 +26,10 @@ pub struct Ask<'a> {
     /// Played by this account (its id).
     pub user: Option<&'a str>,
     pub venue: Option<Venue>,
+    /// Rated games only: none voided.
     pub rated: bool,
+    /// Voided games too.
+    pub voided: bool,
     /// A player, the account behind a seat, an agent's model or program, or a card whose
     /// name contains it, in any case.
     pub text: Option<&'a str>,
@@ -36,6 +39,9 @@ pub struct Ask<'a> {
 
 impl Ask<'_> {
     fn admits(&self, game: &PastGame, text: Option<&str>) -> bool {
+        if game.voided.is_some() && (self.rated || !self.voided) {
+            return false;
+        }
         if self.rated && !game.rated {
             return false;
         }
@@ -154,10 +160,10 @@ fn key(p: &PastPlayer) -> &str {
 
 /// Account `name`'s record against each opponent in `games` (newest first), most games
 /// together first, then the latest met. A game where they sat more than once counts
-/// their first seat, and none against themselves.
+/// their first seat, and none against themselves; a voided game counts for no one.
 pub fn head_to_head(games: &[PastGame], name: &str) -> Vec<Matchup> {
     let mut by_key: HashMap<String, Matchup> = HashMap::new();
-    for game in games {
+    for game in games.iter().filter(|g| g.voided.is_none()) {
         let mine = |p: &PastPlayer| {
             p.account
                 .as_deref()
@@ -242,6 +248,7 @@ mod tests {
             started: ended - 1,
             ended,
             rated,
+            voided: None,
             reason: String::new(),
             kingdom: vec![card.into()],
             landscapes: vec![],
@@ -418,12 +425,15 @@ mod tests {
         };
         let mut token = placed(1, &[("Ada", 1), ("Kit", 2)]);
         token.players[1].account = None;
+        let mut voided = placed(4, &[("Ada", 1), ("Bo", 2)]);
+        voided.voided = Some(4);
         let games = [
             placed(9, &[("Ada", 2), ("Bo", 1), ("Cy", 3)]),
             placed(8, &[("Bo", 1), ("Ada", 1)]),
             placed(7, &[("Ada", 1), ("Cy", 2)]),
             placed(6, &[("Ada", 1), ("Ada", 2)]),
             placed(5, &[("Bo", 1), ("Cy", 2)]),
+            voided,
             token,
         ];
         let rows: Vec<_> = head_to_head(&games, "ADA")
@@ -442,7 +452,20 @@ mod tests {
             vs: Some("KIT"),
             ..Ask::default()
         };
-        assert!(vs.admits(&games[5], None));
+        assert!(vs.admits(&games[6], None));
         assert!(!vs.admits(&games[0], None));
+        let with_voided = Ask {
+            voided: true,
+            ..Ask::default()
+        };
+        let rated = Ask {
+            rated: true,
+            ..with_voided
+        };
+        let mut rated_voided = games[5].clone();
+        rated_voided.rated = true;
+        assert!(!Ask::default().admits(&games[5], None));
+        assert!(with_voided.admits(&games[5], None));
+        assert!(!rated.admits(&rated_voided, None));
     }
 }

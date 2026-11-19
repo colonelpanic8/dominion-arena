@@ -6,7 +6,7 @@
 //! rises from its pile and fades, a discarded card sinks out of the hand or slides off
 //! the play row, a trashed card tilts and drops, a card looked at turns over into the
 //! window showing it. Speed and pauses follow the Animation Type setting's numbers for
-//! each kind of move, and moves queue across changes as dominion.games queues them: on
+//! each kind of move, and live moves queue across changes as dominion.games queues them: on
 //! the two slowest, moves along different routes wait for each other. Shuffles aren't
 //! shown. Ghosts ignore the pointer.
 
@@ -139,6 +139,25 @@ fn class_of(g: &Ghost, you: Option<u8>) -> Class {
 const ANIM_JS: &str = r#"
 (() => {
   const A = window.__dtAnim = { q: [] };
+  const active = new Map();
+  const animate = (el, frames, timing, ghost = null) => {
+    const animation = el.animate(frames, timing);
+    active.set(animation, ghost);
+    const done = () => {
+      active.delete(animation);
+      if (ghost) ghost.remove();
+    };
+    animation.finished.then(done, done);
+  };
+  A.reset = () => {
+    for (const [animation, ghost] of active) {
+      animation.cancel();
+      if (ghost) ghost.remove();
+    }
+    active.clear();
+    A.q = [];
+    A.snap = null;
+  };
   const W = 200, RATIO = 994 / 630;
   const SMOOTH = 'cubic-bezier(.25,.25,.25,1)', EASE_IN = 'cubic-bezier(0,.3,.7,1)';
   const esc = s => CSS.escape(s);
@@ -331,7 +350,7 @@ const ANIM_JS: &str = r#"
       const dx = r0.left + r0.width / 2 - r1.left - r1.width / 2, dy = r0.top + r0.height / 2 - r1.top - r1.height / 2;
       const sx = r0.width / r1.width, sy = r0.height / r1.height;
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < 0.01 && Math.abs(sy - 1) < 0.01) continue;
-      el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` }, { transform: 'none' }], { duration: relayout, easing: SMOOTH });
+      animate(el, [{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` }, { transform: 'none' }], { duration: relayout, easing: SMOOTH });
     }
     const pool = document.getElementById('dt-ghost-pool');
     if (!pool) return;
@@ -404,15 +423,14 @@ const ANIM_JS: &str = r#"
           b.style.cssText = 'position:absolute;inset:0;margin:0;';
           ghost.appendChild(b);
           const k = sc.faceAt / sc.ms;
-          b.animate([{ opacity: 1 }, { opacity: 1, offset: k }, { opacity: 0, offset: Math.min(1, k + 0.001) }, { opacity: 0 }],
+          animate(b, [{ opacity: 1 }, { opacity: 1, offset: k }, { opacity: 0, offset: Math.min(1, k + 0.001) }, { opacity: 0 }],
             { duration: Math.max(1, sc.ms), delay: start, fill: 'both' });
         }
       }
       (document.querySelector('.dt-root') || document.body).appendChild(ghost);
-      const a = ghost.animate(sc.frames, { duration: Math.max(1, sc.ms), delay: start, fill: 'both' });
-      a.onfinish = a.oncancel = () => ghost.remove();
+      animate(ghost, sc.frames, { duration: Math.max(1, sc.ms), delay: start, fill: 'both' }, ghost);
       if (sc.landed && fresh) {
-        fresh.animate([{ opacity: 0 }, { opacity: 0, offset: 0.99 }, { opacity: 1 }], { duration: start + sc.ms });
+        animate(fresh, [{ opacity: 0 }, { opacity: 0, offset: 0.99 }, { opacity: 1 }], { duration: start + sc.ms });
       }
     });
   };
@@ -422,6 +440,11 @@ const ANIM_JS: &str = r#"
 /// Notes where everything is on the table, before a new view changes it.
 pub fn before_change() {
     platform::run_js("window.__dtAnim && window.__dtAnim.snapshot()");
+}
+
+/// Discards motions from the replay position that is about to be replaced.
+pub fn reset_motion() {
+    platform::run_js("window.__dtAnim && window.__dtAnim.reset()");
 }
 
 /// The ghosts of one change and how they move.

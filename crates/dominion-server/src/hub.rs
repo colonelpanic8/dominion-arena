@@ -13,8 +13,8 @@ pub use dominion_protocol::api::{
 use dominion_protocol::api::{Progress, Replay, ReplayTurn, SeatProgress, UndoRequest, UndoState};
 use dominion_protocol::events::History;
 use dominion_protocol::lobby::{
-    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, SeatAgent, Source,
-    UndoRule, UserRef,
+    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, RatingInfo, SeatAgent,
+    Source, UndoRule, UserRef,
 };
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
@@ -98,6 +98,9 @@ pub struct Meta {
     /// Per seat: the id of the account playing it.
     pub owners: Vec<Option<String>>,
     pub rated: bool,
+    /// When it was taken out of the rated record (milliseconds since the Unix epoch): it
+    /// was rated, and no longer is.
+    pub voided: Option<u64>,
     pub watchable: bool,
     /// The deciding seat forfeits when it is away or takes too long ([`Timing`]).
     pub timed: bool,
@@ -678,6 +681,7 @@ impl Index {
 
 type OnEnd = Box<dyn Fn(Ended) + Send + Sync>;
 type Users = Box<dyn Fn(&[Option<String>]) -> Vec<Option<UserRef>> + Send + Sync>;
+type Ratings = Box<dyn Fn(&[Option<String>]) -> Vec<Option<RatingInfo>> + Send + Sync>;
 
 /// How many games read from `expired/` are kept loaded.
 const ARCHIVE_CACHE: usize = 16;
@@ -701,6 +705,8 @@ pub struct Hub {
     on_end: OnceLock<OnEnd>,
     /// Account ids to players, called with no lock held.
     users: OnceLock<Users>,
+    /// Account ids to their ratings, called with no lock held.
+    ratings: OnceLock<Ratings>,
     /// What new games' event streams are written in.
     encoding: Mutex<Encoding>,
     /// Whether new games are recorded (where games are saved).
@@ -718,6 +724,7 @@ impl Default for Hub {
             max_games: AtomicU64::new(DEFAULT_MAX_GAMES as u64),
             on_end: OnceLock::new(),
             users: OnceLock::new(),
+            ratings: OnceLock::new(),
             encoding: Mutex::default(),
             record: AtomicBool::new(true),
         }
@@ -1349,14 +1356,23 @@ impl Hub {
     }
 
     /// `on_end` is called whenever a game ends, `users` to name the accounts playing a
-    /// game's seats. Neither may be set twice.
+    /// game's seats and `ratings` for their ratings. None may be set twice.
     pub fn set_hooks(
         &self,
         on_end: impl Fn(Ended) + Send + Sync + 'static,
         users: impl Fn(&[Option<String>]) -> Vec<Option<UserRef>> + Send + Sync + 'static,
+        ratings: impl Fn(&[Option<String>]) -> Vec<Option<RatingInfo>> + Send + Sync + 'static,
     ) {
         let _ = self.on_end.set(Box::new(on_end));
         let _ = self.users.set(Box::new(users));
+        let _ = self.ratings.set(Box::new(ratings));
+    }
+
+    fn ratings(&self, owners: &[Option<String>]) -> Vec<Option<RatingInfo>> {
+        match self.ratings.get() {
+            Some(ratings) if owners.iter().any(Option::is_some) => ratings(owners),
+            _ => vec![],
+        }
     }
 
     fn users(&self, owners: &[Option<String>]) -> Vec<Option<UserRef>> {
@@ -2049,6 +2065,7 @@ impl Hub {
         let shown = GameMeta {
             source: meta.source,
             rated: meta.rated,
+            voided: meta.voided.is_some(),
             watchable: meta.watchable && table.watchable(),
             timed: meta.timed,
             users: vec![],
@@ -2060,6 +2077,8 @@ impl Hub {
             watchers: game.watchers.load(Ordering::Relaxed),
             ended: meta.ended.clone(),
             levels: vec![],
+            ratings: vec![],
+            online_ratings: vec![],
             now,
         };
         (shown, meta.owners.clone())
@@ -2091,6 +2110,7 @@ impl Hub {
             (seat_view, owners)
         };
         seat_view.meta.users = self.users(&owners);
+        seat_view.meta.ratings = self.ratings(&owners);
         Ok(seat_view)
     }
 
@@ -2203,6 +2223,7 @@ impl Hub {
             (seat_view, owners)
         };
         seat_view.meta.users = self.users(&owners);
+        seat_view.meta.ratings = self.ratings(&owners);
         Ok(seat_view)
     }
 
@@ -2597,7 +2618,7 @@ impl Hub {
 
     /// Ends the game with `seat` out of it: `cause` is `resigned`, `abandoned` or
     /// `timeout`. A seat of the server's agents that is abandoned failed to play, which
-    /// says nothing of anyone's skill: the game is no longer rated.
+    /// says nothing of anyone's skill: a rated game is voided.
     pub fn resign(&self, seat: &Seat, cause: &str) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let ended = {
@@ -2606,8 +2627,9 @@ impl Hub {
             let ended = self.changed(&game, &mut table, next, |meta| {
                 meta.ended = Some(cause.into());
                 let agent = meta.agents.get(seat.seat.index()) == Some(&true);
-                if cause == "abandoned" && agent {
+                if cause == "abandoned" && agent && meta.rated {
                     meta.rated = false;
+                    meta.voided = Some(now_ms());
                 }
             })?;
             lock(&game.undo).request = None;
@@ -2688,10 +2710,13 @@ impl Hub {
             .collect()
     }
 
-    /// Notes that game `id` no longer counts for ratings, if it is still hosted.
-    pub fn unrate(&self, id: &str) {
+    /// Notes that game `id` was voided at `at`, if it is still hosted.
+    pub fn void(&self, id: &str, at: u64) {
         if let Ok(game) = self.game(id) {
-            self.note(&game, |meta, _| meta.rated = false);
+            self.note(&game, |meta, _| {
+                meta.rated = false;
+                meta.voided = Some(at);
+            });
         }
     }
 
@@ -3235,7 +3260,7 @@ mod archive_tests {
     use super::*;
 
     #[test]
-    fn a_game_an_agent_abandons_is_not_rated() {
+    fn a_rated_game_an_agent_abandons_is_voided() {
         let hub = Hub::default();
         let req = NewGame {
             players: 2,
@@ -3243,21 +3268,23 @@ mod archive_tests {
             seed: Some(1),
             ..NewGame::default()
         };
-        let rated_after = |seat: u8, cause: &str| {
+        let after = |rated: bool, seat: u8, cause: &str| {
             let meta = Meta {
-                rated: true,
+                rated,
                 agents: vec![false, true],
                 ..Meta::default()
             };
             let game = (hub.host(config(&req).unwrap(), names(&req).unwrap(), meta)).unwrap();
             let seat = hub.claim(&game.game_id, &game.seats[usize::from(seat)].token);
             hub.resign(&seat.unwrap(), cause).unwrap();
-            hub.meta(&game.game_id).unwrap().rated
+            let meta = hub.meta(&game.game_id).unwrap();
+            (meta.rated, meta.voided.is_some())
         };
-        assert!(!rated_after(1, "abandoned"));
-        assert!(rated_after(0, "abandoned"));
-        assert!(rated_after(1, "resigned"));
-        assert!(rated_after(1, "timeout"));
+        assert_eq!(after(true, 1, "abandoned"), (false, true));
+        assert_eq!(after(true, 0, "abandoned"), (true, false));
+        assert_eq!(after(true, 1, "resigned"), (true, false));
+        assert_eq!(after(true, 1, "timeout"), (true, false));
+        assert_eq!(after(false, 1, "abandoned"), (false, false));
     }
 
     #[test]
