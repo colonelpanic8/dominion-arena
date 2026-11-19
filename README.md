@@ -556,6 +556,13 @@ read its transcript, including private cards and plans, rated or not; a private 
 is for its seats. A game on dominion.games always publishes its agent's, kept under
 `dominion.games-<id>`.
 
+On the table, **Agent log** (under the game log) docks the transcript left of the table,
+which lays itself out beside it: the agents' reasoning, replies and moves, each seat's
+latest reasoning open (**All** adds prompts, tool calls and game lines). **Follow**
+keeps the newest in view until you scroll up. In a replay it shows only what the agents
+had written by the step shown. It opens by itself for someone watching; a seat opens it
+when they want.
+
 The server stores transcript events in SQLite and notifies viewers over SSE. Cursor
 pagination and stable attempt/offset identifiers make reconnects and upload retries
 safe. CLI output is captured while the process is running. Each attempt also keeps

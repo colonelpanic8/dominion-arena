@@ -71,3 +71,33 @@
   .transcript-side { position: static; max-width: none; }
   .trace-block { grid-template-columns: 1fr; gap: .2em; }
 }
+
+/* The agent log docked left of the table. */
+.agent-dock {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  max-width: 100vw;
+  background: #15120d;
+  border-right: 2px solid #555;
+  color: var(--text);
+  font: 14px/1.45 var(--ui);
+}
+.agent-dock.over { box-shadow: 0.5em 0 2em rgba(0, 0, 0, .7); }
+.agent-dock-head, .agent-dock-seats { display: flex; flex-wrap: wrap; align-items: center; gap: .4em; padding: .5em .7em; border-bottom: 1px solid var(--line-soft); }
+.agent-dock-title { flex: 1; font: 700 1.05em var(--title); letter-spacing: .03em; }
+.agent-dock-head .button, .agent-dock-head button, .agent-dock-seats button { padding: .2em .6em; font-size: .9em; }
+.agent-dock-seats button { display: inline-flex; align-items: center; gap: .35em; }
+.agent-dock-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 .8em .8em; user-select: text; }
+.agent-dock .trace-block { grid-template-columns: minmax(0, 1fr); padding: .55em 0; }
+.agent-dock .trace-content header { margin-bottom: .25em; gap: .5em; }
+.agent-dock .trace-block pre { font-size: .92em; line-height: 1.5; }
+.agent-dock .trace-reasoning pre { padding: .5em .7em; }
+.agent-dock .trace-reasoning details summary { color: #b9ad96; font-style: italic; }
+.agent-dock .trace-game { padding: .15em 0; border-top: none; }
+.agent-dock .trace-game-line { font-size: .85em; color: var(--muted); }
+.agent-dock .transcript-empty { padding: 1.5em 0; }

@@ -2,6 +2,7 @@
 //! none: watching), keeping its [`GameState`] current over the change feed, and answering,
 //! resigning and speaking for it.
 
+mod agent_log;
 pub mod board;
 mod chat;
 pub mod entry;
@@ -66,6 +67,14 @@ pub struct Offers {
     pub chat: bool,
     /// The id its agents' transcript is kept under.
     pub transcript: Option<String>,
+    /// In a replay short of its end: how many log entries are shown, the transcript
+    /// shown only as far as them.
+    pub transcript_at: Option<usize>,
+}
+
+/// Whether one of the game's seats is played by an agent.
+fn has_agents(meta: &dominion_protocol::lobby::GameMeta) -> bool {
+    (meta.users.iter().flatten()).any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot)
 }
 
 pub fn use_game() -> GameCtx {
@@ -644,14 +653,10 @@ pub fn GamePage(id: String) -> Element {
     let account = use_account();
     let summary = use_summary(game);
     use_context_provider(|| summary);
-    let offers = use_memo(move || {
-        let meta = &state.read().meta;
-        let agents = (meta.users.iter().flatten())
-            .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
-        Offers {
-            chat: true,
-            transcript: agents.then(|| game.read().clone()),
-        }
+    let offers = use_memo(move || Offers {
+        chat: true,
+        transcript: has_agents(&state.read().meta).then(|| game.read().clone()),
+        transcript_at: None,
     });
     use_context_provider(|| GameCtx {
         game,

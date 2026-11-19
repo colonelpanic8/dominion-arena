@@ -179,6 +179,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
                           the deciding seat's time, how the game ended (pure)
   src/game/chat.rs        the game's chat (`game-<id>`): under the log, and on the plain page
   src/game/menu.rs        the game menu (Resign, Lobby) and the question before resigning
+  src/game/agent_log.rs   the agents' transcript docked left of the table (`TableGame`
+                          makes room for it); in a replay, cut at the step shown
   src/game/undo.rs        the undo request waiting: withdraw yours, allow or refuse another's
   src/game/replay.rs      `/game/<id>/replay`: a finished game on the table at any answer, stepped
                           or played through, as everyone or one seat saw it

@@ -10,7 +10,7 @@ use dominion_protocol::transcript::{
 use futures_util::StreamExt;
 use std::collections::{BTreeMap, HashMap};
 
-const CSS: &str = include_str!("../assets/transcript.css");
+pub(crate) const CSS: &str = include_str!("../assets/transcript.css");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
@@ -96,7 +96,7 @@ async fn refresh(
     }
 }
 
-fn label(kind: Kind) -> &'static str {
+pub fn label(kind: Kind) -> &'static str {
     match kind {
         Kind::System => "System prompt",
         Kind::Observation => "Prompt",
@@ -112,7 +112,7 @@ fn label(kind: Kind) -> &'static str {
 
 /// A collapsed block's one-line summary: its first non-empty line, shortened, and how
 /// many lines it has.
-fn summary(text: &str) -> (String, usize) {
+pub fn summary(text: &str) -> (String, usize) {
     let first = text
         .lines()
         .find(|l| !l.trim().is_empty())
@@ -130,7 +130,7 @@ fn short(text: &str) -> bool {
     text.len() <= 240 && text.lines().count() <= 3
 }
 
-fn clock(time: u64) -> String {
+pub fn clock(time: u64) -> String {
     let seconds = time / 1000;
     format!(
         "{:02}:{:02}:{:02}.{:03}",
@@ -141,18 +141,27 @@ fn clock(time: u64) -> String {
     )
 }
 
-#[component]
-pub fn TranscriptPage(id: String) -> Element {
-    let game = use_signal(move || id);
+impl Block {
+    /// The game log's `seq` a game line repeats.
+    pub fn game_seq(&self) -> Option<usize> {
+        (self.kind == Kind::Game)
+            .then(|| self.key.strip_prefix("game/")?.parse().ok())
+            .flatten()
+    }
+}
+
+/// A game's transcript as it is fetched: kept current over its change feed when `live`.
+#[derive(Clone, Copy)]
+pub struct Feed {
+    pub timeline: Signal<Timeline>,
+    pub error: Signal<Option<String>>,
+    pub ready: Signal<bool>,
+}
+
+pub fn use_feed(game: Memo<String>, live: bool) -> Feed {
     let timeline = use_signal(Timeline::default);
     let mut error = use_signal(|| None::<String>);
     let mut ready = use_signal(|| false);
-    let mut selected = use_signal(|| None::<u8>);
-    let reasoning = use_signal(|| true);
-    let follow = use_signal(|| true);
-    let inputs = use_signal(|| true);
-    let tools = use_signal(|| true);
-    let expand = use_signal(|| false);
     let account = crate::account::use_account();
     use_resource(move || {
         let _ = account.name();
@@ -171,6 +180,9 @@ pub fn TranscriptPage(id: String) -> Element {
                     return;
                 }
             }
+            if !live {
+                return;
+            }
             let (send, mut receive) = futures_channel::mpsc::unbounded();
             let changed = async {
                 while receive.next().await.is_some() {
@@ -186,6 +198,27 @@ pub fn TranscriptPage(id: String) -> Element {
             futures_util::future::join(feed, changed).await;
         }
     });
+    Feed {
+        timeline,
+        error,
+        ready,
+    }
+}
+
+#[component]
+pub fn TranscriptPage(id: String) -> Element {
+    let game = use_memo(move || id.clone());
+    let Feed {
+        timeline,
+        error,
+        ready,
+    } = use_feed(game, true);
+    let mut selected = use_signal(|| None::<u8>);
+    let reasoning = use_signal(|| true);
+    let follow = use_signal(|| true);
+    let inputs = use_signal(|| true);
+    let tools = use_signal(|| true);
+    let expand = use_signal(|| false);
     use_effect(move || {
         let _ = timeline.read().next;
         if follow() {
@@ -288,7 +321,7 @@ pub fn TranscriptPage(id: String) -> Element {
 /// A block's text: folded behind a summary when it is model input or a tool's result
 /// too long to read at a glance.
 #[component]
-fn Body(kind: Kind, text: String, expand: bool) -> Element {
+pub fn Body(kind: Kind, text: String, expand: bool) -> Element {
     let (first, lines) = summary(&text);
     let open = expand || short(&text);
     match kind {

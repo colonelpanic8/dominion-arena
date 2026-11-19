@@ -92,6 +92,7 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         transcript: Some(game())
             .filter(|g| !g.is_empty())
             .map(|g| official_game_id(&g)),
+        transcript_at: None,
     });
     use_watched_game(game, state, offers);
     use_future(move || async move {

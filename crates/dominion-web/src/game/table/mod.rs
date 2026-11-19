@@ -680,6 +680,12 @@ pub fn TableGame(controls: Element) -> Element {
     let mut started = use_signal(|| false);
     sound::use_sound(board_memo, game, muted);
     let mut viewport = use_signal(platform::viewport);
+    let dock = super::agent_log::use_open(game.watching);
+    // The agents' log left of the table: its width, and whether the table makes room.
+    let docked = use_memo(move || {
+        let shown = dock.open.cloned() && game.offers.read().transcript.is_some();
+        shown.then(|| super::agent_log::width(viewport().0))
+    });
     use_future(move || async move {
         let mut eval = document::eval(VIEWPORT_JS);
         while let Ok(v) = eval.recv::<Vec<f64>>().await {
@@ -692,7 +698,10 @@ pub fn TableGame(controls: Element) -> Element {
         }
     });
     let geometry = use_memo(move || {
-        let (w, h) = viewport();
+        let (mut w, h) = viewport();
+        if let Some((dock_w, true)) = docked() {
+            w -= dock_w;
+        }
         let b = board_memo.read();
         let deciding = ui.read().is_some();
         let s = b
@@ -755,7 +764,15 @@ pub fn TableGame(controls: Element) -> Element {
     let can_treasures = ui_now
         .as_ref()
         .is_some_and(|u| !u.inter.treasures.is_empty());
+    let transcript = game.offers.read().transcript.clone();
+    let room = match docked() {
+        Some((w, true)) => w,
+        _ => 0.0,
+    };
     rsx! {
+        if let (Some(id), Some((width, beside))) = (transcript.clone(), docked()) {
+            super::agent_log::AgentDock { key: "{id}", id, width, beside, open: dock }
+        }
         document::Style { "{CSS}" }
         style { "{extra_css}" }
         div {
@@ -763,7 +780,7 @@ pub fn TableGame(controls: Element) -> Element {
             class: if b.status.your_turn { "dt-your-turn" },
             class: if ui_now.is_some() { "dt-deciding" },
             class: if b.watching { "dt-watching" },
-            style: "--vh:{g.vh:.3}px;--vw:{g.vw:.3}px;",
+            style: "--vh:{g.vh:.3}px;--vw:{g.vw:.3}px;left:{room:.0}px;",
             "data-busy": if answering { "1" },
             "data-decision": ui_now.as_ref().map(|u| u.decision.id.clone()).unwrap_or_default(),
             "data-seat": seat.map(|s| s.to_string()).unwrap_or_default(),
@@ -843,6 +860,19 @@ pub fn TableGame(controls: Element) -> Element {
                         title: "Every player's deck composition, side by side",
                         onclick: move |e| { e.stop_propagation(); ctx.open(players::all_decks_popup()); },
                         "Decks"
+                    }
+                    if transcript.is_some() {
+                        button {
+                            class: if dock.open.cloned() { "toggle on" } else { "toggle" },
+                            "data-action": "agent-log",
+                            title: "What the agents think and do, beside the table",
+                            "aria-pressed": "{dock.open.cloned()}",
+                            onclick: move |e| {
+                                e.stop_propagation();
+                                dock.set(!*dock.open.peek());
+                            },
+                            "Agent log"
+                        }
                     }
                     sound::MuteToggle { muted }
                 }

@@ -72,7 +72,16 @@ pub fn ReplayPage(id: String) -> Element {
     let mut shown = use_signal(|| None::<(usize, Option<u8>)>);
     let summary = use_signal(|| None::<GameSummary>);
     use_context_provider(|| summary);
-    super::use_watched_game(game, state, use_memo(super::Offers::default));
+    let offers = use_memo(move || {
+        let st = state.read();
+        let short = replay.read().as_ref().is_some_and(|r| r.step < r.steps);
+        super::Offers {
+            chat: false,
+            transcript: super::has_agents(&st.meta).then(|| game.read().clone()),
+            transcript_at: short.then(|| st.log.last().map_or(0, |e| e.seq + 1)),
+        }
+    });
+    super::use_watched_game(game, state, offers);
 
     // Fetches the view whenever the step or seat wanted differs from the one shown.
     use_effect(move || {
