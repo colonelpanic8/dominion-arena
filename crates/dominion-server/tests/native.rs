@@ -26,6 +26,8 @@ except OSError:
 assert os.environ['HTTPS_PROXY'] == 'http://127.0.0.1:3128'
 prompt = sys.stdin.read()
 if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content"]
+if 'GEMINI_HOME' in os.environ:
+    Path(os.environ['GEMINI_HOME'], 'antigravity-cli/conversations/fixture.db').write_text('')
 assert 'test-credential' not in prompt
 assert '=== CARD & PILE REFERENCE ===' in prompt
 assert 'Village | Action | $3' in prompt
@@ -528,6 +530,12 @@ async fn all_native_adapters_play_watchable_games_and_preserve_complete_logs() {
                 .find(|r| r["kind"] == "request" && r["data"]["tool"] == "join_game")
                 .unwrap();
             assert_eq!(joined["data"]["arguments"]["token"], "[redacted]");
+            if program == "antigravity" {
+                let kept = h._dir.path().join(format!(
+                    "auth/antigravity-cli/conversations/dominion-arena/seat-{seat}/fixture.db"
+                ));
+                assert!(kept.is_file(), "{}", kept.display());
+            }
         }
     }
 }
