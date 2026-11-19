@@ -1982,6 +1982,26 @@ fn a_rating_is_asked_again_soon_after_a_game_finishes() {
     assert!(fresh(now - 30_000, Some(now - 60_000), now));
 }
 
+#[test]
+fn a_search_is_raised_to_the_accounts_opponent_floor() {
+    use crate::online::hosted::raise_to_floor;
+    let raised = |min, max, floor, own| {
+        let mut matching = OnlineMatching {
+            min_rating: min,
+            max_rating: max,
+            ..OnlineMatching::default()
+        };
+        raise_to_floor(&mut matching, floor, own);
+        (matching.min_rating, matching.max_rating)
+    };
+    assert_eq!(raised(-10, 10, 46.0, 45.91), (1, 10));
+    assert_eq!(raised(-10, 10, 46.0, 50.2), (-4, 10));
+    // A range already above the floor stands.
+    assert_eq!(raised(5, 10, 46.0, 45.91), (5, 10));
+    assert_eq!(raised(-10, -5, 46.0, 40.0), (6, 6));
+    assert_eq!(raised(-10, 10, 46.0, -80.0), (100, 100));
+}
+
 /// An account resuming its human match, saved as it would be, waiting for the server.
 fn resuming_human_match() -> (TempDir, Runtime) {
     let (directory, mut runtime) = runtime();

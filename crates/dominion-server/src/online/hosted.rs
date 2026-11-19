@@ -17,9 +17,9 @@ use dominion_online::{
     transport::ancillary::{PlayerProfile, ProfileResult},
 };
 use dominion_protocol::api::{
-    OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMode, OnlineObservation,
-    OnlineOutcome, OnlineRating, OnlineRatingPeriod, OnlineRatingPoint, OnlineRatingType,
-    OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
+    OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMatching, OnlineMode,
+    OnlineObservation, OnlineOutcome, OnlineRating, OnlineRatingPeriod, OnlineRatingPoint,
+    OnlineRatingType, OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
 };
 use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, SeatLevel, UserKind};
 use rmcp::transport::streamable_http_server::{
@@ -52,6 +52,8 @@ pub struct Hosted {
     recordings: Option<PathBuf>,
     /// Where official clients' code is cached (`online_cache_dir`).
     cache: Option<PathBuf>,
+    /// The lowest dominion.games level its public searches match.
+    min_opponent_level: Option<f64>,
 }
 
 /// The dominion.games levels of a game's players by seat, asked of the official server as
@@ -145,6 +147,7 @@ impl Hosted {
             levels: Arc::new(tokio::sync::watch::Sender::new(Levels::default())),
             recordings: None,
             cache: None,
+            min_opponent_level: None,
         }
     }
 
@@ -153,6 +156,11 @@ impl Hosted {
     pub(crate) fn recording(mut self, recordings: PathBuf, cache: Option<PathBuf>) -> Self {
         self.recordings = Some(recordings);
         self.cache = cache;
+        self
+    }
+
+    pub(crate) fn min_opponent_level(mut self, level: Option<f64>) -> Self {
+        self.min_opponent_level = level;
         self
     }
 
@@ -213,10 +221,12 @@ impl Hosted {
         for (account, owner) in accounts.into_iter().zip(owners) {
             match super::start(config, &account).await {
                 Ok(client) => hosted.push(
-                    Self::new(client, account.id, account.account, owner).recording(
-                        super::recordings::dir(&account.state_dir),
-                        config.online_cache_dir(),
-                    ),
+                    Self::new(client, account.id, account.account, owner)
+                        .recording(
+                            super::recordings::dir(&account.state_dir),
+                            config.online_cache_dir(),
+                        )
+                        .min_opponent_level(account.min_opponent_level),
                 ),
                 Err(e) => {
                     eprintln!("dominion: official account {}: {e}", account.id);
@@ -658,10 +668,18 @@ fn management(web: &Web) -> OnlineManagement {
         searching: update.searching || web.job().is_some_and(|j| j.game_id.is_empty()),
         queue_feedback: update.queue_feedback,
         mode: update.mode,
+        min_opponent_level: web.hosted.min_opponent_level,
     }
 }
 async fn manage(State(web): State<Web>) -> axum::Json<OnlineManagement> {
     axum::Json(management(&web))
+}
+/// Raises `matching`'s relative range so it matches no one below level `floor`, the
+/// account being at level `own`.
+pub(super) fn raise_to_floor(matching: &mut OnlineMatching, floor: f64, own: f64) {
+    let lowest = ((floor - own).ceil() as i32).clamp(-100, 100);
+    matching.min_rating = matching.min_rating.max(lowest);
+    matching.max_rating = matching.max_rating.max(matching.min_rating);
 }
 /// The rating dominion.games rates a game of `players` players under.
 fn level_type(players: usize) -> OnlineRatingType {
@@ -889,12 +907,16 @@ async fn start_game(
                 "{playing} plays the running game: its agent can't be changed mid-game"
             ));
         }
-        if let Err(e) = web
-            .hosted
-            .client
-            .matchmaking(start.mode, start.matching)
-            .await
-        {
+        let mut matching = start.matching;
+        if let Some(floor) = web.hosted.min_opponent_level {
+            let kind = level_type(usize::from(matching.players));
+            let own = match web.hosted.rating(kind).await {
+                Ok(rating) => rating.level,
+                Err(e) => return refused(format!("reading the account's level: {e}")),
+            };
+            raise_to_floor(&mut matching, floor, own);
+        }
+        if let Err(e) = web.hosted.client.matchmaking(start.mode, matching).await {
             return refused(e);
         }
         let update = web.hosted.client.current();

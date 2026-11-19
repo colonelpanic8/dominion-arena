@@ -383,6 +383,9 @@ fn OfficialPanel(account: String) -> Element {
                         label { "Maximum rating difference"
                             input { r#type: "number", min: "-100", max: "100", value: "{max_rating}", disabled: busy(), oninput: move |e| { if let Ok(n) = e.value().parse() { max_rating.set(n); } } }
                         }
+                        if let Some(floor) = status.min_opponent_level {
+                            p { class: "muted", "The server raises the minimum to match no one below level {floor}." }
+                        }
                         label { "Timer"
                             select { value: "{timer}", disabled: busy(), onchange: move |e| { if let Ok(n) = e.value().parse() { timer.set(n); } },
                                 option { value: "3", "Patient" }

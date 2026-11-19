@@ -96,6 +96,12 @@ same account. The state-directory lock prevents two processes sharing it.
   unrated public humans, or rated public humans. Human searches support two or
   three players, a relative rating range and one standard timer preset. The
   default timer is Patient. Starting one search never repeats it after a game.
+- `online_min_opponent_level` (`min_opponent_level` in `[[online_accounts]]`) sets
+  the lowest dominion.games level a public search matches. dominion.games ranges are
+  relative to the account's own level, so each search's minimum is raised to the
+  floor less that level (2p or 3p, read when the search starts), rounded up, and
+  its maximum to at least that; a search the account's level can't be read for is
+  refused.
 - Bot games accept required kingdom piles and landscapes. Public matches use the
   server's matchmaking kingdom and preferences, with previews and extra new
   expansion games disabled.
@@ -177,6 +183,7 @@ resume = true                 # optional, default false
 # endpoint = "auto"           # optional
 # state_dir = "..."           # default <online_state_dir>/accounts/<id>
 # enabled = false             # leave it configured but not kept by serve
+# min_opponent_level = 46     # optional: no public opponent below this level
 ```
 
 Ids, official account names and state directories must all differ. Each account's
