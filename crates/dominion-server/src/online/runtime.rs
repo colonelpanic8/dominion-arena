@@ -1128,6 +1128,9 @@ impl Runtime {
             }
             Message::AutomatchStatus(status) => {
                 if self.search.is_some() {
+                    if !status.searching {
+                        eprintln!("dominion: official automatch status not searching: {status:?}");
+                    }
                     self.queue_status = Some(status.searching);
                     self.update.searching = status.searching;
                     self.update.queue_feedback =
