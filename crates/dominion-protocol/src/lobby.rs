@@ -100,6 +100,9 @@ pub struct Me {
     /// Their bots.
     #[serde(default)]
     pub bots: Vec<UserRef>,
+    /// One of the server's `admins`, who make invite codes.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub admin: bool,
 }
 
 /// `POST /api/auth/register` and `/api/auth/login`. Registering from a guest session
@@ -110,6 +113,10 @@ pub struct Credentials {
     #[serde(default)]
     pub name: String,
     pub password: String,
+    /// An admin's invite code: registering with one works even where the server takes
+    /// no new accounts otherwise. Ignored when signing in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite: Option<String>,
 }
 
 /// `POST /api/auth/guest`.
@@ -142,6 +149,42 @@ pub struct NewBot {
 pub struct BotKey {
     pub bot: UserRef,
     pub key: String,
+}
+
+/// `POST /api/invites`: an invite code an admin makes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewInvite {
+    /// How many accounts may register with it (default 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uses: Option<u32>,
+    /// Days until it expires (default 30; 0: never).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub days: Option<u32>,
+    /// Who it is for, as its maker notes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// An invite code, as admins see it (`GET /api/invites`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Invite {
+    pub code: String,
+    /// The admin who made it, while their account exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// Seconds since the Unix epoch.
+    pub created: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires: Option<u64>,
+    /// How many accounts may register with it.
+    pub uses: u32,
+    /// The accounts that registered with it.
+    #[serde(default)]
+    pub used_by: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// What a lobby table deals and how its game runs: dominion.games' Kingdom Options and

@@ -1,5 +1,6 @@
 //! Signing in, and the Account tab: who you are, keeping a guest account, changing the
-//! password, and the bots (accounts for agents, each with an API key shown once).
+//! password, the bots (accounts for agents, each with an API key shown once), and for
+//! admins, invite codes.
 
 use super::{Fieldset, LobbyFrame, OptionRow, Tab, UserName};
 use crate::account::use_account;
@@ -7,7 +8,7 @@ use crate::api;
 use crate::app::Settings;
 use crate::platform;
 use dioxus::prelude::*;
-use dominion_protocol::lobby::{BotKey, Me, UserKind};
+use dominion_protocol::lobby::{BotKey, Invite, Me, NewInvite, UserKind};
 
 #[derive(Clone, Copy, PartialEq)]
 enum How {
@@ -17,29 +18,41 @@ enum How {
 }
 
 /// Name and password: Log in, Register, and Play as guest where the server takes them.
+/// Where it takes new accounts by invitation, or an invite link brought `invite`, an
+/// invite code too.
 #[component]
-pub fn SignIn() -> Element {
+pub fn SignIn(invite: Option<String>) -> Element {
     let account = use_account();
     let settings = use_context::<Settings>().0;
     let mut name = use_signal(String::new);
     let mut password = use_signal(String::new);
+    let linked = invite.is_some();
+    let mut code = use_signal(|| invite.unwrap_or_default());
     let mut error = use_signal(|| None::<String>);
     let mut busy = use_signal(|| false);
-    let (registration, guests) = {
+    let (registration, guests, invites) = {
         let s = settings.read();
-        (s.registration, s.guests)
+        (s.registration, s.guests, s.invites)
     };
+    let ask_code = invites && (!registration || linked);
     let mut sign_in = move |how: How| {
         if busy() {
             return;
         }
         busy.set(true);
         error.set(None);
-        let (n, p) = (name().trim().to_string(), password());
+        let (n, p, c) = (
+            name().trim().to_string(),
+            password(),
+            code().trim().to_string(),
+        );
         spawn(async move {
             let result = match how {
                 How::Login => account.login(&n, &p).await,
-                How::Register => account.register(&n, &p).await,
+                How::Register => {
+                    let c = (ask_code && !c.is_empty()).then_some(c.as_str());
+                    account.register(&n, &p, c).await
+                }
                 How::Guest => account.guest((!n.is_empty()).then_some(n.as_str())).await,
             };
             busy.set(false);
@@ -75,9 +88,20 @@ pub fn SignIn() -> Element {
                     value: "{password}",
                     oninput: move |e| password.set(e.value()),
                 }
+                if ask_code {
+                    input {
+                        class: "lb-input",
+                        name: "invite",
+                        "data-field": "invite",
+                        autocomplete: "off",
+                        placeholder: "Invite code (to register)",
+                        value: "{code}",
+                        oninput: move |e| code.set(e.value()),
+                    }
+                }
                 div { class: "lb-form-buttons",
                     button { class: "lb-button lb-gold", r#type: "submit", "data-action": "login", disabled: busy(), "Log in" }
-                    if registration {
+                    if registration || invites {
                         button {
                             class: "lb-button lb-copper",
                             r#type: "button",
@@ -108,8 +132,9 @@ pub fn SignIn() -> Element {
     }
 }
 
+/// The Account tab; `invite` is the code an invite link brought.
 #[component]
-pub fn AccountTab() -> Element {
+pub fn AccountTab(invite: Option<String>) -> Element {
     let account = use_account();
     let me = account.me.read().clone();
     let loaded = *account.loaded.read();
@@ -119,7 +144,7 @@ pub fn AccountTab() -> Element {
                 match me {
                     None => rsx! {
                         div { class: "lb-column",
-                            if loaded { SignIn {} }
+                            if loaded { SignIn { invite } }
                         }
                         div { class: "lb-column", About {} }
                     },
@@ -127,12 +152,15 @@ pub fn AccountTab() -> Element {
                         div { class: "lb-column",
                             Summary { me: me.clone() }
                             match me.user.kind {
-                                UserKind::Guest => rsx! { KeepAccount { name: me.user.name.clone() } },
+                                UserKind::Guest => rsx! { KeepAccount { name: me.user.name.clone(), invite } },
                                 UserKind::Registered => rsx! { ChangePassword {} },
                                 UserKind::Bot => rsx! {},
                             }
                         }
                         div { class: "lb-column",
+                            if me.admin {
+                                Invites {}
+                            }
                             if me.user.kind == UserKind::Registered {
                                 Bots { me }
                             }
@@ -219,13 +247,20 @@ fn commit_time(t: &str) -> Option<String> {
 
 /// A guest registers: the account stays theirs, with its games.
 #[component]
-fn KeepAccount(name: String) -> Element {
+fn KeepAccount(name: String, invite: Option<String>) -> Element {
     let account = use_account();
     let settings = use_context::<Settings>().0;
     let mut new_name = use_signal(|| name.clone());
     let mut password = use_signal(String::new);
+    let linked = invite.is_some();
+    let mut code = use_signal(|| invite.unwrap_or_default());
     let mut error = use_signal(|| None::<String>);
-    if !settings.read().registration {
+    let (registration, invites) = {
+        let s = settings.read();
+        (s.registration, s.invites)
+    };
+    let ask_code = invites && (!registration || linked);
+    if !registration && !invites {
         return rsx! {
             Fieldset { title: "Guest", class: "lb-keep",
                 p { class: "lb-note", "You are playing as a guest, and this browser holds the account's only session. This server takes no new accounts." }
@@ -239,9 +274,10 @@ fn KeepAccount(name: String) -> Element {
                 class: "lb-form",
                 onsubmit: move |e| {
                     e.prevent_default();
-                    let (n, p) = (new_name().trim().to_string(), password());
+                    let (n, p, c) = (new_name().trim().to_string(), password(), code().trim().to_string());
                     spawn(async move {
-                        match account.register(&n, &p).await {
+                        let c = (ask_code && !c.is_empty()).then_some(c.as_str());
+                        match account.register(&n, &p, c).await {
                             Ok(_) => error.set(None),
                             Err(e) => error.set(Some(e.message)),
                         }
@@ -264,6 +300,17 @@ fn KeepAccount(name: String) -> Element {
                     placeholder: "Password (at least 8 characters)",
                     value: "{password}",
                     oninput: move |e| password.set(e.value()),
+                }
+                if ask_code {
+                    input {
+                        class: "lb-input",
+                        name: "invite",
+                        "data-field": "invite",
+                        autocomplete: "off",
+                        placeholder: "Invite code",
+                        value: "{code}",
+                        oninput: move |e| code.set(e.value()),
+                    }
                 }
                 div { class: "lb-form-buttons",
                     button { class: "lb-button lb-gold", r#type: "submit", "data-action": "keep", "Register" }
@@ -469,6 +516,176 @@ fn Bots(me: Me) -> Element {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// An invite code's link, which opens the Account tab with the code filled in.
+pub fn invite_link(origin: &str, code: &str) -> String {
+    format!("{origin}/invite/{code}")
+}
+
+fn invite_state(invite: &Invite, now: u64) -> String {
+    let used = invite.used_by.len() as u32;
+    if used >= invite.uses {
+        return "used up".into();
+    }
+    match invite.expires {
+        Some(e) if e * 1000 <= now => "expired".into(),
+        Some(e) => format!(
+            "{used} of {} used, until {}",
+            invite.uses,
+            super::date(e * 1000)
+        ),
+        None => format!("{used} of {} used", invite.uses),
+    }
+}
+
+/// An admin's invite codes: make one, copy its link, revoke it.
+#[component]
+fn Invites() -> Element {
+    let mut list = use_signal(Vec::<Invite>::new);
+    let mut uses = use_signal(|| "1".to_string());
+    let mut days = use_signal(|| "30".to_string());
+    let mut note = use_signal(String::new);
+    let mut error = use_signal(|| None::<String>);
+    let mut revoking = use_signal(|| None::<String>);
+    let mut copied = use_signal(|| None::<(String, &'static str)>);
+    let reload = move || {
+        spawn(async move {
+            match api::invites().await {
+                Ok(l) => list.set(l),
+                Err(e) => error.set(Some(e.message)),
+            }
+        });
+    };
+    use_hook(reload);
+    let make = move || {
+        let parse = |s: String| s.trim().parse::<u32>().ok();
+        let new = NewInvite {
+            uses: parse(uses()),
+            days: parse(days()),
+            note: Some(note().trim().to_string()).filter(|n| !n.is_empty()),
+        };
+        spawn(async move {
+            match api::new_invite(&new).await {
+                Ok(_) => {
+                    error.set(None);
+                    note.set(String::new());
+                }
+                Err(e) => error.set(Some(e.message)),
+            }
+            reload();
+        });
+    };
+    let origin = platform::origin();
+    let now = super::now_ms();
+    rsx! {
+        Fieldset { title: "Invites", class: "lb-invites",
+            p { class: "lb-note", "An invite code lets someone register, and so play the server's agents, even while the server takes no new accounts. Send them its link." }
+            div { class: "lb-bots-list",
+                for invite in list().into_iter() {
+                    {
+                        let link = invite_link(&origin, &invite.code);
+                        let (c1, c2) = (invite.code.clone(), invite.code.clone());
+                        let sure = revoking().as_deref() == Some(invite.code.as_str());
+                        let state = invite_state(&invite, now);
+                        let used_by = invite.used_by.join(", ");
+                        let shown = copied().filter(|(c, _)| *c == invite.code).map(|(_, m)| m);
+                        rsx! {
+                            div { key: "{invite.code}", class: "lb-invite", "data-invite": "{invite.code}",
+                                div { class: "lb-bot",
+                                    span { class: "lb-invite-code", "{invite.code}" }
+                                    button {
+                                        class: "lb-oval",
+                                        "data-action": "copy-invite",
+                                        onclick: move |_| {
+                                            let m = if platform::copy(&link) { "Link copied." } else { "Couldn't copy: select the link." };
+                                            copied.set(Some((c1.clone(), m)));
+                                        },
+                                        "Copy Link"
+                                    }
+                                    button {
+                                        class: "lb-oval",
+                                        "data-action": "revoke-invite",
+                                        onclick: move |_| {
+                                            let c = c2.clone();
+                                            if !sure {
+                                                revoking.set(Some(c));
+                                                return;
+                                            }
+                                            revoking.set(None);
+                                            spawn(async move {
+                                                if let Err(e) = api::revoke_invite(&c).await {
+                                                    error.set(Some(e.message));
+                                                }
+                                                reload();
+                                            });
+                                        },
+                                        if sure { "Really revoke?" } else { "Revoke" }
+                                    }
+                                }
+                                div { class: "lb-invite-about",
+                                    if let Some(n) = &invite.note {
+                                        span { class: "lb-invite-note", "{n} · " }
+                                    }
+                                    "{state}"
+                                    if !invite.used_by.is_empty() {
+                                        " · registered: {used_by}"
+                                    }
+                                }
+                                if let Some(m) = shown {
+                                    div { class: "lb-link-line", "{invite_link(&origin, &invite.code)}" }
+                                    span { class: "lb-copied", role: "status", "{m}" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            div { class: "lb-join-row lb-invite-row",
+                input {
+                    class: "lb-input lb-invite-number",
+                    r#type: "number",
+                    min: "1",
+                    max: "100",
+                    title: "How many people may register with it",
+                    "data-field": "invite-uses",
+                    value: "{uses}",
+                    oninput: move |e| uses.set(e.value()),
+                }
+                span { class: "lb-invite-unit", "uses" }
+                input {
+                    class: "lb-input lb-invite-number",
+                    r#type: "number",
+                    min: "0",
+                    max: "365",
+                    title: "Days until it expires (0: never)",
+                    "data-field": "invite-days",
+                    value: "{days}",
+                    oninput: move |e| days.set(e.value()),
+                }
+                span { class: "lb-invite-unit", "days" }
+            }
+            div { class: "lb-join-row",
+                input {
+                    class: "lb-input",
+                    "data-field": "invite-note",
+                    maxlength: "100",
+                    placeholder: "Who it is for (a note)",
+                    value: "{note}",
+                    oninput: move |e| note.set(e.value()),
+                    onkeydown: move |e| {
+                        if e.key() == Key::Enter {
+                            make();
+                        }
+                    },
+                }
+                button { class: "lb-button lb-copper lb-join-button", "data-action": "make-invite", onclick: move |_| make(), "Make Invite" }
+            }
+            if let Some(e) = error() {
+                p { class: "lb-error", role: "alert", "{e}" }
             }
         }
     }

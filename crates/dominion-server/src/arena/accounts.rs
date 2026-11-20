@@ -149,16 +149,24 @@ impl Arena {
     }
 
     /// A new account and a session for it. Asked by a guest, it is the guest's account
-    /// from now on, under the name given or, with none, the guest's. This hashes a
-    /// password: call it off the async threads.
+    /// from now on, under the name given or, with none, the guest's. An invite code given
+    /// is used up by it, and lets it register where the server takes no new accounts
+    /// otherwise. This hashes a password: call it off the async threads.
     pub fn register(
         &self,
         ip: IpAddr,
         credentials: &Credentials,
         current: Option<&Ident>,
     ) -> Result<(Me, Option<String>)> {
-        if !self.settings.registration {
-            return Err(Error::Forbidden("this server takes no new accounts".into()));
+        let invite = (credentials.invite.as_deref())
+            .filter(|c| !c.trim().is_empty())
+            .map(super::invites::normalize);
+        let invites = !self.settings.admins.is_empty();
+        if !self.settings.registration && !(invites && invite.is_some()) {
+            return Err(Error::Forbidden(match invites {
+                true => "this server takes new accounts by invitation: enter an invite code".into(),
+                false => "this server takes no new accounts".into(),
+            }));
         }
         check_password(&credentials.password)?;
         let guest = current
@@ -173,12 +181,14 @@ impl Arena {
         let hash = hash_password(&credentials.password)?;
         if let Some(guest) = guest {
             // The name is theirs unless someone took it meanwhile: then this fails.
-            self.db.make_registered(&guest.id, &name, &hash)?;
+            self.db
+                .make_registered(&guest.id, &name, &hash, invite.as_deref(), now())?;
             let me = self.me_of(&self.user(&guest.id)?)?;
             self.bump();
             return Ok((me, None));
         }
-        let user = self.db.add_user(&name, &Login::Password(hash), now())?;
+        let login = Login::Password(hash);
+        let user = (self.db).add_user_invited(&name, &login, now(), invite.as_deref())?;
         let token = self.start_session(&user.id)?;
         Ok((self.me_of(&user)?, Some(token)))
     }

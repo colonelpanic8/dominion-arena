@@ -875,7 +875,8 @@ async fn settings_serve_the_web_client_settings_without_a_token() {
             "webVolume": 0.25,
             "bannedCards": [],
             "registration": true,
-            "guests": true
+            "guests": true,
+            "invites": false
         })
     );
     let defaults: WebSettings = start().await.get("/api/settings", None).await.json();

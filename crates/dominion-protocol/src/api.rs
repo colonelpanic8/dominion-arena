@@ -221,6 +221,9 @@ pub struct WebSettings {
     pub registration: bool,
     /// People can play without an account.
     pub guests: bool,
+    /// New accounts can be registered with an admin's invite code, even without
+    /// `registration`.
+    pub invites: bool,
 }
 
 /// dominion.games' animation speeds, slowest first.
@@ -249,6 +252,7 @@ impl Default for WebSettings {
             banned_cards: vec![],
             registration: true,
             guests: true,
+            invites: false,
         }
     }
 }

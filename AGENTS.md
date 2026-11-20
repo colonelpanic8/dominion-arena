@@ -86,6 +86,8 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
     db.rs                 the SQLite database of accounts, sessions and records: the only
                           place they are kept (`state` in mod.rs holds what is live)
     accounts.rs           accounts, passwords, sessions, bots and their API keys
+    invites.rs            the `admins`' invite codes, each registering accounts even where
+                          registration is closed
     tables.rs matching.rs lobby tables; the automatch queue
     chat.rs records.rs    chat channels; finished games' records, ratings, leaderboard;
                           `ArenaRecords`, the history's source of Arena's own games; what
@@ -262,7 +264,8 @@ crates/dominion-web/       the browser client (Dioxus 0.7, `web` feature for was
     seat_link.rs          a seat handed out: its agent line, link, token, copy buttons
     selector.rs           "Select Cards", the card selector
     account.rs            `SignIn` (log in, register, play as guest) and the Account tab:
-                          keeping a guest account, the password, bots and their keys
+                          keeping a guest account, the password, bots and their keys,
+                          an admin's invite codes (`/invite/<code>` fills one in)
     avatar.rs             accounts' pictures (`Avatar`: the picture, else the initial), the
                           signed-in account's card under the tabs, the Account tab's picture
     chat.rs               a chat channel (the lobby's, a table's)

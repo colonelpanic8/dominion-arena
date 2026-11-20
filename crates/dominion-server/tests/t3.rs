@@ -216,6 +216,7 @@ async fn setup(fake: FakeT3) -> Harness {
             &dominion_protocol::lobby::Credentials {
                 name: "Host".into(),
                 password: "correct horse".into(),
+                invite: None,
             },
             None,
         )

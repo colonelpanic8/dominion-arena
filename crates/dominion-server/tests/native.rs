@@ -184,6 +184,7 @@ async fn setup(program: &str) -> Harness {
             &dominion_protocol::lobby::Credentials {
                 name: "Host".into(),
                 password: "correct horse".into(),
+                invite: None,
             },
             None,
         )

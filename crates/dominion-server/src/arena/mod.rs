@@ -16,6 +16,7 @@ mod chat;
 mod db;
 pub mod history;
 mod house;
+mod invites;
 mod matching;
 mod official;
 mod records;
@@ -82,6 +83,9 @@ pub struct Settings {
     pub registration: bool,
     /// People can play without an account.
     pub guests: bool,
+    /// The registered accounts, by name, that make invite codes. While there are any,
+    /// an invite code lets someone register without `registration`.
+    pub admins: Vec<String>,
     /// The Banned cards list of anyone who hasn't set their own.
     pub banned_cards: Vec<String>,
     pub timing: Timing,
@@ -114,6 +118,7 @@ impl Default for Settings {
         Settings {
             registration: true,
             guests: true,
+            admins: vec![],
             banned_cards: vec![],
             timing: Timing::default(),
             max_games: crate::hub::DEFAULT_MAX_GAMES,
@@ -487,6 +492,7 @@ impl Arena {
             rating: user.rating_info(self.skill_scale().as_ref()),
             stats: user.stats(),
             bots: bots.iter().map(|b| self.user_ref(b)).collect(),
+            admin: self.is_admin(user),
         })
     }
 

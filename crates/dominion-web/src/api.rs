@@ -8,9 +8,9 @@ use dominion_protocol::api::{
 };
 use dominion_protocol::lobby::{
     BotKey, ChatLog, Credentials, GuestRequest, HeadToHead, HeadToHeadQuery, History, HistoryQuery,
-    JoinTable, Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot, NewPassword,
-    NewTable, OFFICIAL_GAME_PREFIX, Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo,
-    TableSpec, Venue,
+    Invite, JoinTable, Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot,
+    NewInvite, NewPassword, NewTable, OFFICIAL_GAME_PREFIX, Profile, QueueStatus, Ready, Say,
+    SeatEdit, TableInfo, TableSpec, Venue,
 };
 use std::fmt;
 
@@ -209,10 +209,12 @@ pub async fn me() -> Result<Me> {
     imp::get("/api/me", None).await
 }
 
-pub async fn register(name: &str, password: &str) -> Result<Me> {
+/// With `invite`, an admin's invite code, used up by the new account.
+pub async fn register(name: &str, password: &str, invite: Option<&str>) -> Result<Me> {
     let credentials = Credentials {
         name: name.into(),
         password: password.into(),
+        invite: invite.map(String::from),
     };
     imp::post("/api/auth/register", None, &credentials).await
 }
@@ -221,6 +223,7 @@ pub async fn login(name: &str, password: &str) -> Result<Me> {
     let credentials = Credentials {
         name: name.into(),
         password: password.into(),
+        invite: None,
     };
     imp::post("/api/auth/login", None, &credentials).await
 }
@@ -270,6 +273,21 @@ pub async fn new_bot_key(name: &str) -> Result<BotKey> {
 
 pub async fn delete_bot(name: &str) -> Result<()> {
     let url = format!("/api/me/bots/{}", encode(name));
+    imp::send_empty("DELETE", &url, None, None::<&()>).await
+}
+
+// Invite codes, for admins.
+
+pub async fn invites() -> Result<Vec<Invite>> {
+    imp::get("/api/invites", None).await
+}
+
+pub async fn new_invite(new: &NewInvite) -> Result<Invite> {
+    imp::post("/api/invites", None, new).await
+}
+
+pub async fn revoke_invite(code: &str) -> Result<()> {
+    let url = format!("/api/invites/{}", encode(code));
     imp::send_empty("DELETE", &url, None, None::<&()>).await
 }
 

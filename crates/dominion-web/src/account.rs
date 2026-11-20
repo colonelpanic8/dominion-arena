@@ -65,9 +65,15 @@ impl Account {
         self.took(api::login(name, password).await)
     }
 
-    /// Registers an account; signed in as a guest, the guest becomes it.
-    pub async fn register(self, name: &str, password: &str) -> Result<Me, ApiError> {
-        self.took(api::register(name, password).await)
+    /// Registers an account, with an invite code if given; signed in as a guest, the
+    /// guest becomes it.
+    pub async fn register(
+        self,
+        name: &str,
+        password: &str,
+        invite: Option<&str>,
+    ) -> Result<Me, ApiError> {
+        self.took(api::register(name, password, invite).await)
     }
 
     pub async fn guest(self, name: Option<&str>) -> Result<Me, ApiError> {
