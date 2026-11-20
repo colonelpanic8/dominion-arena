@@ -42,6 +42,7 @@ impl HumanTable {
         Ok(())
     }
 }
+const SEARCH_GRACE: Duration = Duration::from_secs(8);
 pub(super) fn criteria(
     mode: OnlineMode,
     options: &OnlineMatching,
@@ -112,12 +113,20 @@ impl Runtime {
         while self.queue_status.is_none() && self.human.is_none() {
             self.receive().await?;
         }
+        // dominion.games can report a search as not started and still match it later.
+        let grace = tokio::time::Instant::now() + SEARCH_GRACE;
+        while !self.update.searching && self.human.is_none() {
+            match tokio::time::timeout_at(grace, self.receive()).await {
+                Ok(received) => received?,
+                Err(_) => break,
+            }
+        }
         if !self.update.searching && self.human.is_none() {
-            self.search = None;
-            return Err(format!(
-                "Matchmaking was not started: {}",
-                self.update.queue_feedback.join("; ")
-            ));
+            let feedback = self.update.queue_feedback.join("; ");
+            self.cancel_match().await?;
+            if self.human.is_none() {
+                return Err(format!("Matchmaking was not started: {feedback}"));
+            }
         }
         Ok(())
     }
