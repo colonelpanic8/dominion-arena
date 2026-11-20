@@ -519,6 +519,7 @@ impl Session {
                             &Credentials {
                                 name: username,
                                 password: password.expose().to_string(),
+                                invite: None,
                             },
                         )
                     })

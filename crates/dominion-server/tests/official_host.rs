@@ -782,6 +782,7 @@ async fn account_cookie_bearer_bot_key_and_ongoing_revocation_reuse_arena_auth()
             &Credentials {
                 name: "Owner".into(),
                 password: "a long test password".into(),
+                invite: None,
             },
             None,
         )

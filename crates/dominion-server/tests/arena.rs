@@ -3,8 +3,9 @@
 use dominion_agent::Answer;
 use dominion_engine::PlayerId;
 use dominion_protocol::lobby::{
-    Arranged, Beyond, Credentials, History, HistoryQuery, MatchRequest, NewTable, Opponents,
-    PlayedBy, QueueState, SeatEdit, SeatKind, Source, TableSpec, UndoRule, UserKind, Venue,
+    Arranged, Beyond, Credentials, History, HistoryQuery, MatchRequest, NewInvite, NewTable,
+    Opponents, PlayedBy, QueueState, SeatEdit, SeatKind, Source, TableSpec, UndoRule, UserKind,
+    Venue,
 };
 use dominion_server::arena::{Arena, Error, Ident, Settings, SkillAnchor};
 use dominion_server::hub::{Hub, Seat, Timing};
@@ -22,6 +23,7 @@ fn register(arena: &Arena, name: &str) -> Ident {
     let credentials = Credentials {
         name: name.into(),
         password: "correct horse".into(),
+        invite: None,
     };
     let (_, token) = arena.register(IP, &credentials, None).unwrap();
     arena.identify(&token.unwrap()).unwrap()
@@ -92,6 +94,7 @@ fn accounts_sign_in_with_their_password_and_names_are_one_persons() {
     let again = Credentials {
         name: "ada".into(),
         password: "another one".into(),
+        invite: None,
     };
     assert!(matches!(
         arena.register(IP, &again, None),
@@ -104,12 +107,14 @@ fn accounts_sign_in_with_their_password_and_names_are_one_persons() {
     let right = Credentials {
         name: " ADA ".into(),
         password: "correct horse".into(),
+        invite: None,
     };
     let (_, token) = arena.login(IP, &right).unwrap();
     assert_eq!(arena.identify(&token), Some(ada.clone()));
     let short = Credentials {
         name: "Bo".into(),
         password: "short".into(),
+        invite: None,
     };
     assert!(matches!(
         arena.register(IP, &short, None),
@@ -126,6 +131,7 @@ fn a_new_password_ends_the_other_sessions() {
     let login = Credentials {
         name: "Ada".into(),
         password: "correct horse".into(),
+        invite: None,
     };
     let (_, here) = arena.login(IP, &login).unwrap();
     let (_, there) = arena.login(IP, &login).unwrap();
@@ -147,6 +153,7 @@ fn a_guest_who_registers_keeps_their_account() {
     let credentials = Credentials {
         name: String::new(),
         password: "correct horse".into(),
+        invite: None,
     };
     let (me, token) = arena.register(IP, &credentials, Some(&guest)).unwrap();
     assert_eq!(token, None, "the guest's session goes on");
@@ -157,6 +164,7 @@ fn a_guest_who_registers_keeps_their_account() {
     let login = Credentials {
         name: "wanderer".into(),
         password: "correct horse".into(),
+        invite: None,
     };
     let (_, token) = arena.login(IP, &login).unwrap();
     assert_eq!(arena.identify(&token), Some(guest));
@@ -173,12 +181,90 @@ fn closed_servers_take_no_accounts_or_guests() {
     let credentials = Credentials {
         name: "Ada".into(),
         password: "correct horse".into(),
+        invite: None,
     };
     assert!(matches!(
         arena.register(IP, &credentials, None),
         Err(Error::Forbidden(_))
     ));
     assert!(matches!(arena.guest(IP, None), Err(Error::Forbidden(_))));
+}
+
+#[test]
+fn admins_invite_people_to_a_closed_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let open = |settings: Settings| {
+        let (hub, _) = Hub::open(dir.path(), Duration::from_secs(3600)).unwrap();
+        Arena::open(Arc::new(hub), settings).unwrap()
+    };
+    register(&open(Settings::default()), "Root");
+    let closed = Settings {
+        registration: false,
+        guests: false,
+        admins: vec!["root".into()],
+        ..Settings::default()
+    };
+    let arena = open(closed);
+    let login = Credentials {
+        name: "Root".into(),
+        password: "correct horse".into(),
+        invite: None,
+    };
+    let root = arena.identify(&arena.login(IP, &login).unwrap().1).unwrap();
+    assert!(arena.me(&root).unwrap().admin);
+    let new = NewInvite {
+        uses: Some(2),
+        note: Some("the Tuesday group".into()),
+        ..NewInvite::default()
+    };
+    let invite = arena.new_invite(&root, &new).unwrap();
+    assert_eq!(invite.by.as_deref(), Some("Root"));
+    let join = |name: &str, code: Option<&str>| {
+        let credentials = Credentials {
+            name: name.into(),
+            password: "correct horse".into(),
+            invite: code.map(String::from),
+        };
+        arena.register(IP, &credentials, None)
+    };
+    assert!(matches!(join("Ada", None), Err(Error::Forbidden(_))));
+    assert!(matches!(
+        join("Ada", Some("NOPE-NOPE-NOPE")),
+        Err(Error::Forbidden(_))
+    ));
+    let typed = invite.code.to_lowercase().replace('-', " ");
+    let (_, token) = join("Ada", Some(&typed)).unwrap();
+    let ada = arena.identify(&token.unwrap()).unwrap();
+    assert!(!arena.me(&ada).unwrap().admin);
+    assert!(matches!(
+        arena.new_invite(&ada, &NewInvite::default()),
+        Err(Error::Forbidden(_))
+    ));
+    assert!(matches!(
+        join("Root", Some(&invite.code)),
+        Err(Error::Conflict(_))
+    ));
+    join("Bo", Some(&invite.code)).unwrap();
+    assert!(matches!(
+        join("Cy", Some(&invite.code)),
+        Err(Error::Forbidden(_))
+    ));
+    let listed = arena.invites(&root).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].used_by, ["Ada", "Bo"]);
+    arena.revoke_invite(&root, &invite.code).unwrap();
+    assert!(arena.invites(&root).unwrap().is_empty());
+    assert!(
+        arena
+            .login(
+                IP,
+                &Credentials {
+                    name: "Bo".into(),
+                    ..login
+                }
+            )
+            .is_ok()
+    );
 }
 
 #[test]
@@ -686,6 +772,7 @@ fn accounts_sessions_and_records_outlive_the_server() {
         let credentials = Credentials {
             name: "Ada".into(),
             password: "correct horse".into(),
+            invite: None,
         };
         let (_, token) = arena.register(IP, &credentials, None).unwrap();
         let ada = arena.identify(token.as_deref().unwrap()).unwrap();
@@ -727,6 +814,7 @@ fn accounts_sessions_and_records_outlive_the_server() {
     let login = Credentials {
         name: "Bo".into(),
         password: "correct horse".into(),
+        invite: None,
     };
     let (_, bo) = arena.login(IP, &login).unwrap();
     let bo = arena.identify(&bo).unwrap();

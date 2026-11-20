@@ -1050,6 +1050,11 @@ a.lb-user-name:hover { text-decoration: underline; }
 .lb-bot .lb-oval { font-size: 1.5vh; padding: .3vh 1vh; margin: 0 0 0 1vh; }
 .lb-bot-key { padding: 0 2.5vh 1vh; }
 .lb-bot-key .lb-note { margin: .6vh 0; }
+.lb-invite-code { flex-grow: 1; font: 700 2vh ui-monospace, monospace; letter-spacing: .1em; user-select: all; }
+.lb-invite-about { color: var(--text-soft); font: 400 1.6vh var(--ui); }
+.lb-invite-note { color: var(--gold); }
+.lb-join-row .lb-invite-number { flex-grow: 0; width: 7vh; }
+.lb-invite-unit { color: var(--text-soft); font: 1.7vh var(--ui); margin-right: 1vh; }
 
 /* Leaderboard and a player's page. */
 /* The Leaderboard: rated players, best first, framed like the History. */

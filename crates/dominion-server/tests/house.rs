@@ -26,6 +26,7 @@ fn register(arena: &Arena, name: &str) -> Ident {
     let credentials = Credentials {
         name: name.into(),
         password: "correct horse".into(),
+        invite: None,
     };
     let (_, token) = arena.register(IP, &credentials, None).unwrap();
     arena.identify(&token.unwrap()).unwrap()

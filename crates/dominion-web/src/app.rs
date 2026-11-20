@@ -31,6 +31,8 @@ pub enum Route {
     History {},
     #[route("/account")]
     Account {},
+    #[route("/invite/:code")]
+    Invited { code: String },
     #[route("/user/:name")]
     User { name: String },
     #[route("/game/:id/agents")]
@@ -163,6 +165,12 @@ fn History() -> Element {
 #[component]
 fn Account() -> Element {
     rsx! { crate::lobby::AccountTab {} }
+}
+
+/// An invite link: the Account tab, its invite code filled in.
+#[component]
+fn Invited(code: String) -> Element {
+    rsx! { crate::lobby::AccountTab { invite: code } }
 }
 
 #[component]

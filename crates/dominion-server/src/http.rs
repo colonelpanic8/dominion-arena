@@ -22,8 +22,9 @@ use dominion_protocol::api::{
 };
 use dominion_protocol::lobby::{
     BotKey, ChatKind, ChatLog, Credentials, GuestRequest, HeadToHead, HeadToHeadQuery, History,
-    HistoryQuery, JoinTable, Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame, NewBot,
-    NewPassword, NewTable, Profile, QueueStatus, Ready, Say, SeatEdit, TableInfo, TableSpec,
+    HistoryQuery, Invite, JoinTable, Leaderboard, Lobby, LobbyChange, MatchRequest, Me, MyGame,
+    NewBot, NewInvite, NewPassword, NewTable, Profile, QueueStatus, Ready, Say, SeatEdit,
+    TableInfo, TableSpec,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -97,6 +98,8 @@ pub fn router(
         .route("/me/bots", post(new_bot))
         .route("/me/bots/{name}", delete(delete_bot))
         .route("/me/bots/{name}/key", post(new_bot_key))
+        .route("/invites", get(invites).post(new_invite))
+        .route("/invites/{code}", delete(revoke_invite))
         .route("/lobby", get(lobby))
         .route("/lobby/events", get(lobby_events))
         .route("/tables", post(new_table))
@@ -821,6 +824,7 @@ fn web_settings(api: &Api, ident: Option<&Ident>) -> WebSettings {
         banned_cards: api.arena.banned_cards(ident),
         registration: server.registration,
         guests: server.guests,
+        invites: !server.admins.is_empty(),
         ..(*api.web).clone()
     }
 }
@@ -1319,6 +1323,28 @@ async fn new_bot_key(
 ) -> Json<BotKey> {
     let ident = api.signed_in(&headers)?;
     Ok(axum::Json(api.arena.new_bot_key(&ident, &name)?))
+}
+
+async fn invites(State(api): State<Api>, headers: HeaderMap) -> Json<Vec<Invite>> {
+    let ident = api.signed_in(&headers)?;
+    Ok(axum::Json(api.arena.invites(&ident)?))
+}
+
+async fn new_invite(State(api): State<Api>, headers: HeaderMap, req: Bytes) -> Result<Response> {
+    let ident = api.signed_in(&headers)?;
+    let new: NewInvite = body(&req)?;
+    let invite = api.arena.new_invite(&ident, &new)?;
+    Ok((StatusCode::CREATED, axum::Json(invite)).into_response())
+}
+
+async fn revoke_invite(
+    State(api): State<Api>,
+    Path(code): Path<String>,
+    headers: HeaderMap,
+) -> Result<StatusCode> {
+    let ident = api.signed_in(&headers)?;
+    api.arena.revoke_invite(&ident, &code)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn lobby(State(api): State<Api>, headers: HeaderMap) -> axum::Json<Lobby> {

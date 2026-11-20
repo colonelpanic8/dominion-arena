@@ -134,6 +134,9 @@ pub struct Config {
     pub registration: Option<bool>,
     /// Whether people can play without an account, as guests (default true).
     pub guests: Option<bool>,
+    /// Registered accounts, by name, that make invite codes in the Account tab (default
+    /// none). An invite code lets someone register even with `registration = false`.
+    pub admins: Option<Vec<String>>,
     /// The most games in progress at once (default 1000).
     pub max_games: Option<usize>,
     /// Days an unfinished game nobody plays is hosted before it is moved to `expired/`
@@ -402,6 +405,7 @@ impl Config {
         crate::arena::Settings {
             registration: self.registration.unwrap_or(true),
             guests: self.guests.unwrap_or(true),
+            admins: self.admins.clone().unwrap_or_default(),
             banned_cards: self.banned_cards.clone().unwrap_or_default(),
             timing: crate::hub::Timing {
                 away: minutes(self.away_minutes.unwrap_or(DEFAULT_AWAY_MINUTES)),
@@ -493,6 +497,7 @@ impl Config {
             banned_cards: self.banned_cards.clone().unwrap_or_default(),
             registration: self.registration.unwrap_or(d.registration),
             guests: self.guests.unwrap_or(d.guests),
+            invites: self.admins.as_ref().is_some_and(|a| !a.is_empty()),
         }
     }
 
@@ -695,6 +700,7 @@ mod tests {
                 banned_cards: vec!["Witch".into()],
                 registration: true,
                 guests: true,
+                invites: false,
             }
         );
         assert_eq!(

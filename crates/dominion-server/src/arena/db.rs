@@ -80,6 +80,22 @@ CREATE TABLE IF NOT EXISTS avatars (
     -- When it was set (ms): its URL changes with it.
     updated INTEGER NOT NULL
 );
+-- Invite codes admins make: each lets `uses` accounts register.
+CREATE TABLE IF NOT EXISTS invites (
+    code TEXT PRIMARY KEY,
+    creator INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    created INTEGER NOT NULL,
+    expires INTEGER,
+    uses INTEGER NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    note TEXT
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS invite_uses (
+    code TEXT NOT NULL REFERENCES invites (code) ON DELETE CASCADE,
+    user INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (code, user)
+) WITHOUT ROWID;
 -- The accounts that played each game. They outlive a guest's account.
 CREATE TABLE IF NOT EXISTS game_players (
     user INTEGER NOT NULL,
@@ -177,7 +193,7 @@ fn rated_win(record: &GameRecord, name: &str) -> bool {
 }
 
 /// Kept in the file (`PRAGMA user_version`), for the day the schema changes.
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 
 const USER: &str = "id, name, kind, password, owner, api_key, rating, deviation, volatility, \
                     rated_at, rated_games, games, wins, banned_cards, rated_wins";
@@ -290,6 +306,39 @@ fn records(
         }
     }
     Ok(out)
+}
+
+/// Counts one use of invite code `code` by account row `user`, if it has a use left and
+/// hasn't expired.
+fn claim_invite(conn: &Connection, code: &str, user: i64, now: u64) -> Result<()> {
+    let claimed = conn.execute(
+        "UPDATE invites SET used = used + 1 \
+         WHERE code = ?1 AND used < uses AND (expires IS NULL OR expires > ?2)",
+        params![code, now as i64],
+    )?;
+    if claimed == 0 {
+        return Err(Error::Forbidden(
+            "that invite code is unknown, used up or expired".into(),
+        ));
+    }
+    conn.execute(
+        "INSERT INTO invite_uses (code, user, at) VALUES (?1, ?2, ?3)",
+        params![code, user, now as i64],
+    )?;
+    Ok(())
+}
+
+/// An invite code as the database has it.
+pub(super) struct InviteRow {
+    pub code: String,
+    /// The maker's account id.
+    pub creator: Option<String>,
+    pub created: u64,
+    pub expires: Option<u64>,
+    pub uses: u32,
+    /// The ids of the accounts that registered with it.
+    pub users: Vec<String>,
+    pub note: Option<String>,
 }
 
 impl Db {
@@ -463,6 +512,17 @@ impl Db {
 
     /// A new account. `now` in seconds since the Unix epoch.
     pub fn add_user(&self, name: &str, login: &Login, now: u64) -> Result<User> {
+        self.add_user_invited(name, login, now, None)
+    }
+
+    /// A new account, registering with invite code `invite` if given: both or neither.
+    pub fn add_user_invited(
+        &self,
+        name: &str,
+        login: &Login,
+        now: u64,
+        invite: Option<&str>,
+    ) -> Result<User> {
         let (kind, password, owner, key) = match login {
             Login::Password(hash) => (UserKind::Registered, Some(hash.as_str()), None, None),
             Login::Guest => (UserKind::Guest, None, None, None),
@@ -472,8 +532,9 @@ impl Db {
             Login::House => (UserKind::Bot, None, None, None),
         };
         let fresh = Rating::default();
-        let conn = lock(&self.conn);
-        conn.execute(
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT INTO users (name, name_key, kind, password, owner, api_key, created, \
              rating, deviation, volatility, rated_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
@@ -492,22 +553,39 @@ impl Db {
             ],
         )
         .map_err(|e| taken(e, name))?;
-        let id = id_of(conn.last_insert_rowid());
-        let added = user(&conn, &id)?;
+        let row = tx.last_insert_rowid();
+        if let Some(code) = invite {
+            claim_invite(&tx, code, row, now)?;
+        }
+        let added = user(&tx, &id_of(row))?;
+        tx.commit()?;
         drop(conn);
         self.changed();
         added.ok_or_else(|| Error::Storage("the new account is missing".into()))
     }
 
     /// Makes account `id` a registered one called `name` with password hash `password`.
-    pub fn make_registered(&self, id: &str, name: &str, password: &str) -> Result<()> {
-        let conn = lock(&self.conn);
-        conn.execute(
+    /// With `invite`, registering with that invite code: both or neither.
+    pub fn make_registered(
+        &self,
+        id: &str,
+        name: &str,
+        password: &str,
+        invite: Option<&str>,
+        now: u64,
+    ) -> Result<()> {
+        let mut conn = lock(&self.conn);
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE users SET name = ?2, name_key = ?3, kind = 'registered', password = ?4 \
              WHERE id = ?1",
             params![row_of(id), name, name.to_lowercase(), password],
         )
         .map_err(|e| taken(e, name))?;
+        if let Some(code) = invite {
+            claim_invite(&tx, code, row_of(id), now)?;
+        }
+        tx.commit()?;
         drop(conn);
         self.changed();
         Ok(())
@@ -557,6 +635,59 @@ impl Db {
             .query_row([key], |row| row.get::<_, i64>(0))
             .optional()?;
         Ok(row.map(id_of))
+    }
+
+    pub fn add_invite(&self, invite: &InviteRow) -> Result<()> {
+        lock(&self.conn).execute(
+            "INSERT INTO invites (code, creator, created, expires, uses, note) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                invite.code,
+                invite.creator.as_deref().map(row_of),
+                invite.created as i64,
+                invite.expires.map(|e| e as i64),
+                invite.uses,
+                invite.note,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Every invite code, newest first.
+    pub fn invites(&self) -> Result<Vec<InviteRow>> {
+        let conn = lock(&self.conn);
+        let mut query = conn.prepare_cached(
+            "SELECT code, creator, created, expires, uses, note FROM invites \
+             ORDER BY created DESC, code",
+        )?;
+        let mut invites = query
+            .query_map([], |r| {
+                Ok(InviteRow {
+                    code: r.get(0)?,
+                    creator: r.get::<_, Option<i64>>(1)?.map(id_of),
+                    created: r.get::<_, i64>(2)? as u64,
+                    expires: r.get::<_, Option<i64>>(3)?.map(|e| e as u64),
+                    uses: r.get(4)?,
+                    users: vec![],
+                    note: r.get(5)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut users =
+            conn.prepare_cached("SELECT user FROM invite_uses WHERE code = ?1 ORDER BY at, user")?;
+        for invite in &mut invites {
+            let rows = users.query_map([&invite.code], |r| r.get::<_, i64>(0))?;
+            invite.users = rows
+                .map(|r| r.map(id_of))
+                .collect::<rusqlite::Result<_>>()?;
+        }
+        Ok(invites)
+    }
+
+    /// Deletes invite code `code`: whether there was one.
+    pub fn delete_invite(&self, code: &str) -> Result<bool> {
+        let deleted = lock(&self.conn).execute("DELETE FROM invites WHERE code = ?1", [code])?;
+        Ok(deleted > 0)
     }
 
     pub fn add_session(&self, token: &str, user: &str, now: u64) -> Result<()> {

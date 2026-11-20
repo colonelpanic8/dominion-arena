@@ -93,6 +93,7 @@ impl Server {
                 &Credentials {
                     name: name.into(),
                     password: "synthetic-passphrase".into(),
+                    invite: None,
                 },
                 None,
             )

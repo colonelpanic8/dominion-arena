@@ -250,6 +250,7 @@ fn the_tables_tab_offers_what_each_line_allows() {
             },
             stats: Stats { games: 0, wins: 0 },
             bots: vec![],
+            admin: false,
         }),
         online: 1,
         searching: Searching::default(),

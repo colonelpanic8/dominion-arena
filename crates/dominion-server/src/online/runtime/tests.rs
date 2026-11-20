@@ -625,6 +625,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
             &Credentials {
                 name: "observer-owner".into(),
                 password: "fixture-password".into(),
+                invite: None,
             },
             None,
         )
@@ -636,6 +637,7 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
             &Credentials {
                 name: "observer-outsider".into(),
                 password: "fixture-password".into(),
+                invite: None,
             },
             None,
         )
@@ -1136,6 +1138,7 @@ async fn official_accounts_keep_their_own_owners_routes_and_agent_tokens() {
         let credentials = Credentials {
             name: name.into(),
             password: "fixture-password".into(),
+            invite: None,
         };
         arena.register(ip, &credentials, None).unwrap().1.unwrap()
     };

@@ -366,6 +366,14 @@ person's, whatever its case. `registration = false` and `guests = false` close e
 door. A guest who registers keeps their account and its games. Sessions last sixty days
 unused (a guest's thirty, after which the guest is forgotten once its games are over).
 
+**Invites.** `admins` names registered accounts that make invite codes, in the Account
+tab or with `POST /api/invites` (`uses`, default 1; `days` until it expires, default 30,
+0 never; a `note`), list them (`GET /api/invites`, with the accounts that used each) and
+revoke them (`DELETE /api/invites/{code}`). Registering with a code (`invite` beside the
+name and password, or the code's link, `/invite/<code>`) uses it up, and works even with
+`registration = false`: on a closed server it is how someone new gets an account, and so
+the server's agents to play. The accounts made with a code stay when it is revoked.
+
 Games made by `create_game` / `POST /api/games` stay what they were: their seats are
 played by token, by whoever holds it. The lobby makes games between accounts:
 
@@ -826,6 +834,7 @@ public_url = "https://dominion.example"  # serve: where people reach it, behind 
 trust_proxy = false            # serve: take clients' addresses from X-Forwarded-For (only behind a proxy that sets it)
 registration = true            # serve: new accounts can be registered
 guests = true                  # serve: people can play without an account
+admins = []                    # serve: registered accounts, by name, that make invite codes (a code registers even with registration = false)
 max_games = 1000               # serve: the most unfinished games at once
 keep_idle_days = 30            # serve: ... and unfinished games nobody has touched for this long (0: never)
 away_minutes = 5               # serve: in a timed game, the deciding player forfeits after this long disconnected (0: never)

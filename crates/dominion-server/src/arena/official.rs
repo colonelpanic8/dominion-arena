@@ -231,6 +231,7 @@ mod tests {
         let credentials = Credentials {
             name: "Owner".into(),
             password: "a long enough password".into(),
+            invite: None,
         };
         arena
             .register("127.0.0.1".parse().unwrap(), &credentials, None)
