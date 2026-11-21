@@ -45,7 +45,7 @@ pub fn spots(board: &Board, inter: &Interaction) -> Vec<Spot> {
                 Place::Supply => t.pile.filter(|p| piles.contains(p)).map(Spot::Pile),
                 Place::Landscape
                     if board.landscapes.iter().any(|l| l.card == card)
-                        || board.druid_boons.contains(&card) =>
+                        || board.set_asides.iter().any(|s| s.card == card) =>
                 {
                     Some(Spot::Landscape(card))
                 }

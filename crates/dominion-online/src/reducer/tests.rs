@@ -170,6 +170,101 @@ fn initial_snapshot_hides_allocated_hand_and_deck_names() {
     );
     assert!(!serde_json::to_string(&v).unwrap().contains("Gold"));
 }
+
+#[test]
+fn projects_public_setup_set_asides_from_zones_and_riverboats_association() {
+    let mut catalog = catalog();
+    let catalog_cards = &mut Arc::get_mut(&mut catalog).unwrap().cards;
+    for (key, name, kind) in [
+        ("DRUID", "Druid", "Action"),
+        ("WAY_OF_THE_MOUSE", "Way of the Mouse", "Way"),
+        ("RIVERBOAT", "Riverboat", "Action"),
+        ("LABORATORY", "Laboratory", "Action"),
+        ("THE_FIELDS_GIFT", "The Field's Gift", "Boon"),
+        ("THE_SKYS_GIFT", "The Sky's Gift", "Boon"),
+        ("THE_WINDS_GIFT", "The Wind's Gift", "Boon"),
+    ] {
+        catalog_cards.push(CardInfo {
+            key: key.into(),
+            name: name.into(),
+            cost: view::Cost::default(),
+            types: vec![kind.into()],
+            kingdom: kind == "Action",
+        });
+    }
+    let mut snapshot = snapshot();
+    let mut allocate = |name: &str| {
+        let id = snapshot.state.cards.len() as i32;
+        let name = catalog.ordinal(name).unwrap();
+        snapshot.state.cards.push(model::Card {
+            id,
+            card_name: name,
+            pile_name: name,
+        });
+        id
+    };
+    let riverboat = allocate("Riverboat");
+    let laboratory = allocate("Laboratory");
+    let boons = ["The Field's Gift", "The Sky's Gift", "The Wind's Gift"].map(&mut allocate);
+    let mut add_zone = |kind, pile_name, cards| {
+        snapshot.state.zones.push(model::Zone {
+            index: 40 + kind,
+            kind,
+            pile_name,
+            owner: -1,
+            cards,
+            created_by: -1,
+            attached_trait: 0,
+            is_visible: kind != THE_BOX,
+        });
+    };
+    add_zone(4, catalog.ordinal("Riverboat").unwrap(), vec![riverboat]);
+    add_zone(
+        DRUID_BOONS,
+        catalog.ordinal("Druid").unwrap(),
+        boons.to_vec(),
+    );
+    add_zone(
+        MOUSE_CARD,
+        catalog.ordinal("Way of the Mouse").unwrap(),
+        vec![7],
+    );
+    add_zone(THE_BOX, 0, vec![laboratory]);
+    // The Mouse's card is a single copy, separate from the normal Village pile.
+    snapshot.state.zones.retain(|z| z.index != 20);
+    snapshot.state.associations.extend([
+        model::Association {
+            card: laboratory,
+            linked_cards: vec![riverboat],
+        },
+        model::Association {
+            card: 1, // Allocated in a player's draw pile.
+            linked_cards: vec![riverboat],
+        },
+    ]);
+    for player_id in [42, 99, -1] {
+        let mut r = Reducer::new(catalog.clone(), player_id);
+        r.replace(snapshot.clone()).unwrap();
+        let v = r.view().unwrap();
+        assert!(v.non_supply.is_empty());
+        let set_asides: Vec<_> = v
+            .notes
+            .iter()
+            .filter(|n| n.setup == Some(view::SetupRole::SetAside))
+            .map(|n| (n.source.as_str(), n.card.as_deref().unwrap()))
+            .collect();
+        assert_eq!(
+            set_asides,
+            [
+                ("Druid", "The Field's Gift"),
+                ("Druid", "The Sky's Gift"),
+                ("Druid", "The Wind's Gift"),
+                ("Way of the Mouse", "Village"),
+                ("Riverboat", "Laboratory"),
+            ]
+        );
+    }
+}
 #[test]
 fn hidden_catalog_identity_is_unavailable_to_question_projection() {
     let r = reducer();

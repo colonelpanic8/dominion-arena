@@ -7,8 +7,8 @@ use super::layout::{Geometry, Rect};
 use super::pieces::{BadgeView, TableCard};
 use super::{Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
-use crate::card::CardSize;
-use crate::game::board::{Board, CardDeck, LandscapeEntry, PileEntry};
+use crate::card::{CardSize, aspect_ratio};
+use crate::game::board::{Board, CardDeck, LandscapeEntry, PileEntry, SetupSetAside};
 use crate::game::state::Selection;
 use dioxus::prelude::*;
 use std::rc::Rc;
@@ -30,13 +30,12 @@ pub fn basic_columns(b: &Board) -> (Vec<PileEntry>, Vec<PileEntry>) {
 }
 
 /// What sits beside the kingdom, in order: landscapes by cost and name, then Boons and
-/// Hexes, then the Boons set aside for Druid. Artifacts are no part of it: their
-/// holder's bar shows them.
+/// Hexes, then cards set aside during setup.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Wide {
     Landscape(LandscapeEntry),
     Deck(&'static str, CardDeck),
-    Druid(String),
+    SetAside(SetupSetAside),
 }
 
 pub fn wides(b: &Board) -> Vec<Wide> {
@@ -53,7 +52,7 @@ pub fn wides(b: &Board) -> Vec<Wide> {
     if let Some(d) = b.hexes.clone() {
         out.push(Wide::Deck("Hexes", d));
     }
-    out.extend(b.druid_boons.iter().cloned().map(Wide::Druid));
+    out.extend(b.set_asides.iter().cloned().map(Wide::SetAside));
     out
 }
 
@@ -93,7 +92,7 @@ pub fn SupplyArea(
                 match w.clone() {
                     Wide::Landscape(l) => rsx! { Landscape { key: "l{l.card}", entry: l, at: *r, ui: ui.clone(), sel: sel.clone() } },
                     Wide::Deck(label, d) => rsx! { Deck { key: "{label}", label, deck: d, at: *r } },
-                    Wide::Druid(card) => rsx! { DruidBoon { key: "d{card}", card, at: *r, ui: ui.clone(), sel: sel.clone() } },
+                    Wide::SetAside(entry) => rsx! { SetAsideCard { key: "s{entry.source}:{entry.card}", entry, at: *r, ui: ui.clone(), sel: sel.clone() } },
                 }
             }
             for (p, r) in non_supply.iter().zip(g.non_supply.iter()) {
@@ -251,18 +250,23 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
     }
 }
 
-/// A Boon set aside for Druid, marked with Druid's name; clicked to receive it when Druid
-/// asks.
+/// A public card set aside during setup, marked with the card that set it aside.
 #[component]
-fn DruidBoon(card: String, at: Rect, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+fn SetAsideCard(entry: SetupSetAside, at: Rect, ui: Option<Rc<Ui>>, sel: Selection) -> Element {
+    let SetupSetAside { source, card } = entry;
+    let cards = use_cards();
+    let aspect = f64::from(aspect_ratio(cards.get(&card), CardSize::Mini));
+    let w = at.w.min(at.h / aspect);
+    let h = w * aspect;
+    let at = Rect::new(at.x + (at.w - w) / 2.0, at.y + (at.h - h) / 2.0, w, h);
     let mark = mark_at(&ui, &sel, Spot::Landscape(card.clone()));
     let plus = mark.target.is_some();
     let badge = crate::game::board::Badge {
         kind: "note".into(),
-        text: format!("Druid: {card}"),
+        text: format!("{card} set aside for {source}"),
         count: None,
         player: None,
-        card: Some("Druid".into()),
+        card: Some(source),
     };
     rsx! {
         TableCard {
@@ -271,7 +275,7 @@ fn DruidBoon(card: String, at: Rect, ui: Option<Rc<Ui>>, sel: Selection) -> Elem
             mark,
             plus,
             badges: vec![badge],
-            class: "dt-landscape dt-druid-boon",
+            class: "dt-setup-set-aside",
             at,
         }
     }

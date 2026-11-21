@@ -162,8 +162,8 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-b-trait { background: rgba(0, 0, 0, 0.7); border-radius: 3px; padding: 0 0.3em; font-size: calc(1.3 * var(--vh)); height: auto; }
 .dt-tokens .dt-b-trait { font-size: 8cqw; line-height: 1.15; }
 .dt-tokens:has(.dt-b-trait) { bottom: 3%; top: auto; flex-direction: column; align-items: center; gap: 1cqw; }
-/* Druid's name above the Boon's art, clear of the Boon's own name. */
-.dt-druid-boon .dt-tokens:has(.dt-b-trait) { top: 14%; bottom: auto; }
+/* Landscape names run along the bottom of the card. */
+.dt-setup-set-aside.dt-wide .dt-tokens:has(.dt-b-trait) { top: 14%; bottom: auto; }
 
 /* The Boons and Hexes decks beside their discard piles. */
 .dt-deckback {

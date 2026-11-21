@@ -19,6 +19,10 @@ type Position = (
     BTreeMap<i32, (i32, i32, u32)>,
 );
 
+const DRUID_BOONS: i32 = 20;
+const MOUSE_CARD: i32 = 22;
+const THE_BOX: i32 = 30;
+
 /// A zone as a snapshot gives it: each card's identity and name where it shows them.
 struct Stock {
     zone: i32,
@@ -788,7 +792,7 @@ impl Reducer {
             if zone.kind == 3 {
                 trash = self.zone_view(zone.index)?;
             }
-            if matches!(zone.kind, 4..=7 | 13 | 20 | 22 | 32 | 34) {
+            if matches!(zone.kind, 4..=7 | 13 | 32 | 34) {
                 let name = self.pile_name(zone);
                 let info = self.catalog.card(name)?;
                 if name == 0 {
@@ -1010,7 +1014,7 @@ impl Reducer {
                                 Ok(view::ZoneRef {
                                     player: u8::try_from(zone.owner).ok(),
                                     pile: if zone.owner < 0
-                                        && matches!(zone.kind, 4..=7 | 13 | 20 | 22 | 32 | 34)
+                                        && matches!(zone.kind, 4..=7 | 13 | 32 | 34)
                                     {
                                         Some(self.catalog.card(self.pile_name(zone))?.name.clone())
                                     } else {
@@ -1086,17 +1090,37 @@ impl Reducer {
         let mut notes = Vec::new();
         for marker in &state.pile_markers {
             let zone = self.zone(marker.zone_index)?;
+            let (source, setup) = match marker.kind {
+                0 => ("Young Witch", Some(view::SetupRole::Bane)),
+                1 => ("Obelisk", Some(view::SetupRole::ChosenPile)),
+                2 => ("Split pile", None),
+                3 => ("Mixed pile", None),
+                4 => ("Ferryman", Some(view::SetupRole::ExtraPile)),
+                _ => ("Pile marker", None),
+            };
             notes.push(view::NoteView {
-                setup: None,
-                source: ["Bane", "Obelisk", "Split pile", "Mixed pile", "Ferryman"]
-                    .get(marker.kind as usize)
-                    .unwrap_or(&"Pile marker")
-                    .to_string(),
+                setup,
+                source: source.into(),
                 player: None,
                 pile: Some(self.catalog.card(zone.pile_name)?.name.clone()),
                 card: None,
                 count: 1,
             });
+        }
+        for zone in state.zones.iter().filter(|z| z.owner < 0) {
+            let source = match zone.kind {
+                DRUID_BOONS => "Druid",
+                MOUSE_CARD => "Way of the Mouse",
+                _ => continue,
+            };
+            for (_, name) in self.knowledge.ordered(zone.index) {
+                if let Some(name) = name {
+                    notes.push(setup_set_aside(
+                        source,
+                        self.catalog.card(name)?.name.clone(),
+                    ));
+                }
+            }
         }
         for (player, p) in state.players.iter().enumerate() {
             for reminder in &p.reminders {
@@ -1131,6 +1155,26 @@ impl Reducer {
             }
         }
         for association in &state.associations {
+            // The official table shows Riverboat's association even when its card is
+            // allocated off-table or in the Box. Player zones still use normal visibility.
+            if association.linked_cards.iter().any(|&id| {
+                self.disclosed(id)
+                    .ok()
+                    .flatten()
+                    .and_then(|name| self.catalog.card(name).ok())
+                    .is_some_and(|card| card.key == "RIVERBOAT")
+            }) && !state
+                .zones
+                .iter()
+                .any(|z| z.kind != THE_BOX && z.cards.contains(&association.card))
+                && let Some(name) = self.disclosed(association.card)?
+            {
+                let note = setup_set_aside("Riverboat", self.catalog.card(name)?.name.clone());
+                if !notes.contains(&note) {
+                    notes.push(note);
+                }
+                continue;
+            }
             if let Some(card) = self.card_name(association.card) {
                 for linked in &association.linked_cards {
                     if let Some(name) = self.card_name(*linked) {
@@ -1233,7 +1277,7 @@ impl Reducer {
             1 => "deck".into(),
             2 => "discard".into(),
             3 => "trash".into(),
-            4..=7 | 13 | 20 | 22 | 32 | 34 if zone.owner < 0 => "pile".into(),
+            4..=7 | 13 | DRUID_BOONS | MOUSE_CARD | 32 | 34 if zone.owner < 0 => "pile".into(),
             8 => "inPlay".into(),
             _ => zone_key(zone.kind).into(),
         })
@@ -1759,6 +1803,17 @@ impl QuestionContext for Reducer {
             .map(|z| zone_key(z.kind).into())
     }
 }
+fn setup_set_aside(source: &str, card: String) -> view::NoteView {
+    view::NoteView {
+        source: source.into(),
+        player: None,
+        pile: None,
+        card: Some(card),
+        count: 0,
+        setup: Some(view::SetupRole::SetAside),
+    }
+}
+
 fn title(name: &str) -> String {
     let mut c = name.chars();
     match c.next() {
@@ -1774,9 +1829,9 @@ const BLOCKADE_TOKENS: i32 = 14;
 
 fn zone_key(kind: i32) -> &'static str {
     match kind {
-        4..=7 | 13 | 20 | 22 | 32 | 34 => "pile",
+        4..=7 | 13 | DRUID_BOONS | MOUSE_CARD | 32 | 34 => "pile",
         23 | 25 | 29 => "looking",
-        9 | 14..=19 | 30 | 33 => "setAside",
+        9 | 14..=19 | THE_BOX | 33 => "setAside",
         _ => zone_label(kind),
     }
 }
@@ -1794,12 +1849,12 @@ fn zone_label(kind: i32) -> &'static str {
         11 => "nativeVillage",
         12 => "island",
         13 | 32 => "nonSupply",
-        20 => "druidBoons",
+        DRUID_BOONS => "druidBoons",
         21 => "exile",
-        22 => "wayOfTheMouse",
+        MOUSE_CARD => "wayOfTheMouse",
         23 | 25 | 29 => "revealed",
         24 | 26..=28 | 31 => "setAside",
-        30 => "box",
+        THE_BOX => "box",
         _ => "hidden",
     }
 }

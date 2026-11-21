@@ -8,7 +8,7 @@ use dominion_agent::{Table, WayChoice};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use dominion_protocol::api::SeatView;
 use dominion_protocol::lobby::{GameMeta, UserKind, UserRef};
-use dominion_protocol::{AgentDecision, AgentView, PlayerView, Tokens};
+use dominion_protocol::{AgentDecision, AgentView, PlayerView, SetupRole, Tokens};
 use dominion_web::cards::CardDb;
 use dominion_web::game::board::{Board, PileAt, PileEntry, PlayerEntry, Zone, board};
 use dominion_web::game::interaction::{Interaction, Place, Target, TreasureRun, interaction};
@@ -65,7 +65,9 @@ fn check_placement(view: &AgentView, d: &AgentDecision, inter: &Interaction) {
                     view.landscapes
                         .iter()
                         .any(|l| Some(l.card.as_str()) == card)
-                        || dominion_web::game::board::druid_boons(view).any(|b| Some(b) == card)
+                        || view.notes.iter().any(|n| {
+                            n.setup == Some(SetupRole::SetAside) && n.card.as_deref() == card
+                        })
                 );
             }
             Place::Tray => assert!(t.card.is_some() || t.zone.is_some(), "{t:?}"),
@@ -261,7 +263,7 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
             .notes
             .iter()
             .filter(|n| n.player.is_none() && n.pile.as_ref() != Some(&n.source))
-            .filter(|n| n.source != "Druid")
+            .filter(|n| n.setup != Some(SetupRole::SetAside))
             .filter(|n| match (&n.pile, &n.card) {
                 (Some(pile), None) => *pile == e.name,
                 (None, Some(_)) => n.source == e.name,
@@ -317,13 +319,18 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
     );
     assert_eq!(b.boons.is_some(), view.boons.is_some());
     assert_eq!(b.hexes.is_some(), view.hexes.is_some());
-    let druid: Vec<&str> = view
+    let set_asides: Vec<_> = view
         .notes
         .iter()
-        .filter(|n| n.source == "Druid")
-        .filter_map(|n| n.card.as_deref())
+        .filter(|n| n.setup == Some(SetupRole::SetAside))
+        .filter_map(|n| Some((n.source.as_str(), n.card.as_deref()?)))
         .collect();
-    assert_eq!(b.druid_boons, druid);
+    let shown: Vec<_> = b
+        .set_asides
+        .iter()
+        .map(|s| (s.source.as_str(), s.card.as_str()))
+        .collect();
+    assert_eq!(shown, set_asides);
     assert_eq!(b.artifacts.len(), view.artifacts.len());
     assert_eq!(b.lasting.len(), view.lasting.len());
     assert_eq!(b.extra_turns.len(), view.extra_turns.len());
@@ -1048,6 +1055,64 @@ fn way_buttons_answer_the_way_question_in_advance() {
 }
 
 #[test]
+fn every_setup_set_aside_is_shown_to_seats_and_spectators() {
+    let cards = card_db();
+    let mut config = config(&["Riverboat", "Druid", "Young Witch", "Ferryman"], 2, 7);
+    config.landscapes = vec![Card::WayOfTheMouse, Card::Obelisk];
+    config.setup_choices = BTreeMap::from([
+        (Card::Riverboat, vec![Card::Laboratory]),
+        (Card::WayOfTheMouse, vec![Card::Village]),
+        (
+            Card::Druid,
+            vec![Card::TheFieldsGift, Card::TheSkysGift, Card::TheWindsGift],
+        ),
+        (Card::YoungWitch, vec![Card::Moat]),
+        (Card::Ferryman, vec![Card::Smithy]),
+        (Card::Obelisk, vec![Card::Riverboat]),
+    ]);
+    let table = Table::new("g", config, vec![]).unwrap();
+    for view in [
+        table.view(PlayerId(0)),
+        table.view(PlayerId(1)),
+        table.watch_view(0).unwrap(),
+    ] {
+        let board = board(&view, None, &Default::default(), &cards);
+        let set_asides: BTreeSet<_> = board
+            .set_asides
+            .iter()
+            .map(|s| (s.source.as_str(), s.card.as_str()))
+            .collect();
+        assert_eq!(
+            set_asides,
+            BTreeSet::from([
+                ("Riverboat", "Laboratory"),
+                ("Way of the Mouse", "Village"),
+                ("Druid", "The Field's Gift"),
+                ("Druid", "The Sky's Gift"),
+                ("Druid", "The Wind's Gift"),
+            ])
+        );
+        for (pile, source, kind) in [
+            ("Riverboat", "Obelisk", "note"),
+            ("Moat", "Young Witch", "bane"),
+            ("Smithy", "Ferryman", "note"),
+        ] {
+            let pile = board
+                .supply
+                .kingdom
+                .iter()
+                .flatten()
+                .chain(&board.non_supply)
+                .find(|p| p.name == pile)
+                .unwrap_or_else(|| panic!("missing {pile}"));
+            assert_eq!(pile.badges.len(), 1, "{pile:?}");
+            assert_eq!(pile.badges[0].kind, kind);
+            assert_eq!(pile.badges[0].card.as_deref(), Some(source));
+        }
+    }
+}
+
+#[test]
 fn druids_boons_sit_beside_the_kingdom_and_answer_druid() {
     let cards = card_db();
     let mut table = Table::new("g", config(&["Druid"], 2, 7), vec![]).unwrap();
@@ -1056,11 +1121,15 @@ fn druids_boons_sit_beside_the_kingdom_and_answer_druid() {
         let view = table.view(seat);
         let d = view.decision.clone().unwrap();
         let b = board(&view, Some(seat.0), &Default::default(), &cards);
-        assert_eq!(b.druid_boons.len(), 3);
+        assert_eq!(b.set_asides.len(), 3);
         if d.source.as_deref() == Some("Druid") {
             let inter = interaction(&view, &d, &cards);
             let spots = spots(&b, &inter);
-            let boons: Vec<Spot> = b.druid_boons.iter().cloned().map(Spot::Landscape).collect();
+            let boons: Vec<Spot> = b
+                .set_asides
+                .iter()
+                .map(|s| Spot::Landscape(s.card.clone()))
+                .collect();
             assert_eq!(spots, boons);
             return;
         }

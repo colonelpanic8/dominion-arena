@@ -8,7 +8,7 @@ use crate::rating::SeatRating;
 use dominion_protocol::api::{InPlay, TableExtras};
 use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
-    AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, ZoneView,
+    AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, SetupRole, ZoneView,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
@@ -31,8 +31,7 @@ pub struct Board {
     pub trash: Zone,
     pub boons: Option<CardDeck>,
     pub hexes: Option<CardDeck>,
-    /// The Boons set aside for Druid.
-    pub druid_boons: Vec<String>,
+    pub set_asides: Vec<SetupSetAside>,
     pub artifacts: Vec<Holding>,
     pub lasting: Vec<Lasting>,
     pub extra_turns: Vec<ExtraTurn>,
@@ -358,6 +357,12 @@ pub struct CardDeck {
     pub count: u32,
     /// Its discard pile, the last one on top.
     pub discard: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SetupSetAside {
+    pub source: String,
+    pub card: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -834,9 +839,8 @@ fn kingdom_rows(mut piles: Vec<PileEntry>) -> Vec<Vec<PileEntry>> {
 }
 
 /// Puts a note where it belongs: tokens it counts on the pile or landscape they sit on
-/// (Family of Inventors' Favors, Sinister Plot's), the pile it names (the Bane,
-/// Obelisk's pile), or a card it names on the pile or landscape it comes from (Way of the
-/// Mouse's card, Riverboat's). Every note is also listed with the other effects.
+/// (Family of Inventors' Favors, Sinister Plot's), or the pile it names (the Bane,
+/// Obelisk's pile). Every note is also listed with the other effects.
 fn note_badge(
     n: &dominion_protocol::NoteView,
     names: &Names<'_>,
@@ -888,24 +892,26 @@ fn note_tokens<'a>(
     }
 }
 
-/// The Boons set aside for Druid: shown as cards beside the kingdom, not as a note.
-pub fn druid_boons(view: &AgentView) -> impl Iterator<Item = &str> {
-    view.notes.iter().filter_map(|n| {
-        (n.source == "Druid" && n.player.is_none() && n.pile.is_none())
-            .then_some(n.card.as_deref())
-            .flatten()
-    })
+/// The public set-asides shown as cards beside the kingdom.
+pub fn setup_set_asides(view: &AgentView) -> impl Iterator<Item = (&str, &str)> {
+    view.notes
+        .iter()
+        .filter(|n| n.setup == Some(SetupRole::SetAside) && n.player.is_none())
+        .filter_map(|n| Some((n.source.as_str(), n.card.as_deref()?)))
 }
 
 /// A note shown as the card it names, and where it goes.
 fn note_card_badge(n: &dominion_protocol::NoteView) -> Option<(&str, Badge)> {
-    if n.player.is_some() || n.pile.as_ref() == Some(&n.source) || n.source == "Druid" {
+    if n.player.is_some()
+        || n.pile.as_ref() == Some(&n.source)
+        || n.setup == Some(SetupRole::SetAside)
+    {
         return None;
     }
     let (on, kind, card) = match (&n.pile, &n.card) {
         (Some(pile), None) => (
             pile.as_str(),
-            if n.source == "Young Witch" {
+            if n.setup == Some(SetupRole::Bane) {
                 "bane"
             } else {
                 "note"
@@ -1061,7 +1067,12 @@ pub fn board(
         trash: zone(&view.trash, cards),
         boons: view.boons.as_ref().map(card_deck),
         hexes: view.hexes.as_ref().map(card_deck),
-        druid_boons: druid_boons(view).map(Into::into).collect(),
+        set_asides: setup_set_asides(view)
+            .map(|(source, card)| SetupSetAside {
+                source: source.into(),
+                card: card.into(),
+            })
+            .collect(),
         artifacts: view
             .artifacts
             .iter()

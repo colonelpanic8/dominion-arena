@@ -47,7 +47,7 @@ pub enum Place {
     InPlay,
     /// A Supply or non-Supply pile on the board.
     Supply,
-    /// A landscape on the board.
+    /// A landscape or public setup card beside the kingdom.
     Landscape,
     /// A card (or card back) in the choice tray above the hand.
     Tray,
@@ -66,11 +66,6 @@ impl Interaction {
     pub fn at(&self, place: Place) -> impl Iterator<Item = &Target> {
         self.targets.iter().filter(move |t| t.place == place)
     }
-}
-
-fn is_landscape(view: &AgentView, card: &str) -> bool {
-    view.landscapes.iter().any(|l| l.card == card)
-        || crate::game::board::druid_boons(view).any(|b| b == card)
 }
 
 /// The visible pile whose top card is `card`.
@@ -129,6 +124,19 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
             .filter(|o| o.card.as_deref() == Some(card))
             .count()
     };
+    let beside_kingdom = |o: &AgentOption, card: &str| {
+        if view.landscapes.iter().any(|l| l.card == card) {
+            return o.action == "buy-landscape"
+                || (matches!(o.action.as_str(), "select" | "trigger") && naming(card) == 1);
+        }
+        o.action == "select"
+            && naming(card) == 1
+            && super::board::setup_set_asides(view).any(|(source, set_aside)| {
+                set_aside == card
+                    && (d.source.as_deref() == Some(source)
+                        || (d.source.is_none() && o.zone.as_deref() == Some("pile")))
+            })
+    };
 
     let ways: Vec<String> = if super::wording::may_ask_way(d) {
         view.landscapes
@@ -170,9 +178,7 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
             place = Place::Supply;
             pile = Some(p);
         } else if let Some(card) = &o.card
-            && is_landscape(view, card)
-            && (o.action == "buy-landscape"
-                || (matches!(o.action.as_str(), "select" | "trigger") && naming(card) == 1))
+            && beside_kingdom(o, card)
         {
             place = Place::Landscape;
         } else if o.action == "trigger" && o.card.is_some() {
