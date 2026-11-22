@@ -29,6 +29,12 @@ pub enum Endpoint {
     Beta,
 }
 impl Endpoint {
+    pub fn other(self) -> Self {
+        match self {
+            Self::Alpha => Self::Beta,
+            Self::Beta => Self::Alpha,
+        }
+    }
     pub fn url(self) -> &'static str {
         match self {
             Self::Alpha => "wss://prod-dominion-alpha.dominion.games:443/",

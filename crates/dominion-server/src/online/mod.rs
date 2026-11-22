@@ -79,31 +79,33 @@ fn catalog(config: &Config) -> Result<Arc<Catalog>, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn endpoint(setting: Option<&str>) -> Result<Endpoint, String> {
+fn configured_endpoint(setting: Option<&str>) -> Result<Option<Endpoint>, String> {
     match setting.unwrap_or("auto") {
-        "alpha" => Ok(Endpoint::Alpha),
-        "beta" => Ok(Endpoint::Beta),
-        "auto" => {
-            let mut errors = Vec::new();
-            for endpoint in [Endpoint::Alpha, Endpoint::Beta] {
-                match probe_one(endpoint).await {
-                    Ok(ServerState::Normal) => return Ok(endpoint),
-                    Ok(state) => errors.push(format!("{endpoint:?}: {state:?}")),
-                    Err(e) => errors.push(e),
-                }
-            }
-            Err(format!(
-                "no official server accepting new clients: {}",
-                errors.join("; ")
-            ))
-        }
+        "alpha" => Ok(Some(Endpoint::Alpha)),
+        "beta" => Ok(Some(Endpoint::Beta)),
+        "auto" => Ok(None),
         other => Err(format!(
             "unknown online_endpoint {other:?}; use auto, alpha or beta"
         )),
     }
 }
+
+async fn auto_endpoint() -> Result<Endpoint, String> {
+    let mut errors = Vec::new();
+    for endpoint in [Endpoint::Alpha, Endpoint::Beta] {
+        match probe_one(endpoint).await {
+            Ok(ServerState::Normal) => return Ok(endpoint),
+            Ok(state) => errors.push(format!("{endpoint:?}: {state:?}")),
+            Err(e) => errors.push(e),
+        }
+    }
+    Err(format!(
+        "no official server accepting new clients: {}",
+        errors.join("; ")
+    ))
+}
 async fn probe_one(endpoint: Endpoint) -> Result<ServerState, String> {
-    tokio::time::timeout(Duration::from_secs(15), async {
+    tokio::time::timeout(Duration::from_secs(5), async {
         let mut socket = Transport::connect_probe(endpoint)
             .await
             .map_err(|e| e.to_string())?;
@@ -141,7 +143,7 @@ async fn start(config: &Config, account: &Account) -> Result<Client, String> {
     let catalog = catalog(config)?;
     let state =
         Store::open(&account.state_dir).map_err(|e| format!("official client state lock: {e}"))?;
-    let endpoint = endpoint(account.endpoint.as_deref()).await?;
+    let endpoint = configured_endpoint(account.endpoint.as_deref())?;
     let secret = match (&account.password_entry, &account.password_file) {
         (Some(entry), None) if !entry.is_empty() && !entry.starts_with('-') => {
             let output = tokio::process::Command::new("pass")
