@@ -253,6 +253,7 @@ enum Request {
 type Reply<T> = oneshot::Sender<Result<T, String>>;
 /// How long dominion.games has to answer a player-page request (its own client's limit).
 const PROFILE_TIMEOUT: Duration = Duration::from_secs(15);
+const RECONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 /// What the official player page asks for: a profile with 30 history points, and 25
 /// results.
 const PROFILE_PERIOD: i32 = 25;
@@ -297,12 +298,17 @@ pub struct Client {
 impl Client {
     pub async fn login(
         catalog: Arc<Catalog>,
-        endpoint: Endpoint,
+        endpoint: impl Into<Option<Endpoint>>,
         username: &str,
         password: &str,
         store: Store,
         resume: bool,
     ) -> Result<Self, String> {
+        let pinned = endpoint.into();
+        let endpoint = match pinned {
+            Some(endpoint) => endpoint,
+            None => super::auto_endpoint().await?,
+        };
         let mut socket = Transport::connect(endpoint)
             .await
             .map_err(|e| e.to_string())?;
@@ -344,13 +350,14 @@ impl Client {
             results: Waiting::default(),
             socket: Some(socket),
             endpoint,
+            auto_endpoint: pinned.is_none(),
             session: None,
             credentials: Some(Credentials {
                 username: username.to_string(),
                 password: password.to_string(),
             }),
-            relogin_due: false,
-            relogged: false,
+            reconnect_to: None,
+            authentication: Some(Authentication::Password),
             needs_snapshot: false,
             request_game: false,
             leaving_finished: false,
@@ -367,7 +374,7 @@ impl Client {
                     reducer
                 },
                 error: None,
-                connected: true,
+                connected: false,
                 searching: false,
                 queue_feedback: Vec::new(),
                 timers: Vec::new(),
@@ -397,11 +404,13 @@ impl Client {
         let (publish, updates) = watch::channel(runtime.update.clone());
         tokio::spawn(async move {
             loop {
-                let request = if runtime.socket.is_some() {
+                let request = if let Some(socket) = &mut runtime.socket {
                     tokio::select! {
                         request=rx.recv()=>request,
-                        received=runtime.receive()=>{
-                            if let Err(error)=received{runtime.fail(error).await;}
+                        frame=socket.receive()=>{
+                            if let Err(error) = runtime.handle_frame(frame).await {
+                                runtime.fail(error).await;
+                            }
                             publish.send_replace(runtime.published());
                             continue;
                         }
@@ -469,7 +478,11 @@ impl Client {
                         (result, reply, false)
                     }
                     Request::Reconnect(reply) => {
-                        let result = runtime.reconnect().await;
+                        runtime.close().await;
+                        publish.send_replace(runtime.published());
+                        let result = runtime
+                            .reconnect(super::auto_endpoint(), Transport::connect)
+                            .await;
                         (result, reply, false)
                     }
                     Request::Resign(reply) => {
@@ -623,15 +636,21 @@ struct Credentials {
     username: String,
     password: String,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Authentication {
+    Session,
+    Password,
+    SessionExpired,
+}
+
 struct Runtime {
     socket: Option<Transport>,
     endpoint: Endpoint,
+    auto_endpoint: bool,
     session: Option<SessionSecret>,
     credentials: Option<Credentials>,
-    /// dominion.games refused the session; log in with the password after this frame.
-    relogin_due: bool,
-    /// The password login has been used since the last explicit reconnect.
-    relogged: bool,
+    reconnect_to: Option<Endpoint>,
+    authentication: Option<Authentication>,
     needs_snapshot: bool,
     request_game: bool,
     leaving_finished: bool,
@@ -660,21 +679,30 @@ impl Runtime {
         self.update.clone()
     }
     async fn close(&mut self) {
-        if let Some(options) = &self.search
-            && let Ok(bytes) = matching::criteria(self.update.mode, options, false)
-            && let Some(socket) = &mut self.socket
-        {
-            let _ = socket.send(bytes).await;
-        }
+        let cancel = self
+            .search
+            .as_ref()
+            .and_then(|options| matching::criteria(self.update.mode, options, false).ok());
         self.update.reducer.invalidate();
         self.update.connected = false;
         self.leaving_finished = false;
         self.update.searching = false;
         self.search = None;
+        self.queue_status = None;
+        self.update.queue_feedback.clear();
+        self.authentication = None;
+        self.outbox.clear();
+        self.request_game = false;
         self.pending_match.clear();
         self.answer_player_page("official connection closed".into());
         if let Some(mut socket) = self.socket.take() {
-            let _ = socket.disconnect().await;
+            let _ = tokio::time::timeout(Duration::from_secs(1), async {
+                if let Some(bytes) = cancel {
+                    let _ = socket.send(bytes).await;
+                }
+                let _ = socket.disconnect().await;
+            })
+            .await;
         }
     }
     async fn fail(&mut self, error: String) {
@@ -702,13 +730,19 @@ impl Runtime {
         result
     }
     async fn receive_inner(&mut self) -> Result<(), String> {
-        let messages = self
+        let frame = self
             .socket
             .as_mut()
             .ok_or("official connection closed")?
             .receive()
-            .await
-            .map_err(|e| e.to_string())?;
+            .await;
+        self.handle_frame(frame).await
+    }
+    async fn handle_frame(
+        &mut self,
+        frame: dominion_online::Result<Vec<Message>>,
+    ) -> Result<(), String> {
+        let messages = frame.map_err(|e| e.to_string())?;
         let mut acknowledgements = 0;
         // With no length prefix, the transport decodes the entire frame before returning it.
         for message in messages {
@@ -717,8 +751,8 @@ impl Runtime {
             }
         }
         self.update.bots.clone_from(&self.bots);
-        if std::mem::take(&mut self.relogin_due) {
-            return self.relogin().await;
+        if self.authentication.is_some() {
+            return Ok(());
         }
         if self.request_game {
             self.safe_table()?;
@@ -731,9 +765,38 @@ impl Runtime {
         for _ in 0..acknowledgements {
             self.send(command::animation_ack()).await?;
         }
+        if self.needs_snapshot {
+            return Ok(());
+        }
         self.answer_forced().await
     }
     fn process(&mut self, message: Message) -> Result<bool, String> {
+        if self.authentication.is_some() {
+            match &message {
+                Message::Login(_)
+                    if self.authentication != Some(Authentication::SessionExpired) => {}
+                Message::Failed(_)
+                | Message::ReconnectInstruction(_)
+                | Message::TimeoutInstruction => {}
+                // SUCCESSFULLY_CONNECTED_NEW_SERVER / SUCCESSFULLY_CONNECTED_OLD_SERVER.
+                Message::Succeeded(9 | 10)
+                    if self.authentication == Some(Authentication::Session) =>
+                {
+                    self.authenticated();
+                    self.request_game = self.needs_snapshot;
+                    return Ok(false);
+                }
+                Message::Pong | Message::LobbyNotice => return Ok(false),
+                _ => return Err("unexpected official message before authentication".into()),
+            }
+        }
+        // Login can repeat a result after the account has already left its table.
+        if let Message::GameFinished { result, .. } = &message
+            && self.update.reducer.result.is_some()
+            && self.update.reducer.game_id == Some(result.game_id)
+        {
+            return Ok(false);
+        }
         let awaiting_match = self.awaiting_match();
         if awaiting_match
             && matches!(
@@ -752,17 +815,13 @@ impl Runtime {
             self.pending_match.push(message);
             return Ok(false);
         }
-        let completed_table = self
-            .completed_table
-            .is_some_and(|id| self.table.as_ref().is_some_and(|t| t.table_id == id));
+        let completed_table = self.holds_finished_table();
         let reducer = &mut self.update.reducer;
         match message {
             Message::Failed(f)
                 if f.reason == "COMMAND_REQUIRES_TABLE"
                     && self.leaving_finished
-                    && completed_table
-                    && !reducer.running
-                    && reducer.result.is_some() =>
+                    && completed_table =>
             {
                 self.table = None;
                 self.bots.clear();
@@ -777,18 +836,29 @@ impl Runtime {
                 self.answer_player_page("dominion.games' rating service is down".into());
             }
             Message::Failed(f)
-                if f.reason == "LOGIN_REQUIRED"
-                    && self.session.is_some()
-                    && self.credentials.is_some()
-                    && !self.relogged =>
+                if matches!(f.reason, "LOGIN_REQUIRED" | "INVALID_SESSION_ID")
+                    && self.authentication == Some(Authentication::Session)
+                    && self.credentials.is_some() =>
             {
-                self.relogin_due = true;
+                self.authentication = Some(Authentication::SessionExpired);
             }
-            Message::Failed(f) => return Err(f.error().to_string()),
+            Message::Failed(f) => {
+                if f.reason == "SERVER_IS_DOWN" {
+                    self.reconnect_to = None;
+                }
+                return Err(f.error().to_string());
+            }
             Message::Login(login) => {
                 let existing_game = login.reconnecting || login.previous_reconnects > 0;
-                if existing_game && self.session.is_none() && !self.resuming {
+                if existing_game && !(self.resuming || reducer.running || self.needs_snapshot) {
                     return Err("REFUSED: login reports an existing game/session; no automatic takeover or reconnect was attempted".into());
+                }
+                if self
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.player != login.player_id)
+                {
+                    return Err("REFUSED: reconnect authenticated a different account".into());
                 }
                 if self.resuming
                     && self.table.as_ref().is_none_or(|t| {
@@ -804,6 +874,8 @@ impl Runtime {
                     self.needs_snapshot = true;
                     // isReconnecting means the server is already sending the game.
                     self.request_game = !login.reconnecting;
+                } else if self.needs_snapshot {
+                    self.request_game = true;
                 } else if self.resuming {
                     self.store.remove("own-table").map_err(|e| e.to_string())?;
                     self.store.remove("own-match").map_err(|e| e.to_string())?;
@@ -812,6 +884,10 @@ impl Runtime {
                     self.resuming = false;
                     self.human = None;
                     self.update.mode = OnlineMode::Bots;
+                } else if completed_table && self.authentication == Some(Authentication::Password) {
+                    self.table = None;
+                    self.bots.clear();
+                    self.human = None;
                 }
                 reducer.player_id = login.player_id;
                 reducer
@@ -832,11 +908,24 @@ impl Runtime {
                         ),
                     )
                     .map_err(|e| e.to_string())?;
+                self.authenticated();
             }
             Message::Snapshot(snapshot) => {
                 if self.session.is_none() {
                     return Err("snapshot before login".into());
                 }
+                if self.table.is_none() || completed_table {
+                    return Err("REFUSED: snapshot has no current official table".into());
+                }
+                if self.needs_snapshot {
+                    self.safe_table()?;
+                    if self.update.reducer.running
+                        && self.update.reducer.game_id != Some(snapshot.game_id)
+                    {
+                        return Err("REFUSED: reconnect snapshot belongs to another game".into());
+                    }
+                }
+                let reducer = &mut self.update.reducer;
                 let players: Vec<_> = snapshot.state.players.iter().map(|p| p.player_id).collect();
                 if let Some(human) = &self.human {
                     human.validate_players(&players, reducer.player_id)?;
@@ -856,6 +945,8 @@ impl Runtime {
                 reducer.replace(snapshot).map_err(|e| e.to_string())?;
                 self.recorder.snapshot(reducer, recorded);
                 self.needs_snapshot = false;
+                self.request_game = false;
+                self.resuming = false;
                 self.update.searching = false;
             }
             Message::Event(event) => {
@@ -886,6 +977,14 @@ impl Runtime {
             Message::TableDetails(table)
                 if self.table.as_ref().map(|t| t.table_id) != Some(table.table_id) => {}
             Message::TableJoined { table, .. } | Message::TableDetails(table) => {
+                if self.needs_snapshot
+                    && !self
+                        .table
+                        .as_ref()
+                        .is_some_and(|t| t.table_id == table.table_id)
+                {
+                    return Err("REFUSED: reconnect joined a different official table".into());
+                }
                 for player in table.players.iter().chain(&table.bots) {
                     reducer.names.insert(player.id, player.name.clone());
                 }
@@ -998,6 +1097,15 @@ impl Runtime {
             {
                 // A game that ended while nothing here followed it (sent on logging in):
                 // leave its table rather than refuse the connection.
+                if self
+                    .table
+                    .as_ref()
+                    .is_some_and(|t| t.table_id != table.table_id)
+                    || !table.players.iter().any(|p| p.id == reducer.player_id)
+                    || table.table_id != result.table_id
+                {
+                    return Ok(false);
+                }
                 self.outbox.push(
                     dominion_online::transport::outgoing::Command::LeaveTable {
                         table: table.table_id,
@@ -1008,12 +1116,25 @@ impl Runtime {
                 );
             }
             Message::GameFinished { table, result, .. } => {
+                if table.table_id != result.table_id
+                    || self
+                        .table
+                        .as_ref()
+                        .is_some_and(|t| t.table_id != table.table_id)
+                {
+                    return Err("REFUSED: game result belongs to another official table".into());
+                }
                 reducer.finish(&result).map_err(|e| e.to_string())?;
                 self.recorder.finish(result);
                 self.store.remove("own-table").map_err(|e| e.to_string())?;
                 self.store.remove("own-match").map_err(|e| e.to_string())?;
+                self.resuming = false;
+                self.needs_snapshot = false;
+                self.request_game = false;
                 self.completed_table = Some(table.table_id);
-                self.table = Some(table);
+                if self.table.is_some() {
+                    self.table = Some(table);
+                }
                 self.update.finished_at = Some(crate::hub::now_ms());
             }
             Message::Chat {
@@ -1028,8 +1149,20 @@ impl Runtime {
                 }
             }
             Message::AnimationCompensation => return Ok(true),
-            Message::ReconnectInstruction(_) | Message::TimeoutInstruction => {
-                return Err("official server requested reconnect; pending answers invalidated; call online_reconnect".into());
+            Message::ReconnectInstruction(switch_server) => {
+                let from = self.endpoint;
+                let to = if switch_server { from.other() } else { from };
+                self.reconnect_to = Some(to);
+                return Err(format!(
+                    "official server requested reconnect ({from:?} to {to:?}); pending answers invalidated; call online_reconnect"
+                ));
+            }
+            Message::TimeoutInstruction => {
+                self.reconnect_to = None;
+                return Err(format!(
+                    "official server {:?} timed out the connection; call online_reconnect",
+                    self.endpoint
+                ));
             }
             Message::Metagame {
                 kind: TIMEOUT_OFFER,
@@ -1359,11 +1492,24 @@ impl Runtime {
         }
         Ok(())
     }
+    fn holds_finished_table(&self) -> bool {
+        !self.update.reducer.running
+            && self.update.reducer.result.is_some()
+            && self
+                .table
+                .as_ref()
+                .is_some_and(|t| Some(t.table_id) == self.completed_table)
+    }
+
+    fn authenticated(&mut self) {
+        self.authentication = None;
+        self.update.connected = true;
+        self.update.error = None;
+    }
+
     async fn leave_finished(&mut self) -> Result<(), String> {
         if self.table.is_some() {
-            if self.update.reducer.result.is_none()
-                || self.completed_table != self.table.as_ref().map(|t| t.table_id)
-            {
+            if !self.holds_finished_table() {
                 return Err("REFUSED: an unfinished official table already exists".into());
             }
             let table_id = self.table.as_ref().expect("table checked").table_id;
@@ -1382,49 +1528,85 @@ impl Runtime {
         }
         Ok(())
     }
-    async fn reconnect(&mut self) -> Result<(), String> {
-        self.close().await;
-        let session = self
-            .session
-            .as_ref()
-            .ok_or("no session owned by this process; restart the client")?;
-        let bytes = command::reconnect_session(session.player, &session.token, VERSION);
-        self.relogged = false;
-        self.relogin_due = false;
-        let mut socket = Transport::connect(self.endpoint)
-            .await
-            .map_err(|e| e.to_string())?;
-        socket.send(bytes).await.map_err(|e| e.to_string())?;
-        self.socket = Some(socket);
-        self.update.error = None;
-        self.update.connected = true;
-        self.needs_snapshot = self.update.reducer.running;
-        self.request_game = false;
-        // RECONNECT_SESSION restores the socket, not the game snapshot.
-        if self.needs_snapshot {
-            self.send(command::reconnect_game()).await?;
+    async fn reconnect(
+        &mut self,
+        probe: impl Future<Output = Result<Endpoint, String>>,
+        connect: impl AsyncFn(Endpoint) -> dominion_online::Result<Transport>,
+    ) -> Result<(), String> {
+        let result =
+            tokio::time::timeout(RECONNECT_TIMEOUT, self.restore_connection(probe, connect))
+                .await
+                .unwrap_or_else(|_| {
+                    Err("official reconnect timed out awaiting confirmation".into())
+                });
+        match &result {
+            Ok(()) => self.reconnect_to = None,
+            Err(error) => self.fail(error.clone()).await,
         }
-        Ok(())
+        result
     }
-    /// Logs in with the password on a new socket, once per reconnect: the session is
-    /// already this process's, so the login may resume its game (`Message::Login`).
-    async fn relogin(&mut self) -> Result<(), String> {
+
+    async fn restore_connection(
+        &mut self,
+        probe: impl Future<Output = Result<Endpoint, String>>,
+        connect: impl AsyncFn(Endpoint) -> dominion_online::Result<Transport>,
+    ) -> Result<(), String> {
+        self.needs_snapshot |= self.update.reducer.running;
+        let idle = !self.needs_snapshot && (self.table.is_none() || self.holds_finished_table());
+        let destination = match self.reconnect_to {
+            Some(to) if !self.auto_endpoint && to != self.endpoint => {
+                return Err(format!(
+                    "official server requested {to:?}, but the endpoint is pinned to {:?}",
+                    self.endpoint
+                ));
+            }
+            Some(to) => to,
+            None if idle && self.auto_endpoint => probe.await?,
+            None => self.endpoint,
+        };
+        if destination != self.endpoint && self.holds_finished_table() {
+            // The finished table ID belongs to the server we left.
+            self.table = None;
+            self.human = None;
+            self.bots.clear();
+            self.completed_table = None;
+        }
+        self.endpoint = destination;
+        if self.reconnect_to.is_some() || !idle || self.credentials.is_none() {
+            let session = self.session.as_ref().ok_or("no owned official session")?;
+            let bytes = command::reconnect_session(session.player, &session.token, VERSION);
+            self.confirm_connection(&connect, Authentication::Session, bytes)
+                .await?;
+            if self.authentication != Some(Authentication::SessionExpired) {
+                return Ok(());
+            }
+            self.close().await;
+        }
+
         let credentials = self
             .credentials
             .as_ref()
-            .ok_or("no password kept by this process; restart the client")?;
+            .ok_or("no official password available")?;
         let bytes = command::login(&credentials.username, &credentials.password, VERSION, 0);
-        self.relogged = true;
-        self.close().await;
-        let mut socket = Transport::connect(self.endpoint)
+        self.confirm_connection(&connect, Authentication::Password, bytes)
             .await
-            .map_err(|e| e.to_string())?;
-        socket.send(bytes).await.map_err(|e| e.to_string())?;
-        self.socket = Some(socket);
-        self.update.error = None;
-        self.update.connected = true;
-        self.needs_snapshot = false;
-        self.request_game = false;
+    }
+
+    async fn confirm_connection(
+        &mut self,
+        connect: &impl AsyncFn(Endpoint) -> dominion_online::Result<Transport>,
+        auth: Authentication,
+        bytes: Vec<u8>,
+    ) -> Result<(), String> {
+        self.authentication = Some(auth);
+        self.socket = Some(connect(self.endpoint).await.map_err(|e| e.to_string())?);
+        self.send(bytes).await?;
+        while self.authentication.is_some() || self.needs_snapshot {
+            self.receive_inner().await?;
+            if self.authentication == Some(Authentication::SessionExpired) {
+                break;
+            }
+        }
         Ok(())
     }
 }

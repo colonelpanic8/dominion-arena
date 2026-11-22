@@ -665,7 +665,8 @@ fn management(web: &Web) -> OnlineManagement {
             .and_then(|v| v.game.id.as_deref())
             .and_then(|game| web.access.arena.official_game_agent(&web.hosted.id, game)),
         running: view.is_some_and(|v| v.game.running),
-        searching: update.searching || web.job().is_some_and(|j| j.game_id.is_empty()),
+        searching: update.connected
+            && (update.searching || web.job().is_some_and(|j| j.game_id.is_empty())),
         queue_feedback: update.queue_feedback,
         mode: update.mode,
         min_opponent_level: web.hosted.min_opponent_level,

@@ -62,10 +62,14 @@ client. Bot-game actions still require a table containing only this account and
 server bots. Public human matchmaking is available through the server management page below;
 joining arbitrary tables is not exposed.
 
-`online_reconnect` explicitly resumes only the in-memory session owned by this
-process. It invalidates previous decisions and waits for a replacement snapshot.
-If dominion.games has dropped that session (`LOGIN_REQUIRED`), it logs in again once
-with the password the process read at startup, kept in memory only.
+`online_reconnect` invalidates previous decisions. A server-directed reconnect
+uses the owned session on the requested server. An explicit Alpha or Beta pin
+refuses a handoff to the other server. When idle without a handoff, the client
+uses a fresh password login and, in auto mode, probes for a server accepting
+new games. A refused session (`LOGIN_REQUIRED` or `INVALID_SESSION_ID`) permits
+one password attempt. Recovery waits up to 20 seconds for authentication and,
+for an owned live game, a replacement snapshot or its result. After a
+disconnect, matchmaking needs a new search request.
 Answers are consumed before transmission and are never automatically retried,
 even when a send fails. To resume after restarting the process, opt into
 `online_resume = true`: only a table recorded in this state directory is
