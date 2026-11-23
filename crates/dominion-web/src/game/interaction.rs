@@ -210,7 +210,7 @@ pub fn interaction(view: &AgentView, d: &AgentDecision, cards: &CardDb) -> Inter
         targets.push(Target {
             place,
             options: vec![o.index],
-            label: o.label.clone(),
+            label: super::wording::option_label(d, o, &view.notes),
             action: o.action.clone(),
             card: o.card.clone(),
             zone: o.zone.clone(),

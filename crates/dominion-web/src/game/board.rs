@@ -882,7 +882,12 @@ fn note_tokens<'a>(
             n.source.as_str(),
             Badge {
                 kind: "sinister-plot".into(),
-                text: format!("{}'s Sinister Plot: {} token(s)", names.name(p), n.count),
+                text: format!(
+                    "{}'s Sinister Plot: {} {}",
+                    names.name(p),
+                    n.count,
+                    if n.count == 1 { "token" } else { "tokens" }
+                ),
                 count: Some(n.count),
                 player: Some(p),
                 card: None,

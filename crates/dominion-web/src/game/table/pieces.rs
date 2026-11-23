@@ -65,7 +65,6 @@ pub fn badge_icon(kind: &str) -> Option<&'static str> {
         "pirate-ship" => "images/elements/pirate_130.png",
         "embargo" | "blockade" => "images/elements/embargo.png",
         "trade-route" | "tokens" => "images/elements/coin-token.png",
-        "sinister-plot" => "images/elements/sinister-plot.png",
         "-card" => "images/tokens/minuscard.png",
         "-coin" => "images/tokens/minuscoin.png",
         "journey" => "images/tokens/journey-token.png",
@@ -93,7 +92,6 @@ fn badge_short(kind: &str) -> &str {
         "embargo" => "Emb",
         "blockade" => "Blk",
         "trade-route" => "TR",
-        "sinister-plot" => "Plot",
         "tokens" => "Tok",
         "journey" | "journey-down" => "J",
         "sun" => "☀",
@@ -108,6 +106,20 @@ fn badge_short(kind: &str) -> &str {
 pub fn BadgeView(badge: Badge) -> Element {
     let assets = use_assets();
     let b = &badge;
+    if b.kind == "sinister-plot"
+        && let (Some(seat), Some(count)) = (b.player, b.count)
+    {
+        return rsx! {
+            span {
+                class: "dt-badge dt-b-sinister-plot {seat_class(seat)}",
+                title: "{b.text}",
+                role: "img",
+                "aria-label": "{b.text}",
+                "data-badge": "sinister-plot",
+                "{count}"
+            }
+        };
+    }
     if matches!(b.kind.as_str(), "trait" | "note" | "bane")
         && let Some(card) = b.card.clone()
     {
@@ -499,7 +511,9 @@ pub fn TableCard(
                             BadgeView { key: "{i}", badge: b.clone() }
                         }
                         for (seat, who) in cubes.iter() {
-                            Cube { key: "c{seat}", seat: *seat, name: who.clone() }
+                            if !badges.iter().any(|b| b.kind == "sinister-plot" && b.player == Some(*seat)) {
+                                Cube { key: "c{seat}", seat: *seat, name: who.clone() }
+                            }
                         }
                     }
                 }

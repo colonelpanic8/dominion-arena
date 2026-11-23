@@ -1101,6 +1101,65 @@ fn a_landscape_is_named_by_the_card_in_its_zone() {
 }
 
 #[test]
+fn sinister_plot_projects_only_visible_counters_for_its_owners() {
+    let mut catalog = catalog();
+    let cards = &mut Arc::get_mut(&mut catalog).unwrap().cards;
+    let plot = cards.len() as i32;
+    cards.push(CardInfo {
+        key: "SINISTER_PLOT".into(),
+        name: "Sinister Plot".into(),
+        cost: view::Cost {
+            coins: 4,
+            potions: 0,
+            debt: 0,
+        },
+        types: vec!["Project".into()],
+        kingdom: false,
+    });
+    let mut snap = snapshot();
+    snap.state.players[0].bought_projects.push(plot);
+    snap.state.players[1].bought_projects.push(plot);
+    snap.state.counters = vec![
+        model::Counter {
+            index: 0,
+            kind: SINISTER_PLOT,
+            owner: 0,
+            value: 2,
+            zone: -1,
+            card: -1,
+            is_visible: true,
+        },
+        model::Counter {
+            index: 1,
+            kind: SINISTER_PLOT,
+            owner: 1,
+            value: 4,
+            zone: -1,
+            card: -1,
+            is_visible: false,
+        },
+    ];
+    let mut r = Reducer::new(catalog, 42);
+    r.replace(snap).unwrap();
+    let plot_counts = |r: &Reducer| {
+        let view = r.view().unwrap();
+        assert!(view.you.unwrap().counters.is_empty());
+        view.notes
+            .into_iter()
+            .filter(|n| n.source == "Sinister Plot")
+            .map(|n| (n.player, n.count))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(plot_counts(&r), [(Some(0), 2)]);
+    r.apply(model::Event::CounterChange(model::CounterChange {
+        index: 0,
+        new_value: 0,
+    }))
+    .unwrap();
+    assert_eq!(plot_counts(&r), [(Some(0), 0)]);
+}
+
+#[test]
 fn recorded_inputs_fold_to_the_views_they_were_recorded_at() {
     use crate::record::Input;
     let mut live = Reducer::new(catalog(), 42);

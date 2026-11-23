@@ -107,6 +107,7 @@ pub fn PlainGame() -> Element {
                         DecisionControls {
                             key: "{d.id}",
                             decision: d,
+                            notes: view.notes.clone(),
                             busy: answering,
                             on_answer: move |a| ctx.submit.call(a),
                         }
@@ -626,6 +627,7 @@ fn bounds_text(min: u32, max: u32) -> String {
 #[component]
 pub fn DecisionControls(
     decision: AgentDecision,
+    #[props(default)] notes: Vec<dominion_protocol::NoteView>,
     busy: bool,
     on_answer: EventHandler<Answer>,
 ) -> Element {
@@ -661,6 +663,7 @@ pub fn DecisionControls(
                                 let d = d.clone();
                                 let pos = sel.position(o.index);
                                 let title = o.card.as_deref().map(|c| cards.tooltip(c)).unwrap_or_default();
+                                let label = wording::option_label(&d, &o, &notes);
                                 rsx! {
                                     button {
                                         key: "{o.index}",
@@ -680,7 +683,7 @@ pub fn DecisionControls(
                                         if let (Some(p), true) = (pos, d.ordered) {
                                             span { class: "order", "{p + 1}" }
                                         }
-                                        "{o.label}"
+                                        "{label}"
                                     }
                                 }
                             }
