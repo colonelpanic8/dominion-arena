@@ -180,6 +180,7 @@ impl CatalogSpec {
             about: None,
             instructions: self.instructions.clone(),
             effort: own_effort,
+            fast_mode: false,
             response_seconds: self.response_seconds,
             history_turns: None,
             auth_dir: self.auth_dir.clone(),
@@ -443,11 +444,13 @@ pub fn offers(
     catalogs: &[(CatalogSpec, Vec<Found>)],
 ) -> Vec<(AgentSpec, Offer)> {
     let same = |p: &AgentSpec, s: &AgentSpec| {
-        (p.program, &p.model, &p.effort) == (s.program, &s.model, &s.effort)
+        (p.program, &p.model, &p.effort, p.fast_mode)
+            == (s.program, &s.model, &s.effort, s.fast_mode)
     };
     let mut used = vec![false; profiles.len()];
     let mut out: Vec<(AgentSpec, Offer)> = vec![];
-    let mut push = |spec: AgentSpec, model: OfferedModel, on_demand: bool| {
+    let mut push = |spec: AgentSpec, mut model: OfferedModel, on_demand: bool| {
+        model.fast_mode = spec.fast_mode;
         let offer = Offer {
             name: spec.name.clone(),
             about: spec.about(),
@@ -461,6 +464,7 @@ pub fn offers(
         id: model.id.clone(),
         name: model.name.clone(),
         effort: effort.map(String::from),
+        fast_mode: false,
     };
     for (catalog, found) in catalogs {
         for model in found {
@@ -510,6 +514,7 @@ pub fn offers(
                 id: id.unwrap_or_default().into(),
                 name: id.unwrap_or(&profile.name).into(),
                 effort: profile.effort.clone(),
+                fast_mode: profile.fast_mode,
             },
         };
         push(profile.clone(), group, false);
@@ -754,6 +759,37 @@ mod tests {
             ("Claude Code", "Opus 5.5")
         );
         assert_eq!(offered[1].0.model.as_deref(), Some("claude-opus-5-5"));
+    }
+
+    #[test]
+    fn a_fast_profile_and_the_standard_catalog_choice_are_both_selectable() {
+        let provider = catalog(Program::OpenAi);
+        let model = found("gpt-6.2-astra", "Astra", &["high"]);
+        let profile = AgentSpec {
+            name: "Astra High Fast".into(),
+            fast_mode: true,
+            ..provider.agent(&model, Some("high"))
+        };
+        let variants = offers(&[profile], &[(provider, vec![model])]);
+        let choices: Vec<_> = variants
+            .iter()
+            .map(|(spec, offer)| {
+                let offered = offer.model.as_ref().unwrap();
+                (
+                    spec.name.as_str(),
+                    spec.fast_mode,
+                    offered.fast_mode,
+                    offered.effort.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            choices,
+            [
+                ("Astra High", false, false, Some("high")),
+                ("Astra High Fast", true, true, Some("high")),
+            ]
+        );
     }
 
     #[test]

@@ -121,6 +121,11 @@ pub fn launch(spec: &AgentSpec, playbook: bool) -> Launch {
     if let Some(model) = &spec.model {
         launch.args.extend(["--model".into(), model.clone()]);
     }
+    if spec.fast_mode {
+        launch
+            .args
+            .extend(["-c".into(), r#"service_tier="fast""#.into()]);
+    }
     if let Some(effort) = &spec.effort {
         launch.args.extend([
             "-c".into(),

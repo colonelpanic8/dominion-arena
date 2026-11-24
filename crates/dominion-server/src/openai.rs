@@ -325,7 +325,15 @@ fn parse_stream(text: &str) -> Result<(Vec<Value>, Value), String> {
         };
         match event["type"].as_str() {
             Some("response.output_item.done") => items.push(event["item"].clone()),
-            Some("response.completed") => usage = event["response"]["usage"].clone(),
+            Some("response.completed") => {
+                let response = &event["response"];
+                usage = response["usage"].clone();
+                if let (Some(counts), Some(tier)) =
+                    (usage.as_object_mut(), response["service_tier"].as_str())
+                {
+                    counts.insert("service_tier".into(), json!(tier));
+                }
+            }
             Some("response.failed" | "error") => {
                 return Err(format!("OpenAI: {}", snippet(&event.to_string())));
             }
@@ -590,7 +598,7 @@ async fn play_inner(
         if let Some(effort) = &spec.effort {
             reasoning["effort"] = json!(effort);
         }
-        let body = json!({
+        let mut body = json!({
             "model": spec.model.as_deref().ok_or("an openai agent needs a model")?,
             "instructions": instructions,
             "input": input,
@@ -603,9 +611,12 @@ async fn play_inner(
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session.id,
         });
+        if spec.fast_mode {
+            body["service_tier"] = json!("priority");
+        }
         archive.record(
             "direct_request",
-            json!({"model": spec.model, "items": input.len()}),
+            json!({"model": spec.model, "items": input.len(), "service_tier": body.get("service_tier")}),
         )?;
         let (items, usage) = session.respond(&body).await?;
         archive.record("direct_usage", usage)?;
@@ -811,10 +822,11 @@ data: {"error":{"code":"server_is_overloaded","headers":{"retry-after":"323","re
 
     #[test]
     fn streamed_responses_give_their_items_and_usage() {
-        let text = "event: x\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3}}}\n";
+        let text = "event: x\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"service_tier\":\"default\",\"usage\":{\"input_tokens\":3}}}\n";
         let (items, usage) = parse_stream(text).unwrap();
         assert_eq!(items, [json!({"type":"message"})]);
         assert_eq!(usage["input_tokens"], 3);
+        assert_eq!(usage["service_tier"], "default");
         assert!(parse_stream("data: {\"type\":\"response.failed\"}\n").is_err());
         assert!(parse_stream("data: {\"type\":\"response.created\"}\n").is_err());
     }

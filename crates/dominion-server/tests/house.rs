@@ -294,6 +294,7 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
         name: name.into(),
         about: format!("Claude Code, claude-opus-5-5, {effort} effort"),
         model: Some(OfferedModel {
+            fast_mode: false,
             program: "Claude Code".into(),
             id: "claude-opus-5-5".into(),
             name: "Opus 5.5".into(),
@@ -406,6 +407,7 @@ fn a_record_kept_with_only_an_agents_name_shows_what_it_is_offered_as_now() {
         name: "Sol High".into(),
         about: "OpenAI, gpt-6.2-sol, high effort".into(),
         model: Some(OfferedModel {
+            fast_mode: false,
             program: "OpenAI".into(),
             id: "gpt-6.2-sol".into(),
             name: "GPT-6.2-Sol".into(),
@@ -432,6 +434,7 @@ fn a_search_for_any_agent_gets_one_when_none_has_an_account_yet() {
         name: name.into(),
         about: "Claude Code".into(),
         model: Some(OfferedModel {
+            fast_mode: false,
             program: "Claude Code".into(),
             id: "claude-opus-5-5".into(),
             name: "Opus 5.5".into(),
