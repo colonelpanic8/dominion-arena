@@ -723,7 +723,9 @@ async fn runner_game(transient_failure: bool, compare_strategies: bool) {
                     .find(|r| r["kind"] == "native_request")
                     .unwrap()["data"]["prompt"];
                 let aware = setup["runnerStrategy"] == "clock_aware";
-                assert_eq!(path.join("preliminary/interactions.jsonl").is_file(), aware);
+                let attempt = path.file_name().unwrap().to_str().unwrap();
+                let preliminary = path.join(format!("preliminary-{attempt}"));
+                assert_eq!(preliminary.join("interactions.jsonl").is_file(), aware);
                 assert_eq!(
                     prompt
                         .as_str()

@@ -111,6 +111,16 @@ impl Advice {
     }
 }
 
+// Native conversation storage uses the archive basename across all seats.
+fn analysis_dir(archive: &Archive, role: &str) -> std::path::PathBuf {
+    let attempt = archive
+        .dir
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+    archive.dir.join(format!("{role}-{attempt}"))
+}
+
 pub(super) fn start(
     tasks: &mut JoinSet<()>,
     advice: &Advice,
@@ -139,14 +149,7 @@ pub(super) fn start(
     };
     let board = board::setup(&view);
     let analyst = model.for_model(&config.model);
-    let dir = archive.dir.join(format!(
-        "analyst-{}",
-        archive
-            .dir
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-    ));
+    let dir = analysis_dir(archive, "analyst");
     let advice = advice.clone();
     let game = job.game_id.clone();
     let (done, opened) = oneshot::channel();
@@ -227,7 +230,7 @@ pub(super) async fn preliminary_plan(
     let plan = tokio::time::timeout_at(
         deadline,
         player.analyze(
-            &archive.dir.join("preliminary"),
+            &analysis_dir(archive, "preliminary"),
             brief,
             observation,
             deadline,
@@ -253,7 +256,7 @@ pub(super) async fn preliminary_plan(
         if let Ok(Ok(refined)) = tokio::time::timeout_at(
             deadline,
             player.analyze(
-                &archive.dir.join("opening-review"),
+                &analysis_dir(archive, "opening-review"),
                 brief,
                 &review,
                 deadline,
