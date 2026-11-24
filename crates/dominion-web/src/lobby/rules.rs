@@ -695,7 +695,7 @@ pub fn seat_edits(seats: &[TableSeat]) -> Vec<SeatEdit> {
             SeatKind::Agent => match &seat.user {
                 Some(user) => SeatEdit::Agent(dominion_protocol::lobby::AgentSelection::new(
                     user.name.clone(),
-                    seat.strategy,
+                    seat.options,
                 )),
                 None => SeatEdit::Open,
             },

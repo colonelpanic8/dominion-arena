@@ -16,7 +16,7 @@ use dominion_protocol::api::{
     GameSummary, OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineOpponent,
     OnlineOutcome, OnlineRating, OnlineRatingType, OnlineStart,
 };
-use dominion_protocol::lobby::{AgentSelection, RunnerStrategy};
+use dominion_protocol::lobby::{AgentSelection, LaunchOptions};
 use dominion_protocol::lobby::{OfficialAccount, official_game_id};
 
 const CSS: &str = include_str!("../assets/online.css");
@@ -245,8 +245,8 @@ fn OfficialPanel(account: String) -> Element {
         .collect();
     let id = use_signal(|| account.clone());
     let mut against = use_signal(|| None::<String>);
-    let mut strategy = use_signal(RunnerStrategy::default);
-    let mut against_strategy = use_signal(RunnerStrategy::default);
+    let mut options = use_signal(LaunchOptions::default);
+    let mut against_options = use_signal(LaunchOptions::default);
     let mut against_agent = use_signal(String::new);
     let mut management = use_signal(|| None::<OnlineManagement>);
     let mut agent = use_signal(String::new);
@@ -271,11 +271,11 @@ fn OfficialPanel(account: String) -> Element {
                         .or(status.agents.first());
                     // A selection no longer offered goes back to the default.
                     if !status.agents.contains(&agent.peek()) {
-                        strategy.set(RunnerStrategy::Classic);
+                        options.set(LaunchOptions::default());
                         agent.set(first.cloned().unwrap_or_default());
                     }
                     if !status.agents.contains(&against_agent.peek()) {
-                        against_strategy.set(RunnerStrategy::Classic);
+                        against_options.set(LaunchOptions::default());
                         against_agent.set(first.cloned().unwrap_or_default());
                     }
                     management.set(Some(status));
@@ -297,12 +297,12 @@ fn OfficialPanel(account: String) -> Element {
         let opponent = (against.peek().clone()).map(|account| OnlineOpponent {
             account,
             agent: against_agent.peek().clone(),
-            strategy: *against_strategy.peek(),
+            options: *against_options.peek(),
         });
         let chooses_cards = *mode.peek() == OnlineMode::Bots || opponent.is_some();
         let request = OnlineStart {
             agent: selected.clone(),
-            strategy: *strategy.peek(),
+            options: *options.peek(),
             mode: if opponent.is_some() {
                 OnlineMode::Unrated
             } else {
@@ -337,7 +337,7 @@ fn OfficialPanel(account: String) -> Element {
             let result = match action {
                 Action::Start => api::online_start(account, &request).await,
                 Action::Attach => {
-                    api::online_attach(account, selected, Some(request.strategy)).await
+                    api::online_attach(account, selected, Some(request.options)).await
                 }
                 Action::Resume(agent) => api::online_attach(account, agent, None).await,
                 Action::Pause => api::online_manage_action(account, "pause").await,
@@ -379,9 +379,9 @@ fn OfficialPanel(account: String) -> Element {
                     } else {
                         AgentPicker {
                             models: status.models.clone(),
-                            value: Some(AgentSelection::new(agent(), strategy())),
+                            value: Some(AgentSelection::new(agent(), options())),
                             disabled: busy(),
-                            onpick: move |selection: Option<AgentSelection>| if let Some(pick) = selection { agent.set(pick.name().into()); strategy.set(pick.strategy()); },
+                            onpick: move |selection: Option<AgentSelection>| if let Some(pick) = selection { agent.set(pick.name().into()); options.set(pick.options()); },
                         }
                     }
                 }
@@ -432,9 +432,9 @@ fn OfficialPanel(account: String) -> Element {
                             } else {
                                 AgentPicker {
                                     models: status.models.clone(),
-                                    value: Some(AgentSelection::new(against_agent(), against_strategy())),
+                                    value: Some(AgentSelection::new(against_agent(), against_options())),
                                     disabled: busy(),
-                                    onpick: move |selection: Option<AgentSelection>| if let Some(pick) = selection { against_agent.set(pick.name().into()); against_strategy.set(pick.strategy()); },
+                                    onpick: move |selection: Option<AgentSelection>| if let Some(pick) = selection { against_agent.set(pick.name().into()); against_options.set(pick.options()); },
                                 }
                             }
                         }

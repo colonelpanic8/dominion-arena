@@ -88,7 +88,7 @@ impl Arena {
                         user,
                         &setups,
                         reported,
-                        meta.strategies.get(i).copied().unwrap_or_default(),
+                        meta.launch_options.get(i).copied().unwrap_or_default(),
                     )?,
                     None => (None, None),
                 };
@@ -279,7 +279,7 @@ pub(super) fn who_played(
     user: &User,
     setups: &Setups,
     reported: Option<AgentRun>,
-    strategy: dominion_protocol::lobby::RunnerStrategy,
+    options: dominion_protocol::lobby::LaunchOptions,
 ) -> Result<(Option<AgentRun>, Option<String>)> {
     Ok(match &user.login {
         Login::House => {
@@ -293,7 +293,8 @@ pub(super) fn who_played(
                 }
                 None => AgentRun {
                     setup: AgentSetup {
-                        runner_strategy: strategy,
+                        runner_strategy: options.strategy,
+                        speed: options.speed.or_else(|| known.and_then(|s| s.speed)),
                         agent: user.name.clone(),
                         ..known.cloned().unwrap_or_default()
                     },
@@ -318,6 +319,7 @@ fn complete_agents(games: &mut [PastGame], setups: &Setups) {
             *a = SeatAgent {
                 agent: std::mem::take(&mut a.agent),
                 runner_strategy: a.runner_strategy,
+                speed: a.speed,
                 ..SeatAgent::from(setup)
             };
         }

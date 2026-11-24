@@ -197,6 +197,8 @@ pub(crate) async fn play_with_plan(
     archive: &mut Archive,
     stop: CancellationToken,
 ) -> Result<(), String> {
+    let launched = spec.for_launch(job.options)?;
+    let spec = &launched;
     spec.validate()?;
     archive.publish(server, job)?;
     archive.record("seat", json!({"agent":spec,"job":job,"server":server}))?;
@@ -205,7 +207,7 @@ pub(crate) async fn play_with_plan(
         match Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
             .await
         {
-            Ok(client) => Arc::new(client.with_clock_cues(job.strategy.clock_cues())),
+            Ok(client) => Arc::new(client.with_clock_cues(job.options.strategy.clock_cues())),
             Err(error) => {
                 archive.record("seat_finished", json!({"result":{"Err":error}}))?;
                 archive.finish_publish().await;
@@ -221,7 +223,7 @@ pub(crate) async fn play_with_plan(
             }
             Program::T3Code => return Err("T3 Code requires its conversation adapter".into()),
         };
-        if provider.native() && job.strategy.is_classic() && !job.official {
+        if provider.native() && job.options.strategy.is_classic() && !job.official {
             // Prime the common tool stream before the classic grouped card reference.
             let bound = client
                 .call("join_game", json!({"game":job.game_id,"token":job.token}))
@@ -240,7 +242,7 @@ pub(crate) async fn play_with_plan(
         let legacy = AnalysisPlan::from_legacy_profile(spec);
         let plan = plan
             .or(legacy.as_ref())
-            .filter(|_| !job.strategy.is_classic());
+            .filter(|_| !job.options.strategy.is_classic());
         super::strategy::run(&mut provider, &seat, plan, archive).await
     };
     let result = tokio::select! { biased;

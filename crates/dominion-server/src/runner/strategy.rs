@@ -92,7 +92,7 @@ pub(super) async fn run(
     let (spec, sandbox, job, client) = (seat.spec, seat.sandbox, seat.job, seat.client.as_ref());
     let advice = analyst::Advice::default();
     let model = AnalysisModel::new(spec, sandbox);
-    let (tool, args) = job.strategy.initial_tool(job);
+    let (tool, args) = job.options.strategy.initial_tool(job);
     let joined = call(client, archive, "dominion", tool, args).await?;
     if !joined.ok {
         return Err(joined.text);
@@ -105,6 +105,7 @@ pub(super) async fn run(
         clock_aware: clocked,
         ratings,
     } = job
+        .options
         .strategy
         .prepare_opening(joined, client, archive, job, sandbox)
         .await?;
@@ -432,7 +433,7 @@ mod tests {
             })
             .unwrap();
         let job = Job {
-            strategy: Default::default(),
+            options: Default::default(),
             official: false,
             official_account: None,
             transcript: false,

@@ -381,7 +381,7 @@ mod tests {
         let (client, revoked) = revocable().await;
         revoked.store(true, Ordering::SeqCst);
         let job = Job {
-            strategy: Default::default(),
+            options: Default::default(),
             official: true,
             official_account: None,
             transcript: false,

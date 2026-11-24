@@ -133,7 +133,7 @@ pub(super) fn start(
     let (Some(config), Some(json)) = (plan, &reply.json) else {
         return false;
     };
-    if job.brief.is_some() || !job.strategy.timed_opening(json) {
+    if job.brief.is_some() || !job.options.strategy.timed_opening(json) {
         return false;
     }
     let game = &game_state(json)["game"];

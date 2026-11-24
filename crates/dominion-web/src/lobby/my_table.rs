@@ -831,7 +831,7 @@ pub fn Players() -> Element {
                                                 if pickable {
                                                     AgentPicker {
                                                         models,
-                                                        value: dominion_protocol::lobby::AgentSelection::new(user_name.clone(), seat.strategy),
+                                                        value: dominion_protocol::lobby::AgentSelection::new(user_name.clone(), seat.options),
                                                         class: "lb-agent-select",
                                                         action: "change-agent",
                                                         title: "{user_name}: the server starts it when the game does",

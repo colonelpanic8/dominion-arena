@@ -305,7 +305,7 @@ impl Hosted {
                 } else if update.reducer.running {
                     if let Some(job) = web.job()
                         && job.game_id.is_empty()
-                        && let Err(e) = assign(&web, job.agent, job.strategy)
+                        && let Err(e) = assign(&web, job.agent, job.options)
                     {
                         eprintln!(
                             "dominion: official account {}: assigning matched game: {e}",
@@ -667,9 +667,9 @@ fn management(web: &Web) -> OnlineManagement {
     let view = update.reducer.view().ok();
     let (agents, models) = web.access.arena.official_agents();
     OnlineManagement {
-        strategy: web
+        options: web
             .job()
-            .map(|j| j.strategy)
+            .map(|j| j.options)
             .or_else(|| {
                 let game = &view.as_ref()?.game;
                 if !game.running {
@@ -677,7 +677,7 @@ fn management(web: &Web) -> OnlineManagement {
                 }
                 web.access
                     .arena
-                    .official_game_strategy(&web.hosted.id, game.id.as_deref()?)
+                    .official_game_options(&web.hosted.id, game.id.as_deref()?)
             })
             .unwrap_or_default(),
         connected: update.connected,
@@ -874,7 +874,7 @@ fn refused(error: impl ToString) -> Response {
 fn assign(
     web: &Web,
     agent: String,
-    strategy: dominion_protocol::lobby::RunnerStrategy,
+    options: dominion_protocol::lobby::LaunchOptions,
 ) -> Result<(), String> {
     let view = web
         .hosted
@@ -896,14 +896,14 @@ fn assign(
     if web
         .access
         .arena
-        .official_game_strategy(&web.hosted.id, &game_id)
-        .is_some_and(|s| s != strategy)
+        .official_game_options(&web.hosted.id, &game_id)
+        .is_some_and(|s| s != options)
     {
-        return Err("the running game must resume with the same strategy".into());
+        return Err("the running game must resume with the same launch options".into());
     }
     web.hosted.check_assignment(&game_id)?;
     web.set_job(Some(crate::house::Job {
-        strategy,
+        options,
         official: true,
         official_account: Some(web.hosted.id.clone()),
         transcript: true,
@@ -942,7 +942,7 @@ async fn start_game(
         &web.hosted.owner,
         &web.hosted.id,
         &start.agent,
-        start.strategy,
+        start.options,
     ) {
         Ok(r) => r,
         Err(e) => return refused(e),
@@ -953,10 +953,10 @@ async fn start_game(
         }
         let current = management(&web);
         if let Some(playing) = current.game_agent
-            && (playing != start.agent || current.strategy != start.strategy)
+            && (playing != start.agent || current.options != start.options)
         {
             return refused(format!(
-                "{playing} plays the running game: its agent and strategy are fixed"
+                "{playing} plays the running game: its agent and launch options are fixed"
             ));
         }
         let mut matching = start.matching;
@@ -973,12 +973,12 @@ async fn start_game(
         }
         let update = web.hosted.client.current();
         if update.reducer.running {
-            if let Err(e) = assign(&web, start.agent, start.strategy) {
+            if let Err(e) = assign(&web, start.agent, start.options) {
                 return refused(e);
             }
         } else if update.searching {
             web.set_job(Some(crate::house::Job {
-                strategy: start.strategy,
+                options: start.options,
                 official: true,
                 official_account: Some(web.hosted.id.clone()),
                 transcript: true,
@@ -1004,7 +1004,7 @@ async fn start_game(
     if let Err(e) = web.hosted.client.new_game(options).await {
         return refused(e);
     }
-    if let Err(e) = assign(&web, start.agent, start.strategy) {
+    if let Err(e) = assign(&web, start.agent, start.options) {
         return refused(e);
     }
     drop(reservation);
@@ -1052,13 +1052,13 @@ async fn start_paired(
             &web.hosted.owner,
             &web.hosted.id,
             &start.agent,
-            start.strategy,
+            start.options,
         ),
         arena.reserve_official(
             &peer.hosted.owner,
             &peer.hosted.id,
             &against.agent,
-            against.strategy,
+            against.options,
         ),
     );
     let (Ok(_host_seat), Ok(_peer_seat)) = reservations else {
@@ -1084,10 +1084,10 @@ async fn start_paired(
     if let Err(e) = paired {
         return refused(e);
     }
-    if let Err(e) = assign(web, start.agent, start.strategy) {
+    if let Err(e) = assign(web, start.agent, start.options) {
         return refused(e);
     }
-    if let Err(e) = assign(&peer, against.agent, against.strategy) {
+    if let Err(e) = assign(&peer, against.agent, against.options) {
         return refused(e);
     }
     axum::Json(management(web)).into_response()
@@ -1097,17 +1097,21 @@ async fn attach_agent(
     axum::Json(body): axum::Json<OnlineAttach>,
 ) -> Response {
     let _guard = web.hosted.control.lock().await;
-    let strategy = body.strategy.unwrap_or_else(|| management(&web).strategy);
+    let previous = management(&web).options;
+    let options = dominion_protocol::lobby::LaunchOptions {
+        strategy: body.strategy.unwrap_or(previous.strategy),
+        speed: body.speed.or(previous.speed),
+    };
     let reservation = match web.access.arena.reserve_official(
         &web.hosted.owner,
         &web.hosted.id,
         &body.agent,
-        strategy,
+        options,
     ) {
         Ok(r) => r,
         Err(e) => return refused(e),
     };
-    if let Err(e) = assign(&web, body.agent, strategy) {
+    if let Err(e) = assign(&web, body.agent, options) {
         return refused(e);
     }
     drop(reservation);
@@ -1189,7 +1193,7 @@ async fn cancel_matchmaking(State(web): State<Web>) -> Response {
             if update.reducer.running {
                 if let Some(job) = web.job()
                     && job.game_id.is_empty()
-                    && let Err(e) = assign(&web, job.agent, job.strategy)
+                    && let Err(e) = assign(&web, job.agent, job.options)
                 {
                     return refused(e);
                 }

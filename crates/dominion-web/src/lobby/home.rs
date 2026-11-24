@@ -234,7 +234,7 @@ fn Automatch() -> Element {
                             players: vec![n + 1],
                             opponents: Opponents::Agents,
                             rated: request.peek().rated,
-                            strategy: opponent().filter(|_| n == 1).map(|o| o.strategy()).unwrap_or_default(),
+                            options: opponent().filter(|_| n == 1).map(|o| o.options()).unwrap_or_default(),
                             agent: opponent().filter(|_| n == 1).map(|o| o.name().to_owned()),
                         }),
                         if n == 1 { "1 Bot" } else { "{n} Bots" }

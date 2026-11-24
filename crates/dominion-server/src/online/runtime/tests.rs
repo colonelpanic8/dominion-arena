@@ -2732,6 +2732,7 @@ async fn exercise_hosted_pair(host_loses_connection: bool) {
             name: name.into(),
             effort: None,
             fast_mode: false,
+            supports_speed: true,
             supports_clock_aware: true,
         }),
         ..Default::default()
@@ -2811,7 +2812,7 @@ async fn exercise_hosted_pair(host_loses_connection: bool) {
             "mode": "unrated",
             "matching": {"timer": 0},
             "kingdom": ["Village"],
-            "against": {"account": "neon", "agent": "agent-b", "strategy": "clock_aware"},
+            "against": {"account": "neon", "agent": "agent-b", "strategy": "clock_aware", "speed":"fast"},
         }))
         .send()
         .await
@@ -2833,7 +2834,11 @@ async fn exercise_hosted_pair(host_loses_connection: bool) {
         assert_eq!(management["paired"], true);
         for (account, agent, seat) in [("astra", "agent-a", 0), ("neon", "agent-b", 1)] {
             let job = arena.official_job(account).unwrap();
-            assert_eq!(job.strategy.is_classic(), account == "astra");
+            assert_eq!(job.options.strategy.is_classic(), account == "astra");
+            assert_eq!(
+                job.options.speed,
+                (account == "neon").then_some(dominion_protocol::lobby::InferenceSpeed::Fast)
+            );
             assert_eq!(
                 (job.agent.as_str(), job.game_id.as_str(), job.seat),
                 (agent, "dominion.games:123", seat)
@@ -2849,6 +2854,7 @@ async fn exercise_hosted_pair(host_loses_connection: bool) {
         assert!(paused.status().is_success());
         let paused: serde_json::Value = paused.json().await.unwrap();
         assert_eq!(paused["strategy"], "clock_aware");
+        assert_eq!(paused["speed"], "fast");
         assert!(arena.official_job("neon").is_none());
         let attach = |body| http.post(&agent_url).bearer_auth(&owner).json(&body).send();
         let switched = attach(serde_json::json!({"agent":"agent-b","strategy":"classic"}))
@@ -2856,11 +2862,22 @@ async fn exercise_hosted_pair(host_loses_connection: bool) {
             .unwrap();
         assert_eq!(switched.status(), reqwest::StatusCode::CONFLICT);
         assert!(arena.official_job("neon").is_none());
+        let changed_speed = attach(serde_json::json!({"agent":"agent-b","speed":"standard"}))
+            .await
+            .unwrap();
+        assert_eq!(changed_speed.status(), reqwest::StatusCode::CONFLICT);
         let resumed = attach(serde_json::json!({"agent":"agent-b"}))
             .await
             .unwrap();
         assert!(resumed.status().is_success());
-        assert!(!arena.official_job("neon").unwrap().strategy.is_classic());
+        assert!(
+            !arena
+                .official_job("neon")
+                .unwrap()
+                .options
+                .strategy
+                .is_classic()
+        );
     }
     assert!(host_requests.try_recv().is_err() && guest_requests.try_recv().is_err());
     stop.cancel();

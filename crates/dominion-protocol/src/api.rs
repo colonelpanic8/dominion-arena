@@ -655,11 +655,8 @@ pub struct OnlineResultOpponent {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineManagement {
-    #[serde(
-        default,
-        skip_serializing_if = "crate::lobby::RunnerStrategy::is_classic"
-    )]
-    pub strategy: crate::lobby::RunnerStrategy,
+    #[serde(flatten)]
+    pub options: crate::lobby::LaunchOptions,
     /// The official account's id.
     #[serde(default)]
     pub id: String,
@@ -689,11 +686,8 @@ pub struct OnlineManagement {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OnlineStart {
-    #[serde(
-        default,
-        skip_serializing_if = "crate::lobby::RunnerStrategy::is_classic"
-    )]
-    pub strategy: crate::lobby::RunnerStrategy,
+    #[serde(flatten)]
+    pub options: crate::lobby::LaunchOptions,
     pub agent: String,
     #[serde(default)]
     pub mode: OnlineMode,
@@ -714,11 +708,8 @@ pub struct OnlineStart {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OnlineOpponent {
-    #[serde(
-        default,
-        skip_serializing_if = "crate::lobby::RunnerStrategy::is_classic"
-    )]
-    pub strategy: crate::lobby::RunnerStrategy,
+    #[serde(flatten)]
+    pub options: crate::lobby::LaunchOptions,
     /// The other hosted account's id.
     pub account: String,
     /// The agent that plays it.
@@ -732,6 +723,8 @@ fn one_bot() -> u8 {
 pub struct OnlineAttach {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strategy: Option<crate::lobby::RunnerStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<crate::lobby::InferenceSpeed>,
     pub agent: String,
 }
 
@@ -767,7 +760,7 @@ impl Default for OnlineStart {
     fn default() -> Self {
         Self {
             agent: String::new(),
-            strategy: Default::default(),
+            options: Default::default(),
             mode: OnlineMode::Bots,
             matching: OnlineMatching::default(),
             bots: 1,

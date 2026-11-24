@@ -7,8 +7,8 @@ use super::records::{past_game, recall, who_played};
 use super::{Arena, Result};
 use crate::hub::{lock, now_ms};
 use dominion_protocol::lobby::{
-    GameRecord, OFFICIAL_GAME_PREFIX, OfficialAccount, OfficialGame, PastGame, RecordPlayer,
-    RunnerStrategy, Source, Venue, official_game_id,
+    GameRecord, LaunchOptions, OFFICIAL_GAME_PREFIX, OfficialAccount, OfficialGame, PastGame,
+    RecordPlayer, Source, Venue, official_game_id,
 };
 use dominion_protocol::view::GameResult;
 use std::sync::{Arc, OnceLock};
@@ -20,7 +20,7 @@ pub(super) struct Official {
     /// When its current game was first seen running (ms).
     started: Option<(String, u64)>,
     /// The agent last seen playing its current game.
-    played_by: Option<(String, String, RunnerStrategy)>,
+    played_by: Option<(String, String, LaunchOptions)>,
     /// The last game recorded.
     recorded: Option<String>,
 }
@@ -62,7 +62,7 @@ impl GameSource for OfficialRecords {
 pub(super) fn played_by(state: &mut super::State, account: &str, job: &crate::house::Job) {
     if !job.game_id.is_empty() {
         let entry = state.official.entry(account.into()).or_default();
-        entry.played_by = Some((job.game_id.clone(), job.agent.clone(), job.strategy));
+        entry.played_by = Some((job.game_id.clone(), job.agent.clone(), job.options));
     }
 }
 
@@ -82,7 +82,7 @@ impl Arena {
                     entry.started = Some((game.clone(), now_ms()));
                 }
                 if let Some(job) = job.filter(|j| &j.game_id == game) {
-                    entry.played_by = Some((game.clone(), job.agent, job.strategy));
+                    entry.played_by = Some((game.clone(), job.agent, job.options));
                 }
             }
             info.agent = None;
@@ -135,11 +135,7 @@ impl Arena {
         (played.0 == game).then(|| played.1.clone())
     }
 
-    pub(crate) fn official_game_strategy(
-        &self,
-        account: &str,
-        game: &str,
-    ) -> Option<RunnerStrategy> {
+    pub(crate) fn official_game_options(&self, account: &str, game: &str) -> Option<LaunchOptions> {
         let state = lock(&self.state);
         let played = state.official.get(account)?.played_by.as_ref()?;
         (played.0 == game).then_some(played.2)
@@ -163,7 +159,7 @@ impl Arena {
         game: &OfficialGame,
         result: &GameResult,
         started: Option<u64>,
-        agent: Option<(String, RunnerStrategy)>,
+        agent: Option<(String, LaunchOptions)>,
         owner: &str,
     ) -> Result<bool> {
         let id = official_game_id(&game.id);

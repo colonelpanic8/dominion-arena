@@ -115,7 +115,7 @@ pub struct Meta {
     /// Per seat: played by one of the server's agents, which allow every undo.
     pub agents: Vec<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub strategies: Vec<dominion_protocol::lobby::RunnerStrategy>,
+    pub launch_options: Vec<dominion_protocol::lobby::LaunchOptions>,
     /// The lobby table that started it.
     pub table: Option<String>,
     /// Milliseconds since the Unix epoch.
@@ -1206,7 +1206,13 @@ fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary 
             .map(|i| match meta.runs.get(i) {
                 Some(Some(run)) => Some(SeatAgent::from(&run.setup)),
                 _ if meta.agents.get(i).copied().unwrap_or(false) => Some(SeatAgent {
-                    runner_strategy: meta.strategies.get(i).copied().unwrap_or_default(),
+                    runner_strategy: meta
+                        .launch_options
+                        .get(i)
+                        .copied()
+                        .unwrap_or_default()
+                        .strategy,
+                    speed: meta.launch_options.get(i).and_then(|o| o.speed),
                     agent: table.names()[i].clone(),
                     ..SeatAgent::default()
                 }),

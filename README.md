@@ -578,12 +578,12 @@ played two minutes): a provider error, the server restarting, a model that ended
 conversation early. A seat that never recovers forfeits by the server's timing. Only a
 forbidden tool, one its CLI offers that the seat may not use, stops the seat at once; a
 call to a tool the CLI doesn't offer (a misspelled name) runs nothing and play goes on.
-To start GPT-6.2-Astra in Fast mode, choose an effort marked **Fast** when
-selecting the agent, or pass the corresponding agent name (for example
-`Astra High Fast`) to the start API. Standard speed is the default. Fast
-requests OpenAI's priority service tier and may use more quota. Set
-`fast_mode = true` in an `[[agents]]` profile for `openai` or `codex` to offer
-that choice independently of reasoning effort. In direct OpenAI archives,
+Select **Inference speed** when starting a direct OpenAI or native Codex seat.
+For example, `{"agent":"Astra High","speed":"fast"}` requests OpenAI priority
+inference for that seat at High effort. `"speed":"standard"` explicitly selects
+ordinary inference. Omitting speed inherits the profile's default. Existing
+`Astra High Fast` launches and profiles with `fast_mode = true` still work.
+Fast may use more quota. In direct OpenAI archives,
 `direct_request.service_tier` records the tier requested and
 `direct_usage.service_tier` records the tier OpenAI reported, when supplied.
 
@@ -628,13 +628,13 @@ account and seat allowance. The game record includes the strategy used.
 For example, these Arena game-creation fields seat the same profile twice:
 
 ```json
-{"players": 2, "agents": ["Astra High", {"agent": "Astra High", "strategy": "clock_aware"}]}
+{"players": 2, "agents": ["Astra High", {"agent": "Astra High", "strategy": "clock_aware", "speed": "fast"}]}
 ```
 
 A profile name alone selects Classic. For hosted dominion.games, send
 `strategy` alongside `agent` to `POST /api/online/{id}/start`. On a private
-unrated table, `against.strategy` selects the peer's strategy independently.
-Reattaching an agent to the same running game retains its assigned strategy.
+unrated table, `against.strategy` and `against.speed` configure the peer independently.
+Reattaching an agent to the same running game retains its strategy and speed. The public analyst uses its own model profile.
 
 Classic starts with the ordinary opening and preserves grouped card references
 on Arena join. Clock-aware prepares the first timed decision, prefetches available

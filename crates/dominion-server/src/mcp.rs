@@ -151,6 +151,7 @@ pub struct FindMatchParams {
     pub agent: Option<String>,
     /// The selected house agent's runner strategy (default classic).
     pub strategy: Option<dominion_protocol::lobby::RunnerStrategy>,
+    pub speed: Option<dominion_protocol::lobby::InferenceSpeed>,
     /// The player counts you accept, each 2 to 6 (default [2]).
     pub players: Option<Vec<u8>>,
     /// Who you may be paired with: "any" (default), "humans" or "agents".
@@ -671,7 +672,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a profile name (Classic) or {agent, strategy} to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents. Anyone may watch a game unless `watchable` is false. `briefs` gives each seat's player text to read before the game (null for none): a plan to play, notes from earlier games; a server agent gets it with its first view, a token seat on joining. `debrief` is a question every server agent answers once the game is over, before it leaves; game_report collects the answers. `rated: true` counts a game with a different server agent in every seat for their ratings (no undo). Returns the game id and secret tokens only for seats without agents."
+        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a profile name (Classic) or {agent, strategy?, speed?} to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents. Anyone may watch a game unless `watchable` is false. `briefs` gives each seat's player text to read before the game (null for none): a plan to play, notes from earlier games; a server agent gets it with its first view, a token seat on joining. `debrief` is a question every server agent answers once the game is over, before it leaves; game_report collects the answers. `rated: true` counts a game with a different server agent in every seat for their ratings (no undo). Returns the game id and secret tokens only for seats without agents."
     )]
     async fn create_game(
         &self,
@@ -979,12 +980,16 @@ impl Session {
             || p.opponents.is_some()
             || p.rated.is_some()
             || p.agent.is_some()
-            || p.strategy.is_some();
+            || p.strategy.is_some()
+            || p.speed.is_some();
         let defaults = MatchRequest::default();
         let request = MatchRequest {
             players: p.players.unwrap_or(defaults.players),
             opponents: p.opponents.unwrap_or_default(),
-            strategy: p.strategy.unwrap_or_default(),
+            options: dominion_protocol::lobby::LaunchOptions {
+                strategy: p.strategy.unwrap_or_default(),
+                speed: p.speed,
+            },
             rated: p.rated.unwrap_or(defaults.rated),
             agent: p.agent,
         };

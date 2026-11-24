@@ -294,6 +294,7 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
         name: name.into(),
         about: format!("Claude Code, claude-opus-5-5, {effort} effort"),
         model: Some(OfferedModel {
+            supports_speed: false,
             supports_clock_aware: name != "Opus High",
             fast_mode: false,
             program: "Claude Code".into(),
@@ -340,7 +341,7 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
     let game = arena.ready(&ada, &table.id, true).unwrap().game.unwrap();
     let job = |told: &mut UnboundedReceiver<ToRunner>| {
         let jobs = jobs(told).unwrap();
-        assert!(jobs.iter().all(|j| !j.strategy.is_classic()));
+        assert!(jobs.iter().all(|j| !j.options.strategy.is_classic()));
         jobs.iter()
             .map(|j| (j.agent.clone(), j.game_id.clone()))
             .collect::<Vec<_>>()
@@ -367,6 +368,7 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
 
     // Its record says what it was, though no longer offered when the game ended.
     let max = SeatAgent {
+        speed: None,
         runner_strategy: dominion_protocol::lobby::RunnerStrategy::ClockAware,
         agent: "Opus 5.5 Max".into(),
         program: Some("Claude Code".into()),
@@ -388,6 +390,7 @@ fn an_agent_offered_on_demand_has_an_account_once_seated_and_after_its_runner_re
     assert_eq!(
         arena.profile("Opus 5.5 Max").unwrap().agent,
         Some(SeatAgent {
+            speed: None,
             runner_strategy: Default::default(),
             ..max
         })
@@ -426,6 +429,7 @@ fn a_record_kept_with_only_an_agents_name_shows_what_it_is_offered_as_now() {
         name: "Sol High".into(),
         about: "OpenAI, gpt-6.2-sol, high effort".into(),
         model: Some(OfferedModel {
+            supports_speed: false,
             supports_clock_aware: false,
             fast_mode: false,
             program: "OpenAI".into(),
@@ -437,6 +441,7 @@ fn a_record_kept_with_only_an_agents_name_shows_what_it_is_offered_as_now() {
     };
     arena.offers_changed(runner, vec![offered]);
     let full = SeatAgent {
+        speed: None,
         runner_strategy: Default::default(),
         agent: "Sol High".into(),
         program: Some("OpenAI".into()),
@@ -455,6 +460,7 @@ fn a_search_for_any_agent_gets_one_when_none_has_an_account_yet() {
         name: name.into(),
         about: "Claude Code".into(),
         model: Some(OfferedModel {
+            supports_speed: false,
             supports_clock_aware: false,
             fast_mode: false,
             program: "Claude Code".into(),
@@ -484,6 +490,7 @@ fn a_search_for_any_agent_gets_one_when_none_has_an_account_yet() {
 
 fn setup(agent: &str, version: &str) -> dominion_protocol::lobby::AgentSetup {
     dominion_protocol::lobby::AgentSetup {
+        speed: None,
         runner_strategy: Default::default(),
         agent: agent.into(),
         program: "Claude Code".into(),

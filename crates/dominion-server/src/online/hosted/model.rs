@@ -156,7 +156,7 @@ pub(super) async fn model_action(
             let strategy = web
                 .access
                 .arena
-                .official_game_strategy(&web.hosted.id, &req.game)
+                .official_game_options(&web.hosted.id, &req.game)
                 .unwrap_or_default();
             let reservation = match web.access.arena.reserve_official(
                 &web.hosted.owner,

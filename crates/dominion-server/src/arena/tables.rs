@@ -26,7 +26,7 @@ pub(super) enum Seat {
     },
     Token(String),
     /// One of the server's agents, by its account's id.
-    Agent(String, dominion_protocol::lobby::RunnerStrategy),
+    Agent(String, dominion_protocol::lobby::LaunchOptions),
 }
 
 pub(super) struct Table {
@@ -80,7 +80,7 @@ impl Table {
                 .map(|seat| match seat {
                     Seat::Open => TableSeat::default(),
                     Seat::Player { user, ready } => TableSeat {
-                        strategy: Default::default(),
+                        options: Default::default(),
                         kind: SeatKind::Player,
                         user: db.user_ref(user),
                         name: None,
@@ -88,7 +88,7 @@ impl Table {
                         here: state.here(user),
                     },
                     Seat::Token(name) => TableSeat {
-                        strategy: Default::default(),
+                        options: Default::default(),
                         kind: SeatKind::Token,
                         user: None,
                         name: Some(name.clone()),
@@ -96,7 +96,7 @@ impl Table {
                         here: false,
                     },
                     Seat::Agent(user, strategy) => TableSeat {
-                        strategy: *strategy,
+                        options: *strategy,
                         kind: SeatKind::Agent,
                         user: db.user_ref(user),
                         name: None,
@@ -179,8 +179,8 @@ fn agent_seat(
     }
     let name = selection.name();
     if let Some(agent) = state.house.agent_named(name) {
-        state.house.check_strategy(name, selection.strategy())?;
-        return Ok(Seat::Agent(agent.user.clone(), selection.strategy()));
+        state.house.check_options(name, selection.options())?;
+        return Ok(Seat::Agent(agent.user.clone(), selection.options()));
     }
     let key = name.trim().to_lowercase();
     let seated = old.iter().find(|s| match s {
@@ -190,8 +190,8 @@ fn agent_seat(
         _ => false,
     });
     match seated {
-        Some(Seat::Agent(_, strategy)) if *strategy != selection.strategy() => {
-            bad("unavailable agent cannot change strategy")
+        Some(Seat::Agent(_, strategy)) if *strategy != selection.options() => {
+            bad("unavailable agent cannot change launch options")
         }
         Some(seat) => Ok(seat.clone()),
         None => bad(format!("the server has no agent called {}", name.trim())),
@@ -720,7 +720,7 @@ impl Arena {
             clock: start.spec.clock.map(ClockState::new),
             undo: start.spec.undo,
             agents: is_agent,
-            strategies: order
+            launch_options: order
                 .iter()
                 .map(|&i| match &start.seats[i] {
                     Seat::Agent(_, strategy) => *strategy,

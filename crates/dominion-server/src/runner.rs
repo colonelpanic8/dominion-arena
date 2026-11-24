@@ -132,7 +132,30 @@ pub struct AgentSpec {
     pub context_results: Option<usize>,
 }
 
+impl Program {
+    pub(crate) fn supports_speed(self) -> bool {
+        matches!(self, Self::OpenAi | Self::Codex)
+    }
+}
+
 impl AgentSpec {
+    pub(super) fn for_launch(
+        &self,
+        options: dominion_protocol::lobby::LaunchOptions,
+    ) -> Result<Self, String> {
+        let mut spec = self.clone();
+        if let Some(speed) = options.speed {
+            if !spec.program.supports_speed() {
+                return Err(format!(
+                    "{} does not support selectable inference speed",
+                    spec.name
+                ));
+            }
+            spec.fast_mode = speed == dominion_protocol::lobby::InferenceSpeed::Fast;
+        }
+        Ok(spec)
+    }
+
     /// What plays it: "Claude Code, claude-opus-5-5, high effort".
     pub fn about(&self) -> String {
         self.about.clone().unwrap_or_else(|| {
@@ -146,7 +169,7 @@ impl AgentSpec {
         if self.name.trim().is_empty() || self.name.trim() != self.name {
             return Err("agent name must be nonempty without surrounding whitespace".into());
         }
-        if self.fast_mode && !matches!(self.program, Program::OpenAi | Program::Codex) {
+        if self.fast_mode && !self.program.supports_speed() {
             return Err(format!("{}: fast_mode requires openai or codex", self.name));
         }
         if let Some(analyst) = &self.opening_analyst
@@ -518,7 +541,7 @@ async fn keep_playing(
                 job.game_id,
                 archive.dir.display()
             );
-            let setup = setup(&spec, &sandbox, job.strategy).await;
+            let setup = setup(&spec, &sandbox, job.options).await;
             archive.record("setup", serde_json::to_value(&setup).expect("serializable"))?;
             archived = (archive.dir.file_name())
                 .map(|n| n.to_string_lossy().into_owned())
@@ -609,7 +632,7 @@ async fn keep_playing(
 async fn setup(
     spec: &AgentSpec,
     sandbox: &crate::harness::Sandbox,
-    strategy: RunnerStrategy,
+    options: dominion_protocol::lobby::LaunchOptions,
 ) -> AgentSetup {
     let dir = sandbox
         .playbook
@@ -626,7 +649,10 @@ async fn setup(
     };
     AgentSetup {
         agent: spec.name.clone(),
-        runner_strategy: strategy,
+        runner_strategy: options.strategy,
+        speed: options.speed.or(spec
+            .fast_mode
+            .then_some(dominion_protocol::lobby::InferenceSpeed::Fast)),
         program: spec.program.label().into(),
         model: spec.model.clone(),
         model_name: None,

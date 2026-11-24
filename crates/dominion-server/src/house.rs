@@ -6,7 +6,7 @@
 
 use crate::arena::Arena;
 use dominion_protocol::lobby::AgentSetup;
-use dominion_protocol::lobby::RunnerStrategy;
+use dominion_protocol::lobby::LaunchOptions;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -33,6 +33,8 @@ pub struct Offer {
 pub struct OfferedModel {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supports_clock_aware: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supports_speed: bool,
 
     /// What runs it ("Claude Code").
     pub program: String,
@@ -81,8 +83,8 @@ pub enum ToRunner {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
-    #[serde(default, skip_serializing_if = "RunnerStrategy::is_classic")]
-    pub strategy: RunnerStrategy,
+    #[serde(flatten)]
+    pub options: LaunchOptions,
     #[serde(default)]
     pub official: bool,
     /// The official account an official job plays as; its MCP endpoint is

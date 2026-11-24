@@ -117,7 +117,7 @@ impl Arena {
             return conflict("finish or resign the game you are in first");
         }
         let user = self.user(&ident.user)?;
-        if !request.strategy.is_classic() && request.agent.is_none() {
+        if request.options != Default::default() && request.agent.is_none() {
             return bad("choose an agent for the selected strategy");
         }
         if let Some(name) = &request.agent {
@@ -131,7 +131,7 @@ impl Arena {
             let Some(agent) = state.house.agent_named(name) else {
                 return conflict(format!("the server has no agent called {name} now"));
             };
-            state.house.check_strategy(name, request.strategy)?;
+            state.house.check_options(name, request.options)?;
             request.agent = Some(agent.name.clone());
         }
         let mut state = lock(&self.state);
@@ -329,13 +329,13 @@ impl Arena {
         let meta = Meta {
             source: Source::Automatch,
             host: house.map(|(host, _)| host.into()),
-            strategies: house
+            launch_options: house
                 .map(|(_, agent)| {
                     group
                         .iter()
                         .map(|e| {
                             if e.user == agent {
-                                e.request.strategy
+                                e.request.options
                             } else {
                                 Default::default()
                             }

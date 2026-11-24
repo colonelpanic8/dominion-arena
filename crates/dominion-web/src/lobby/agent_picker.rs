@@ -2,7 +2,9 @@
 
 use super::who::effort_title;
 use dioxus::prelude::*;
-use dominion_protocol::lobby::{AgentSelection, HouseModel, RunnerStrategy, house_choice};
+use dominion_protocol::lobby::{
+    AgentSelection, HouseModel, InferenceSpeed, LaunchOptions, RunnerStrategy, house_choice,
+};
 
 /// `models` without the agents `taken`, and without the models left with none.
 pub fn without(models: &[HouseModel], taken: &[String]) -> Vec<HouseModel> {
@@ -30,12 +32,19 @@ pub fn AgentPicker(
     #[props(default)] disabled: bool,
     onpick: EventHandler<Option<AgentSelection>>,
 ) -> Element {
-    let strategy = value
+    let options = value
         .as_ref()
-        .map(AgentSelection::strategy)
+        .map(AgentSelection::options)
         .unwrap_or_default();
+    let strategy = options.strategy;
     let picked = value.as_ref().and_then(|v| house_choice(&models, v.name()));
     let clock_aware = picked.is_some_and(|(_, c)| c.supports_clock_aware);
+    let speed_choice = picked.filter(|(_, c)| c.supports_speed).map(|(_, c)| {
+        let fast = options
+            .speed
+            .map_or(c.fast_mode, |s| s == InferenceSpeed::Fast);
+        (c.agent.clone(), fast)
+    });
     let selected = value.as_ref().map(|v| v.name().to_owned());
     let current = picked.map(|(m, _)| (m.program.clone(), m.model.clone()));
     let mut programs: Vec<String> = vec![];
@@ -45,26 +54,44 @@ pub fn AgentPicker(
         }
     }
     let models_for_pick = models.clone();
-    let efforts = picked.filter(|(m, _)| m.choices.len() > 1).map(|(m, c)| {
-        let options: Vec<(String, String)> = (m.choices.iter())
+    let efforts = picked.and_then(|(m, current)| {
+        let choices: Vec<_> = m
+            .choices
+            .iter()
+            .filter(|c| {
+                !c.fast_mode
+                    || !c.supports_speed
+                    || !m
+                        .choices
+                        .iter()
+                        .any(|other| !other.fast_mode && other.effort == c.effort)
+            })
             .map(|c| {
                 let mut label = c.effort.as_deref().map_or(c.agent.clone(), effort_title);
-                if c.fast_mode {
+                if c.fast_mode && !c.supports_speed {
                     label.push_str(" · Fast");
                 }
-                (c.agent.clone(), label)
+                (
+                    c.agent.clone(),
+                    label,
+                    c.effort == current.effort
+                        && (current.supports_speed || c.fast_mode == current.fast_mode),
+                )
             })
             .collect();
-        (options, c.agent.clone())
+        (choices.len() > 1).then_some(choices)
     });
     let models_for_effort = models.clone();
     let select = move |c: &dominion_protocol::lobby::HouseChoice| {
         AgentSelection::new(
             c.agent.clone(),
-            if c.supports_clock_aware {
-                strategy
-            } else {
-                RunnerStrategy::Classic
+            LaunchOptions {
+                strategy: if c.supports_clock_aware {
+                    strategy
+                } else {
+                    RunnerStrategy::Classic
+                },
+                speed: options.speed.filter(|_| c.supports_speed),
             },
         )
     };
@@ -102,16 +129,31 @@ pub fn AgentPicker(
                 }
             }
         }
-        if let Some((options, agent)) = efforts {
+        if let Some(efforts) = efforts {
             select {
                 class: "{class} lb-effort-select",
                 "data-action": "pick-effort",
-                title: "Reasoning effort and speed",
+                title: "Reasoning effort",
                 disabled,
                 onchange: move |e| onpick.call(house_choice(&models_for_effort, &e.value()).map(|(_, c)| select(c))),
-                for (name, label) in options {
-                    option { key: "{name}", value: "{name}", selected: name == agent, "{label}" }
+                for (name, label, is_selected) in efforts {
+                    option { key: "{name}", value: "{name}", selected: is_selected, "{label}" }
                 }
+            }
+        }
+        if let Some((agent, fast)) = speed_choice {
+            select {
+                class: "{class} lb-effort-select",
+                title: "Inference speed",
+                aria_label: "Inference speed",
+                "data-action": "pick-speed",
+                disabled,
+                onchange: move |e| {
+                    let speed = if e.value() == "fast" { InferenceSpeed::Fast } else { InferenceSpeed::Standard };
+                    onpick.call(Some(AgentSelection::new(agent.clone(), LaunchOptions { speed: Some(speed), ..options })));
+                },
+                option { value: "standard", selected: !fast, "Standard" }
+                option { value: "fast", selected: fast, "Fast" }
             }
         }
         if clock_aware && let Some(agent) = selected {
@@ -123,7 +165,7 @@ pub fn AgentPicker(
                 disabled,
                 onchange: move |e| {
                     let strategy = if e.value() == "clock_aware" { RunnerStrategy::ClockAware } else { RunnerStrategy::Classic };
-                    onpick.call(Some(AgentSelection::new(agent.clone(), strategy)));
+                    onpick.call(Some(AgentSelection::new(agent.clone(), LaunchOptions { strategy, ..options })));
                 },
                 option { value: "classic", selected: strategy.is_classic(), "Classic" }
                 option { value: "clock_aware", selected: !strategy.is_classic(), "Clock-aware" }
