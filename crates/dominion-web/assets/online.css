@@ -8,8 +8,12 @@
 .online-controls textarea { font: inherit; color: inherit; background: rgba(0, 0, 0, .45); min-height: 5em; resize: vertical; }
 .online-controls > button { justify-self: start; }
 .online-controls > button.primary { justify-self: center; font-size: 1.2em; padding: .6em 1.8em; margin-top: .4em; }
-.dt-below-log:has(.online-controls) { overflow-y: auto; }
-.dt-controls:has(.online-controls) { display: block; width: 100%; }
+.online-table-management > summary { cursor: pointer; }
+.dt-below-log .dt-controls:has(.online-table-management) {
+  display: block;
+  max-height: 50%;
+  overflow-y: auto;
+}
 .online-idle .online-controls > strong { display: none; }
 .online-accounts { display: flex; flex-wrap: wrap; gap: .4em .9em; }
 .online-accounts a.on { font-weight: 700; text-decoration: underline; }

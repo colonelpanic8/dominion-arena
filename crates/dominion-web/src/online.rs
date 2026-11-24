@@ -130,7 +130,14 @@ pub fn OnlinePage(account: Option<String>) -> Element {
         .map(|y| y.name.clone());
     let controls = rsx! {
         if let Some(account) = owner.cloned() {
-            OfficialPanel { key: "{account}", account }
+            if state.read().view.is_some() {
+                details { class: "online-table-management",
+                    summary { "Official account controls" }
+                    OfficialPanel { key: "{account}", account }
+                }
+            } else {
+                OfficialPanel { key: "{account}", account }
+            }
         }
         if let Some(error) = error.clone() {
             p { class: "error", "{error}" }
