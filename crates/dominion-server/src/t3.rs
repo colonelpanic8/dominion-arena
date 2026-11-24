@@ -502,6 +502,7 @@ async fn play_inner(
         return Err(view.text);
     }
     let mut errors = 0;
+    let mut shown_prompts = 0;
     loop {
         let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
         if state["game"]["running"] == false {
@@ -521,8 +522,15 @@ async fn play_inner(
             }
             continue;
         }
+        let mut guidance = String::new();
+        for prompt in view.model_prompts.iter().skip(shown_prompts) {
+            guidance.push_str(&format!(
+                "Gameplay instruction from the person directing this seat:\n{prompt}\n\n"
+            ));
+        }
+        shown_prompts = view.model_prompts.len();
         let mut message = format!(
-            "Current view:\n{}",
+            "{guidance}Current view:\n{}",
             serde_json::to_string(state).expect("serializable")
         );
         for interaction in 0..32 {

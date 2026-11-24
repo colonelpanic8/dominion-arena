@@ -10,6 +10,7 @@ pub mod interaction;
 pub mod logfmt;
 pub mod menu;
 pub mod meta;
+mod model;
 pub mod moves;
 pub mod plain;
 mod replay;
@@ -63,6 +64,7 @@ pub struct GameCtx {
 /// What a game's source has besides its views. The page draws only what is offered.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Offers {
+    pub model_controls: Option<String>,
     /// The game has a chat to show.
     pub chat: bool,
     /// Where what the page says in it goes; none: it is only read.
@@ -596,13 +598,26 @@ pub fn ViewToggle(table_on: Signal<bool>) -> Element {
 /// watch, the view toggle and the menu.
 #[component]
 pub fn GameBar(title: String, table_on: Signal<bool>, children: Element) -> Element {
-    let watchers = use_game().state.read().meta.watchers;
+    let ctx = use_game();
+    let watchers = ctx.state.read().meta.watchers;
+    let endpoint = ctx.offers.read().model_controls.clone();
+    let me = use_account().me.read().clone();
+    let running = ctx
+        .state
+        .read()
+        .view
+        .as_ref()
+        .is_none_or(|v| v.game.running);
+    let game = ctx.game.read().clone();
     rsx! {
         div { class: "seat-bar",
             span { class: "game-title", "{title}" }
             {children}
             if watchers > 0 {
                 span { class: "muted", "data-watchers": "{watchers}", title: "People watching this game", "{watchers} watching" }
+            }
+            if running && let (Some(url), Some(me)) = (endpoint, me) {
+                model::ModelControls { key: "{url}-{game}-{me.user.name}", url, game, admin: me.admin }
             }
             ViewToggle { table_on }
             menu::GameMenu {}
@@ -670,6 +685,11 @@ pub fn GamePage(id: String) -> Element {
         let agents = (meta.users.iter().flatten())
             .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
         Offers {
+            model_controls: summary
+                .read()
+                .as_ref()
+                .filter(|g| g.running && g.agents.iter().any(Option::is_some))
+                .map(|_| format!("/api/games/{}/model", platform::encode(&game.read()))),
             chat: true,
             say: Some(Say::Arena),
             transcript: agents.then(|| game.read().clone()),

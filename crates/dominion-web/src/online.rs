@@ -95,7 +95,11 @@ pub fn OnlinePage(account: Option<String>) -> Element {
             account: Some(a.id.clone()),
             name: a.account.clone(),
         });
-    let offers = use_memo(use_reactive!(|say| Offers {
+    let model_controls = shown
+        .as_deref()
+        .map(|id| api::online_path(Some(id), "model"));
+    let offers = use_memo(use_reactive!(|(say, model_controls)| Offers {
+        model_controls,
         chat: say.is_some() || !state.read().chat.is_empty(),
         say,
         transcript: Some(game())

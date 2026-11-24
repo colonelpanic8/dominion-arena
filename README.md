@@ -481,6 +481,18 @@ bearer token. Guests never can.
 `rated: true` makes a game with a different one of the server's agents in every seat
 count for their ratings; it allows no undo.
 
+#### Directing a model during play
+
+Open **Model controls** in a live game's Table or Plain view. The Arena game host
+or linked dominion.games account owner can send a prompt to a specific model seat.
+Admins can do this on either backend. The model receives the prompt with its next
+game observation. A move it is already preparing can still finish first. Prompts
+can appear in the agent transcript.
+
+An admin can choose **Take over seat** to pause the runner and answer the seat's
+legal decisions in that panel. Closing the panel keeps the seat under manual
+control. **Return to model** starts the runner again on the current position.
+
 #### Briefs, debriefs and reports
 
 To run games between agents and learn from them, `create_game` also takes:

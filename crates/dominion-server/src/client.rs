@@ -16,9 +16,19 @@ use tokio::time::Instant;
 /// A tool call's outcome: its text content, structured content, and whether it failed.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Reply {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub model_prompts: Vec<String>,
     pub ok: bool,
     pub text: String,
     pub json: Option<Value>,
+}
+
+impl Reply {
+    pub(crate) fn game_over(&self) -> bool {
+        self.json
+            .as_ref()
+            .is_some_and(|v| crate::harness::game_state(v)["game"]["running"] == false)
+    }
 }
 
 /// Why a tool call got no [`Reply`].
@@ -75,6 +85,12 @@ impl Client {
             .collect::<Vec<_>>()
             .join("\n");
         Ok(Reply {
+            model_prompts: result
+                .meta
+                .as_ref()
+                .and_then(|m| m.get("dominion/modelPrompts"))
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default(),
             ok: result.is_error != Some(true),
             text,
             json: result.structured_content,

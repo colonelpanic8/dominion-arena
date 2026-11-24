@@ -72,6 +72,7 @@ pub fn router(
         .route("/games", get(list).post(create))
         .route("/deal", post(deal))
         .route("/seat", get(seat))
+        .route("/games/{id}/model", get(model_seats).post(model_action))
         .route("/games/{id}/view", get(view))
         .route("/games/{id}/watch", get(watch))
         .route("/games/{id}/answer", post(answer))
@@ -550,7 +551,7 @@ pub(crate) struct Error {
 }
 
 impl Error {
-    fn new(status: StatusCode, message: impl Into<String>) -> Error {
+    pub(crate) fn new(status: StatusCode, message: impl Into<String>) -> Error {
         Error {
             status,
             message: message.into(),
@@ -892,6 +893,51 @@ type Queried<T> = std::result::Result<Query<T>, axum::extract::rejection::QueryR
 fn query<T>(query: Queried<T>) -> Result<T> {
     let Query(query) = query.map_err(|e| Error::new(StatusCode::BAD_REQUEST, e.body_text()))?;
     Ok(query)
+}
+
+fn model_access(api: &Api, id: &str, headers: &HeaderMap) -> Result<(Ident, bool)> {
+    let ident = api.signed_in(headers)?;
+    let (_, admin) = api.arena.model_director(&ident)?;
+    if !admin && api.hub.meta(id)?.host.as_deref() != Some(&ident.user) {
+        return Err(Error::new(
+            StatusCode::FORBIDDEN,
+            "Only the game host and admins can direct its models",
+        ));
+    }
+    Ok((ident, admin))
+}
+
+async fn model_seats(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Json<Vec<dominion_protocol::api::ModelSeat>> {
+    let (who, admin) = model_access(&api, &id, &headers)?;
+    Ok(axum::Json(
+        api.hub
+            .model_seats(&id, admin.then_some(who.user.as_str()))?,
+    ))
+}
+
+async fn model_action(
+    State(api): State<Api>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> Json<Vec<dominion_protocol::api::ModelSeat>> {
+    let (who, admin) = model_access(&api, &id, &headers)?;
+    let req = body(&bytes)?;
+    api.hub.model_action(&id, &who.user, admin, &req)?;
+    if matches!(
+        req.action,
+        dominion_protocol::api::ModelAction::Take | dominion_protocol::api::ModelAction::Release
+    ) {
+        api.arena.dispatch();
+    }
+    Ok(axum::Json(
+        api.hub
+            .model_seats(&id, admin.then_some(who.user.as_str()))?,
+    ))
 }
 
 async fn view(

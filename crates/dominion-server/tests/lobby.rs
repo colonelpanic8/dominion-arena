@@ -64,15 +64,14 @@ async fn start() -> Server {
 }
 
 async fn start_with(options: Options) -> Server {
+    start_with_hub(options, Arc::new(Hub::default())).await
+}
+
+async fn start_with_hub(options: Options, hub: Arc<Hub>) -> Server {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let stop = CancellationToken::new();
-    tokio::spawn(dominion_server::serve(
-        listener,
-        Arc::new(Hub::default()),
-        options,
-        stop.clone(),
-    ));
+    tokio::spawn(dominion_server::serve(listener, hub, options, stop.clone()));
     Server {
         base,
         http: reqwest::Client::new(),
@@ -551,4 +550,114 @@ async fn anonymous_watching_works_with_guest_accounts_disabled_and_cannot_act() 
         .get(&format!("/api/chat/game-{private}"), None)
         .await
         .error(StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn model_control_is_seat_scoped_and_fences_the_models_existing_session() {
+    use dominion_server::hub::{self, Meta, NewGame};
+    let hub = Arc::new(Hub::default());
+    let options = Options {
+        arena: dominion_server::arena::Settings {
+            admins: vec!["Director".into()],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let server = start_with_hub(options, hub.clone()).await;
+    let host = server.register("Host").await;
+    let admin = server.register("Director").await;
+    let outsider = server.register("Visitor").await;
+    let created = hub
+        .host(
+            hub::config(&NewGame {
+                players: 2,
+                seed: Some(1),
+                kingdom: vec!["Village".into()],
+                ..Default::default()
+            })
+            .unwrap(),
+            vec!["First".into(), "Second".into()],
+            Meta {
+                host: Some("u1".into()),
+                agents: vec![true, false],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let id = &created.game_id;
+    let url = format!("/api/games/{id}/model");
+    let req = |action| json!({"game": id, "seat": 0, "action":action});
+    let client = dominion_server::client::Client::connect(&format!("{}/mcp", server.base))
+        .await
+        .unwrap();
+    let bind = json!({"game":id,"token":created.seats[0].token});
+    assert!(client.call("join_game", bind).await.unwrap().ok);
+    let prompt = req(json!({"type":"prompt","text":"Save a buy for Village."}));
+    server
+        .post(&url, None, prompt.clone())
+        .await
+        .error(StatusCode::UNAUTHORIZED);
+    server
+        .post(&url, Some(&outsider), prompt.clone())
+        .await
+        .error(StatusCode::FORBIDDEN);
+    server.post(&url, Some(&host), prompt).await.ok();
+    let observe = || client.call("state", json!({}));
+    let shown = observe().await.unwrap();
+    assert!(shown.text.contains("Save a buy for Village."));
+    assert!(
+        !observe()
+            .await
+            .unwrap()
+            .text
+            .contains("Save a buy for Village.")
+    );
+    let take = req(json!({"type":"take"}));
+    server
+        .post(&url, Some(&host), take.clone())
+        .await
+        .error(StatusCode::FORBIDDEN);
+    let seats: Vec<dominion_protocol::api::ModelSeat> =
+        server.post(&url, Some(&admin), take).await.ok().json();
+    assert_eq!(seats.len(), 1);
+    let decision = seats[0]
+        .playing
+        .as_ref()
+        .unwrap()
+        .decision
+        .as_ref()
+        .unwrap();
+    let answer = json!({"decision":decision.id,"indices":[decision.options[0].index]});
+    let stale = client
+        .call(
+            "step",
+            json!({"decision":decision.id,"indices":[decision.options[0].index],"timeout_s":0}),
+        )
+        .await
+        .unwrap();
+    assert!(!stale.ok && stale.text.contains("admin"), "{}", stale.text);
+    let play = req(json!({"type":"answer","answer":answer}));
+    server
+        .post(&url, Some(&host), play.clone())
+        .await
+        .error(StatusCode::FORBIDDEN);
+    server.post(&url, Some(&admin), play.clone()).await.ok();
+    server
+        .post(&url, Some(&admin), play.clone())
+        .await
+        .error(StatusCode::CONFLICT);
+    server
+        .post(&url, Some(&admin), req(json!({"type":"release"})))
+        .await
+        .ok();
+    server
+        .post(&url, Some(&admin), play)
+        .await
+        .error(StatusCode::CONFLICT);
+    let other = json!({"game":id,"seat":1,"action":{"type":"take"}});
+    server
+        .post(&url, Some(&admin), other)
+        .await
+        .error(StatusCode::CONFLICT);
+    client.close().await;
 }

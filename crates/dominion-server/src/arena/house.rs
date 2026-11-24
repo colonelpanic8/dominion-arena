@@ -200,6 +200,52 @@ impl Drop for Reservation<'_> {
 }
 
 impl Arena {
+    /// Older lobby snapshots always seat the host, but do not identify them if several
+    /// accounts played. Older Bot Games also omit the house seat flag.
+    pub(super) fn restore_model_hosts(&self) -> Result<()> {
+        use lobby::Source;
+        for game in self
+            .hub
+            .hosting()
+            .into_iter()
+            .filter(|g| g.running && matches!(g.source, Source::Table | Source::Automatch))
+        {
+            let meta = self.hub.meta(&game.id)?;
+            if meta.host.is_some() {
+                continue;
+            }
+            let mut agents = meta.agents;
+            if game.source == Source::Automatch && !agents.contains(&true) && game.names.len() == 2
+            {
+                agents.clear();
+                for owner in &meta.owners {
+                    let user = owner
+                        .as_ref()
+                        .map(|id| self.db.user(id))
+                        .transpose()?
+                        .flatten();
+                    agents.push(user.is_some_and(|u| matches!(u.login, Login::House)));
+                }
+            }
+            if !agents.contains(&true) {
+                continue;
+            }
+            let mut people = meta
+                .owners
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| agents.get(*i) == Some(&false))
+                .filter_map(|(_, user)| user.as_ref());
+            if let Some(host) = people.next()
+                && people.next().is_none()
+            {
+                self.hub
+                    .restore_model_host(&game.id, agents, host.clone())?;
+            }
+        }
+        Ok(())
+    }
+
     /// Creates an ordinary game, optionally seating the server's agents directly.
     pub fn create_game(
         &self,
@@ -350,7 +396,13 @@ impl Arena {
         let jobs: Vec<_> = self
             .jobs(&runner.playing(), &official)
             .into_iter()
-            .filter(|j| !j.official || !j.game_id.is_empty())
+            .filter(|j| {
+                if j.official {
+                    !j.game_id.is_empty()
+                } else {
+                    !self.hub.model_paused(&j.game_id, j.seat)
+                }
+            })
             .collect();
         if runner.told.as_ref() != Some(&jobs) {
             let _ = runner.send.send(ToRunner::Jobs { jobs: jobs.clone() });

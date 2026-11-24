@@ -471,6 +471,18 @@ impl Session {
         match self.hub.view(seat) {
             Ok((view, text, note)) => {
                 let mut result = view_result(&view, text, format);
+                let prompts = self.hub.model_prompts(seat);
+                if !prompts.is_empty() {
+                    for prompt in &prompts {
+                        result.content.push(ContentBlock::text(format!(
+                            "GAMEPLAY INSTRUCTION from the person directing this seat:\n{prompt}"
+                        )));
+                    }
+                    result
+                        .meta
+                        .get_or_insert_with(Default::default)
+                        .insert("dominion/modelPrompts".into(), serde_json::json!(prompts));
+                }
                 if include_cards {
                     let cards = dominion_agent::glossary_for(&view);
                     let reference = match format {

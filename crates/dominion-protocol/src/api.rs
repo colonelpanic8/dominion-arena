@@ -742,3 +742,37 @@ impl Default for OnlineStart {
         }
     }
 }
+
+/// Live controls offered for one of the server's model seats.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSeat {
+    pub seat: u8,
+    pub name: String,
+    pub controlled: bool,
+    /// Visible only to the admin currently playing the seat.
+    pub playing: Option<ModelHand>,
+    pub prompts: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ModelHand {
+    pub hand: crate::ZoneView,
+    pub decision: Option<crate::AgentDecision>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelRequest {
+    pub game: String,
+    pub seat: u8,
+    pub action: ModelAction,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ModelAction {
+    Prompt { text: String },
+    Take,
+    Release,
+    Answer { answer: Answer },
+}

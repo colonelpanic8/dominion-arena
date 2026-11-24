@@ -679,8 +679,19 @@ pub async fn watch_transcript(game: &str, token: Option<&str>, on_change: impl F
     follow(&url, on_change).await
 }
 
+pub(crate) async fn model_seats(url: &str) -> Result<Vec<dominion_protocol::api::ModelSeat>> {
+    imp::get(url, None).await
+}
+
+pub(crate) async fn model_action(
+    url: &str,
+    req: &dominion_protocol::api::ModelRequest,
+) -> Result<Vec<dominion_protocol::api::ModelSeat>> {
+    imp::post(url, None, req).await
+}
+
 /// An official account's API path: the primary one's unprefixed when `account` is none.
-fn online_path(account: Option<&str>, rest: &str) -> String {
+pub(crate) fn online_path(account: Option<&str>, rest: &str) -> String {
     match account {
         Some(id) => format!("/api/online/{}/{rest}", encode(id)),
         None => format!("/api/online/{rest}"),

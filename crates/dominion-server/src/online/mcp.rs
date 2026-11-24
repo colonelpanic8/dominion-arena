@@ -14,7 +14,7 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct Session {
     client: Client,
-    managed: bool,
+    managed: Option<(super::Hosted, u64)>,
     presentation: Arc<Mutex<play::Presentation>>,
 }
 
@@ -24,13 +24,15 @@ impl Session {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            managed: false,
+            managed: None,
             presentation: Arc::new(Mutex::new(play::Presentation::default())),
         }
     }
-    pub(crate) fn managed(client: Client) -> Self {
+    pub(crate) fn managed(hosted: super::Hosted) -> Self {
+        let generation = hosted.model_generation();
+        let client = hosted.client.clone();
         Self {
-            managed: true,
+            managed: Some((hosted, generation)),
             ..Self::new(client)
         }
     }
@@ -75,6 +77,11 @@ impl PlaySeat for Session {
             seat: dominion_engine::PlayerId(seat),
         };
         let observation = PlayObservation {
+            prompts: self
+                .managed
+                .as_ref()
+                .map(|(h, _)| h.prompts(&seat.game))
+                .unwrap_or_default(),
             log: view.since_last_decision.clone(),
             glossary: glossary(&update.reducer, &names)?,
             undos: update.reducer.epoch,
@@ -88,6 +95,13 @@ impl PlaySeat for Session {
 
     async fn answer(&self, answer: &Answer, expect: Option<&[String]>) -> Result<(), String> {
         let expect = expect.map(<[String]>::to_vec);
+        let _guard = if let Some((hosted, generation)) = &self.managed {
+            let guard = hosted.control.lock().await;
+            hosted.check_model(*generation)?;
+            Some(guard)
+        } else {
+            None
+        };
         self.client.answer(answer.clone(), expect).await
     }
 
@@ -100,7 +114,7 @@ impl PlaySeat for Session {
     }
 
     fn no_game(&self) -> String {
-        if self.managed {
+        if self.managed.is_some() {
             "its owner starts one from Arena's official-game page".into()
         } else {
             "call new_game for an unrated game against official server bots".into()
@@ -132,7 +146,7 @@ impl Session {
         description = "Start an unrated official-server game against server bots. players defaults to 2 and bots to 1; bots must equal players minus one. Optional kingdom and landscapes are required card names. No humans or spectators. Never replaces or resigns an existing game. Settings the backend cannot honor are refused."
     )]
     async fn new_game(&self, Parameters(p): Parameters<NewGame>) -> CallToolResult {
-        if self.managed {
+        if self.managed.is_some() {
             return self.play().failure(MANAGED);
         }
         match self.client.new_game(p).await {
@@ -172,7 +186,7 @@ impl Session {
         description = "Explicitly resign this account's current official-server game. Token is ignored."
     )]
     async fn resign(&self, Parameters(_): Parameters<StateParams>) -> CallToolResult {
-        if self.managed {
+        if self.managed.is_some() {
             return self.play().failure(MANAGED);
         }
         self.settled(self.client.resign().await).await
@@ -181,7 +195,7 @@ impl Session {
         description = "Reconnect only this process's own official-server session. Invalidates prior decisions, does not resend actions, and never imports a browser session or removes another login."
     )]
     async fn online_reconnect(&self) -> CallToolResult {
-        if self.managed {
+        if self.managed.is_some() {
             return self.play().failure(MANAGED);
         }
         self.settled(self.client.reconnect().await).await

@@ -140,6 +140,7 @@ pub struct NewGameParams {
 #[derive(Default)]
 pub struct Presentation {
     pub seat: Option<crate::hub::Seat>,
+    prompt_count: usize,
     previous: Option<AgentView>,
     shown: BTreeSet<String>,
     last_log: Option<usize>,
@@ -389,6 +390,7 @@ impl Presentation {
             note,
             clock,
             chat,
+            prompts,
         } = observation;
         let undos = *undos;
         if self.seat.as_ref() != Some(seat) {
@@ -489,6 +491,11 @@ impl Presentation {
             text.push_str(&chat_text(said, own.map(String::as_str)));
         }
         self.last_chat = chat.last().map(|m| m.seq).or(self.last_chat);
+        for prompt in prompts.iter().skip(self.prompt_count) {
+            text.push_str("\nGAMEPLAY INSTRUCTION from the person directing this seat:\n");
+            text.push_str(prompt);
+        }
+        self.prompt_count = prompts.len();
         let rendered = dominion_agent::text::render(view);
         if let Some(index) = rendered.find("DECISION ") {
             text.push('\n');
@@ -565,6 +572,7 @@ mod tests {
                 note: None,
                 clock: None,
                 chat: vec![],
+                prompts: vec![],
             },
         )
     }

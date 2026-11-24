@@ -453,8 +453,7 @@ async fn play_inner(
                 || archive.has_result()
                 || call(client, archive, "dominion", "state", token(job, json!({})))
                     .await?
-                    .text
-                    .contains("GAME OVER");
+                    .game_over();
             if ended {
                 archive.record("native_response", json!({"response": said}))?;
                 if let Some(request) = debrief.take() {
@@ -508,7 +507,7 @@ async fn play_inner(
                             Err(_) if archive.has_result() => return Ok(Ok(String::new())),
                             Err(error) => return Err(error),
                         };
-                        if reply.text.contains("GAME OVER") {
+                        if reply.game_over() {
                             over = true;
                         }
                         if reply.ok {
