@@ -17,11 +17,11 @@ pub struct NewGame {
     /// one line, and no two seats share a name.
     #[serde(default)]
     pub names: Vec<String>,
-    /// Per seat: the server's agent profile to play it, or null for a token seat.
+    /// Each seat accepts a profile name (Classic), an agent and strategy, or null for a token seat.
     /// When supplied, one entry per player. Seating agents requires a registered
     /// account and uses its agent-seat allowance.
     #[serde(default)]
-    pub agents: Vec<Option<String>>,
+    pub agents: Vec<Option<crate::lobby::AgentSelection>>,
     /// Kingdom piles by name. Without it, a random kingdom is dealt from `sets`.
     #[serde(default)]
     pub kingdom: Vec<String>,
@@ -655,6 +655,8 @@ pub struct OnlineResultOpponent {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnlineManagement {
+    #[serde(flatten)]
+    pub options: crate::lobby::LaunchOptions,
     /// The official account's id.
     #[serde(default)]
     pub id: String,
@@ -677,10 +679,15 @@ pub struct OnlineManagement {
     /// server's settings: a search's range is raised to it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_opponent_level: Option<f64>,
+    /// The game is against another official account this server hosts.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub paired: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OnlineStart {
+    #[serde(flatten)]
+    pub options: crate::lobby::LaunchOptions,
     pub agent: String,
     #[serde(default)]
     pub mode: OnlineMode,
@@ -692,6 +699,21 @@ pub struct OnlineStart {
     pub landscapes: Vec<String>,
     #[serde(default = "one_bot")]
     pub bots: u8,
+    /// Another official account this server hosts to play against at a private unrated
+    /// table, instead of a search (`mode` unrated, two players). `matching.timer` is the
+    /// table's timer, where 4 is Off; `kingdom` and `landscapes` apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub against: Option<OnlineOpponent>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnlineOpponent {
+    #[serde(flatten)]
+    pub options: crate::lobby::LaunchOptions,
+    /// The other hosted account's id.
+    pub account: String,
+    /// The agent that plays it.
+    pub agent: String,
 }
 fn one_bot() -> u8 {
     1
@@ -699,6 +721,10 @@ fn one_bot() -> u8 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OnlineAttach {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strategy: Option<crate::lobby::RunnerStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<crate::lobby::InferenceSpeed>,
     pub agent: String,
 }
 
@@ -734,11 +760,13 @@ impl Default for OnlineStart {
     fn default() -> Self {
         Self {
             agent: String::new(),
+            options: Default::default(),
             mode: OnlineMode::Bots,
             matching: OnlineMatching::default(),
             bots: 1,
             kingdom: vec![],
             landscapes: vec![],
+            against: None,
         }
     }
 }

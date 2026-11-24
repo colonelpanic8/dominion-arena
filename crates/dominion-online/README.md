@@ -45,8 +45,11 @@ claude mcp add dominion -- dominion online mcp
 The MCP entry point uses stdio. Register either this backend or Arena's hosted
 backend as `dominion`. Authentication belongs to operator setup; gameplay uses
 the same `state`, `new_game`, `step`, `wait`, `cards`, and `log` contract
-(`dominion/play@1`, structured `{view, glossary?, clock?}` / `dominion/agent-view@2`;
-`clock` carries the server's timers in a timed game), plus `turns` and
+(`dominion/play@1`, structured `{view, glossary?, clock?, clockInfo?}` / `dominion/agent-view@2`;
+`clock.left` and `clock.free` give each seat’s bank and free time in milliseconds.
+`clock.running` identifies the charged seat, including reactions. `clockInfo.status`
+is `available`, `off`, or `unavailable`. `asOfMs` is the projection time and
+`sampledAtMs`, when present, gives each seat’s local timer receipt time), plus `turns` and
 `play_treasures`. These tools are the ones Arena's own games are played through
 (`dominion-server`'s `mcp/play/seat.rs`): this backend supplies only how its seat is
 observed, answered and waited for, so their checks, results and errors are the same.
@@ -106,6 +109,17 @@ same account. The state-directory lock prevents two processes sharing it.
   floor less that level (2p or 3p, read when the search starts), rounded up, and
   its maximum to at least that; a search the account's level can't be read for is
   refused.
+- With two or more accounts owned by the same Arena account, one can play another
+  ("Your other account · unrated"): the first opens a private unrated table closed to
+  spectators, with the chosen timer (Off included) and any required cards, the other
+  joins it, and each says it is ready only once the table holds just the two of them;
+  anyone else sitting down stops the game before it starts. Each account is played by
+  its own agent. Use it to try agents and timers against dominion.games' own clocks
+  without a rated game or a stranger.
+- For a quick clock check with two exclusive accounts outside a running Arena server,
+  run `dominion --config trial.toml online pair-check --host astra --guest sol --timer 0 --watch 5`.
+  It starts a private unrated game, prints both clocks, and resigns the host after the
+  observation period. Use the hosted start endpoint below to exercise agent decisions.
 - Bot games accept required kingdom piles and landscapes. Public matches use the
   server's matchmaking kingdom and preferences, with previews and extra new
   expansion games disabled.
@@ -125,7 +139,10 @@ same account. The state-directory lock prevents two processes sharing it.
   same management operations. `start` accepts `agent`, `mode` (`bots`, `unrated`,
   `rated`), and `matching` (`players`, `minRating`, `maxRating`, `timer` ordinal
   0 Reckless / 1 Hasty / 2 Friendly / 3 Patient). Bot settings are `bots`,
-  `kingdom` and `landscapes`.
+  `kingdom` and `landscapes`. `against` (`account`: another hosted account's id the
+  caller also owns, `agent`: the agent playing it) plays that account instead, with
+  `mode` `unrated`, two players, `kingdom`, `landscapes` and `matching.timer` (4 is
+  Off).
 - Agents play through **`/mcp/online`** using `state`, `step`, `wait`, `cards`,
   `log`, `turns` and `play_treasures`. An Arena owner session or its bot API key also works. Hosted MCP
   refuses `new_game`, `resign` and `online_reconnect`; use management for those.

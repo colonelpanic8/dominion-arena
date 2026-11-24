@@ -15,11 +15,17 @@ use dominion_online::{
 use dominion_protocol::{
     AgentView, Answer, GlossaryEntry,
     api::{OnlineMatching, OnlineMode},
-    lobby::{ChatKind, ChatMessage, ClockView},
+    lobby::{ChatKind, ChatMessage, ClockInfo, ClockStatus, ClockView},
 };
 mod matching;
+mod pairing;
 use matching::HumanTable;
-use std::{sync::Arc, time::Duration};
+pub use pairing::PairTable;
+use pairing::Pairing;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, oneshot, watch};
 
 #[derive(Clone, Debug, Default, serde::Deserialize, schemars::JsonSchema)]
@@ -41,11 +47,25 @@ impl NewGame {
         if !(2..=6).contains(&players) || bots != players - 1 {
             return Err("REFUSED: official backend requires 2–6 players and bots = players - 1; human games are unsupported".into());
         }
-        if self.kingdom.len() > 10 {
+        Ok((
+            bots,
+            table_rules(catalog, players, &self.kingdom, &self.landscapes)?,
+        ))
+    }
+}
+/// A table's rules for `players` seats, with `kingdom` and `landscapes` required.
+fn table_rules(
+    catalog: &Catalog,
+    players: u8,
+    kingdom: &[String],
+    landscapes: &[String],
+) -> Result<Vec<TableRule>, String> {
+    {
+        if kingdom.len() > 10 {
             return Err("REJECTED: at most ten required Kingdom piles".into());
         }
         let mut required = Vec::new();
-        for (names, landscape) in [(&self.kingdom, false), (&self.landscapes, true)] {
+        for (names, landscape) in [(kingdom, false), (landscapes, true)] {
             for name in names {
                 let ordinal = catalog
                     .ordinal(name)
@@ -82,25 +102,36 @@ impl NewGame {
                 required.push(RequiredSlot::Card(ordinal));
             }
         }
-        Ok((
-            bots,
-            vec![
-                TableRule {
-                    id: 2,
-                    value: RuleValue::Required(required),
-                },
-                TableRule {
-                    id: 9,
-                    value: RuleValue::Int(i32::from(players)),
-                },
-                TableRule {
-                    id: 10,
-                    value: RuleValue::Int(i32::from(players)),
-                },
-            ],
-        ))
+        Ok(vec![
+            TableRule {
+                id: 2,
+                value: RuleValue::Required(required),
+            },
+            TableRule {
+                id: 9,
+                value: RuleValue::Int(i32::from(players)),
+            },
+            TableRule {
+                id: 10,
+                value: RuleValue::Int(i32::from(players)),
+            },
+        ])
     }
 }
+#[derive(Clone, Debug)]
+pub(crate) struct TimerSample {
+    pub update: TimerUpdate,
+    pub received_ms: u64,
+    pub received_at: Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TimerMode {
+    Off,
+    Active,
+    Unknown,
+}
+
 #[derive(Clone)]
 pub(crate) struct Update {
     pub reducer: Reducer,
@@ -109,14 +140,17 @@ pub(crate) struct Update {
     pub searching: bool,
     pub queue_feedback: Vec<String>,
     pub mode: OnlineMode,
-    /// The official server's latest timer for each player, with when it came (ms since
-    /// the epoch).
-    pub timers: Vec<(TimerUpdate, u64)>,
+    /// The official server's latest timer for each player, with local receipt timestamps.
+    pub timers: Vec<TimerSample>,
+    /// The official game snapshot's timer settings, where a game is loaded.
+    pub timer_settings: Option<dominion_online::model::TimerSettings>,
     /// When the last game finished, in milliseconds since the epoch.
     pub finished_at: Option<u64>,
     /// The official server's ids of the bots at the table.
     pub bots: Vec<i32>,
     pub chat: TableChat,
+    /// The game is against another account this server hosts.
+    pub paired: bool,
 }
 /// What has been said at the account's table, its last lines; a table it joins starts it
 /// afresh.
@@ -182,25 +216,95 @@ impl TableChat {
     }
 }
 impl Update {
-    /// The game's timers as they stand at `now`, by seat.
-    pub fn clock(&self, now: u64) -> Option<ClockView> {
-        if self.timers.is_empty() {
-            return None;
+    fn timer_mode(&self) -> TimerMode {
+        let Some(settings) = &self.timer_settings else {
+            return TimerMode::Unknown;
+        };
+        let Some(preset) = usize::try_from(settings.preset)
+            .ok()
+            .and_then(|i| self.reducer.catalog.enums.get("TimerPresetOptions")?.get(i))
+        else {
+            return TimerMode::Unknown;
+        };
+        if preset == "OFF" {
+            TimerMode::Off
+        } else {
+            TimerMode::Active
         }
-        let players = &self.reducer.state().ok()?.players;
+    }
+
+    /// The game's timers and availability metadata at `now_ms`. When `now_instant` is
+    /// provided, running elapsed time is measured monotonically from receipt so wall-clock
+    /// jumps cannot distort countdowns; otherwise `now_ms` is used directly (for tests).
+    pub fn clock_observation_at(
+        &self,
+        now_ms: u64,
+        now_instant: Option<Instant>,
+    ) -> (Option<ClockView>, Option<ClockInfo>) {
+        let Ok(state) = self.reducer.state() else {
+            return (None, None);
+        };
+        let unavailable = || {
+            (
+                None,
+                Some(ClockInfo {
+                    status: ClockStatus::Unavailable,
+                    as_of_ms: now_ms,
+                    sampled_at_ms: Vec::new(),
+                }),
+            )
+        };
+        match self.timer_mode() {
+            TimerMode::Off => {
+                if self.timers.is_empty() {
+                    return (
+                        None,
+                        Some(ClockInfo {
+                            status: ClockStatus::Off,
+                            as_of_ms: now_ms,
+                            sampled_at_ms: Vec::new(),
+                        }),
+                    );
+                }
+                return unavailable();
+            }
+            TimerMode::Active | TimerMode::Unknown => {}
+        }
+        if self.timers.is_empty() {
+            return unavailable();
+        }
+        let players = &state.players;
         let mut clock = ClockView {
             left: vec![0; players.len()],
             free: vec![0; players.len()],
             running: None,
             increment: None,
         };
-        for (timer, at) in &self.timers {
-            let Some(seat) = players.iter().position(|p| p.player_id == timer.player) else {
-                continue;
+        let mut sampled_at_ms = vec![0; players.len()];
+        let mut running_count = 0usize;
+        for (seat, player) in players.iter().enumerate() {
+            let Some(sample) = self
+                .timers
+                .iter()
+                .find(|s| s.update.player == player.player_id)
+            else {
+                return unavailable();
             };
-            let (mut left, mut free) = (timer.time.max(0) as u64, timer.free_time.max(0) as u64);
-            if timer.running {
-                let elapsed = now.saturating_sub(*at);
+            let (mut left, mut free) = (
+                sample.update.time.max(0) as u64,
+                sample.update.free_time.max(0) as u64,
+            );
+            if sample.update.running {
+                running_count += 1;
+                if running_count > 1 {
+                    return unavailable();
+                }
+                let elapsed = match now_instant {
+                    Some(now) => now
+                        .saturating_duration_since(sample.received_at)
+                        .as_millis() as u64,
+                    None => now_ms.saturating_sub(sample.received_ms),
+                };
                 let from_free = elapsed.min(free);
                 free -= from_free;
                 left = left.saturating_sub(elapsed - from_free);
@@ -208,11 +312,30 @@ impl Update {
             }
             clock.left[seat] = left;
             clock.free[seat] = free;
+            sampled_at_ms[seat] = sample.received_ms;
         }
         if clock.free.iter().all(|&f| f == 0) {
             clock.free.clear();
         }
-        Some(clock)
+        (
+            Some(clock),
+            Some(ClockInfo {
+                status: ClockStatus::Available,
+                as_of_ms: now_ms,
+                sampled_at_ms,
+            }),
+        )
+    }
+
+    /// The game's timers and freshness metadata as of right now (wall + monotonic).
+    pub fn clock_now(&self) -> (Option<ClockView>, Option<ClockInfo>) {
+        self.clock_observation_at(crate::hub::now_ms(), Some(Instant::now()))
+    }
+
+    /// The game's timers as they stand at `now`, by seat.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn clock(&self, now: u64) -> Option<ClockView> {
+        self.clock_observation_at(now, None).0
     }
 
     pub fn view(&self) -> Result<Option<AgentView>, String> {
@@ -249,11 +372,21 @@ enum Request {
     /// A player's profile (this account's when none) under a `RatingTypes` ordinal.
     Profile(Option<i32>, i32, Reply<PlayerProfile>),
     Results(i32, Reply<Vec<ProfileResult>>),
+    /// Opens a private unrated table for the account with that player id to join.
+    PairOpen(i32, PairTable, Reply<i64>),
+    /// Joins the other account's table, made by that host for this account to play at.
+    PairJoin(i64, i32, u8, oneshot::Sender<Result<(), String>>),
+    /// Starts the table's game once that player has joined it.
+    PairStart(i32, oneshot::Sender<Result<(), String>>),
+    /// Leaves a paired table whose game hasn't started.
+    PairAbandon(oneshot::Sender<Result<(), String>>),
 }
 type Reply<T> = oneshot::Sender<Result<T, String>>;
 /// How long dominion.games has to answer a player-page request (its own client's limit).
 const PROFILE_TIMEOUT: Duration = Duration::from_secs(15);
 const RECONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long each step of setting up a paired table may take.
+const PAIRING_TIMEOUT: Duration = Duration::from_secs(30);
 /// What the official player page asks for: a profile with 30 history points, and 25
 /// results.
 const PROFILE_PERIOD: i32 = 25;
@@ -340,12 +473,15 @@ impl Client {
         };
         let saved = human.as_ref().map(|h| h.table.clone()).or(saved);
         let mode = human.as_ref().map_or(OnlineMode::Bots, |h| h.mode);
+        let paired = human.as_ref().is_some_and(|h| h.paired);
         let mut runtime = Runtime {
             human,
             search: None,
             queue_status: None,
             outbox: Vec::new(),
             pending_match: Vec::new(),
+            pairing: None,
+            timer_presets: Vec::new(),
             profiles: Waiting::default(),
             results: Waiting::default(),
             socket: Some(socket),
@@ -378,9 +514,11 @@ impl Client {
                 searching: false,
                 queue_feedback: Vec::new(),
                 timers: Vec::new(),
+                timer_settings: None,
                 finished_at: None,
                 bots: Vec::new(),
                 chat: TableChat::default(),
+                paired,
                 mode,
             },
             recorder: Recorder::new(recordings::dir(store.dir())),
@@ -507,6 +645,43 @@ impl Client {
                         publish.send_replace(runtime.published());
                         continue;
                     }
+                    Request::PairOpen(partner, options, reply) => {
+                        let result = match tokio::time::timeout(
+                            PAIRING_TIMEOUT,
+                            runtime.pair_open(partner, options),
+                        )
+                        .await
+                        {
+                            Ok(result) => result,
+                            Err(_) => {
+                                let error =
+                                    "opening the table timed out; reconnect explicitly".to_string();
+                                runtime.fail(error.clone()).await;
+                                Err(error)
+                            }
+                        };
+                        publish.send_replace(runtime.published());
+                        let _ = reply.send(result);
+                        continue;
+                    }
+                    Request::PairJoin(table, host, timer, reply) => {
+                        let result = tokio::time::timeout(
+                            PAIRING_TIMEOUT,
+                            runtime.pair_join(table, host, timer),
+                        )
+                        .await;
+                        (runtime.pairing_step(result).await, reply, false)
+                    }
+                    Request::PairStart(guest, reply) => {
+                        let result =
+                            tokio::time::timeout(PAIRING_TIMEOUT, runtime.pair_start(guest)).await;
+                        (runtime.pairing_step(result).await, reply, false)
+                    }
+                    Request::PairAbandon(reply) => {
+                        let result =
+                            tokio::time::timeout(PAIRING_TIMEOUT, runtime.abandon_pairing()).await;
+                        (runtime.pairing_step(result).await, reply, false)
+                    }
                 };
                 publish.send_replace(runtime.published());
                 let _ = reply.send(result);
@@ -547,6 +722,31 @@ impl Client {
     }
     pub async fn cancel_matchmaking(&self) -> Result<(), String> {
         self.call(Request::CancelMatch).await
+    }
+    /// Opens a private unrated table for the account with player id `partner` to join;
+    /// its id.
+    pub(crate) async fn pair_open(&self, partner: i32, options: PairTable) -> Result<i64, String> {
+        let (tx, rx) = oneshot::channel();
+        self.tx
+            .send(Request::PairOpen(partner, options, tx))
+            .await
+            .map_err(|_| "official client stopped")?;
+        rx.await
+            .map_err(|_| "official client stopped".to_string())?
+    }
+    /// Joins table `table`, which player `host` opened for this account with timer preset
+    /// `timer`, and says it is ready.
+    pub(crate) async fn pair_join(&self, table: i64, host: i32, timer: u8) -> Result<(), String> {
+        self.call(|r| Request::PairJoin(table, host, timer, r))
+            .await
+    }
+    /// Starts the paired table's game once player `guest` has joined it.
+    pub(crate) async fn pair_start(&self, guest: i32) -> Result<(), String> {
+        self.call(|r| Request::PairStart(guest, r)).await
+    }
+    /// Leaves the paired table if its game hasn't started.
+    pub(crate) async fn pair_abandon(&self) -> Result<(), String> {
+        self.call(Request::PairAbandon).await
     }
     pub async fn reconnect(&self) -> Result<(), String> {
         self.call(Request::Reconnect).await
@@ -663,6 +863,9 @@ struct Runtime {
     queue_status: Option<bool>,
     outbox: Vec<Vec<u8>>,
     pending_match: Vec<Message>,
+    pairing: Option<Pairing>,
+    /// The timer presets dominion.games offers, as login gave them.
+    timer_presets: Vec<(i32, dominion_online::transport::TimerSettings)>,
     profiles: Waiting<(i32, i32), PlayerProfile>,
     results: Waiting<i32, Vec<ProfileResult>>,
     update: Update,
@@ -676,6 +879,7 @@ impl Runtime {
         if let Some(table) = &self.table {
             self.update.chat.at(table.table_id);
         }
+        self.update.paired = self.human.as_ref().is_some_and(|h| h.paired);
         self.update.clone()
     }
     async fn close(&mut self) {
@@ -818,6 +1022,15 @@ impl Runtime {
         let completed_table = self.holds_finished_table();
         let reducer = &mut self.update.reducer;
         match message {
+            // An answer can cross the official result in flight. The result is final.
+            Message::Failed(f)
+                if f.reason == "COMMAND_REQUIRES_GAME"
+                    && completed_table
+                    && !reducer.running
+                    && reducer.result.is_some()
+                    && !self.needs_snapshot
+                    && self.pairing.is_none()
+                    && self.search.is_none() => {}
             Message::Failed(f)
                 if f.reason == "COMMAND_REQUIRES_TABLE"
                     && self.leaving_finished
@@ -841,6 +1054,11 @@ impl Runtime {
                     && self.credentials.is_some() =>
             {
                 self.authentication = Some(Authentication::SessionExpired);
+            }
+            Message::Failed(f) if self.pairing.is_some() && f.reason != "SERVER_IS_DOWN" => {
+                if let Some(pairing) = &mut self.pairing {
+                    pairing.refused = Some(f.error().to_string());
+                }
             }
             Message::Failed(f) => {
                 if f.reason == "SERVER_IS_DOWN" {
@@ -890,6 +1108,7 @@ impl Runtime {
                     self.human = None;
                 }
                 reducer.player_id = login.player_id;
+                self.timer_presets.clone_from(&login.timer_presets);
                 reducer
                     .names
                     .insert(login.player_id, login.username.clone());
@@ -938,9 +1157,9 @@ impl Runtime {
                             .into(),
                     );
                 }
-                if reducer.game_id != Some(snapshot.game_id) {
-                    self.update.timers.clear();
-                }
+                // Invalidate any prior timer samples on every new or replacement snapshot.
+                self.update.timers.clear();
+                self.update.timer_settings = Some(snapshot.table_options.timer_settings.clone());
                 let recorded = snapshot.clone();
                 reducer.replace(snapshot).map_err(|e| e.to_string())?;
                 self.recorder.snapshot(reducer, recorded);
@@ -948,16 +1167,24 @@ impl Runtime {
                 self.request_game = false;
                 self.resuming = false;
                 self.update.searching = false;
+                self.pairing = None;
             }
             Message::Event(event) => {
                 reducer.apply(event.clone()).map_err(|e| e.to_string())?;
                 self.recorder.input(Input::Event { event });
             }
             Message::Timers(timers) => {
-                let at = crate::hub::now_ms();
+                let received_ms = crate::hub::now_ms();
+                let received_at = Instant::now();
                 for timer in timers {
-                    self.update.timers.retain(|(t, _)| t.player != timer.player);
-                    self.update.timers.push((timer, at));
+                    self.update
+                        .timers
+                        .retain(|s| s.update.player != timer.player);
+                    self.update.timers.push(TimerSample {
+                        update: timer,
+                        received_ms,
+                        received_at,
+                    });
                 }
             }
             Message::Question(question) => {
@@ -1038,7 +1265,9 @@ impl Runtime {
             } => {
                 if !awaiting_match
                     && ((player_id == reducer.player_id && !is_player)
-                        || (self.human.is_none() && player_id != reducer.player_id))
+                        || (self.human.is_none()
+                            && player_id != reducer.player_id
+                            && self.pairing.as_ref().is_none_or(|p| p.partner != player_id)))
                 {
                     return Err("REFUSED: official table role changed".into());
                 }
@@ -1223,6 +1452,7 @@ impl Runtime {
                     mode: self.update.mode,
                     owner: reducer.player_id,
                     table: table.clone(),
+                    paired: false,
                 };
                 if table.players.len() != usize::from(options.players) {
                     return Err("REFUSED: matched player count differs".into());
@@ -1551,6 +1781,7 @@ impl Runtime {
         probe: impl Future<Output = Result<Endpoint, String>>,
         connect: impl AsyncFn(Endpoint) -> dominion_online::Result<Transport>,
     ) -> Result<(), String> {
+        self.update.timers.clear();
         self.needs_snapshot |= self.update.reducer.running;
         let idle = !self.needs_snapshot && (self.table.is_none() || self.holds_finished_table());
         let destination = match self.reconnect_to {

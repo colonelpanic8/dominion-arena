@@ -578,12 +578,12 @@ played two minutes): a provider error, the server restarting, a model that ended
 conversation early. A seat that never recovers forfeits by the server's timing. Only a
 forbidden tool, one its CLI offers that the seat may not use, stops the seat at once; a
 call to a tool the CLI doesn't offer (a misspelled name) runs nothing and play goes on.
-To start GPT-6.2-Astra in Fast mode, choose an effort marked **Fast** when
-selecting the agent, or pass the corresponding agent name (for example
-`Astra High Fast`) to the start API. Standard speed is the default. Fast
-requests OpenAI's priority service tier and may use more quota. Set
-`fast_mode = true` in an `[[agents]]` profile for `openai` or `codex` to offer
-that choice independently of reasoning effort. In direct OpenAI archives,
+Select **Inference speed** when starting a direct OpenAI or native Codex seat.
+For example, `{"agent":"Astra High","speed":"fast"}` requests OpenAI priority
+inference for that seat at High effort. `"speed":"standard"` explicitly selects
+ordinary inference. Omitting speed inherits the profile's default. Existing
+`Astra High Fast` launches and profiles with `fast_mode = true` still work.
+Fast may use more quota. In direct OpenAI archives,
 `direct_request.service_tier` records the tier requested and
 `direct_usage.service_tier` records the tier OpenAI reported, when supplied.
 
@@ -618,6 +618,60 @@ subscriptions use Antigravity, not Gemini CLI. `auth_dir` selects a provider's n
 login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and respects
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or `GEMINI_HOME`). Codex needs its native
 `models_cache.json`, populated by starting Codex once after sign-in.
+
+Choose the **runner strategy** when seating an agent. The picker offers Classic
+and Clock-aware for native Claude, Codex and Antigravity players and the direct
+OpenAI and Anthropic players. T3 Code offers Classic. Model, effort and OpenAI
+Fast mode are independent of strategy. Both strategies use the same agent
+account and seat allowance. The game record includes the strategy used.
+
+For example, these Arena game-creation fields seat the same profile twice:
+
+```json
+{"players": 2, "agents": ["Astra High", {"agent": "Astra High", "strategy": "clock_aware", "speed": "fast"}]}
+```
+
+A profile name alone selects Classic. For hosted dominion.games, send
+`strategy` alongside `agent` to `POST /api/online/{id}/start`. On a private
+unrated table, `against.strategy` and `against.speed` configure the peer independently.
+Reattaching an agent to the same running game retains its strategy and speed. The public analyst uses its own model profile.
+
+Classic starts with the ordinary opening and preserves grouped card references
+on Arena join. Clock-aware prepares the first timed decision, prefetches available
+kingdom ratings, and puts a short cue beside a pending decision when the deciding
+seat's clock is low. Both strategies can read the clock. Untimed games use the
+ordinary opening. Standalone MCP clients can request the cue per tool call
+with `"_meta": {"dominion.arena/clockCues": true}`.
+
+To add parallel kingdom analysis to Clock-aware seats, name an existing
+`[[agents]]` profile in the runner configuration:
+
+```toml
+[clock_aware]
+analyst = "Neon High"
+target_seconds = 45
+background = false
+```
+
+The player model considers its hand while the analyst studies the public
+kingdom in a separate session. Only the player can submit moves. Both receive
+the configured playbook's `skills/play-game/references/live-decisions.md` when
+available. The runner refreshes the decision before delivering the preliminary
+plan. A creator's brief or an untimed game uses the player alone.
+
+The 45-second default is a target from the first playable observation through
+the first move request. The runner caps planning at a quarter of available time,
+reserves 12 seconds for submission, and moves sooner when analysis finishes.
+Set the target to zero for immediate play with concurrent public analysis.
+A short bank (60 seconds or less), unavailable clock information, an off-turn
+reaction or a later turn also skips the opening wait.
+
+Set `background = true` to request another assessment starting on turn five,
+then every four turns or as piles approach exhaustion. One analysis runs at a
+time. Notes are delivered on relevant decisions and expire when the position
+changes. Each background request has a two-minute deadline and uses provider
+capacity. Existing per-profile `opening_analyst` settings are a fallback for
+explicit Clock-aware launches when the runner has no global analyst configured.
 
 An Antigravity seat keeps its conversation in a folder of its own under
 `conversations_dir` (default `<auth_dir>/antigravity-cli/conversations/dominion-arena`),

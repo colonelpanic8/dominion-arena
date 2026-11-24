@@ -180,6 +180,7 @@ impl CatalogSpec {
             about: None,
             instructions: self.instructions.clone(),
             effort: own_effort,
+            opening_analyst: None,
             fast_mode: false,
             response_seconds: self.response_seconds,
             history_turns: None,
@@ -465,6 +466,8 @@ pub fn offers(
         name: model.name.clone(),
         effort: effort.map(String::from),
         fast_mode: false,
+        supports_clock_aware: program != Program::T3Code,
+        supports_speed: program.supports_speed(),
     };
     for (catalog, found) in catalogs {
         for model in found {
@@ -515,6 +518,8 @@ pub fn offers(
                 name: id.unwrap_or(&profile.name).into(),
                 effort: profile.effort.clone(),
                 fast_mode: profile.fast_mode,
+                supports_clock_aware: profile.program != Program::T3Code,
+                supports_speed: profile.program.supports_speed(),
             },
         };
         push(profile.clone(), group, false);
@@ -771,6 +776,32 @@ mod tests {
             ..provider.agent(&model, Some("high"))
         };
         let variants = offers(&[profile], &[(provider, vec![model])]);
+        use dominion_protocol::lobby::{
+            AgentSelection, InferenceSpeed, LaunchOptions, RunnerStrategy,
+        };
+        let regular = &variants[0].0;
+        let fast_alias = &variants[1].0;
+        let selection: AgentSelection =
+            serde_json::from_str(r#"{"agent":"Astra High","speed":"fast"}"#).unwrap();
+        let fast = regular.for_launch(selection.options()).unwrap();
+        assert!(fast.fast_mode && !regular.fast_mode);
+        assert_eq!((&fast.name, &fast.effort), (&regular.name, &regular.effort));
+        assert!(selection.options().strategy.is_classic());
+        assert!(
+            fast_alias
+                .for_launch(LaunchOptions::default())
+                .unwrap()
+                .fast_mode
+        );
+        assert!(
+            !fast_alias
+                .for_launch(LaunchOptions {
+                    strategy: RunnerStrategy::ClockAware,
+                    speed: Some(InferenceSpeed::Standard)
+                })
+                .unwrap()
+                .fast_mode
+        );
         let choices: Vec<_> = variants
             .iter()
             .map(|(spec, offer)| {

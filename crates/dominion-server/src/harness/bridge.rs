@@ -1,3 +1,4 @@
+use crate::runner::analyst::Advice;
 use crate::{archive::Archive, client::Client, house::Job};
 use rmcp::model::*;
 use rmcp::service::RequestContext;
@@ -49,6 +50,7 @@ struct SeatBridge {
     token: String,
     journal: mpsc::Sender<Record>,
     official: bool,
+    advice: Advice,
 }
 
 impl SeatBridge {
@@ -127,7 +129,7 @@ impl ServerHandler for SeatBridge {
             json!({"source":"dominion", "tool":tool, "arguments":args}),
         )
         .await?;
-        let reply = match tokio::time::timeout(
+        let mut reply = match tokio::time::timeout(
             crate::mcp::MAX_WAIT + std::time::Duration::from_secs(30),
             self.client.call(tool, Value::Object(args)),
         )
@@ -147,6 +149,7 @@ impl ServerHandler for SeatBridge {
                 return Err(ErrorData::internal_error(error, None));
             }
         };
+        self.advice.deliver(&mut reply);
         self.record(
             "response",
             json!({"source":"dominion", "tool":tool, "reply":reply}),
@@ -167,35 +170,17 @@ pub struct Bridge {
 }
 
 impl Bridge {
-    /// Joins the seat and serves its MCP endpoint: on `socket` if given (reached from
-    /// inside the sandbox through `sandbox::BRIDGE_PORT`), else on a loopback port.
+    /// Serves an already bound seat client on the sandbox socket or a loopback port.
     pub async fn start(
-        server: &str,
+        client: Arc<Client>,
         job: &Job,
         socket: Option<&std::path::Path>,
+        advice: Advice,
     ) -> Result<Self, String> {
-        let endpoint = super::endpoint(server, job)?;
-        let client = Arc::new(
-            Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
-                .await?,
-        );
-        let joined = client
-            .call(
-                if job.official { "state" } else { "join_game" },
-                if job.official {
-                    json!({})
-                } else {
-                    json!({"game":job.game_id,"token":job.token})
-                },
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-        if !joined.ok {
-            return Err(joined.text);
-        }
         let (journal, records) = mpsc::channel(32);
         let bridge = SeatBridge {
-            client,
+            client: client.clone(),
+            advice,
             token: job.token.clone(),
             journal,
             official: job.official,

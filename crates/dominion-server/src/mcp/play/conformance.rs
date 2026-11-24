@@ -32,6 +32,7 @@ async fn keeps_the_contract(seat: &impl PlaySeat) {
     let play = Play {
         seat,
         shown: &shown,
+        clock_cues: true,
     };
     let state = play.observation(true);
     assert!(!failed(&state), "{}", text(&state));
@@ -168,6 +169,7 @@ async fn an_official_seat_keeps_the_contract() {
     let sent = Play {
         seat: &seat,
         shown: &shown,
+        clock_cues: true,
     }
     .step(StepParams {
         token: None,

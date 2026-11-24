@@ -13,9 +13,10 @@ use crate::{
 };
 use dioxus::prelude::*;
 use dominion_protocol::api::{
-    GameSummary, OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineOutcome,
-    OnlineRating, OnlineRatingType, OnlineStart,
+    GameSummary, OnlineManagement, OnlineMatching, OnlineMode, OnlineObservation, OnlineOpponent,
+    OnlineOutcome, OnlineRating, OnlineRatingType, OnlineStart,
 };
+use dominion_protocol::lobby::{AgentSelection, LaunchOptions};
 use dominion_protocol::lobby::{OfficialAccount, official_game_id};
 
 const CSS: &str = include_str!("../assets/online.css");
@@ -237,7 +238,16 @@ pub fn OfficialBox() -> Element {
 /// with an agent, cancel the search, pause or resume the agent, resign, reconnect.
 #[component]
 fn OfficialPanel(account: String) -> Element {
+    // The player's other accounts, which this one can play at a private unrated table.
+    let others: Vec<(String, String)> = (use_owned().into_iter())
+        .filter(|a| a.id != account)
+        .map(|a| (a.id, a.account))
+        .collect();
     let id = use_signal(|| account.clone());
+    let mut against = use_signal(|| None::<String>);
+    let mut options = use_signal(LaunchOptions::default);
+    let mut against_options = use_signal(LaunchOptions::default);
+    let mut against_agent = use_signal(String::new);
     let mut management = use_signal(|| None::<OnlineManagement>);
     let mut agent = use_signal(String::new);
     let mut kingdom = use_signal(String::new);
@@ -261,7 +271,12 @@ fn OfficialPanel(account: String) -> Element {
                         .or(status.agents.first());
                     // A selection no longer offered goes back to the default.
                     if !status.agents.contains(&agent.peek()) {
+                        options.set(LaunchOptions::default());
                         agent.set(first.cloned().unwrap_or_default());
+                    }
+                    if !status.agents.contains(&against_agent.peek()) {
+                        against_options.set(LaunchOptions::default());
+                        against_agent.set(first.cloned().unwrap_or_default());
                     }
                     management.set(Some(status));
                 }
@@ -279,22 +294,37 @@ fn OfficialPanel(account: String) -> Element {
         action_error.set(None);
         confirming.set(false);
         let selected = agent.peek().clone();
-        let bot_game = *mode.peek() == OnlineMode::Bots;
+        let opponent = (against.peek().clone()).map(|account| OnlineOpponent {
+            account,
+            agent: against_agent.peek().clone(),
+            options: *against_options.peek(),
+        });
+        let chooses_cards = *mode.peek() == OnlineMode::Bots || opponent.is_some();
         let request = OnlineStart {
             agent: selected.clone(),
-            mode: *mode.peek(),
+            options: *options.peek(),
+            mode: if opponent.is_some() {
+                OnlineMode::Unrated
+            } else {
+                *mode.peek()
+            },
+            against: opponent.clone(),
             matching: OnlineMatching {
-                players: *players.peek(),
+                players: if opponent.is_some() {
+                    2
+                } else {
+                    *players.peek()
+                },
                 min_rating: *min_rating.peek(),
                 max_rating: *max_rating.peek(),
                 timer: *timer.peek(),
             },
-            kingdom: if bot_game {
+            kingdom: if chooses_cards {
                 card_names(&kingdom.peek())
             } else {
                 vec![]
             },
-            landscapes: if bot_game {
+            landscapes: if chooses_cards {
                 card_names(&landscapes.peek())
             } else {
                 vec![]
@@ -306,8 +336,10 @@ fn OfficialPanel(account: String) -> Element {
             let account = Some(account.as_str());
             let result = match action {
                 Action::Start => api::online_start(account, &request).await,
-                Action::Attach => api::online_attach(account, selected).await,
-                Action::Resume(agent) => api::online_attach(account, agent).await,
+                Action::Attach => {
+                    api::online_attach(account, selected, Some(request.options)).await
+                }
+                Action::Resume(agent) => api::online_attach(account, agent, None).await,
                 Action::Pause => api::online_manage_action(account, "pause").await,
                 Action::Resign => api::online_manage_action(account, "resign").await,
                 Action::Cancel => api::online_manage_action(account, "cancel").await,
@@ -330,6 +362,7 @@ fn OfficialPanel(account: String) -> Element {
                 if status.running || status.searching {
                     p { class: "muted",
                         match status.mode {
+                            _ if status.paired => "Unrated game against your other account",
                             OnlineMode::Bots => "Unrated server bots",
                             OnlineMode::Unrated => "Unrated public humans",
                             OnlineMode::Rated => "Rated public humans",
@@ -346,9 +379,9 @@ fn OfficialPanel(account: String) -> Element {
                     } else {
                         AgentPicker {
                             models: status.models.clone(),
-                            value: Some(agent()).filter(|a| !a.is_empty()),
+                            value: Some(AgentSelection::new(agent(), options())),
                             disabled: busy(),
-                            onpick: move |name: Option<String>| agent.set(name.unwrap_or_default()),
+                            onpick: move |selection: Option<AgentSelection>| if let Some(pick) = selection { agent.set(pick.name().into()); options.set(pick.options()); },
                         }
                     }
                 }
@@ -363,15 +396,64 @@ fn OfficialPanel(account: String) -> Element {
                 } else if !status.running {
                     label { "Game type"
                         select {
-                            value: match mode() { OnlineMode::Bots => "bots", OnlineMode::Unrated => "unrated", OnlineMode::Rated => "rated" },
+                            value: match mode() { _ if against().is_some() => "paired", OnlineMode::Bots => "bots", OnlineMode::Unrated => "unrated", OnlineMode::Rated => "rated" },
                             disabled: busy(),
-                            onchange: move |e| mode.set(match e.value().as_str() { "bots" => OnlineMode::Bots, "unrated" => OnlineMode::Unrated, _ => OnlineMode::Rated }),
+                            onchange: {
+                                let first = others.first().map(|(id, _)| id.clone());
+                                move |e: Event<FormData>| {
+                                    let value = e.value();
+                                    against.set((value == "paired").then(|| first.clone()).flatten());
+                                    // A table's timer may be Off; a search's may not.
+                                    if value != "paired" && timer() > 3 {
+                                        timer.set(3);
+                                    }
+                                    mode.set(match value.as_str() { "bots" => OnlineMode::Bots, "rated" => OnlineMode::Rated, _ => OnlineMode::Unrated });
+                                }
+                            },
                             option { value: "rated", "Public humans · rated" }
                             option { value: "unrated", "Public humans · unrated" }
                             option { value: "bots", "Server bots · unrated" }
+                            if !others.is_empty() {
+                                option { value: "paired", "Your other account · unrated" }
+                            }
                         }
                     }
-                    if mode() == OnlineMode::Bots {
+                    if let Some(opponent) = against() {
+                        label { "Opponent"
+                            select { value: "{opponent}", disabled: busy(), onchange: move |e| against.set(Some(e.value())),
+                                for (other, name) in &others { option { value: "{other}", "{name}" } }
+                            }
+                        }
+                        label { "Opponent's agent"
+                            if status.models.is_empty() {
+                                select { value: "{against_agent}", disabled: busy(), onchange: move |e| against_agent.set(e.value()),
+                                    for name in &status.agents { option { value: "{name}", "{name}" } }
+                                }
+                            } else {
+                                AgentPicker {
+                                    models: status.models.clone(),
+                                    value: Some(AgentSelection::new(against_agent(), against_options())),
+                                    disabled: busy(),
+                                    onpick: move |selection: Option<AgentSelection>| if let Some(pick) = selection { against_agent.set(pick.name().into()); against_options.set(pick.options()); },
+                                }
+                            }
+                        }
+                        label { "Kingdom (optional, comma-separated)"
+                            textarea { value: "{kingdom}", disabled: busy(), oninput: move |e| kingdom.set(e.value()) }
+                        }
+                        label { "Landscapes (optional, comma-separated)"
+                            input { value: "{landscapes}", disabled: busy(), oninput: move |e| landscapes.set(e.value()) }
+                        }
+                        label { "Timer"
+                            select { value: "{timer}", disabled: busy(), onchange: move |e| { if let Ok(n) = e.value().parse() { timer.set(n); } },
+                                option { value: "3", "Patient" }
+                                option { value: "2", "Friendly" }
+                                option { value: "1", "Hasty" }
+                                option { value: "0", "Reckless" }
+                                option { value: "4", "Off" }
+                            }
+                        }
+                    } else if mode() == OnlineMode::Bots {
                         label { "Server bots"
                             input { r#type: "number", min: "1", max: "5", value: "{bots}", disabled: busy(), oninput: move |e| { if let Ok(n) = e.value().parse() { bots.set(n); } } }
                         }
@@ -408,9 +490,11 @@ fn OfficialPanel(account: String) -> Element {
                     }
                     button {
                         class: "primary",
-                        disabled: busy() || agent.read().is_empty() || !status.connected || status.agents.is_empty(),
+                        disabled: busy() || agent.read().is_empty() || !status.connected || status.agents.is_empty()
+                            || (against().is_some() && against_agent.read().is_empty()),
                         onclick: move |_| execute.call(Action::Start),
                         match mode() {
+                            _ if against().is_some() => "Start unrated game against your other account",
                             OnlineMode::Bots => "Start unrated bot game",
                             OnlineMode::Rated => "Find rated human match",
                             OnlineMode::Unrated => "Find unrated human match",

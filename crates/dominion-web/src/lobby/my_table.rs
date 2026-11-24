@@ -816,7 +816,7 @@ pub fn Players() -> Element {
                                                 class: "lb-agent-select",
                                                 action: "seat-agent",
                                                 title: "Seat one of the server's agents: the server starts it when the game does ({left_today})",
-                                                onpick: move |name: Option<String>| {
+                                                onpick: move |name: Option<dominion_protocol::lobby::AgentSelection>| {
                                                     if let Some(name) = name {
                                                         change_seats(ctx, toast, move |_, s| s[i] = SeatEdit::Agent(name));
                                                     }
@@ -831,11 +831,11 @@ pub fn Players() -> Element {
                                                 if pickable {
                                                     AgentPicker {
                                                         models,
-                                                        value: user_name.clone(),
+                                                        value: dominion_protocol::lobby::AgentSelection::new(user_name.clone(), seat.options),
                                                         class: "lb-agent-select",
                                                         action: "change-agent",
                                                         title: "{user_name}: the server starts it when the game does",
-                                                        onpick: move |name: Option<String>| {
+                                                        onpick: move |name: Option<dominion_protocol::lobby::AgentSelection>| {
                                                             if let Some(name) = name {
                                                                 change_seats(ctx, toast, move |_, s| s[i] = SeatEdit::Agent(name));
                                                             }

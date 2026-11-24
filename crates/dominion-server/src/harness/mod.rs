@@ -2,10 +2,10 @@
 //! validates and executes their structured game requests.
 
 mod antigravity;
-mod bridge;
+pub(crate) mod bridge;
 mod claude;
 mod codex;
-mod process;
+pub(crate) mod process;
 pub mod sandbox;
 
 pub use bridge::TOOLS as GAME_TOOLS;
@@ -14,14 +14,15 @@ pub use process::write_private;
 use crate::archive::{Archive, call};
 use crate::client::Client;
 use crate::house::Job;
-use crate::runner::AgentSpec;
+
 use serde_json::json;
-use tokio_util::sync::CancellationToken;
 
 const INSTRUCTIONS: &str = "You play one assigned seat of Dominion. Play to win using only the dominion MCP tools. Follow dominion/play@1: read your observation, then call step with decision and indices (ordered: top first) or name only when nameAny is true. Give expect with each chosen option's label or card, in index order. step answers and waits for your next decision. When there is no decision for you (WAITING), call wait and continue. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. Finish only at GAME OVER. The initial observation includes the full view and official card reference; use cards with names for more text/current costs or log to reread log entries by seq. state shows the whole game again when needed. Do not refresh after a tool already returned the current view. play_treasures plays every Treasure offered in one call. Keep playing this seat for the entire game in this conversation. Never print a JSON action in place of calling a tool. The server supplies your secret seat credentials and binds the bridge to this seat; do not override them or create another game. When a tool rejects a request, correct it using the returned error and open decision.";
 const NO_PLAYBOOK: &str =
     "Do not inspect files, run commands, delegate, resign, or ask a person for help.";
-const PLAYBOOK: &str = "Your working directory is the Dominion playbook, read-only. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board with its command, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves. Read its files and run its lookup commands as it says, and run nothing else. Do not delegate, resign, or ask a person for help.";
+const CLOCKED_NO_PLAYBOOK: &str = "This game has an active clock. Make timely legal moves and answer immediately when a CLOCK PRESSURE or LOW TIME cue appears. Do not inspect files, run commands, delegate, resign, or ask a person for help.";
+const PLAYBOOK: &str = "Your working directory is the read-only Dominion playbook. Use the full opening analysis in skills/play-game/SKILL.md, including on a timed table. A BRIEF from the game's creator supplies the plan. Read its files and run its lookup commands as needed. Do not delegate, resign, or ask a person for help.";
+pub(crate) const CLOCKED_OPENING: &str = "Your clock may already be running. Use the supplied opening budget and any pre-fetched card ratings. Answer LOW TIME immediately. A BRIEF from the game's creator supplies the plan.";
 
 /// What a native seat runs with beyond its profile: the playbook it starts in, the tools
 /// on its PATH and the hosts it may reach.
@@ -97,103 +98,66 @@ pub fn playbook(dir: &std::path::Path) -> Result<dominion_protocol::lobby::Playb
     })
 }
 
-/// The game brief: the seat's system prompt.
-pub fn instructions(playbook: bool) -> String {
-    format!(
-        "{INSTRUCTIONS} {}",
-        if playbook { PLAYBOOK } else { NO_PLAYBOOK }
-    )
+/// The player brief for the opening selected by the runner strategy.
+pub fn instructions(playbook: bool, clocked: bool) -> String {
+    let guidance = match (playbook, clocked) {
+        (true, true) => {
+            return format!(
+                "{INSTRUCTIONS} Your working directory is the read-only Dominion playbook. {CLOCKED_OPENING} Read its files and run its lookup commands as needed. Do not delegate, resign, or ask a person for help."
+            );
+        }
+        (true, false) => PLAYBOOK,
+        (false, true) => CLOCKED_NO_PLAYBOOK,
+        (false, false) => NO_PLAYBOOK,
+    };
+    format!("{INSTRUCTIONS} {guidance}")
 }
 
-pub async fn play(
-    spec: &AgentSpec,
-    sandbox: &Sandbox,
-    job: &Job,
-    server: &str,
-    archive: &mut Archive,
-    stop: CancellationToken,
+/// Supply the playbook's short table guidance without a model tool call on the clock.
+pub(crate) fn append_live_guidance(
+    text: &mut String,
+    playbook: Option<&std::path::Path>,
 ) -> Result<(), String> {
-    spec.validate()?;
-    archive.publish(server, job)?;
-    archive.record("seat", json!({"agent":spec,"job":job,"server":server}))?;
-    let endpoint = endpoint(server, job)?;
-    let client =
-        match Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
-            .await
-        {
-            Ok(client) => client,
-            Err(error) => {
-                archive.record("seat_finished", json!({"result":{"Err":error}}))?;
-                archive.finish_publish().await;
-                return Err(error);
-            }
-        };
-    let result = async {
-        let mut harness = process::Harness::new(spec, sandbox, &archive.dir)?;
-        tokio::select! {
-            biased;
-            _ = stop.cancelled() => Err("seat runner cancelled".into()),
-            result = play_inner(&mut harness, &client, spec, job, server, archive) => result,
-        }
-    }
-    .await;
-    record_final_result(&client, archive, job).await?;
-    let result = match result {
-        Ok(answer) => {
-            debrief(&client, archive, job, answer).await;
+    let Some(dir) = playbook else { return Ok(()) };
+    let path = dir.join("skills/play-game/references/live-decisions.md");
+    match std::fs::read_to_string(&path) {
+        Ok(guide) => {
+            text.push_str("\n\n");
+            text.push_str(guide.trim());
             Ok(())
         }
-        Err(e) => Err(e),
-    };
-    archive.record("seat_finished", json!({"result":result}))?;
-    client.close().await;
-    archive.finish_publish().await;
-    result
+        // Older and custom playbooks may only provide the general play-game skill.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }
 
-async fn play_inner(
-    harness: &mut process::Harness,
-    client: &Client,
-    spec: &AgentSpec,
-    job: &Job,
-    server: &str,
-    archive: &mut Archive,
-) -> Result<Result<String, String>, String> {
-    // Bind the tool stream before reading the opening, so instructions arriving between them are visible.
-    let mut bridge = bridge::Bridge::start(server, job, Some(&harness.bridge_socket())).await?;
-    let view = call(
-        client,
-        archive,
-        "dominion",
-        if job.official { "state" } else { "join_game" },
-        if job.official {
-            json!({})
-        } else {
-            json!({"game_id":job.game_id,"token":job.token})
-        },
-    )
-    .await?;
-    if !view.ok {
-        return Err(view.text);
+/// Whether a common play@1 observation indicates an active (or potentially active) clock.
+/// Returns `false` for explicitly untimed games (`clockInfo.status == "off"` or absent
+/// clock metadata with no `clock`).
+pub(crate) fn is_clock_active(reply: &serde_json::Value) -> bool {
+    match reply
+        .get("clockInfo")
+        .and_then(|v| v.get("status"))
+        .and_then(|v| v.as_str())
+    {
+        Some("off") => false,
+        Some("available" | "unavailable") => true,
+        _ => reply.get("clock").is_some_and(|v| !v.is_null()),
     }
-    harness.enable_mcp(
-        spec,
-        &bridge.url,
-        bridge.records.take().expect("new bridge"),
-    )?;
-    let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
-    if game_state(state)["game"]["running"] == false {
-        return Ok(Err(JOINED_OVER.into()));
-    }
-    let message = format!(
-        "{}Initial view and card reference:\n{}",
-        opening(job, true),
-        view.text
-    );
-    let answer = harness.reply(spec, &message, archive).await?;
-    session_end(client, archive, job).await?;
-    Ok(Ok(answer))
 }
+
+pub(crate) fn has_decision(reply: &serde_json::Value) -> bool {
+    game_state(reply)
+        .get("decision")
+        .is_some_and(|v| !v.is_null())
+}
+
+pub(crate) fn is_running(reply: &serde_json::Value) -> bool {
+    game_state(reply)["game"]["running"] != false
+}
+
+pub use crate::runner::provider::play;
 
 /// Why a seat has no debrief when it joined a game already over.
 pub const JOINED_OVER: &str = "the seat's agent started after the game was over";
@@ -261,7 +225,11 @@ pub async fn debrief(
 /// Whether the game is over once the CLI has finished: shown by a reply during play, else
 /// by a fresh view. An official seat's access ends with its game, so a reply that showed
 /// it settles it without asking.
-async fn session_end(client: &Client, archive: &mut Archive, job: &Job) -> Result<(), String> {
+pub(crate) async fn session_end(
+    client: &Client,
+    archive: &mut Archive,
+    job: &Job,
+) -> Result<(), String> {
     if archive.has_result() {
         return Ok(());
     }
@@ -413,6 +381,7 @@ mod tests {
         let (client, revoked) = revocable().await;
         revoked.store(true, Ordering::SeqCst);
         let job = Job {
+            options: Default::default(),
             official: true,
             official_account: None,
             transcript: false,

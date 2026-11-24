@@ -90,6 +90,7 @@ impl House {
             if let Some(m) = &offer.model {
                 let setup = AgentSetup {
                     agent: offer.name.clone(),
+                    speed: m.fast_mode.then_some(lobby::InferenceSpeed::Fast),
                     program: m.program.clone(),
                     model: Some(m.id.clone()),
                     model_name: Some(m.name.clone()),
@@ -111,6 +112,20 @@ impl House {
         (self.runner.as_ref()?.offers.iter()).find(|o| o.name.to_lowercase() == key)
     }
 
+    pub(super) fn check_options(&self, agent: &str, options: lobby::LaunchOptions) -> Result<()> {
+        let model = self
+            .offer_named(agent)
+            .and_then(|offer| offer.model.as_ref());
+        if options.speed.is_some() && !model.is_some_and(|m| m.supports_speed) {
+            return super::bad(format!("{agent} does not offer selectable inference speed"));
+        }
+        if options.strategy.is_classic() || model.is_some_and(|m| m.supports_clock_aware) {
+            Ok(())
+        } else {
+            super::bad(format!("{agent} does not offer the clock-aware strategy"))
+        }
+    }
+
     /// The agent seated for a model alone: the first model's default effort.
     pub(super) fn default_agent(&self) -> Option<String> {
         let models = self.models();
@@ -122,6 +137,8 @@ impl House {
         let mut models: Vec<HouseModel> = vec![];
         for offer in self.runner.iter().flat_map(|r| &r.offers) {
             let choice = HouseChoice {
+                supports_clock_aware: offer.model.as_ref().is_some_and(|m| m.supports_clock_aware),
+                supports_speed: offer.model.as_ref().is_some_and(|m| m.supports_speed),
                 fast_mode: offer.model.as_ref().is_some_and(|m| m.fast_mode),
                 effort: offer.model.as_ref().and_then(|m| m.effort.clone()),
                 agent: offer.name.clone(),
@@ -278,8 +295,8 @@ impl Arena {
         let who =
             who.ok_or_else(|| Error::Unauthorized("sign in to seat the server's agents".into()))?;
         if self.may_seat_agents(&self.user(&who.user)?) {
-            for name in req.agents.iter().flatten() {
-                self.summon(name)?;
+            for selection in req.agents.iter().flatten() {
+                self.summon(selection.name())?;
             }
         }
         let agents = {
@@ -288,7 +305,9 @@ impl Arena {
                 .iter()
                 .map(|name| {
                     name.as_ref()
-                        .map(|name| {
+                        .map(|selection| {
+                            let name = selection.name();
+                            state.house.check_options(name, selection.options())?;
                             state.house.agent_named(name).cloned().ok_or_else(|| {
                                 Error::BadRequest(format!(
                                     "the server's agent {name:?} is unavailable"
@@ -341,6 +360,11 @@ impl Arena {
                 false => lobby::UndoRule::Ask,
             },
             agents: agents.iter().map(Option::is_some).collect(),
+            launch_options: req
+                .agents
+                .iter()
+                .map(|a| a.as_ref().map(|s| s.options()).unwrap_or_default())
+                .collect(),
             ..Default::default()
         };
         crate::hub::brief(&req, &mut meta)?;
@@ -367,6 +391,11 @@ impl Arena {
                 .map(|g| {
                     let meta = self.hub.meta(&g.game_id).unwrap_or_default();
                     Job {
+                        options: meta
+                            .launch_options
+                            .get(usize::from(g.seat))
+                            .copied()
+                            .unwrap_or_default(),
                         official: false,
                         official_account: None,
                         transcript: true,
@@ -397,6 +426,17 @@ impl Arena {
         let jobs: Vec<_> = self
             .jobs(&runner.playing(), &official)
             .into_iter()
+            .filter(|j| {
+                j.options == lobby::LaunchOptions::default()
+                    || runner.told.as_ref().is_some_and(|jobs| jobs.contains(j))
+                    || runner.offers.iter().any(|o| {
+                        o.name.eq_ignore_ascii_case(&j.agent)
+                            && o.model.as_ref().is_some_and(|m| {
+                                (j.options.strategy.is_classic() || m.supports_clock_aware)
+                                    && (j.options.speed.is_none() || m.supports_speed)
+                            })
+                    })
+            })
             .filter(|j| {
                 if j.official {
                     !j.game_id.is_empty()
@@ -678,6 +718,7 @@ impl Arena {
         owner: &str,
         account: &str,
         agent: &str,
+        options: lobby::LaunchOptions,
     ) -> Result<Reservation<'_>> {
         self.summon(agent)?;
         let mut state = lock(&self.state);
@@ -687,6 +728,7 @@ impl Arena {
         if state.house.agent_named(agent).is_none() {
             return conflict("selected agent is unavailable");
         }
+        state.house.check_options(agent, options)?;
         if state.house.official.contains_key(account) {
             return conflict("an agent is already assigned to this official account");
         }

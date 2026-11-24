@@ -147,6 +147,11 @@ pub struct SignInParams {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FindMatchParams {
+    /// House agent to play when searching for agents.
+    pub agent: Option<String>,
+    /// The selected house agent's runner strategy (default classic).
+    pub strategy: Option<dominion_protocol::lobby::RunnerStrategy>,
+    pub speed: Option<dominion_protocol::lobby::InferenceSpeed>,
     /// The player counts you accept, each 2 to 6 (default [2]).
     pub players: Option<Vec<u8>>,
     /// Who you may be paired with: "any" (default), "humans" or "agents".
@@ -229,6 +234,7 @@ pub struct Session {
     trust_proxy: bool,
     max_wait: Duration,
     presentation: Arc<Mutex<play::Presentation>>,
+    clock_cues: bool,
 }
 
 const NO_GAME: &str = "call new_game (Arena has token seats, no automatic bots)";
@@ -301,6 +307,7 @@ impl Session {
             ident: Arc::new(Mutex::new(None)),
             peer: Arc::new(Mutex::new(None)),
             max_wait: max_wait.min(MAX_WAIT),
+            clock_cues: false,
             presentation: Arc::new(Mutex::new(play::Presentation::default())),
         }
     }
@@ -450,6 +457,7 @@ impl Session {
         Play {
             seat,
             shown: &self.presentation,
+            clock_cues: self.clock_cues,
         }
     }
 
@@ -475,7 +483,8 @@ impl Session {
                 if !prompts.is_empty() {
                     for prompt in &prompts {
                         result.content.push(ContentBlock::text(format!(
-                            "GAMEPLAY INSTRUCTION from the person directing this seat:\n{prompt}"
+                            "{}\n{prompt}",
+                            play::GAMEPLAY_INSTRUCTION
                         )));
                     }
                     result
@@ -663,7 +672,7 @@ impl Session {
     }
 
     #[tool(
-        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a server agent profile to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents. Anyone may watch a game unless `watchable` is false. `briefs` gives each seat's player text to read before the game (null for none): a plan to play, notes from earlier games; a server agent gets it with its first view, a token seat on joining. `debrief` is a question every server agent answers once the game is over, before it leaves; game_report collects the answers. `rated: true` counts a game with a different server agent in every seat for their ratings (no undo). Returns the game id and secret tokens only for seats without agents."
+        description = "Create a game. Give `players` and optionally `kingdom`, `landscapes`, `sets`, `seed`, `turn_limit`, `names`, `clock` (a chess clock: {initial, increment} in seconds; a seat whose time runs out forfeits). `agents` assigns a profile name (Classic) or {agent, strategy?, speed?} to each seat (null for a token seat); two agents play each other. Requires a registered account to seat agents. Anyone may watch a game unless `watchable` is false. `briefs` gives each seat's player text to read before the game (null for none): a plan to play, notes from earlier games; a server agent gets it with its first view, a token seat on joining. `debrief` is a question every server agent answers once the game is over, before it leaves; game_report collects the answers. `rated: true` counts a game with a different server agent in every seat for their ratings (no undo). Returns the game id and secret tokens only for seats without agents."
     )]
     async fn create_game(
         &self,
@@ -967,13 +976,22 @@ impl Session {
             Ok(ident) => ident,
             Err(e) => return Ok(failure(e)),
         };
-        let asked = p.players.is_some() || p.opponents.is_some() || p.rated.is_some();
+        let asked = p.players.is_some()
+            || p.opponents.is_some()
+            || p.rated.is_some()
+            || p.agent.is_some()
+            || p.strategy.is_some()
+            || p.speed.is_some();
         let defaults = MatchRequest::default();
         let request = MatchRequest {
             players: p.players.unwrap_or(defaults.players),
             opponents: p.opponents.unwrap_or_default(),
+            options: dominion_protocol::lobby::LaunchOptions {
+                strategy: p.strategy.unwrap_or_default(),
+                speed: p.speed,
+            },
             rated: p.rated.unwrap_or(defaults.rated),
-            agent: None,
+            agent: p.agent,
         };
         let searching = (self.arena.queue_status(&ident))
             .is_some_and(|q| q.state == QueueState::Searching && (!asked || q.request == request));
@@ -1271,10 +1289,14 @@ impl ServerHandler for Session {
         if let Some(parts) = context.extensions.get::<Parts>() {
             self.greet(parts);
         }
+        let session = Self {
+            clock_cues: play::show_clock_cues(&context.meta),
+            ..self.clone()
+        };
         let router = Self::tool_router();
         answered(
             &tool,
-            router.call(ToolCallContext::new(self, request, context)),
+            router.call(ToolCallContext::new(&session, request, context)),
         )
         .await
     }
