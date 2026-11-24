@@ -698,6 +698,7 @@ impl Arena {
         }
         let meta = Meta {
             source: Source::Table,
+            host: Some(start.host.clone()),
             owners: owners.clone(),
             rated: start.rated,
             watchable: start.spec.watchable,

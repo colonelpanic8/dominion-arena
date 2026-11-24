@@ -378,6 +378,19 @@ async fn normal_game_creation_runs_two_agents_through_t3_with_complete_archives(
     assert_eq!(jobs.len(), 2);
     assert_eq!(jobs[0].configuration.as_ref().unwrap().seed, 42);
     assert!(h.arena.hub.watch_view(id, 0, None).unwrap().view.spectating);
+    let prompt = "Favor Village in this game.";
+    reqwest::Client::new()
+        .post(format!(
+            "{}/api/games/{id}/model",
+            h.config.server().trim_end_matches("/mcp")
+        ))
+        .bearer_auth(&h.token)
+        .json(&json!({"game":id,"seat":0,"action":{"type":"prompt","text":prompt}}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
     let (root, results) =
         tokio::time::timeout(std::time::Duration::from_secs(30), play(&mut h, jobs))
             .await
@@ -407,6 +420,19 @@ async fn normal_game_creation_runs_two_agents_through_t3_with_complete_archives(
         assert_eq!(journal[0]["data"]["job"]["configuration"]["seed"], 42);
     }
     let calls = calls.lock().unwrap();
+    assert_eq!(
+        calls
+            .iter()
+            .filter(
+                |(tool, args)| matches!(tool.as_str(), "t3_thread_send" | "t3_thread_launch")
+                    && args["message"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains(prompt)
+            )
+            .count(),
+        1
+    );
     assert_eq!(
         calls
             .iter()

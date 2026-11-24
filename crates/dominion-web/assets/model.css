@@ -1,0 +1,44 @@
+dialog.model-controls {
+  width: min(31rem, calc(100vw - 1.5rem));
+  max-height: calc(100dvh - 2rem);
+  padding: clamp(1rem, 4vw, 1.6rem);
+  overflow: auto;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--gold-deep);
+  box-shadow: 0 .8rem 4rem #000a;
+  font: 1rem/1.45 var(--ui);
+  text-align: left;
+  text-shadow: none;
+  white-space: normal;
+}
+.model-controls[open] { display: grid; gap: .8rem; }
+.model-controls::backdrop { background: #0008; }
+.model-controls header, .model-controls footer, .model-send {
+  display: flex; align-items: center; justify-content: space-between; gap: .9rem;
+}
+.model-controls h2 { margin: 0; color: var(--text); font: 1.65rem/1.15 var(--title); }
+.model-controls p { margin: 0; }
+.model-seat-name { color: var(--gold-pale); overflow-wrap: anywhere; }
+.model-controls .model-close { align-self: start; font-size: 1.4rem; }
+.model-controls label { display: grid; gap: .35rem; font-weight: 650; }
+.model-controls select, .model-controls textarea {
+  box-sizing: border-box; width: 100%; min-width: 0; padding: .7rem;
+  color: var(--text); background: var(--bg); border: 1px solid var(--line); font: inherit;
+}
+.model-controls textarea { resize: vertical; min-height: 5rem; }
+.model-status { display: flex; gap: .5rem; align-items:center; padding: .55rem 0; border-block: 1px solid var(--line-soft); }
+.model-dot { background: var(--gold); width: .45rem; height: .45rem; border-radius: 50%; }
+.model-controls footer { border-top: 1px solid var(--line-soft); padding-top: .85rem; }
+.model-controls footer span, .model-controls small { color: var(--text-soft); font-size: .88rem; }
+.model-controls button { min-height: 44px; flex-shrink: 0; }
+.model-history { color: var(--text-soft); }
+.model-history summary { cursor: pointer; }
+.model-history ol { max-height: 10rem; overflow: auto; padding-inline-start: 1.6rem; }
+.model-history li { white-space: pre-wrap; overflow-wrap: anywhere; margin: .4rem 0; }
+.model-controls .model-notice { color: var(--good); }
+@media (max-width: 380px) {
+  .model-controls footer, .model-send { flex-wrap: wrap; }
+}
+.model-hand { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .7rem; }
+.model-hand h3 { width: 100%; margin: 0; color: var(--text-soft); font: 600 .9rem var(--ui); }

@@ -159,6 +159,8 @@ async fn play_inner(
     server: &str,
     archive: &mut Archive,
 ) -> Result<Result<String, String>, String> {
+    // Bind the tool stream before reading the opening, so instructions arriving between them are visible.
+    let mut bridge = bridge::Bridge::start(server, job, Some(&harness.bridge_socket())).await?;
     let view = call(
         client,
         archive,
@@ -174,7 +176,6 @@ async fn play_inner(
     if !view.ok {
         return Err(view.text);
     }
-    let mut bridge = bridge::Bridge::start(server, job, Some(&harness.bridge_socket())).await?;
     harness.enable_mcp(
         spec,
         &bridge.url,

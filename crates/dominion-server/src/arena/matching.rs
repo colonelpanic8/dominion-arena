@@ -175,7 +175,7 @@ impl Arena {
                 break;
             };
             group.shuffle(&mut rand::rng());
-            match self.start_match(&group) {
+            match self.start_match(&group, None) {
                 Ok(game) => {
                     let mut state = lock(&self.state);
                     for e in group {
@@ -279,7 +279,7 @@ impl Arena {
             };
             let mut group = vec![entry, house];
             group.shuffle(&mut rand::rng());
-            match self.start_match(&group) {
+            match self.start_match(&group, Some((&user, &agent.user))) {
                 Ok(game) => {
                     reservation.keep();
                     let mut state = lock(&self.state);
@@ -306,7 +306,7 @@ impl Arena {
         }
     }
 
-    fn start_match(&self, group: &[Entry]) -> Result<String> {
+    fn start_match(&self, group: &[Entry], house: Option<(&str, &str)>) -> Result<String> {
         let mut banned: Vec<String> = vec![];
         for card in group.iter().flat_map(|e| &e.banned) {
             if !banned.contains(card) {
@@ -324,6 +324,10 @@ impl Arena {
             .collect::<Result<_>>()?;
         let meta = Meta {
             source: Source::Automatch,
+            host: house.map(|(host, _)| host.into()),
+            agents: house
+                .map(|(_, agent)| group.iter().map(|e| e.user == agent).collect())
+                .unwrap_or_default(),
             owners: group.iter().map(|e| Some(e.user.clone())).collect(),
             rated: group.iter().all(|e| e.request.rated && !e.guest),
             watchable: true,

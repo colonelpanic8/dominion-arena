@@ -1,3 +1,4 @@
+mod model;
 use super::recordings::{Refused, Replays};
 use super::{Client, mcp, runtime::Update};
 use crate::{arena::Arena, config::Config};
@@ -22,6 +23,7 @@ use dominion_protocol::api::{
     OnlineRatingType, OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
 };
 use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, SeatLevel, UserKind};
+use model::{OfficialModel, model_action, model_seats};
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -45,7 +47,8 @@ pub struct Hosted {
     pub account: String,
     /// The registered Arena account that controls it.
     pub owner: String,
-    control: Arc<tokio::sync::Mutex<()>>,
+    pub(super) control: Arc<tokio::sync::Mutex<()>>,
+    model: Arc<std::sync::Mutex<OfficialModel>>,
     ratings: Arc<std::sync::Mutex<HashMap<OnlineRatingType, OnlineRating>>>,
     levels: Arc<tokio::sync::watch::Sender<Levels>>,
     /// Where its games are recorded.
@@ -143,6 +146,7 @@ impl Hosted {
             account,
             owner,
             control: Arc::new(tokio::sync::Mutex::new(())),
+            model: Arc::default(),
             ratings: Arc::default(),
             levels: Arc::new(tokio::sync::watch::Sender::new(Levels::default())),
             recordings: None,
@@ -259,11 +263,11 @@ impl Hosted {
         stop: CancellationToken,
         primary: bool,
     ) -> Router {
-        let client = self.client.clone();
+        let hosted = self.clone();
         let mut sessions = LocalSessionManager::default();
         sessions.session_config.keep_alive = idle;
         let service = StreamableHttpService::new(
-            move || Ok(mcp::Session::managed(client.clone())),
+            move || Ok(mcp::Session::managed(hosted.clone())),
             Arc::new(sessions),
             StreamableHttpServerConfig::default()
                 .with_allowed_hosts(hosts.clone())
@@ -316,6 +320,7 @@ impl Hosted {
             .route("/manage", get(manage))
             .route("/rating", get(rating))
             .route("/start", post(start_game))
+            .route("/model", get(model_seats).post(model_action))
             .route("/agent", post(attach_agent).delete(pause_agent))
             .route("/matchmaking", axum::routing::delete(cancel_matchmaking))
             .route("/reconnect", post(reconnect))
@@ -387,7 +392,9 @@ async fn authorize(State(access): State<Access>, request: Request, next: Next) -
                 .official_job(&access.id)
                 .is_some_and(|job| !job.token.is_empty() && job.token == token)
         });
-    if !watching
+    let model = path.starts_with("/api/online/") && path.ends_with("/model");
+    if !model
+        && !watching
         && !runner
         && let Err(status) = access.allowed(request.headers())
     {
@@ -861,6 +868,7 @@ fn assign(web: &Web, agent: String) -> Result<(), String> {
             "{playing} plays this game: its agent can't be changed mid-game"
         ));
     }
+    web.hosted.check_assignment(&game_id)?;
     web.set_job(Some(crate::house::Job {
         official: true,
         official_account: Some(web.hosted.id.clone()),

@@ -403,6 +403,7 @@ impl Arena {
                 None => vec![],
             },
         );
+        arena.restore_model_hosts().map_err(failed)?;
         for ended in hub.unrecorded() {
             arena.record(ended);
         }

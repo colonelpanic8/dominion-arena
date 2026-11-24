@@ -594,8 +594,14 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         "fixture-42".into(),
         "observer-owner".into(),
     );
-    let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
-        .unwrap();
+    let arena = crate::arena::Arena::open(
+        Arc::new(crate::hub::Hub::default()),
+        crate::arena::Settings {
+            admins: vec!["model-director".into()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
     let (_, owner) = arena
         .register(
@@ -867,6 +873,101 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+    let (_, admin) = arena
+        .register(
+            ip,
+            &Credentials {
+                name: "model-director".into(),
+                password: "fixture-password".into(),
+                invite: None,
+            },
+            None,
+        )
+        .unwrap();
+    let admin = admin.unwrap();
+    let action = |token: &str, action: serde_json::Value| {
+        http.post(format!("{manager}/model"))
+            .bearer_auth(token)
+            .json(&serde_json::json!({"game":first.game_id,"seat":first.seat,"action":action}))
+    };
+    let take = serde_json::json!({"type":"take"});
+    let prompt = serde_json::json!({"type":"prompt","text":"Keep the Village."});
+    assert_eq!(
+        action(&outsider, prompt.clone())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        reqwest::StatusCode::FORBIDDEN
+    );
+    action(&owner, prompt)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    assert!(
+        capability
+            .call("state", serde_json::json!({}))
+            .await
+            .unwrap()
+            .text
+            .contains("Keep the Village.")
+    );
+    assert_eq!(
+        action(&owner, take.clone()).send().await.unwrap().status(),
+        reqwest::StatusCode::FORBIDDEN
+    );
+    let seats: Vec<dominion_protocol::api::ModelSeat> = action(&admin, take)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let decision = seats[0]
+        .playing
+        .as_ref()
+        .unwrap()
+        .decision
+        .as_ref()
+        .unwrap();
+    assert!(arena.official_job(crate::online::LEGACY_ID).is_none());
+    let answer = Answer {
+        decision: decision.id.clone(),
+        indices: Some(vec![decision.options[0].index]),
+        name: None,
+    };
+    let expected = answer.clone();
+    let backend = tokio::spawn(async move {
+        match requests.recv().await.unwrap() {
+            Request::Answer(answer, _, reply) => {
+                assert_eq!(answer, expected);
+                reply.send(Ok(())).unwrap();
+            }
+            _ => panic!("expected a manual decision"),
+        }
+        requests
+    });
+    action(&admin, serde_json::json!({"type":"answer","answer":answer}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let mut requests = backend.await.unwrap();
+    action(&admin, serde_json::json!({"type":"release"}))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    assert_ne!(
+        arena.official_job(crate::online::LEGACY_ID).unwrap().token,
+        first.token
+    );
     let response = http
         .delete(format!("{manager}/agent"))
         .bearer_auth(&owner)
