@@ -583,7 +583,9 @@ selecting the agent, or pass the corresponding agent name (for example
 `Astra High Fast`) to the start API. Standard speed is the default. Fast
 requests OpenAI's priority service tier and may use more quota. Set
 `fast_mode = true` in an `[[agents]]` profile for `openai` or `codex` to offer
-that choice independently of reasoning effort.
+that choice independently of reasoning effort. In direct OpenAI archives,
+`direct_request.service_tier` records the tier requested and
+`direct_usage.service_tier` records the tier OpenAI reported, when supplied.
 
 The direct OpenAI agent waits out OpenAI's overload and rate limits for as long as it
 asks, up to 20 minutes a request, within the same attempt. Each attempt has a separate archive; completed moves remain
