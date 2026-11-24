@@ -202,6 +202,7 @@ pub fn listing(lobby: &Lobby, games: &[GameSummary], held: &dyn Fn(&str) -> bool
                         _ => SeatMark::Open,
                     };
                     let agent = (s.kind == SeatKind::Agent).then(|| SeatAgent {
+                        runner_strategy: s.strategy,
                         agent: s.user.as_ref().map(|u| u.name.clone()).unwrap_or_default(),
                         ..SeatAgent::default()
                     });

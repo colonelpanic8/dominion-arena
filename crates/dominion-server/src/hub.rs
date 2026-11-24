@@ -15,8 +15,8 @@ pub use dominion_protocol::api::{
 use dominion_protocol::api::{Progress, Replay, ReplayTurn, SeatProgress, UndoRequest, UndoState};
 use dominion_protocol::events::History;
 use dominion_protocol::lobby::{
-    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, RatingInfo, SeatAgent,
-    Source, UndoRule, UserRef,
+    AgentAttempt, AgentRun, AgentSetup, Clock, ClockInfo, ClockStatus, ClockView, GameMeta, MyGame,
+    RatingInfo, SeatAgent, Source, UndoRule, UserRef,
 };
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
@@ -114,6 +114,8 @@ pub struct Meta {
     pub undo: UndoRule,
     /// Per seat: played by one of the server's agents, which allow every undo.
     pub agents: Vec<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub strategies: Vec<dominion_protocol::lobby::RunnerStrategy>,
     /// The lobby table that started it.
     pub table: Option<String>,
     /// Milliseconds since the Unix epoch.
@@ -321,6 +323,8 @@ pub(crate) struct PlayObservation {
     pub note: Option<String>,
     /// The game's chess clock as it stands.
     pub clock: Option<ClockView>,
+    /// Freshness and availability metadata for `clock`.
+    pub clock_info: Option<ClockInfo>,
     /// What people at the table have said, its last lines in order.
     pub chat: Vec<dominion_protocol::lobby::ChatMessage>,
 }
@@ -1202,6 +1206,7 @@ fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary 
             .map(|i| match meta.runs.get(i) {
                 Some(Some(run)) => Some(SeatAgent::from(&run.setup)),
                 _ if meta.agents.get(i).copied().unwrap_or(false) => Some(SeatAgent {
+                    runner_strategy: meta.strategies.get(i).copied().unwrap_or_default(),
                     agent: table.names()[i].clone(),
                     ..SeatAgent::default()
                 }),
@@ -2040,12 +2045,23 @@ impl Hub {
                 undos: table.undos(),
                 note: None,
                 clock: None,
+                clock_info: None,
                 chat: Vec::new(),
             }
         })
         .map(|mut observation| {
+            let now = now_ms();
             observation.note = self.undo_note(&game, &table, seat.seat);
-            observation.clock = game.clock(&lock(&game.meta), now_ms()).map(|(_, c)| c);
+            observation.clock = game.clock(&lock(&game.meta), now).map(|(_, c)| c);
+            observation.clock_info = Some(ClockInfo {
+                status: if observation.clock.is_some() {
+                    ClockStatus::Available
+                } else {
+                    ClockStatus::Off
+                },
+                as_of_ms: now,
+                sampled_at_ms: Vec::new(),
+            });
             observation
         })
     }

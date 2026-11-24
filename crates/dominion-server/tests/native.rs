@@ -29,7 +29,21 @@ if "--input-format" in sys.argv: prompt = json.loads(prompt)["message"]["content
 if 'GEMINI_HOME' in os.environ:
     Path(os.environ['GEMINI_HOME'], 'antigravity-cli/conversations/fixture.db').write_text('')
 assert 'test-credential' not in prompt
-assert '=== CARD & PILE REFERENCE ===' in prompt
+if not Path('/work/seat-mcp.json').exists() and ('preliminary plan' in prompt or 'provisional opening' in prompt or 'STRATEGY NOTE:' in prompt):
+    assert not Path('/playbook').exists()
+    if 'STRATEGY NOTE:' in prompt:
+        assert '--restricted' in sys.argv
+        assert 'DECISION ' not in prompt
+        answer = 'STRATEGY NOTE: Compare Village with Silver.'
+        print(json.dumps({'type':'result', 'is_error':False, 'result':answer}))
+    else:
+        assert '--agent' in sys.argv
+        print(json.dumps({'event':'result','result':{'status':'SUCCESS','response':'Open Silver.'}}))
+    sys.exit(0)
+if 'Your clock may already be running' in prompt or 'This game has an active clock' in prompt:
+    assert '\nCARDS\n' in prompt
+else:
+    assert '=== CARD & PILE REFERENCE ===' in prompt
 assert 'Village | Action | $3' in prompt
 if 'fixture:brief' in prompt:
     assert "BRIEF from the game's creator" in prompt
@@ -611,17 +625,23 @@ async fn active_sessions_and_opponent_waits_outlive_the_inactivity_limit() {
 #[tokio::test]
 #[ignore = "requires bubblewrap and Linux user namespaces"]
 async fn the_existing_runner_dispatches_native_seats_and_archives_game_completion() {
-    runner_game(false).await;
+    runner_game(false, false).await;
 }
 
 #[tokio::test]
 #[ignore = "requires bubblewrap and Linux user namespaces"]
 async fn runner_recovers_a_failed_native_turn_without_abandoning_the_seat() {
-    runner_game(true).await;
+    runner_game(true, false).await;
 }
 
-async fn runner_game(transient_failure: bool) {
-    let mut h = setup(if transient_failure {
+#[tokio::test]
+#[ignore = "requires bubblewrap and Linux user namespaces"]
+async fn one_profile_can_play_both_strategies_with_an_independent_analyst() {
+    runner_game(false, true).await;
+}
+
+async fn runner_game(transient_failure: bool, compare_strategies: bool) {
+    let mut h = setup(if transient_failure || compare_strategies {
         "antigravity"
     } else {
         "claude"
@@ -629,6 +649,18 @@ async fn runner_game(transient_failure: bool) {
     .await;
     if transient_failure {
         h.config.agents.as_mut().unwrap()[0].instructions = Some("fixture:transient".into());
+    }
+    if compare_strategies {
+        let profiles = h.config.agents.as_mut().unwrap();
+        let mut analyst = profiles[0].clone();
+        analyst.name = "Research".into();
+        analyst.program = dominion_server::runner::Program::Claude;
+        profiles.push(analyst);
+        h.config.clock_aware = Some(dominion_server::runner::ClockAwareSettings {
+            analyst: "Research".into(),
+            target_seconds: 30,
+            background: false,
+        });
     }
     let socket = h._dir.path().join("agents.sock");
     h.config.agent_socket = Some(socket.clone());
@@ -653,7 +685,15 @@ async fn runner_game(transient_failure: bool) {
         .await
         .unwrap()
         .unwrap();
-    let created = h.arena.create_game(Some(&h.who), &request()).unwrap();
+    let mut game = request();
+    if compare_strategies {
+        game.agents[0] = Some(dominion_protocol::lobby::AgentSelection::new(
+            "Test".into(),
+            dominion_protocol::lobby::RunnerStrategy::ClockAware,
+        ));
+        game.clock = Some(dominion_protocol::lobby::Clock::new(300, 0));
+    }
+    let created = h.arena.create_game(Some(&h.who), &game).unwrap();
     let hub = h.arena.hub.clone();
     let mut game_changes = hub.subscribe(&created.game_id).unwrap().version;
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
@@ -673,8 +713,25 @@ async fn runner_game(transient_failure: bool) {
     let mut finished = 0;
     let mut failed = 0;
     for entry in std::fs::read_dir(root).unwrap() {
-        let records = records(&entry.unwrap().path());
+        let path = entry.unwrap().path();
+        let records = records(&path);
         if records.iter().any(|r| r["kind"] == "seat") {
+            if compare_strategies {
+                let setup = &records.iter().find(|r| r["kind"] == "setup").unwrap()["data"];
+                let prompt = &records
+                    .iter()
+                    .find(|r| r["kind"] == "native_request")
+                    .unwrap()["data"]["prompt"];
+                let aware = setup["runnerStrategy"] == "clock_aware";
+                assert_eq!(path.join("preliminary/interactions.jsonl").is_file(), aware);
+                assert_eq!(
+                    prompt
+                        .as_str()
+                        .unwrap()
+                        .contains("Compare Village with Silver."),
+                    aware
+                );
+            }
             assert!(records.iter().any(|r| r["kind"] == "seat_finished"));
             if records
                 .iter()
@@ -697,6 +754,10 @@ async fn runner_game(transient_failure: bool) {
     let meta = hub.meta(&created.game_id).unwrap();
     let runs: Vec<_> = meta.runs.iter().flatten().collect();
     assert_eq!(runs.len(), 2);
+    if compare_strategies {
+        assert!(!runs[0].setup.runner_strategy.is_classic());
+        assert!(runs[1].setup.runner_strategy.is_classic());
+    }
     let attempts = runs.iter().flat_map(|r| &r.attempts);
     assert_eq!(attempts.clone().count(), 2 + failed);
     assert_eq!(attempts.filter(|a| a.error.is_some()).count(), failed);
@@ -730,7 +791,7 @@ async fn live_native_game() {
             serde_json::from_str(&opponent).expect("DOMINION_LIVE_OPPONENT agent profile");
         opponent.instructions = agents[0].instructions.clone();
         opponent.response_seconds = Some(60);
-        game.agents[1] = Some(opponent.name.clone());
+        game.agents[1] = Some(opponent.name.clone().into());
         agents.push(opponent);
         let (send, receive) = tokio::sync::mpsc::unbounded_channel();
         h.arena.runner_connected(

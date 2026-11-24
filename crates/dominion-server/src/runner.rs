@@ -3,6 +3,10 @@
 
 use crate::house::{FromRunner, Job, Offer, ToRunner};
 use dominion_protocol::lobby::AgentSetup;
+pub use dominion_protocol::lobby::RunnerStrategy;
+pub(crate) mod analyst;
+pub(crate) mod provider;
+pub(crate) mod strategy;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -39,6 +43,55 @@ pub enum Program {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct OpeningAnalyst {
+    pub model: String,
+    pub effort: String,
+    /// Target from the first playable opening observation to requesting the move.
+    #[serde(default = "default_opening_target")]
+    pub target_seconds: u32,
+    /// Revisit strategy as public scores and supply piles change.
+    #[serde(default)]
+    pub background: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClockAwareSettings {
+    pub analyst: String,
+    #[serde(default = "default_opening_target")]
+    pub target_seconds: u32,
+    #[serde(default)]
+    pub background: bool,
+}
+
+impl ClockAwareSettings {
+    pub(crate) fn resolve(&self, agents: &[AgentSpec]) -> Result<provider::AnalysisPlan, String> {
+        let model = agents
+            .iter()
+            .find(|a| a.name.eq_ignore_ascii_case(&self.analyst))
+            .ok_or_else(|| {
+                format!(
+                    "clock_aware.analyst names an unknown agent profile: {}",
+                    self.analyst
+                )
+            })?;
+        if model.program == Program::T3Code {
+            return Err("T3 Code does not offer isolated analysis".into());
+        }
+        Ok(provider::AnalysisPlan {
+            model: model.clone(),
+            target_seconds: self.target_seconds,
+            background: self.background,
+        })
+    }
+}
+
+fn default_opening_target() -> u32 {
+    45
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentSpec {
     pub name: String,
     pub program: Program,
@@ -49,6 +102,9 @@ pub struct AgentSpec {
     /// Request the priority service tier for a direct OpenAI or native Codex seat.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fast_mode: bool,
+    /// Optional concurrent Antigravity analysis of the public opening in clocked games.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opening_analyst: Option<OpeningAnalyst>,
     /// Native reasoning effort.
     pub effort: Option<String>,
     /// Maximum model inactivity between events, excluding MCP calls (default 300 seconds).
@@ -92,6 +148,16 @@ impl AgentSpec {
         }
         if self.fast_mode && !matches!(self.program, Program::OpenAi | Program::Codex) {
             return Err(format!("{}: fast_mode requires openai or codex", self.name));
+        }
+        if let Some(analyst) = &self.opening_analyst
+            && (self.program != Program::Antigravity
+                || analyst.model.trim().is_empty()
+                || !self.program.efforts().contains(&analyst.effort.as_str()))
+        {
+            return Err(format!(
+                "{}: opening_analyst requires Antigravity, a model and a supported effort",
+                self.name
+            ));
         }
         if self.response_seconds == Some(0) {
             return Err("response_seconds must be positive".into());
@@ -147,6 +213,7 @@ pub fn default_agents() -> Vec<AgentSpec> {
         fast_mode: false,
         response_seconds: None,
         history_turns: None,
+        opening_analyst: None,
         api_key_env: None,
         context_results: None,
         auth_dir: None,
@@ -162,6 +229,7 @@ pub struct Settings {
     pub socket: PathBuf,
     pub server: String,
     pub agents: Vec<AgentSpec>,
+    pub analysis: Option<provider::AnalysisPlan>,
     /// Providers whose models are each offered, at each effort.
     pub catalogs: Vec<crate::catalog::CatalogSpec>,
     /// Agent seats played at once.
@@ -434,6 +502,7 @@ async fn keep_playing(
     let Settings {
         server,
         t3code,
+        analysis,
         sandbox,
         ..
     } = settings;
@@ -449,7 +518,7 @@ async fn keep_playing(
                 job.game_id,
                 archive.dir.display()
             );
-            let setup = setup(&spec, &sandbox).await;
+            let setup = setup(&spec, &sandbox, job.strategy).await;
             archive.record("setup", serde_json::to_value(&setup).expect("serializable"))?;
             archived = (archive.dir.file_name())
                 .map(|n| n.to_string_lossy().into_owned())
@@ -459,41 +528,20 @@ async fn keep_playing(
                     game_id: job.game_id.clone(),
                     seat: job.seat,
                     archive: archived.clone(),
-                    setup,
+                    setup: Box::new(setup),
                 });
             }
             let cancelled = CancellationToken::new();
             let play = async {
                 match (spec.program, &t3code) {
                     (Program::T3Code, None) => Err("a t3code agent needs [t3code] settings".into()),
-                    (Program::Anthropic, _) => {
-                        crate::anthropic::play(
-                            &spec,
-                            &sandbox,
-                            &job,
-                            &server,
-                            &mut archive,
-                            cancelled.clone(),
-                        )
-                        .await
-                    }
-                    (Program::OpenAi, _) => {
-                        crate::openai::play(
-                            &spec,
-                            &sandbox,
-                            &job,
-                            &server,
-                            &mut archive,
-                            cancelled.clone(),
-                        )
-                        .await
-                    }
                     (Program::T3Code, Some(t3)) => {
                         crate::t3::play(t3, &spec, &job, &server, &mut archive, cancelled.clone())
                             .await
                     }
                     _ => {
-                        crate::harness::play(
+                        provider::play_with_plan(
+                            analysis.as_ref(),
                             &spec,
                             &sandbox,
                             &job,
@@ -558,7 +606,11 @@ async fn keep_playing(
 }
 
 /// What plays a seat: the agent's profile, this build, and the playbook it is given.
-async fn setup(spec: &AgentSpec, sandbox: &crate::harness::Sandbox) -> AgentSetup {
+async fn setup(
+    spec: &AgentSpec,
+    sandbox: &crate::harness::Sandbox,
+    strategy: RunnerStrategy,
+) -> AgentSetup {
     let dir = sandbox
         .playbook
         .clone()
@@ -574,6 +626,7 @@ async fn setup(spec: &AgentSpec, sandbox: &crate::harness::Sandbox) -> AgentSetu
     };
     AgentSetup {
         agent: spec.name.clone(),
+        runner_strategy: strategy,
         program: spec.program.label().into(),
         model: spec.model.clone(),
         model_name: None,

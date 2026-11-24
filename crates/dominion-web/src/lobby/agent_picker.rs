@@ -1,8 +1,8 @@
-//! Picking one of the server's agents: its model, then its effort.
+//! Selects a house agent and its seat's runner strategy.
 
 use super::who::effort_title;
 use dioxus::prelude::*;
-use dominion_protocol::lobby::{HouseModel, house_choice};
+use dominion_protocol::lobby::{AgentSelection, HouseModel, RunnerStrategy, house_choice};
 
 /// `models` without the agents `taken`, and without the models left with none.
 pub fn without(models: &[HouseModel], taken: &[String]) -> Vec<HouseModel> {
@@ -18,20 +18,25 @@ pub fn without(models: &[HouseModel], taken: &[String]) -> Vec<HouseModel> {
 }
 
 /// A model select grouped by what runs them, and an effort select for a model that has
-/// several. `onpick` gets the agent's name: a model's default effort when the model is
-/// picked, and none for `none`, the first option, when there is one.
+/// several. The strategy follows the selection when the new profile supports it.
 #[component]
 pub fn AgentPicker(
     models: Vec<HouseModel>,
-    value: Option<String>,
+    value: Option<AgentSelection>,
     none: Option<String>,
     #[props(default)] class: String,
     #[props(default)] action: String,
     #[props(default)] title: String,
     #[props(default)] disabled: bool,
-    onpick: EventHandler<Option<String>>,
+    onpick: EventHandler<Option<AgentSelection>>,
 ) -> Element {
-    let picked = value.as_deref().and_then(|v| house_choice(&models, v));
+    let strategy = value
+        .as_ref()
+        .map(AgentSelection::strategy)
+        .unwrap_or_default();
+    let picked = value.as_ref().and_then(|v| house_choice(&models, v.name()));
+    let clock_aware = picked.is_some_and(|(_, c)| c.supports_clock_aware);
+    let selected = value.as_ref().map(|v| v.name().to_owned());
     let current = picked.map(|(m, _)| (m.program.clone(), m.model.clone()));
     let mut programs: Vec<String> = vec![];
     for m in &models {
@@ -52,6 +57,17 @@ pub fn AgentPicker(
             .collect();
         (options, c.agent.clone())
     });
+    let models_for_effort = models.clone();
+    let select = move |c: &dominion_protocol::lobby::HouseChoice| {
+        AgentSelection::new(
+            c.agent.clone(),
+            if c.supports_clock_aware {
+                strategy
+            } else {
+                RunnerStrategy::Classic
+            },
+        )
+    };
     rsx! {
         select {
             class: "{class}",
@@ -65,7 +81,7 @@ pub fn AgentPicker(
                     .ok()
                     .and_then(|i| models_for_pick.get(i))
                     .and_then(|m| m.default_choice())
-                    .map(|c| c.agent.clone());
+                    .map(select);
                 onpick.call(pick);
             },
             if let Some(none) = none {
@@ -92,10 +108,25 @@ pub fn AgentPicker(
                 "data-action": "pick-effort",
                 title: "Reasoning effort and speed",
                 disabled,
-                onchange: move |e| onpick.call(Some(e.value())),
+                onchange: move |e| onpick.call(house_choice(&models_for_effort, &e.value()).map(|(_, c)| select(c))),
                 for (name, label) in options {
                     option { key: "{name}", value: "{name}", selected: name == agent, "{label}" }
                 }
+            }
+        }
+        if clock_aware && let Some(agent) = selected {
+            select {
+                class: "{class} lb-effort-select",
+                title: "Runner strategy",
+                aria_label: "Runner strategy",
+                "data-action": "pick-strategy",
+                disabled,
+                onchange: move |e| {
+                    let strategy = if e.value() == "clock_aware" { RunnerStrategy::ClockAware } else { RunnerStrategy::Classic };
+                    onpick.call(Some(AgentSelection::new(agent.clone(), strategy)));
+                },
+                option { value: "classic", selected: strategy.is_classic(), "Classic" }
+                option { value: "clock_aware", selected: !strategy.is_classic(), "Clock-aware" }
             }
         }
     }

@@ -153,10 +153,16 @@ pub(super) async fn model_action(
             }
         }
         ModelAction::Release => {
+            let strategy = web
+                .access
+                .arena
+                .official_game_strategy(&web.hosted.id, &req.game)
+                .unwrap_or_default();
             let reservation = match web.access.arena.reserve_official(
                 &web.hosted.owner,
                 &web.hosted.id,
                 &seat.name,
+                strategy,
             ) {
                 Ok(r) => r,
                 Err(e) => return refused(e),
@@ -166,7 +172,7 @@ pub(super) async fn model_action(
                 model.generation += 1;
                 model.control.controller = None;
             }
-            if let Err(e) = assign(&web, seat.name.clone()) {
+            if let Err(e) = assign(&web, seat.name.clone(), strategy) {
                 crate::hub::lock(&web.hosted.model).control.controller = Some(who);
                 return refused(e);
             }

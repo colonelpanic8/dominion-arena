@@ -377,6 +377,8 @@ pub enum SeatKind {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableSeat {
+    #[serde(default, skip_serializing_if = "RunnerStrategy::is_classic")]
+    pub strategy: RunnerStrategy,
     pub kind: SeatKind,
     /// A `player` seat's player, an `agent` seat's agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -429,7 +431,7 @@ pub enum SeatEdit {
     Player(String),
     Open,
     Token(String),
-    Agent(String),
+    Agent(AgentSelection),
 }
 
 /// `POST /api/tables/{id}/join`.
@@ -466,6 +468,8 @@ pub enum Opponents {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields, default)]
 pub struct MatchRequest {
+    #[serde(default, skip_serializing_if = "RunnerStrategy::is_classic")]
+    pub strategy: RunnerStrategy,
     /// The player counts you accept, each 2 to 6 (default: 2).
     pub players: Vec<u8>,
     pub opponents: Opponents,
@@ -481,6 +485,7 @@ pub struct MatchRequest {
 impl Default for MatchRequest {
     fn default() -> MatchRequest {
         MatchRequest {
+            strategy: RunnerStrategy::Classic,
             players: vec![2],
             opponents: Opponents::Any,
             rated: true,
@@ -676,9 +681,73 @@ pub struct HouseModel {
     pub choices: Vec<HouseChoice>,
 }
 
+/// How a model runner prepares decisions, independently of model, effort and service tier.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub enum RunnerStrategy {
+    #[default]
+    Classic,
+    ClockAware,
+}
+
+/// An agent selected for a seat. A bare name keeps the classic launch wire format.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(untagged, deny_unknown_fields)]
+pub enum AgentSelection {
+    Named(String),
+    WithStrategy {
+        agent: String,
+        strategy: RunnerStrategy,
+    },
+}
+
+impl AgentSelection {
+    pub fn new(agent: String, strategy: RunnerStrategy) -> Self {
+        match strategy {
+            RunnerStrategy::Classic => Self::Named(agent),
+            RunnerStrategy::ClockAware => Self::WithStrategy { agent, strategy },
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Named(agent) | Self::WithStrategy { agent, .. } => agent,
+        }
+    }
+
+    pub fn strategy(&self) -> RunnerStrategy {
+        match self {
+            Self::Named(_) => RunnerStrategy::Classic,
+            Self::WithStrategy { strategy, .. } => *strategy,
+        }
+    }
+}
+
+impl From<String> for AgentSelection {
+    fn from(name: String) -> Self {
+        Self::Named(name)
+    }
+}
+
+impl From<&str> for AgentSelection {
+    fn from(name: &str) -> Self {
+        Self::Named(name.into())
+    }
+}
+
+impl RunnerStrategy {
+    pub fn is_classic(&self) -> bool {
+        *self == Self::Classic
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HouseChoice {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supports_clock_aware: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fast_mode: bool,
     /// Its reasoning effort; none where the model has none to choose.
@@ -857,6 +926,33 @@ pub struct ClockView {
     pub increment: Option<u64>,
 }
 
+/// Whether a game's chess clock is currently trustworthy, explicitly off, or unavailable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ClockStatus {
+    /// A consistent, usable clock reading is present in `clock`.
+    Available,
+    /// The game explicitly has no chess clock.
+    Off,
+    /// The game may be clocked (or settings are unknown), but no complete, consistent
+    /// sample is currently available.
+    Unavailable,
+}
+
+/// Freshness and availability metadata alongside [`ClockView`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClockInfo {
+    pub status: ClockStatus,
+    /// Producer Unix epoch milliseconds at projection, shared by all balances.
+    pub as_of_ms: u64,
+    /// Optional per-seat local receipt timestamps (Unix epoch milliseconds) for external
+    /// timer feeds such as dominion.games. Empty when the producer computes balances
+    /// authoritatively.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sampled_at_ms: Vec<u64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordPlayer {
@@ -902,6 +998,8 @@ pub struct AgentRun {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSetup {
+    #[serde(default, skip_serializing_if = "RunnerStrategy::is_classic")]
+    pub runner_strategy: RunnerStrategy,
     /// The agent's name.
     pub agent: String,
     /// What runs it ("Claude Code", "OpenAI").
@@ -956,6 +1054,8 @@ pub struct Playbook {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SeatAgent {
+    #[serde(default, skip_serializing_if = "RunnerStrategy::is_classic")]
+    pub runner_strategy: RunnerStrategy,
     /// Its account's name ("Opus 5.5 High").
     pub agent: String,
     /// What runs it ("Claude Code").
@@ -975,6 +1075,7 @@ pub struct SeatAgent {
 impl From<&AgentSetup> for SeatAgent {
     fn from(s: &AgentSetup) -> SeatAgent {
         SeatAgent {
+            runner_strategy: s.runner_strategy,
             agent: s.agent.clone(),
             program: Some(s.program.clone()).filter(|p| !p.is_empty()),
             model: s.model.clone(),

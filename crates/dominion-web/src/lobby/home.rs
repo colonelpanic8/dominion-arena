@@ -82,12 +82,12 @@ fn Automatch() -> Element {
     let counts = lobby.as_ref().map(|l| (l.online, l.searching));
     let house = lobby.as_ref().map(|l| l.house.clone()).unwrap_or_default();
     drop(lobby);
-    let mut opponent = use_signal(|| None::<String>);
+    let mut opponent = use_signal(|| None::<dominion_protocol::lobby::AgentSelection>);
     let house_names: Vec<String> = house.models.iter().map(|m| m.name.clone()).collect();
     if opponent
         .peek()
         .as_ref()
-        .is_some_and(|o| house_choice(&house.models, o).is_none())
+        .is_some_and(|o| house_choice(&house.models, o.name()).is_none())
     {
         opponent.set(None);
     }
@@ -234,7 +234,8 @@ fn Automatch() -> Element {
                             players: vec![n + 1],
                             opponents: Opponents::Agents,
                             rated: request.peek().rated,
-                            agent: if n == 1 { opponent() } else { None },
+                            strategy: opponent().filter(|_| n == 1).map(|o| o.strategy()).unwrap_or_default(),
+                            agent: opponent().filter(|_| n == 1).map(|o| o.name().to_owned()),
                         }),
                         if n == 1 { "1 Bot" } else { "{n} Bots" }
                     }

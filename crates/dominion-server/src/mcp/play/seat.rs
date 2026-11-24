@@ -147,6 +147,7 @@ pub(crate) fn glossary_result(entries: Result<Vec<GlossaryEntry>, String>) -> Ca
 pub(crate) struct Play<'a, S> {
     pub seat: &'a S,
     pub shown: &'a Mutex<Presentation>,
+    pub clock_cues: bool,
 }
 
 impl<S: PlaySeat> Play<'_, S> {
@@ -161,34 +162,50 @@ impl<S: PlaySeat> Play<'_, S> {
             .shown
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .render(&seat, &observation, full);
+            .render(&seat, &observation, full, self.clock_cues);
         let mut value = serde_json::json!({"view": observation.view});
         if let Some(clock) = &observation.clock {
             value["clock"] = serde_json::json!(clock);
         }
+        if let Some(clock_info) = &observation.clock_info {
+            value["clockInfo"] = serde_json::json!(clock_info);
+        }
         if !glossary.is_empty() {
             value["glossary"] = serde_json::json!(glossary);
         }
-        structured(value, text)
+        let mut result = structured(value, text);
+        if !observation.prompts.is_empty() {
+            result.meta.get_or_insert_with(Default::default).insert(
+                "dominion/modelPrompts".into(),
+                serde_json::json!(observation.prompts),
+            );
+        }
+        result
     }
 
     /// A failed call: why, then the decision still open, so it can be answered again
     /// without another call.
     pub fn failure(&self, message: impl Into<String>) -> CallToolResult {
         let mut text = message.into();
-        let decision = match self.seat.observe() {
-            Ok(Some((_, observation))) => Some(observation.view),
+        let observation = match self.seat.observe() {
+            Ok(Some((_, observation))) => Some(observation),
             _ => None,
         };
-        let open = decision.as_ref().and_then(|view| {
-            let rendered = dominion_agent::text::render(view);
-            rendered
-                .find("DECISION ")
-                .map(|i| rendered[i..].to_string())
+        let open = observation.as_ref().and_then(|obs| {
+            let rendered = dominion_agent::text::render(&obs.view);
+            let decision = rendered.find("DECISION ").map(|i| &rendered[i..])?;
+            if !self.clock_cues {
+                return Some(decision.to_owned());
+            }
+            let cue = super::clock_cue(&obs.view, obs.clock.as_ref(), obs.clock_info.as_ref());
+            Some(match cue {
+                Some(cue) => format!("{cue}\n{decision}"),
+                None => decision.to_string(),
+            })
         });
         match open {
             Some(open) => text = format!("{text}\n{open}"),
-            None if decision.is_some() && text.starts_with("REJECTED") => {
+            None if observation.is_some() && text.starts_with("REJECTED") => {
                 text.push_str("\nNo decision is open for you; call wait.");
             }
             None => {}

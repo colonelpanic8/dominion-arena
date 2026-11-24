@@ -19,8 +19,8 @@ use dominion_online::{
 };
 use dominion_protocol::api::{
     OnlineAccountInfo, OnlineAttach, OnlineManagement, OnlineMatching, OnlineMode,
-    OnlineObservation, OnlineOutcome, OnlineRating, OnlineRatingPeriod, OnlineRatingPoint,
-    OnlineRatingType, OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
+    OnlineObservation, OnlineOpponent, OnlineOutcome, OnlineRating, OnlineRatingPeriod,
+    OnlineRatingPoint, OnlineRatingType, OnlineResult, OnlineResultOpponent, OnlineStart, SeatView,
 };
 use dominion_protocol::lobby::{GameMeta, OfficialAccount, OfficialGame, SeatLevel, UserKind};
 use model::{OfficialModel, model_action, model_seats};
@@ -93,6 +93,7 @@ pub fn router(
         .position(|h| h.id == super::LEGACY_ID)
         .unwrap_or(0);
     let list: Vec<Hosted> = hosted.to_vec();
+    let peers: Arc<[Hosted]> = hosted.into();
     let dirs: Vec<PathBuf> = hosted.iter().filter_map(|h| h.recordings.clone()).collect();
     let replays = match hosted.first() {
         Some(first) if !dirs.is_empty() => {
@@ -129,6 +130,7 @@ pub fn router(
     for (i, h) in hosted.iter().enumerate() {
         router = router.merge(h.router(
             arena.clone(),
+            peers.clone(),
             hosts.clone(),
             idle,
             stop.clone(),
@@ -258,6 +260,7 @@ impl Hosted {
     fn router(
         &self,
         arena: Arc<Arena>,
+        peers: Arc<[Hosted]>,
         hosts: Vec<String>,
         idle: Option<Duration>,
         stop: CancellationToken,
@@ -281,6 +284,7 @@ impl Hosted {
         let lifecycle_web = Web {
             hosted: self.clone(),
             access: auth.clone(),
+            peers: peers.clone(),
             stop: stop.clone(),
         };
         let mut updates = self.client.updates.clone();
@@ -301,7 +305,7 @@ impl Hosted {
                 } else if update.reducer.running {
                     if let Some(job) = web.job()
                         && job.game_id.is_empty()
-                        && let Err(e) = assign(&web, job.agent)
+                        && let Err(e) = assign(&web, job.agent, job.strategy)
                     {
                         eprintln!(
                             "dominion: official account {}: assigning matched game: {e}",
@@ -330,6 +334,7 @@ impl Hosted {
             .with_state(Web {
                 hosted: self.clone(),
                 access: auth.clone(),
+                peers,
                 stop,
             });
         let mut router = Router::new()
@@ -468,7 +473,7 @@ async fn no_cache(request: Request, next: Next) -> Response {
 /// What anyone may watch: the account's view without its decision.
 fn observation(update: Update, ratings: Vec<Option<SeatLevel>>) -> OnlineObservation {
     let now = crate::hub::now_ms();
-    let clock = update.clock(now);
+    let (clock, _) = update.clock_observation_at(now, Some(std::time::Instant::now()));
     let game = update.reducer.view().ok().map(|mut view| {
         let deciding = view.decision.take().and(view.seat);
         view.spectating = true;
@@ -504,6 +509,8 @@ fn observation(update: Update, ratings: Vec<Option<SeatLevel>>) -> OnlineObserva
 struct Web {
     hosted: Hosted,
     access: Access,
+    /// Every account this server hosts, this one included.
+    peers: Arc<[Hosted]>,
     stop: CancellationToken,
 }
 async fn snapshot(State(web): State<Web>) -> axum::Json<OnlineObservation> {
@@ -660,6 +667,19 @@ fn management(web: &Web) -> OnlineManagement {
     let view = update.reducer.view().ok();
     let (agents, models) = web.access.arena.official_agents();
     OnlineManagement {
+        strategy: web
+            .job()
+            .map(|j| j.strategy)
+            .or_else(|| {
+                let game = &view.as_ref()?.game;
+                if !game.running {
+                    return None;
+                }
+                web.access
+                    .arena
+                    .official_game_strategy(&web.hosted.id, game.id.as_deref()?)
+            })
+            .unwrap_or_default(),
         connected: update.connected,
         error: update.error,
         id: web.hosted.id.clone(),
@@ -677,6 +697,7 @@ fn management(web: &Web) -> OnlineManagement {
         queue_feedback: update.queue_feedback,
         mode: update.mode,
         min_opponent_level: web.hosted.min_opponent_level,
+        paired: update.paired,
     }
 }
 async fn manage(State(web): State<Web>) -> axum::Json<OnlineManagement> {
@@ -850,7 +871,11 @@ fn refused(error: impl ToString) -> Response {
     )
         .into_response()
 }
-fn assign(web: &Web, agent: String) -> Result<(), String> {
+fn assign(
+    web: &Web,
+    agent: String,
+    strategy: dominion_protocol::lobby::RunnerStrategy,
+) -> Result<(), String> {
     let view = web
         .hosted
         .client
@@ -868,8 +893,17 @@ fn assign(web: &Web, agent: String) -> Result<(), String> {
             "{playing} plays this game: its agent can't be changed mid-game"
         ));
     }
+    if web
+        .access
+        .arena
+        .official_game_strategy(&web.hosted.id, &game_id)
+        .is_some_and(|s| s != strategy)
+    {
+        return Err("the running game must resume with the same strategy".into());
+    }
     web.hosted.check_assignment(&game_id)?;
     web.set_job(Some(crate::house::Job {
+        strategy,
         official: true,
         official_account: Some(web.hosted.id.clone()),
         transcript: true,
@@ -890,30 +924,39 @@ fn assign(web: &Web, agent: String) -> Result<(), String> {
 }
 async fn start_game(
     State(web): State<Web>,
+    headers: HeaderMap,
     axum::Json(start): axum::Json<OnlineStart>,
 ) -> Response {
     let _guard = web.hosted.control.lock().await;
+    if let Some(against) = start.against.clone() {
+        // Run to the end even if the request goes away, so no table is left half made.
+        let web = web.clone();
+        let paired =
+            tokio::spawn(async move { start_paired(&web, &headers, start, against).await });
+        return paired.await.unwrap_or_else(refused);
+    }
     if start.mode == OnlineMode::Bots && !(1..=5).contains(&start.bots) {
         return refused("choose 1–5 server bots");
     }
-    let reservation =
-        match web
-            .access
-            .arena
-            .reserve_official(&web.hosted.owner, &web.hosted.id, &start.agent)
-        {
-            Ok(r) => r,
-            Err(e) => return refused(e),
-        };
+    let reservation = match web.access.arena.reserve_official(
+        &web.hosted.owner,
+        &web.hosted.id,
+        &start.agent,
+        start.strategy,
+    ) {
+        Ok(r) => r,
+        Err(e) => return refused(e),
+    };
     if start.mode != OnlineMode::Bots {
         if !start.kingdom.is_empty() || !start.landscapes.is_empty() {
             return refused("public matchmaking does not accept required cards");
         }
-        if let Some(playing) = management(&web).game_agent
-            && playing != start.agent
+        let current = management(&web);
+        if let Some(playing) = current.game_agent
+            && (playing != start.agent || current.strategy != start.strategy)
         {
             return refused(format!(
-                "{playing} plays the running game: its agent can't be changed mid-game"
+                "{playing} plays the running game: its agent and strategy are fixed"
             ));
         }
         let mut matching = start.matching;
@@ -930,11 +973,12 @@ async fn start_game(
         }
         let update = web.hosted.client.current();
         if update.reducer.running {
-            if let Err(e) = assign(&web, start.agent) {
+            if let Err(e) = assign(&web, start.agent, start.strategy) {
                 return refused(e);
             }
         } else if update.searching {
             web.set_job(Some(crate::house::Job {
+                strategy: start.strategy,
                 official: true,
                 official_account: Some(web.hosted.id.clone()),
                 transcript: true,
@@ -960,27 +1004,110 @@ async fn start_game(
     if let Err(e) = web.hosted.client.new_game(options).await {
         return refused(e);
     }
-    if let Err(e) = assign(&web, start.agent) {
+    if let Err(e) = assign(&web, start.agent, start.strategy) {
         return refused(e);
     }
     drop(reservation);
     axum::Json(management(&web)).into_response()
+}
+/// How long a game against another hosted account waits for that account's control.
+const PEER_BUSY: Duration = Duration::from_secs(5);
+
+/// Starts a private unrated game between this account and `against`, another account this
+/// server hosts that the caller also owns, each played by its agent.
+async fn start_paired(
+    web: &Web,
+    headers: &HeaderMap,
+    start: OnlineStart,
+    against: OnlineOpponent,
+) -> Response {
+    if start.mode != OnlineMode::Unrated || start.matching.players != 2 {
+        return refused("a game against another hosted account is unrated with two players");
+    }
+    let Some(peer) = web.peers.iter().find(|h| h.id == against.account).cloned() else {
+        return refused(format!("no hosted official account {}", against.account));
+    };
+    if peer.id == web.hosted.id {
+        return refused("choose another account to play against");
+    }
+    let peer = Web {
+        access: Access {
+            arena: web.access.arena.clone(),
+            owner: peer.owner.clone(),
+            id: peer.id.clone(),
+        },
+        hosted: peer,
+        peers: web.peers.clone(),
+        stop: web.stop.clone(),
+    };
+    if peer.access.allowed(headers).is_err() {
+        return refused(format!("you don't own {}", peer.hosted.account));
+    }
+    let Ok(_peer_guard) = tokio::time::timeout(PEER_BUSY, peer.hosted.control.lock()).await else {
+        return refused(format!("{} is busy", peer.hosted.account));
+    };
+    let arena = &web.access.arena;
+    let reservations = (
+        arena.reserve_official(
+            &web.hosted.owner,
+            &web.hosted.id,
+            &start.agent,
+            start.strategy,
+        ),
+        arena.reserve_official(
+            &peer.hosted.owner,
+            &peer.hosted.id,
+            &against.agent,
+            against.strategy,
+        ),
+    );
+    let (Ok(_host_seat), Ok(_peer_seat)) = reservations else {
+        let (a, b) = reservations;
+        return refused(a.err().or(b.err()).expect("a reservation failed"));
+    };
+    let (host, guest) = (web.hosted.client.current(), peer.hosted.client.current());
+    // `pair` checks these too; here they name the account.
+    for (update, account) in [(&host, &web.hosted.account), (&guest, &peer.hosted.account)] {
+        if !update.connected || update.error.is_some() {
+            return refused(format!("{account} is not connected"));
+        }
+        if update.reducer.running || update.searching {
+            return refused(format!("{account} is already playing or searching"));
+        }
+    }
+    let options = super::PairTable {
+        kingdom: start.kingdom,
+        landscapes: start.landscapes,
+        timer: start.matching.timer,
+    };
+    let paired = super::pair(&web.hosted.client, &peer.hosted.client, options).await;
+    if let Err(e) = paired {
+        return refused(e);
+    }
+    if let Err(e) = assign(web, start.agent, start.strategy) {
+        return refused(e);
+    }
+    if let Err(e) = assign(&peer, against.agent, against.strategy) {
+        return refused(e);
+    }
+    axum::Json(management(web)).into_response()
 }
 async fn attach_agent(
     State(web): State<Web>,
     axum::Json(body): axum::Json<OnlineAttach>,
 ) -> Response {
     let _guard = web.hosted.control.lock().await;
-    let reservation =
-        match web
-            .access
-            .arena
-            .reserve_official(&web.hosted.owner, &web.hosted.id, &body.agent)
-        {
-            Ok(r) => r,
-            Err(e) => return refused(e),
-        };
-    if let Err(e) = assign(&web, body.agent) {
+    let strategy = body.strategy.unwrap_or_else(|| management(&web).strategy);
+    let reservation = match web.access.arena.reserve_official(
+        &web.hosted.owner,
+        &web.hosted.id,
+        &body.agent,
+        strategy,
+    ) {
+        Ok(r) => r,
+        Err(e) => return refused(e),
+    };
+    if let Err(e) = assign(&web, body.agent, strategy) {
         return refused(e);
     }
     drop(reservation);
@@ -1062,7 +1189,7 @@ async fn cancel_matchmaking(State(web): State<Web>) -> Response {
             if update.reducer.running {
                 if let Some(job) = web.job()
                     && job.game_id.is_empty()
-                    && let Err(e) = assign(&web, job.agent)
+                    && let Err(e) = assign(&web, job.agent, job.strategy)
                 {
                     return refused(e);
                 }

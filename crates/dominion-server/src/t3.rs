@@ -421,6 +421,9 @@ pub async fn play(
     archive: &mut Archive,
     stop: CancellationToken,
 ) -> Result<(), String> {
+    if !job.strategy.is_classic() {
+        return Err("T3 Code seats require the classic runner strategy".into());
+    }
     if job.official {
         return Err("T3 Code agents play only Arena's own games".into());
     }

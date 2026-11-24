@@ -8,7 +8,7 @@ use super::{Arena, Result};
 use crate::hub::{lock, now_ms};
 use dominion_protocol::lobby::{
     GameRecord, OFFICIAL_GAME_PREFIX, OfficialAccount, OfficialGame, PastGame, RecordPlayer,
-    Source, Venue, official_game_id,
+    RunnerStrategy, Source, Venue, official_game_id,
 };
 use dominion_protocol::view::GameResult;
 use std::sync::{Arc, OnceLock};
@@ -20,7 +20,7 @@ pub(super) struct Official {
     /// When its current game was first seen running (ms).
     started: Option<(String, u64)>,
     /// The agent last seen playing its current game.
-    played_by: Option<(String, String)>,
+    played_by: Option<(String, String, RunnerStrategy)>,
     /// The last game recorded.
     recorded: Option<String>,
 }
@@ -62,7 +62,7 @@ impl GameSource for OfficialRecords {
 pub(super) fn played_by(state: &mut super::State, account: &str, job: &crate::house::Job) {
     if !job.game_id.is_empty() {
         let entry = state.official.entry(account.into()).or_default();
-        entry.played_by = Some((job.game_id.clone(), job.agent.clone()));
+        entry.played_by = Some((job.game_id.clone(), job.agent.clone(), job.strategy));
     }
 }
 
@@ -82,7 +82,7 @@ impl Arena {
                     entry.started = Some((game.clone(), now_ms()));
                 }
                 if let Some(job) = job.filter(|j| &j.game_id == game) {
-                    entry.played_by = Some((game.clone(), job.agent));
+                    entry.played_by = Some((game.clone(), job.agent, job.strategy));
                 }
             }
             info.agent = None;
@@ -101,8 +101,8 @@ impl Arena {
             });
             let agent = finished.as_ref().and_then(|g| {
                 (entry.played_by.as_ref())
-                    .filter(|(p, _)| p == g)
-                    .map(|p| p.1.clone())
+                    .filter(|(p, ..)| p == g)
+                    .map(|p| (p.1.clone(), p.2))
             });
             let owner = entry.info.owner.clone();
             let game = entry.info.game.clone();
@@ -113,7 +113,7 @@ impl Arena {
             finished.and(game).map(|game| (game, started, agent, owner))
         };
         if let (Some((game, started, agent, owner)), Some(result)) = (finished, result) {
-            match self.record_official(&game, result, started, agent.as_deref(), &owner) {
+            match self.record_official(&game, result, started, agent, &owner) {
                 Ok(true) => self.bump(),
                 Ok(false) => {}
                 Err(e) => eprintln!("dominion: recording an official game: {e}"),
@@ -135,6 +135,16 @@ impl Arena {
         (played.0 == game).then(|| played.1.clone())
     }
 
+    pub(crate) fn official_game_strategy(
+        &self,
+        account: &str,
+        game: &str,
+    ) -> Option<RunnerStrategy> {
+        let state = lock(&self.state);
+        let played = state.official.get(account)?.played_by.as_ref()?;
+        (played.0 == game).then_some(played.2)
+    }
+
     /// The official accounts, each with the agent sent to play as it.
     pub(super) fn official_accounts(&self, state: &super::State) -> Vec<OfficialAccount> {
         (state.official.values())
@@ -153,12 +163,17 @@ impl Arena {
         game: &OfficialGame,
         result: &GameResult,
         started: Option<u64>,
-        agent: Option<&str>,
+        agent: Option<(String, RunnerStrategy)>,
         owner: &str,
     ) -> Result<bool> {
         let id = official_game_id(&game.id);
+        let strategy = agent
+            .as_ref()
+            .map(|(_, strategy)| *strategy)
+            .unwrap_or_default();
         let player = match agent
-            .map(|a| self.db.user_by_name(a))
+            .as_ref()
+            .map(|(name, _)| self.db.user_by_name(name))
             .transpose()?
             .flatten()
         {
@@ -172,7 +187,7 @@ impl Arena {
                 return Ok(false);
             }
             let (agent, bot_owner) = match &player {
-                Some(user) => who_played(tx, user, &setups, None)?,
+                Some(user) => who_played(tx, user, &setups, None, strategy)?,
                 None => (None, None),
             };
             let mut users = vec![];

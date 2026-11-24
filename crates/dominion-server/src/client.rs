@@ -44,6 +44,7 @@ pub enum CallError {
 
 pub struct Client {
     service: RunningService<RoleClient, ()>,
+    clock_cues: bool,
 }
 
 impl Client {
@@ -61,7 +62,15 @@ impl Client {
         config.retry_config = Arc::new(retry);
         let transport = StreamableHttpClientTransport::from_config(config);
         let service = ().serve(transport).await.map_err(|e| format!("connecting to {url}: {e}"))?;
-        Ok(Client { service })
+        Ok(Client {
+            service,
+            clock_cues: false,
+        })
+    }
+
+    pub(crate) fn with_clock_cues(mut self, enabled: bool) -> Self {
+        self.clock_cues = enabled;
+        self
     }
 
     pub async fn call(&self, tool: &'static str, args: Value) -> Result<Reply, CallError> {
@@ -70,14 +79,17 @@ impl Client {
                 "tool arguments must be an object".into(),
             ));
         };
-        let result = self
-            .service
-            .call_tool(CallToolRequestParams::new(tool).with_arguments(args))
-            .await
-            .map_err(|e| match e {
-                ServiceError::McpError(e) => CallError::Refused(format!("{tool}: {}", e.message)),
-                e => CallError::Lost(format!("{tool}: {e}")),
-            })?;
+        let mut request = CallToolRequestParams::new(tool).with_arguments(args);
+        if self.clock_cues {
+            request
+                .meta
+                .get_or_insert_with(Default::default)
+                .insert(crate::mcp::play::CLOCK_CUES_META.into(), Value::Bool(true));
+        }
+        let result = self.service.call_tool(request).await.map_err(|e| match e {
+            ServiceError::McpError(e) => CallError::Refused(format!("{tool}: {}", e.message)),
+            e => CallError::Lost(format!("{tool}: {e}")),
+        })?;
         let text = result
             .content
             .iter()

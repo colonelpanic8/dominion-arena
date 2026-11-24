@@ -693,7 +693,10 @@ pub fn seat_edits(seats: &[TableSeat]) -> Vec<SeatEdit> {
             },
             SeatKind::Token => SeatEdit::Token(seat.name.clone().unwrap_or_default()),
             SeatKind::Agent => match &seat.user {
-                Some(user) => SeatEdit::Agent(user.name.clone()),
+                Some(user) => SeatEdit::Agent(dominion_protocol::lobby::AgentSelection::new(
+                    user.name.clone(),
+                    seat.strategy,
+                )),
                 None => SeatEdit::Open,
             },
         })

@@ -23,7 +23,13 @@ const LOOKUPS: [&str; 2] = [
 /// in it and loads it as a workspace: AGENTS.md as a rule, `.agents/skills`. It may read
 /// it and run its lookups; Antigravity refuses anything else outside the playbook (other
 /// commands, reads elsewhere) and ends the turn.
-pub fn settings(work: &Path, playbook: bool) -> Result<(), String> {
+pub fn settings(work: &Path, playbook: bool, brief: &str) -> Result<(), String> {
+    write_agent(work, playbook, brief)?;
+    permissions(work, playbook, false)
+}
+
+/// Writes the seat's Antigravity agent definition with `brief` as its system prompt.
+pub fn write_agent(work: &Path, playbook: bool, brief: &str) -> Result<(), String> {
     let tools = if playbook {
         "[read_file, run_command, finish]"
     } else {
@@ -32,15 +38,14 @@ pub fn settings(work: &Path, playbook: bool) -> Result<(), String> {
     // Global config (`GEMINI_HOME/config`) holds the agent and MCP servers, wherever the
     // seat starts; `.agents/` serves a seat started in /work.
     let agent = format!(
-        "---\nname: dominion\ndescription: Play a Dominion seat through structured replies\ntools: {tools}\nmainAgent: true\nsubagent: false\ncommandExecutionPolicy: off\nmcpServers: []\nskills: []\nplugins: []\n---\n{}\n",
-        super::instructions(playbook)
+        "---\nname: dominion\ndescription: Play a Dominion seat through structured replies\ntools: {tools}\nmainAgent: true\nsubagent: false\ncommandExecutionPolicy: off\nmcpServers: []\nskills: []\nplugins: []\n---\n{brief}\n",
     );
     for dir in [".agents/agents", "config/agents"] {
         let dir = work.join(dir);
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         write_private(&dir.join("dominion.md"), agent.as_bytes())?;
     }
-    permissions(work, playbook, false)
+    Ok(())
 }
 
 /// Lets the seat use the bridge's game tools at `url`.

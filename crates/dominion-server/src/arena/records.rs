@@ -83,7 +83,13 @@ impl Arena {
                 }
                 let reported = meta.runs.get(usize::from(p.index)).cloned().flatten();
                 let (agent, bot_owner) = match &accounts[i] {
-                    Some(user) => who_played(tx, user, &setups, reported)?,
+                    Some(user) => who_played(
+                        tx,
+                        user,
+                        &setups,
+                        reported,
+                        meta.strategies.get(i).copied().unwrap_or_default(),
+                    )?,
                     None => (None, None),
                 };
                 players.push(RecordPlayer {
@@ -273,6 +279,7 @@ pub(super) fn who_played(
     user: &User,
     setups: &Setups,
     reported: Option<AgentRun>,
+    strategy: dominion_protocol::lobby::RunnerStrategy,
 ) -> Result<(Option<AgentRun>, Option<String>)> {
     Ok(match &user.login {
         Login::House => {
@@ -285,10 +292,11 @@ pub(super) fn who_played(
                     run
                 }
                 None => AgentRun {
-                    setup: known.cloned().unwrap_or_else(|| AgentSetup {
+                    setup: AgentSetup {
+                        runner_strategy: strategy,
                         agent: user.name.clone(),
-                        ..AgentSetup::default()
-                    }),
+                        ..known.cloned().unwrap_or_default()
+                    },
                     attempts: vec![],
                 },
             };
@@ -309,6 +317,7 @@ fn complete_agents(games: &mut [PastGame], setups: &Setups) {
         {
             *a = SeatAgent {
                 agent: std::mem::take(&mut a.agent),
+                runner_strategy: a.runner_strategy,
                 ..SeatAgent::from(setup)
             };
         }

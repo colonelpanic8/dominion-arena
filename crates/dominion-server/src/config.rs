@@ -164,6 +164,7 @@ pub struct Config {
     /// (`claude`, `codex`, or `antigravity`), and optionally `model`, `command`, `about` (default: Claude
     /// Opus, Claude Sonnet and Codex).
     pub agents: Option<Vec<crate::runner::AgentSpec>>,
+    pub clock_aware: Option<crate::runner::ClockAwareSettings>,
     /// Providers whose models `dominion agents` offers, each at every effort allowed, as
     /// `[[catalogs]]` tables: `program`, and optionally `models` and `exclude` (patterns
     /// of model ids), `efforts`, `tag` and the agents' other settings. An `[[agents]]`
@@ -452,6 +453,11 @@ impl Config {
         Ok(crate::runner::Settings {
             socket,
             server: self.server(),
+            analysis: self
+                .clock_aware
+                .as_ref()
+                .map(|s| s.resolve(&agents))
+                .transpose()?,
             agents,
             catalogs,
             capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),

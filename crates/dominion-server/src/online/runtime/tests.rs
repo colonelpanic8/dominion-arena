@@ -93,6 +93,8 @@ fn runtime() -> (TempDir, Runtime) {
         queue_status: None,
         outbox: Vec::new(),
         pending_match: Vec::new(),
+        pairing: None,
+        timer_presets: Vec::new(),
         profiles: Waiting::default(),
         results: Waiting::default(),
         update: Update {
@@ -103,9 +105,11 @@ fn runtime() -> (TempDir, Runtime) {
             queue_feedback: Vec::new(),
             mode: OnlineMode::Bots,
             timers: Vec::new(),
+            timer_settings: None,
             finished_at: None,
             bots: Vec::new(),
             chat: Default::default(),
+            paired: false,
         },
         recorder: Recorder::new(recordings::dir(directory.path())),
         store,
@@ -1060,7 +1064,12 @@ async fn hosted_watching_is_public_but_management_and_mcp_require_owner() {
     // The reserved slot cannot be reused while waiting for the public opponent.
     assert!(
         arena
-            .reserve_official("observer-owner", crate::online::LEGACY_ID, "fixture-agent")
+            .reserve_official(
+                "observer-owner",
+                crate::online::LEGACY_ID,
+                "fixture-agent",
+                Default::default()
+            )
             .is_err()
     );
     let mut between = client.current();
@@ -1323,6 +1332,21 @@ async fn official_accounts_keep_their_own_owners_routes_and_agent_tokens() {
         .await
         .unwrap();
     assert_eq!(response.status(), S::FORBIDDEN);
+    // Playing another hosted account needs owning that one too.
+    let response = http
+        .post(format!("{base}/api/online/start"))
+        .bearer_auth(&owner_a)
+        .json(&serde_json::json!({
+            "agent": "fixture-agent",
+            "mode": "unrated",
+            "against": {"account": "sol", "agent": "fixture-agent"},
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), S::CONFLICT);
+    assert!(response.text().await.unwrap().contains("don't own"));
+    assert!(a_requests.try_recv().is_err() && b_requests.try_recv().is_err());
     let backend = tokio::spawn(async move {
         match b_requests.recv().await.unwrap() {
             Request::NewGame(_, reply) => reply.send(Ok(())).unwrap(),
@@ -1547,6 +1571,29 @@ fn matching_criteria_match_official_player_rating_timer_and_cancellation_fields(
 }
 
 #[test]
+fn a_game_command_refused_after_its_result_keeps_the_finished_table() {
+    let (_directory, mut runtime) = active_runtime();
+    let late = || {
+        Message::Failed(dominion_online::transport::Failure {
+            reason: "COMMAND_REQUIRES_GAME",
+            card: None,
+        })
+    };
+    assert!(runtime.process(late()).is_err());
+    runtime.update.reducer.running = false;
+    runtime.completed_table = runtime.table.as_ref().map(|t| t.table_id);
+    assert!(runtime.process(late()).is_err());
+    runtime.update.reducer.result = Some(dominion_protocol::GameResult {
+        reason: None,
+        players: vec![],
+    });
+    runtime.process(late()).unwrap();
+    assert!(runtime.table.is_some() && runtime.update.reducer.result.is_some());
+    runtime.needs_snapshot = true;
+    assert!(runtime.process(late()).is_err());
+}
+
+#[test]
 fn a_completed_table_already_left_by_the_server_does_not_block_the_next_game() {
     let (_directory, mut runtime) = active_runtime();
     let failure = || {
@@ -1758,6 +1805,21 @@ fn a_timeout_offer_for_an_opponent_resigns_them() {
 #[test]
 fn official_timers_are_kept_by_seat_and_counted_down_while_running() {
     let (_directory, mut runtime) = active_runtime();
+    Arc::make_mut(&mut runtime.update.reducer.catalog)
+        .enums
+        .insert(
+            "TimerPresetOptions".into(),
+            ["RECKLESS", "HASTY", "FRIENDLY", "PATIENT", "OFF"]
+                .map(String::from)
+                .to_vec(),
+        );
+    let read = |runtime: &Runtime, now| {
+        let (clock, info) = runtime.update.clock_observation_at(now, None);
+        (clock, info.unwrap())
+    };
+    assert_eq!(read(&runtime, 0).1.status, ClockStatus::Off);
+    runtime.update.timer_settings.as_mut().unwrap().preset = 3;
+    assert_eq!(read(&runtime, 0).1.status, ClockStatus::Unavailable);
     assert_eq!(runtime.update.clock(0), None);
     let timer = |player, time, running, free_time| TimerUpdate {
         player,
@@ -1767,13 +1829,22 @@ fn official_timers_are_kept_by_seat_and_counted_down_while_running() {
         maximum: 0,
     };
     runtime
-        .process(Message::Timers(vec![
-            timer(-2, 300_000, true, 5_000),
-            timer(42, 200_000, false, 0),
-        ]))
+        .process(Message::Timers(vec![timer(-2, 300_000, true, 5_000)]))
         .unwrap();
-    let at = runtime.update.timers[0].1;
-    let clock = runtime.update.clock(at + 8_000).unwrap();
+    assert_eq!(read(&runtime, 0).0, None);
+    assert_eq!(read(&runtime, 0).1.status, ClockStatus::Unavailable);
+    runtime
+        .process(Message::Timers(vec![timer(42, 200_000, false, 0)]))
+        .unwrap();
+    let at = runtime.update.timers[0].received_ms;
+    let (clock, info) = read(&runtime, at + 8_000);
+    assert_eq!(info.status, ClockStatus::Available);
+    assert_eq!(info.as_of_ms, at + 8_000);
+    assert_eq!(
+        info.sampled_at_ms,
+        [runtime.update.timers[1].received_ms, at]
+    );
+    let clock = clock.unwrap();
     assert_eq!(clock.running, Some(1));
     assert_eq!(clock.left, [200_000, 297_000]);
     assert!(clock.free.is_empty(), "free time used up is none");
@@ -1782,6 +1853,9 @@ fn official_timers_are_kept_by_seat_and_counted_down_while_running() {
         .process(Message::Timers(vec![timer(42, 150_000, true, 0)]))
         .unwrap();
     assert_eq!(runtime.update.timers.len(), 2);
+    let (clock, info) = read(&runtime, at + 8_000);
+    assert!(clock.is_none());
+    assert_eq!(info.status, ClockStatus::Unavailable);
     let mut next = snapshot();
     next.game_id = 124;
     runtime.process(Message::Snapshot(next)).unwrap();
@@ -2120,6 +2194,7 @@ fn resuming_human_match() -> (TempDir, Runtime) {
         table: human_table(true),
         mode: OnlineMode::Rated,
         owner: 42,
+        paired: false,
     };
     runtime.store.save("own-match", &human).unwrap();
     runtime.table = Some(human.table.clone());
@@ -2312,4 +2387,516 @@ fn table_chat_names_players_watchers_and_the_server_and_starts_afresh_at_a_new_t
         })
         .unwrap();
     assert!(runtime.published().chat.lines.is_empty());
+}
+
+/// One side of a fake dominion.games socket, for the server's end of a conversation.
+struct FakeOfficial {
+    socket: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    encoder: dominion_online::server::ServerEncoder,
+}
+impl FakeOfficial {
+    async fn send(&mut self, message: Message) {
+        use futures_util::SinkExt;
+        let bytes = self.encoder.encode_batch(&[message]).unwrap();
+        self.socket
+            .send(tokio_tungstenite::tungstenite::Message::Binary(
+                bytes.into(),
+            ))
+            .await
+            .unwrap();
+    }
+    /// The next command with `opcode`, past pings and acknowledgements, after its opcode.
+    async fn expect(&mut self, opcode: i32) -> Vec<u8> {
+        use futures_util::StreamExt;
+        loop {
+            let frame = self.socket.next().await.unwrap().unwrap();
+            let tokio_tungstenite::tungstenite::Message::Binary(bytes) = frame else {
+                continue;
+            };
+            let mut reader = Reader::new(&bytes);
+            let got = reader.int().unwrap();
+            if [44, 51].contains(&got) {
+                continue;
+            }
+            assert_eq!(got, opcode, "unexpected command");
+            return bytes[reader.position()..].to_vec();
+        }
+    }
+}
+/// An account logged in as player `player` over a fresh socket to `listener`, with
+/// dominion.games' Hasty preset, and the server's end of that socket.
+async fn connected(
+    listener: &tokio::net::TcpListener,
+    player: i32,
+) -> (TempDir, Runtime, FakeOfficial) {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+    let request = format!("ws://{}/", listener.local_addr().unwrap())
+        .into_client_request()
+        .unwrap();
+    let (transport, socket) = tokio::join!(Transport::connect_request(request), async {
+        let (stream, _) = listener.accept().await.unwrap();
+        tokio_tungstenite::accept_async(stream).await.unwrap()
+    });
+    let (directory, mut runtime) = runtime();
+    runtime.socket = Some(transport.unwrap());
+    runtime.session = Some(SessionSecret {
+        player,
+        token: "fixture".into(),
+    });
+    runtime.update.reducer.player_id = player;
+    runtime.table = None;
+    runtime.bots.clear();
+    runtime.timer_presets = vec![(
+        1,
+        dominion_online::transport::TimerSettings {
+            parameters: vec![(0, 60_000)],
+            force_resign: true,
+            preset: 1,
+        },
+    )];
+    let fake = FakeOfficial {
+        socket,
+        encoder: Default::default(),
+    };
+    (directory, runtime, fake)
+}
+/// The table a fake server makes of a new-table request's rules, hosted by 42.
+fn requested_table(rules: &[u8]) -> TableDetails {
+    let mut reader = Reader::new(rules);
+    let count = reader.int().unwrap();
+    let rules = (0..count)
+        .map(|_| (TableRule::parse(&mut reader).unwrap(), false))
+        .collect();
+    TableDetails {
+        table_id: 77,
+        host_id: 42,
+        players: vec![named(42)],
+        ready: vec![false],
+        bots: vec![],
+        spectators: vec![],
+        reconnecting: vec![],
+        rules,
+        division: String::new(),
+        match_games: vec![],
+        match_score: None,
+        tournament: None,
+    }
+}
+fn paired_snapshot() -> model::Snapshot {
+    let mut snapshot = snapshot();
+    snapshot.state.players[1].player_id = 99;
+    snapshot
+}
+
+#[tokio::test]
+async fn two_hosted_accounts_play_each_other_at_a_private_unrated_table() {
+    for preset in [1, 4] {
+        play_paired_table(preset).await;
+    }
+}
+
+async fn play_paired_table(preset: u8) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (_host_dir, mut host, mut host_end) = connected(&listener, 42).await;
+    let (_guest_dir, mut guest, mut guest_end) = connected(&listener, 99).await;
+    let server = tokio::spawn(async move {
+        let mut table = requested_table(&host_end.expect(9).await);
+        let rule = |id| table.rules.iter().find(|(r, _)| r.id == id).cloned();
+        assert_eq!(rule(19).unwrap().0.value, RuleValue::Boolean(false));
+        assert_eq!(rule(5).unwrap().0.value, RuleValue::Group(Group::Nobody));
+        let RuleValue::Timer(timer) = rule(16).unwrap().0.value else {
+            panic!("no timer rule");
+        };
+        assert_eq!(timer.preset, i32::from(preset));
+        assert_eq!(timer.force_resign, preset != 4);
+        host_end
+            .send(Message::TableJoined {
+                table: table.clone(),
+                show: true,
+            })
+            .await;
+        let join = guest_end.expect(2).await;
+        let mut join = Reader::new(&join);
+        assert_eq!((join.long().unwrap(), join.boolean().unwrap()), (77, true));
+        table.players.push(named(99));
+        table.ready.push(false);
+        guest_end
+            .send(Message::TableJoined {
+                table: table.clone(),
+                show: true,
+            })
+            .await;
+        guest_end.expect(10).await;
+        host_end
+            .send(Message::PlayerJoined {
+                table_id: 77,
+                player: named(99),
+                is_player: true,
+            })
+            .await;
+        host_end.expect(10).await;
+        for end in [&mut host_end, &mut guest_end] {
+            end.send(Message::GameStarted {
+                table_id: 77,
+                game_id: 123,
+            })
+            .await;
+            end.send(Message::Snapshot(paired_snapshot())).await;
+        }
+        (host_end, guest_end)
+    });
+    let options = PairTable {
+        timer: preset,
+        ..PairTable::default()
+    };
+    assert_eq!(host.pair_open(99, options).await.unwrap(), 77);
+    guest.pair_join(77, 42, preset).await.unwrap();
+    host.pair_start(99).await.unwrap();
+    while !guest.update.reducer.running {
+        guest.receive().await.unwrap();
+    }
+    let _ends = server.await.unwrap();
+    for runtime in [&mut host, &mut guest] {
+        assert!(runtime.update.reducer.running);
+        assert!(runtime.safe_table().is_ok());
+        assert_eq!(runtime.update.mode, OnlineMode::Unrated);
+        assert!(runtime.published().paired);
+        assert!(runtime.store.dir().join("own-match.json").exists());
+        assert!(runtime.pairing.is_none());
+    }
+}
+
+#[tokio::test]
+async fn a_stranger_at_the_paired_table_stops_the_game_and_the_host_leaves() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (_dir, mut host, mut end) = connected(&listener, 42).await;
+    let server = tokio::spawn(async move {
+        let table = requested_table(&end.expect(9).await);
+        end.send(Message::TableJoined { table, show: true }).await;
+        for id in [100, 99] {
+            end.send(Message::PlayerJoined {
+                table_id: 77,
+                player: named(id),
+                is_player: true,
+            })
+            .await;
+        }
+        let leave = end.expect(6).await;
+        let mut leave = Reader::new(&leave);
+        assert_eq!((leave.long().unwrap(), leave.int().unwrap()), (77, 42));
+        end.send(Message::PlayerLeft {
+            table_id: 77,
+            player_id: 42,
+        })
+        .await;
+        end
+    });
+    let options = PairTable {
+        timer: 1,
+        ..PairTable::default()
+    };
+    host.pair_open(99, options).await.unwrap();
+    let refused = host.pair_start(99).await.unwrap_err();
+    assert!(refused.contains("not just"), "{refused}");
+    let _end = server.await.unwrap();
+    assert!(host.table.is_none() && host.human.is_none());
+    assert!(!host.store.dir().join("own-match.json").exists());
+    assert!(host.update.connected && host.update.error.is_none());
+}
+
+#[tokio::test]
+async fn a_refused_join_fails_the_step_without_closing_the_connection() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (_dir, mut guest, mut end) = connected(&listener, 99).await;
+    let server = tokio::spawn(async move {
+        end.expect(2).await;
+        end.send(Message::Failed(dominion_online::transport::Failure {
+            reason: "NOT_ALLOWED_TO_JOIN",
+            card: None,
+        }))
+        .await;
+        end
+    });
+    let refused = guest.pair_join(77, 42, 1).await.unwrap_err();
+    assert!(refused.contains("NOT_ALLOWED_TO_JOIN"), "{refused}");
+    let _end = server.await.unwrap();
+    assert!(guest.socket.is_some() && guest.update.error.is_none());
+    assert!(guest.pairing.is_none() && guest.human.is_none());
+}
+
+#[test]
+fn a_paired_table_holds_just_the_two_accounts_unrated_unwatched_and_timed() {
+    let mut table = table();
+    table.bots.clear();
+    table.players.push(named(99));
+    table.ready.push(false);
+    table.rules.push((
+        TableRule {
+            id: 16,
+            value: RuleValue::Timer(dominion_online::transport::TimerSettings {
+                parameters: vec![],
+                force_resign: true,
+                preset: 1,
+            }),
+        },
+        false,
+    ));
+    assert!(pairing::check_table(&table, &[99, 42], 1).is_ok());
+    assert!(pairing::check_table(&table, &[42, 99], 2).is_err());
+    assert!(pairing::check_table(&table, &[42], 1).is_err());
+    let mut watched = table.clone();
+    watched.spectators.push(named(100));
+    assert!(pairing::check_table(&watched, &[42, 99], 1).is_err());
+    let mut rated = table.clone();
+    rated.rules.push((
+        TableRule {
+            id: 19,
+            value: RuleValue::Boolean(true),
+        },
+        false,
+    ));
+    assert!(pairing::check_table(&rated, &[42, 99], 1).is_err());
+    table.rules.retain(|(r, _)| r.id != 16);
+    assert!(pairing::check_table(&table, &[42, 99], 4).is_ok());
+    assert!(pairing::check_table(&table, &[42, 99], 1).is_err());
+}
+
+#[tokio::test]
+async fn starting_a_paired_game_sets_up_both_accounts_and_sends_each_its_agent() {
+    exercise_hosted_pair(false).await;
+}
+
+#[tokio::test]
+async fn a_partial_start_reports_the_surviving_game_without_assigning_agents() {
+    exercise_hosted_pair(true).await;
+}
+
+async fn exercise_hosted_pair(host_loses_connection: bool) {
+    use dominion_protocol::lobby::Credentials;
+    use std::net::{IpAddr, Ipv4Addr};
+    let idle = |player: i32| {
+        let (directory, mut runtime) = runtime();
+        runtime.process(Message::Login(login(false))).unwrap();
+        runtime.update.reducer.player_id = player;
+        runtime.table = None;
+        (directory, runtime)
+    };
+    let (_host_dir, mut host) = idle(42);
+    let (_guest_dir, mut guest) = idle(99);
+    let (host_publish, host_updates) = watch::channel(host.update.clone());
+    let (guest_publish, guest_updates) = watch::channel(guest.update.clone());
+    let (host_tx, host_requests) = mpsc::channel(16);
+    let (guest_tx, guest_requests) = mpsc::channel(16);
+    let (mut host_requests, mut guest_requests) = (
+        without_levels(host_requests),
+        without_levels(guest_requests),
+    );
+    let hosted = [
+        crate::online::Hosted::new(
+            Client {
+                tx: host_tx,
+                updates: host_updates,
+            },
+            "astra".into(),
+            "fixture-42".into(),
+            "owner".into(),
+        ),
+        crate::online::Hosted::new(
+            Client {
+                tx: guest_tx,
+                updates: guest_updates,
+            },
+            "neon".into(),
+            "fixture-99".into(),
+            "owner".into(),
+        ),
+    ];
+    let arena = crate::arena::Arena::open(Arc::new(crate::hub::Hub::default()), Default::default())
+        .unwrap();
+    let credentials = Credentials {
+        name: "owner".into(),
+        password: "fixture-password".into(),
+        invite: None,
+    };
+    let owner = (arena.register(IpAddr::V4(Ipv4Addr::LOCALHOST), &credentials, None))
+        .unwrap()
+        .1
+        .unwrap();
+    let (offering, _jobs) = mpsc::unbounded_channel();
+    let offer = |name: &str| crate::house::Offer {
+        name: name.into(),
+        about: "fixture".into(),
+        model: Some(crate::house::OfferedModel {
+            program: "OpenAI".into(),
+            id: name.into(),
+            name: name.into(),
+            effort: None,
+            fast_mode: false,
+            supports_clock_aware: true,
+        }),
+        ..Default::default()
+    };
+    arena.runner_connected(vec![offer("agent-a"), offer("agent-b")], 2, offering);
+    let stop = tokio_util::sync::CancellationToken::new();
+    let router = crate::online::router(
+        &hosted,
+        arena.clone(),
+        vec!["127.0.0.1".into()],
+        None,
+        stop.clone(),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let stopped = stop.clone();
+    let serving = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(stopped.cancelled_owned())
+            .await
+            .unwrap()
+    });
+    // Each account's game starting, as its backend would see it.
+    let start = |runtime: &mut Runtime, publish: &watch::Sender<Update>| {
+        let mut table = human_table(false);
+        table.spectators.clear();
+        runtime.table = Some(table.clone());
+        runtime.human = Some(HumanTable {
+            table,
+            mode: OnlineMode::Unrated,
+            owner: runtime.update.reducer.player_id,
+            paired: true,
+        });
+        runtime.update.mode = OnlineMode::Unrated;
+        runtime
+            .process(Message::Snapshot(paired_snapshot()))
+            .unwrap();
+        publish.send_replace(runtime.published());
+    };
+    let backends = tokio::spawn(async move {
+        let Some(Request::PairOpen(99, options, reply)) = host_requests.recv().await else {
+            panic!("expected the host to open a table for 99");
+        };
+        assert_eq!(
+            (options.timer, options.kingdom),
+            (0, vec!["Village".to_string()])
+        );
+        reply.send(Ok(77)).unwrap();
+        let Some(Request::PairJoin(77, 42, 0, reply)) = guest_requests.recv().await else {
+            panic!("expected the guest to join table 77");
+        };
+        reply.send(Ok(())).unwrap();
+        let Some(Request::PairStart(99, reply)) = host_requests.recv().await else {
+            panic!("expected the host to start the game");
+        };
+        start(&mut guest, &guest_publish);
+        if host_loses_connection {
+            reply.send(Err("host disconnected".into())).unwrap();
+            for queue in [&mut host_requests, &mut guest_requests] {
+                let Some(Request::PairAbandon(reply)) = queue.recv().await else {
+                    panic!("expected unstarted table cleanup");
+                };
+                reply.send(Ok(())).unwrap();
+            }
+        } else {
+            start(&mut host, &host_publish);
+            reply.send(Ok(())).unwrap();
+        }
+        (host_requests, guest_requests, host_publish, guest_publish)
+    });
+    let http = reqwest::Client::new();
+    let response = http
+        .post(format!("{base}/api/online/astra/start"))
+        .bearer_auth(&owner)
+        .json(&serde_json::json!({
+            "agent": "agent-a",
+            "mode": "unrated",
+            "matching": {"timer": 0},
+            "kingdom": ["Village"],
+            "against": {"account": "neon", "agent": "agent-b", "strategy": "clock_aware"},
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    let management: serde_json::Value = response.json().await.unwrap();
+    let (mut host_requests, mut guest_requests, _, _) = backends.await.unwrap();
+    if host_loses_connection {
+        assert_eq!(status, reqwest::StatusCode::CONFLICT);
+        assert!(
+            management["error"]
+                .as_str()
+                .unwrap()
+                .contains("guest still reports paired game 123 running")
+        );
+        assert!(arena.official_job("astra").is_none() && arena.official_job("neon").is_none());
+    } else {
+        assert!(status.is_success());
+        assert_eq!(management["paired"], true);
+        for (account, agent, seat) in [("astra", "agent-a", 0), ("neon", "agent-b", 1)] {
+            let job = arena.official_job(account).unwrap();
+            assert_eq!(job.strategy.is_classic(), account == "astra");
+            assert_eq!(
+                (job.agent.as_str(), job.game_id.as_str(), job.seat),
+                (agent, "dominion.games:123", seat)
+            );
+        }
+        let agent_url = format!("{base}/api/online/neon/agent");
+        let paused = http
+            .delete(&agent_url)
+            .bearer_auth(&owner)
+            .send()
+            .await
+            .unwrap();
+        assert!(paused.status().is_success());
+        let paused: serde_json::Value = paused.json().await.unwrap();
+        assert_eq!(paused["strategy"], "clock_aware");
+        assert!(arena.official_job("neon").is_none());
+        let attach = |body| http.post(&agent_url).bearer_auth(&owner).json(&body).send();
+        let switched = attach(serde_json::json!({"agent":"agent-b","strategy":"classic"}))
+            .await
+            .unwrap();
+        assert_eq!(switched.status(), reqwest::StatusCode::CONFLICT);
+        assert!(arena.official_job("neon").is_none());
+        let resumed = attach(serde_json::json!({"agent":"agent-b"}))
+            .await
+            .unwrap();
+        assert!(resumed.status().is_success());
+        assert!(!arena.official_job("neon").unwrap().strategy.is_classic());
+    }
+    assert!(host_requests.try_recv().is_err() && guest_requests.try_recv().is_err());
+    stop.cancel();
+    tokio::time::timeout(Duration::from_secs(2), serving)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_paired_table_left_behind_is_left_before_the_next_one_opens() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (_dir, mut host, mut end) = connected(&listener, 42).await;
+    let server = tokio::spawn(async move {
+        let table = requested_table(&end.expect(9).await);
+        end.send(Message::TableJoined {
+            table: table.clone(),
+            show: true,
+        })
+        .await;
+        end.expect(6).await;
+        end.send(Message::PlayerLeft {
+            table_id: 77,
+            player_id: 42,
+        })
+        .await;
+        let mut table = requested_table(&end.expect(9).await);
+        table.table_id = 78;
+        end.send(Message::TableJoined { table, show: true }).await;
+        end
+    });
+    let options = PairTable {
+        timer: 1,
+        ..PairTable::default()
+    };
+    assert_eq!(host.pair_open(99, options.clone()).await.unwrap(), 77);
+    assert_eq!(host.pair_open(99, options).await.unwrap(), 78);
+    let _end = server.await.unwrap();
 }

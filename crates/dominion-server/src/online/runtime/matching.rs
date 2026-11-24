@@ -6,6 +6,9 @@ pub(super) struct HumanTable {
     pub table: TableDetails,
     pub mode: OnlineMode,
     pub owner: i32,
+    /// Its other player is another account this server hosts, at a table one of them made.
+    #[serde(default)]
+    pub paired: bool,
 }
 impl HumanTable {
     pub fn validate_players(&self, players: &[i32], own: i32) -> Result<(), String> {

@@ -739,11 +739,12 @@ pub async fn online_start(
 pub async fn online_attach(
     account: Option<&str>,
     agent: String,
+    strategy: Option<dominion_protocol::lobby::RunnerStrategy>,
 ) -> Result<dominion_protocol::api::OnlineManagement> {
     imp::post(
         &online_path(account, "agent"),
         None,
-        &dominion_protocol::api::OnlineAttach { agent },
+        &dominion_protocol::api::OnlineAttach { agent, strategy },
     )
     .await
 }

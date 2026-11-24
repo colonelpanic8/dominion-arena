@@ -26,7 +26,7 @@ pub(super) enum Seat {
     },
     Token(String),
     /// One of the server's agents, by its account's id.
-    Agent(String),
+    Agent(String, dominion_protocol::lobby::RunnerStrategy),
 }
 
 pub(super) struct Table {
@@ -57,7 +57,7 @@ impl Table {
     /// The server's agents seated, by account id.
     fn agents(&self) -> impl Iterator<Item = &str> {
         self.seats.iter().filter_map(|s| match s {
-            Seat::Agent(user) => Some(user.as_str()),
+            Seat::Agent(user, _) => Some(user.as_str()),
             _ => None,
         })
     }
@@ -80,6 +80,7 @@ impl Table {
                 .map(|seat| match seat {
                     Seat::Open => TableSeat::default(),
                     Seat::Player { user, ready } => TableSeat {
+                        strategy: Default::default(),
                         kind: SeatKind::Player,
                         user: db.user_ref(user),
                         name: None,
@@ -87,13 +88,15 @@ impl Table {
                         here: state.here(user),
                     },
                     Seat::Token(name) => TableSeat {
+                        strategy: Default::default(),
                         kind: SeatKind::Token,
                         user: None,
                         name: Some(name.clone()),
                         ready: true,
                         here: false,
                     },
-                    Seat::Agent(user) => TableSeat {
+                    Seat::Agent(user, strategy) => TableSeat {
+                        strategy: *strategy,
                         kind: SeatKind::Agent,
                         user: db.user_ref(user),
                         name: None,
@@ -152,7 +155,7 @@ fn check_seats(seats: &[Seat]) -> Result<()> {
     let names: Vec<String> = (seats.iter())
         .filter_map(|s| match s {
             Seat::Token(name) => Some(format!("token {}", name.to_lowercase())),
-            Seat::Agent(user) => Some(format!("agent {user}")),
+            Seat::Agent(user, _) => Some(format!("agent {user}")),
             _ => None,
         })
         .collect();
@@ -164,21 +167,32 @@ fn check_seats(seats: &[Seat]) -> Result<()> {
 
 /// A seat for the server's agent `name`, set by `host`: one the runner offers now, or
 /// one of the table's seats already.
-fn agent_seat(state: &State, db: &Db, may: bool, name: &str, old: &[Seat]) -> Result<Seat> {
+fn agent_seat(
+    state: &State,
+    db: &Db,
+    may: bool,
+    selection: &dominion_protocol::lobby::AgentSelection,
+    old: &[Seat],
+) -> Result<Seat> {
     if !may {
         return Err(super::house::no_agents());
     }
+    let name = selection.name();
     if let Some(agent) = state.house.agent_named(name) {
-        return Ok(Seat::Agent(agent.user.clone()));
+        state.house.check_strategy(name, selection.strategy())?;
+        return Ok(Seat::Agent(agent.user.clone(), selection.strategy()));
     }
     let key = name.trim().to_lowercase();
     let seated = old.iter().find(|s| match s {
-        Seat::Agent(user) => db
+        Seat::Agent(user, _) => db
             .user_ref(user)
             .is_some_and(|u| u.name.to_lowercase() == key),
         _ => false,
     });
     match seated {
+        Some(Seat::Agent(_, strategy)) if *strategy != selection.strategy() => {
+            bad("unavailable agent cannot change strategy")
+        }
         Some(seat) => Ok(seat.clone()),
         None => bad(format!("the server has no agent called {}", name.trim())),
     }
@@ -286,7 +300,7 @@ impl Arena {
         }
         for edit in edits {
             if let SeatEdit::Agent(name) = edit {
-                self.summon(name)?;
+                self.summon(name.name())?;
             }
         }
         Ok(())
@@ -596,7 +610,7 @@ impl Arena {
             let all = table.seats.iter().all(|s| match s {
                 Seat::Open => false,
                 Seat::Player { ready, .. } => *ready,
-                Seat::Token(_) | Seat::Agent(_) => true,
+                Seat::Token(_) | Seat::Agent(..) => true,
             });
             if all {
                 table.starting = true;
@@ -673,7 +687,7 @@ impl Arena {
             order.shuffle(&mut rand::rng());
         }
         let is_agent: Vec<bool> = (order.iter())
-            .map(|&i| matches!(start.seats[i], Seat::Agent(_)))
+            .map(|&i| matches!(start.seats[i], Seat::Agent(..)))
             .collect();
         let (names, owners): (Vec<String>, Vec<Option<String>>) = (order.iter())
             .map(|&i| match &start.seats[i] {
@@ -681,7 +695,7 @@ impl Arena {
                     let name = self.db.user_ref(user).map(|u| u.name);
                     (name.unwrap_or_default(), Some(user.clone()))
                 }
-                Seat::Agent(user) => {
+                Seat::Agent(user, _) => {
                     let name = self.db.user_ref(user).map(|u| u.name);
                     (name.unwrap_or_default(), Some(user.clone()))
                 }
@@ -706,13 +720,20 @@ impl Arena {
             clock: start.spec.clock.map(ClockState::new),
             undo: start.spec.undo,
             agents: is_agent,
+            strategies: order
+                .iter()
+                .map(|&i| match &start.seats[i] {
+                    Seat::Agent(_, strategy) => *strategy,
+                    _ => Default::default(),
+                })
+                .collect(),
             table: Some(start.table.clone()),
             ..Meta::default()
         };
         let agents = start
             .seats
             .iter()
-            .filter(|s| matches!(s, Seat::Agent(_)))
+            .filter(|s| matches!(s, Seat::Agent(..)))
             .count();
         self.validate_start(&config, &meta)?;
         let reservation = self.reserve(&start.host, agents as u32)?;

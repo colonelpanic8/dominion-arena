@@ -39,6 +39,7 @@ pub struct Harness {
     sandbox: Sandbox,
     /// The seat starts in the playbook and loads it itself.
     playbook: bool,
+    brief: String,
     forwarder: PathBuf,
     sockets: sandbox::Sockets,
     _proxy: sandbox::Proxy,
@@ -109,11 +110,9 @@ impl Harness {
             .canonicalize()
             .map_err(|e| format!("provider credentials {}: {e}", auth.display()))?;
         let playbook = settings.playbook.is_some();
+        let brief = instructions(playbook, false);
         write(&work.join("empty"), b"")?;
-        write(
-            &work.join("instructions.txt"),
-            instructions(playbook).as_bytes(),
-        )?;
+        write(&work.join("instructions.txt"), brief.as_bytes())?;
         let sockets = sandbox::Sockets::new()?;
         let hosts = (sandbox::default_hosts(spec.program).iter())
             .map(|h| h.to_string())
@@ -132,7 +131,7 @@ impl Harness {
                 codex::launch(&resolved, playbook)
             }
             Program::Antigravity => {
-                antigravity::settings(&work, playbook)?;
+                antigravity::settings(&work, playbook, &brief)?;
                 conversations = antigravity::conversations(spec, &auth, archive);
                 antigravity::launch(spec)
             }
@@ -154,6 +153,7 @@ impl Harness {
             records: None,
             sandbox: settings.clone(),
             playbook,
+            brief,
             forwarder,
             sockets,
             _proxy: proxy,
@@ -163,6 +163,20 @@ impl Harness {
     }
 
     /// Where the seat bridge listens, for the sandbox to reach it.
+    pub fn playbook(&self) -> bool {
+        self.playbook
+    }
+
+    /// Updates the seat's system brief before MCP is enabled and the CLI process spawns.
+    pub fn set_brief(&mut self, spec: &AgentSpec, brief: String) -> Result<(), String> {
+        write(&self.work.join("instructions.txt"), brief.as_bytes())?;
+        if spec.program == Program::Antigravity {
+            antigravity::write_agent(&self.work, self.playbook, &brief)?;
+        }
+        self.brief = brief;
+        Ok(())
+    }
+
     pub fn bridge_socket(&self) -> PathBuf {
         self.sockets.bridge()
     }
@@ -356,7 +370,7 @@ impl Harness {
         archive: &mut Archive,
     ) -> Result<String, String> {
         self.responses += 1;
-        let brief = instructions(self.playbook);
+        let brief = &self.brief;
         let player = spec.instructions.clone().unwrap_or_default();
         let prompt = if player.trim().is_empty() {
             format!("{brief}\n\n{message}")
