@@ -43,7 +43,10 @@ pub fn AgentPicker(
     let efforts = picked.filter(|(m, _)| m.choices.len() > 1).map(|(m, c)| {
         let options: Vec<(String, String)> = (m.choices.iter())
             .map(|c| {
-                let label = c.effort.as_deref().map_or(c.agent.clone(), effort_title);
+                let mut label = c.effort.as_deref().map_or(c.agent.clone(), effort_title);
+                if c.fast_mode {
+                    label.push_str(" · Fast");
+                }
                 (c.agent.clone(), label)
             })
             .collect();
@@ -87,7 +90,7 @@ pub fn AgentPicker(
             select {
                 class: "{class} lb-effort-select",
                 "data-action": "pick-effort",
-                title: "Reasoning effort",
+                title: "Reasoning effort and speed",
                 disabled,
                 onchange: move |e| onpick.call(Some(e.value())),
                 for (name, label) in options {

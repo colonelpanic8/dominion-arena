@@ -38,6 +38,8 @@ pub struct OfferedModel {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast_mode: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -590,7 +590,7 @@ async fn play_inner(
         if let Some(effort) = &spec.effort {
             reasoning["effort"] = json!(effort);
         }
-        let body = json!({
+        let mut body = json!({
             "model": spec.model.as_deref().ok_or("an openai agent needs a model")?,
             "instructions": instructions,
             "input": input,
@@ -603,6 +603,9 @@ async fn play_inner(
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session.id,
         });
+        if spec.fast_mode {
+            body["service_tier"] = json!("priority");
+        }
         archive.record(
             "direct_request",
             json!({"model": spec.model, "items": input.len()}),

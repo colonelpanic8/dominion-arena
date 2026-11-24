@@ -122,6 +122,7 @@ impl House {
         let mut models: Vec<HouseModel> = vec![];
         for offer in self.runner.iter().flat_map(|r| &r.offers) {
             let choice = HouseChoice {
+                fast_mode: offer.model.as_ref().is_some_and(|m| m.fast_mode),
                 effort: offer.model.as_ref().and_then(|m| m.effort.clone()),
                 agent: offer.name.clone(),
             };

@@ -578,6 +578,13 @@ played two minutes): a provider error, the server restarting, a model that ended
 conversation early. A seat that never recovers forfeits by the server's timing. Only a
 forbidden tool, one its CLI offers that the seat may not use, stops the seat at once; a
 call to a tool the CLI doesn't offer (a misspelled name) runs nothing and play goes on.
+To start GPT-6.2-Astra in Fast mode, choose an effort marked **Fast** when
+selecting the agent, or pass the corresponding agent name (for example
+`Astra High Fast`) to the start API. Standard speed is the default. Fast
+requests OpenAI's priority service tier and may use more quota. Set
+`fast_mode = true` in an `[[agents]]` profile for `openai` or `codex` to offer
+that choice independently of reasoning effort.
+
 The direct OpenAI agent waits out OpenAI's overload and rate limits for as long as it
 asks, up to 20 minutes a request, within the same attempt. Each attempt has a separate archive; completed moves remain
 in the game. A new attempt is a new conversation, which sees the game as it stands and

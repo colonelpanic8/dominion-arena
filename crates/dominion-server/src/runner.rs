@@ -46,6 +46,9 @@ pub struct AgentSpec {
     pub command: Option<String>,
     pub about: Option<String>,
     pub instructions: Option<String>,
+    /// Request the priority service tier for a direct OpenAI or native Codex seat.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast_mode: bool,
     /// Native reasoning effort.
     pub effort: Option<String>,
     /// Maximum model inactivity between events, excluding MCP calls (default 300 seconds).
@@ -86,6 +89,9 @@ impl AgentSpec {
     pub fn validate(&self) -> Result<(), String> {
         if self.name.trim().is_empty() || self.name.trim() != self.name {
             return Err("agent name must be nonempty without surrounding whitespace".into());
+        }
+        if self.fast_mode && !matches!(self.program, Program::OpenAi | Program::Codex) {
+            return Err(format!("{}: fast_mode requires openai or codex", self.name));
         }
         if self.response_seconds == Some(0) {
             return Err("response_seconds must be positive".into());
@@ -138,6 +144,7 @@ pub fn default_agents() -> Vec<AgentSpec> {
         about: None,
         instructions: None,
         effort: None,
+        fast_mode: false,
         response_seconds: None,
         history_turns: None,
         api_key_env: None,

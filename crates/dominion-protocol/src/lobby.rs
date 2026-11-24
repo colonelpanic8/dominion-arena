@@ -679,6 +679,8 @@ pub struct HouseModel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HouseChoice {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast_mode: bool,
     /// Its reasoning effort; none where the model has none to choose.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
@@ -690,7 +692,13 @@ impl HouseModel {
     /// The choice seated when only the model is picked: high effort, else the first.
     pub fn default_choice(&self) -> Option<&HouseChoice> {
         (self.choices.iter())
-            .find(|c| c.effort.as_deref() == Some("high"))
+            .find(|c| !c.fast_mode && c.effort.as_deref() == Some("high"))
+            .or_else(|| self.choices.iter().find(|c| !c.fast_mode))
+            .or_else(|| {
+                self.choices
+                    .iter()
+                    .find(|c| c.effort.as_deref() == Some("high"))
+            })
             .or(self.choices.first())
     }
 }

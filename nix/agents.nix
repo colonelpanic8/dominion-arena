@@ -44,3 +44,27 @@
     model = "gemini-4-argon-high";
   }
 ]
+++ map (level: {
+  name = "Astra ${level.name} Fast";
+  program = "openai";
+  model = "gpt-6.2-astra";
+  effort = level.effort;
+  fast_mode = true;
+}) [
+  {
+    name = "Low";
+    effort = "low";
+  }
+  {
+    name = "Medium";
+    effort = "medium";
+  }
+  {
+    name = "High";
+    effort = "high";
+  }
+  {
+    name = "XHigh";
+    effort = "xhigh";
+  }
+]
