@@ -236,6 +236,54 @@ pub fn StatusBar(
     }
 }
 
+/// A button's label as dominion.games fits it on a `w` × `h` button: one line in 90% of
+/// the width beside any icon, at most 0.405 of the height tall; on a button with an icon,
+/// two lines of up to 0.3 of the height where one would be smaller than that.
+fn label_lines(
+    label: &str,
+    w: f64,
+    h: f64,
+    icon: bool,
+    m: &dyn crate::card::fit::Measure,
+) -> Vec<(String, f64)> {
+    let room = 0.9 * if icon { w - h } else { w };
+    let fit = |text: &str, cap: f64| {
+        let ems = f64::from(m.width(text, crate::card::fit::Font::Title)).max(0.01);
+        cap.min(room / ems)
+    };
+    let one = fit(label, 0.405 * h);
+    if !icon || one >= 0.3 * h {
+        return vec![(label.to_string(), one)];
+    }
+    let words: Vec<&str> = label.split(' ').collect();
+    let (a, b) = words.split_at(words.len() / 2);
+    [a.join(" "), b.join(" ")]
+        .into_iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            let px = fit(&l, 0.3 * h);
+            (l, px)
+        })
+        .collect()
+}
+
+/// The icon dominion.games draws on a button choosing a vanilla bonus.
+fn mode_icon(label: &str) -> Option<&'static str> {
+    Some(match label {
+        "+1 Card" => "1-card",
+        "+2 Cards" => "2-card",
+        "+3 Cards" => "3-card",
+        "+1 Action" => "action",
+        "+2 Actions" => "2-action",
+        "+1 Buy" => "buy",
+        "+$1" => "1-coin",
+        "+$2" => "2-coin",
+        "+$3" => "3-coin",
+        "Gain a Gold" => "gold",
+        _ => return None,
+    })
+}
+
 /// The option a counter answers when clicked, as dominion.games has no button for it.
 fn counter_action(kind: &str) -> Option<&'static str> {
     match kind {
@@ -330,7 +378,11 @@ pub fn Buttons(
                 } else {
                     t.label.clone()
                 },
-                icon: resolving.then_some("continue"),
+                icon: if resolving {
+                    Some("continue")
+                } else {
+                    mode_icon(&t.label)
+                },
                 count: None,
                 disabled: busy,
                 on: !sel.positions(&t.options).is_empty(),
@@ -407,7 +459,13 @@ pub fn Buttons(
         });
     }
     let (bw, bh) = g.button;
-    let width = |b: &Btn| if b.icon.is_some() { bw * 4.0 / 3.0 } else { bw };
+    let width = |b: &Btn| {
+        if b.icon.is_some() || b.count.is_some() {
+            bw * 4.0 / 3.0
+        } else {
+            bw
+        }
+    };
     let gap = 2.0 * g.vh;
     // Rows centred on the button line, wrapping upwards past 56vw.
     let mut rows: Vec<Vec<usize>> = vec![vec![]];
@@ -426,8 +484,9 @@ pub fn Buttons(
         rows.last_mut().expect("a row").push(i);
     }
     let mut placed: Vec<(usize, Rect)> = vec![];
-    // With abilities to choose from, every button joins their column at the right.
-    if !side.is_empty() {
+    // With abilities to choose from, or five buttons or more, every button joins the
+    // column at the right.
+    if !side.is_empty() || row.len() >= 5 {
         rows.clear();
         for (i, b) in row.iter().enumerate() {
             let w = width(b);
@@ -454,6 +513,7 @@ pub fn Buttons(
         Rect::new(g.buttons_cx - w / 2.0, g.buttons_bottom - bh, w, bh)
     });
     let side_w = 21.0 * g.vh;
+    let m = crate::card::measure::measurer(assets.fonts);
     rsx! {
         for (i, r) in placed.iter() {
             {
@@ -461,6 +521,10 @@ pub fn Buttons(
                 let what = b.what.clone();
                 let icon_url = b.icon.and_then(|k| {
                     let path = match k {
+                        "1-card" | "2-card" | "3-card" | "1-coin" | "2-coin" | "3-coin"
+                        | "action" | "2-action" | "buy" | "gold" => {
+                            return assets.file_url(&format!("images/buttons/{k}.png"));
+                        }
                         "treasures" => "images/buttons/autoplay-treasures.png",
                         "refuse" => "images/buttons/refuse.png",
                         "continue" => "images/buttons/continue.png",
@@ -503,7 +567,11 @@ pub fn Buttons(
                                 Act::Decline => ctx.decline(),
                             }
                         },
-                        span { class: "dt-btn-label", "{b.label}" }
+                        span { class: "dt-btn-label",
+                            for (k, (line, px)) in label_lines(&b.label, r.w, r.h, b.icon.is_some() || b.count.is_some(), m.as_ref()).into_iter().enumerate() {
+                                span { key: "{k}", class: "dt-btn-line", style: "font-size:{px:.1}px;", "{line}" }
+                            }
+                        }
                         if let Some(src) = icon_url {
                             span { class: "dt-btn-img",
                                 img { src, alt: "", draggable: "false" }

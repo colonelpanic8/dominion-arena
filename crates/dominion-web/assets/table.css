@@ -445,7 +445,8 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.95); }
 .dt-btn:disabled { color: #666; border-color: #666; cursor: default; }
 .dt-btn.dt-on { background: #fff; color: #000; }
-.dt-btn-label { flex: 1; }
+.dt-btn-label { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; white-space: nowrap; }
+.dt-btn-line { line-height: 1.05; }
 .dt-btn-img { position: relative; flex: none; height: 80%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; }
 .dt-btn-img img { max-height: 100%; max-width: 100%; }
 .dt-btn:disabled .dt-btn-img img { opacity: 0.4; }
@@ -455,7 +456,7 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-ability { justify-content: flex-start; overflow: hidden; }
 .dt-ability-art { position: absolute; inset: 0; opacity: 0.55; pointer-events: none; }
 .dt-ability-art .dt-c { width: 100%; }
-.dt-ability .dt-btn-label { position: relative; text-align: left; }
+.dt-ability .dt-btn-label { position: relative; text-align: left; align-items: flex-start; }
 .dt-slider { position: absolute; display: flex; gap: calc(1 * var(--vh)); align-items: center; padding: 0 calc(1 * var(--vh)); background: rgba(0, 0, 0, 0.8); z-index: 14000; box-sizing: border-box; }
 .dt-slider input { flex: 1; }
 .dt-slider .dt-slider-go { position: static; height: 80%; min-width: 30%; }
