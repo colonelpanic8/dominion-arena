@@ -1,0 +1,34 @@
+{
+  "cards": [
+    {"id":8,"card_name":1,"pile_name":1},
+    {"id":17,"card_name":5,"pile_name":5},
+    {"id":31,"card_name":6,"pile_name":6},
+    {"id":85,"card_name":2,"pile_name":2},
+    {"id":139,"card_name":3,"pile_name":3},
+    {"id":169,"card_name":4,"pile_name":4},
+    {"id":185,"card_name":94,"pile_name":94},
+    {"id":195,"card_name":745,"pile_name":745},
+    {"id":205,"card_name":662,"pile_name":662},
+    {"id":215,"card_name":630,"pile_name":630},
+    {"id":224,"card_name":532,"pile_name":532},
+    {"id":226,"card_name":183,"pile_name":172},
+    {"id":227,"card_name":220,"pile_name":172},
+    {"id":228,"card_name":185,"pile_name":172},
+    {"id":229,"card_name":184,"pile_name":172},
+    {"id":230,"card_name":218,"pile_name":172},
+    {"id":231,"card_name":217,"pile_name":172},
+    {"id":232,"card_name":216,"pile_name":172},
+    {"id":233,"card_name":186,"pile_name":172},
+    {"id":234,"card_name":219,"pile_name":172},
+    {"id":235,"card_name":187,"pile_name":172},
+    {"id":245,"card_name":674,"pile_name":674},
+    {"id":255,"card_name":288,"pile_name":288},
+    {"id":265,"card_name":843,"pile_name":843},
+    {"id":285,"card_name":53,"pile_name":53},
+    {"id":287,"card_name":241,"pile_name":241}
+  ],
+  "zones": [{"index":12,"kind":4,"pile_name":172,"owner":-1,"cards":[226,227,228,229,230,231,232,233,234,235],"created_by":-1,"attached_trait":0,"is_visible":true}],
+  "question": {"index":8,"description":{"question_type":18,"association":-1,"story":{"question_id":14,"arguments":[],"context":null},"short_story":{"question_id":14,"arguments":[],"context":null}},"kind":{"Complex":[
+    {"index":8,"description":{"question_type":9,"association":-1,"story":{"question_id":4,"arguments":[],"context":null},"short_story":{"question_id":4,"arguments":[],"context":null}},"kind":{"Choice":{"min":0,"max":1,"elements":{"BuyableCards":[[8,true],[85,true],[139,true],[169,true],[17,true],[31,true],[285,true],[185,true],[235,true],[255,true],[224,true],[215,true],[205,true],[245,true],[195,true],[265,true],[287,true]]},"decline":1,"defaults":[],"affected":[]}}}
+  ]}}
+}

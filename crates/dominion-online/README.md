@@ -45,7 +45,7 @@ claude mcp add dominion -- dominion online mcp
 The MCP entry point uses stdio. Register either this backend or Arena's hosted
 backend as `dominion`. Authentication belongs to operator setup; gameplay uses
 the same `state`, `new_game`, `step`, `wait`, `cards`, and `log` contract
-(`dominion/play@1`, structured `{view, glossary?, clock?, clockInfo?}` / `dominion/agent-view@2`;
+(`dominion/play@1`, structured `{view, glossary?, clock?, clockInfo?, decisionConsequence?}` / `dominion/agent-view@2`;
 `clock.left` and `clock.free` give each seat’s bank and free time in milliseconds.
 `clock.running` identifies the charged seat, including reactions. `clockInfo.status`
 is `available`, `off`, or `unavailable`. `asOfMs` is the projection time and
@@ -59,7 +59,25 @@ On dominion.games, selecting a `Buy` option with unplayed Treasures can
 automatically play just enough to pay for that purchase. For example, buying
 Scouting Party at $0 with five Coppers in hand can play two Coppers and leave
 the other three in hand. To use all $5 across both Buys, play the five Coppers
-before buying Scouting Party.
+before buying Scouting Party. The play tools say so on every decision that offers
+both, for this backend and Arena's alike: buying ends Treasure plays, with the
+Treasures still unplayed and their printed $, and ending a phase names the plays it
+gives up.
+
+Compound questions reach the agent as option groups, each group's prompt saying
+what it is for, and the decision's prompt saying, in option numbers, which groups
+one answer may combine. What the official client never asks about is answered with
+the server's default and not offered: the `REJECT_ABILITY` number beside "resolve
+an effect" (sending 1 there cancels the ability chosen), any number of a type the
+client has no words for, and a part of an AND that chooses from nothing. Numbers the
+client does show are labelled as it labels them ("Pay off 2 Debt", "Top (5)"). A
+Way goes out only with the card it plays, as the client sends it: an answer giving
+the Way alone is refused, saying which options hold the card to add.
+
+A mixed or split pile's top card is the one the client shows: the last named card
+of the pile as a snapshot lists it (bottom first), then whatever arrives on it or a
+`PileUpdate` names. When that card isn't known to still be there, the pile names no
+top rather than a card below it.
 
 `new_game` accepts `players`, `bots`, `kingdom`, and `landscapes`. Every opponent
 must be a server bot: defaults are two players and one bot. It requests unrated

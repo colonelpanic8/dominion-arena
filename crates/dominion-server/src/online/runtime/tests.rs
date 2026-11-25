@@ -1,4 +1,5 @@
 mod reconnect;
+mod recorded;
 
 use super::*;
 use dominion_online::{

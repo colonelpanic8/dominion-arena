@@ -183,7 +183,9 @@ fn matches(expected: &str, option: &dominion_agent::AgentOption) -> bool {
     !expected.is_empty()
         && (expected == key(&option.label)
             || expected == key(option.label.split(" (").next().unwrap_or(&option.label))
-            || option.card.as_ref().is_some_and(|c| expected == key(c)))
+            || option.card.as_ref().is_some_and(|c| expected == key(c))
+            || (option.action == "number"
+                && option.value.is_some_and(|v| v.to_string() == expected)))
 }
 
 pub fn validate_expect(d: &AgentDecision, p: &StepParams) -> Result<(), String> {
@@ -494,9 +496,6 @@ impl Presentation {
         } else {
             note + &delta(self.previous.as_ref().unwrap(), &text_view)
         };
-        if full && view.game.running && !view.spectating {
-            text.push_str("\nBefore your first purchase, play the Treasures you want for all your planned buys. Use play_treasures when you want to play them all and their order doesn't matter.");
-        }
         if let Some(line) = clock
             .as_ref()
             .filter(|_| {
