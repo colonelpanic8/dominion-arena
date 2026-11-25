@@ -121,6 +121,18 @@ enum GamesCommand {
         #[arg(long)]
         record_only: bool,
     },
+    /// Drain official accounts before a restart: they start no new games, and their
+    /// running games play to the end (a restart mid-game costs the seat its clock).
+    /// Lists the games still running; with --wait, returns once there are none. The
+    /// restarted server starts undrained.
+    Drain {
+        /// Wait until no official game is running.
+        #[arg(long)]
+        wait: bool,
+        /// Stop draining.
+        #[arg(long, conflicts_with = "wait")]
+        cancel: bool,
+    },
     /// Write dominion/events@1 streams for games saved before the server recorded them,
     /// here and in `expired/`, checking each against its snapshot first. Run it with the
     /// server stopped: it takes the state directory's lock (a dry run doesn't).
@@ -363,6 +375,27 @@ async fn games(
             dry_run,
             record_only,
         },
+        GamesCommand::Drain { wait, cancel } => loop {
+            let reply = request(&socket, &Request::Drain { cancel }).await?;
+            let Reply::Draining { draining, running } = reply else {
+                return Err(format!("unexpected reply {reply:?}"));
+            };
+            if !draining {
+                println!("not draining");
+                return Ok(());
+            }
+            for (account, game) in &running {
+                println!("{account}: game {game} running");
+            }
+            if running.is_empty() {
+                println!("drained: no official game running");
+                return Ok(());
+            }
+            if !wait {
+                return Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        },
         GamesCommand::Backfill { .. } => unreachable!("run without the server"),
     };
     match request(&socket, &asked).await? {
@@ -416,6 +449,7 @@ async fn games(
             }
             Ok(())
         }
+        Reply::Draining { .. } => unreachable!("drained above"),
         Reply::Error { message } => Err(message),
     }
 }

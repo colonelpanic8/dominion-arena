@@ -165,6 +165,9 @@ pub struct Config {
     /// Opus, Claude Sonnet and Codex).
     pub agents: Option<Vec<crate::runner::AgentSpec>>,
     pub clock_aware: Option<crate::runner::ClockAwareSettings>,
+    /// `[clock_guard]`: whether and when `dominion agents` answers, with the least a
+    /// decision allows, for a seat whose bank is all but spent (default on, 6 seconds).
+    pub clock_guard: Option<crate::runner::ClockGuardSettings>,
     /// Providers whose models `dominion agents` offers, each at every effort allowed, as
     /// `[[catalogs]]` tables: `program`, and optionally `models` and `exclude` (patterns
     /// of model ids), `efforts`, `tag` and the agents' other settings. An `[[agents]]`
@@ -458,6 +461,7 @@ impl Config {
                 .as_ref()
                 .map(|s| s.resolve(&agents))
                 .transpose()?,
+            clock_guard: self.clock_guard.clone().unwrap_or_default(),
             agents,
             catalogs,
             capacity: self.agents_at_once.unwrap_or(DEFAULT_AGENTS_AT_ONCE),

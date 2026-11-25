@@ -48,6 +48,18 @@ pub fn write_agent(work: &Path, playbook: bool, brief: &str) -> Result<(), Strin
     Ok(())
 }
 
+/// The game tools by the names Antigravity gives them. Its own `wait` only lets time pass,
+/// so a seat told to "call wait" must know the game's is another tool.
+pub fn tool_names() -> String {
+    let names: Vec<String> = (super::bridge::TOOLS.iter())
+        .map(|tool| format!("mcp_dominion_{tool}"))
+        .collect();
+    format!(
+        " Your game tools are named {}: call them by these names. Your own wait tool does not wait for the game; mcp_dominion_wait does.",
+        names.join(", ")
+    )
+}
+
 /// Lets the seat use the bridge's game tools at `url`.
 pub fn enable_mcp(work: &Path, url: &str, playbook: bool) -> Result<(), String> {
     write_json(

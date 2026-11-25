@@ -113,13 +113,16 @@ crates/dominion-server/   the `dominion` binary: MCP server (rmcp, axum), termin
   src/limits.rs           token-bucket rate limits (pure)
   src/house.rs            the agent socket: the runner's messages and the server's end
   src/control.rs          the control socket: `dominion games` lists and retires hosted
-                          games and voids finished rated games
+                          games, voids finished rated games and drains official accounts
+                          before a restart
   src/backfill.rs         `dominion games backfill`: streams for games saved before they
                           were recorded, replayed from their answers and checked against
                           the snapshot, each naming the history it was built from;
                           offline, under the state directory's lock
   src/runner.rs           `dominion agents`: offers the agents, keeps a `claude -p` /
                           `codex exec` or T3 Code conversation playing each job's seat
+  src/runner/clock_guard.rs  each timed seat's clock guard: the least answer, logged as
+                          the harness's, to a decision still open at the bank's margin
   src/catalog.rs          the models the runner offers: read from each provider's catalog
                           (`[[catalogs]]`), an agent per model and effort, profiles in place
   src/harness/            native CLI agents (Claude Code, Codex, Antigravity): one process per

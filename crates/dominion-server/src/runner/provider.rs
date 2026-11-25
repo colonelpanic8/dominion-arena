@@ -96,6 +96,8 @@ pub(crate) struct Seat<'a> {
     pub sandbox: &'a Sandbox,
     pub job: &'a Job,
     pub client: Arc<Client>,
+    /// What the harness tells the player on its next reply.
+    pub notices: super::clock_guard::Notices,
 }
 
 pub(crate) struct PlayerOpening {
@@ -185,9 +187,20 @@ pub async fn play(
     archive: &mut Archive,
     stop: CancellationToken,
 ) -> Result<(), String> {
-    play_with_plan(None, spec, sandbox, job, server, archive, stop).await
+    play_with_plan(
+        None,
+        spec,
+        sandbox,
+        job,
+        server,
+        archive,
+        stop,
+        Default::default(),
+    )
+    .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn play_with_plan(
     plan: Option<&AnalysisPlan>,
     spec: &AgentSpec,
@@ -196,6 +209,7 @@ pub(crate) async fn play_with_plan(
     server: &str,
     archive: &mut Archive,
     stop: CancellationToken,
+    notices: super::clock_guard::Notices,
 ) -> Result<(), String> {
     let launched = spec.for_launch(job.options)?;
     let spec = &launched;
@@ -238,6 +252,7 @@ pub(crate) async fn play_with_plan(
             sandbox,
             job,
             client: client.clone(),
+            notices,
         };
         let legacy = AnalysisPlan::from_legacy_profile(spec);
         let plan = plan

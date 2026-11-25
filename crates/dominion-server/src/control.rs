@@ -1,5 +1,6 @@
 //! The operator's socket: `dominion games` lists the games a running `dominion serve`
-//! hosts, retires them, and voids finished rated games. A connection sends one request
+//! hosts, retires them, voids finished rated games, and drains official accounts before
+//! a restart. A connection sends one request
 //! line and reads one reply line, both JSON. Only the socket's owner may connect.
 
 use crate::arena::Arena;
@@ -24,6 +25,12 @@ pub enum Request {
         #[serde(default)]
         record_only: bool,
     },
+    /// Start draining official accounts for a restart (or stop, with `cancel`): no new
+    /// games start, and the reply lists those still running.
+    Drain {
+        #[serde(default)]
+        cancel: bool,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,6 +47,11 @@ pub enum Reply {
     Voided {
         voided: crate::arena::Voided,
         dry_run: bool,
+    },
+    Draining {
+        draining: bool,
+        /// The official games still running, as `(account, game)`.
+        running: Vec<(String, String)>,
     },
     Error {
         message: String,
@@ -111,6 +123,10 @@ fn handle(arena: &Arena, request: Request) -> Reply {
             }
             Reply::Retired { retired, refused }
         }
+        Request::Drain { cancel } => Reply::Draining {
+            draining: !cancel,
+            running: arena.drain(!cancel),
+        },
         Request::Void {
             games,
             dry_run,

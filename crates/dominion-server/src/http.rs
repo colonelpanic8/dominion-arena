@@ -658,6 +658,11 @@ pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("bearer") && !token.trim().is_empty()).then(|| token.trim())
 }
 
+/// The client a request says it is, for logs.
+pub(crate) fn user_agent(headers: &HeaderMap) -> Option<&str> {
+    headers.get(header::USER_AGENT)?.to_str().ok()
+}
+
 pub(crate) fn cookie(headers: &HeaderMap) -> Option<&str> {
     let cookies = headers.get_all(header::COOKIE).into_iter();
     cookies

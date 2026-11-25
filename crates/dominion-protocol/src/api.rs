@@ -671,6 +671,9 @@ pub struct OnlineManagement {
     /// The agent that has played the running game: only it may resume it.
     #[serde(default)]
     pub game_agent: Option<String>,
+    /// The running game's id: what resigning it names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game: Option<String>,
     pub running: bool,
     pub searching: bool,
     pub queue_feedback: Vec<String>,
@@ -718,6 +721,15 @@ pub struct OnlineOpponent {
 fn one_bot() -> u8 {
     1
 }
+/// Resigning an official account's running game: which game, and why. The reason is
+/// logged with who resigned.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnlineResign {
+    pub game: String,
+    pub reason: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OnlineAttach {

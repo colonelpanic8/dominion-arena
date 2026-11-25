@@ -222,7 +222,12 @@ impl Harness {
                     (self.launch.args).extend(claude::PLAYBOOK_TOOLS.map(String::from));
                 }
             }
-            Program::Antigravity => antigravity::enable_mcp(&self.work, url, self.playbook)?,
+            Program::Antigravity => {
+                self.brief.push_str(&antigravity::tool_names());
+                write(&self.work.join("instructions.txt"), self.brief.as_bytes())?;
+                antigravity::write_agent(&self.work, self.playbook, &self.brief)?;
+                antigravity::enable_mcp(&self.work, url, self.playbook)?
+            }
             Program::T3Code | Program::OpenAi | Program::Anthropic => {
                 unreachable!("only CLI agents have a native harness")
             }
@@ -456,15 +461,8 @@ impl Harness {
                     )
                 })?;
                 archive.record("native_event", event.clone())?;
-                if event["type"] == "system"
-                    && event["subtype"] == "init"
-                    && let Some(tools) = event["tools"].as_array()
-                {
-                    exposed = Some(
-                        (tools.iter())
-                            .filter_map(|t| t.as_str().map(String::from))
-                            .collect(),
-                    );
+                if let Some(tools) = offered_tools(&event) {
+                    exposed = Some(tools);
                 }
                 if event["type"] == "system"
                     && event["subtype"] == "init"
@@ -474,6 +472,12 @@ impl Harness {
                     })
                 {
                     return Err("native harness exposed forbidden tools; see its archive".into());
+                }
+                if let Some(name) = misnamed_game_tool(&event) {
+                    archive.record(
+                        "native_tool_misnamed",
+                        json!({"tool": name, "response": self.responses}),
+                    )?;
                 }
                 if tool_event(&event, self.playbook, exposed.as_deref()) {
                     return Err("native harness attempted a forbidden tool; see its archive".into());
@@ -565,10 +569,56 @@ fn allowed_tool(name: &str, playbook: bool) -> bool {
                 || antigravity::PLAYBOOK_TOOLS.contains(&name)))
 }
 
-/// Whether an event shows a seat using a tool it may not. A Claude seat's call to a tool
-/// its CLI doesn't offer (`exposed`), such as a misspelled name, runs nothing: the CLI
-/// answers it with an error, and the seat plays on.
+/// The tools a CLI's start event says it offers: Claude's `system` init, Antigravity's
+/// `init`.
+fn offered_tools(event: &Value) -> Option<Vec<String>> {
+    let tools = if event["type"] == "system" && event["subtype"] == "init" {
+        event["tools"].as_array()
+    } else if event["event"] == "init" {
+        event["init"]["tools"].as_array()
+    } else {
+        None
+    }?;
+    Some(
+        tools
+            .iter()
+            .filter_map(|t| t.as_str().map(String::from))
+            .collect(),
+    )
+}
+
+/// The name a tool call event uses, in any CLI's form.
+fn called_tool(event: &Value) -> Option<&str> {
+    if matches!(event["type"].as_str(), Some("tool_use" | "tool_result")) {
+        return event["name"].as_str();
+    }
+    if event["step_update"]["step_type"] == "tool" {
+        return (event["step_update"]["tool_name"].as_str())
+            .or_else(|| event["step_update"]["tool_info"]["name"].as_str());
+    }
+    event["message"]["content"]
+        .as_array()?
+        .iter()
+        .find(|x| x["type"] == "tool_use")?["name"]
+        .as_str()
+}
+
+/// A game tool called by its bare name (`wait` for `mcp_dominion_wait`). No game tool
+/// runs: the CLI answers it as a tool it doesn't know, or runs its own tool of that name
+/// (Antigravity's `wait`, which only lets time pass), and the seat can call the right one
+/// next. Nothing a sandboxed seat could misuse has such a name.
+fn misnamed_game_tool(event: &Value) -> Option<&str> {
+    called_tool(event).filter(|name| super::bridge::TOOLS.contains(name))
+}
+
+/// Whether an event shows a seat using a tool it may not. A call to a tool its CLI
+/// doesn't offer (`exposed`), such as a misspelled name, or to a game tool by its bare
+/// name (`misnamed_game_tool`) runs nothing that matters: the CLI answers it, and the
+/// seat plays on.
 fn tool_event(event: &Value, playbook: bool, exposed: Option<&[String]>) -> bool {
+    if misnamed_game_tool(event).is_some() {
+        return false;
+    }
     // Antigravity refused something its permissions don't allow, and ended the turn.
     if event["result"]["denied_actions"]
         .as_array()
@@ -611,13 +661,10 @@ fn tool_event(event: &Value, playbook: bool, exposed: Option<&[String]>) -> bool
         return true;
     }
     event["step_update"]["step_type"] == "tool"
-        && !allowed_tool(
-            event["step_update"]["tool_name"]
-                .as_str()
-                .or_else(|| event["step_update"]["tool_info"]["name"].as_str())
-                .unwrap_or(""),
-            playbook,
-        )
+        && called_tool(event).is_none_or(|name| {
+            !allowed_tool(name, playbook)
+                && exposed.is_none_or(|tools| tools.iter().any(|t| t == name))
+        })
 }
 
 #[cfg(test)]
@@ -640,6 +687,31 @@ mod tests {
             true,
             None
         ));
+    }
+
+    /// Antigravity's own `wait`, called in place of the game's `mcp_dominion_wait`
+    /// (game 186223254), and a tool it doesn't offer, run nothing: the seat plays on.
+    #[test]
+    fn antigravity_calling_a_game_tool_by_its_bare_name_is_no_forbidden_use() {
+        let init = json!({"event":"init","init":{"tools":["read_file","run_command","wait","write_to_file","finish"]}});
+        let offered = super::offered_tools(&init).unwrap();
+        let step = |tool: &str| json!({"event":"step_update","step_update":{"state":"ACTIVE","step_index":10,"step_type":"tool","tool_info":{"name":tool},"tool_name":tool}});
+        for playbook in [true, false] {
+            assert!(!tool_event(&step("wait"), playbook, Some(&offered)));
+            assert!(!tool_event(&step("step"), playbook, Some(&offered)));
+            assert!(!tool_event(
+                &step("mcp_dominion_wait"),
+                playbook,
+                Some(&offered)
+            ));
+            assert!(!tool_event(&step("no_such_tool"), playbook, Some(&offered)));
+            assert!(tool_event(&step("write_to_file"), playbook, Some(&offered)));
+        }
+        assert_eq!(super::misnamed_game_tool(&step("wait")), Some("wait"));
+        assert_eq!(super::misnamed_game_tool(&step("mcp_dominion_wait")), None);
+        assert!(tool_event(&step("run_command"), false, Some(&offered)));
+        // Without its start event, a tool it might offer is still refused.
+        assert!(tool_event(&step("no_such_tool"), true, None));
     }
 
     #[test]

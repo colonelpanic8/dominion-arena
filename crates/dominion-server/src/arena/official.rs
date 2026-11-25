@@ -135,6 +135,25 @@ impl Arena {
         (played.0 == game).then(|| played.1.clone())
     }
 
+    /// Starts draining for a restart (`on`), or stops: while draining, official accounts
+    /// start no new games, and the games they play run to their end. The official games
+    /// still running, as `(account, game)`.
+    pub fn drain(&self, on: bool) -> Vec<(String, String)> {
+        (self.draining).store(on, std::sync::atomic::Ordering::SeqCst);
+        let state = lock(&self.state);
+        (state.official.values())
+            .filter_map(|o| {
+                let game = o.info.game.as_ref().filter(|g| g.running)?;
+                Some((o.info.id.clone(), game.id.clone()))
+            })
+            .collect()
+    }
+
+    /// Whether the server is draining for a restart.
+    pub(crate) fn draining(&self) -> bool {
+        self.draining.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     pub(crate) fn official_game_options(&self, account: &str, game: &str) -> Option<LaunchOptions> {
         let state = lock(&self.state);
         let played = state.official.get(account)?.played_by.as_ref()?;

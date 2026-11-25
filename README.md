@@ -52,7 +52,13 @@ With `online_enabled` and `online_owner` configured, `dominion serve` shares the
 connection through `/mcp/online` and the lobby. The owner manages it from the lobby's
 Automatch tab (select an agent, start/cancel searches, pause/resume play, resign) and
 sees its dominion.games rating on the Account tab. A game keeps the agent it started
-with: pausing stops it, and only that agent resumes it. Anyone can watch the running game
+with: pausing stops it, and only that agent resumes it. Its seat keeps its job through
+a dropped connection, a reconnect and a restart of the server (the job is kept in the
+account's state directory as `agent-job.json`), so the same seat plays on from a fresh
+snapshot. Resigning (`POST /api/online/{id}/resign` with `{"game": <the running game's
+id, as /manage gives it>, "reason": "..."}`) takes the owner signed in as themself: a
+bot's API key, the credential to give automation that watches or recovers the account,
+is refused. The server logs who resigned which game, from what client, and why. Anyone can watch the running game
 from the Tables tab (`/online/<id>`), on the same page as Arena's own games, and read its
 agent's transcript, rated or not; each finished game is recorded in Arena's
 history for the agent that played it (else the owner), without changing anyone's
@@ -641,10 +647,12 @@ unrated table, `against.strategy` and `against.speed` configure the peer indepen
 Reattaching an agent to the same running game retains its strategy and speed. The public analyst uses its own model profile.
 
 Classic starts with the ordinary opening and preserves grouped card references
-on Arena join. Clock-aware prepares the first timed decision, prefetches available
-kingdom ratings, and puts a short cue beside a pending decision when the deciding
-seat's clock is low. Both strategies can read the clock. Untimed games use the
-ordinary opening. Standalone MCP clients can request the cue per tool call
+on Arena join. Clock-aware starts the player at once on a timed game, before its first
+decision if it has none yet, so what it plans while other players take their turns
+costs it no time. Its first message carries the kingdom's prefetched ratings and an
+opening budget, and a short cue sits beside a pending decision when the deciding seat's
+clock is low. Both strategies can read the clock. Untimed games use the ordinary
+opening. Standalone MCP clients can request the cue per tool call
 with `"_meta": {"dominion.arena/clockCues": true}`.
 
 To add parallel kingdom analysis to Clock-aware seats, name an existing
@@ -657,18 +665,15 @@ target_seconds = 45
 background = false
 ```
 
-The player model considers its hand while the analyst studies the public
-kingdom in a separate session. Only the player can submit moves. Both receive
-the configured playbook's `skills/play-game/references/live-decisions.md` when
-available. The runner refreshes the decision before delivering the preliminary
-plan. A creator's brief or an untimed game uses the player alone.
+The player model plays from the start while the analyst studies the public
+kingdom in a separate session; nothing waits for the analysis. Its opening plan
+reaches the player beside the first decision after it is ready. Only the player can
+submit moves. Both receive the configured playbook's
+`skills/play-game/references/live-decisions.md` when available. A creator's brief or an
+untimed game uses the player alone.
 
-The 45-second default is a target from the first playable observation through
-the first move request. The runner caps planning at a quarter of available time,
-reserves 12 seconds for submission, and moves sooner when analysis finishes.
-Set the target to zero for immediate play with concurrent public analysis.
-A short bank (60 seconds or less), unavailable clock information, an off-turn
-reaction or a later turn also skips the opening wait.
+`target_seconds` (default 45) is the budget the player's first message gives it, from
+its first decision to its first move.
 
 Set `background = true` to request another assessment starting on turn five,
 then every four turns or as piles approach exhaustion. One analysis runs at a
@@ -676,6 +681,27 @@ time. Notes are delivered on relevant decisions and expire when the position
 changes. Each background request has a two-minute deadline and uses provider
 capacity. Existing per-profile `opening_analyst` settings are a fallback for
 explicit Clock-aware launches when the runner has no global analyst configured.
+
+Every seat the runner plays on a timed game, whatever its program or strategy, has a
+**clock guard**: a session of its own beside the player, across its attempts and the
+gaps between them, that answers one of the seat's decisions only when it is still open
+with the seat's bank (after the decision's free time) down to the margin. It answers
+with the least the decision allows, the rule an idle solo seat follows: end the phase,
+else decline, else choose nothing, else the first options. That keeps the seat in the
+game without playing for it. Decision ids settle a race with the player: the later
+answer is refused as stale. The player is told on its next reply (`HARNESS CLOCK
+GUARD: ...`), the runner's log says so, and each answer is appended to
+`<agents_dir>/clock-guard.jsonl` with the game, seat, agent, decision, labels and bank
+left. If a step's reply is lost, the log records `accepted: null`. The guard reads the
+seat again before retrying and makes at most three attempts per decision. Connection
+and request timeouts shrink with the observed bank. Turn it off or move the margin
+in the runner's settings:
+
+```toml
+[clock_guard]
+enabled = true
+margin_seconds = 6
+```
 
 An Antigravity seat keeps its conversation in a folder of its own under
 `conversations_dir` (default `<auth_dir>/antigravity-cli/conversations/dominion-arena`),
@@ -1010,7 +1036,10 @@ game's files and record stay. Games voided before records kept that say only `ra
 false` and still count among their players' Arena games; `dominion games void
 --record-only ID...` marks them voided (when it is run) and takes them off those
 tallies, changing no rating, and refuses a game that is rated, voided already, or had a
-seat of no account. All three talk to
+seat of no account. Before a planned restart, `dominion games drain --wait` stops official
+accounts starting games and returns once none is running: the official server's clock
+runs while ours is down, and a restart mid-game can cost a seat the game. A restarted
+server starts undrained (`--cancel` stops draining without one). All four talk to
 `control_socket`, which only the server's user can reach; the NixOS module sets it and
 installs `dominion-games` for root: `sudo dominion-games list`.
 
