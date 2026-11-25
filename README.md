@@ -688,7 +688,10 @@ game without playing for it. Decision ids settle a race with the player: the lat
 answer is refused as stale. The player is told on its next reply (`HARNESS CLOCK
 GUARD: ...`), the runner's log says so, and each answer is appended to
 `<agents_dir>/clock-guard.jsonl` with the game, seat, agent, decision, labels and bank
-left. Turn it off or move the margin in the runner's settings:
+left. If a step's reply is lost, the log records `accepted: null`. The guard reads the
+seat again before retrying and makes at most three attempts per decision. Connection
+and request timeouts shrink with the observed bank. Turn it off or move the margin
+in the runner's settings:
 
 ```toml
 [clock_guard]

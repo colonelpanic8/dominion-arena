@@ -17,14 +17,18 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 /// The longest the guard goes without looking at the seat while a decision is open.
 const POLL: Duration = Duration::from_secs(10);
 /// How long one `wait` for the seat's next decision lasts.
-const WAIT_S: u64 = 30;
+const MAX_WAIT: Duration = Duration::from_secs(30);
+/// Local state and step calls normally take milliseconds. Reserve bank for recovery.
+const MAX_CALL: Duration = Duration::from_secs(2);
+const MIN_POLL: Duration = Duration::from_millis(100);
 /// How long the guard waits before reaching the server again after losing it.
-const RECONNECT: Duration = Duration::from_secs(2);
+const RECONNECT: Duration = Duration::from_millis(500);
 /// The most answers the guard tries for one decision before leaving it.
 const ATTEMPTS: usize = 3;
 
@@ -131,10 +135,12 @@ fn next(reply: &Value, game: &str, now_ms: u64, margin_ms: u64) -> Next {
 /// then its first option.
 fn fallbacks(d: &AgentDecision) -> Vec<Vec<u32>> {
     let least = crate::steps::idle_answer(d).indices.unwrap_or_default();
-    let mut answers = vec![least, vec![]];
-    answers.extend(d.options.first().map(|o| vec![o.index]));
-    answers.dedup();
-    answers.truncate(ATTEMPTS);
+    let mut answers = vec![least];
+    for choice in std::iter::once(vec![]).chain(d.options.first().map(|o| vec![o.index])) {
+        if !answers.contains(&choice) {
+            answers.push(choice);
+        }
+    }
     answers
 }
 
@@ -143,6 +149,53 @@ fn labels(d: &AgentDecision, indices: &[u32]) -> Vec<String> {
         .filter_map(|i| d.options.iter().find(|o| o.index == *i))
         .map(|o| o.label.clone())
         .collect()
+}
+
+/// Time available for one connection and request, leaving room to observe the result
+/// and retry. A small floor lets us discover a new turn even after a stale clock expires.
+fn call_budget(bank_until: Option<Instant>) -> Duration {
+    bank_until.map_or(MAX_CALL, |end| {
+        let remaining = end.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            MIN_POLL
+        } else {
+            (remaining / 3).clamp(MIN_POLL, MAX_CALL).min(remaining)
+        }
+    })
+}
+
+/// Remember attempts across reads and reconnects. An unknown outcome retries the same
+/// answer only if a fresh observation still offers that decision.
+#[derive(Default)]
+struct Attempts {
+    decision: String,
+    sent: usize,
+    fallback: usize,
+}
+
+impl Attempts {
+    fn take(&mut self, d: &AgentDecision) -> Option<Vec<u32>> {
+        if self.decision != d.id {
+            *self = Self {
+                decision: d.id.clone(),
+                ..Self::default()
+            };
+        }
+        if self.sent >= ATTEMPTS {
+            return None;
+        }
+        let choice = fallbacks(d).into_iter().nth(self.fallback)?;
+        self.sent += 1;
+        Some(choice)
+    }
+
+    fn replied(&mut self, accepted: Option<bool>) {
+        match accepted {
+            Some(true) => self.sent = ATTEMPTS,
+            Some(false) => self.fallback += 1,
+            None => {}
+        }
+    }
 }
 
 /// The guard's own session with the seat's game.
@@ -160,26 +213,41 @@ impl Session<'_> {
         args
     }
 
-    async fn call(&mut self, tool: &'static str, args: Value) -> Result<Reply, String> {
-        if self.client.is_none() {
-            let token = self.job.official.then(|| self.job.token.clone());
-            self.client = Some(Client::connect_authenticated(&self.endpoint, token).await?);
-        }
+    async fn call(
+        &mut self,
+        tool: &'static str,
+        args: Value,
+        budget: Duration,
+    ) -> Result<Reply, CallError> {
         let args = self.args(args);
-        let client = self.client.as_ref().expect("connected");
-        let result =
-            tokio::time::timeout(crate::mcp::MAX_WAIT + POLL, client.call(tool, args)).await;
-        // A session the server no longer knows (it restarted) is refused, not lost: any
-        // failure starts a fresh one.
-        let error = match result {
-            Ok(Ok(reply)) => return Ok(reply),
-            Ok(Err(CallError::Refused(e) | CallError::Lost(e))) => e,
-            Err(_) => format!("{tool}: no reply"),
+        let request = async {
+            if self.client.is_none() {
+                let token = self.job.official.then(|| self.job.token.clone());
+                self.client = Some(
+                    Client::connect_authenticated(&self.endpoint, token)
+                        .await
+                        .map_err(CallError::Lost)?,
+                );
+            }
+            self.client
+                .as_ref()
+                .expect("connected")
+                .call(tool, args)
+                .await
         };
-        if let Some(client) = self.client.take() {
-            client.close().await;
+        let result = tokio::time::timeout(budget, request)
+            .await
+            .unwrap_or_else(|_| {
+                Err(CallError::Lost(format!(
+                    "{tool}: no reply within {budget:?}"
+                )))
+            });
+        if matches!(result, Err(CallError::Lost(_))) {
+            // Dropping the MCP service cancels it. Waiting for its shutdown would spend
+            // the very clock budget the timeout protects.
+            self.client = None;
         }
-        Err(error)
+        result
     }
 }
 
@@ -205,95 +273,119 @@ pub(crate) async fn run(
         client: None,
     };
     let margin = u64::from(settings.margin_seconds) * 1000;
-    let mut tool = "state";
-    tokio::select! {
-        () = stop.cancelled() => {},
-        () = async {
-            loop {
-                let args = match tool {
-                    "wait" => json!({"timeout_s": WAIT_S}),
-                    _ => json!({}),
-                };
-                let reply = match session.call(tool, args).await {
-                    Ok(reply) if reply.ok && reply.json.is_some() => reply,
-                    // The server away, or the seat refused for now (a reconnecting
-                    // official account): look again shortly.
-                    _ => {
-                        tool = "state";
-                        tokio::time::sleep(RECONNECT).await;
-                        continue;
+    let mut wait = Duration::ZERO;
+    let mut bank_until = None;
+    let mut attempts = Attempts::default();
+    let guard = async {
+        loop {
+            let hold = std::mem::take(&mut wait);
+            let (tool, args) = if hold.is_zero() {
+                ("state", json!({}))
+            } else {
+                ("wait", json!({"timeout_s": hold.as_secs()}))
+            };
+            let budget = hold + call_budget(bank_until);
+            let reply = match session.call(tool, args, budget).await {
+                Ok(reply) if reply.ok && reply.json.is_some() => reply,
+                _ => {
+                    tokio::time::sleep(RECONNECT.min(call_budget(bank_until))).await;
+                    continue;
+                }
+            };
+            let json = reply.json.expect("checked");
+            let now = crate::hub::now_ms();
+            let seat = game_state(&json)["seat"]
+                .as_u64()
+                .and_then(|s| usize::try_from(s).ok());
+            let own_bank = seat
+                .and_then(|s| json["clock"]["left"].get(s))
+                .and_then(Value::as_u64);
+            // A paused clock may start at any point during the next request.
+            let remaining = bank_left(&json, now).or(own_bank);
+            bank_until = remaining.map(|ms| Instant::now() + Duration::from_millis(ms));
+            match next(&json, &job.game_id, now, margin) {
+                Next::Done => return,
+                Next::Wait => {
+                    // Even an opponent's turn can end as soon as this wait starts.
+                    // Bound a stalled wait by the time our seat could then lose.
+                    let left = remaining.unwrap_or(margin);
+                    wait = Duration::from_secs((left / 3000).min(MAX_WAIT.as_secs()));
+                    if wait.is_zero() {
+                        tokio::time::sleep(MIN_POLL).await;
                     }
-                };
-                let json = reply.json.expect("checked");
-                tool = "state";
-                match next(&json, &job.game_id, crate::hub::now_ms(), margin) {
-                    Next::Done => return,
-                    Next::Wait => tool = "wait",
-                    Next::Sleep(pause) => tokio::time::sleep(pause).await,
-                    Next::Answer(decision, left) => {
-                        answer(&mut session, &decision, left, &notices, &log).await;
+                }
+                Next::Sleep(pause) => tokio::time::sleep(pause).await,
+                Next::Answer(d, left) => {
+                    if let Some(indices) = attempts.take(&d) {
+                        let accepted = answer(
+                            &mut session,
+                            &d,
+                            indices,
+                            left,
+                            call_budget(bank_until),
+                            &notices,
+                            &log,
+                        )
+                        .await;
+                        attempts.replied(accepted);
+                    } else {
+                        tokio::time::sleep(RECONNECT.min(call_budget(bank_until))).await;
                     }
                 }
             }
-        } => {},
-    }
-    if let Some(client) = session.client.take() {
-        client.close().await;
+        }
+    };
+    tokio::select! {
+        () = stop.cancelled() => {},
+        () = guard => {},
     }
 }
 
-/// Answers `d` with the least it allows; the first fallback the game takes stands.
+/// Submit once. Only the server's reply can tell us whether our step was accepted.
 async fn answer(
     session: &mut Session<'_>,
     d: &AgentDecision,
+    indices: Vec<u32>,
     left: u64,
+    budget: Duration,
     notices: &Notices,
     log: &Path,
-) {
+) -> Option<bool> {
     let job = session.job;
-    for indices in fallbacks(d) {
-        let labels = labels(d, &indices);
-        let args = json!({"decision": d.id, "indices": indices, "expect": labels, "timeout_s": 0});
-        let reply = session.call("step", args).await;
-        let accepted = reply.as_ref().is_ok_and(|r| r.ok);
-        let entry = json!({
-            "time": crate::hub::now_ms(), "game": job.game_id, "seat": job.seat,
-            "agent": job.agent, "decision": d.id, "prompt": d.prompt, "indices": indices,
-            "labels": labels, "bankLeftMs": left, "accepted": accepted,
-            "error": match &reply { Ok(r) if !r.ok => Some(r.text.clone()), Err(e) => Some(e.clone()), _ => None },
-        });
-        record(log, &entry);
-        if accepted {
-            let chosen = match labels.is_empty() {
-                true => "nothing".to_string(),
-                false => labels.join(", "),
-            };
-            eprintln!(
-                "dominion agents: clock guard answered {} in {} for {} with {chosen}: {:.1} s of bank left",
-                d.id,
-                job.game_id,
-                job.agent,
-                left as f64 / 1000.0
-            );
-            notices.push(format!(
-                "HARNESS CLOCK GUARD: your clock was about to run out ({:.1} s of bank left) with decision {} open, so the harness answered it for you with the least it allows ({chosen}). Decide faster: answer each decision promptly.",
-                left as f64 / 1000.0,
-                d.id
-            ));
-            return;
-        }
-        // The player's answer got there first, or the game moved on.
-        let Ok(fresh) = session.call("state", json!({})).await else {
-            return;
+    let labels = labels(d, &indices);
+    let args = json!({"decision": d.id, "indices": indices, "expect": labels, "timeout_s": 0});
+    let reply = session.call("step", args, budget).await;
+    let accepted = match &reply {
+        Ok(reply) => Some(reply.ok),
+        Err(CallError::Refused(_)) => Some(false),
+        Err(CallError::Lost(_)) => None,
+    };
+    let entry = json!({
+        "time": crate::hub::now_ms(), "game": job.game_id, "seat": job.seat,
+        "agent": job.agent, "decision": d.id, "prompt": d.prompt, "indices": indices,
+        "labels": labels, "bankLeftMs": left, "accepted": accepted,
+        "error": match &reply { Ok(r) if !r.ok => Some(r.text.clone()), Err(e) => Some(e.to_string()), _ => None },
+    });
+    record(log, &entry);
+    if accepted == Some(true) {
+        let chosen = match labels.is_empty() {
+            true => "nothing".to_string(),
+            false => labels.join(", "),
         };
-        let open = fresh
-            .json
-            .as_ref()
-            .map(|j| game_state(j)["decision"]["id"].clone());
-        if open != Some(json!(d.id)) {
-            return;
-        }
+        eprintln!(
+            "dominion agents: clock guard answered {} in {} for {} with {chosen}: {:.1} s of bank left",
+            d.id,
+            job.game_id,
+            job.agent,
+            left as f64 / 1000.0
+        );
+        notices.push(format!(
+            "HARNESS CLOCK GUARD: your clock was about to run out ({:.1} s of bank left) with decision {} open, so the harness answered it for you with the least it allows ({chosen}). Decide faster: answer each decision promptly.",
+            left as f64 / 1000.0,
+            d.id
+        ));
     }
+    accepted
 }
 
 /// Appends `entry` to the guard's log, kept beside the runner's archives.
@@ -353,6 +445,34 @@ mod tests {
     }
 
     #[test]
+    fn a_call_reserves_time_for_recovery_as_the_bank_runs_down() {
+        let now = Instant::now();
+        assert_eq!(call_budget(None), MAX_CALL);
+        assert_eq!(call_budget(Some(now + Duration::from_secs(60))), MAX_CALL);
+        assert!(call_budget(Some(now + Duration::from_secs(3))) <= Duration::from_secs(1));
+        assert_eq!(call_budget(Some(now)), MIN_POLL);
+    }
+
+    #[test]
+    fn repeated_observations_of_a_decision_share_one_attempt_limit() {
+        let Next::Answer(mut d, _) = next(&view(1_000, 0, 1_000), "g", 1_000, 6_000) else {
+            panic!("guard should answer")
+        };
+        let mut attempts = Attempts::default();
+        assert_eq!(attempts.take(&d), Some(vec![1]));
+        attempts.replied(None);
+        assert_eq!(attempts.take(&d), Some(vec![1]));
+        attempts.replied(Some(false));
+        assert_eq!(attempts.take(&d), Some(vec![]));
+        attempts.replied(None);
+        assert_eq!(attempts.take(&d), None);
+        d.id = "d2".into();
+        assert_eq!(attempts.take(&d), Some(vec![1]));
+        attempts.replied(Some(true));
+        assert_eq!(attempts.take(&d), None);
+    }
+
+    #[test]
     fn the_guard_leaves_other_seats_clocks_untimed_games_and_finished_ones() {
         let margin = 6_000;
         let mut theirs = view(1_000, 0, 1000);
@@ -380,12 +500,27 @@ mod tests {
     /// decision once the bank reaches the margin, logs it, and leaves a notice.
     #[tokio::test]
     async fn the_guard_answers_a_silent_seat_before_its_clock_runs_out() {
+        guard_game(false).await;
+    }
+
+    #[tokio::test]
+    async fn the_guard_reads_state_after_a_committed_step_loses_its_reply() {
+        guard_game(true).await;
+    }
+
+    async fn guard_game(lose_first_reply: bool) {
         use crate::arena::Arena;
         use crate::hub::{Hub, NewGame};
+        use axum::{
+            body::{Body, to_bytes},
+            extract::Request,
+            middleware::{Next, from_fn},
+        };
         use dominion_protocol::lobby::Clock;
         use rmcp::transport::streamable_http_server::{
             StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
         };
+        use std::sync::atomic::{AtomicBool, Ordering};
         let hub = Arc::new(Hub::default());
         let arena = Arena::open(hub.clone(), Default::default()).unwrap();
         let service = StreamableHttpService::new(
@@ -399,7 +534,37 @@ mod tests {
             Arc::new(LocalSessionManager::default()),
             StreamableHttpServerConfig::default(),
         );
-        let router = axum::Router::new().nest_service("/mcp", service);
+        let mut router = axum::Router::new().nest_service("/mcp", service);
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        if lose_first_reply {
+            let received = calls.clone();
+            let lose = Arc::new(AtomicBool::new(true));
+            router = router.layer(from_fn(move |req: Request, next: Next| {
+                let received = received.clone();
+                let lose = lose.clone();
+                async move {
+                    let (parts, body) = req.into_parts();
+                    let bytes = to_bytes(body, 1 << 20).await.unwrap();
+                    let message: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+                    let mut stall = false;
+                    if message["method"] == "tools/call" {
+                        let name = message["params"]["name"].as_str().unwrap();
+                        let decision = message["params"]["arguments"]["decision"]
+                            .as_str()
+                            .map(str::to_owned);
+                        received.lock().unwrap().push((name.to_owned(), decision));
+                        stall = name == "step" && lose.swap(false, Ordering::Relaxed);
+                    }
+                    let response = next
+                        .run(Request::from_parts(parts, Body::from(bytes)))
+                        .await;
+                    if stall {
+                        std::future::pending::<()>().await;
+                    }
+                    response
+                }
+            }));
+        }
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/mcp", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, router).await });
@@ -474,6 +639,31 @@ mod tests {
         // Not before the bank reached the margin.
         assert!(started.elapsed() >= Duration::from_secs(1));
         assert!(hub.view(&second).unwrap().0.game.running);
+        if lose_first_reply {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    {
+                        let history = calls.lock().unwrap();
+                        if let Some(i) = history.iter().position(|(name, _)| name == "step")
+                            && history.len() >= i + 3
+                        {
+                            assert_eq!(history[i + 1].0, "state");
+                            assert_eq!(
+                                history
+                                    .iter()
+                                    .filter(|(n, d)| n == "step" && d.as_ref() == Some(&waiting.id))
+                                    .count(),
+                                1
+                            );
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("the guard must reconnect and read the committed state");
+        }
         let entry: Value = serde_json::from_str(
             std::fs::read_to_string(&log)
                 .unwrap()
@@ -483,24 +673,33 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entry["decision"], json!(waiting.id));
-        assert_eq!(entry["accepted"], json!(true));
+        assert_eq!(
+            entry["accepted"],
+            if lose_first_reply {
+                Value::Null
+            } else {
+                json!(true)
+            }
+        );
         assert!(entry["bankLeftMs"].as_u64().unwrap() <= 28_000);
         // The player hears of it on its next reply, whichever attempt plays then.
-        let advice = crate::runner::analyst::Advice::with_notices(notices.clone());
-        let mut reply = Reply {
-            model_prompts: vec![],
-            ok: true,
-            text: "DECISION d2".into(),
-            json: Some(json!({"view":{}})),
-        };
-        advice.deliver(&mut reply);
-        assert!(
-            reply.text.starts_with("HARNESS CLOCK GUARD"),
-            "{}",
-            reply.text
-        );
-        assert!(reply.text.contains(&waiting.id) && reply.text.ends_with("DECISION d2"));
-        assert!(notices.take().is_empty());
+        if !lose_first_reply {
+            let advice = crate::runner::analyst::Advice::with_notices(notices.clone());
+            let mut reply = Reply {
+                model_prompts: vec![],
+                ok: true,
+                text: "DECISION d2".into(),
+                json: Some(json!({"view":{}})),
+            };
+            advice.deliver(&mut reply);
+            assert!(
+                reply.text.starts_with("HARNESS CLOCK GUARD"),
+                "{}",
+                reply.text
+            );
+            assert!(reply.text.contains(&waiting.id) && reply.text.ends_with("DECISION d2"));
+            assert!(notices.take().is_empty());
+        }
         stop.cancel();
         tokio::time::timeout(Duration::from_secs(5), guard)
             .await
