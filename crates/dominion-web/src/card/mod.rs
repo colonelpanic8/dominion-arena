@@ -14,7 +14,7 @@ use crate::app::use_cards;
 use crate::assets::{AssetDb, url, use_assets};
 use crate::platform;
 use dioxus::prelude::*;
-use dominion_protocol::api::CardInfo;
+use dominion_protocol::api::{CardCost, CardInfo};
 use fit::{Font, Measure, fit_line, fit_text};
 use layout::{Rect, Shape};
 use text::{Line, LineKind, Piece, Style};
@@ -56,6 +56,24 @@ struct Price {
     debt: u32,
 }
 
+/// What a card's cost box shows: `cost` in place of the printed cost, and nothing for a
+/// card with none printed (Landmarks, Ways, Boons, ...), whatever `cost` says.
+fn price(cost: Option<dominion_protocol::Cost>, printed: Option<CardCost>) -> Option<Price> {
+    let printed = printed?;
+    Some(match cost {
+        Some(c) => Price {
+            coins: c.coins,
+            potions: c.potions,
+            debt: c.debt,
+        },
+        None => Price {
+            coins: printed.coins,
+            potions: printed.potions,
+            debt: printed.debt,
+        },
+    })
+}
+
 /// One card. `cost` replaces the printed cost (cost reducers). `class` is added to the
 /// card's root, for highlighting; `children` are drawn over the card (count badges,
 /// tokens), in a layer covering it.
@@ -78,19 +96,7 @@ pub fn CardView(
     let cards = use_cards();
     let assets = use_assets();
     let info = cards.get(&name).cloned();
-    let price = match (cost, info.as_ref().and_then(|c| c.cost)) {
-        (Some(c), _) => Some(Price {
-            coins: c.coins,
-            potions: c.potions,
-            debt: c.debt,
-        }),
-        (None, Some(c)) => Some(Price {
-            coins: c.coins,
-            potions: c.potions,
-            debt: c.debt,
-        }),
-        (None, None) => None,
-    };
+    let price = price(cost, info.as_ref().and_then(|c| c.cost));
     let m = measure::measurer(assets.fonts);
     let body = match &info {
         Some(info) => draw(
@@ -596,12 +602,36 @@ fn piece_node(p: &Piece) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use super::set_slug;
+    use super::{Price, price, set_slug};
+    use dominion_protocol::{Cost, api::CardCost};
 
     #[test]
     fn set_names_become_icon_slugs() {
         assert_eq!(set_slug("Dark Ages"), "dark-ages");
         assert_eq!(set_slug("Cornucopia & Guilds"), "cornucopia-guilds");
         assert_eq!(set_slug("Base"), "base");
+    }
+
+    #[test]
+    fn only_a_card_with_a_printed_cost_shows_one() {
+        let zero = Cost {
+            coins: 0,
+            potions: 0,
+            debt: 0,
+        };
+        assert_eq!(price(Some(zero.clone()), None), None);
+        assert_eq!(price(None, None), None);
+        let printed = CardCost {
+            coins: 5,
+            potions: 0,
+            debt: 0,
+        };
+        let shown = |coins| Price {
+            coins,
+            potions: 0,
+            debt: 0,
+        };
+        assert_eq!(price(None, Some(printed)), Some(shown(5)));
+        assert_eq!(price(Some(zero), Some(printed)), Some(shown(0)));
     }
 }

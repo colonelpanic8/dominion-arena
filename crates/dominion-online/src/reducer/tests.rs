@@ -1101,6 +1101,59 @@ fn a_landscape_is_named_by_the_card_in_its_zone() {
 }
 
 #[test]
+fn only_a_bought_landscape_has_a_cost() {
+    let mut catalog = (*catalog()).clone();
+    for (key, name, kind) in [
+        ("ALMS", "Alms", "Event"),
+        ("WAY_OF_THE_OX", "Way of the Ox", "Way"),
+    ] {
+        catalog.cards.push(CardInfo {
+            key: key.into(),
+            name: name.into(),
+            cost: view::Cost::default(),
+            types: vec![kind.into()],
+            kingdom: false,
+        });
+    }
+    let mut snap = snapshot();
+    for (i, name) in [4, 5].into_iter().enumerate() {
+        let id = 8 + i as i32;
+        snap.state.cards.push(model::Card {
+            id,
+            card_name: name,
+            pile_name: name,
+        });
+        snap.state.zones.push(model::Zone {
+            index: 40 + i as i32,
+            kind: 7,
+            pile_name: 0,
+            owner: -1,
+            cards: vec![id],
+            created_by: -1,
+            attached_trait: 0,
+            is_visible: true,
+        });
+    }
+    let mut r = Reducer::new(Arc::new(catalog), 42);
+    r.replace(snap).unwrap();
+    let shown: Vec<_> = r
+        .view()
+        .unwrap()
+        .landscapes
+        .into_iter()
+        .map(|l| (l.card, l.cost))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            ("Alms".into(), Some(view::Cost::default())),
+            ("Way of the Ox".into(), None)
+        ]
+    );
+    sound(&r);
+}
+
+#[test]
 fn recorded_inputs_fold_to_the_views_they_were_recorded_at() {
     use crate::record::Input;
     let mut live = Reducer::new(catalog(), 42);
