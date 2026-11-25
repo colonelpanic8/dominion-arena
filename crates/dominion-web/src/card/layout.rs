@@ -166,6 +166,17 @@ impl Shape {
         }
     }
 
+    /// dominion.games' text box (`getCardTextBbox`), for its own lines.
+    pub fn online_text(&self) -> Rect {
+        if self.landscape {
+            r(0.09, 0.72, 0.815, 0.21)
+        } else if self.heirloom {
+            r(0.1, 0.55, 0.795, 0.27)
+        } else {
+            r(0.1, 0.55, 0.795, 0.31)
+        }
+    }
+
     pub fn heirloom_band(&self) -> Rect {
         r(0.12, 0.828, 0.76, 0.04)
     }

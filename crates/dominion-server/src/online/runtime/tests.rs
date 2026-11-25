@@ -29,6 +29,7 @@ fn catalog() -> Arc<Catalog> {
         cards: vec![],
         enums: BTreeMap::new(),
         labels: BTreeMap::new(),
+        texts: BTreeMap::new(),
     })
 }
 fn named(id: i32) -> NamedId {

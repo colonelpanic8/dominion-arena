@@ -215,6 +215,10 @@ fn lay_out(lines: &[Line], size: f32, width: f32, m: &dyn Measure) -> Option<(f3
                 height += SEPARATOR_HEIGHT * size;
                 vec![]
             }
+            Line::Gap => {
+                height += GAP * size;
+                vec![]
+            }
             Line::Text { pieces, .. } => {
                 let s = size * scale(kind);
                 let rows = wrap(pieces, width * WIDTH_SLACK / s, m)?;
@@ -268,6 +272,69 @@ pub fn fit_line(
         return by_height;
     }
     by_height.min(width * WIDTH_SLACK / w)
+}
+
+/// The heights, in ems of the body size, of dominion.games' dividing line (margins
+/// included) and of an empty line.
+pub fn online_spacing(landscape: bool) -> (f32, f32) {
+    if landscape { (0.4, 0.2) } else { (0.8, 0.4) }
+}
+
+/// The body size dominion.games' client sets its own lines (`text::parse_online`) at in
+/// a `width` × `height` box, unwrapped: the least of 15% of the height (40% on a
+/// landscape), the height over the lines' and the width over the widest line's.
+pub fn online_size(
+    lines: &[Line],
+    width: f32,
+    height: f32,
+    landscape: bool,
+    m: &dyn Measure,
+) -> f32 {
+    let (separator, gap) = online_spacing(landscape);
+    // It measures at 50px, both sums starting at 1px.
+    let mut widest = 1.0 / 50.0;
+    let mut total = 1.0 / 50.0;
+    for line in lines {
+        let (w, h) = match line {
+            Line::Separator => (0.0, separator),
+            Line::Gap => (0.0, gap),
+            Line::Text { kind, pieces } => online_extent(*kind, pieces, m),
+        };
+        widest = f32::max(widest, w);
+        total += h;
+    }
+    let cap = height * if landscape { 0.4 } else { 0.15 };
+    cap.min(height / total).min(width / widest)
+}
+
+/// A line's width and height as dominion.games measures them: text by its font, VP by
+/// its number plus 0.9 of the size, any other icon the size. A huge line's coin makes
+/// the line 1.1 times larger, and its VP number is measured at twice its size.
+fn online_extent(kind: LineKind, pieces: &[Piece], m: &dyn Measure) -> (f32, f32) {
+    let mut s = match kind {
+        LineKind::Bonus => BONUS_SCALE,
+        LineKind::Huge => HUGE_SCALE,
+        LineKind::Heirloom => 0.8,
+        LineKind::Normal | LineKind::Italic => 1.0,
+    };
+    let huge = kind == LineKind::Huge;
+    let mut width = 0.0;
+    for p in pieces {
+        width += match p {
+            Piece::Text(t, style) => m.width(t, Font::of(*style)) * s,
+            Piece::Vp(n) => {
+                let n = n.map(|n| n.to_string()).unwrap_or_default();
+                let size = if huge { 2.0 * s } else { s };
+                m.width(&n, Font::Number) * size + 0.9 * s
+            }
+            Piece::Coin(_) | Piece::Debt(_) | Piece::Potion if huge => {
+                s *= 1.1;
+                s
+            }
+            _ => s,
+        };
+    }
+    (width, s)
 }
 
 /// Rough Times-like widths, for native builds and tests.
@@ -349,5 +416,31 @@ mod tests {
             last[last.len() - 2..],
             [Piece::Coin(Some(4)), Piece::Text(".".into(), Style::Normal)]
         );
+    }
+
+    #[test]
+    fn online_lines_set_the_size_by_the_widest_and_the_total_height() {
+        use crate::card::text::parse_online;
+        let short = parse_online("|+1 Card|//|+2 Actions|");
+        assert_eq!(online_size(&short, 80.0, 49.0, false, &Approx), 49.0 * 0.15);
+
+        let wide = parse_online("A line far too long to fit at the largest size there is.");
+        let w: f32 = Approx.width(
+            "A line far too long to fit at the largest size there is.",
+            Font::Body,
+        );
+        assert_eq!(online_size(&wide, 80.0, 49.0, false, &Approx), 80.0 / w);
+
+        let tall = parse_online("a//a//a//a//---//a////a//a//a//a//a");
+        let lines = 10.0 + 0.8 + 0.4 + 0.02;
+        let s = online_size(&tall, 80.0, 49.0, false, &Approx);
+        assert!((s - 49.0 / lines).abs() < 1e-4, "{s}");
+        let landscape = online_size(&tall, 80.0, 49.0, true, &Approx);
+        assert!((landscape - 49.0 / (10.0 + 0.4 + 0.2 + 0.02)).abs() < 1e-4);
+
+        let (w, h) = online_extent(LineKind::Huge, &[Piece::Coin(Some(2))], &Approx);
+        assert!((w - 2.2).abs() < 1e-6 && (h - 2.2).abs() < 1e-6);
+        let (w, h) = online_extent(LineKind::Huge, &[Piece::Vp(Some(2))], &Approx);
+        assert!((w - (4.0 * Approx.width("2", Font::Number) + 1.8)).abs() < 1e-5 && h == 2.0);
     }
 }

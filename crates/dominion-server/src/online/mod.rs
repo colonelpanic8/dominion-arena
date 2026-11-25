@@ -12,7 +12,7 @@ use dominion_online::{
     transport::{Endpoint, Message, ServerState, Transport, command},
 };
 use rmcp::ServiceExt;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
 pub use runtime::{Client, NewGame};
 #[cfg(test)]
@@ -68,6 +68,40 @@ pub async fn sync(config: &Config) -> Result<(), String> {
         path.display()
     );
     Ok(())
+}
+
+/// dominion.games' text of each card it has, by our card name (`CardInfo::online_text`):
+/// from `host`'s catalog, else from the verified bundle in its file or the cache, if
+/// there is one.
+pub fn card_texts(
+    config: &Config,
+    host: Option<&crate::official_host::Host>,
+) -> BTreeMap<String, String> {
+    let read = || -> Option<Catalog> {
+        let path = match &config.official_server_catalog_file {
+            Some(path) => path.clone(),
+            None => cache_file(config).ok()?,
+        };
+        let bytes = std::fs::read(&path).ok()?;
+        Catalog::from_bundle(&bytes)
+            .inspect_err(|e| eprintln!("dominion: no card texts from {}: {e}", path.display()))
+            .ok()
+    };
+    let owned;
+    let catalog = match host {
+        Some(host) => &host.catalog.catalog,
+        None => match read() {
+            Some(c) => {
+                owned = c;
+                &owned
+            }
+            None => return BTreeMap::new(),
+        },
+    };
+    dominion_engine::Card::ALL
+        .iter()
+        .filter_map(|c| Some((c.name().to_string(), catalog.text(c.name())?.to_string())))
+        .collect()
 }
 
 fn catalog(config: &Config) -> Result<Arc<Catalog>, String> {

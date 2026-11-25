@@ -103,6 +103,7 @@ fn catalog() -> Arc<Catalog> {
         cards,
         enums,
         labels: BTreeMap::new(),
+        texts: BTreeMap::new(),
     })
 }
 

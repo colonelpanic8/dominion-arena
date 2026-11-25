@@ -361,6 +361,7 @@ mod tests {
             removed: false,
             pile: None,
             text: text.into(),
+            online_text: None,
         };
         CardDb::new(vec![
             card(

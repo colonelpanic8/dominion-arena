@@ -1,11 +1,15 @@
-//! Official card text (`data/cards`) parsed into lines of inline pieces: words in a
-//! style and the coin, Debt, Potion, VP and Sun icons the printed cards draw.
+//! Card text parsed into lines of inline pieces: words in a style and the coin, Debt,
+//! Potion, VP and Sun icons the printed cards draw. [`parse`] reads the official text
+//! (`data/cards`), to be wrapped; [`parse_online`] dominion.games' own, whose lines are
+//! fixed.
 
 /// One line of card text, as printed.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Line {
     /// The dividing line (`---`).
     Separator,
+    /// An empty line of dominion.games' text.
+    Gap,
     Text {
         kind: LineKind,
         pieces: Vec<Piece>,
@@ -41,14 +45,14 @@ pub enum Piece {
     Debt(Option<u32>),
     Potion,
     /// `N VP`; `None` for a bare `VP`.
-    Vp(Option<u32>),
+    Vp(Option<i32>),
     Sun,
 }
 
 impl Line {
     pub fn kind(&self) -> Option<LineKind> {
         match self {
-            Line::Separator => None,
+            Line::Separator | Line::Gap => None,
             Line::Text { kind, .. } => Some(*kind),
         }
     }
@@ -145,6 +149,10 @@ fn number(s: &str) -> Option<(u32, usize)> {
     (len > 0).then(|| (s[..len].parse().unwrap_or(u32::MAX), len))
 }
 
+fn vp(n: u32) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
 /// The word starting at `s`: letters, digits and apostrophes.
 fn word(s: &str) -> &str {
     let len = s
@@ -225,7 +233,7 @@ fn inline(line: &str) -> Vec<Piece> {
             {
                 let w = word(after);
                 let piece = match w {
-                    "VP" => Some(Piece::Vp(Some(n))),
+                    "VP" => Some(Piece::Vp(Some(vp(n)))),
                     "Debt" => Some(Piece::Debt(Some(n))),
                     _ => None,
                 };
@@ -280,7 +288,7 @@ fn signed_icon(st: &mut Inline, rest: &str) -> Option<usize> {
     let w = word(tail);
     let used = 1 + len + 1 + w.len();
     let icon = match w {
-        "VP" => Some(Piece::Vp(Some(n))),
+        "VP" => Some(Piece::Vp(Some(vp(n)))),
         "Debt" => Some(Piece::Debt(Some(n))),
         _ => None,
     };
@@ -299,6 +307,103 @@ fn signed_icon(st: &mut Inline, rest: &str) -> Option<usize> {
         return Some(used);
     }
     None
+}
+
+/// dominion.games' own text for a card (`CardInfo::online_text`), as its client 2.3.7
+/// sets it: lines split on `//`, each kept whole. A line in `|bars|` is a bold line
+/// (`Bonus`), `%..%` an italic one, `%%..%%` the Heirloom line, `[!2]` or `{!2}` alone a
+/// huge one, an empty line a gap. Inside a line `|bold|`, `%italic%`, `[2]`, `[]`,
+/// `[P]`, `[4D]` and `[D]`, `{1}` (VP) and `<sun>`. Each text piece is one of its
+/// blocks, spaces kept; a line stops where nothing matches, as there.
+pub fn parse_online(text: &str) -> Vec<Line> {
+    text.split("//").map(online_line).collect()
+}
+
+fn online_line(line: &str) -> Line {
+    if line == "---" {
+        return Line::Separator;
+    }
+    if line.is_empty() {
+        return Line::Gap;
+    }
+    let wrapped = |m: &str| line.len() >= 2 * m.len() && line.starts_with(m) && line.ends_with(m);
+    let (kind, inner, style) = if wrapped("|") {
+        (LineKind::Bonus, &line[1..line.len() - 1], Style::Bold)
+    } else if wrapped("%%") {
+        (LineKind::Heirloom, &line[2..line.len() - 2], Style::Italic)
+    } else if wrapped("%") {
+        (LineKind::Italic, &line[1..line.len() - 1], Style::Italic)
+    } else if (line.starts_with("[!") || line.starts_with("{!"))
+        && (line.ends_with(']') || line.ends_with('}'))
+    {
+        (LineKind::Huge, line, Style::Normal)
+    } else {
+        (LineKind::Normal, line, Style::Normal)
+    };
+    Line::Text {
+        kind,
+        pieces: blocks(inner, style),
+    }
+}
+
+/// `s` from `open` up to the first `close` after it: what is between and the length.
+fn delimited<'a>(s: &'a str, open: &str, close: &str) -> Option<(&'a str, usize)> {
+    let rest = s.strip_prefix(open)?;
+    let end = rest.find(close)?;
+    Some((&rest[..end], open.len() + end + close.len()))
+}
+
+fn blocks(mut s: &str, style: Style) -> Vec<Piece> {
+    let mut out = vec![];
+    while !s.is_empty() {
+        let text = s.find(['<', '>', '[', '{', '|', '%']).unwrap_or(s.len());
+        let (piece, len) = if text > 0 {
+            (Piece::Text(s[..text].into(), style), text)
+        } else if let Some((t, len)) = delimited(s, "|", "|") {
+            (Piece::Text(t.into(), Style::Bold), len)
+        } else if let Some((t, len)) = delimited(s, "%%", "%%").or_else(|| delimited(s, "%", "%")) {
+            (Piece::Text(t.into(), Style::Italic), len)
+        } else if let Some((t, len)) = delimited(s, "[!", "]").or_else(|| delimited(s, "[", "]")) {
+            (online_cost(t), len)
+        } else if let Some((t, len)) = delimited(s, "{!", "}").or_else(|| delimited(s, "{", "}")) {
+            (Piece::Vp(t.parse().ok()), len)
+        } else if s.starts_with("<sun>") {
+            (Piece::Sun, "<sun>".len())
+        } else {
+            break;
+        };
+        out.push(piece);
+        s = &s[len..];
+    }
+    out
+}
+
+/// `[..]`: `P` a Potion, `4D` Debt, `D` bare Debt, nothing a bare coin, else a coin.
+fn online_cost(t: &str) -> Piece {
+    if t == "P" {
+        return Piece::Potion;
+    }
+    if t == "D" {
+        return Piece::Debt(None);
+    }
+    if let Some((n, len)) = number(t)
+        && t[len..].starts_with('D')
+    {
+        return Piece::Debt(Some(n));
+    }
+    Piece::Coin(number(t).map(|(n, _)| n))
+}
+
+/// Whether dominion.games keeps a block's margin on its left and right: a text block
+/// starting or ending with one of `+-,;.` drops that side's, a coin, Potion or Debt keeps
+/// both, VP and Sun have none.
+pub fn block_margins(p: &Piece) -> (bool, bool) {
+    let keeps = |c: Option<char>| !c.is_some_and(|c| "+-,;.".contains(c));
+    match p {
+        Piece::Text(t, _) => (keeps(t.chars().next()), keeps(t.chars().last())),
+        Piece::Coin(_) | Piece::Debt(_) | Piece::Potion => (true, true),
+        Piece::Vp(_) | Piece::Sun => (false, false),
+    }
 }
 
 #[cfg(test)]
@@ -340,12 +445,11 @@ mod tests {
 
     /// The source text a piece stands for.
     fn source(p: &Piece) -> String {
-        let n = |v: &Option<u32>| v.map(|v| v.to_string());
         match p {
             Text(s, _) => s.clone(),
-            Coin(v) => format!("${}", n(v).unwrap_or_default()),
-            Debt(v) => n(v).map_or("Debt".into(), |v| format!("{v} Debt")),
-            Vp(v) => n(v).map_or("VP".into(), |v| format!("{v} VP")),
+            Coin(v) => format!("${}", v.map(|v| v.to_string()).unwrap_or_default()),
+            Debt(v) => v.map_or("Debt".into(), |v| format!("{v} Debt")),
+            Vp(v) => v.map_or("VP".into(), |v| format!("{v} VP")),
             Potion => "Potion".into(),
             Sun => "Sun".into(),
         }
@@ -363,7 +467,7 @@ mod tests {
             assert_eq!(lines.len(), source_lines.len(), "{name}");
             for (l, src) in lines.iter().zip(source_lines) {
                 let rebuilt = match l {
-                    Line::Separator => "---".to_string(),
+                    Line::Separator | Line::Gap => "---".to_string(),
                     Line::Text { pieces, .. } => pieces.iter().map(source).collect(),
                 };
                 assert_eq!(rebuilt, src, "{name}");
@@ -546,5 +650,71 @@ mod tests {
         for (text, expected) in cases {
             assert_eq!(parse(text), expected, "{text}");
         }
+    }
+
+    #[test]
+    fn online_lines_keep_their_breaks_and_blocks() {
+        use LineKind::*;
+        let lines = parse_online(
+            "|+1 Action|////Choose one: |+|[2]; or trash//a card costing [P] or [4D], %if any%.//---//{!2}//[!1]//%(Not in the Supply.)%//%%(Heirloom: Goat)%%//+<sun> and {-1}, [] [D] {}",
+        );
+        assert_eq!(
+            lines,
+            vec![
+                line(Bonus, vec![b("+1 Action")]),
+                Line::Gap,
+                line(
+                    Normal,
+                    vec![t("Choose one: "), b("+"), Coin(Some(2)), t("; or trash"),],
+                ),
+                line(
+                    Normal,
+                    vec![
+                        t("a card costing "),
+                        Potion,
+                        t(" or "),
+                        Debt(Some(4)),
+                        t(", "),
+                        i("if any"),
+                        t("."),
+                    ],
+                ),
+                Line::Separator,
+                line(Huge, vec![Vp(Some(2))]),
+                line(Huge, vec![Coin(Some(1))]),
+                line(Italic, vec![i("(Not in the Supply.)")]),
+                line(Heirloom, vec![i("(Heirloom: Goat)")]),
+                line(
+                    Normal,
+                    vec![
+                        t("+"),
+                        Sun,
+                        t(" and "),
+                        Vp(Some(-1)),
+                        t(", "),
+                        Coin(None),
+                        t(" "),
+                        Debt(None),
+                        t(" "),
+                        Vp(None),
+                    ],
+                ),
+            ]
+        );
+        assert_eq!(
+            parse_online("Gain a card > 3. More"),
+            vec![line(Normal, vec![t("Gain a card ")])]
+        );
+    }
+
+    #[test]
+    fn blocks_drop_the_margin_beside_punctuation() {
+        assert_eq!(block_margins(&b("+")), (false, false));
+        assert_eq!(block_margins(&t("; or trash")), (false, true));
+        assert_eq!(block_margins(&t("Choose one: ")), (true, true));
+        assert_eq!(block_margins(&t(" a card,")), (true, false));
+        assert_eq!(block_margins(&Coin(Some(2))), (true, true));
+        assert_eq!(block_margins(&Vp(Some(1))), (false, false));
+        assert_eq!(block_margins(&Sun), (false, false));
     }
 }
