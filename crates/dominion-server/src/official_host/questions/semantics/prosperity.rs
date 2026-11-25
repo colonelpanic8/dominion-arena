@@ -255,6 +255,7 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
         Charlatan => &["off-turn-attack"],
         Clerk => &["off-turn-attack", "card-selection", "reaction-ability"],
         Collection | Hoard | Talisman => &["passive-lasting"],
+        Contraband | WarChest => &["name-card", "pile-selection", "public-effects"],
         CountingHouse => &["discard-inspection", "card-selection"],
         CrystalBall => &["looking", "semantic-modes"],
         Expand | Forge => &["card-selection", "pile-selection", "explicit-cost-bound"],
@@ -268,6 +269,7 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
         Rabble => &["off-turn-attack", "looking", "ordered-cards"],
         RoyalSeal => &["optional-ability"],
         Tiara => &["repeated-play", "card-selection", "optional-ability"],
+        TradeRoute => &["card-selection", "pile-tokens"],
         Vault => &["card-selection", "optional-effect"],
         _ => return None,
     })

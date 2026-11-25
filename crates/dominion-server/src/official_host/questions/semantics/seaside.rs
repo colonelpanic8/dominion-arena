@@ -17,6 +17,9 @@ pub(super) fn binding(
         (Ambassador, P::Reveal) => ("REVEAL", "AMBASSADOR_REVEAL"),
         (Ambassador, P::Return) => return Some(ambassador(view, d, c)),
         (Blockade, P::Gain) => ("GAIN", "BLOCKADE"),
+        (Embargo, P::Other) if matches!(d.kind, DecisionKind::Pile { .. }) => {
+            ("SELECT_ZONE", "EMBARGO")
+        }
         (Explorer, P::Reveal) => ("REVEAL", "EXPLORER"),
         (Lookout, P::Trash) => ("TRASH", "LOOKOUT_TRASH"),
         (Lookout, P::Discard) => ("DISCARD", "LOOKOUT_DISCARD"),
@@ -196,6 +199,11 @@ pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
             ("AbilityNames", "CORSAIR_NEXT_TURN_ABILITY"),
             ("AbilityNames", "CORSAIR_TRASH"),
         ],
+        Embargo => &[
+            ("AbilityNames", "EMBARGO_GAIN_CURSE"),
+            ("QuestionIds", "EMBARGO"),
+            ("QuestionTypes", "SELECT_ZONE"),
+        ],
         Explorer => &[("QuestionIds", "EXPLORER"), ("QuestionTypes", "REVEAL")],
         FishingVillage => &[("AbilityNames", "FISHING_VILLAGE_ABILITY")],
         Lookout => &[
@@ -281,6 +289,7 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
             "optional-ability",
         ],
         Cutpurse => &["off-turn-attack", "card-selection"],
+        Embargo => &["pile-selection", "pile-tokens"],
         Explorer => &["card-selection"],
         Lookout => &["looking", "card-selection"],
         Monkey => &["duration-reminder", "duration-ability"],

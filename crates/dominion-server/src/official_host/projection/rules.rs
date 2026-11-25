@@ -1436,3 +1436,6 @@ fn bustling_village_takes_actual_settlers_from_discard() {
         std::fs::write(path, serde_json::to_vec_pretty(&vec![case]).unwrap()).unwrap();
     }
 }
+
+#[path = "rules_seaside_promos.rs"]
+mod seaside_promos;
