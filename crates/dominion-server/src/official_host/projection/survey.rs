@@ -369,6 +369,14 @@ fn transport_survey() {
         .ok()
         .filter(|s| !s.is_empty())
         .map(|s| s.split(',').map(|x| x.trim().to_lowercase()).collect());
+    let admitted: std::collections::BTreeSet<String> =
+        super::super::profile::coverage_report(catalog())
+            .cards
+            .into_iter()
+            .filter(|c| c.gaps.is_empty())
+            .map(|c| c.card)
+            .collect();
+    let mut admitted_total = 0;
     let mut cards = serde_json::Map::new();
     let mut by_category: std::collections::BTreeMap<String, Vec<String>> = Default::default();
     let mut clean = 0;
@@ -405,6 +413,9 @@ fn transport_survey() {
         if errors.is_empty() {
             clean += 1;
         }
+        if admitted.contains(card.name()) {
+            admitted_total += 1;
+        }
         for c in seen.keys() {
             by_category
                 .entry(c.clone())
@@ -417,6 +428,7 @@ fn transport_survey() {
                 "set": format!("{:?}", card.set()),
                 "decisions": decisions,
                 "clean": errors.is_empty(),
+                "admitted": admitted.contains(card.name()),
                 "first": errors.first(),
                 "categories": seen,
             }),
@@ -424,6 +436,7 @@ fn transport_survey() {
     }
     let report = json!({
         "clean": clean,
+        "admitted": admitted_total,
         "total": total,
         "categories": by_category
             .iter()
@@ -432,5 +445,7 @@ fn transport_survey() {
         "cards": cards,
     });
     std::fs::write(&out, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
-    eprintln!("transport survey: {clean}/{total} cards clean; report at {out}");
+    eprintln!(
+        "transport survey: {clean}/{total} cards clean, {admitted_total} admitted; report at {out}"
+    );
 }
