@@ -593,14 +593,20 @@ fn active_opponent(b: &Board, chosen: Option<u8>) -> Option<u8> {
         .or_else(|| others.first().map(|o| o.seat))
 }
 
-/// The layout's inputs for a board. `deciding`: the shown seat has a decision open.
-/// Someone watching sees the kingdom drop on the turns of all but the first player.
+/// The layout's inputs for a board. `deciding`: the shown seat has a decision open;
+/// `ended_turn`: whose turn the game ended on, once it has. Someone watching sees the
+/// kingdom drop on the turns of all but the first player.
 fn shape(
     b: &Board,
     settings: &dominion_protocol::api::WebSettings,
     deciding: bool,
+    ended_turn: Option<u8>,
 ) -> layout::Shape {
     let (victory, treasures) = supply::basic_columns(b);
+    let turn = b.status.player.as_ref().map(|w| w.seat).or(ended_turn);
+    let others_turn = turn.is_some()
+        && turn != b.you.as_ref().map(|y| y.seat)
+        && turn != b.front().map(|f| f.seat);
     layout::Shape {
         opponents: b.others().len(),
         victory: victory.len(),
@@ -609,11 +615,9 @@ fn shape(
         landscapes: supply::wides(b).len(),
         non_supply: b.non_supply.len(),
         lowered: settings.web_move_kingdom
-            && b.status.running
             && b.front().is_some()
-            && b.status.player.is_some()
+            && others_turn
             && !b.status.your_turn
-            && !b.front_turn()
             && !deciding
             && !at_start(b),
     }
@@ -724,9 +728,17 @@ pub fn TableGame(controls: Element) -> Element {
         let (w, h) = viewport();
         let b = board_memo.read();
         let deciding = ui.read().is_some();
+        let ended_turn = b.as_ref().filter(|b| !b.status.running).and_then(|_| {
+            let st = game.state.read();
+            st.log
+                .iter()
+                .rev()
+                .find(|e| e.kind == "turn-start")
+                .and_then(|e| e.player)
+        });
         let s = b
             .as_ref()
-            .map(|b| shape(b, &settings.read(), deciding))
+            .map(|b| shape(b, &settings.read(), deciding, ended_turn))
             .unwrap_or_default();
         Rc::new(layout::geometry(w, h, &s))
     });

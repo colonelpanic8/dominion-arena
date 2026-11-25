@@ -610,21 +610,27 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-study-member:hover, .dt-study-member:focus-visible { z-index: 1; outline: 2px solid #fff; }
 .dt-study-card > .dc-card, .dt-study-member > .dc-card { border-radius: 4.5% / 2.85%; box-shadow: 0 0 0 2px #000; }
 
-/* The end of the game. */
+/* The end of the game: dominion.games' modal window, centred on the page. */
 .dt-ended {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  padding: calc(2 * var(--vh)) calc(3 * var(--vh));
-  background: #000;
-  border: calc(0.2 * var(--vh)) solid #ccc;
-  border-radius: calc(1 * var(--vh));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(1 * var(--vw));
+  background: rgba(0, 0, 0, 0.9);
+  border: 2px solid #fff;
+  border-radius: 16px;
+  font-family: var(--ui);
+  font-size: calc(1.8 * var(--vw));
+  line-height: 1.2;
   text-align: center;
   z-index: 26000;
 }
-.dt-ended p { margin: 0 0 calc(1 * var(--vh)); font-size: calc(3.5 * var(--vh)); }
-.dt-ok { background: #000; color: #fff; border: calc(0.25 * var(--vh)) solid #fff; font-family: var(--ui); font-weight: 700; font-size: calc(3 * var(--vh)); padding: 0 0.3em; cursor: pointer; }
+.dt-ended p { margin: 0; }
+.dt-ok { display: inline-flex; align-items: center; box-sizing: border-box; height: calc(5 * var(--vh)); margin-top: calc(1.5 * var(--vh)); background: rgba(0, 0, 0, 0.6); color: #fff; border: 2px solid #fff; font-family: var(--ui); font-weight: 700; font-size: calc(3 * var(--vh)); padding: calc(0.7 * var(--vh)); cursor: pointer; }
 .dt-score {
   position: absolute;
   inset: 0;
