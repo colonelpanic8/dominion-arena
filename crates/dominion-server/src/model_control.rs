@@ -70,7 +70,9 @@ impl ModelControl {
 
     pub fn model_turn(&self) -> Result<(), HubError> {
         if self.controller.is_some() {
-            return Err(HubError::Conflict("An admin is playing this seat".into()));
+            return Err(HubError::Conflict(
+                "An admin is playing this seat; call wait until it is handed back".into(),
+            ));
         }
         Ok(())
     }
