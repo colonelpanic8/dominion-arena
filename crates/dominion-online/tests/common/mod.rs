@@ -25,6 +25,8 @@ pub fn catalog() -> Arc<Catalog> {
             .collect(),
         enums: BTreeMap::new(),
         labels: BTreeMap::from([("DeclineButtonIds".into(), vec![Some("End Actions".into())])]),
+        texts: BTreeMap::new(),
+        productions: BTreeMap::new(),
     })
 }
 pub fn table() -> TableDetails {

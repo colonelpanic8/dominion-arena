@@ -212,7 +212,7 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     let catalog = catalog();
     let cfg = config();
     let meta = hub::Meta::default();
-    profile::check_supported(&cfg, &meta, &catalog).unwrap();
+    profile::check_supported(&cfg, &meta, &catalog, false).unwrap();
     let mut cases = vec![];
     let mut c = cfg.clone();
     c.players = 1;
@@ -235,8 +235,16 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     let mut c = cfg.clone();
     c.kingdom[0] = c.kingdom[1];
     cases.push(c);
-    for c in cases {
-        assert!(profile::check_supported(&c, &meta, &catalog).is_err());
+    for c in &cases {
+        assert!(profile::check_supported(c, &meta, &catalog, false).is_err());
+    }
+    // Admitting unreviewed cards admits the Fountain, never anything else refused.
+    for (i, c) in cases.iter().enumerate() {
+        assert_eq!(
+            profile::check_supported(c, &meta, &catalog, true).is_ok(),
+            i == 2,
+            "{i}"
+        );
     }
     assert!(
         profile::check_supported(
@@ -245,7 +253,8 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
                 rated: true,
                 ..Default::default()
             },
-            &catalog
+            &catalog,
+            false
         )
         .is_err()
     );
@@ -256,7 +265,8 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
                 timed: true,
                 ..Default::default()
             },
-            &catalog
+            &catalog,
+            false
         )
         .is_err()
     );
@@ -286,10 +296,12 @@ fn snapshot_raw_allocations_are_disclosed_only_and_receiver_facts_agree() {
             if z.kind == zone::DRAW || (z.kind == zone::HAND && z.owner != i32::from(seat)) {
                 assert!(z.cards.iter().all(|&id| id == -1));
             }
-            if z.kind == zone::DISCARD
-                || matches!(z.kind, zone::SUPPLY | zone::TREASURE | zone::VICTORY)
-            {
+            if z.kind == zone::DISCARD {
                 assert!(z.cards.iter().skip(1).all(|&id| id == -1));
+            }
+            // A pile is bottom first: only its top, the last, is disclosed.
+            if matches!(z.kind, zone::SUPPLY | zone::TREASURE | zone::VICTORY) {
+                assert!(z.cards.iter().rev().skip(1).all(|&id| id == -1));
             }
         }
         assert!(
@@ -1004,4 +1016,84 @@ fn a_clock_reaches_the_client_as_its_timer_preset_and_each_players_time() {
         catalog.symbol("TimerPresetOptions", "OFF").unwrap()
     );
     assert!(plain.timers.is_empty());
+}
+
+#[test]
+fn split_piles_carry_their_marker_to_their_supply_zone() {
+    let catalog = catalog();
+    let mut kingdom = KINGDOM.to_vec();
+    kingdom[0] = Card::Settlers;
+    let game = Game::new(GameConfig::new(2, kingdom, 42)).unwrap();
+    let state = update(&game, 0, &catalog, 1).snapshot.state;
+    let marked: Vec<(i32, i32)> = state
+        .pile_markers
+        .iter()
+        .map(|m| (m.kind, state.zones[m.zone_index as usize].pile_name))
+        .collect();
+    let split = super::super::catalog::pile_marker(dominion_protocol::PileMarker::Split);
+    let settlers = catalog.card(Card::Settlers).unwrap();
+    assert_eq!(marked, vec![(split, settlers)]);
+    // Anyone may look through it, so its cards go by name: their client shadows it.
+    let zone = &state.zones[state.pile_markers[0].zone_index as usize];
+    let mut names: Vec<i32> = zone
+        .cards
+        .iter()
+        .map(|&id| state.cards[id as usize].card_name)
+        .collect();
+    names.dedup();
+    let bustling = catalog.card(Card::BustlingVillage).unwrap();
+    assert_eq!(names, vec![bustling, settlers]);
+}
+
+#[test]
+fn the_bane_is_marked_and_traits_attach_to_their_pile() {
+    let catalog = catalog();
+    let mut kingdom = KINGDOM.to_vec();
+    kingdom[0] = Card::YoungWitch;
+    let mut config = GameConfig::new(2, kingdom, 42);
+    config.landscapes.push(Card::Cheap);
+    let game = Game::new(config).unwrap();
+    let view = game.view(PlayerId(0));
+    let bane = view
+        .notes()
+        .iter()
+        .find(|n| n.setup == Some(dominion_engine::SetupRole::Bane))
+        .and_then(|n| n.pile)
+        .unwrap();
+    let cheap = view.piles().find(|p| p.traits() == [Card::Cheap]).unwrap();
+    let (bane, cheap) = (
+        catalog.card(view.pile(bane).card()).unwrap(),
+        catalog.card(cheap.card()).unwrap(),
+    );
+    let state = update(&game, 0, &catalog, 1).snapshot.state;
+    let marked: Vec<(i32, i32)> = state
+        .pile_markers
+        .iter()
+        .map(|m| (m.kind, state.zones[m.zone_index as usize].pile_name))
+        .collect();
+    let mark = super::super::catalog::pile_marker(dominion_protocol::PileMarker::Bane);
+    assert_eq!(marked, vec![(mark, bane)]);
+    let traits: Vec<(i32, i32)> = state
+        .zones
+        .iter()
+        .filter(|z| z.attached_trait != 0)
+        .map(|z| (z.pile_name, z.attached_trait))
+        .collect();
+    assert_eq!(traits, vec![(cheap, catalog.card(Card::Cheap).unwrap())]);
+    // Their client draws the Trait's landscape with a card of its pile linked to it.
+    let named = |id: i32| state.cards[id as usize].card_name;
+    let links: Vec<(i32, Vec<i32>)> = state
+        .associations
+        .iter()
+        .map(|a| {
+            (
+                named(a.card),
+                a.linked_cards.iter().map(|&l| named(l)).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        links,
+        vec![(cheap, vec![catalog.card(Card::Cheap).unwrap()])]
+    );
 }

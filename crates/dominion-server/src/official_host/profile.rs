@@ -457,13 +457,19 @@ pub(crate) fn assess_setup(
         gaps,
     )
 }
+/// `unreviewed` admits cards whose rules no one has mapped onto the transport yet.
 pub(crate) fn check_supported(
     config: &GameConfig,
     meta: &hub::Meta,
     c: &WireCatalog,
+    unreviewed: bool,
 ) -> Result<(), UnsupportedFeature> {
     let report = assess_setup(config, meta, c);
-    match report.gaps.first() {
+    let mut gaps = report
+        .gaps
+        .iter()
+        .filter(|g| !(unreviewed && g.feature == "semantic-inventory"));
+    match gaps.next() {
         Some(gap) => Err(UnsupportedFeature {
             feature: format!(
                 "{}{}: {}",

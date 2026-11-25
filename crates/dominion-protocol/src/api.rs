@@ -450,6 +450,15 @@ pub struct CardInfo {
     pub pile: Option<String>,
     /// Official text: lines separated by `\n`, `---` for the dividing line.
     pub text: String,
+    /// The text dominion.games' client sets on the card, when the server has its
+    /// bundle: its fixed lines separated by `//`, in its markup (`|bold|`, `%italic%`,
+    /// `[2]` coins, `{1}` VP, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub online_text: Option<String>,
+    /// What dominion.games prints in the coins beside the full card's name, when the
+    /// server has its bundle: a number, `P` for a Potion, or its text (`?`, `x2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub online_production: Option<String>,
 }
 
 /// A printed cost, every component present.

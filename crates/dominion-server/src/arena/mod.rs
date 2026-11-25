@@ -101,6 +101,9 @@ pub struct Settings {
     pub agent_players: Option<Vec<String>>,
     /// Players rated here and on dominion.games, which ratings are read off on its scale.
     pub skill_anchors: Vec<SkillAnchor>,
+    /// Every lobby table's game is dealt with this seed (none: a random one). For
+    /// reproducible tests, such as tools/parity.
+    pub table_seed: Option<u64>,
 }
 
 /// A player rated here and on dominion.games.
@@ -127,6 +130,7 @@ impl Default for Settings {
             agent_seats_per_day: 5,
             agent_players: None,
             skill_anchors: vec![],
+            table_seed: None,
         }
     }
 }

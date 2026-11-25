@@ -261,6 +261,16 @@ pub fn TableCard(
     /// A pile holding different cards: a back peeking out from under it.
     #[props(default)]
     split: bool,
+    /// A Supply pile's markers, printed on its mini card (`CardView::pile`).
+    #[props(default)]
+    pile: Option<Vec<String>>,
+    /// The Trait on the pile (`CardView::attached`).
+    #[props(default)]
+    attached: Option<String>,
+    /// The card of the pile a landscape names (a Trait's, Obelisk's), drawn on it, and
+    /// what it costs now.
+    #[props(default)]
+    holds: Option<(String, Option<dominion_protocol::Cost>)>,
     #[props(default)] inspect_pile: bool,
     /// Upside down, as an opponent's cards across the table.
     #[props(default)]
@@ -336,7 +346,21 @@ pub fn TableCard(
             if back {
                 CardBack { size }
             } else {
-                CardView { name: name.clone(), size, cost: cost.clone(), shifted: count.is_some() && size == CardSize::Mini }
+                CardView {
+                    name: name.clone(),
+                    size,
+                    cost: cost.clone(),
+                    shifted: count.is_some() && size != CardSize::Full,
+                    pile: pile.clone(),
+                    attached: attached.clone(),
+                    if let Some((held, cost)) = holds.clone() {
+                        div {
+                            class: "dt-held-pile",
+                            style: crate::card::layout::LANDSCAPE_PILE.css(),
+                            CardView { name: held, size: CardSize::Mini, cost }
+                        }
+                    }
+                }
             }
             if empty {
                 div { class: "dt-empty-x",

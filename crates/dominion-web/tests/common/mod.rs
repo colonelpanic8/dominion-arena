@@ -31,6 +31,8 @@ pub fn card_db() -> CardDb {
                     removed: d.removed,
                     pile: d.pile.map(|p| p.name().into()),
                     text: d.text.into(),
+                    online_text: None,
+                    online_production: None,
                 }
             })
             .collect(),

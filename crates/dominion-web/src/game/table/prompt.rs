@@ -122,6 +122,15 @@ pub fn StatusBar(
             .map(|(i, _)| i)
     });
     let (end_label, end_look) = wording::end_phase(s.phase.as_deref());
+    // Spending Coffers or a Villager, or paying off Debt: a click on its counter.
+    let spend = |kind: &str| {
+        let action = counter_action(kind)?;
+        let u = ui.as_ref()?;
+        (0..u.spots.len())
+            .find(|&i| u.spots[i] == Spot::Button && u.inter.targets[i].action == action)
+    };
+    let (spend_villager, spend_debt, spend_coffers) =
+        (spend("villagers"), spend("debt"), spend("coffers"));
     let local = Rect::new(
         g.end_button.x - g.status.x,
         g.end_button.y - g.status.y,
@@ -133,7 +142,7 @@ pub fn StatusBar(
             div { class: "dt-counters",
                 span { class: "dt-counter dt-actions", class: if actions == 0 { "dt-zero" }, "{plural(actions, \"Action\", \"Actions\")}" }
                 if villagers > 0 {
-                    span { class: "dt-counter dt-icon dt-villagers", title: "Villagers", "{villagers}" }
+                    SpendCounter { kind: "villagers", title: "Villagers", n: villagers, target: spend_villager }
                 }
                 span { class: "dt-sep" }
                 span { class: "dt-counter dt-buys", class: if buys == 0 { "dt-zero" }, "{plural(buys, \"Buy\", \"Buys\")}" }
@@ -143,10 +152,10 @@ pub fn StatusBar(
                     span { class: "dt-counter dt-icon dt-potion", title: "Potions", if potions > 1 { "{potions}" } }
                 }
                 if debt > 0 {
-                    span { class: "dt-counter dt-icon dt-debt", title: "Debt", "{debt}" }
+                    SpendCounter { kind: "debt", title: "Debt", n: debt, target: spend_debt }
                 }
                 if coffers > 0 {
-                    span { class: "dt-counter dt-icon dt-coffers", title: "Coffers", "{coffers}" }
+                    SpendCounter { kind: "coffers", title: "Coffers", n: coffers, target: spend_coffers }
                 }
                 if favors > 0 {
                     span { class: "dt-sep" }
@@ -193,6 +202,38 @@ pub fn StatusBar(
     }
 }
 
+/// The option a counter answers when clicked, as dominion.games has no button for it.
+fn counter_action(kind: &str) -> Option<&'static str> {
+    match kind {
+        "coffers" => Some("spend-coffers"),
+        "villagers" => Some("spend-villager"),
+        "debt" => Some("pay-debt"),
+        _ => None,
+    }
+}
+
+/// A token counter in the status bar; clicking it spends one where that is offered.
+#[component]
+fn SpendCounter(kind: &'static str, title: &'static str, n: u32, target: Option<usize>) -> Element {
+    let ctx = use_table();
+    rsx! {
+        span {
+            class: "dt-counter dt-icon dt-{kind}",
+            class: if target.is_some() { "dt-click dt-spend" },
+            title,
+            "data-target": target.map(|i| i.to_string()),
+            "data-options": target.map(|_| "1"),
+            onclick: move |e| {
+                if let Some(i) = target {
+                    e.stop_propagation();
+                    ctx.act(i);
+                }
+            },
+            "{n}"
+        }
+    }
+}
+
 /// One button of the row: black, white Trajan letters, an icon at its right end.
 #[derive(Clone, Debug, PartialEq)]
 struct Btn {
@@ -231,6 +272,11 @@ pub fn Buttons(
     let d = &u.decision;
     let main: Vec<usize> = (0..u.spots.len())
         .filter(|&i| u.spots[i] == Spot::Button && u.inter.targets[i].action != "end-phase")
+        .filter(|&i| {
+            !["coffers", "villagers", "debt"]
+                .iter()
+                .any(|k| counter_action(k) == Some(u.inter.targets[i].action.as_str()))
+        })
         .collect();
     let side: Vec<usize> = (0..u.spots.len())
         .filter(|&i| u.spots[i] == Spot::Ability)

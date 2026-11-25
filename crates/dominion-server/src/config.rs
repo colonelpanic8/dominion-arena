@@ -36,6 +36,9 @@ pub struct Config {
     pub official_server_catalog_file: Option<PathBuf>,
     /// Enable the original client's host/port-only root WebSocket alias.
     pub official_server_root_socket: Option<bool>,
+    /// Also admit cards whose rules aren't reviewed for the transport, for drawing them
+    /// in tests (default false; their questions may end the connection).
+    pub official_server_unreviewed_cards: Option<bool>,
     /// Per-account flat preference files, separate from game state and asset cache.
     pub official_preferences_dir: Option<PathBuf>,
     /// Separately populated original application cache; never downloaded by the host.
@@ -130,6 +133,9 @@ pub struct Config {
     /// `player` (the account here) and `skill` (its dominion.games skill, mu, not level).
     /// With two or more, ratings are also shown on dominion.games' scale.
     pub official_skill_anchors: Option<Vec<crate::arena::SkillAnchor>>,
+    /// Deal every lobby table's game with this seed, for reproducible tests (default: a
+    /// random seed each game). Never set it on a server people play on.
+    pub table_seed: Option<u64>,
     /// Whether new accounts can be registered (default true).
     pub registration: Option<bool>,
     /// Whether people can play without an account, as guests (default true).
@@ -423,6 +429,7 @@ impl Config {
                 .unwrap_or(DEFAULT_AGENT_SEATS_PER_DAY),
             agent_players: self.agent_players.clone(),
             skill_anchors: self.official_skill_anchors.clone().unwrap_or_default(),
+            table_seed: self.table_seed,
         }
     }
 

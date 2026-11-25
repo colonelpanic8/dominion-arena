@@ -912,6 +912,30 @@ async fn cards_lists_every_card_as_printed() {
     assert_eq!(card("Province").vp, 6);
     assert!(card("Copper").basic);
     assert_eq!(card("Sir Martin").pile.as_deref(), Some("Knights"));
+    assert!(village.get("onlineText").is_none());
+
+    let online = dominion_server::online::OnlineCards {
+        texts: [("Village".to_string(), "|+1 Card|".to_string())].into(),
+        productions: [("Copper".to_string(), "1".to_string())].into(),
+    };
+    let server = start_with(Options {
+        online_cards: Arc::new(online),
+        ..Options::default()
+    })
+    .await;
+    let cards: Vec<CardInfo> = server.get("/api/cards", None).await.json();
+    let text = |name: &str| {
+        cards
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .online_text
+            .clone()
+    };
+    assert_eq!(text("Village").as_deref(), Some("|+1 Card|"));
+    assert_eq!(text("Smithy"), None);
+    let copper = cards.iter().find(|c| c.name == "Copper").unwrap();
+    assert_eq!(copper.online_production.as_deref(), Some("1"));
 }
 
 #[tokio::test]

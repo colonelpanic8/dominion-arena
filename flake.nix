@@ -135,6 +135,14 @@
         DOMINION_PLAYBOOK = dominion-playbook;
       };
 
+      # tools/parity: our table against dominion.games' own client, in Chromium.
+      devShells.parity = pkgs.mkShell {
+        packages = [pkgs.nodejs pkgs.playwright-test];
+        NODE_PATH = "${pkgs.playwright-test}/lib/node_modules";
+        PLAYWRIGHT_BROWSERS_PATH = pkgs.playwright-driver.browsers;
+        PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+      };
+
       formatter = pkgs.alejandra;
     });
 }

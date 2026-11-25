@@ -237,6 +237,18 @@ pub(super) mod zone {
     pub const PLAY: i32 = 8;
 }
 
+// PileMarkerTypes {BANE, OBELISK, SPLIT, MIXED, FERRYMAN} in the same pinned body.
+pub(super) fn pile_marker(marker: dominion_protocol::PileMarker) -> i32 {
+    use dominion_protocol::PileMarker::*;
+    match marker {
+        Bane => 0,
+        Obelisk => 1,
+        Split => 2,
+        Mixed => 3,
+        Ferryman => 4,
+    }
+}
+
 // TimerPresetOptions.OFF and ResignationTypes.MANUAL in the same pinned body.
 pub(super) const TIMER_OFF: i32 = 4;
 pub(super) const MANUAL_RESIGNATION: i32 = 0;

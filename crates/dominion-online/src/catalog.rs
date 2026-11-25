@@ -25,6 +25,13 @@ pub struct Catalog {
     pub cards: Vec<CardInfo>,
     pub enums: BTreeMap<String, Vec<String>>,
     pub labels: BTreeMap<String, Vec<Option<String>>>,
+    /// Each card's English text as the client sets it on the card, by `CardNames` key.
+    #[serde(default)]
+    pub texts: BTreeMap<String, String>,
+    /// What the client prints in the coins beside a full Treasure's name, by `CardNames`
+    /// key: a number, `P` for a Potion, or its own text (`?`, `x2`).
+    #[serde(default)]
+    pub productions: BTreeMap<String, String>,
 }
 
 impl Catalog {
@@ -181,11 +188,33 @@ impl Catalog {
                 })
                 .collect(),
         );
+        let texts = card_texts(source);
+        if texts.len() < cards.len() / 2 {
+            return Err(malformed("EnglishCardTexts"));
+        }
+        let productions = coin_productions(source);
+        if !productions.contains_key("COPPER") {
+            return Err(malformed("setCoinProduction"));
+        }
         Ok(Self {
             cards,
             enums,
             labels,
+            texts,
+            productions,
         })
+    }
+
+    /// The text the client sets on the card named `name`, found as [`Self::ordinal`] finds it.
+    pub fn text(&self, name: &str) -> Option<&str> {
+        let key = &self.card(self.ordinal(name)?).ok()?.key;
+        self.texts.get(key).map(String::as_str)
+    }
+
+    /// What the client prints beside the name of the full card named `name`.
+    pub fn production(&self, name: &str) -> Option<&str> {
+        let key = &self.card(self.ordinal(name)?).ok()?.key;
+        self.productions.get(key).map(String::as_str)
     }
 
     pub fn card(&self, ordinal: i32) -> Result<&CardInfo> {
@@ -239,6 +268,62 @@ fn assignment<'a>(source: &'a str, name: &str) -> Option<&'a str> {
         let end = boundary(rest, true).ok()?;
         Some(&rest[..end])
     })
+}
+
+/// Every `EnglishCardTexts[CardNames.KEY]="..."` in one pass; the first of a key counts.
+fn card_texts(source: &str) -> BTreeMap<String, String> {
+    const NEEDLE: &str = "EnglishCardTexts[CardNames.";
+    let mut texts = BTreeMap::new();
+    for (i, _) in source.match_indices(NEEDLE) {
+        if i > 0
+            && (source.as_bytes()[i - 1].is_ascii_alphanumeric()
+                || b"_$.".contains(&source.as_bytes()[i - 1]))
+        {
+            continue;
+        }
+        let Some((key, value)) = source[i + NEEDLE.len()..].split_once("]=") else {
+            continue;
+        };
+        if key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            continue;
+        }
+        let Ok(end) = boundary(value, true) else {
+            continue;
+        };
+        if let Ok(text) = string(&value[..end]) {
+            texts.entry(key.to_string()).or_insert(text);
+        }
+    }
+    texts
+}
+
+/// Every `CardNames.KEY.setCoinProduction(new Cost(...))`: `Cost(2)` is "2", `Cost(0,1)`
+/// a Potion ("P"), `Cost("?")` its text.
+fn coin_productions(source: &str) -> BTreeMap<String, String> {
+    const NEEDLE: &str = ".setCoinProduction(new Cost(";
+    let mut out = BTreeMap::new();
+    for (i, _) in source.match_indices(NEEDLE) {
+        let Some(key) = source[..i].rsplit_once("CardNames.").map(|(_, k)| k) else {
+            continue;
+        };
+        if key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            continue;
+        }
+        let Some((args, _)) = source[i + NEEDLE.len()..].split_once("))") else {
+            continue;
+        };
+        let value = match args {
+            "0,1" => "P".to_string(),
+            a if a.starts_with('"') => match string(a) {
+                Ok(text) => text,
+                Err(_) => continue,
+            },
+            a if !a.is_empty() && a.bytes().all(|b| b.is_ascii_digit()) => a.to_string(),
+            _ => continue,
+        };
+        out.entry(key.to_string()).or_insert(value);
+    }
+    out
 }
 
 fn object<'a>(source: &'a str, name: &str) -> Result<Vec<(&'a str, &'a str)>> {
@@ -354,6 +439,20 @@ mod tests {
         assert!(split("[1,2").is_err());
     }
     #[test]
+    fn coin_productions_are_read_by_key() {
+        let source = r#"CardNames.COPPER.setCoinProduction(new Cost(1)),CardNames.POTION.setCoinProduction(new Cost(0,1)),CardNames.BANK.setCoinProduction(new Cost("?")),CardNames.X.setCoinProduction(new Cost(a))"#;
+        let p = coin_productions(source);
+        assert_eq!(p.len(), 3);
+        assert_eq!((&*p["COPPER"], &*p["POTION"], &*p["BANK"]), ("1", "P", "?"));
+    }
+    #[test]
+    fn card_texts_are_read_by_key() {
+        let source = r#"x.EnglishCardTexts[CardNames.A]="no";EnglishCardTexts[CardNames.VILLAGE]="|+1 Card|//a, \"b\"",EnglishCardTexts[CardNames.VILLAGE]="later";EnglishCardTexts[CardNames.B]=f(1);"#;
+        let texts = card_texts(source);
+        assert_eq!(texts.len(), 1);
+        assert_eq!(texts["VILLAGE"], "|+1 Card|//a, \"b\"");
+    }
+    #[test]
     #[ignore = "requires downloaded public pinned bundle; no network in tests"]
     fn extracts_verified_bundle() {
         let path = std::env::var("DOMINION_ONLINE_TEST_BUNDLE").expect("test bundle path");
@@ -393,6 +492,10 @@ mod tests {
             catalog.label("DeclineButtonIds", 0).as_deref(),
             Some("End Actions")
         );
+        assert_eq!(catalog.texts.len(), 871);
+        assert_eq!(catalog.productions.len(), 74);
+        assert_eq!(catalog.production("Fortune"), Some("x2"));
+        assert!(catalog.text("Village").unwrap().starts_with("|+1 Card|//"));
         assert_eq!(
             catalog
                 .card(catalog.ordinal("King's Court").unwrap())

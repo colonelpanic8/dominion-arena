@@ -14,7 +14,7 @@ use crate::app::use_cards;
 use crate::assets::{AssetDb, url, use_assets};
 use crate::platform;
 use dioxus::prelude::*;
-use dominion_protocol::api::CardInfo;
+use dominion_protocol::api::{CardCost, CardInfo};
 use fit::{Font, Measure, fit_line, fit_text};
 use layout::{Rect, Shape};
 use text::{Line, LineKind, Piece, Style};
@@ -56,6 +56,24 @@ struct Price {
     debt: u32,
 }
 
+/// What a card's cost box shows: `cost` in place of the printed cost, and nothing for a
+/// card with none printed (Landmarks, Ways, Boons, ...), whatever `cost` says.
+fn price(cost: Option<dominion_protocol::Cost>, printed: Option<CardCost>) -> Option<Price> {
+    let printed = printed?;
+    Some(match cost {
+        Some(c) => Price {
+            coins: c.coins,
+            potions: c.potions,
+            debt: c.debt,
+        },
+        None => Price {
+            coins: printed.coins,
+            potions: printed.potions,
+            debt: printed.debt,
+        },
+    })
+}
+
 /// One card. `cost` replaces the printed cost (cost reducers). `class` is added to the
 /// card's root, for highlighting; `children` are drawn over the card (count badges,
 /// tokens), in a layer covering it.
@@ -69,27 +87,37 @@ pub fn CardView(
     /// A pile's name, moved right to clear its count badge in the top left corner.
     #[props(default)]
     shifted: bool,
+    /// A Supply pile's markers (Bane, Split, ...): its mini card prints them, then the
+    /// types its cards show on a pile (Attack, ...), as dominion.games does.
+    #[props(default)]
+    pile: Option<Vec<String>>,
+    /// The Trait on a Supply pile, drawn across the top of its mini card.
+    #[props(default)]
+    attached: Option<String>,
+    /// A Trait drawn across its pile (`attached`): its name fills the strip.
+    #[props(default)]
+    inset: bool,
     #[props(default = VNode::empty())] children: Element,
 ) -> Element {
     let cards = use_cards();
     let assets = use_assets();
     let info = cards.get(&name).cloned();
-    let price = match (cost, info.as_ref().and_then(|c| c.cost)) {
-        (Some(c), _) => Some(Price {
-            coins: c.coins,
-            potions: c.potions,
-            debt: c.debt,
-        }),
-        (None, Some(c)) => Some(Price {
-            coins: c.coins,
-            potions: c.potions,
-            debt: c.debt,
-        }),
-        (None, None) => None,
-    };
+    let price = price(cost, info.as_ref().and_then(|c| c.cost));
     let m = measure::measurer(assets.fonts);
     let body = match &info {
-        Some(info) => draw(info, size, price, shifted, &assets, m.as_ref()),
+        Some(info) => draw(
+            info,
+            size,
+            price,
+            Placing {
+                shifted,
+                pile: pile.as_deref(),
+                attached: attached.as_deref().filter(|_| size == CardSize::Mini),
+                inset,
+            },
+            &assets,
+            m.as_ref(),
+        ),
         None => draw_unknown(&name, size, &assets, m.as_ref()),
     };
     let ratio = info
@@ -241,14 +269,28 @@ fn name_node(title: &str, rect: Rect, size: f32, light: bool) -> Element {
     }
 }
 
+/// Where a card lies, as far as its face shows it (`CardView`'s props of that name).
+struct Placing<'a> {
+    shifted: bool,
+    pile: Option<&'a [String]>,
+    attached: Option<&'a str>,
+    inset: bool,
+}
+
 fn draw(
     info: &CardInfo,
     size: CardSize,
     price: Option<Price>,
-    shifted: bool,
+    placing: Placing<'_>,
     assets: &AssetDb,
     m: &dyn Measure,
 ) -> Element {
+    let Placing {
+        shifted,
+        pile,
+        attached,
+        inset,
+    } = placing;
     let shape = Shape::of(info);
     let ratio = shape.ratio(size);
     let files = assets.card(&info.name);
@@ -263,29 +305,31 @@ fn draw(
         ),
         CardSize::Micro => (None, files.and_then(|f| f.micro_template.as_deref())),
     };
+    // A pile with a Trait has its frame with room for it, where the cache has one.
+    let trait_template = attached
+        .and(template)
+        .and_then(|t| t.strip_suffix(".webp"))
+        .map(|t| format!("{t}-trait.webp"))
+        .filter(|t| assets.has(t));
+    let template = trait_template.as_deref().or(template);
     let fallback = template.is_none();
     let template_box = shape.template(size);
     let title = title_text(&info.name, assets);
     let mut name_box = shape.name(size);
-    if shifted && size == CardSize::Mini && !shape.landscape {
+    // Beside a count: upstream's "shifted-name" box.
+    if shifted && size != CardSize::Full && !shape.landscape {
         name_box.x = 0.24;
         name_box.w = 0.68;
     }
-    if size == CardSize::Micro
-        && let Some(p) = price
-    {
-        let icons = [
-            p.coins > 0 || (p.potions == 0 && p.debt == 0),
-            p.potions > 0,
-            p.debt > 0,
-        ]
-        .into_iter()
-        .filter(|on| *on)
-        .count() as f32;
-        let start = 0.03 + 0.13 * icons + 0.01;
-        name_box.w -= (start - name_box.x).max(0.0);
-        name_box.x = name_box.x.max(start);
+    if attached.is_some() && !shape.landscape {
+        name_box.y = 0.16;
+        name_box.h = 0.12;
     }
+    if inset && size == CardSize::Micro {
+        name_box = layout::ATTACHED_NAME;
+    }
+    // Upstream prints no cost on a micro card.
+    let price = price.filter(|_| size != CardSize::Micro);
     let fill = match size {
         CardSize::Micro => 0.8,
         CardSize::Full if shape.landscape => 0.9,
@@ -316,7 +360,44 @@ fn draw(
         );
         (rect, line, s)
     });
-    let lines = text::parse(&info.text);
+    let pile_types = pile.filter(|_| size == CardSize::Mini).and_then(|markers| {
+        let rect = shape.pile_types()?;
+        let parts: Vec<&str> = markers.iter().map(String::as_str).collect();
+        if parts.is_empty() {
+            return None;
+        }
+        let line = title_text(&parts.join("/"), assets);
+        let s = fit_line(
+            &line,
+            Font::Title,
+            rect.width_cqw(),
+            rect.height_cqw(ratio),
+            0.6,
+            m,
+        );
+        Some((rect, line, s))
+    });
+    // dominion.games' own lines where the server has them, else the official text wrapped.
+    let online = info
+        .online_text
+        .as_deref()
+        .filter(|t| size == CardSize::Full && !shape.basic && !t.is_empty())
+        .map(|t| {
+            let lines = text::parse_online(t);
+            let rect = shape.online_text();
+            let s = fit::online_size(
+                &lines,
+                rect.width_cqw(),
+                rect.height_cqw(ratio),
+                shape.landscape,
+                m,
+            );
+            (rect, s, lines)
+        });
+    let lines = match online {
+        Some(_) => vec![],
+        None => text::parse(&info.text),
+    };
     let (heirloom, body): (Vec<Line>, Vec<Line>) = lines
         .into_iter()
         .partition(|l| l.kind() == Some(LineKind::Heirloom));
@@ -345,8 +426,18 @@ fn draw(
         _ => None,
     };
     let cost = price.map(|p| (shape.cost(size), p));
-    let production = (size == CardSize::Full && shape.basic && shape.treasure_only)
-        .then_some((info.coins, info.potions));
+    // dominion.games' own list where the server has it, else the basic Treasures'.
+    let production = (size == CardSize::Full)
+        .then(|| match &info.online_production {
+            Some(p) => Some(p.clone()),
+            None if shape.basic && shape.treasure_only => Some(if info.potions > 0 {
+                "P".to_string()
+            } else {
+                info.coins.to_string()
+            }),
+            None => None,
+        })
+        .flatten();
     let symbol =
         (size == CardSize::Full && shape.basic && art.is_none()).then(|| basic_symbol(info));
     let set_icon = (size == CardSize::Full)
@@ -398,6 +489,11 @@ fn draw(
             }
         }
         {name_node(&title, name_box, name_size, light_title)}
+        if let Some(t) = attached {
+            div { class: "dc-attached", style: layout::ATTACHED.css(),
+                CardView { name: t.to_string(), size: CardSize::Micro, inset: true }
+            }
+        }
         if let Some((rect, line, s)) = types {
             div {
                 class: if corner_types { "dc-types dc-corner" } else { "dc-types" },
@@ -405,6 +501,17 @@ fn draw(
                 style: rect.css(),
                 span { style: "font-size:{s:.3}cqw;", "{line}" }
             }
+        }
+        if let Some((rect, line, s)) = pile_types {
+            div {
+                class: "dc-types dc-pile-types",
+                class: if light_title { "dc-light" },
+                style: rect.css(),
+                span { style: "font-size:{s:.3}cqw;", "{line}" }
+            }
+        }
+        if let Some((rect, s, lines)) = online {
+            {online_text_node(rect, s, &lines, shape.landscape, shape.dark_text)}
         }
         if let Some((rect, l)) = text_layout {
             {text_node(rect, &l, shape.dark_text, "dc-text")}
@@ -419,19 +526,19 @@ fn draw(
                 {cost_node(p, info.variable_cost, info.overpay)}
             }
         }
-        if let Some((coins, potions)) = production {
+        if let Some(made) = production {
             for (i, rect) in shape.production().into_iter().enumerate() {
                 div {
                     key: "{i}",
                     class: "dc-cost-box",
                     style: "{rect.css()}font-size:{rect.height_cqw(ratio):.3}cqw;",
-                    if potions > 0 {
+                    if made == "P" {
                         span { class: "dc-cost",
                             span { class: "dc-i dc-potion" }
                         }
                     } else {
                         span { class: "dc-cost",
-                            span { class: "dc-i dc-coin", "{coins}" }
+                            span { class: "dc-i dc-coin", "{made}" }
                         }
                     }
                 }
@@ -519,6 +626,108 @@ fn text_node(rect: Rect, l: &fit::TextLayout, dark: bool, class: &str) -> Elemen
     }
 }
 
+/// dominion.games' own lines, drawn as its TextLayer draws them: centred, one block per
+/// piece, each line unbroken.
+fn online_text_node(
+    rect: Rect,
+    size: f32,
+    lines: &[Line],
+    landscape: bool,
+    light: bool,
+) -> Element {
+    let (separator, gap) = fit::online_spacing(landscape);
+    rsx! {
+        div { class: "dc-ol", class: if light { "dc-light" }, style: rect.css(),
+            div { class: "dc-ol-lines", style: "font-size:{size:.3}cqw;",
+                for (i, line) in lines.iter().enumerate() {
+                    match line {
+                        Line::Separator => rsx! {
+                            div {
+                                key: "{i}",
+                                class: "dc-ol-line dc-ol-sep",
+                                style: "height:{0.2 * separator:.3}em;margin:{0.5 * separator:.3}em 0 {0.3 * separator:.3}em;",
+                            }
+                        },
+                        Line::Gap => rsx! {
+                            div { key: "{i}", class: "dc-ol-line", style: "height:{gap}em;" }
+                        },
+                        Line::Text { kind, pieces } => rsx! {
+                            div { key: "{i}", class: "dc-ol-line {online_line_class(*kind)}",
+                                for p in pieces.iter() {
+                                    {online_block(p)}
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn online_line_class(kind: LineKind) -> &'static str {
+    match kind {
+        LineKind::Normal => "",
+        LineKind::Bonus => "dc-ol-bold",
+        LineKind::Huge => "dc-ol-huge",
+        LineKind::Italic => "dc-ol-italic",
+        LineKind::Heirloom => "dc-ol-heirloom",
+    }
+}
+
+fn online_block(p: &Piece) -> Element {
+    let (left, right) = text::block_margins(p);
+    let margins = match (left, right) {
+        (true, true) => "",
+        (false, true) => "dc-nl",
+        (true, false) => "dc-nr",
+        (false, false) => "dc-nl dc-nr",
+    };
+    let n = |v: &Option<u32>| v.map(|v| v.to_string()).unwrap_or_default();
+    match p {
+        Piece::Text(t, style) => {
+            let style = match style {
+                Style::Normal => "",
+                Style::Bold => "dc-b",
+                Style::Italic => "dc-it",
+            };
+            rsx! { span { class: "dc-ol-block {margins} {style}", "{t}" } }
+        }
+        Piece::Coin(v) => rsx! {
+            span { class: "dc-ol-block {margins}",
+                span { class: "dc-ol-cost",
+                    span { class: "dc-i dc-coin", "{n(v)}" }
+                }
+            }
+        },
+        Piece::Debt(v) => rsx! {
+            span { class: "dc-ol-block {margins}",
+                span { class: "dc-ol-cost",
+                    span { class: "dc-i dc-debt", "{n(v)}" }
+                }
+            }
+        },
+        Piece::Potion => rsx! {
+            span { class: "dc-ol-block {margins}",
+                span { class: "dc-ol-cost",
+                    span { class: "dc-i dc-potion" }
+                }
+            }
+        },
+        Piece::Vp(v) => rsx! {
+            span { class: "dc-ol-vp",
+                span { class: "dc-ol-vp-n",
+                    if let Some(v) = v {
+                        "{v}"
+                    }
+                }
+                span { class: "dc-i dc-shield" }
+            }
+        },
+        Piece::Sun => rsx! { span { class: "dc-i dc-sun" } },
+    }
+}
+
 fn row_class(kind: Option<LineKind>) -> &'static str {
     match kind {
         Some(LineKind::Bonus) => "dc-bonus",
@@ -545,8 +754,8 @@ fn piece_node(p: &Piece) -> Element {
         Piece::Sun => rsx! { span { class: "dc-i dc-sun" } },
         Piece::Vp(v) => rsx! {
             span { class: "dc-vp",
-                if v.is_some() {
-                    span { class: "dc-vp-n", "{n(v)}" }
+                if let Some(v) = v {
+                    span { class: "dc-vp-n", "{v}" }
                 }
                 span { class: "dc-i dc-shield" }
             }
@@ -556,12 +765,36 @@ fn piece_node(p: &Piece) -> Element {
 
 #[cfg(test)]
 mod tests {
-    use super::set_slug;
+    use super::{Price, price, set_slug};
+    use dominion_protocol::{Cost, api::CardCost};
 
     #[test]
     fn set_names_become_icon_slugs() {
         assert_eq!(set_slug("Dark Ages"), "dark-ages");
         assert_eq!(set_slug("Cornucopia & Guilds"), "cornucopia-guilds");
         assert_eq!(set_slug("Base"), "base");
+    }
+
+    #[test]
+    fn only_a_card_with_a_printed_cost_shows_one() {
+        let zero = Cost {
+            coins: 0,
+            potions: 0,
+            debt: 0,
+        };
+        assert_eq!(price(Some(zero.clone()), None), None);
+        assert_eq!(price(None, None), None);
+        let printed = CardCost {
+            coins: 5,
+            potions: 0,
+            debt: 0,
+        };
+        let shown = |coins| Price {
+            coins,
+            potions: 0,
+            debt: 0,
+        };
+        assert_eq!(price(None, Some(printed)), Some(shown(5)));
+        assert_eq!(price(Some(zero), Some(printed)), Some(shown(0)));
     }
 }

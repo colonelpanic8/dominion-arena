@@ -544,6 +544,20 @@ impl<'a> PileView<'a> {
         self.pile.cards.len()
     }
 
+    /// Its cards' names, top first, where anyone may look through it: every pile but a
+    /// face-down or shuffled one (Knights, Ruins). Never their ids.
+    pub fn names(&self) -> Option<Vec<Card>> {
+        let shuffled = self
+            .pile
+            .structure
+            .as_ref()
+            .is_some_and(|s| s.kind == crate::PileKind::Shuffled);
+        (!self.pile.hidden && !shuffled).then(|| {
+            let g = self.game;
+            self.pile.cards.iter().rev().map(|&id| g.card(id)).collect()
+        })
+    }
+
     /// Its top card, unless the pile is face down.
     pub fn top(&self) -> Option<CardId> {
         self.pile

@@ -150,7 +150,8 @@ impl Session {
             if meta.undo != dominion_protocol::lobby::UndoRule::Off {
                 return Err("official lifecycle requires Arena's undo-off policy".into());
             }
-            profile::check_supported(config, meta, &host.catalog).map_err(|e| e.to_string())
+            profile::check_supported(config, meta, &host.catalog, host.unreviewed_cards)
+                .map_err(|e| e.to_string())
         });
         let check = self.arena.check_starts(&ident, check);
         let attendance = self.arena.attend(&ident);
@@ -281,8 +282,13 @@ impl Session {
                                 return Err("official lifecycle requires Arena's undo-off policy"
                                     .to_string());
                             }
-                            profile::check_supported(config, meta, &self.host.catalog)
-                                .map_err(|e| e.to_string())
+                            profile::check_supported(
+                                config,
+                                meta,
+                                &self.host.catalog,
+                                self.host.unreviewed_cards,
+                            )
+                            .map_err(|e| e.to_string())
                         })
                         .map_err(|_| Failure(1008, "game unavailable"))?;
                 if let Err(error) = supported {

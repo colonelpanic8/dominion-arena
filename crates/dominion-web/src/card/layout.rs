@@ -28,6 +28,13 @@ const fn r(x: f32, y: f32, w: f32, h: f32) -> Rect {
     Rect { x, y, w, h }
 }
 
+/// A pile's Trait, drawn as a micro card across the top of its mini card.
+pub const ATTACHED: Rect = r(0.22, 0.03, 0.72, 0.14);
+/// That micro card's name, filling it.
+pub const ATTACHED_NAME: Rect = r(0.03, 0.2, 0.94, 0.8);
+/// The card of the pile a mini landscape names (a Trait's, Obelisk's), drawn on it.
+pub const LANDSCAPE_PILE: Rect = r(0.6, 0.177, 0.3, 0.446);
+
 impl Rect {
     pub fn css(&self) -> String {
         format!(
@@ -122,7 +129,7 @@ impl Shape {
             CardSize::Full => r(0.09, 0.049, 0.82, 0.082),
             CardSize::Mini if self.landscape => r(0.09, 0.72, 0.82, 0.24),
             CardSize::Mini => r(0.09, 0.06, 0.82, 0.145),
-            CardSize::Micro => r(0.17, 0.2, 0.76, 0.6),
+            CardSize::Micro => r(0.09, 0.23, 0.82, 0.775),
         }
     }
 
@@ -131,12 +138,18 @@ impl Shape {
     pub fn types(&self, size: CardSize) -> Option<Rect> {
         match size {
             CardSize::Full if self.landscape => Some(r(0.848, 0.103, 0.124, 0.056)),
-            CardSize::Mini if self.landscape => Some(r(0.32, 0.036, 0.36, 0.072)),
+            CardSize::Mini if self.landscape => Some(r(0.306, 0.021, 0.396, 0.122)),
             CardSize::Full if self.basic && self.treasure_only => Some(r(0.21, 0.85, 0.64, 0.097)),
             CardSize::Full if self.basic => Some(r(0.21, 0.86, 0.64, 0.097)),
             CardSize::Full => Some(r(0.21, 0.88, 0.64, 0.068)),
             _ => None,
         }
+    }
+
+    /// A Supply pile's markers and types on its mini card: upstream's types layer, under
+    /// the art between the cost and the right edge.
+    pub fn pile_types(&self) -> Option<Rect> {
+        (!self.landscape).then(|| r(0.169, 0.844, 0.716, 0.143))
     }
 
     /// Centred on the parchment between the art and the type banner (upstream's box is
@@ -150,6 +163,17 @@ impl Shape {
             Some(r(0.1, 0.54, 0.795, 0.27))
         } else {
             Some(r(0.1, 0.54, 0.795, 0.31))
+        }
+    }
+
+    /// dominion.games' text box (`getCardTextBbox`), for its own lines.
+    pub fn online_text(&self) -> Rect {
+        if self.landscape {
+            r(0.09, 0.72, 0.815, 0.21)
+        } else if self.heirloom {
+            r(0.1, 0.55, 0.795, 0.27)
+        } else {
+            r(0.1, 0.55, 0.795, 0.31)
         }
     }
 
@@ -185,9 +209,9 @@ impl Shape {
         if self.landscape {
             r(0.925, 0.72, 0.03, 0.03 / LANDSCAPE_RATIO)
         } else {
-            // On the flat end of the type banner, clear of its curl.
-            let s = 0.039;
-            r(0.865, 0.89, s * FULL_RATIO, s)
+            // Upstream's icon layer: 8px square at (125, 196) on a 140 x 220.5 card.
+            let s = 0.0363;
+            r(0.894, 0.889, s * FULL_RATIO, s)
         }
     }
 }

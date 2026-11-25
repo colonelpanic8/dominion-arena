@@ -114,7 +114,15 @@ pub fn Tab(
     #[props(default)] art: Option<String>,
     #[props(default)] anchor: Option<String>,
     #[props(default)] z: i32,
+    /// The count before the title, as on dominion.games' trash; a mat's follows it.
+    #[props(default)]
+    count_first: bool,
 ) -> Element {
+    // One line, shrunk to fit beside the count as dominion.games fits it.
+    let vh = at.h / 4.0;
+    let room = (at.w - 4.4 * vh).max(vh);
+    let chars = label.chars().count().max(1) as f64;
+    let label_px = (2.4 * vh).min(room / (0.62 * chars));
     let ctx = use_table();
     let p_hover = popup.clone();
     let p_click = popup.clone();
@@ -139,8 +147,8 @@ pub fn Tab(
             if let Some(a) = art {
                 div { class: "dt-tab-art", style: "background-image:var(--dt-{a});" }
             }
-            span { class: "dt-tab-label", "{label}" }
-            span { class: "dt-tab-n", "{count}" }
+            span { class: "dt-tab-label", style: "font-size:{label_px:.1}px;", "{label}" }
+            span { class: "dt-tab-n", class: if count_first { "dt-tab-n-first" }, "{count}" }
         }
     }
 }
@@ -171,6 +179,7 @@ fn TrashTab(board: Rc<Board>, g: Rc<Geometry>) -> Element {
             popup,
             art: "trash-mat".to_string(),
             anchor: "trash".to_string(),
+            count_first: true,
         }
     }
 }
@@ -181,6 +190,21 @@ pub fn pile_anchor(at: crate::game::board::PileAt) -> String {
         crate::game::board::PileAt::Supply(i) => format!("pile:s{i}"),
         crate::game::board::PileAt::NonSupply(i) => format!("pile:n{i}"),
     }
+}
+
+/// What a pile's mini card prints under its art: its markers, then the types
+/// dominion.games shows on piles of the card the pile is named after.
+fn pile_line(pile: &PileEntry, cards: &crate::cards::CardDb) -> Vec<String> {
+    let shown = cards.get(&pile.name).into_iter().flat_map(|c| &c.types);
+    pile.markers
+        .iter()
+        .map(|m| m.name().to_string())
+        .chain(
+            shown
+                .filter(|t| dominion_protocol::TYPES_SHOWN_ON_PILE.contains(&t.as_str()))
+                .cloned(),
+        )
+        .collect()
 }
 
 #[component]
@@ -194,13 +218,22 @@ fn Pile(
     let cards = use_cards();
     let printed = cards.get(&pile.card).and_then(|c| c.cost);
     let cost = pile.cost.clone().filter(|c| {
-        printed.is_none_or(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
+        printed.is_some_and(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
     });
     let mark = mark_at(&ui, &sel, Spot::Pile(pile.at));
     let changed = cost.is_some();
     let inspect_pile = !pile.hidden && cards.pile_members(&pile.name).len() > 1;
-    let split = inspect_pile && size == CardSize::Mini && pile.count > 1;
-    let plus = mark.target.is_some() && size != CardSize::Full;
+    let split = pile.shadowed && size == CardSize::Mini;
+    // Shrunk to leave the back room, as dominion.games does.
+    let at = if split {
+        Rect::new(at.x, at.y, at.w * 0.95, at.h * 0.95)
+    } else {
+        at
+    };
+    let waiting = ui
+        .as_ref()
+        .is_some_and(|u| crate::game::wording::treasures_first(&u.decision));
+    let plus = mark.target.is_some() && size != CardSize::Full && !waiting;
     rsx! {
         TableCard {
             name: pile.card.clone(),
@@ -215,6 +248,8 @@ fn Pile(
             at,
             plus,
             split,
+            pile: pile_line(&pile, &cards),
+            attached: pile.attached.clone(),
             inspect_pile,
             class: format!(
                 "dt-pile{}{}{}",
@@ -231,7 +266,7 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
     let cards = use_cards();
     let printed = cards.get(&entry.card).and_then(|c| c.cost);
     let cost = entry.cost.clone().filter(|c| {
-        printed.is_none_or(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
+        printed.is_some_and(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
     });
     let mark = mark_at(&ui, &sel, Spot::Landscape(entry.card.clone()));
     let plus = mark.target.is_some();
@@ -244,6 +279,7 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
             plus,
             badges: entry.badges.clone(),
             cubes: entry.owners.iter().map(|w| (w.seat, w.name.clone())).collect::<Vec<_>>(),
+            holds: entry.pile.as_ref().map(|p| (p.name.clone(), p.cost.clone())),
             class: "dt-landscape dt-kind-{entry.kind}",
             at,
         }

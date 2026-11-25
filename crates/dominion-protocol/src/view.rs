@@ -299,6 +299,85 @@ pub struct PileStructure {
     pub sample_size: Option<u32>,
 }
 
+impl PileStructure {
+    /// dominion.games' marker for a pile of different cards: Mixed for a shuffled one,
+    /// Split for a stack of two. Others (Castles, Allies' rotating piles) are told
+    /// apart by a type their cards show on the pile instead.
+    pub fn marker(&self) -> Option<PileMarker> {
+        pile_marker(self.kind, self.cards.len())
+    }
+
+    /// Whether the `count` cards left differ, as far as the recipe tells: dominion.games
+    /// draws a back under such a pile, but not under a shuffled one.
+    pub fn shadowed(&self, count: u32) -> bool {
+        match self.kind {
+            PileKind::Shuffled => false,
+            PileKind::Rotating => self.cards.len() > 1 && count > 1,
+            // Taken from the top: what is left is the recipe's last `count` cards.
+            PileKind::Stacked => {
+                let mut left = count;
+                let groups = self
+                    .cards
+                    .iter()
+                    .rev()
+                    .take_while(|g| {
+                        let more = left > 0;
+                        left = left.saturating_sub(g.count);
+                        more
+                    })
+                    .count();
+                groups > 1
+            }
+        }
+    }
+}
+
+/// What dominion.games prints on a Supply pile besides the types its cards show there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PileMarker {
+    Bane,
+    Obelisk,
+    Split,
+    Mixed,
+    Ferryman,
+}
+
+impl PileMarker {
+    pub fn name(self) -> &'static str {
+        match self {
+            PileMarker::Bane => "Bane",
+            PileMarker::Obelisk => "Obelisk",
+            PileMarker::Split => "Split",
+            PileMarker::Mixed => "Mixed",
+            PileMarker::Ferryman => "Ferryman",
+        }
+    }
+}
+
+/// [`PileStructure::marker`] for a pile of `kind` made of `groups` groups of cards.
+pub fn pile_marker(kind: PileKind, groups: usize) -> Option<PileMarker> {
+    match kind {
+        PileKind::Shuffled => Some(PileMarker::Mixed),
+        PileKind::Stacked if groups == 2 => Some(PileMarker::Split),
+        _ => None,
+    }
+}
+
+/// Types dominion.games prints on a Supply pile's card, after its markers: those its
+/// colours don't already tell.
+pub const TYPES_SHOWN_ON_PILE: [&str; 10] = [
+    "Attack",
+    "Castle",
+    "Command",
+    "Liaison",
+    "Augur",
+    "Clash",
+    "Fort",
+    "Odyssey",
+    "Townsfolk",
+    "Wizard",
+];
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PileView {
@@ -509,4 +588,31 @@ pub struct GlossaryEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<Cost>,
     pub text: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stacked_pile_is_shadowed_while_more_than_one_card_name_is_left() {
+        let group = |card: &str| PileGroup {
+            card: card.into(),
+            count: 5,
+        };
+        let split = PileStructure {
+            kind: PileKind::Stacked,
+            cards: vec![group("Settlers"), group("Bustling Village")],
+            sample_size: None,
+        };
+        assert!(split.shadowed(10));
+        assert!(split.shadowed(6));
+        assert!(!split.shadowed(5));
+        assert!(!split.shadowed(0));
+        let mixed = PileStructure {
+            kind: PileKind::Shuffled,
+            ..split
+        };
+        assert!(!mixed.shadowed(10));
+    }
 }

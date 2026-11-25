@@ -30,13 +30,12 @@ fn zone_popup(title: String, z: &Zone, note: Option<String>) -> Popup {
 
 /// A player's name bar: name, VP, and under them their tokens and held landscapes.
 #[component]
-fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element {
+fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usize) -> Element {
     let ctx = use_table();
     let assets = use_assets();
     let p = &player;
     let seat = p.seat;
     let reminders: Vec<String> = p.states.iter().chain(&p.artifacts).cloned().collect();
-    let cubes = p.projects.clone();
     let cube = assets.file_url(&cube_icon(seat));
     let account = p.account.clone();
     let away = account.as_ref().is_some_and(|a| !a.connected);
@@ -65,13 +64,13 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 }
             },
             div { class: "dt-bar-top",
+                span { class: "dt-pname", style: "font-size:{name_px:.1}px;", "{p.name}" }
                 if let Some(a) = &account {
                     span {
                         class: if a.connected { "dt-conn dt-conn-on" } else { "dt-conn" },
                         title: "{a.title()}",
                     }
                 }
-                span { class: "dt-pname", style: "font-size:{name_px:.1}px;", "{p.name}" }
                 if let Some(c) = &clock {
                     span {
                         class: "dt-clock",
@@ -90,12 +89,12 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 }
             }
             div { class: "dt-bar-bottom",
-                Badges { badges: p.badges.clone() }
-                for c in cubes.iter() {
-                    span { key: "{c}", class: "dt-bar-cube", title: "{c}",
+                for i in 0..cubes {
+                    span { key: "cube{i}", class: "dt-bar-cube", title: "{p.name}'s Project cube",
                         if let Some(src) = cube.clone() { img { src, alt: "", draggable: "false" } }
                     }
                 }
+                Badges { badges: p.badges.clone() }
                 for c in reminders.iter() {
                     Reminder { key: "r{c}", name: c.clone() }
                 }
@@ -208,7 +207,8 @@ pub fn RatingsWindow(board: Rc<Board>) -> Element {
     }
 }
 
-/// A player's mats, set-aside cards and (off their turn) cards in play, as tabs.
+/// A player's mats, set-aside cards and (off their turn) cards in play, as tabs, titled
+/// as dominion.games titles them: Native Village's and Island's mats are "Set Aside".
 fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Option<String>)> {
     let mut out = vec![];
     if show_in_play && p.in_play.count > 0 {
@@ -222,12 +222,15 @@ fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Optio
     }
     for z in &p.zones {
         if z.zone.count > 0 {
-            let art = match z.key.as_str() {
-                "tavern" => Some("tavern-mat".to_string()),
-                "exile" => Some("exile-mat".to_string()),
-                _ => None,
+            let (label, art) = match z.key.as_str() {
+                "tavern" => (z.label.clone(), Some("tavern-mat".to_string())),
+                "exile" => (z.label.clone(), Some("exile-mat".to_string())),
+                "nativeVillage" => ("Set Aside (Native Village)".to_string(), None),
+                "island" => ("Set Aside (Island)".to_string(), None),
+                "setAside" => ("Set Aside".to_string(), None),
+                _ => (z.label.clone(), None),
             };
-            out.push((z.key.clone(), z.label.clone(), z.zone.clone(), art));
+            out.push((z.key.clone(), label, z.zone.clone(), art));
         }
     }
     out
@@ -267,7 +270,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
     let them = active.and_then(|s| b.others().iter().find(|o| o.seat == s).cloned());
     rsx! {
         for (o, r) in b.others().iter().zip(g.opponent_bars.iter()) {
-            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active }
+            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active, cubes: b.project_cubes() }
         }
         if let Some(o) = them {
             {
@@ -800,7 +803,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     let click_answers = ui.as_ref().is_some_and(|u| u.click_answers);
     let ctx = use_table();
     rsx! {
-        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false }
+        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false, cubes: board.project_cubes() }
         if you.discard.count > 0 {
             TableCard {
                 name: you.discard_top.clone().unwrap_or_default(),

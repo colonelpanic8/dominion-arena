@@ -56,6 +56,8 @@ fn recorded(source: &str) -> Reducer {
             cards,
             enums: Default::default(),
             labels,
+            texts: Default::default(),
+            productions: Default::default(),
         }),
         42,
     );

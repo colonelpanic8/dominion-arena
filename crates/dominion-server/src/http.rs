@@ -64,6 +64,7 @@ pub fn router(
         origin: public.map(|u| Arc::new(u.to_ascii_lowercase())),
         official_server: options.official_server.clone(),
         native_web_dir: options.web_dir.clone(),
+        online_cards: options.online_cards.clone(),
     };
     let api = Router::new()
         .route("/cards", get(cards))
@@ -357,7 +358,7 @@ async fn official_socket(
     let seat = api.seat(&id, &headers, None, query.seat)?;
     api.hub
         .admission(&id, |config, meta| {
-            profile::check_supported(config, meta, &host.catalog)
+            profile::check_supported(config, meta, &host.catalog, host.unreviewed_cards)
         })?
         .map_err(|error| Error::new(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
     let context = context(&api.arena, &seat, &host)
@@ -542,6 +543,7 @@ struct Api {
     origin: Option<Arc<String>>,
     official_server: Option<Arc<crate::official_host::Host>>,
     native_web_dir: Option<std::path::PathBuf>,
+    online_cards: Arc<crate::online::OnlineCards>,
 }
 
 pub(crate) struct Error {
@@ -798,7 +800,7 @@ fn kind_name(kind: Kind) -> &'static str {
     }
 }
 
-fn card_info(card: Card) -> CardInfo {
+fn card_info(card: Card, online: &crate::online::OnlineCards) -> CardInfo {
     let d = card.def();
     CardInfo {
         name: d.name.into(),
@@ -820,11 +822,18 @@ fn card_info(card: Card) -> CardInfo {
         removed: d.removed,
         pile: d.pile.map(|p| p.name().into()),
         text: d.text.into(),
+        online_text: online.texts.get(card.name()).cloned(),
+        online_production: online.productions.get(card.name()).cloned(),
     }
 }
 
-async fn cards() -> axum::Json<Vec<CardInfo>> {
-    axum::Json(Card::ALL.iter().map(|&c| card_info(c)).collect())
+async fn cards(State(api): State<Api>) -> axum::Json<Vec<CardInfo>> {
+    axum::Json(
+        Card::ALL
+            .iter()
+            .map(|&c| card_info(c, &api.online_cards))
+            .collect(),
+    )
 }
 
 fn web_settings(api: &Api, ident: Option<&Ident>) -> WebSettings {

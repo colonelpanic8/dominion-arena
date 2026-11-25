@@ -47,6 +47,12 @@ web-build:
     cp -r target/dx/dominion-web/release/web/public {{web_out}}
     echo "web client: {{web_out}}"
 
+# Score our table against dominion.games' own 2.3.7 client on the same games
+# (tools/parity/README.md): builds the server and web client, then runs every scenario.
+parity *args: web-build
+    cargo build -p dominion-server --bin dominion
+    nix develop .#parity -c node tools/parity/run.mjs {{args}}
+
 # Build the web client and serve it: dominion serve --web-dir target/web-client [args].
 web-serve *args: web-build
     cargo run --release -p dominion-server -- serve --web-dir {{web_out}} {{args}}

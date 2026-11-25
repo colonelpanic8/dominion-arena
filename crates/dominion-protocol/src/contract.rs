@@ -23,6 +23,7 @@ pub const OTHER_ZONES: [&str; 6] = [
 /// placed with.
 pub const COMMON_ZONES: [&str; 6] = ["hand", "deck", "discard", "inPlay", "pile", "trash"];
 
+/// Only an Event or a Project, which are bought, has a `cost`.
 pub const LANDSCAPE_KINDS: [&str; 9] = [
     "event", "landmark", "project", "way", "ally", "trait", "prophecy", "study", "other",
 ];
@@ -139,6 +140,9 @@ pub fn violations(view: &AgentView, table: Option<&TableExtras>) -> Vec<String> 
     for l in &view.landscapes {
         if !LANDSCAPE_KINDS.contains(&l.kind.as_str()) {
             out.push(format!("{} is a landscape of kind {:?}", l.card, l.kind));
+        }
+        if l.cost.is_some() && !matches!(l.kind.as_str(), "event" | "project" | "other") {
+            out.push(format!("{} is a {} with a cost", l.card, l.kind));
         }
     }
     for e in &view.since_last_decision {

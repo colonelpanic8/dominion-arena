@@ -76,6 +76,8 @@ pub struct Options {
     /// The official accounts kept connected.
     pub online: Vec<online::Hosted>,
     pub official_server: Option<Arc<official_host::Host>>,
+    /// What dominion.games draws on each card, by name ([`online::online_cards`]).
+    pub online_cards: Arc<online::OnlineCards>,
 }
 
 impl Default for Options {
@@ -93,6 +95,7 @@ impl Default for Options {
             control_socket: None,
             online: Vec::new(),
             official_server: None,
+            online_cards: Default::default(),
         }
     }
 }

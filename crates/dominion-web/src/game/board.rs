@@ -8,7 +8,8 @@ use crate::rating::SeatRating;
 use dominion_protocol::api::{InPlay, TableExtras};
 use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
-    AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, SetupRole, ZoneView,
+    AgentView, CardCount, Cost, DeckView, PileMarker, PileView, PlayerView, ResultPlayer,
+    SetupRole, ZoneView,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
@@ -57,6 +58,15 @@ impl Board {
         self.you
             .as_ref()
             .or_else(|| self.opponents.first().filter(|_| self.watching))
+    }
+
+    /// The Project cubes a player bar shows: dominion.games draws one per Project in the
+    /// game, at most two, whoever has bought them.
+    pub fn project_cubes(&self) -> usize {
+        (self.landscapes.iter())
+            .filter(|l| l.kind == "project")
+            .count()
+            .min(2)
     }
 
     /// The players drawn as opponents: everyone but [`Board::front`].
@@ -182,6 +192,12 @@ pub struct PileEntry {
     pub hidden: bool,
     pub types: Vec<String>,
     pub badges: Vec<Badge>,
+    /// What dominion.games prints on the pile's card (Bane, Split, ...), in its order.
+    pub markers: Vec<PileMarker>,
+    /// The Trait on it, drawn across its top.
+    pub attached: Option<String>,
+    /// Holding different cards one can look through: a back shows under it.
+    pub shadowed: bool,
 }
 
 /// A token, Trait or counter shown on a pile, player or landscape.
@@ -206,6 +222,8 @@ pub struct LandscapeEntry {
     pub types: Vec<String>,
     pub badges: Vec<Badge>,
     pub owners: Vec<Who>,
+    /// The pile it names (a Trait's, Obelisk's), whose card is drawn on it.
+    pub pile: Option<Box<PileEntry>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -649,15 +667,6 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> Pi
             card: None,
         });
     }
-    for tr in &p.traits {
-        badges.push(Badge {
-            kind: "trait".into(),
-            text: format!("Trait: {tr}"),
-            count: None,
-            player: None,
-            card: Some(tr.clone()),
-        });
-    }
     PileEntry {
         at,
         name: p.card.clone(),
@@ -673,6 +682,14 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> Pi
         hidden: p.hidden,
         types: p.types.clone(),
         badges,
+        markers: p
+            .structure
+            .as_ref()
+            .and_then(|s| s.marker())
+            .into_iter()
+            .collect(),
+        attached: p.traits.first().cloned(),
+        shadowed: p.structure.as_ref().is_some_and(|s| s.shadowed(p.count)),
     }
 }
 
@@ -858,7 +875,26 @@ fn note_badge(
         .chain(non_supply.iter_mut())
         .find(|p| p.name == on)
     {
-        p.badges.push(b);
+        let marker = match (n.setup, n.source.as_str()) {
+            (Some(SetupRole::Bane), _) => Some(PileMarker::Bane),
+            (_, "Obelisk") if n.pile.is_some() => Some(PileMarker::Obelisk),
+            _ => None,
+        };
+        match marker {
+            // The marker says it, and Obelisk's card shows the pile.
+            Some(m) => {
+                if !p.markers.contains(&m) {
+                    p.markers.push(m);
+                    p.markers.sort();
+                }
+                if m == PileMarker::Obelisk
+                    && let Some(l) = landscapes.iter_mut().find(|l| l.card == n.source)
+                {
+                    l.pile = Some(Box::new(p.clone()));
+                }
+            }
+            None => p.badges.push(b),
+        }
     } else if let Some(l) = landscapes.iter_mut().find(|l| l.card == on) {
         l.badges.push(b);
     }
@@ -1006,6 +1042,7 @@ pub fn board(
                 types: l.types.clone(),
                 badges,
                 owners: l.owners.iter().map(|&p| names.who(p)).collect(),
+                pile: None,
             }
         })
         .collect();
@@ -1042,6 +1079,13 @@ pub fn board(
         .map(|(i, p)| pile_entry(PileAt::NonSupply(i), p, &names, cards))
         .collect();
     let mut landscapes: Vec<LandscapeEntry> = landscapes;
+    for p in basic.iter().chain(&kingdom).chain(&non_supply) {
+        if let Some(l) =
+            (p.attached.as_ref()).and_then(|t| landscapes.iter_mut().find(|l| &l.card == t))
+        {
+            l.pile = Some(Box::new(p.clone()));
+        }
+    }
     for n in &view.notes {
         note_badge(
             n,
