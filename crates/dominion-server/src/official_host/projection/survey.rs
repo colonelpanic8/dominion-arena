@@ -103,9 +103,22 @@ fn catalog() -> &'static WireCatalog {
     C.get_or_init(super::tests::catalog)
 }
 
+fn and_type() -> i32 {
+    catalog().symbol("QuestionTypes", "COMPLEX_AND").unwrap()
+}
+
 /// A random legal wire answer: indices for each leaf down a random path.
 fn wire_answer(q: &Question, rng: &mut Rng) -> Option<Vec<i32>> {
     match &q.kind {
+        QuestionKind::Complex(children) if q.description.question_type == and_type() => {
+            let mut a = vec![];
+            for child in children {
+                let values = wire_answer(child, rng)?;
+                a.push(values.len() as i32);
+                a.extend(values);
+            }
+            Some(a)
+        }
         QuestionKind::Complex(children) => {
             let i = rng.below(children.len());
             let mut a = vec![i as i32];
@@ -141,7 +154,11 @@ fn engine_answer(game: &Game, card: Card, rng: &mut Rng) -> Response {
         DecisionKind::Turn { moves, .. } => {
             let preferred: Vec<_> = moves
                 .iter()
-                .filter(|m| matches!(m, Move::Play(id) if game.card(*id) == card))
+                .filter(|m| match m {
+                    Move::Play(id) => game.card(*id) == card,
+                    Move::BuyLandscape(l) => *l == card,
+                    _ => false,
+                })
                 .collect();
             if !preferred.is_empty() && rng.below(4) != 0 {
                 return Response::Move(*preferred[rng.below(preferred.len())]);
@@ -220,7 +237,7 @@ fn deal(game: Game, card: Card) -> Game {
     serde_json::from_value(state).unwrap_or(game)
 }
 
-fn survey_card(card: Card, seeds: u64) -> (u32, Vec<String>) {
+pub(super) fn survey_card(card: Card, seeds: u64) -> (u32, Vec<String>) {
     let mut decisions = 0;
     let mut errors = vec![];
     for seed in 0..seeds {

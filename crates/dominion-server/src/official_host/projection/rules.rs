@@ -248,6 +248,23 @@ fn hex(bytes: &[u8]) -> String {
 /// Enumerate individual options, legal boundary selections and non-palindromic order.
 fn answers(q: &Question) -> Vec<Vec<i32>> {
     match &q.kind {
+        QuestionKind::Complex(children)
+            if q.description.question_type
+                == catalog().symbol("QuestionTypes", "COMPLEX_AND").unwrap() =>
+        {
+            children.iter().fold(vec![vec![]], |acc, child| {
+                acc.iter()
+                    .flat_map(|prefix| {
+                        answers(child).into_iter().map(move |a| {
+                            let mut v = prefix.clone();
+                            v.push(a.len() as i32);
+                            v.extend(a);
+                            v
+                        })
+                    })
+                    .collect()
+            })
+        }
         QuestionKind::Complex(children) => children
             .iter()
             .enumerate()
@@ -1436,3 +1453,6 @@ fn bustling_village_takes_actual_settlers_from_discard() {
         std::fs::write(path, serde_json::to_vec_pretty(&vec![case]).unwrap()).unwrap();
     }
 }
+
+#[path = "rules_empires_renaissance_menagerie.rs"]
+mod empires_renaissance_menagerie;
