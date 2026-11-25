@@ -59,6 +59,7 @@ impl SetRules for Rules {
             }
             (Card::BorderVillage, Hook::Ability(GAINED)) => {
                 let cost = g.cost_of(f.this());
+                f.choice_cost = Some(cost);
                 gain_where(g, f, input, Dest::Discard, |_, c| c.less_than(cost))
             }
             (Card::Farmland, Hook::Ability(GAINED)) => farmland(g, f, input),
@@ -185,6 +186,7 @@ impl SetRules for Rules {
                     f.s.cost = g.cost_of(card);
                 }
                 let limit = f.s.cost;
+                f.choice_cost = Some(limit);
                 gain_where(g, f, input, Dest::Discard, |t, c| {
                     c.less_than(limit) && !t.intersects(Types::VICTORY)
                 })
@@ -718,6 +720,7 @@ fn farmland(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         2 => {
             let exact = g.cost_of(f.s.pick.expect("set in step 1")).plus_coins(2);
+            f.choice_cost = Some(exact);
             let piles: Vec<PileId> = g
                 .supply_piles_where(|_, c| c == exact)
                 .into_iter()
@@ -1008,6 +1011,7 @@ fn wheelwright(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         _ => {
             f.pc -= 2;
             let limit = g.cost_of(f.s.pick.expect("set in step 1"));
+            f.choice_cost = Some(limit);
             let flow = gain_where(g, f, input, Dest::Discard, |t, c| {
                 c.at_most(limit) && t.intersects(Types::ACTION)
             });
@@ -1181,6 +1185,7 @@ fn oracle(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 2;
+            f.choice_subject = Some(q);
             f.ask_yes_or(
                 Purpose::Discard,
                 format!("Discard {} {}", whose(f.player, q), names(g, &f.s.cards)),

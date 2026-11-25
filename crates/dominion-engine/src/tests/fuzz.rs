@@ -2123,11 +2123,18 @@ fn check_views(g: &Game, flags: &mut Flags) {
     for v in 0..g.num_players() {
         let v = PlayerId(v as u8);
         let view = g.view(v);
-        let offered: Vec<CardId> = g
+        let mut offered: Vec<CardId> = g
             .pending()
             .filter(|d| d.player == v)
             .map(offered_cards)
             .unwrap_or_default();
+        // A trigger's own card, to the player choosing among their triggers.
+        offered.extend(
+            view.pending_triggers()
+                .iter()
+                .filter(|t| t.owner == v)
+                .filter_map(|t| t.source),
+        );
         if view.pending().is_some() != g.pending().is_some_and(|d| d.player == v) {
             flags.bug("view-shows-another-player's-decision", || ctx(g));
         }

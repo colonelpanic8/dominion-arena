@@ -692,6 +692,7 @@ fn overpaid(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                         return Flow::done();
                     }
                     f.pc = 1;
+                    f.choice_cost = Some(exact);
                     f.ask_pile(piles, false, Purpose::Gain)
                 }
                 _ => {
@@ -747,6 +748,7 @@ fn advisor(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             }
             f.pc = 2;
             let left = g.left_of(f.player);
+            f.choice_subject = Some(f.player);
             f.ask_cards_for(left, f.s.cards.clone(), 1, 1, Purpose::Discard)
         }
         2 => {
@@ -789,6 +791,7 @@ fn butcher(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 3;
+            f.choice_cost = Some(limit);
             f.ask_pile(piles, false, Purpose::Gain)
         }
         3 => {
@@ -889,6 +892,7 @@ fn horn_of_plenty(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 1;
+            f.choice_cost = Some(Cost::coins(n.min(255) as u8));
             f.ask_pile(piles, false, Purpose::Gain)
         }
         1 => {
@@ -1130,6 +1134,7 @@ fn remake(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::Continue;
             }
             f.pc = 3;
+            f.choice_cost = Some(exact);
             f.ask_pile(piles, false, Purpose::Gain)
         }
         _ => {
@@ -1229,6 +1234,7 @@ fn stonemason(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 3;
+            f.choice_cost = Some(limit);
             f.ask_pile(piles, false, Purpose::Gain)
         }
         _ => {
@@ -1632,6 +1638,7 @@ fn taxman(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                 return Flow::done();
             }
             f.pc = 5;
+            f.choice_cost = Some(limit);
             f.ask_pile(piles, false, Purpose::Gain)
         }
         5 => {

@@ -1,6 +1,181 @@
 use super::{ProjectionError, WireCatalog};
-use dominion_engine::{Card, Decision, DecisionKind, Purpose, View};
+use dominion_engine::{Card, Decision, DecisionKind, Purpose, Trigger, View};
 use dominion_online::questions::{CardFrequency, LogArgument};
+
+#[path = "semantics/adventures.rs"]
+mod adventures;
+#[path = "semantics/alchemy.rs"]
+mod alchemy;
+#[path = "semantics/allies.rs"]
+mod allies;
+#[path = "semantics/cornucopia_guilds.rs"]
+mod cornucopia_guilds;
+#[path = "semantics/dark_ages.rs"]
+mod dark_ages;
+#[path = "semantics/empires.rs"]
+mod empires;
+#[path = "semantics/hinterlands.rs"]
+mod hinterlands;
+#[path = "semantics/menagerie.rs"]
+mod menagerie;
+#[path = "semantics/nocturne.rs"]
+mod nocturne;
+#[path = "semantics/plunder.rs"]
+mod plunder;
+#[path = "semantics/promos.rs"]
+mod promos;
+#[path = "semantics/prosperity.rs"]
+mod prosperity;
+#[path = "semantics/renaissance.rs"]
+mod renaissance;
+#[path = "semantics/rising_sun.rs"]
+mod rising_sun;
+#[path = "semantics/seaside.rs"]
+mod seaside;
+
+pub(super) type Binding = (&'static str, &'static str, Vec<LogArgument>);
+
+/// Each set's own bindings, tried after the shared ones below.
+struct SetBindings {
+    binding: fn(&View<'_>, &Decision, &WireCatalog) -> Option<Result<Binding, ProjectionError>>,
+    mode: fn(Card, u8) -> Option<&'static str>,
+    ability: fn(Card, u8) -> Option<&'static str>,
+    symbols: fn(Card) -> &'static [(&'static str, &'static str)],
+    requirements: fn(Card) -> Option<&'static [&'static str]>,
+}
+
+macro_rules! sets {
+    ($($m:ident),*) => {
+        const SETS: &[SetBindings] = &[$(SetBindings {
+            binding: $m::binding,
+            mode: $m::mode,
+            ability: $m::ability,
+            symbols: $m::symbols,
+            requirements: $m::requirements,
+        }),*];
+    };
+}
+sets!(
+    seaside,
+    alchemy,
+    prosperity,
+    hinterlands,
+    promos,
+    dark_ages,
+    cornucopia_guilds,
+    adventures,
+    nocturne,
+    empires,
+    renaissance,
+    menagerie,
+    allies,
+    plunder,
+    rising_sun
+);
+
+pub(super) type AbilityArguments = Option<Result<Vec<LogArgument>, ProjectionError>>;
+
+/// Cards by name, for a story's CARDS argument.
+pub(super) fn names_of(
+    c: &WireCatalog,
+    cards: impl IntoIterator<Item = Card>,
+) -> Result<LogArgument, ProjectionError> {
+    let mut frequencies = std::collections::BTreeMap::new();
+    for card in cards {
+        *frequencies.entry(c.card(card)?).or_insert(0) += 1;
+    }
+    Ok(LogArgument::CardNames(
+        frequencies
+            .into_iter()
+            .map(|(name, frequency)| CardFrequency { name, frequency })
+            .collect(),
+    ))
+}
+
+/// The card the occasion of pending trigger `t` is about, where its owner knows it.
+pub(super) fn occasion_card(view: &View<'_>, t: &Trigger) -> Option<Card> {
+    let i = view
+        .pending_triggers()
+        .iter()
+        .position(|x| std::ptr::eq(*x, t))?;
+    view.pending_occasion_card(i)
+}
+
+/// A triggered ability's one card argument, which its owner must be able to see.
+pub(super) fn ability_card(
+    t: &Trigger,
+    card: Option<Card>,
+    c: &WireCatalog,
+) -> Result<Vec<LogArgument>, ProjectionError> {
+    let card = card.ok_or_else(|| {
+        ProjectionError::Compatibility(super::super::profile::CompatibilityGap {
+            feature: "decision-semantic".into(),
+            card: Some(t.card.name().into()),
+            detail: format!("ability {} argument not visible", t.ability),
+        })
+    })?;
+    Ok(vec![names_of(c, [card])?])
+}
+
+/// The cost bound the effect states (AMOUNT0).
+pub(super) fn cost_limit(view: &View<'_>, d: &Decision) -> Result<LogArgument, ProjectionError> {
+    view.pending_cost_limit()
+        .map(amount)
+        .ok_or_else(|| gap(d, "missing explicit cost bound"))
+}
+
+pub(super) fn amount(cost: dominion_engine::Cost) -> LogArgument {
+    LogArgument::Amount {
+        coins: cost.coins.into(),
+        potions: cost.potions.into(),
+        debt: cost.debt.into(),
+    }
+}
+
+/// How a set presents a choice of options (yes/no, alternatives) `prepare` has no
+/// generic shape for.
+pub(super) enum ChoiceShape {
+    /// Selecting the card answers `yes`; the decline button answers `no`.
+    Target {
+        card: dominion_engine::CardId,
+        yes: dominion_engine::Opt,
+        no: dominion_engine::Opt,
+        decline: &'static str,
+    },
+    /// A CardModes symbol per option; an empty selection, if declinable, is `decline`.
+    Modes {
+        options: Vec<(dominion_engine::Opt, &'static str)>,
+        decline: Option<(dominion_engine::Opt, &'static str)>,
+    },
+    /// A DeclineButtonIds button per option.
+    Buttons(Vec<(dominion_engine::Opt, &'static str)>),
+    /// A disclosed card per option (one of each name offered).
+    Cards(Vec<(dominion_engine::Opt, dominion_engine::CardId)>),
+    /// A card name per option.
+    Names(Vec<(dominion_engine::Opt, Card)>),
+}
+
+pub(super) fn choice_shape(
+    view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    allies::choice_shape(view, d)
+        .or_else(|| plunder::choice_shape(view, d))
+        .or_else(|| rising_sun::choice_shape(view, d))
+        .or_else(|| dark_ages::choice_shape(view, d))
+        .or_else(|| cornucopia_guilds::choice_shape(view, d))
+        .or_else(|| adventures::choice_shape(view, d))
+        .or_else(|| nocturne::choice_shape(view, d))
+        .or_else(|| seaside::choice_shape(view, d))
+        .or_else(|| alchemy::choice_shape(view, d))
+        .or_else(|| prosperity::choice_shape(view, d))
+        .or_else(|| hinterlands::choice_shape(view, d))
+}
+
+/// A card's requirements as a set's module declares them.
+pub(crate) fn set_requirements(card: Card) -> Option<&'static [&'static str]> {
+    SETS.iter().find_map(|s| (s.requirements)(card))
+}
 
 pub(super) fn gap(d: &Decision, feature: &str) -> ProjectionError {
     ProjectionError::Compatibility(super::super::profile::CompatibilityGap {
@@ -8,6 +183,55 @@ pub(super) fn gap(d: &Decision, feature: &str) -> ProjectionError {
         card: d.source.map(|c| c.name().into()),
         detail: format!("{feature} ({:?})", d.purpose),
     })
+}
+
+/// AMOUNT: the cost bound the asking effect states.
+pub(super) fn cost_bound(view: &View<'_>, d: &Decision) -> Result<LogArgument, ProjectionError> {
+    let limit = view
+        .pending_cost_limit()
+        .ok_or_else(|| gap(d, "missing explicit cost bound (old save)"))?;
+    Ok(LogArgument::Amount {
+        coins: limit.coins.into(),
+        potions: limit.potions.into(),
+        debt: limit.debt.into(),
+    })
+}
+
+/// CARDS: these visible cards, by name.
+pub(super) fn card_names(
+    view: &View<'_>,
+    d: &Decision,
+    c: &WireCatalog,
+    cards: impl IntoIterator<Item = dominion_engine::CardId>,
+) -> Result<LogArgument, ProjectionError> {
+    let mut frequencies = std::collections::BTreeMap::new();
+    for id in cards {
+        let card = view
+            .card(id)
+            .ok_or_else(|| gap(d, "missing visible referenced card"))?;
+        *frequencies.entry(c.card(card)?).or_insert(0) += 1;
+    }
+    Ok(LogArgument::CardNames(
+        frequencies
+            .into_iter()
+            .map(|(name, frequency)| CardFrequency { name, frequency })
+            .collect(),
+    ))
+}
+
+/// PLAYER: the player the asking effect is about.
+pub(super) fn subject(view: &View<'_>, d: &Decision) -> Result<LogArgument, ProjectionError> {
+    let subject = view
+        .pending_subject()
+        .ok_or_else(|| gap(d, "missing affected player"))?;
+    Ok(LogArgument::Player(subject.0.into()))
+}
+
+/// The index of pending trigger `t`, for what its occasion is about.
+pub(super) fn trigger_index(view: &View<'_>, t: &Trigger) -> Option<usize> {
+    view.pending_triggers()
+        .iter()
+        .position(|&p| std::ptr::eq(p, t))
 }
 
 /// Stories are selected by effect purpose and response shape, never display labels.
@@ -83,7 +307,12 @@ pub(super) fn binding(
         (Some(Cathedral), P::Trash) => ("TRASH", "CATHEDRAL"),
         (Some(Settlers), P::Move) => ("PUT_IN_HAND", "SETTLERS"),
         (Some(BustlingVillage), P::Move) => ("PUT_IN_HAND", "BUSTLING_VILLAGE"),
-        _ => return Err(gap(d, "missing story/shape binding")),
+        _ => {
+            return SETS
+                .iter()
+                .find_map(|s| (s.binding)(view, d, c))
+                .unwrap_or_else(|| Err(gap(d, "missing story/shape binding")));
+        }
     };
     let mut args = vec![];
     if matches!(
@@ -152,13 +381,16 @@ pub(super) fn mode(card: Card, mode: u8) -> Option<&'static str> {
         ],
         Lurker => &["LURKER_TRASH", "LURKER_GAIN"],
         NativeVillage => &["NATIVE_VILLAGE_SET_ASIDE", "NATIVE_VILLAGE_RETURN"],
-        _ => return None,
+        _ => return SETS.iter().find_map(|s| (s.mode)(card, mode)),
     };
     choices.get(usize::from(mode)).copied()
 }
 
 pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     use Card::*;
+    if let Some(symbol) = SETS.iter().find_map(|s| (s.ability)(card, ability)) {
+        return Some(symbol);
+    }
     if ability != 0 {
         return None;
     }
@@ -173,6 +405,82 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
         Cathedral => "CATHEDRAL",
         _ => return None,
     })
+}
+
+/// How a set shows a `Choose` decision that isn't all CardModes.
+pub(super) fn option_shape(
+    view: &View<'_>,
+    d: &Decision,
+    c: &WireCatalog,
+) -> Option<Result<super::OptionShape, ProjectionError>> {
+    empires::option_shape(view, d, c)
+        .or_else(|| renaissance::option_shape(view, d, c))
+        .or_else(|| menagerie::option_shape(view, d, c))
+}
+
+/// A set's own decline button for an optional choice ("Don't Crown").
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
+    empires::decline_button(d)
+        .or_else(|| renaissance::decline_button(d))
+        .or_else(|| menagerie::decline_button(d))
+        .or_else(|| dark_ages::decline_button(d))
+        .or_else(|| cornucopia_guilds::decline_button(d))
+        .or_else(|| adventures::decline_button(d))
+        .or_else(|| nocturne::decline_button(d))
+}
+
+type ArgumentsHook<'a> = dyn Fn() -> Option<Result<Vec<LogArgument>, ProjectionError>> + 'a;
+
+/// The log arguments an ability's description names (its Argument0, ...), by symbol.
+pub(super) fn ability_arguments(
+    view: &View<'_>,
+    d: &Decision,
+    t: &Trigger,
+    symbol: &str,
+    c: &WireCatalog,
+) -> Result<Vec<LogArgument>, ProjectionError> {
+    use dominion_engine::Set;
+    // Sets share ability names (TOPDECK_REACTION): the trigger's own set reads it first.
+    let hooks: [(Set, &ArgumentsHook); 15] = [
+        (Set::Empires, &|| {
+            empires::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Renaissance, &|| {
+            renaissance::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Menagerie, &|| {
+            menagerie::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Allies, &|| allies::ability_arguments(view, t, c)),
+        (Set::Plunder, &|| plunder::ability_arguments(view, t, c)),
+        (Set::RisingSun, &|| {
+            rising_sun::ability_arguments(view, t, c)
+        }),
+        (Set::DarkAges, &|| dark_ages::ability_arguments(view, t, c)),
+        (Set::CornucopiaGuilds, &|| {
+            cornucopia_guilds::ability_arguments(view, t, c)
+        }),
+        (Set::Adventures, &|| {
+            adventures::ability_arguments(view, t, c)
+        }),
+        (Set::Nocturne, &|| nocturne::ability_arguments(view, t, c)),
+        (Set::Seaside, &|| seaside::ability_arguments(view, t, c)),
+        (Set::Alchemy, &|| alchemy::ability_arguments(view, t, c)),
+        (Set::Prosperity, &|| {
+            prosperity::ability_arguments(view, t, c)
+        }),
+        (Set::Hinterlands, &|| {
+            hinterlands::ability_arguments(view, t, c)
+        }),
+        (Set::Promos, &|| promos::ability_arguments(view, t, c)),
+    ];
+    let set = t.card.set();
+    hooks
+        .iter()
+        .filter(|(s, _)| *s == set)
+        .chain(hooks.iter().filter(|(s, _)| *s != set))
+        .find_map(|(_, hook)| hook())
+        .unwrap_or(Ok(vec![]))
 }
 
 /// Declared symbol dependencies for admission; evaluated even before the first play.
@@ -351,6 +659,10 @@ pub(crate) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
         Card::Vassal => &[("QuestionIds", "VASSAL"), ("QuestionTypes", "PLAY")],
         Card::WishingWell => &[("QuestionIds", "WISHING_WELL"), ("QuestionTypes", "WISH")],
         Card::Workshop => &[("QuestionIds", "WORKSHOP"), ("QuestionTypes", "GAIN")],
-        _ => &[],
+        _ => SETS
+            .iter()
+            .map(|s| (s.symbols)(card))
+            .find(|s| !s.is_empty())
+            .unwrap_or(&[]),
     }
 }

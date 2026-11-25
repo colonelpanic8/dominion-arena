@@ -221,7 +221,7 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     c.kingdom[0] = Card::Possession;
     cases.push(c);
     let mut c = cfg.clone();
-    c.landscapes.push(Card::Fountain);
+    c.landscapes.push(Card::Transport);
     cases.push(c);
     let mut c = cfg.clone();
     c.shelters = Some(true);
@@ -238,7 +238,7 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     for c in &cases {
         assert!(profile::check_supported(c, &meta, &catalog, false).is_err());
     }
-    // Admitting unreviewed cards admits the Fountain, never anything else refused.
+    // Admitting unreviewed cards admits Transport, never anything else refused.
     for (i, c) in cases.iter().enumerate() {
         assert_eq!(
             profile::check_supported(c, &meta, &catalog, true).is_ok(),
@@ -1096,4 +1096,364 @@ fn the_bane_is_marked_and_traits_attach_to_their_pile() {
         links,
         vec![(cheap, vec![catalog.card(Card::Cheap).unwrap()])]
     );
+}
+
+fn kingdom_with(cards: &[Card]) -> Vec<Card> {
+    let mut kingdom = KINGDOM.to_vec();
+    kingdom[..cards.len()].copy_from_slice(cards);
+    kingdom
+}
+
+fn zone_of(state: &model::GameState, kind: i32) -> Option<&model::Zone> {
+    state.zones.iter().find(|z| z.kind == kind)
+}
+
+fn names_in(state: &model::GameState, zone: &model::Zone) -> Vec<i32> {
+    zone.cards
+        .iter()
+        .map(|&id| state.cards[id as usize].card_name)
+        .collect()
+}
+
+#[test]
+fn boons_and_hexes_lie_in_their_decks_whose_order_stays_hidden() {
+    let catalog = catalog();
+    let game = Game::new(GameConfig::new(
+        2,
+        kingdom_with(&[Card::Bard, Card::Leprechaun]),
+        42,
+    ))
+    .unwrap();
+    let mut state = serde_json::to_value(&game).unwrap();
+    for deck in ["boons", "hexes"] {
+        let draw = state[deck]["draw"].as_array_mut().unwrap();
+        let discarded: Vec<Value> = draw.drain(..2).collect();
+        state[deck]["discard"] = Value::Array(discarded);
+    }
+    let game: Game = serde_json::from_value(state).unwrap();
+    let mut twin = serde_json::to_value(&game).unwrap();
+    for deck in ["boons", "hexes"] {
+        twin[deck]["draw"].as_array_mut().unwrap().reverse();
+    }
+    let twin: Game = serde_json::from_value(twin).unwrap();
+    let view = game.view(PlayerId(0));
+    for seat in 0..2 {
+        let update = update(&game, seat, &catalog, 3);
+        assert_eq!(
+            bytes(&update),
+            bytes(&super::tests::update(&twin, seat, &catalog, 3))
+        );
+        let state = &update.snapshot.state;
+        for (deck, draw, discard, kind) in [
+            (
+                view.boons(),
+                "Boon Drawpile",
+                "Boon Discardpile",
+                zone::BOON_DISCARD,
+            ),
+            (
+                view.hexes(),
+                "Hex Drawpile",
+                "Hex Discardpile",
+                zone::HEX_DISCARD,
+            ),
+        ] {
+            let pile = state
+                .zones
+                .iter()
+                .find(|z| z.kind == zone::NON_SUPPLY && z.pile_name == catalog.named(draw).unwrap())
+                .unwrap();
+            assert_eq!(pile.cards, vec![-1; deck.draw_size]);
+            let discards = zone_of(state, kind).unwrap();
+            assert_eq!(discards.pile_name, catalog.named(discard).unwrap());
+            let expected: Vec<i32> = deck
+                .discard
+                .iter()
+                .map(|&c| catalog.card(c).unwrap())
+                .collect();
+            assert_eq!(names_in(state, discards), expected);
+        }
+        // Every Boon and Hex is among the game's cards, which their client lists.
+        for card in [
+            Card::TheSunsGift,
+            Card::Famine,
+            Card::Deluded,
+            Card::Miserable,
+        ] {
+            assert!(state.card_names.contains(&catalog.card(card).unwrap()));
+        }
+        receive(&update, &catalog, seat).reducer.view().unwrap();
+    }
+}
+
+#[test]
+fn states_kept_boons_artifacts_and_tokens_reach_the_receiver() {
+    let catalog = catalog();
+    let game = Game::new(GameConfig::new(
+        2,
+        kingdom_with(&[Card::Bard, Card::FlagBearer, Card::Leprechaun]),
+        42,
+    ))
+    .unwrap();
+    let view = game.view(PlayerId(0));
+    let pile = |card: Card| view.supply_pile(card).unwrap();
+    let (village, smithy) = (pile(KINGDOM[5]), pile(KINGDOM[6]));
+    let mut state = serde_json::to_value(&game).unwrap();
+    let card = |c: Card| serde_json::to_value(c).unwrap();
+    state["players"][0]["states"] = json!([card(Card::Deluded)]);
+    state["players"][0]["boons_kept"] = json!([card(Card::TheFieldsGift)]);
+    state["players"][1]["minus_card"] = json!(true);
+    state["players"][1]["minus_coin"] = json!(true);
+    state["players"][1]["tokens"] = json!({ "PlusAction": village.0 });
+    state["piles"][village.index()]["tokens"] = json!([[1, "PlusAction"]]);
+    state["piles"][smithy.index()]["embargo"] = json!(2);
+    state["piles"][smithy.index()]["trade_route"] = json!(true);
+    for artifact in state["artifacts"].as_array_mut().unwrap() {
+        artifact[1] = json!(0);
+    }
+    let game: Game = serde_json::from_value(state).unwrap();
+    for seat in 0..2 {
+        let update = update(&game, seat, &catalog, 3);
+        let receiver = receive(&update, &catalog, seat);
+        let view = receiver.reducer.view().unwrap();
+        let players: Vec<_> = view.you.iter().chain(&view.opponents).collect();
+        let first = players.iter().find(|p| p.index == 0).unwrap();
+        let second = players.iter().find(|p| p.index == 1).unwrap();
+        assert_eq!(first.states, vec!["Deluded".to_string()]);
+        assert_eq!(first.boons, vec!["The Field's Gift".to_string()]);
+        assert_eq!(first.artifacts, vec!["Flag".to_string()]);
+        assert!(second.tokens.minus_card && second.tokens.minus_coin);
+        assert!(!first.tokens.minus_card);
+        assert_eq!(second.adventure_tokens.len(), 1);
+        let on = |card: Card| {
+            view.supply
+                .iter()
+                .find(|p| p.card == card.name())
+                .unwrap()
+                .tokens
+                .clone()
+        };
+        assert_eq!(on(KINGDOM[5]).players.len(), 1);
+        assert_eq!(on(KINGDOM[6]).embargo, 2);
+        assert!(on(KINGDOM[6]).trade_route);
+    }
+}
+
+#[test]
+fn setup_set_asides_lie_in_their_zones_and_riverboats_card_is_linked() {
+    let catalog = catalog();
+    let mut config = GameConfig::new(2, kingdom_with(&[Card::Druid, Card::Riverboat]), 42);
+    config.landscapes.push(Card::WayOfTheMouse);
+    let game = Game::new(config).unwrap();
+    let notes = game.view(PlayerId(0)).notes();
+    let set_aside = |source: Card| -> Vec<i32> {
+        let mut cards: Vec<i32> = notes
+            .iter()
+            .filter(|n| n.source == source)
+            .filter_map(|n| n.card)
+            .map(|c| catalog.card(c).unwrap())
+            .collect();
+        cards.sort();
+        cards
+    };
+    for seat in 0..2 {
+        let update = update(&game, seat, &catalog, 3);
+        let state = &update.snapshot.state;
+        for (kind, source) in [
+            (zone::DRUID_BOONS, Card::Druid),
+            (zone::MOUSE, Card::WayOfTheMouse),
+            (zone::THE_BOX, Card::Riverboat),
+        ] {
+            let mut names = names_in(state, zone_of(state, kind).unwrap());
+            names.sort();
+            assert_eq!(names, set_aside(source), "{}", source.name());
+        }
+        let boxed = zone_of(state, zone::THE_BOX).unwrap().cards[0];
+        let riverboat = catalog.card(Card::Riverboat).unwrap();
+        assert!(state.associations.iter().any(|a| {
+            a.card == boxed
+                && a.linked_cards
+                    .iter()
+                    .all(|&l| state.cards[l as usize].card_name == riverboat)
+        }));
+        let view = receive(&update, &catalog, seat).reducer.view().unwrap();
+        let mut sources: Vec<&str> = view
+            .notes
+            .iter()
+            .filter(|n| n.setup.is_some())
+            .map(|n| n.source.as_str())
+            .collect();
+        sources.sort();
+        assert_eq!(
+            sources,
+            ["Druid", "Druid", "Druid", "Riverboat", "Way of the Mouse"]
+        );
+    }
+}
+
+#[test]
+fn the_prophecys_suns_and_landmark_points_are_counters_on_their_landscapes() {
+    let catalog = catalog();
+    let mut config = GameConfig::new(2, kingdom_with(&[Card::RusticVillage]), 42);
+    config.landscapes.extend([Card::GreatLeader, Card::Arena]);
+    let game = Game::new(config).unwrap();
+    let view = game.view(PlayerId(0));
+    let (_, suns) = view.prophecy().unwrap();
+    let update = update(&game, 0, &catalog, 3);
+    let view = receive(&update, &catalog, 0).reducer.view().unwrap();
+    let landscape = |card: Card| {
+        view.landscapes
+            .iter()
+            .find(|l| l.card == card.name())
+            .unwrap()
+    };
+    assert_eq!(landscape(Card::GreatLeader).suns, Some(suns));
+    assert_eq!(landscape(Card::Arena).vp, Some(12));
+}
+
+/// Random games with every kind of table state: each seat not deciding is projected at
+/// every decision (no question, so only the state), and their client's model reads it.
+#[test]
+fn random_games_project_the_table_state_for_every_waiting_seat() {
+    use super::survey::{Rng, deal, engine_answer};
+    let catalog = catalog();
+    let games: &[(&[Card], &[Card])] = &[
+        (
+            &[
+                Card::Bard,
+                Card::Druid,
+                Card::Fool,
+                Card::Leprechaun,
+                Card::Skulk,
+            ],
+            &[],
+        ),
+        (
+            &[
+                Card::FlagBearer,
+                Card::Swashbuckler,
+                Card::Treasurer,
+                Card::BorderGuard,
+            ],
+            &[Card::SinisterPlot, Card::Fleet],
+        ),
+        (
+            &[Card::BridgeTroll, Card::Relic, Card::Ranger, Card::Embargo],
+            &[Card::LostArts, Card::Seaway, Card::Mission],
+        ),
+        (
+            &[
+                Card::TradeRoute,
+                Card::Riverboat,
+                Card::RusticVillage,
+                Card::Outpost,
+            ],
+            &[Card::WayOfTheMouse, Card::Arena, Card::SeizeTheDay],
+        ),
+        (
+            &[Card::Wizards, Card::Odysseys, Card::Giant],
+            &[Card::FamilyOfInventors, Card::Plan, Card::Ferry],
+        ),
+    ];
+    let mut projected = 0;
+    let mut seen = BTreeSet::new();
+    for (n, (cards, landscapes)) in games.iter().enumerate() {
+        for seed in 0..4 {
+            let mut config = GameConfig::new(2, kingdom_with(cards), 500 + seed);
+            config.landscapes.extend_from_slice(landscapes);
+            let favoured = cards[seed as usize % cards.len()];
+            let mut game = deal(Game::new(config).unwrap(), favoured);
+            let mut rng = Rng(seed * 31 + n as u64);
+            for _ in 0..600 {
+                let Some(decider) = game.pending().map(|d| d.player) else {
+                    break;
+                };
+                let view = game.view(decider);
+                if view.players().any(|p| {
+                    p.hand_size() + p.deck_size() + p.discard_size() + p.in_play().len() < 5
+                }) {
+                    break;
+                }
+                let waiting = PlayerId(1 - decider.0);
+                let observation = hub::SeatObservation {
+                    clock: None,
+                    view: game.view(waiting),
+                    known: &KnownCards::default(),
+                    names: &["Ada".into(), "Bob".into()],
+                    decision_id: Some("engine-d1"),
+                    deciding: Some(decider),
+                    version: 7,
+                    undos: 0,
+                    outcome: None,
+                    ended: None,
+                };
+                match project(observation, &ids(), &catalog, 1, false) {
+                    Ok(update) => {
+                        receive(&update, &catalog, waiting.0)
+                            .reducer
+                            .view()
+                            .unwrap();
+                        projected += 1;
+                        let state = &update.snapshot.state;
+                        seen.extend(
+                            state
+                                .zones
+                                .iter()
+                                .filter(|z| !z.cards.is_empty())
+                                .map(|z| z.kind),
+                        );
+                        seen.extend(state.counters.iter().map(|c| 100 + c.kind));
+                        seen.extend(state.tokens.iter().map(|t| 200 + t.kind));
+                        if state.players.iter().any(|p| !p.reminders.is_empty()) {
+                            seen.insert(300);
+                        }
+                    }
+                    Err(ProjectionError::UnsupportedState(gap)) => {
+                        panic!("{gap} in game {n}, seed {seed}")
+                    }
+                    Err(e) => panic!("{e} in game {n}, seed {seed}"),
+                }
+                let answer = engine_answer(&game, favoured, &mut rng);
+                game.respond(answer).unwrap();
+            }
+        }
+    }
+    assert!(projected > 1000, "{projected}");
+    // Boon and Hex discards, Druid's Boons, Way of the Mouse's card, the Box; Embargo,
+    // Trade Route, Sinister Plot and Sun counters; -1 Card and -$1 tokens; reminders.
+    for kind in [15, 16, 20, 22, 30, 109, 110, 113, 118, 207, 208, 300] {
+        assert!(seen.contains(&kind), "never saw {kind}: {seen:?}");
+    }
+}
+
+#[test]
+fn the_face_down_loot_pile_shows_its_count_and_nothing_of_its_order() {
+    let catalog = catalog();
+    let game = Game::new(GameConfig::new(2, kingdom_with(&[Card::Cutthroat]), 42)).unwrap();
+    let view = game.view(PlayerId(0));
+    let loot = view.piles().find(|p| p.card() == Card::Loot).unwrap();
+    let (index, size) = (loot.id().index(), loot.size());
+    let mut twin = serde_json::to_value(&game).unwrap();
+    twin["piles"][index]["cards"]
+        .as_array_mut()
+        .unwrap()
+        .reverse();
+    let twin: Game = serde_json::from_value(twin).unwrap();
+    for seat in 0..2 {
+        let update = update(&game, seat, &catalog, 3);
+        assert_eq!(
+            bytes(&update),
+            bytes(&super::tests::update(&twin, seat, &catalog, 3))
+        );
+        let state = &update.snapshot.state;
+        let zone = state
+            .zones
+            .iter()
+            .find(|z| z.pile_name == catalog.card(Card::Loot).unwrap())
+            .unwrap();
+        assert_eq!(
+            (zone.kind, zone.cards.clone()),
+            (zone::NON_SUPPLY, vec![-1; size])
+        );
+    }
 }

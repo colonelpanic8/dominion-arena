@@ -53,6 +53,12 @@ parity *args: web-build
     cargo build -p dominion-server --bin dominion
     nix develop .#parity -c node tools/parity/run.mjs {{args}}
 
+# Which cards the official transport carries through random games:
+# just transport-survey out.json [sets or cards, comma-separated]
+transport-survey out only="" seeds="3":
+    DOMINION_TRANSPORT_SURVEY={{out}} SURVEY_ONLY={{only}} SURVEY_SEEDS={{seeds}} \
+      cargo test --release -p dominion-server --lib official_host::projection::survey -- --ignored --nocapture
+
 # Build the web client and serve it: dominion serve --web-dir target/web-client [args].
 web-serve *args: web-build
     cargo run --release -p dominion-server -- serve --web-dir {{web_out}} {{args}}

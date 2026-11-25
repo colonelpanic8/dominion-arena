@@ -111,7 +111,7 @@ fn requirements(card: Card) -> Option<&'static [&'static str]> {
         _ if vanilla(card) && card.def().plus.coffers > 0 => &["coffers"],
         _ if vanilla(card) && card.def().plus.villagers > 0 => &["villagers"],
         _ if vanilla(card) => &[],
-        _ => return None,
+        _ => return super::questions::semantics::set_requirements(card),
     })
 }
 
@@ -191,6 +191,7 @@ fn feature_symbols(feature: &str) -> &'static [(&'static str, &'static str)] {
             ("DeclineButtonIds", "DONT_DISCARD"),
         ],
         "location-number" => &[("QuestionTypes", "LOCATION")],
+        "overpay" => &[("QuestionTypes", "OVERPAY")],
         "ordered-cards" => &[("QuestionTypes", "ORDER_CARDS")],
         "set-aside" => &[("ZoneNames", "SetAsideZone")],
         "hidden-mat" => &[("ZoneNames", "NVZone")],
@@ -200,6 +201,34 @@ fn feature_symbols(feature: &str) -> &'static [(&'static str, &'static str)] {
             ("QuestionIds", "GAME_MAY_BUY_NONCARDS"),
         ],
         "extra-turn" => &[("ExtraTurnTypes", "OUTPOST")],
+        "debt" => &[
+            ("CounterNames", "DEBT"),
+            ("GameButtons", "PAY_OFF_DEBT"),
+            ("QuestionIds", "GAME_PAY_OFF_DEBT"),
+            ("QuestionTypes", "BUTTON"),
+        ],
+        "vp-tokens" => &[("CounterNames", "VP_TOKENS")],
+        "landscape" => &[("ZoneNames", "SingleLandscapeZone")],
+        "non-supply-pile" => &[("ZoneNames", "NonSupplyZone")],
+        "exile" => &[
+            ("ZoneNames", "ExileZone"),
+            ("QuestionTypes", "EXILE"),
+            ("DeclineButtonIds", "DONT_EXILE"),
+            ("AbilityNames", "DISCARD_FROM_EXILE"),
+            ("QuestionTypes", "RESOLVE_ABILITY"),
+        ],
+        "way" => &[
+            ("ZoneNames", "SingleLandscapeZone"),
+            ("QuestionTypes", "COMPLEX_AND"),
+            ("QuestionTypes", "PLAY"),
+            ("QuestionTypes", "WAY"),
+            ("QuestionIds", "CONSIDER_WAY"),
+        ],
+        "favors" => &[("CounterNames", "FAVORS")],
+        "rotate" => &[
+            ("QuestionTypes", "ROTATE"),
+            ("DeclineButtonIds", "DONT_ROTATE"),
+        ],
         _ => &[],
     }
 }
