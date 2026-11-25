@@ -1,5 +1,5 @@
 use super::{ProjectionError, WireCatalog};
-use dominion_engine::{Card, Decision, DecisionKind, Purpose, View};
+use dominion_engine::{Card, Decision, DecisionKind, Purpose, Trigger, View};
 use dominion_online::questions::{CardFrequency, LogArgument};
 
 #[path = "semantics/adventures.rs"]
@@ -257,6 +257,38 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
         Cathedral => "CATHEDRAL",
         _ => return None,
     })
+}
+
+/// How a set shows a `Choose` decision that isn't all CardModes.
+pub(super) fn option_shape(
+    view: &View<'_>,
+    d: &Decision,
+    c: &WireCatalog,
+) -> Option<Result<super::OptionShape, ProjectionError>> {
+    empires::option_shape(view, d, c)
+        .or_else(|| renaissance::option_shape(view, d, c))
+        .or_else(|| menagerie::option_shape(view, d, c))
+}
+
+/// A set's own decline button for an optional choice ("Don't Crown").
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
+    empires::decline_button(d)
+        .or_else(|| renaissance::decline_button(d))
+        .or_else(|| menagerie::decline_button(d))
+}
+
+/// The log arguments an ability's description names (its Argument0, ...), by symbol.
+pub(super) fn ability_arguments(
+    view: &View<'_>,
+    d: &Decision,
+    t: &Trigger,
+    symbol: &str,
+    c: &WireCatalog,
+) -> Result<Vec<LogArgument>, ProjectionError> {
+    empires::ability_arguments(view, d, t, symbol, c)
+        .or_else(|| renaissance::ability_arguments(view, d, t, symbol, c))
+        .or_else(|| menagerie::ability_arguments(view, d, t, symbol, c))
+        .unwrap_or(Ok(vec![]))
 }
 
 /// Declared symbol dependencies for admission; evaluated even before the first play.

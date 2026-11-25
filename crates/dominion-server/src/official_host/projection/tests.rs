@@ -221,7 +221,7 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     c.kingdom[0] = Card::Possession;
     cases.push(c);
     let mut c = cfg.clone();
-    c.landscapes.push(Card::Fountain);
+    c.landscapes.push(Card::Transport);
     cases.push(c);
     let mut c = cfg.clone();
     c.shelters = Some(true);
@@ -238,7 +238,7 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     for c in &cases {
         assert!(profile::check_supported(c, &meta, &catalog, false).is_err());
     }
-    // Admitting unreviewed cards admits the Fountain, never anything else refused.
+    // Admitting unreviewed cards admits Transport, never anything else refused.
     for (i, c) in cases.iter().enumerate() {
         assert_eq!(
             profile::check_supported(c, &meta, &catalog, true).is_ok(),
