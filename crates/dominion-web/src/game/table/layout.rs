@@ -557,6 +557,32 @@ pub fn geometry(width: f64, height: f64, shape: &Shape) -> Geometry {
     }
 }
 
+/// Where the `i`th of `n` cards set aside for a pile or landscape drawn at `on` lies on
+/// it, as dominion.games insets them: Riverboat's card low on its pile's right
+/// (`NON_SUPPLY_CARD`), Way of the Mouse's centred on its landscape's right
+/// (`MouseZone`), Druid's Boons stacked down its pile's right (`DruidBoonZone`).
+pub fn inset(on: Rect, landscape_host: bool, landscape_card: bool, i: usize, n: usize) -> Rect {
+    let w = 0.3 * on.w;
+    let x = on.x + 0.6 * on.w;
+    if landscape_card {
+        let h = w * WIDE;
+        let (top, bottom) = (0.2 * on.h, 0.8 * on.h);
+        let gap = if n > 1 {
+            (h / 4.0).min((bottom - top - h * n as f64) / (n - 1) as f64)
+        } else {
+            0.0
+        };
+        return Rect::new(x, on.y + top + (h + gap) * i as f64, w, h);
+    }
+    let h = w * MINI;
+    let y = if landscape_host {
+        (0.8 * on.h - h) / 2.0
+    } else {
+        on.h - (1.7 + i as f64) * h
+    };
+    Rect::new(x, on.y + y, w, h)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,6 +689,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn set_aside_insets_lie_on_their_hosts_right() {
+        let pile = Rect::new(100.0, 50.0, 120.0, 113.0);
+        let card = inset(pile, false, false, 0, 1);
+        assert!(card.x > pile.x + pile.w / 2.0 && card.right() < pile.right());
+        assert!(card.bottom() < pile.bottom() && (card.h / card.w - MINI).abs() < 1e-9);
+        let boons: Vec<Rect> = (0..3).map(|i| inset(pile, false, true, i, 3)).collect();
+        for w in boons.windows(2) {
+            assert!(w[1].y >= w[0].bottom() - 0.01 * pile.h, "{boons:?}");
+        }
+        assert!(boons[0].y >= pile.y + 0.2 * pile.h - 0.01);
+        assert!(boons[2].bottom() <= pile.y + 0.8 * pile.h + 0.01);
+        let landscape = Rect::new(100.0, 50.0, 120.0, 75.0);
+        let card = inset(landscape, true, false, 0, 1);
+        assert!(card.y > landscape.y && card.bottom() < landscape.y + 0.8 * landscape.h);
     }
 
     #[test]

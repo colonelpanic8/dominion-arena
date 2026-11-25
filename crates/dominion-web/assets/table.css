@@ -176,27 +176,6 @@ body:has(.dt-root) .topbar { display: none; }
 /* Landscape names run along the bottom of the card. */
 .dt-setup-set-aside.dt-wide .dt-tokens:has(.dt-b-trait) { top: 14%; bottom: auto; }
 
-/* The Boons and Hexes decks beside their discard piles. */
-.dt-deckback {
-  position: absolute;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: calc(0.6 * var(--vh));
-  border: max(1px, calc(0.25 * var(--vh))) solid #000;
-  border-radius: calc(0.6 * var(--vh));
-  box-shadow: 0 0 0 1px #9a8a62 inset;
-  background: linear-gradient(160deg, #314a7d, #16223d);
-  color: #f2e6c8;
-  font-family: var(--title, serif);
-  text-shadow: 0 0 3px #000;
-}
-.dt-deck-hexes { background: linear-gradient(160deg, #5b3470, #24122e); }
-.dt-deckback:hover { border-color: #eee; }
-.dt-deckback-label { font-size: calc(1.8 * var(--vh)); }
-.dt-deckback-n { font-family: var(--num, sans-serif); font-size: calc(2.2 * var(--vh)); }
 .dt-cube img { height: calc(2.6 * var(--vh)); }
 .dt-tokens .dt-cube img { height: 18cqw; }
 

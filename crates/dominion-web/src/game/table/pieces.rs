@@ -282,6 +282,9 @@ pub fn TableCard(
     /// a click on the rest of the card plays it as itself.
     #[props(default)]
     ways: Vec<String>,
+    /// A name to print instead of the card's (`CardView::title`).
+    #[props(default)]
+    title: Option<String>,
 ) -> Element {
     let ctx = use_table();
     let assets = use_assets();
@@ -353,6 +356,7 @@ pub fn TableCard(
                     shifted: count.is_some() && size != CardSize::Full,
                     pile: pile.clone(),
                     attached: attached.clone(),
+                    title: title.clone(),
                     if let Some((held, cost)) = holds.clone() {
                         div {
                             class: "dt-held-pile",

@@ -97,6 +97,9 @@ pub fn CardView(
     /// A Trait drawn across its pile (`attached`): its name fills the strip.
     #[props(default)]
     inset: bool,
+    /// A name to print instead of the card's own (a Boon or Hex deck's strip).
+    #[props(default)]
+    title: Option<String>,
     #[props(default = VNode::empty())] children: Element,
 ) -> Element {
     let cards = use_cards();
@@ -114,6 +117,7 @@ pub fn CardView(
                 pile: pile.as_deref(),
                 attached: attached.as_deref().filter(|_| size == CardSize::Mini),
                 inset,
+                title: title.as_deref(),
             },
             &assets,
             m.as_ref(),
@@ -275,6 +279,7 @@ struct Placing<'a> {
     pile: Option<&'a [String]>,
     attached: Option<&'a str>,
     inset: bool,
+    title: Option<&'a str>,
 }
 
 fn draw(
@@ -290,6 +295,7 @@ fn draw(
         pile,
         attached,
         inset,
+        title,
     } = placing;
     let shape = Shape::of(info);
     let ratio = shape.ratio(size);
@@ -314,10 +320,10 @@ fn draw(
     let template = trait_template.as_deref().or(template);
     let fallback = template.is_none();
     let template_box = shape.template(size);
-    let title = title_text(&info.name, assets);
+    let title = title_text(title.unwrap_or(&info.name), assets);
     let mut name_box = shape.name(size);
     // Beside a count: upstream's "shifted-name" box.
-    if shifted && size != CardSize::Full && !shape.landscape {
+    if shifted && (size == CardSize::Micro || (size == CardSize::Mini && !shape.landscape)) {
         name_box.x = 0.24;
         name_box.w = 0.68;
     }
