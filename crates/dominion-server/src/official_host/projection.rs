@@ -248,8 +248,12 @@ fn build(
     // Shadow cards the decider may play from their deck: their client shows a deck's
     // named cards in it (the Shadow cards tab), at the bottom where a shuffle puts them.
     if let Some(d) = view.pending() {
-        let offered = d.about.iter().copied().chain(match &d.kind {
-            dominion_engine::DecisionKind::Cards { candidates, .. } => candidates.clone(),
+        let offered = match &d.kind {
+            dominion_engine::DecisionKind::Cards { candidates, .. }
+                if d.purpose == dominion_engine::Purpose::Play =>
+            {
+                candidates.clone()
+            }
             dominion_engine::DecisionKind::Turn { moves, .. } => moves
                 .iter()
                 .filter_map(|m| match m {
@@ -258,7 +262,7 @@ fn build(
                 })
                 .collect(),
             _ => vec![],
-        });
+        };
         for id in offered {
             let (Some(dominion_engine::Zone::Deck(p)), Some(types)) =
                 (view.zone(id), view.types(id))
@@ -655,6 +659,10 @@ fn build(
                 .map(|(pile, _)| (pile, n.source))
         }));
     for (pile, landscape) in chosen {
+        // An emptied pile has no card to link; its zone's attached Trait still marks it.
+        if view.pile(pile).top().is_none() && landscape_ids.contains_key(&landscape) {
+            continue;
+        }
         let (Some(top), Some(&linked)) = (view.pile(pile).top(), landscape_ids.get(&landscape))
         else {
             return Err(ProjectionError::UnsupportedState(
