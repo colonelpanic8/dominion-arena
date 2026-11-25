@@ -1,8 +1,8 @@
 // What a page shows, read the same way from both clients: every visible picture (by
 // its file name) and every visible run of text, with their boxes in viewport pixels.
-// Elements matching `ignore` are left out, and their boxes returned as `ignored`. Runs in
-// the page.
-export function extract({ ignore }) {
+// Elements matching `ignore` are left out, and their boxes returned as `ignored`; those
+// matching `pixelsOnly` are left out but stay in the screenshot. Runs in the page.
+export function extract({ ignore, pixelsOnly }) {
   const W = innerWidth;
   const H = innerHeight;
   const box = (r) => {
@@ -27,8 +27,8 @@ export function extract({ ignore }) {
   };
   const images = [];
   const texts = [];
-  const skip = ignore.join(',');
-  const ignored = [...document.querySelectorAll(skip)]
+  const skip = [...ignore, ...pixelsOnly].join(',');
+  const ignored = [...document.querySelectorAll(ignore.join(','))]
     .filter(visible)
     .map((el) => box(el.getBoundingClientRect()))
     .filter(Boolean);
@@ -60,7 +60,15 @@ export function extract({ ignore }) {
       texts.push({ key: text.toLowerCase(), text, size: parseFloat(cs.fontSize), ...b });
     }
   }
-  return { width: W, height: H, images, texts, ignored };
+  // A run drawn twice in one place (their outlined text has a copy under it) is seen once.
+  const once = (list) => {
+    const seen = new Set();
+    return list.filter((a) => {
+      const k = [a.key, Math.round(a.x), Math.round(a.y), Math.round(a.w), Math.round(a.h)].join();
+      return !seen.has(k) && seen.add(k);
+    });
+  };
+  return { width: W, height: H, images: once(images), texts: once(texts), ignored };
 }
 
 /// Resolves once the page has stopped changing for `quiet` ms (or after `limit`).

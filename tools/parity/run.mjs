@@ -52,16 +52,22 @@ const browser = await chromium.launch({
 
 const PASSWORD = 'parity-password';
 
-// The log and chat: their client is told no history when it joins a game in progress,
-// so only the table is compared.
-const IGNORE = { theirs: ['.game-tabs', 'metagame-buttons'], ours: ['.dt-log-wrap', '.dt-below-log'] };
+// The log and chat beside the table: their client is told no history when it joins a
+// game in progress. Also their Force end turn button, offered because Bob's seat has no
+// client connected. Their game buttons (End Buys, Autoplay Treasures, ...) are painted on a
+// canvas, so ours are left to the pixels too.
+const IGNORE = {
+  theirs: { ignore: ['.game-tabs', '.chat-container', 'metagame-buttons', '.end-turn-button'], pixelsOnly: [] },
+  ours: { ignore: ['.dt-log-wrap', '.dt-below-log'], pixelsOnly: ['.dt-end', '.dt-btn'] },
+};
 
 async function capture(page, dir, side) {
   // Over the log, where hovering opens nothing on the table.
   await page.mouse.move(viewport.width - 60, Math.round(viewport.height * 0.3));
   await page.evaluate(settle, { quiet: 1500, limit: 20000 });
   const png = await page.screenshot({ path: path.join(dir, `${side}.png`) });
-  const shown = await page.evaluate(extract, { ignore: IGNORE[side] });
+  fs.writeFileSync(path.join(dir, `${side}.html`), await page.content());
+  const shown = await page.evaluate(extract, IGNORE[side]);
   fs.writeFileSync(path.join(dir, `${side}.json`), JSON.stringify(shown));
   return { png, shown };
 }
