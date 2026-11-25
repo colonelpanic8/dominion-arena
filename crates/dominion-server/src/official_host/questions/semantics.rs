@@ -1,5 +1,7 @@
 use super::{ProjectionError, WireCatalog};
-use dominion_engine::{Card, Decision, DecisionKind, Purpose, View};
+use dominion_engine::{
+    Card, CardId, Decision, DecisionKind, Occasion, Opt, Purpose, Trigger, View,
+};
 use dominion_online::questions::{CardFrequency, LogArgument};
 
 #[path = "semantics/adventures.rs"]
@@ -72,6 +74,113 @@ sets!(
     plunder,
     rising_sun
 );
+
+type AbilityArguments = Option<Result<Vec<LogArgument>, ProjectionError>>;
+
+/// Hooks beyond `SetBindings`, for the sets whose questions need them; each module listed
+/// in `extras!` defines all four.
+struct SetExtras {
+    /// A non-mode option (Yes, No) shown as a CardModes choice.
+    option_mode: fn(Card, Opt) -> Option<&'static str>,
+    /// An option shown as a button of a COMPLEX_OR question: (story, DeclineButtonIds).
+    option_button: fn(Card, Opt) -> Option<(&'static str, &'static str)>,
+    /// The card shown for an option (Yes of "may", a named card's pile).
+    option_card: fn(&View<'_>, &Decision, Opt) -> Option<CardId>,
+    /// The log arguments of a triggered ability's AbilityNames symbol.
+    ability_arguments: fn(&View<'_>, &Trigger, Option<&Occasion>, &WireCatalog) -> AbilityArguments,
+}
+
+macro_rules! extras {
+    ($($m:ident),*) => {
+        const EXTRAS: &[SetExtras] = &[$(SetExtras {
+            option_mode: $m::option_mode,
+            option_button: $m::option_button,
+            option_card: $m::option_card,
+            ability_arguments: $m::ability_arguments,
+        }),*];
+    };
+}
+extras!(seaside, alchemy, prosperity, hinterlands, promos);
+
+pub(super) fn option_mode(card: Card, opt: Opt) -> Option<&'static str> {
+    EXTRAS.iter().find_map(|s| (s.option_mode)(card, opt))
+}
+
+/// Every option's button, if each has one.
+pub(super) fn option_buttons(
+    source: Option<Card>,
+    options: &[Opt],
+) -> Option<Vec<(&'static str, &'static str)>> {
+    let source = source?;
+    options
+        .iter()
+        .map(|&o| EXTRAS.iter().find_map(|s| (s.option_button)(source, o)))
+        .collect()
+}
+
+pub(super) fn option_card(view: &View<'_>, d: &Decision, opt: Opt) -> Option<CardId> {
+    EXTRAS.iter().find_map(|s| (s.option_card)(view, d, opt))
+}
+
+pub(super) fn ability_arguments(
+    view: &View<'_>,
+    t: &Trigger,
+    occ: Option<&Occasion>,
+    c: &WireCatalog,
+) -> AbilityArguments {
+    EXTRAS
+        .iter()
+        .find_map(|s| (s.ability_arguments)(view, t, occ, c))
+}
+
+/// One card name, for a story's CARDS argument.
+pub(super) fn card_names(
+    c: &WireCatalog,
+    cards: impl IntoIterator<Item = Card>,
+) -> Result<LogArgument, ProjectionError> {
+    let mut frequencies = std::collections::BTreeMap::new();
+    for card in cards {
+        *frequencies.entry(c.card(card)?).or_insert(0) += 1;
+    }
+    Ok(LogArgument::CardNames(
+        frequencies
+            .into_iter()
+            .map(|(name, frequency)| CardFrequency { name, frequency })
+            .collect(),
+    ))
+}
+
+/// A triggered ability's one card argument, which its owner must be able to see.
+pub(super) fn ability_card(
+    view: &View<'_>,
+    t: &Trigger,
+    card: Option<CardId>,
+    c: &WireCatalog,
+) -> Result<Vec<LogArgument>, ProjectionError> {
+    let card = card.and_then(|id| view.card(id)).ok_or_else(|| {
+        ProjectionError::Compatibility(super::super::profile::CompatibilityGap {
+            feature: "decision-semantic".into(),
+            card: Some(t.card.name().into()),
+            detail: format!("ability {} argument not visible", t.ability),
+        })
+    })?;
+    Ok(vec![card_names(c, [card])?])
+}
+
+/// The cost bound the effect states (AMOUNT0).
+pub(super) fn cost_limit(view: &View<'_>, d: &Decision) -> Result<LogArgument, ProjectionError> {
+    view.pending_cost_limit()
+        .map(amount)
+        .ok_or_else(|| gap(d, "missing explicit cost bound"))
+}
+
+pub(super) fn amount(cost: dominion_engine::Cost) -> LogArgument {
+    LogArgument::Amount {
+        coins: cost.coins.into(),
+        potions: cost.potions.into(),
+        debt: cost.debt.into(),
+    }
+}
 
 /// A card's requirements as a set's module declares them.
 pub(crate) fn set_requirements(card: Card) -> Option<&'static [&'static str]> {

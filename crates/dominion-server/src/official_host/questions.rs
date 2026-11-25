@@ -411,6 +411,7 @@ pub(super) fn prepare(
             options, min, max, ..
         } if d.purpose == Purpose::Trigger => {
             let triggers = view.pending_triggers();
+            let occasions = view.pending_trigger_occasions();
             let mut abilities = vec![];
             let mut targets = vec![];
             let mut optional = false;
@@ -439,6 +440,13 @@ pub(super) fn prepare(
                                     frequency: 1,
                                 },
                             ])]
+                        } else if let Some(arguments) = semantics::ability_arguments(
+                            view,
+                            t,
+                            occasions.get(usize::from(i)).copied(),
+                            c,
+                        ) {
+                            arguments?
                         } else {
                             vec![]
                         };
@@ -448,6 +456,16 @@ pub(super) fn prepare(
                             association: t
                                 .source
                                 .and_then(|s| ids.get(&s).copied())
+                                .or_else(|| {
+                                    // Its lasting effect's card (Herbalist, Tiara), else
+                                    // another of that card's effects still on the table.
+                                    let lastings = view.lasting();
+                                    let exact = lastings.iter().filter(|l| Some(l.id) == t.lasting);
+                                    let same = lastings
+                                        .iter()
+                                        .filter(|l| l.card == t.card && l.owner == t.owner);
+                                    exact.chain(same).find_map(|l| ids.get(&l.source?).copied())
+                                })
                                 .or_else(|| landscapes.get(&t.card).copied())
                                 .ok_or_else(|| {
                                     semantics::gap(d, "ability association unavailable")
@@ -590,8 +608,20 @@ pub(super) fn prepare(
                 DecisionKind::Choose {
                     options, min, max, ..
                 } => {
+                    let buttons = semantics::option_buttons(d.source, options);
+                    let option_modes = d.source.and_then(|s| {
+                        options
+                            .iter()
+                            .map(|&o| semantics::option_mode(s, o))
+                            .collect::<Option<Vec<_>>>()
+                    });
+                    let option_cards = options
+                        .iter()
+                        .map(|&o| (o, semantics::option_card(view, d, o)))
+                        .collect::<Vec<_>>();
                     if options.iter().all(|o| matches!(o, Opt::Mode(_)))
                         && d.source != Some(Card::Torturer)
+                        && buttons.is_none()
                     {
                         let source = d
                             .source
@@ -607,6 +637,20 @@ pub(super) fn prepare(
                                 )
                             })
                             .collect::<Result<Vec<_>, ProjectionError>>()?;
+                        (
+                            choice(desc, QuestionElements::Modes(modes), *min, *max, -1)?,
+                            AnswerPlan::Options {
+                                targets: options.clone(),
+                                min: *min,
+                                max: *max,
+                                decline: None,
+                            },
+                        )
+                    } else if let Some(modes) = option_modes {
+                        let modes = modes
+                            .into_iter()
+                            .map(|m| c.symbol("CardModes", m))
+                            .collect::<Result<Vec<_>, _>>()?;
                         (
                             choice(desc, QuestionElements::Modes(modes), *min, *max, -1)?,
                             AnswerPlan::Options {
@@ -668,10 +712,61 @@ pub(super) fn prepare(
                                 decline: Some(Opt::No),
                             },
                         )
-                    } else if matches!(d.source, Some(Card::Torturer | Card::Mill)) {
+                    } else if options == &[Opt::Yes, Opt::No]
+                        && let Some(target) = option_cards[0].1
+                    {
+                        (
+                            choice(
+                                desc,
+                                QuestionElements::Cards(vec![id(&target)?]),
+                                0,
+                                1,
+                                decline(c, d.purpose, 0)?,
+                            )?,
+                            AnswerPlan::Options {
+                                targets: vec![Opt::Yes],
+                                min: 1,
+                                max: 1,
+                                decline: Some(Opt::No),
+                            },
+                        )
+                    } else if *min == 1
+                        && *max == 1
+                        && options.iter().all(|o| matches!(o, Opt::Card(_)))
+                        && option_cards.iter().any(|x| x.1.is_some())
+                    {
+                        // A named option without a card to show is the decline (a copy
+                        // that can't be gained).
+                        let unshown = option_cards.iter().find(|x| x.1.is_none()).map(|x| x.0);
+                        let shown = option_cards
+                            .iter()
+                            .filter_map(|&(o, card)| Some(id(&card?).map(|i| (i, o))))
+                            .collect::<Result<Vec<_>, ProjectionError>>()?;
+                        let button = match unshown {
+                            Some(_) => decline(c, d.purpose, 0)?,
+                            None => -1,
+                        };
+                        (
+                            choice(
+                                desc,
+                                QuestionElements::Cards(shown.iter().map(|x| x.0).collect()),
+                                usize::from(unshown.is_none()),
+                                1,
+                                button,
+                            )?,
+                            AnswerPlan::Options {
+                                targets: shown.iter().map(|x| x.1).collect(),
+                                min: 1,
+                                max: 1,
+                                decline: unshown,
+                            },
+                        )
+                    } else if matches!(d.source, Some(Card::Torturer | Card::Mill))
+                        || buttons.is_some()
+                    {
                         let mut children = vec![];
                         let mut plans = vec![];
-                        for &o in options {
+                        for (i, &o) in options.iter().enumerate() {
                             let (story, button) = match (d.source, o) {
                                 (Some(Card::Torturer), Opt::Mode(0)) => {
                                     ("TORTURER_MAY_DISCARD", "CONTINUE")
@@ -681,7 +776,10 @@ pub(super) fn prepare(
                                 }
                                 (Some(Card::Mill), Opt::Yes) => ("MILL", "CONTINUE"),
                                 (Some(Card::Mill), Opt::No) => ("MILL", "DONT_DISCARD"),
-                                _ => return Err(semantics::gap(d, "alternative binding")),
+                                _ => buttons
+                                    .as_ref()
+                                    .and_then(|b| b.get(i).copied())
+                                    .ok_or_else(|| semantics::gap(d, "alternative binding"))?,
                             };
                             children.push(choice(
                                 description(c, "BUTTON", story, association)?,

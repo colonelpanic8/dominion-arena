@@ -280,10 +280,21 @@ fn build(
     ));
     // Searched discard/deck candidates are visible without disclosing the other slots.
     if let Some(d) = view.pending() {
-        let offered = d.about.iter().copied().chain(match &d.kind {
-            dominion_engine::DecisionKind::Cards { candidates, .. } => candidates.clone(),
-            _ => vec![],
+        // A triggered ability's own card in a discard pile (Tunnel discarded with others).
+        let triggers = view.pending_triggers().into_iter().filter_map(|t| {
+            t.source.filter(|&id| {
+                matches!(view.zone(id), Some(dominion_engine::Zone::Discard(p)) if p == d.player)
+            })
         });
+        let offered = d
+            .about
+            .iter()
+            .copied()
+            .chain(match &d.kind {
+                dominion_engine::DecisionKind::Cards { candidates, .. } => candidates.clone(),
+                _ => vec![],
+            })
+            .chain(triggers);
         let mut inspected = Vec::new();
         for id in offered {
             if zones.iter().any(|z| z.slots.contains(&Some(id))) || inspected.contains(&Some(id)) {
