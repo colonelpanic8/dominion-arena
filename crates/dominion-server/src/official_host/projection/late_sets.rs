@@ -3,8 +3,8 @@
 //! offered to the decider resolves to a response the engine accepts.
 //! `LATE_SETS_CARDS=<names>` checks other cards; `LATE_SETS_REPORT=1` prints instead of failing.
 use super::*;
-use dominion_engine::{DecisionKind, Game, GameConfig, KnownCards, Move, Response, Set};
-use dominion_online::questions::{Question, QuestionKind};
+use dominion_engine::{DecisionKind, Game, GameConfig, KnownCards, Move, Opt, Response, Set};
+use dominion_online::questions::{Question, QuestionElements, QuestionKind};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 const FILLER: &[Card] = &[
@@ -94,8 +94,8 @@ fn update(game: &Game, seat: u8, index: i32) -> Result<ProjectedUpdate, Projecti
     )
 }
 
-/// Every leaf choice of a question: each element alone, the empty answer where it is
-/// allowed, and the largest selection.
+/// Leaf choices of a question: each element alone, the empty answer where it is allowed,
+/// the largest selection and every rotation of a minimal one.
 fn answers(q: &Question) -> Vec<Vec<i32>> {
     match &q.kind {
         QuestionKind::Complex(children) => children
@@ -122,7 +122,9 @@ fn answers(q: &Question) -> Vec<Vec<i32>> {
                 a.push((0..(*max).min(len)).rev().collect());
             }
             if *min > 1 {
-                a.push((0..*min).collect());
+                for offset in 0..len {
+                    a.push((0..*min).map(|i| (offset + i) % len).collect());
+                }
             }
             a
         }
@@ -164,9 +166,27 @@ fn game_for(card: Card, seed: u64) -> Option<Game> {
         kingdom.truncate(9);
         kingdom.push(pile);
     }
+    // A Prophecy comes into effect once Omens take its Suns; Loot comes from its pile.
+    if card.kind() == dominion_engine::Kind::Prophecy {
+        kingdom.truncate(9);
+        kingdom.push(Card::TeaHouse);
+    }
+    if card.is(dominion_engine::Types::LOOT) {
+        kingdom.truncate(9);
+        kingdom.push(Card::SackOfLoot);
+    }
+    // A Liaison's pile brings an Ally; a fixed one, not whichever setup would pick.
+    let liaison = kingdom.iter().any(|&k| {
+        Card::ALL
+            .iter()
+            .any(|c| (*c == k || c.def().pile == Some(k)) && c.is(dominion_engine::Types::LIAISON))
+    });
     let mut cfg = GameConfig::new(2, kingdom, 5000 + seed);
     cfg.colonies = Some(false);
     cfg.shelters = Some(false);
+    if liaison && card.kind() != dominion_engine::Kind::Ally {
+        cfg.landscapes.push(Card::LeagueOfBankers);
+    }
     if card.kind().is_landscape() {
         cfg.landscapes.push(card);
     }
@@ -228,7 +248,7 @@ fn check(card: Card, seeds: u64) -> Vec<String> {
                     Ok(Ok(u)) if seat == decider => question = u.question,
                     Ok(Ok(_)) => {}
                     Ok(Err(e)) => {
-                        errors.insert(e.to_string());
+                        errors.insert(format!("{:?} {:?}: {e}", d.source, d.purpose));
                     }
                     Err(_) => {
                         errors.insert("projection panicked".into());
@@ -296,4 +316,231 @@ fn allies_plunder_and_rising_sun_admitted_cards_project_and_resolve() {
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// The first position in a random game with `card` dealt where `found` holds.
+fn first(card: Card, found: impl Fn(&Game) -> bool) -> Game {
+    for seed in 0..40 {
+        let Some(mut game) = game_for(card, seed) else {
+            continue;
+        };
+        let mut rng = Rng(seed * 104729 + 7);
+        for step in 0..300 {
+            if found(&game) {
+                return game;
+            }
+            let Some(d) = game.pending() else { break };
+            let response = respond_for(&game, card, &mut rng).or_else(|| {
+                let q = update(&game, d.player.0, step + 1).ok()?.question?;
+                let mut options: Vec<_> = answers(&q.wire)
+                    .into_iter()
+                    .filter_map(|a| q.resolve_at(19, q.wire.index, &a).ok())
+                    .collect();
+                (!options.is_empty()).then(|| options.swap_remove(rng.below(options.len())))
+            });
+            if response.is_none_or(|r| game.respond(r).is_err()) {
+                break;
+            }
+        }
+    }
+    panic!("no position found for {}", card.name());
+}
+
+fn question(game: &Game) -> (ProjectedUpdate, Question) {
+    let seat = game.pending().unwrap().player.0;
+    let u = update(game, seat, 1).unwrap();
+    let q = u.question.as_ref().unwrap().wire.clone();
+    (u, q)
+}
+
+fn pending(game: &Game, source: Card) -> bool {
+    game.pending()
+        .is_some_and(|d| d.source == Some(source) && matches!(d.kind, DecisionKind::Choose { .. }))
+}
+
+fn resolve(u: &ProjectedUpdate, values: &[i32]) -> Response {
+    let q = u.question.as_ref().unwrap();
+    q.resolve_at(19, q.wire.index, values).unwrap()
+}
+
+#[test]
+fn a_shadow_card_in_the_deck_shows_there_and_its_play_resolves() {
+    let in_deck = |g: &Game, id| matches!(g.zone(id), dominion_engine::Zone::Deck(_));
+    let game = first(Card::Fishmonger, |g| {
+        g.pending().is_some_and(|d| match &d.kind {
+            DecisionKind::Turn { moves, .. } => moves
+                .iter()
+                .any(|m| matches!(m, Move::Play(id) if in_deck(g, *id))),
+            _ => false,
+        })
+    });
+    let d = game.pending().unwrap();
+    let DecisionKind::Turn { moves, .. } = &d.kind else {
+        unreachable!()
+    };
+    let played = moves
+        .iter()
+        .find(|m| matches!(m, Move::Play(id) if in_deck(&game, *id)))
+        .copied()
+        .unwrap();
+    let (u, q) = question(&game);
+    let fishmonger = catalog().card(Card::Fishmonger).unwrap();
+    let deck = u
+        .snapshot
+        .state
+        .zones
+        .iter()
+        .find(|z| z.kind == super::zone::DRAW && z.owner == i32::from(d.player.0))
+        .unwrap();
+    let shown: Vec<i32> = deck
+        .cards
+        .iter()
+        .copied()
+        .filter(|&id| id >= 0 && u.snapshot.state.cards[id as usize].card_name == fishmonger)
+        .collect();
+    assert!(
+        !shown.is_empty(),
+        "the deck shows its playable Shadow cards"
+    );
+    // The PLAY choice offers it; picking it plays that card from the deck.
+    let path = |q: &Question| -> Option<Vec<i32>> {
+        let pick = |elements: &QuestionElements| match elements {
+            QuestionElements::Cards(ids) => ids.iter().position(|id| shown.contains(id)),
+            _ => None,
+        };
+        match &q.kind {
+            QuestionKind::Choice { elements, .. } => pick(elements).map(|i| vec![i as i32]),
+            QuestionKind::Complex(children) => children.iter().enumerate().find_map(|(c, q)| {
+                let QuestionKind::Choice { elements, .. } = &q.kind else {
+                    return None;
+                };
+                pick(elements).map(|i| vec![c as i32, i as i32])
+            }),
+            _ => None,
+        }
+    };
+    let response = resolve(&u, &path(&q).unwrap());
+    let Response::Move(Move::Play(id)) = response else {
+        panic!("{response:?}")
+    };
+    assert!(in_deck(&game, id) && game.card(id) == Card::Fishmonger);
+    assert!(matches!(played, Move::Play(p) if game.card(p) == Card::Fishmonger));
+}
+
+#[test]
+fn rotating_a_split_pile_offers_its_top_card_or_dont_rotate() {
+    let game = first(Card::TownCrier, |g| {
+        pending(g, Card::TownCrier)
+            && g.pending().unwrap().purpose == dominion_engine::Purpose::Other
+    });
+    let (u, q) = question(&game);
+    let top = u
+        .snapshot
+        .state
+        .zones
+        .iter()
+        .find(|z| z.owner == -1 && z.pile_name == catalog().card(Card::Townsfolk).unwrap())
+        .and_then(|z| z.cards.last().copied())
+        .unwrap();
+    let QuestionKind::Choice {
+        elements, decline, ..
+    } = &q.kind
+    else {
+        panic!("{q:?}")
+    };
+    assert_eq!(elements, &QuestionElements::Cards(vec![top]));
+    assert_eq!(
+        *decline,
+        catalog().symbol("DeclineButtonIds", "DONT_ROTATE").unwrap()
+    );
+    assert_eq!(resolve(&u, &[0]), Response::option(Opt::Yes));
+    assert_eq!(resolve(&u, &[]), Response::option(Opt::No));
+}
+
+#[test]
+fn gang_of_pickpockets_asks_spend_a_favor_or_continue_as_buttons() {
+    let game = first(Card::GangOfPickpockets, |g| {
+        pending(g, Card::GangOfPickpockets)
+    });
+    let (u, q) = question(&game);
+    let QuestionKind::Complex(children) = &q.kind else {
+        panic!("{q:?}")
+    };
+    let buttons: Vec<i32> = children
+        .iter()
+        .map(|c| match &c.kind {
+            QuestionKind::Choice { decline, .. } => *decline,
+            _ => panic!("{c:?}"),
+        })
+        .collect();
+    let symbol = |s| catalog().symbol("DeclineButtonIds", s).unwrap();
+    assert_eq!(buttons, vec![symbol("SPEND_FAVOR"), symbol("CONTINUE")]);
+    assert_eq!(resolve(&u, &[0]), Response::option(Opt::Yes));
+    assert_eq!(resolve(&u, &[1]), Response::option(Opt::No));
+}
+
+#[test]
+fn inherited_offers_starting_cards_by_name() {
+    let game = first(Card::Inherited, |g| pending(g, Card::Inherited));
+    let (u, q) = question(&game);
+    let DecisionKind::Choose { options, .. } = &game.pending().unwrap().kind else {
+        unreachable!()
+    };
+    let QuestionKind::Choice { elements, .. } = &q.kind else {
+        panic!("{q:?}")
+    };
+    let names: Vec<i32> = options
+        .iter()
+        .map(|o| match o {
+            Opt::Card(c) => catalog().card(*c).unwrap(),
+            _ => panic!("{o:?}"),
+        })
+        .collect();
+    assert_eq!(elements, &QuestionElements::Names(names));
+    for (i, &o) in options.iter().enumerate() {
+        assert_eq!(resolve(&u, &[i as i32]), Response::option(o));
+    }
+}
+
+#[test]
+fn bauble_topdeck_ability_names_the_gained_card() {
+    let game = first(Card::Bauble, |g| {
+        g.pending()
+            .is_some_and(|d| d.purpose == dominion_engine::Purpose::Trigger)
+            && g.view(g.pending().unwrap().player)
+                .pending_triggers()
+                .iter()
+                .any(|t| t.card == Card::Bauble)
+    });
+    let (_, q) = question(&game);
+    let QuestionKind::Choice {
+        elements: QuestionElements::Abilities(abilities),
+        ..
+    } = &q.kind
+    else {
+        panic!("{q:?}")
+    };
+    let topdeck = catalog()
+        .symbol("AbilityNames", "TOPDECK_REACTION")
+        .unwrap();
+    let ability = abilities.iter().find(|a| a.name == topdeck).unwrap();
+    assert_eq!(ability.description_type, 2);
+    assert!(matches!(
+        ability.arguments.as_slice(),
+        [dominion_online::questions::LogArgument::CardNames(names)] if names.len() == 1
+    ));
+}
+
+#[test]
+fn every_admitted_card_has_its_catalog_symbols() {
+    let report = super::super::profile::coverage_report(catalog());
+    let gaps: Vec<_> = report
+        .cards
+        .iter()
+        .filter(|c| {
+            c.semantic_mapped && ["Allies", "Plunder", "RisingSun"].contains(&c.set.as_str())
+        })
+        .flat_map(|c| c.gaps.iter().map(|g| g.to_string()))
+        .collect();
+    assert!(gaps.is_empty(), "{gaps:#?}");
 }

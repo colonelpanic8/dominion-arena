@@ -545,8 +545,7 @@ pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
 const DURATION: &[&str] = &["duration-ability", "duration-reminder"];
 const TRAIT: &[&str] = &["trait", "optional-ability"];
 
-/// Cards the survey runs clean and `projection::late_sets` covers. Loot (a face-down pile),
-/// and every card that gains one, wait for hidden piles in the state projection.
+/// Cards the survey runs clean and `projection::late_sets` covers.
 const ADMITTED: &[(Card, &[&str])] = &[
     (
         Card::Cage,
@@ -684,10 +683,78 @@ const ADMITTED: &[(Card, &[&str])] = &[
     (Card::Rich, &["trait"]),
     (Card::Shy, TRAIT),
     (Card::Tireless, &["trait", "set-aside"]),
+    (
+        Card::Cutthroat,
+        &[
+            "off-turn-attack",
+            "card-selection",
+            "duration-ability",
+            "loot",
+        ],
+    ),
+    (Card::JewelledEgg, &["loot"]),
+    (Card::Pickaxe, &["card-selection", "loot"]),
+    (Card::SackOfLoot, &["loot"]),
+    (
+        Card::Search,
+        &["duration-ability", "duration-reminder", "loot"],
+    ),
+    (Card::WealthyVillage, &["loot"]),
+    (Card::Peril, &["event", "card-selection", "loot"]),
+    (Card::Foray, &["event", "card-selection", "loot"]),
+    (Card::Looting, &["event", "loot"]),
+    (
+        Card::Invasion,
+        &["event", "optional-play", "pile-selection", "loot"],
+    ),
+    (Card::Prosper, &["event", "pile-selection", "loot"]),
+    (Card::Cursed, &["trait", "loot"]),
+    (
+        Card::Amphora,
+        &[
+            "loot",
+            "semantic-modes",
+            "duration-ability",
+            "duration-reminder",
+        ],
+    ),
+    (Card::Doubloons, &["loot"]),
+    (
+        Card::EndlessChalice,
+        &["loot", "duration-ability", "duration-reminder"],
+    ),
+    (
+        Card::Figurehead,
+        &["loot", "duration-ability", "duration-reminder"],
+    ),
+    (Card::Hammer, &["loot", "pile-selection"]),
+    (Card::Insignia, &["loot", "optional-ability"]),
+    (
+        Card::Jewels,
+        &["loot", "duration-ability", "duration-reminder"],
+    ),
+    (Card::Orb, &["loot", "discard-inspection", "semantic-modes"]),
+    (Card::PrizeGoat, &["loot", "card-selection"]),
+    (Card::PuzzleBox, &["loot", "set-aside"]),
+    (Card::Sextant, &["loot", "looking", "ordered-cards"]),
+    (Card::Shield, &["loot", "reaction-ability"]),
+    (
+        Card::SpellScroll,
+        &["loot", "pile-selection", "semantic-modes"],
+    ),
+    (Card::Staff, &["loot", "optional-play"]),
+    (Card::Sword, &["loot", "off-turn-attack", "card-selection"]),
 ];
 
 /// The features a card needs (see `profile::requirements`); `None` until reviewed.
 pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
+    // The Loot pile is offered once each Loot is.
+    if card == Card::Loot {
+        let mut loots = Card::ALL.iter().filter(|c| c.def().pile == Some(card));
+        return loots
+            .all(|&c| requirements(c).is_some())
+            .then_some(&["loot"]);
+    }
     ADMITTED
         .iter()
         .find(|(c, _)| *c == card)

@@ -32,6 +32,16 @@ pub(super) fn binding(
         (Practice, P::Play) => ("PLAY", "PRACTICE"),
         (ReceiveTribute, P::Gain) => ("GAIN", receive_tribute_story(view, d)),
         (SeaTrade, P::Trash) => ("TRASH", "SEA_TRADE"),
+        (Kitsune, P::Mode) => ("CHOOSE_MODE", "KITSUNE"),
+        (MountainShrine, P::Trash) => ("TRASH", "MOUNTAIN_SHRINE"),
+        (RiverShrine, P::Trash) => ("TRASH", "RIVER_SHRINE_TRASH"),
+        (RiverShrine, P::Gain) => ("GAIN", "RIVER_SHRINE_GAIN"),
+        (RusticVillage, P::Discard) if choosing => ("DISCARD", "RUSTIC_VILLAGE_CHOICE"),
+        (RusticVillage, P::Discard) => ("DISCARD", "RUSTIC_VILLAGE_DISCARD"),
+        (Sickness, P::Mode) => ("CHOOSE_MODE", "SICKNESS"),
+        (Sickness, P::Discard) => ("DISCARD", "SICKNESS_DISCARD"),
+        (Growth, P::Gain) => ("GAIN", "GROWTH"),
+        (KindEmperor, P::Gain) => ("GAIN", "KIND_EMPEROR"),
         _ => return None,
     };
     Some(arguments(view, d, c, story).map(|args| (kind, story, args)))
@@ -55,6 +65,23 @@ fn arguments(
                 .and_then(|id| view.cost_of(id))
                 .ok_or_else(|| gap(d, "missing visible trashed card"))?;
             vec![amount(trashed.plus_coins(2))]
+        }
+        "GROWTH" => {
+            // Cheaper than the Treasure whose gain this answers.
+            let treasure = view
+                .log()
+                .iter()
+                .rev()
+                .find_map(|e| match e {
+                    Event::Gained { player, card, .. }
+                        if *player == d.player && card.is(Types::TREASURE) =>
+                    {
+                        Some(*card)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| gap(d, "missing gained Treasure"))?;
+            vec![amount(view.cost(treasure))]
         }
         "GATHER" => {
             let DecisionKind::Pile { piles, .. } = &d.kind else {
@@ -123,6 +150,10 @@ pub(super) fn choice_shape(
                 None => ChoiceShape::Buttons(vec![(Opt::Yes, "CONTINUE"), (Opt::No, "NO_THANKS")]),
             },
         )),
+        (Card::RusticVillage, Purpose::Discard) => Some(Ok(ChoiceShape::Buttons(vec![
+            (Opt::Yes, "CONTINUE"),
+            (Opt::No, "DONT_DISCARD"),
+        ]))),
         (Card::SnakeWitch, Purpose::Reveal) => Some(
             view.pending_source()
                 .map(|card| ChoiceShape::Target {
@@ -144,7 +175,25 @@ pub(super) fn ability_arguments(
 ) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
     let missing =
         || ProjectionError::UnsupportedState(format!("{} ability argument", t.card.name()));
+    let set_aside = || {
+        let l = view
+            .lasting()
+            .into_iter()
+            .find(|l| Some(l.id) == t.lasting)
+            .ok_or_else(missing)?;
+        let card = (l.data.cards.iter().copied())
+            .chain(l.data.pick)
+            .find_map(|id| view.card(id))
+            .ok_or_else(missing)?;
+        Ok(vec![names(c, card)?])
+    };
     match (t.card, t.ability) {
+        (Card::RapidExpansion, 0) => Some(set_aside()),
+        (Card::RapidExpansion, 1) | (Card::Progress, 0) => Some(
+            super::allies::last_gained(view, t.owner)
+                .ok_or_else(missing)
+                .and_then(|card| Ok(vec![names(c, card)?])),
+        ),
         (Card::Daimyo, 1) => Some(
             view.log()
                 .iter()
@@ -160,14 +209,38 @@ pub(super) fn ability_arguments(
     }
 }
 
-pub(super) fn mode(_card: Card, _mode: u8) -> Option<&'static str> {
-    None
+pub(super) fn mode(card: Card, mode: u8) -> Option<&'static str> {
+    let choices: &[&str] = match card {
+        Card::Kitsune => &[
+            "KITSUNE_COINS",
+            "KITSUNE_ACTIONS",
+            "KITSUNE_CURSE",
+            "KITSUNE_SILVER",
+        ],
+        Card::Sickness => &["SICKNESS_CURSE", "SICKNESS_DISCARD"],
+        _ => return None,
+    };
+    choices.get(usize::from(mode)).copied()
 }
 
 pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     Some(match (card, ability) {
         (Card::Samurai, 1) => "SAMURAI",
         (Card::Daimyo, 1) => "DAIMYO_REPLAY",
+        (Card::RiverShrine, 0) => "RIVER_SHRINE",
+        (Card::Foresight, 0) => "FORESIGHT_RETURN_TO_HAND",
+        (Card::KindEmperor, 0) => "KIND_EMPEROR",
+        (Card::Sickness, 0) => "SICKNESS",
+        (Card::BidingTime, 0) => "BIDING_TIME_RETURN_TO_HAND",
+        (Card::BidingTime, 1) => "BIDING_TIME_SET_ASIDE_HAND",
+        (Card::Panic, 0) => "PANIC_BUYS",
+        (Card::Panic, 1) => "PANIC_RETURN",
+        (Card::Enlightenment, 0) => "ENLIGHTENMENT_REPLACE_ABILITY",
+        (Card::GoodHarvest, 0) => "GOOD_HARVEST",
+        (Card::HarshWinter, 0) => "HARSH_WINTER",
+        (Card::Progress, 0) => "PROGRESS",
+        (Card::RapidExpansion, 0) => "RAPID_EXPANSION_PLAY_LATER",
+        (Card::RapidExpansion, 1) => "RAPID_EXPANSION_SET_ASIDE",
         _ => return None,
     })
 }
@@ -227,6 +300,61 @@ pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
             ("QuestionTypes", "GAIN"),
         ],
         SeaTrade => &[("QuestionIds", "SEA_TRADE"), ("QuestionTypes", "TRASH")],
+        Kitsune => &[
+            ("QuestionIds", "KITSUNE"),
+            ("QuestionTypes", "CHOOSE_MODE"),
+            ("CardModes", "KITSUNE_COINS"),
+            ("CardModes", "KITSUNE_ACTIONS"),
+            ("CardModes", "KITSUNE_CURSE"),
+            ("CardModes", "KITSUNE_SILVER"),
+        ],
+        MountainShrine => &[
+            ("QuestionIds", "MOUNTAIN_SHRINE"),
+            ("QuestionTypes", "TRASH"),
+        ],
+        RiverShrine => &[
+            ("QuestionIds", "RIVER_SHRINE_TRASH"),
+            ("QuestionIds", "RIVER_SHRINE_GAIN"),
+            ("QuestionTypes", "TRASH"),
+            ("QuestionTypes", "GAIN"),
+            ("AbilityNames", "RIVER_SHRINE"),
+        ],
+        RusticVillage => &[
+            ("QuestionIds", "RUSTIC_VILLAGE_CHOICE"),
+            ("QuestionIds", "RUSTIC_VILLAGE_DISCARD"),
+            ("QuestionTypes", "DISCARD"),
+            ("QuestionTypes", "COMPLEX_OR"),
+            ("QuestionTypes", "BUTTON"),
+            ("DeclineButtonIds", "CONTINUE"),
+            ("DeclineButtonIds", "DONT_DISCARD"),
+        ],
+        Sickness => &[
+            ("QuestionIds", "SICKNESS"),
+            ("QuestionIds", "SICKNESS_DISCARD"),
+            ("QuestionTypes", "CHOOSE_MODE"),
+            ("QuestionTypes", "DISCARD"),
+            ("CardModes", "SICKNESS_CURSE"),
+            ("CardModes", "SICKNESS_DISCARD"),
+            ("AbilityNames", "SICKNESS"),
+        ],
+        KindEmperor => &[
+            ("QuestionIds", "KIND_EMPEROR"),
+            ("QuestionTypes", "GAIN"),
+            ("AbilityNames", "KIND_EMPEROR"),
+        ],
+        Foresight => &[("AbilityNames", "FORESIGHT_RETURN_TO_HAND")],
+        BidingTime => &[
+            ("AbilityNames", "BIDING_TIME_RETURN_TO_HAND"),
+            ("AbilityNames", "BIDING_TIME_SET_ASIDE_HAND"),
+        ],
+        Enlightenment => &[("AbilityNames", "ENLIGHTENMENT_REPLACE_ABILITY")],
+        GoodHarvest => &[("AbilityNames", "GOOD_HARVEST")],
+        HarshWinter => &[("AbilityNames", "HARSH_WINTER")],
+        Progress => &[("AbilityNames", "PROGRESS")],
+        RapidExpansion => &[
+            ("AbilityNames", "RAPID_EXPANSION_PLAY_LATER"),
+            ("AbilityNames", "RAPID_EXPANSION_SET_ASIDE"),
+        ],
         _ => &[],
     }
 }
@@ -287,12 +415,49 @@ const ADMITTED: &[(Card, &[&str])] = &[
     (Card::Practice, &["event", "repeated-play", "optional-play"]),
     (Card::ReceiveTribute, &["event", "pile-selection"]),
     (Card::SeaTrade, &["event", "card-selection"]),
+    (Card::BidingTime, &["prophecy", "set-aside"]),
+    (Card::Enlightenment, &["prophecy"]),
+    (Card::FlourishingTrade, &["prophecy", "dynamic-cost"]),
+    (Card::GoodHarvest, &["prophecy"]),
+    (Card::GreatLeader, &["prophecy"]),
+    (Card::HarshWinter, &["prophecy", "debt"]),
+    (Card::KindEmperor, &["prophecy", "pile-selection"]),
+    (Card::Progress, &["prophecy"]),
+    (Card::RapidExpansion, &["prophecy", "set-aside"]),
+    (
+        Card::Sickness,
+        &["prophecy", "semantic-modes", "card-selection"],
+    ),
+];
+
+/// Omens, once every Prophecy is carried: setup picks their Prophecy at random.
+const OMENS: &[(Card, &[&str])] = &[
+    (
+        Card::Kitsune,
+        &["prophecy", "semantic-modes", "off-turn-attack"],
+    ),
+    (Card::MountainShrine, &["prophecy", "card-selection"]),
+    (Card::Poet, &["prophecy"]),
+    (
+        Card::RiverShrine,
+        &["prophecy", "card-selection", "pile-selection"],
+    ),
+    (Card::RusticVillage, &["prophecy", "card-selection"]),
+    (Card::TeaHouse, &["prophecy"]),
 ];
 
 /// The features a card needs (see `profile::requirements`); `None` until reviewed.
 pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
-    ADMITTED
-        .iter()
-        .find(|(c, _)| *c == card)
-        .map(|(_, features)| *features)
+    let find = |list: &[(Card, &'static [&'static str])]| {
+        list.iter().find(|(c, _)| *c == card).map(|(_, f)| *f)
+    };
+    if let Some(features) = find(OMENS) {
+        let mut prophecies = Card::ALL
+            .iter()
+            .filter(|c| c.kind() == dominion_engine::Kind::Prophecy);
+        return prophecies
+            .all(|&p| ADMITTED.iter().any(|(c, _)| *c == p))
+            .then_some(features);
+    }
+    find(ADMITTED)
 }
