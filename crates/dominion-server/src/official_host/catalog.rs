@@ -245,6 +245,7 @@ pub(super) fn pile_marker(marker: dominion_protocol::PileMarker) -> i32 {
         Obelisk => 1,
         Split => 2,
         Mixed => 3,
+        Ferryman => 4,
     }
 }
 

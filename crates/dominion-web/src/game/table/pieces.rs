@@ -264,6 +264,12 @@ pub fn TableCard(
     /// A Supply pile's markers, printed on its mini card (`CardView::pile`).
     #[props(default)]
     pile: Option<Vec<String>>,
+    /// The Trait on the pile (`CardView::attached`).
+    #[props(default)]
+    attached: Option<String>,
+    /// The card of the pile a landscape names (a Trait's, Obelisk's), drawn on it.
+    #[props(default)]
+    holds: Option<String>,
     #[props(default)] inspect_pile: bool,
     /// Upside down, as an opponent's cards across the table.
     #[props(default)]
@@ -343,8 +349,16 @@ pub fn TableCard(
                     name: name.clone(),
                     size,
                     cost: cost.clone(),
-                    shifted: count.is_some() && size == CardSize::Mini,
+                    shifted: count.is_some() && size != CardSize::Full,
                     pile: pile.clone(),
+                    attached: attached.clone(),
+                    if let Some(held) = holds.clone() {
+                        div {
+                            class: "dt-held-pile",
+                            style: crate::card::layout::LANDSCAPE_PILE.css(),
+                            CardView { name: held, size: CardSize::Mini }
+                        }
+                    }
                 }
             }
             if empty {

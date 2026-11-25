@@ -296,10 +296,12 @@ fn snapshot_raw_allocations_are_disclosed_only_and_receiver_facts_agree() {
             if z.kind == zone::DRAW || (z.kind == zone::HAND && z.owner != i32::from(seat)) {
                 assert!(z.cards.iter().all(|&id| id == -1));
             }
-            if z.kind == zone::DISCARD
-                || matches!(z.kind, zone::SUPPLY | zone::TREASURE | zone::VICTORY)
-            {
+            if z.kind == zone::DISCARD {
                 assert!(z.cards.iter().skip(1).all(|&id| id == -1));
+            }
+            // A pile is bottom first: only its top, the last, is disclosed.
+            if matches!(z.kind, zone::SUPPLY | zone::TREASURE | zone::VICTORY) {
+                assert!(z.cards.iter().rev().skip(1).all(|&id| id == -1));
             }
         }
         assert!(
@@ -1026,5 +1028,53 @@ fn split_piles_carry_their_marker_to_their_supply_zone() {
         .map(|m| (m.kind, state.zones[m.zone_index as usize].pile_name))
         .collect();
     let split = super::super::catalog::pile_marker(dominion_protocol::PileMarker::Split);
-    assert_eq!(marked, vec![(split, catalog.card(Card::Settlers).unwrap())]);
+    let settlers = catalog.card(Card::Settlers).unwrap();
+    assert_eq!(marked, vec![(split, settlers)]);
+    // Anyone may look through it, so its cards go by name: their client shadows it.
+    let zone = &state.zones[state.pile_markers[0].zone_index as usize];
+    let mut names: Vec<i32> = zone
+        .cards
+        .iter()
+        .map(|&id| state.cards[id as usize].card_name)
+        .collect();
+    names.dedup();
+    let bustling = catalog.card(Card::BustlingVillage).unwrap();
+    assert_eq!(names, vec![bustling, settlers]);
+}
+
+#[test]
+fn the_bane_is_marked_and_traits_attach_to_their_pile() {
+    let catalog = catalog();
+    let mut kingdom = KINGDOM.to_vec();
+    kingdom[0] = Card::YoungWitch;
+    let mut config = GameConfig::new(2, kingdom, 42);
+    config.landscapes.push(Card::Cheap);
+    let game = Game::new(config).unwrap();
+    let view = game.view(PlayerId(0));
+    let bane = view
+        .notes()
+        .iter()
+        .find(|n| n.setup == Some(dominion_engine::SetupRole::Bane))
+        .and_then(|n| n.pile)
+        .unwrap();
+    let cheap = view.piles().find(|p| p.traits() == [Card::Cheap]).unwrap();
+    let (bane, cheap) = (
+        catalog.card(view.pile(bane).card()).unwrap(),
+        catalog.card(cheap.card()).unwrap(),
+    );
+    let state = update(&game, 0, &catalog, 1).snapshot.state;
+    let marked: Vec<(i32, i32)> = state
+        .pile_markers
+        .iter()
+        .map(|m| (m.kind, state.zones[m.zone_index as usize].pile_name))
+        .collect();
+    let mark = super::super::catalog::pile_marker(dominion_protocol::PileMarker::Bane);
+    assert_eq!(marked, vec![(mark, bane)]);
+    let traits: Vec<(i32, i32)> = state
+        .zones
+        .iter()
+        .filter(|z| z.attached_trait != 0)
+        .map(|z| (z.pile_name, z.attached_trait))
+        .collect();
+    assert_eq!(traits, vec![(cheap, catalog.card(Card::Cheap).unwrap())]);
 }

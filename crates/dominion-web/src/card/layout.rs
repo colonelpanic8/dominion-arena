@@ -28,6 +28,13 @@ const fn r(x: f32, y: f32, w: f32, h: f32) -> Rect {
     Rect { x, y, w, h }
 }
 
+/// A pile's Trait, drawn as a micro card across the top of its mini card.
+pub const ATTACHED: Rect = r(0.22, 0.03, 0.72, 0.14);
+/// That micro card's name, filling it.
+pub const ATTACHED_NAME: Rect = r(0.03, 0.2, 0.94, 0.8);
+/// The card of the pile a mini landscape names (a Trait's, Obelisk's), drawn on it.
+pub const LANDSCAPE_PILE: Rect = r(0.6, 0.177, 0.3, 0.446);
+
 impl Rect {
     pub fn css(&self) -> String {
         format!(
@@ -122,7 +129,7 @@ impl Shape {
             CardSize::Full => r(0.09, 0.049, 0.82, 0.082),
             CardSize::Mini if self.landscape => r(0.09, 0.72, 0.82, 0.24),
             CardSize::Mini => r(0.09, 0.06, 0.82, 0.145),
-            CardSize::Micro => r(0.17, 0.2, 0.76, 0.6),
+            CardSize::Micro => r(0.09, 0.23, 0.82, 0.775),
         }
     }
 

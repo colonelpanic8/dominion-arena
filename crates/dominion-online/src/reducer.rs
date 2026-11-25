@@ -842,7 +842,8 @@ impl Reducer {
                             .collect(),
                     });
                 } else {
-                    let top = zone.cards.iter().find_map(|id| {
+                    // Bottom first: the top is the last card known.
+                    let top = zone.cards.iter().rev().find_map(|id| {
                         self.zones
                             .get(&zone.index)?
                             .exact

@@ -194,6 +194,10 @@ pub struct PileEntry {
     pub badges: Vec<Badge>,
     /// What dominion.games prints on the pile's card (Bane, Split, ...), in its order.
     pub markers: Vec<PileMarker>,
+    /// The Trait on it, drawn across its top.
+    pub attached: Option<String>,
+    /// Holding different cards one can look through: a back shows under it.
+    pub shadowed: bool,
 }
 
 /// A token, Trait or counter shown on a pile, player or landscape.
@@ -218,6 +222,8 @@ pub struct LandscapeEntry {
     pub types: Vec<String>,
     pub badges: Vec<Badge>,
     pub owners: Vec<Who>,
+    /// The card of the pile it names (a Trait's, Obelisk's), drawn on it.
+    pub pile: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -661,15 +667,6 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> Pi
             card: None,
         });
     }
-    for tr in &p.traits {
-        badges.push(Badge {
-            kind: "trait".into(),
-            text: format!("Trait: {tr}"),
-            count: None,
-            player: None,
-            card: Some(tr.clone()),
-        });
-    }
     PileEntry {
         at,
         name: p.card.clone(),
@@ -691,6 +688,8 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> Pi
             .and_then(|s| s.marker())
             .into_iter()
             .collect(),
+        attached: p.traits.first().cloned(),
+        shadowed: p.structure.as_ref().is_some_and(|s| s.shadowed(p.count)),
     }
 }
 
@@ -881,11 +880,21 @@ fn note_badge(
             (_, "Obelisk") if n.pile.is_some() => Some(PileMarker::Obelisk),
             _ => None,
         };
-        if let Some(m) = marker.filter(|m| !p.markers.contains(m)) {
-            p.markers.push(m);
-            p.markers.sort();
+        match marker {
+            // The marker says it, and Obelisk's card shows the pile.
+            Some(m) => {
+                if !p.markers.contains(&m) {
+                    p.markers.push(m);
+                    p.markers.sort();
+                }
+                if m == PileMarker::Obelisk
+                    && let Some(l) = landscapes.iter_mut().find(|l| l.card == n.source)
+                {
+                    l.pile = Some(p.name.clone());
+                }
+            }
+            None => p.badges.push(b),
         }
-        p.badges.push(b);
     } else if let Some(l) = landscapes.iter_mut().find(|l| l.card == on) {
         l.badges.push(b);
     }
@@ -1033,6 +1042,7 @@ pub fn board(
                 types: l.types.clone(),
                 badges,
                 owners: l.owners.iter().map(|&p| names.who(p)).collect(),
+                pile: None,
             }
         })
         .collect();
@@ -1069,6 +1079,13 @@ pub fn board(
         .map(|(i, p)| pile_entry(PileAt::NonSupply(i), p, &names, cards))
         .collect();
     let mut landscapes: Vec<LandscapeEntry> = landscapes;
+    for p in basic.iter().chain(&kingdom).chain(&non_supply) {
+        if let Some(l) =
+            (p.attached.as_ref()).and_then(|t| landscapes.iter_mut().find(|l| &l.card == t))
+        {
+            l.pile = Some(p.name.clone());
+        }
+    }
     for n in &view.notes {
         note_badge(
             n,

@@ -10,6 +10,7 @@ use super::{
     questions::{self, PreparedQuestion},
 };
 use crate::hub;
+use dominion_protocol::PileMarker;
 use dominion_protocol::lobby::ClockView;
 
 #[derive(Debug, thiserror::Error)]
@@ -62,6 +63,15 @@ fn count(value: u32, field: &'static str) -> Result<i32, ProjectionError> {
 struct VisibleZone {
     wire: model::Zone,
     slots: Vec<Option<CardId>>,
+    /// Slots without a disclosed card whose name is public (a split pile's cards).
+    named: Vec<(usize, Card)>,
+}
+
+/// A wire card: a disclosed engine card, or a zone's slot known only by name.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Handle {
+    Card(CardId),
+    Named(usize, usize),
 }
 
 impl VisibleZone {
@@ -78,6 +88,7 @@ impl VisibleZone {
                 is_visible: kind != zone::DRAW,
             },
             slots,
+            named: vec![],
         }
     }
 }
@@ -96,7 +107,7 @@ fn validate_state(view: &View<'_>) -> Result<(), ProjectionError> {
     {
         return Err(gap("Boon/Hex/Artifact/Prophecy projection"));
     }
-    if !view.notes().is_empty() {
+    if view.notes().iter().any(|n| setup_marker(n).is_none()) {
         return Err(gap("structured setup/state notes"));
     }
     for p in view.players() {
@@ -116,7 +127,7 @@ fn validate_state(view: &View<'_>) -> Result<(), ProjectionError> {
         if p.hidden()
             || p.removed()
             || !p.tokens().is_empty()
-            || !p.traits().is_empty()
+            || p.traits().len() > 1
             || p.embargo() != 0
             || p.trade_route()
         {
@@ -126,6 +137,19 @@ fn validate_state(view: &View<'_>) -> Result<(), ProjectionError> {
         }
     }
     Ok(())
+}
+
+/// A setup note dominion.games shows only as a marker on its pile: the Bane, Obelisk's
+/// pile, Ferryman's.
+fn setup_marker(note: &dominion_engine::Note) -> Option<(dominion_engine::PileId, PileMarker)> {
+    use dominion_engine::SetupRole::*;
+    let marker = match (note.setup?, note.source) {
+        (Bane, Card::YoungWitch) => PileMarker::Bane,
+        (ChosenPile, Card::Obelisk) => PileMarker::Obelisk,
+        (ExtraPile, Card::Ferryman) => PileMarker::Ferryman,
+        _ => return None,
+    };
+    Some((note.pile?, marker))
 }
 
 fn build(
@@ -345,8 +369,9 @@ fn build(
         };
         let mut slots = vec![None; pile.size()];
         if let Some(top) = pile.top() {
+            // Bottom first, as their client stacks a zone's cards: the top is last.
             *slots
-                .first_mut()
+                .last_mut()
                 .ok_or(ProjectionError::Inconsistent("pile top without cards"))? = Some(top);
         }
         let marker = pile.structure().and_then(|s| {
@@ -357,13 +382,40 @@ fn build(
             };
             dominion_protocol::pile_marker(kind, s.cards.len())
         });
-        if let Some(marker) = marker {
+        let zone_index = integer(zones.len(), "zone index")?;
+        let mut pile_markers: Vec<PileMarker> = view
+            .notes()
+            .iter()
+            .filter_map(setup_marker)
+            .filter(|(id, _)| *id == pile.id())
+            .map(|(_, m)| m)
+            .chain(marker)
+            .collect();
+        pile_markers.sort();
+        for marker in pile_markers {
             markers.push(model::PileMarker {
                 kind: super::catalog::pile_marker(marker),
-                zone_index: integer(zones.len(), "zone index")?,
+                zone_index,
             });
         }
-        zones.push(VisibleZone::new(kind, -1, *name, slots));
+        let mut zone = VisibleZone::new(kind, -1, *name, slots);
+        // Their client shadows a pile it knows holds different cards.
+        if let Some(names) = pile.names().filter(|n| n.iter().any(|c| *c != n[0])) {
+            if names.len() != pile.size() {
+                return Err(ProjectionError::Inconsistent("pile names"));
+            }
+            let below = names.len() - 1;
+            zone.named = names
+                .into_iter()
+                .skip(1)
+                .enumerate()
+                .map(|(i, card)| (below - 1 - i, card))
+                .collect();
+        }
+        if let Some(&t) = pile.traits().first() {
+            zone.wire.attached_trait = catalog.card(t)?;
+        }
+        zones.push(zone);
         let cost = view.cost(pile.card());
         overrides.push((
             *name,
@@ -374,9 +426,9 @@ fn build(
             },
         ));
     }
-    let mut grouped: BTreeMap<(i32, i32), Vec<CardId>> = BTreeMap::new();
+    let mut grouped: BTreeMap<(i32, i32), Vec<Handle>> = BTreeMap::new();
     let mut seen = BTreeSet::new();
-    for z in &zones {
+    for (zi, z) in zones.iter().enumerate() {
         integer(z.slots.len(), "zone size")?;
         for id in z.slots.iter().flatten() {
             if !seen.insert(*id) {
@@ -406,10 +458,19 @@ fn build(
             grouped
                 .entry((catalog.card(card)?, catalog.card(origin)?))
                 .or_default()
-                .push(*id);
+                .push(Handle::Card(*id));
+        }
+        for &(slot, card) in &z.named {
+            if z.slots.get(slot) != Some(&None) {
+                return Err(ProjectionError::Inconsistent("named slot"));
+            }
+            grouped
+                .entry((catalog.card(card)?, z.wire.pile_name))
+                .or_default()
+                .push(Handle::Named(zi, slot));
         }
     }
-    let mut identities = BTreeMap::new();
+    let mut handles = BTreeMap::new();
     let mut cards = Vec::new();
     let mut card_names = Vec::new();
     let mut card_counts = Vec::new();
@@ -418,9 +479,9 @@ fn build(
         card_names.push(name);
         pile_names.push(origin);
         card_counts.push(integer(group.len(), "allocation count")?);
-        for engine_id in group {
+        for handle in group {
             let id = integer(cards.len(), "allocated cards")?;
-            identities.insert(engine_id, id);
+            handles.insert(handle, id);
             cards.push(model::Card {
                 id,
                 card_name: name,
@@ -429,6 +490,13 @@ fn build(
         }
     }
     integer(cards.len(), "allocated cards")?;
+    let identities: BTreeMap<CardId, i32> = handles
+        .iter()
+        .filter_map(|(h, &id)| match h {
+            Handle::Card(c) => Some((*c, id)),
+            Handle::Named(..) => None,
+        })
+        .collect();
     let mut zones = zones
         .into_iter()
         .enumerate()
@@ -437,7 +505,11 @@ fn build(
             z.wire.cards = z
                 .slots
                 .iter()
-                .map(|id| id.map_or(-1, |id| identities[&id]))
+                .enumerate()
+                .map(|(slot, id)| match id {
+                    Some(id) => handles[&Handle::Card(*id)],
+                    None => handles.get(&Handle::Named(i, slot)).copied().unwrap_or(-1),
+                })
                 .collect();
             if z.wire.kind == zone::HAND {
                 z.wire.is_visible = Some(PlayerId(z.wire.owner as u8)) == view.me();
@@ -559,6 +631,26 @@ fn build(
                 is_visible: true,
             });
         }
+    }
+    // A Trait or Obelisk is drawn with a card of its pile: a card of that pile linked
+    // to the landscape.
+    let notes = view.notes();
+    let chosen = view
+        .piles()
+        .flat_map(|p| p.traits().iter().map(move |&t| (p.id(), t)))
+        .chain(notes.iter().filter_map(|n| {
+            setup_marker(n)
+                .filter(|(_, m)| *m == PileMarker::Obelisk)
+                .map(|(pile, _)| (pile, n.source))
+        }));
+    for (pile, landscape) in chosen {
+        let (Some(top), Some(&linked)) = (view.pile(pile).top(), landscape_ids.get(&landscape))
+        else {
+            return Err(ProjectionError::UnsupportedState(
+                "a Trait or Obelisk without its pile's card".into(),
+            ));
+        };
+        links.entry(identities[&top]).or_default().insert(linked);
     }
     let associations = links
         .into_iter()

@@ -91,6 +91,12 @@ pub fn CardView(
     /// types its cards show on a pile (Attack, ...), as dominion.games does.
     #[props(default)]
     pile: Option<Vec<String>>,
+    /// The Trait on a Supply pile, drawn across the top of its mini card.
+    #[props(default)]
+    attached: Option<String>,
+    /// A Trait drawn across its pile (`attached`): its name fills the strip.
+    #[props(default)]
+    inset: bool,
     #[props(default = VNode::empty())] children: Element,
 ) -> Element {
     let cards = use_cards();
@@ -103,8 +109,12 @@ pub fn CardView(
             info,
             size,
             price,
-            shifted,
-            pile.as_deref(),
+            Placing {
+                shifted,
+                pile: pile.as_deref(),
+                attached: attached.as_deref().filter(|_| size == CardSize::Mini),
+                inset,
+            },
             &assets,
             m.as_ref(),
         ),
@@ -259,15 +269,28 @@ fn name_node(title: &str, rect: Rect, size: f32, light: bool) -> Element {
     }
 }
 
+/// Where a card lies, as far as its face shows it (`CardView`'s props of that name).
+struct Placing<'a> {
+    shifted: bool,
+    pile: Option<&'a [String]>,
+    attached: Option<&'a str>,
+    inset: bool,
+}
+
 fn draw(
     info: &CardInfo,
     size: CardSize,
     price: Option<Price>,
-    shifted: bool,
-    pile: Option<&[String]>,
+    placing: Placing<'_>,
     assets: &AssetDb,
     m: &dyn Measure,
 ) -> Element {
+    let Placing {
+        shifted,
+        pile,
+        attached,
+        inset,
+    } = placing;
     let shape = Shape::of(info);
     let ratio = shape.ratio(size);
     let files = assets.card(&info.name);
@@ -282,29 +305,31 @@ fn draw(
         ),
         CardSize::Micro => (None, files.and_then(|f| f.micro_template.as_deref())),
     };
+    // A pile with a Trait has its frame with room for it, where the cache has one.
+    let trait_template = attached
+        .and(template)
+        .and_then(|t| t.strip_suffix(".webp"))
+        .map(|t| format!("{t}-trait.webp"))
+        .filter(|t| assets.has(t));
+    let template = trait_template.as_deref().or(template);
     let fallback = template.is_none();
     let template_box = shape.template(size);
     let title = title_text(&info.name, assets);
     let mut name_box = shape.name(size);
-    if shifted && size == CardSize::Mini && !shape.landscape {
+    // Beside a count: upstream's "shifted-name" box.
+    if shifted && size != CardSize::Full && !shape.landscape {
         name_box.x = 0.24;
         name_box.w = 0.68;
     }
-    if size == CardSize::Micro
-        && let Some(p) = price
-    {
-        let icons = [
-            p.coins > 0 || (p.potions == 0 && p.debt == 0),
-            p.potions > 0,
-            p.debt > 0,
-        ]
-        .into_iter()
-        .filter(|on| *on)
-        .count() as f32;
-        let start = 0.03 + 0.13 * icons + 0.01;
-        name_box.w -= (start - name_box.x).max(0.0);
-        name_box.x = name_box.x.max(start);
+    if attached.is_some() && !shape.landscape {
+        name_box.y = 0.16;
+        name_box.h = 0.12;
     }
+    if inset && size == CardSize::Micro {
+        name_box = layout::ATTACHED_NAME;
+    }
+    // Upstream prints no cost on a micro card.
+    let price = price.filter(|_| size != CardSize::Micro);
     let fill = match size {
         CardSize::Micro => 0.8,
         CardSize::Full if shape.landscape => 0.9,
@@ -337,9 +362,7 @@ fn draw(
     });
     let pile_types = pile.filter(|_| size == CardSize::Mini).and_then(|markers| {
         let rect = shape.pile_types()?;
-        let shown = (info.types.iter().map(String::as_str))
-            .filter(|t| dominion_protocol::TYPES_SHOWN_ON_PILE.contains(t));
-        let parts: Vec<&str> = markers.iter().map(String::as_str).chain(shown).collect();
+        let parts: Vec<&str> = markers.iter().map(String::as_str).collect();
         if parts.is_empty() {
             return None;
         }
@@ -436,6 +459,11 @@ fn draw(
             }
         }
         {name_node(&title, name_box, name_size, light_title)}
+        if let Some(t) = attached {
+            div { class: "dc-attached", style: layout::ATTACHED.css(),
+                CardView { name: t.to_string(), size: CardSize::Micro, inset: true }
+            }
+        }
         if let Some((rect, line, s)) = types {
             div {
                 class: if corner_types { "dc-types dc-corner" } else { "dc-types" },

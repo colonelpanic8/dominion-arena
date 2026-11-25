@@ -100,7 +100,7 @@ async function runScenario(scenario) {
       if (m.text().includes('Game has loaded')) loaded = true;
       log.write(m.text() + '\n');
     });
-    theirs.page.on('pageerror', (e) => log.write(`ERROR ${e.message}\n`));
+    theirs.page.on('pageerror', (e) => log.write(`ERROR ${e.stack ?? e.message}\n`));
     await enterTheirs(theirs.page, arena, 'Alice', PASSWORD);
     for (let i = 0; i < 300 && !loaded; i++) await new Promise((r) => setTimeout(r, 100));
     if (!loaded) throw new Error(`their client never loaded the game; see ${dir}/theirs-console.log`);

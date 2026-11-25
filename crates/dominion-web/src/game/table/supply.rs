@@ -192,6 +192,21 @@ pub fn pile_anchor(at: crate::game::board::PileAt) -> String {
     }
 }
 
+/// What a pile's mini card prints under its art: its markers, then the types
+/// dominion.games shows on piles of the card the pile is named after.
+fn pile_line(pile: &PileEntry, cards: &crate::cards::CardDb) -> Vec<String> {
+    let shown = cards.get(&pile.name).into_iter().flat_map(|c| &c.types);
+    pile.markers
+        .iter()
+        .map(|m| m.name().to_string())
+        .chain(
+            shown
+                .filter(|t| dominion_protocol::TYPES_SHOWN_ON_PILE.contains(&t.as_str()))
+                .cloned(),
+        )
+        .collect()
+}
+
 #[component]
 fn Pile(
     pile: PileEntry,
@@ -208,7 +223,13 @@ fn Pile(
     let mark = mark_at(&ui, &sel, Spot::Pile(pile.at));
     let changed = cost.is_some();
     let inspect_pile = !pile.hidden && cards.pile_members(&pile.name).len() > 1;
-    let split = inspect_pile && size == CardSize::Mini && pile.count > 1;
+    let split = pile.shadowed && size == CardSize::Mini;
+    // Shrunk to leave the back room, as dominion.games does.
+    let at = if split {
+        Rect::new(at.x, at.y, at.w * 0.95, at.h * 0.95)
+    } else {
+        at
+    };
     let plus = mark.target.is_some() && size != CardSize::Full;
     rsx! {
         TableCard {
@@ -224,7 +245,8 @@ fn Pile(
             at,
             plus,
             split,
-            pile: pile.markers.iter().map(|m| m.name().to_string()).collect::<Vec<_>>(),
+            pile: pile_line(&pile, &cards),
+            attached: pile.attached.clone(),
             inspect_pile,
             class: format!(
                 "dt-pile{}{}{}",
@@ -254,6 +276,7 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
             plus,
             badges: entry.badges.clone(),
             cubes: entry.owners.iter().map(|w| (w.seat, w.name.clone())).collect::<Vec<_>>(),
+            holds: entry.pile.clone(),
             class: "dt-landscape dt-kind-{entry.kind}",
             at,
         }

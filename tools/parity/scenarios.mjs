@@ -51,7 +51,7 @@ export const SCENARIOS = [
     about: 'split and mixed piles (Castles, Patrician, Gladiator, Catapult, Encampment), Landmarks and Events',
     spec: {
       kingdom: ['Patrician', 'Castles', 'Gladiator', 'Catapult', 'Encampment', 'Chariot Race', 'Temple', 'Villa', 'Wild Hunt', 'Forum'],
-      landscapes: ['Tomb', 'Wall', 'Triumph', 'Dominate'],
+      landscapes: ['Tomb', 'Obelisk', 'Triumph', 'Dominate'],
     },
     steps: [],
   },
@@ -67,7 +67,7 @@ export const SCENARIOS = [
     name: 'renaissance',
     about: 'Projects and Ways together',
     spec: {
-      kingdom: ['Ducat', 'Villain', 'Priest', 'Sculptor', 'Hideout', 'Scholar', 'Seer', 'Lackeys', 'Patron', 'Swashbuckler'],
+      kingdom: ['Ducat', 'Villain', 'Priest', 'Sculptor', 'Hideout', 'Scholar', 'Seer', 'Lackeys', 'Patron', 'Inventor'],
       landscapes: ['Academy', 'Barracks', 'Way of the Ox', 'Way of the Mole'],
     },
     steps: [],
@@ -85,7 +85,7 @@ export const SCENARIOS = [
     name: 'plunder',
     about: 'Traits on piles and Durations',
     spec: {
-      kingdom: ['Cage', 'Grotto', 'Jewelled Egg', 'Search', 'Shaman', 'Buried Treasure', 'Cabin Boy', 'Crew', 'Flagship', 'Harbor Village'],
+      kingdom: ['Cage', 'Grotto', 'Fortune Hunter', 'Sailor', 'Shaman', 'Buried Treasure', 'Cabin Boy', 'Crew', 'Flagship', 'Harbor Village'],
       landscapes: ['Cheap', 'Rich'],
     },
     steps: [],

@@ -23,6 +23,7 @@
 .dc-micro .dc-bg { border-radius: 1.6cqw; }
 .dc-overlay { inset: 0; z-index: 20; pointer-events: none; }
 .dc-overlay > * { pointer-events: auto; }
+.dc-attached { z-index: 6; }
 
 .dc-art { object-fit: cover; object-position: top; z-index: 1; }
 .dc-art-ph {

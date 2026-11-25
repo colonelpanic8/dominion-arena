@@ -8,7 +8,7 @@ use dominion_agent::{Table, WayChoice};
 use dominion_engine::{Card, GameConfig, PlayerId, Set};
 use dominion_protocol::api::SeatView;
 use dominion_protocol::lobby::{GameMeta, UserKind, UserRef};
-use dominion_protocol::{AgentDecision, AgentView, PlayerView, SetupRole, Tokens};
+use dominion_protocol::{AgentDecision, AgentView, PileMarker, PlayerView, SetupRole, Tokens};
 use dominion_web::cards::CardDb;
 use dominion_web::game::board::{Board, PileAt, PileEntry, PlayerEntry, Zone, board};
 use dominion_web::game::interaction::{Interaction, Place, Target, TreasureRun, interaction};
@@ -257,13 +257,15 @@ fn check_board(b: &Board, view: &AgentView, deciding: Option<u8>) {
             + usize::from(t.trade_route)
             + usize::from(t.vp != 0)
             + usize::from(t.debt != 0)
-            + t.players.len()
-            + p.traits.len();
+            + t.players.len();
+        assert_eq!(e.attached.as_ref(), p.traits.first());
+        // The Bane and Obelisk's pile are told by their pile's marker.
         let notes = view
             .notes
             .iter()
             .filter(|n| n.player.is_none() && n.pile.as_ref() != Some(&n.source))
             .filter(|n| n.setup != Some(SetupRole::SetAside))
+            .filter(|n| n.setup != Some(SetupRole::Bane) && n.source != "Obelisk")
             .filter(|n| match (&n.pile, &n.card) {
                 (Some(pile), None) => *pile == e.name,
                 (None, Some(_)) => n.source == e.name,
@@ -1092,23 +1094,35 @@ fn every_setup_set_aside_is_shown_to_seats_and_spectators() {
                 ("Druid", "The Wind's Gift"),
             ])
         );
-        for (pile, source, kind) in [
-            ("Riverboat", "Obelisk", "note"),
-            ("Moat", "Young Witch", "bane"),
-            ("Smithy", "Ferryman", "note"),
-        ] {
-            let pile = board
+        let pile = |name: &str| {
+            board
                 .supply
                 .kingdom
                 .iter()
                 .flatten()
                 .chain(&board.non_supply)
-                .find(|p| p.name == pile)
-                .unwrap_or_else(|| panic!("missing {pile}"));
-            assert_eq!(pile.badges.len(), 1, "{pile:?}");
-            assert_eq!(pile.badges[0].kind, kind);
-            assert_eq!(pile.badges[0].card.as_deref(), Some(source));
+                .find(|p| p.name == name)
+                .unwrap_or_else(|| panic!("missing {name}"))
+                .clone()
+        };
+        for (name, marker) in [
+            ("Riverboat", PileMarker::Obelisk),
+            ("Moat", PileMarker::Bane),
+        ] {
+            let pile = pile(name);
+            assert!(pile.markers.contains(&marker), "{pile:?}");
+            assert!(pile.badges.is_empty(), "{pile:?}");
         }
+        let obelisk = board
+            .landscapes
+            .iter()
+            .find(|l| l.card == "Obelisk")
+            .unwrap();
+        assert_eq!(obelisk.pile.as_deref(), Some("Riverboat"));
+        let smithy = pile("Smithy");
+        assert_eq!(smithy.badges.len(), 1, "{smithy:?}");
+        assert_eq!(smithy.badges[0].kind, "note");
+        assert_eq!(smithy.badges[0].card.as_deref(), Some("Ferryman"));
     }
 }
 
