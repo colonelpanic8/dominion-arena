@@ -53,17 +53,8 @@ fn pinned_bundle_proves_fixture_semantics_and_layout_ordinals() {
         .0
         .split(',')
         .collect::<Vec<_>>();
-    for (index, name) in [
-        (zone::HAND, "HandZone"),
-        (zone::DRAW, "DrawZone"),
-        (zone::DISCARD, "DiscardZone"),
-        (zone::TRASH, "TrashZone"),
-        (zone::SUPPLY, "SupplyCardZone"),
-        (zone::TREASURE, "BasicTreasureZone"),
-        (zone::VICTORY, "BasicVictoryZone"),
-        (zone::PLAY, "InPlayZone"),
-    ] {
-        assert_eq!(names[index as usize], name);
+    for (name, index) in ZONE_SYMBOLS {
+        assert_eq!(names[*index as usize], *name);
     }
     assert_eq!(real.symbol("TimerPresetOptions", "OFF").unwrap(), TIMER_OFF);
     for (index, name) in [

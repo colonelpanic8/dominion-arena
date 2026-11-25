@@ -65,6 +65,9 @@ struct VisibleZone {
     slots: Vec<Option<CardId>>,
     /// Slots without a disclosed card whose name is public (a split pile's cards).
     named: Vec<(usize, Card)>,
+    /// Its named slots are no physical cards (Boons, Hexes, landscapes): each is its own
+    /// pile.
+    standalone: bool,
 }
 
 /// A wire card: a disclosed engine card, or a zone's slot known only by name.
@@ -89,54 +92,18 @@ impl VisibleZone {
             },
             slots,
             named: vec![],
+            standalone: false,
         }
     }
-}
 
-fn validate_state(view: &View<'_>) -> Result<(), ProjectionError> {
-    let gap = |feature: &str| ProjectionError::UnsupportedState(feature.into());
-    if view.me().is_none() {
-        return Err(gap("spectator visibility policy"));
+    /// A zone of cards that are no physical cards (Boons, Hexes, a landscape), each known
+    /// by name, bottom first.
+    fn named(kind: i32, pile_name: i32, cards: &[Card]) -> Self {
+        let mut zone = Self::new(kind, -1, pile_name, vec![None; cards.len()]);
+        zone.named = cards.iter().copied().enumerate().collect();
+        zone.standalone = true;
+        zone
     }
-    if !view.artifacts().is_empty()
-        || view.prophecy().is_some()
-        || view.boons().draw_size != 0
-        || view.hexes().draw_size != 0
-        || !view.boons().discard.is_empty()
-        || !view.hexes().discard.is_empty()
-    {
-        return Err(gap("Boon/Hex/Artifact/Prophecy projection"));
-    }
-    if view.notes().iter().any(|n| setup_marker(n).is_none()) {
-        return Err(gap("structured setup/state notes"));
-    }
-    for p in view.players() {
-        if !p.states().is_empty()
-            || !p.boons_kept().is_empty()
-            || !p.tokens().is_empty()
-            || p.minus_card()
-            || p.minus_coin()
-            || p.skip_turns() != 0
-        {
-            return Err(gap(
-                "States, Adventure tokens, negative tokens or skipped turns",
-            ));
-        }
-    }
-    for p in view.piles() {
-        if p.hidden()
-            || p.removed()
-            || !p.tokens().is_empty()
-            || p.traits().len() > 1
-            || p.embargo() != 0
-            || p.trade_route()
-        {
-            return Err(gap(
-                "hidden/removed piles, pile traits or special pile tokens",
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// A setup note dominion.games shows only as a marker on its pile: the Bane, Obelisk's
@@ -167,7 +134,7 @@ fn build(
             "timed table options".into(),
         ));
     }
-    validate_state(view)?;
+    table::validate(view)?;
     let players = view.num_players();
     if !matches!(context.viewer_role, ViewerRole::Player(p) if p < players && view.me() == Some(PlayerId(p as u8)))
     {
@@ -241,8 +208,8 @@ fn build(
     for p in view.players() {
         let owner = i32::from(p.id().0);
         for (kind, size, known) in [
-            (23, p.looking_size(), p.looking()),
-            (24, p.set_aside_size(), p.set_aside()),
+            (zone::REVEAL, p.looking_size(), p.looking()),
+            (zone::SET_ASIDE, p.set_aside_size(), p.set_aside()),
             (
                 10,
                 p.mat_size(Mat::Tavern),
@@ -295,6 +262,8 @@ fn build(
             let (owner, kind) = match location {
                 dominion_engine::Zone::Discard(p) => (i32::from(p.0), zone::DISCARD),
                 dominion_engine::Zone::Deck(p) => (i32::from(p.0), zone::DRAW),
+                // Another player's hand they revealed (Pillage).
+                dominion_engine::Zone::Hand(p) => (i32::from(p.0), zone::HAND),
                 _ => {
                     return Err(ProjectionError::UnsupportedState(
                         "candidate zone association".into(),
@@ -357,9 +326,18 @@ fn build(
     piles.sort_by_key(|x| x.0);
     let mut overrides = Vec::new();
     let mut markers = Vec::new();
+    let mut pile_zones = BTreeMap::new();
+    let mut held = Vec::new();
     for (name, pile) in &piles {
-        let kind = if !pile.in_supply() {
-            13
+        let holder = table::holder(view, pile);
+        if pile.removed() && holder.is_none() {
+            // Out of the game (Divine Wind): their client has no zone for it.
+            continue;
+        }
+        let kind = if let Some(kind) = holder {
+            kind
+        } else if !pile.in_supply() {
+            zone::NON_SUPPLY
         } else if pile.kingdom() {
             zone::SUPPLY
         } else if pile.card().is(Types::TREASURE) {
@@ -382,7 +360,21 @@ fn build(
             };
             dominion_protocol::pile_marker(kind, s.cards.len())
         });
+        let cost = view.cost(pile.card());
+        overrides.push((
+            *name,
+            model::Cost {
+                coins: cost.coins.into(),
+                potions: cost.potions.into(),
+                debt: cost.debt.into(),
+            },
+        ));
+        if holder.is_some() {
+            held.push((pile.id(), VisibleZone::new(kind, -1, *name, slots)));
+            continue;
+        }
         let zone_index = integer(zones.len(), "zone index")?;
+        pile_zones.insert(pile.id(), zone_index);
         let mut pile_markers: Vec<PileMarker> = view
             .notes()
             .iter()
@@ -416,15 +408,19 @@ fn build(
             zone.wire.attached_trait = catalog.card(t)?;
         }
         zones.push(zone);
-        let cost = view.cost(pile.card());
-        overrides.push((
-            *name,
-            model::Cost {
-                coins: cost.coins.into(),
-                potions: cost.potions.into(),
-                debt: cost.debt.into(),
-            },
-        ));
+    }
+    zones.extend(table::fate_zones(view, catalog)?);
+    let mut landscape_zones = BTreeMap::new();
+    for &landscape in view.landscapes() {
+        let name = catalog.card(landscape)?;
+        landscape_zones.insert(landscape, integer(zones.len(), "zone index")?);
+        zones.push(VisibleZone::named(zone::LANDSCAPE, name, &[landscape]));
+    }
+    // Their client places a card a pile out of the game holds (Way of the Mouse's) on
+    // its landscape, which must be drawn first.
+    for (pile, zone) in held {
+        pile_zones.insert(pile, integer(zones.len(), "zone index")?);
+        zones.push(zone);
     }
     let mut grouped: BTreeMap<(i32, i32), Vec<Handle>> = BTreeMap::new();
     let mut seen = BTreeSet::new();
@@ -464,8 +460,9 @@ fn build(
             if z.slots.get(slot) != Some(&None) {
                 return Err(ProjectionError::Inconsistent("named slot"));
             }
+            let name = catalog.card(card)?;
             grouped
-                .entry((catalog.card(card)?, z.wire.pile_name))
+                .entry((name, if z.standalone { name } else { z.wire.pile_name }))
                 .or_default()
                 .push(Handle::Named(zi, slot));
         }
@@ -497,7 +494,7 @@ fn build(
             Handle::Named(..) => None,
         })
         .collect();
-    let mut zones = zones
+    let zones = zones
         .into_iter()
         .enumerate()
         .map(|(i, mut z)| {
@@ -518,29 +515,17 @@ fn build(
         })
         .collect::<Result<Vec<_>, ProjectionError>>()?;
     let turn = view.turn();
-    let mut landscape_ids = BTreeMap::new();
-    for &landscape in view.landscapes() {
-        let name = catalog.card(landscape)?;
-        let handle = integer(cards.len(), "landscape allocation")?;
-        landscape_ids.insert(landscape, handle);
-        cards.push(model::Card {
-            id: handle,
-            card_name: name,
-            pile_name: name,
-        });
-        card_names.push(name);
-        pile_names.push(name);
-        card_counts.push(1);
-        zones.push(model::Zone {
-            index: integer(zones.len(), "zone index")?,
-            kind: 7,
-            owner: -1,
-            pile_name: name,
-            cards: vec![handle],
-            created_by: -1,
-            attached_trait: 0,
-            is_visible: true,
-        });
+    let landscape_ids: BTreeMap<Card, i32> = landscape_zones
+        .iter()
+        .map(|(&card, &zone)| (card, handles[&Handle::Named(zone as usize, 0)]))
+        .collect();
+    for card in table::offstage(view) {
+        let name = catalog.card(card)?;
+        if !card_names.contains(&name) {
+            card_names.push(name);
+            pile_names.push(name);
+            card_counts.push(0);
+        }
     }
     let mut counters = [
         ("ACTIONS", turn.actions),
@@ -585,30 +570,16 @@ fn build(
             });
         }
     }
-    for (_, pile) in &piles {
-        let name = catalog.card(pile.card())?;
-        let zone = zones
-            .iter()
-            .find(|z| z.owner == -1 && z.pile_name == name)
-            .map(|z| z.index)
-            .ok_or(ProjectionError::Inconsistent("pile zone"))?;
-        for (kind, value) in [
-            ("VP_TOKENS", pile.vp_tokens()),
-            ("DEBT", pile.debt_tokens()),
-        ] {
-            if value == 0 {
-                continue;
-            }
-            counters.push(model::Counter {
-                index: integer(counters.len(), "pile counter")?,
-                kind: catalog.symbol("CounterNames", kind)?,
-                owner: -1,
-                value,
-                zone,
-                card: -1,
-                is_visible: true,
-            });
-        }
+    for c in table::counts(view, &pile_zones, &landscape_zones) {
+        counters.push(model::Counter {
+            index: integer(counters.len(), "table counter")?,
+            kind: catalog.symbol("CounterNames", c.kind)?,
+            owner: c.owner,
+            value: c.value,
+            zone: c.zone,
+            card: -1,
+            is_visible: true,
+        });
     }
     let mut links: BTreeMap<i32, BTreeSet<i32>> = BTreeMap::new();
     for lasting in view.lasting() {
@@ -652,6 +623,20 @@ fn build(
         };
         links.entry(identities[&top]).or_default().insert(linked);
     }
+    // Their client draws Riverboat's card on its pile: the card linked to a Riverboat.
+    let boxed = view
+        .piles()
+        .filter(|p| table::holder(view, p) == Some(zone::THE_BOX))
+        .filter_map(|p| p.top());
+    for card in boxed {
+        let riverboat = identities
+            .iter()
+            .find(|(id, _)| view.card(**id) == Some(Card::Riverboat))
+            .map(|(_, &handle)| handle);
+        if let (Some(&card), Some(riverboat)) = (identities.get(&card), riverboat) {
+            links.entry(card).or_default().insert(riverboat);
+        }
+    }
     let associations = links
         .into_iter()
         .map(|(card, linked_cards)| model::Association {
@@ -660,6 +645,7 @@ fn build(
         })
         .collect();
     let turn_number = view.player(turn.player).turns_taken();
+    let tokens = table::tokens(view, catalog, &pile_zones, &zones)?;
     let snapshot = model::Snapshot {
         reconnect,
         game_id: ids.game_id,
@@ -672,20 +658,7 @@ fn build(
                     Ok(model::Player {
                         player_id,
                         card_frequencies: vec![],
-                        reminders: {
-                            let mut reminders = BTreeMap::new();
-                            for l in view.lasting().iter().filter(|l| l.owner.index() == seat) {
-                                *reminders.entry(catalog.card(l.card)?).or_insert(0) += 1;
-                            }
-                            reminders
-                                .into_iter()
-                                .map(|(card_name, frequency)| model::Reminder {
-                                    card_name,
-                                    frequency,
-                                    blinking: false,
-                                })
-                                .collect()
-                        },
+                        reminders: table::reminders(view, catalog, seat)?,
                         bought_projects: vec![],
                     })
                 })
@@ -696,25 +669,13 @@ fn build(
             cards,
             zones,
             pile_markers: markers,
-            tokens: vec![],
+            tokens,
             counters,
             turn: model::TurnDescription {
                 owner_id: turn.player.0.into(),
                 controller_id: turn.player.0.into(),
                 turn_number: count(turn_number, "turn number")?,
-                turn_type: catalog.symbol(
-                    "ExtraTurnTypes",
-                    match turn.extra {
-                        None => "REGULAR",
-                        Some(Card::Outpost) => "OUTPOST",
-                        Some(Card::Voyage) => "VOYAGE",
-                        Some(_) => {
-                            return Err(ProjectionError::UnsupportedState(
-                                "extra-turn type binding".into(),
-                            ));
-                        }
-                    },
-                )?,
+                turn_type: catalog.symbol("ExtraTurnTypes", table::turn_type(view)?)?,
             },
             cost_reduction: model::CostReduction {
                 generic: 0,
@@ -907,6 +868,9 @@ fn result(
         auto_continue: false,
     })
 }
+
+#[path = "projection/table.rs"]
+mod table;
 
 #[cfg(test)]
 #[path = "projection/tests.rs"]

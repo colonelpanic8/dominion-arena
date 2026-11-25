@@ -141,6 +141,32 @@ export const SCENARIOS = [
     steps: [],
   },
   {
+    name: 'nocturne-fate',
+    about: "the Boons' and Hexes' decks, Druid's Boons, Heirlooms of Fate and Doom cards",
+    spec: {
+      kingdom: ['Druid', 'Bard', 'Tracker', 'Fool', 'Pixie', 'Leprechaun', 'Skulk', 'Cursed Village', 'Idol', 'Blessed Village'],
+    },
+    steps: [],
+  },
+  {
+    name: 'tokens',
+    about: 'Trade Route tokens on the Victory piles, Artifacts and Adventures tokens in the game',
+    spec: {
+      kingdom: ['Trade Route', 'Embargo', 'Swashbuckler', 'Flag Bearer', 'Treasurer', 'Border Guard', 'Bridge Troll', 'Relic', 'Ranger', 'Lost City'],
+      landscapes: ['Lost Arts', 'Seaway'],
+    },
+    steps: [],
+  },
+  {
+    name: 'rising-sun',
+    about: "a Prophecy's Sun tokens, a Landmark's VP, Riverboat's card in the Box, Way of the Mouse's card",
+    spec: {
+      kingdom: ['Riverboat', 'Rustic Village', 'Poet', 'Kitsune', 'Village', 'Smithy', 'Market', 'Moat', 'Militia', 'Cellar'],
+      landscapes: ['Great Leader', 'Arena', 'Way of the Mouse', 'Sinister Plot'],
+    },
+    steps: [],
+  },
+  {
     name: 'seaside2',
     about: "Seaside's second edition: Durations and Treasures",
     spec: {
