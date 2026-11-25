@@ -993,8 +993,11 @@ fn way_questions_read_like_dominion_games() {
             asked += 1;
             let source = d.source.clone().unwrap();
             assert_eq!(
-                wording::prompt(&d, &cards),
-                format!("Consider the Way you play {source}")
+                wording::prompt_parts(&d, &cards),
+                [
+                    "Consider the Way you play".to_string(),
+                    format!("a {source}")
+                ]
             );
         }
         let sel = steer(&view, &cards, &["Village", "Smithy"], &mut rng);

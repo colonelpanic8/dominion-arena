@@ -1,0 +1,673 @@
+ACOLYTE	Trash to gain a Gold?
+ACOLYTE_SELF	Trash to gain an Augur?
+ADVANCE_GAIN	Gain an Action
+ADVANCE_TRASH	You may trash an Action
+ADVISOR	Discard for PLAYER0
+ALMS	Gain a card
+ALTAR_GAIN	Gain a card
+ALTAR_TRASH	Trash a card
+AMASS	Gain an Action card costing up to 5.
+AMBASSADOR_RETURN_ONE	You may return CARDS0
+AMBASSADOR_RETURN_TWO	Return 0, 1 or 2
+AMBASSADOR_REVEAL	Reveal a card from your hand
+AMPHORA_MODE	+1 Buy, +3 Coins now or next turn?
+AMULET_MODE	Choose how to play Amulet
+AMULET_TRASH	Trash a card
+ANIMAL_FAIR_MAY_TRASH	You may trash an Action from your hand
+ANIMAL_FAIR_TRASH	Trash an Action from your hand
+ANNEX	Choose up to 5 cards
+APOTHECARY	Topdeck these cards
+APPRENTICE	Trash, then draw
+ARCHER_HIDE	Choose a Card not to reveal
+ARCHITECTS_GUILD	What to gain
+ARCHIVE	Choose a card
+ARENA	Arena: discard for NUMBER0VP?
+ARMORY	Gain a card
+ARTIFICER_DELAY	You may use Artificer
+ARTIFICER_DISCARD	Discard, then gain
+ARTIFICER_GAIN	You may gain a card for AMOUNT0
+ARTISAN_GAIN	Gain a card
+ARTISAN_TOPDECK	Topdeck a card
+ASCETICISM	Trash up to Argument0 Cards.
+AVANTO_CHAIN	You may play a Sauna
+AVOID	Put up to 3 cards in your Discard pile.
+BALL_FIRST	Gain two cards
+BALL_SECOND	Gain another card
+BANDIT	Trash a card from PLAYER0.
+BAND_OF_MISFITS	Play a card
+BAND_OF_NOMADS	Spend more Favors for Buys?
+BANISH	Exile cards with the same name
+BANQUET	Gain a non-Victory
+BARBARIAN	Gain a cheaper card
+BARGAIN	Gain a non-Victory up to $5
+BARGE	Now or next turn?
+BARON	You may discard an Estate
+BAT	You may Trash
+BATTLE_PLAN_REVEAL	Reveal an Attack for +1 Card?
+BATTLE_PLAN_ROTATE	Rotate a supply pile?
+BAUBLE	Choose how to play Bauble
+BERSERKER_GAIN	Gain a cheaper card
+BISHOP_OTHER	You may trash a card
+BISHOP_SELF	Trash a card
+BLACKSMITH	How to play Blacksmith?
+BLACK_MARKET_BUY	You may buy
+BLACK_MARKET_COMPLEX	You play Black Market
+BLACK_MARKET_PLAY	You may play Treasures
+BLESSED_VILLAGE_MODE	When to receive?
+BLOCKADE	Gain a card
+BONFIRE	Trash up to 2 Coppers from play
+BORDER_GUARD_MODE	Horn or Lantern?
+BORDER_GUARD_PUT_IN_HAND	Put into your hand
+BORDER_VILLAGE	Gain a card cheaper than AMOUNT0
+BOUNTY_HUNTER	Exile a card
+BROKER_MODE	What bonus to receive?
+BROKER_TRASH	What card to trash?
+BUREAUCRAT	Topdeck a Victory card
+BURY	Place a card on the bottom of your deck.
+BUSTLING_VILLAGE	You may take a Settlers
+BUTCHER_GAIN	Gain a card up to AMOUNT0
+BUTCHER_TRASH	You may trash a card
+BUTTERFLY_RETURN	Return Argument0 to its pile?
+CABIN_BOY_GAIN	Gain a Duration card.
+CABIN_BOY_MODE	Choose one: +2 Coins, or trash [Cabin Boy] to gain a Duration.
+CAGE_SET_ASIDE	You may set aside up to 4 cards.
+CAMEL_TRAIN	Exile a card
+CAPITAL_CITY_DISCARD	Discard 2 Cards
+CAPITAL_CITY_MODE	Discard or pay?
+CAPTAIN	Choose what to play
+CARDINAL_EXILE	Exile a card
+CARTOGRAPHER_DISCARD	Discard any number
+CARTOGRAPHER_TOPDECK	Topdeck these cards
+CATACOMBS_GAIN	Gain a card cheaper than AMOUNT0
+CATACOMBS_MODE	Take or draw new?
+CATAPULT_DISCARD	Discard down to 3 cards
+CATAPULT_TRASH	Trash a card
+CATHEDRAL	Trash a card
+CAVE_DWELLERS	Spend a Favor and discard to draw?
+CELLAR	Discard, then draw
+CEMETERY	You may Trash
+CHANGELING_GAIN_COPY	Gain a card
+CHANGELING_REPLACE	
+CHANGE_GAIN	Gain a card and get debt
+CHANGE_TRASH	Trash a card from your Hand
+CHAPEL	Trash up to 4 cards
+CHARM_GAIN	Gain a card for AMOUNT1 (not CARDS0)
+CHARM_MODE	Choose how to play Charm
+CHURCH_SET_ASIDE	Set aside up to 3 cards
+CHURCH_TRASH	You may trash a card
+CITY_GATE	Topdeck a card.
+CLERK	Topdeck a Card
+COASTAL_HAVEN	What cards to keep in hand?
+COBBLER	Gain to your hand
+CONCLAVE	You may play an Action
+CONSIDER_WAY	Consider the Way you play Argument0
+CONTINUE	Gain and play a non-attack Action card
+CONTRABAND	Ban a card
+CONTRACT	You may play an action next turn
+CORONET_ACTION	What Action to play twice?
+CORONET_TREASURE	What Treasure to play twice?
+COUNTERFEIT	Play twice, then trash
+COUNTING_HOUSE	Take coppers
+COUNT_DISCARD	Discard 2 cards
+COUNT_PAY	Choose Count payment
+COUNT_PROFIT	Choose Count profit
+COUNT_TOPDECK	Topdeck a card
+COURIER	You may play a card
+COURSER	Choose how to play Courser
+COURTIER_MODE	Choose NUMBER0 options
+COURTIER_REVEAL	Reveal a card
+COURTYARD	Topdeck a card
+CRAFTERS_GUILD	Spend 2 Favors to gain a card
+CRAFTSMAN	Gain a card costing up to 5.
+CREDIT	Gain an Action or Treasure up to 8
+CROP_ROTATION	You may discard
+CROWN_ACTION	You may play an Action twice
+CROWN_TREASURE	You may play a Treasure twice
+CRUCIBLE	Trash a card from your hand.
+CRYPT_RETURN_TO_HAND	Choose a card
+CRYPT_SET_ASIDE	Set aside any number
+CRYSTAL_BALL	What to do with Argument0
+CULTIST	Play another Cultist?
+CUTTHROAT_DISCARD	Discard down to 3 cards in hand.
+DAME_ANNA	Trash up to 2 cards
+DAME_NATALIE	You may gain a card
+DEATH_CART	You may trash Death Cart or an Action card.
+DELAY	You may set aside an Action
+DEMAND	Gain a card up to $4 onto your deck
+DESERT_GUIDES	Keep this hand?
+DESPERATION	You may gain a Curse
+DEVELOP_GAIN1	Gain 1st card for AMOUNT0 or Argument1
+DEVELOP_GAIN2	Gain 2nd card for AMOUNT0
+DEVELOP_TRASH	Trash a card
+DEVILS_WORKSHOP	Gain a card
+DIADEM	Use Villagers?
+DIPLOMAT	Discard 3 cards
+DISCIPLE	Play twice, then gain a copy
+DISMANTLE_GAIN	Gain a card cheaper than AMOUNT0
+DISMANTLE_TRASH	Trash a card
+DISPLACE_EXILE	Exile a card
+DISPLACE_GAIN	Gain a card up to AMOUNT0
+DOCTOR_MODE	What to do with CARDS0?
+DOCTOR_MODE_MANY	CARDS0? (NUMBER1 more)
+DOCTOR_OVERPAY	You may overpay
+DOCTOR_PLAY	Name a card
+DOCTOR_TOPDECK	Topdeck these cards
+DONATE	Trash any number
+DRUID	Which Boon?
+DUCAT	You may trash a Copper
+DUCHESS	You may discard CARDS0
+DUNGEON	Discard 2 cards
+ELDER	You may play a card
+EMBARGO	Embargo a pile
+EMBASSY	Discard 3 cards
+ENCAMPMENT	You may reveal Gold or Plunder
+ENGINEER_GAIN	Gain a card
+ENGINEER_TRASH	You may trash the Engineer
+ENHANCE_GAIN	Gain a card up to AMOUNT0
+ENHANCE_TRASH	You may trash a non-Victory card
+ENLARGE_GAIN	Gain a card costing up to AMOUNT0
+ENLARGE_TRASH	Trash a card.
+ENVOY	Discard a card
+EXORCIST_GAIN	Gain a cheaper Spirit
+EXORCIST_TRASH	Trash a card
+EXPAND_GAIN	Gain a card up to AMOUNT0
+EXPAND_TRASH	Trash a card
+EXPLORER	You may reveal a Province
+FALCONER	Gain a card to your hand
+FAMILY_OF_INVENTORS	What pile to make cheaper
+FARMHANDS	What Card to play at the start of your next turn?.
+FARMLAND_GAIN	Gain a card for AMOUNT0
+FARMLAND_TRASH	Trash a card
+FARRIER_OVERPAY	You may overpay
+FATED_BOTTOMDECK	You may bottomdeck Fated Cards.
+FATED_TOPDECK	You may topdeck Fated Cards.
+FEAR_DISCARD	Discard a card
+FERRY	Move -$2 cost token
+FIGURINE	You may discard an Action for +1 Coin and +1 Buy.
+FIRST_MATE	You may play a card.
+FOLLOWERS	Discard down to 3
+FOOL	What Boon next?
+FORAGER	Trash a card
+FORAY	Discard 3 cards.
+FOREST_DWELLERS_DISCARD	Discard any number
+FOREST_DWELLERS_TOPDECK	Topdeck in some order
+FORGE_GAIN	Gain a card for AMOUNT0
+FORGE_TRASH	Trash any number
+FORTUNE_HUNTER_PLAY	Play a revealed treasure.
+FORTUNE_HUNTER_TOPDECK	Topdeck the remaining cards.
+FORUM	Discard 2 cards
+FRIENDLY	Discard a [Friendly] card to gain another.
+FRIGATE	Discard down to 4 cards in hand.
+FUGITIVE	Discard a card
+GAMBLE	Play Argument0?
+GANG_OF_PICKPOCKETS	Discard or spend a Favor?
+GATHER	Gain a card costing exactly Argument0.
+GEAR	Set aside up to 2 cards
+GHOST_SHIP	Topdeck NUMBER0 cards
+GLADIATOR_BLOCK	You may reveal CARDS0
+GLADIATOR_PRETEND	Pretend to think
+GLADIATOR_REVEAL	Reveal a card
+GOAT	You may Trash
+GOATHERD	You may trash a card
+GOLD_MINE	Gain a Gold and get 4 debt?
+GOLEM	Choose play order
+GONDOLA_MODE	+2 Coins now or later?
+GONDOLA_PLAY	You may play an Action card from your hand.
+GOONS	Discard down to 3 cards
+GOVERNOR_GAIN	Gain a card
+GOVERNOR_MAY_TRASH	You may trash
+GOVERNOR_MODE	Choose how to play Governor
+GRAVEROBBER_COMPLEX	Gain a card from the trash or trash an Action card
+GRAVEROBBER_EXPAND	Trash a card
+GRAVEROBBER_GAIN	Gain from the trash
+GRAVEROBBER_GAIN_SUPPLY	Gain a card up to AMOUNT0
+GRAVEROBBER_MAY_EXPAND	You may trash a card
+GRAVEROBBER_MAY_GAIN	You may gain from trash
+GRAVEROBBER_MODE	Choose how to play Graverobber
+GROOM	Gain a card up to AMOUNT0
+GROTTO_SET_ASIDE	You may set aside up to 4 cards.
+HAGGLER	Gain a non-Victory cheaper than AMOUNT0
+HAMLET	You may discard
+HAMLET_ACTION	Discard for +1 Action
+HAMLET_BOTH	Discard 2 cards
+HAMLET_BUY	Discard for +1 Buy
+HAMMER	Gain a card costing up to 4.
+HARBINGER_TOPDECK	You may topdeck
+HAUNTED_CASTLE	Topdeck 2 cards
+HAUNTED_MIRROR	You may discard
+HAUNTED_WOODS	Put your hand onto your deck
+HAUNTING	Topdeck something
+HAVEN	Set a card aside
+HERALD_CHOOSE	Topdeck a card
+HERALD_OVERPAY	You may overpay
+HERBALIST	You may topdeck a Treasure
+HERBALISTS	Topdeck up to Argument0 Treasures
+HERB_GATHERER_PLAY	What Treasure to play?
+HERMIT_GAIN	Gain a card
+HERMIT_TRASH	You may trash
+HERO	Gain a Treasure
+HIDEOUT	Trash a card
+HILL_FORT_MODE	Choose how to play Hill Fort
+HORN_OF_PLENTY	Gain a card up to AMOUNT0
+HORN_TOPDECK	Which [Border Guard] to topdeck?
+HORSE_TRADERS	Discard 2 cards.
+HOSTELRY	Discard for Horses
+HUNTER_ACTION	Put an Action into your hand
+HUNTER_TREASURE	Put a Treasure into your hand
+HUNTER_VICTORY	Put a Victory card into your hand
+HUNTING_GROUNDS	Duchy or 3 Estates?
+HUNTING_LODGE	Discard for +5 Cards?
+ILL_GOTTEN_GAINS	You may gain a Copper
+IMP	What to play?
+IMPORTER	Gain a card costing up to $5
+IMPROVE_GAIN	Gain a card for AMOUNT0
+IMPROVE_TRASH	You may improve
+INFIRMARY_OVERPAY	You may overpay
+INFIRMARY_TRASH	You may trash a card.
+INHERITANCE	Choose a card to inherit
+INHERITED	Replace a starting card with an [Inherited] card.
+INNKEEPER_DISCARD	Discard Argument0 Cards
+INNKEEPER_MODE	How to play Innkeeper?
+INN_DISCARD	Discard 2 cards
+INN_SHUFFLE	Shuffle Actions back in
+INSPIRING	You may play an action you don't have in play ([Inspiring]).
+INVASION_GAIN	Gain an Action.
+INVASION_PLAY	You may play an Attack.
+INVEST	Exile an Action card to Invest in
+INVESTMENT_MODE	Choose how to play Investment
+IRONMONGER	You may discard CARDS0
+IRONWORKS	Gain a card
+ISLAND	Put a card onto your mat
+JACK_DISCARD	You may discard CARDS0
+JACK_TRASH	You may trash a non-Treasure
+JESTER	Choose who gains CARDS0
+JOURNEYMAN	Name a card
+JOUST_GAIN_REWARD	What Reward to gain to your hand?
+JOUST_SET_ASIDE	Set aside a Province?
+JUNK_DEALER	Trash a card
+KIND_EMPEROR	Gain an Action to your Hand
+KINGS_CACHE	You may play a Treasure 3 times.
+KINGS_COURT	You may play an Action three times
+KINTSUGI_TRASH	Trash a card from your hand.
+KITSUNE	Choose how to play Kitsune
+KNIGHTS	Choose a card to trash
+KNIGHTS_ALREADY_DIES	Choose a card to trash
+KNIGHTS_STILL_MATTERS	Choose a card to trash
+LEGIONARY_DISCARD	Discard down to 2 cards
+LEGIONARY_REVEAL	You may reveal a Gold
+LIBRARY	You may skip CARDS0
+LICH	Gain a Card from the Trash
+LOAN	Discard or trash CARDS0
+LOCUSTS	Gain a cheaper card
+LOOKOUT_DISCARD	Discard a card
+LOOKOUT_TRASH	Trash a card
+LOST_ARTS_MOVE	Move +1 Action token
+LOST_ARTS_NEW	Move +1 Action token
+LOST_IN_THE_WOODS	Discard for a Boon?
+LURKER_COMPLEX	When playing Lurker
+LURKER_GAIN	Gain from the trash
+LURKER_MAY_GAIN	You may gain the trash
+LURKER_MAY_TRASH	You may trash from the Supply
+LURKER_MODE	Choose how to play Lurker
+LURKER_TRASH	Trash from the Supply
+MAELSTROM_OPPONENT_TRASH	Trash Argument0 cards.
+MAELSTROM_TRASH	Trash a card.
+MANDARIN_GAIN	Topdeck your Treasures
+MANDARIN_PLAY	Topdeck a card
+MAPMAKER	Put 2 cards into your hand.
+MARCH	You may play a card from discard
+MARCHLAND	Discard for +$1 each
+MARGRAVE	Discard down to 3 cards
+MARKET_TOWNS_AGAIN	Play another action for a Favor?
+MARKET_TOWNS_FIRST	What action to play?
+MAROON	Trash a card.
+MARQUIS	Discard down to 10
+MASQUERADE_PASS	Pass a card to PLAYER0
+MASQUERADE_TRASH	You may trash a card
+MASTERMIND	You may play an Action three times
+MASTERPIECE	You may overpay
+MAY_PAY_OFF_EXTRA_DEBT	You may pay off Debt
+MAY_ROTATE_AUGURS	You may rotate the Augurs
+MAY_ROTATE_FORTS	You may rotate the Forts
+MAY_ROTATE_ODYSSEYS	You may rotate the Odysseys
+MAY_ROTATE_TOWNSFOLK	You may rotate the Townsfolk
+MAY_ROTATE_WIZARDS	You may rotate the Wizards
+MAY_SPEND_EXTRA_COFFERS	You may spend extra coffers
+MAY_SPEND_EXTRA_COFFERS_BASILICA	You may spend extra coffers for Basilica
+MAY_SPEND_EXTRA_COFFERS_FORTUNE	You may spend extra coffers before doubling your Coins
+MAY_SPEND_EXTRA_COFFERS_SWASHBUCKLER	You may spend extra coffers to not get the Treasure Chest
+MERCENARY_DISCARD	Discard down to 3
+MERCENARY_MULTIPLE	You may trash two cards
+MERCENARY_ONE	You may trash a card
+MESSENGER_DISCARD	You may discard your deck
+MESSENGER_GAIN	Distribute a card costing up to $4
+MILITIA	Discard down to 3
+MILL	You may discard 2 cards
+MILLER	Put a card in hand.
+MINE_GAIN	Gain a Treasure up to AMOUNT0
+MINE_TRASH	You may improve a Treasure
+MINING_VILLAGE	You may trash Mining Village
+MINION	Choose +$2 or new hands
+MINT	You may copy a Treasure
+MISER	Copper to mat or +AMOUNT0?
+MODIFY_GAIN	Gain a card
+MODIFY_MODE	How to play Modify
+MODIFY_TRASH	Trash a card
+MONASTERY	You may trash up to AMOUNT0
+MONEYLENDER	You may trash a Copper
+MOUNTAIN_PASS_NEW	Bid up to 40D
+MOUNTAIN_PASS_OVERBID	Bid up to 40D
+MOUNTAIN_SHRINE	You may trash a card from your hand.
+MOUNTAIN_VILLAGE	Put into your hand
+MOUNTEBANK	You may discard a Curse
+MYSTIC	Guess a card
+NATIVE_VILLAGE_BOTH	Pick up Argument0?
+NATIVE_VILLAGE_MAY_SET_ASIDE	You may put onto your mat
+NATIVE_VILLAGE_MAY_TAKE	Pick up Argument0?
+NAVIGATOR	Topdeck or discard
+NECROMANCER	Play from trash
+NIGHT_WATCHMAN_DISCARD	Discard any number
+NIGHT_WATCHMAN_TOPDECK	Topdeck the rest
+NOBLES	Choose +3 Cards or +2 Actions
+NOBLE_BRIGAND	Choose a Treasure
+OASIS	Discard a card
+OLD_MAP_DISCARD	Discard a Card
+OLD_WITCH	You may trash
+OPULENT_CASTLE	Discard for +$2 each
+ORACLE_DISCARD	Make PLAYER1 discard?
+ORACLE_TOPDECK	Topdeck these cards
+ORB	Play an Action or Treasure.
+ORDER_BOTTOMDECKED_CARDS	Choose the order on the bottom
+ORDER_OF_ASTROLOGERS	You may topdeck for Favors
+ORDER_OF_MASONS	You may pick 2 cards per Favor to put into your discard
+OVERLORD	Play a card
+PAGEANT	$1 for +1 Coffers?
+PATHFINDING_MOVE	Move +1 Card token
+PATHFINDING_NEW	Move +1 Card token
+PATIENT_PLAY	Which [Patient] card to play next?
+PATIENT_SET_ASIDE	Set aside [Patient] cards to play next turn.
+PATROL	Topdeck these cards
+PAWN	Choose how to play Pawn
+PAY_OFF_DEBT_BEFORE_CHANGE	Pay off Debt to remodel?
+PAY_OFF_DEBT_BEFORE_STORYTELLER	Pay off Debt to draw fewer Cards?
+PEACEFUL_CULT	You may trash for Favors
+PEARL_DIVER	Put CARDS0 on top or bottom
+PERIL	You may trash an action to gain a Loot.
+PICKAXE	Trash a card from your hand.
+PILGRIMAGE_FIRST	Choose 3 cards to gain
+PILGRIMAGE_SECOND	Choose 2 cards to gain
+PILGRIMAGE_THIRD	Choose 1 card to gain
+PILGRIM_TOPDECK	Put a card from your hand onto your deck.
+PILLAGE	Choose discard for PLAYER0
+PIOUS_TRASH	You may trash a card from your hand.
+PIRATE	Gain to your hand
+PIRATE_SHIP_MODE	+AMOUNT0 or attack
+PIRATE_SHIP_TRASH	Choose a Treasure to trash
+PIXIE_MODE	Trash Pixie?
+PLAN_MOVE	Move Trashing token
+PLAN_NEW	Move Trashing token
+PLAZA_DELAY	You may discard a Treasure
+PLAZA_DISCARD	Discard a Treasure
+POACHER	Discard Argument0.
+POOKA	You may trash
+POPULATE	What card to gain next?
+POVERTY	Discard down to 3
+PREPARE	Play a set-aside card.
+PRIEST	Trash a card
+PRINCE_MAY_SET_ASIDE	You may set a card aside
+PRIZE_GOAT	You may trash a card.
+PROCESSION_GAIN	Gain an Action for AMOUNT0
+PROCESSION_PLAY	You may play an Action twice.
+PROSPER	Gain a differently-named Treasure.
+PURSUE	What card to keep on top?
+PUZZLE_BOX	Set a card aside
+QUARTERMASTER_GAIN	Gain a card costing up to 4.
+QUARTERMASTER_MODE	Gain a card costing up to 4, or take one of: Argument0.
+QUARTERMASTER_MODE_MULTI	Gain a card costing up to 4, or take one of: Argument0. (NUMBER1/NUMBER2)
+QUARTERMASTER_TAKE	Put a card into your hand.
+QUEST_6CARDS	Discard six cards
+QUEST_ATTACK	Discard an Attack
+QUEST_MODE	Choose your quest
+RABBLE	Topdeck these cards
+RAIDER	Discard a card
+RATCATCHER	Trash a card
+RATS_TRASH_ANY	Trash a card
+RATS_TRASH_OTHER	Trash a card
+RAZE_ALL	Trash a card or trash Raze
+RAZE_CAN_TRASH_FROM_HAND	You may trash a card
+RAZE_CAN_TRASH_FROM_PLAY	You may trash Raze
+RAZE_CHOOSE_CARD	Put a card into your hand
+REBUILD_GAIN	Gain a Victory card up to AMOUNT0
+REBUILD_SKIP	Name a card to skip
+RECEIVE_TRIBUTE_FIRST	You may gain 3 Action cards you don't have in play.
+RECEIVE_TRIBUTE_SECOND	You may gain 2 Action cards you don't have in play.
+RECEIVE_TRIBUTE_THIRD	You may gain an Action card you don't have in play.
+RECONSIDER_WAY	Reconsider the Way you play Argument0
+RECRUITER	Trash a card
+REMAKE_GAIN_FIRST	Gain a card
+REMAKE_GAIN_SECOND	Gain a card
+REMAKE_TRASH_FIRST	Trash first card
+REMAKE_TRASH_SECOND	Trash another card
+REMODEL_GAIN	Gain a card up to AMOUNT0
+REMODEL_TRASH	Trash a card
+REPLACE_GAIN	Gain a card up to AMOUNT0
+REPLACE_TRASH	Trash a card
+RESEARCH_TRASH	Trash a card
+RITUAL	Trash a card
+RIVER_SHRINE_GAIN	Gain a card costing up to 4.
+RIVER_SHRINE_TRASH	Trash up to 2 cards
+ROGUE_GAIN	Gain a card from the trash
+ROGUE_TRASH	Trash a card from PLAYER0
+ROPE_TRASH	You may trash a card from your hand.
+ROYAL_GALLEY	You may play an Action
+RUSTIC_VILLAGE_CHOICE	Discard 2 cards to draw 1?
+RUSTIC_VILLAGE_DISCARD	Which 2 cards to discard?
+SACRED_GROVE_MODE	receive Argument0?
+SACRIFICE	Trash a card
+SAILOR	You may trash a card
+SALT_THE_EARTH	Trash from the Supply
+SALVAGER	Trash a card
+SANCTUARY	You may Exile a Card
+SAUNA_CHAIN	You may play an Avanto
+SAUNA_MAY_TRASH	You may trash
+SAVE	Set a card aside
+SCAVENGER	You may discard your deck
+SCAVENGER_TOPDECK	Topdeck a card
+SCEPTER_COMPLEX	Replay or Coins?
+SCEPTER_MODE	add Coins
+SCEPTER_PLAY	Replay an Action
+SCHEME	You may scheme a card
+SCHEMES	Scheme up to Argument0 cards
+SCOUTING_PARTY_DISCARD	Discard NUMBER0 cards.
+SCOUTING_PARTY_TOPDECK	Topdeck these cards
+SCRAP_MODES	Choose Argument0 effects
+SCRAP_TRASH	Trash a card from your hand.
+SCROUNGE_COMPLEX	When playing Scrounge,
+SCROUNGE_GAIN	Gain a card costing up to 5.
+SCROUNGE_GAIN_ESTATE	Gain an Estate.
+SCROUNGE_MAY_GAIN_ESTATE	You may gain an Estate.
+SCROUNGE_MAY_TRASH	You may trash a card from your hand.
+SCROUNGE_TRASH	Trash a card from your hand.
+SCRYING_POOL_OTHER	PLAYER1: keep or discard CARDS0.
+SCRYING_POOL_YOU	You: keep or discard CARDS0
+SCULPTOR	Gain to your hand
+SEAWAY	Gain an Action card
+SEA_TRADE	Trash up to Argument0 Cards.
+SECLUDED_SHRINE	You may trash up to 2 cards from your hand.
+SECRET_CAVE	You may discard
+SECRET_PASSAGE_INSERT	Choose a location and a card
+SECRET_PASSAGE_TOPDECK	Topdeck a card
+SEER	Topdeck in any order
+SENTINEL_TRASH	Trash up to two cards
+SENTRY_DISCARD	You may discard
+SENTRY_TOPDECK	Topdeck in any order
+SENTRY_TRASH	You may trash
+SETTLERS	You may take a Copper
+SEWERS	You may trash up to AMOUNT0 (Sewers)
+SEXTANT_DISCARD	Discard any number of cards.
+SEXTANT_TOPDECK	Put the remaining cards back in any order.
+SHAMAN_GAIN	Gain a card costing up to 6 from the trash.
+SHAMAN_TRASH	You may trash a card from your hand.
+SHEPHERD	You may discard
+SHORT_CALL	You may call cards
+SHORT_CALL_SPECIFIC	You may call Argument0
+SHORT_PLAY	You may play Actions
+SHORT_PLAY_CALL	Play or call Actions
+SHORT_PLAY_CALL_SPECIFIC	Play or call Argument0...
+SHORT_WHEN_GAIN	You gain Argument0...
+SHORT_WHEN_WOULD_GAIN	You would gain Argument0...
+SHORT_YOU_MAY_REACT	You may react
+SHY	Discard a [Shy] card for +2 Cards.
+SIBYL_BOTTOMDECK	Bottomdeck a card
+SIBYL_TOPDECK	Topdeck a card
+SICKNESS	Discard 3 or gain a Curse onto your deck
+SICKNESS_DISCARD	Gain a Curse onto your deck or Discard?
+SICKNESS_MODE	
+SILOS	You may discard
+SILVER_MINE	Gain a treasure into your hand.
+SINISTER_PLOT	Draw AMOUNT0 or add a token?
+SIREN	You may trash an Action.
+SIR_MICHAEL	Discard down to 3 cards
+SKIRMISHER	Discard down to 3
+SMALL_CASTLE_GAIN	Gain a Castle
+SMALL_CASTLE_GONE	Trash a Castle
+SMALL_CASTLE_IN_PLAY	Trash a Castle
+SMUGGLERS_GAIN	Gain a card
+SMUGGLERS_MAY_GAIN	You may gain a card
+SNAKE_WITCH	Return [Snake Witch] to have each other player gain a Curse?
+SNOWY_VILLAGE	Use villagers while you can?
+SOLDIER	Discard a card
+SORCERER	Guess a Card
+SORCERESS	Guess a Card
+SOUK	Trash up to 2
+SPECIALIST_MODE	Play Argument0 again or copy?
+SPECIALIST_PLAY	What card to play?
+SPELL_SCROLL_GAIN	Gain a card costing less than AMOUNT0.
+SPELL_SCROLL_PLAY	Play Argument0?
+SPICE_MERCHANT_MODE	Choose how to play Spice Merchant
+SPICE_MERCHANT_TRASH	You may trash a Treasure
+SPRAWLING_CASTLE	Duchy or 3 Estates?
+SQUIRE_GAIN	Gain an Attack
+SQUIRE_MODE	Choose Squire mode
+STABLES	You may discard a Treasure
+STAFF	You may play an Action card.
+START_GAME	Your starting cards:
+STAR_CHART	Select a card to go on top
+STAR_CHART_ASTROLOGERS_COMBINED	You may topdeck for Favors (one free)
+STEWARD_MODE	Choose how to play [Steward]
+STEWARD_TRASH	Choose 2 cards to trash
+STONEMASON_GAIN1	Gain 1st card cheaper than AMOUNT0
+STONEMASON_GAIN2	Gain 2nd card cheaper than AMOUNT0
+STONEMASON_GAIN_EQUAL	Gain another Action for AMOUNT0
+STONEMASON_OVERPAY	Either specify the overpay amount, or a card to overpay for
+STONEMASON_OVERPAY_AMOUNT	Specify the overpay amount.
+STONEMASON_TRASH	Trash a card
+STOREROOM_CARDS	Discard for cards
+STOREROOM_COINS	Discard for coins
+STORYTELLER_FIRST	Play up to 3 Treasures
+STORYTELLER_SECOND	Play up to 2 Treasures
+STORYTELLER_THIRD	You may play another Treasure
+STRONGHOLD_MODE	Choose how to play Stronghold
+STUDENT	Trash a Card
+SUMMON	Summon a card
+SUNKEN_TREASURE	Gain an Action you don't have in play
+SURVIVORS	Topdeck or discard
+SWAP_GAIN	Gain an Action
+SWAP_RETURN	You may return a card
+SWINDLER	Choose a card for PLAYER0
+SWORD	Discard down to 4 cards.
+SYCOPHANT	Discard 3 cards
+TAX	Add (2D) to a pile
+TAXMAN_GAIN	Gain a treasure up to AMOUNT0
+TAXMAN_TRASH	You may trash a Treasure
+TEACHER_CHOOSE_TOKEN	Choose which token
+TEACHER_PLUS_ACTION_MOVE	Move +1 Action token
+TEACHER_PLUS_ACTION_NEW	Move +1 Action token
+TEACHER_PLUS_BUY_MOVE	Move +1 Buy token
+TEACHER_PLUS_BUY_NEW	Move +1 Buy token
+TEACHER_PLUS_CARD_MOVE	Move +1 Card token
+TEACHER_PLUS_CARD_NEW	Move +1 Card token
+TEACHER_PLUS_COIN_MOVE	Move +1 Coin token
+TEACHER_PLUS_COIN_NEW	Move +1 Coin token
+TEMPLE	Trash 1 - 3 cards
+THE_EARTHS_GIFT_DISCARD	You may discard
+THE_EARTHS_GIFT_GAIN	Gain a card
+THE_FLAMES_GIFT	You may trash
+THE_MOONS_GIFT	You may topdeck
+THE_SKYS_GIFT	You may discard
+THE_SUNS_GIFT_DISCARD	Discard any number
+THE_SUNS_GIFT_TOPDECK	put the rest back
+THE_WINDS_GIFT	Discard 2 cards
+THRONE_ROOM	You may play an Action twice
+TIARA_MODE	Choose how to play Tiara
+TIARA_PLAY	What Treasure to play twice
+TOIL	You may play a card
+TOOLS	Gain a copy of a card somebody has in play.
+TORTURER_DISCARD_OR_CURSE	Discard 2 cards or gain a Curse
+TORTURER_MAY_CURSE	You may gain a Curse
+TORTURER_MAY_DISCARD	You may discard 2 cards
+TOURNAMENT_GAIN_PRIZE_OR_DUCHY	Gain a Prize or a Duchy
+TOURNAMENT_MAY_GAIN_DUCHY	You may gain a Duchy
+TOURNAMENT_MAY_GAIN_PRIZE	You may gain a Prize
+TOURNAMENT_REVEAL	You may reveal a Province
+TOWN_CRIER	How to play Town Crier?
+TOWN_MODE	How to play Town
+TRADE	Trash up to 2 cards
+TRADER_TRASH	Trash a card
+TRADE_ROUTE	Trash a card
+TRADING_POST	Trash 2 cards
+TRAGIC_HERO	Gain a Treasure
+TRAINING_MOVE	Move +1 Coin token
+TRAINING_NEW	Move +1 Coin token
+TRANSMOGRIFY_GAIN	Gain a card up to AMOUNT0
+TRANSMOGRIFY_TRASH	Trash a card
+TRANSMUTE	Trash a card
+TRANSPORT_COMPLEX	Exile from the Supply; or Topdeck from Exile
+TRANSPORT_EXILE	Exile an Action card
+TRANSPORT_MAY_EXILE	You may exile an Action card
+TRANSPORT_MAY_TOPDECK	You may topdeck an Exiled Action
+TRANSPORT_TOPDECK	Topdeck an Exiled Action
+TRASHING_TOKEN	You may trash a card
+TREASURER_COMPLEX	When playing Treasurer
+TREASURER_FAIL	do nothing
+TREASURER_GAIN	gain a Treasure
+TREASURER_KEY	take the Key
+TREASURER_MODE	Choose how to play Treasurer
+TREASURER_TRASH	trash a Treasure
+TRICKSTER	You may set aside a treasure from play.
+TRICKSTER_DISCARD	What Treasure to set aside?
+TRUSTY_STEED	Choose how to play Trusty Steed
+UNIVERSITY	You may gain an Action
+UPGRADE_GAIN	Gain a card for AMOUNT0
+UPGRADE_TRASH	Trash a card
+URCHIN	Discard down to 4 cards
+USE_FAVOR_WHEN_SHUFFLING	Use a favor when shuffling?
+VAMPIRE	Gain a card
+VASSAL	You may play CARDS0
+VAULT_OTHER	You may discard 2 cards
+VAULT_SELF	Discard any number
+VILLAGE_GREEN	Now or next turn?
+VILLAIN	Discard a card
+WANDERING_MINSTREL	Topdeck in any order
+WAREHOUSE	Discard 3 cards.
+WAR_CHEST_GAIN	Gain a card
+WAR_CHEST_PROHIBIT	Ban a card
+WAYFARER	You may gain a Silver
+WAY_OF_THE_GOAT	Trash a Card from your hand.
+WAY_OF_THE_RAT	Discard a Treasure to gain a copy
+WEAVER	Gain a Card or 2 Silvers
+WHAT_NIGHT_TO_PLAY	What Night to play?
+WHEELWRIGHT_DISCARD	Discard to gain
+WHEELWRIGHT_GAIN	Gain a card up to AMOUNT0
+WILD_HUNT	Cards or points?
+WISH	Gain a card
+WISHING_WELL	Guess a card
+WITCHS_HUT	Discard 2 Cards revealed
+WOODWORKERS_GUILD_GAIN	Gain an Action
+WOODWORKERS_GUILD_TRASH	Trash an Action
+WORKSHOP	Gain a card
+YOUNG_WITCH	Discard 2 cards
+YOUNG_WITCH_BANE	Reveal CARDS0 to block Young Witch?
+ZOMBIE_APPRENTICE	You may trash
+ZOMBIE_MASON	You may gain a card
+ZOMBIE_SPY	You may Discard

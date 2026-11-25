@@ -117,11 +117,15 @@ pub fn StatusBar(
     let ticker: Element = if starting {
         rsx! { span { "data-prompt": "starting", "Your starting cards:" } }
     } else if !s.running {
-        rsx! { "The game has ended." }
+        rsx! {}
     } else if let Some(u) = ui.clone() {
-        let text = wording::prompt(&u.decision, &cards);
+        let parts = wording::prompt_parts(&u.decision, &cards);
         rsx! {
-            span { "data-prompt": "{u.decision.purpose}", "{text}" }
+            span { "data-prompt": "{u.decision.purpose}",
+                for (i, part) in parts.iter().enumerate() {
+                    span { key: "{i}", if i > 0 { " " } "{part}" }
+                }
+            }
         }
     } else {
         // A player who has left is counted down in place of "Waiting for".
@@ -372,14 +376,16 @@ pub fn Buttons(
                 what: Act::SelectAll,
             });
         }
+        let none = wording::done_with_none(d).filter(|_| picks == 0);
         let icon = match d.purpose.as_str() {
+            _ if none.is_some() => Some("refuse"),
             "discard" => Some("discard-icon"),
             "trash" => Some("trash-icon"),
             "top-deck" => Some("topdeck-icon"),
             _ => None,
         };
         row.push(Btn {
-            label: wording::done(d).into(),
+            label: none.unwrap_or_else(|| wording::done(d)).into(),
             icon,
             count: wording::done_count(d, picks),
             disabled: busy || !sel.is_legal(d),

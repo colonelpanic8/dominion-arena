@@ -86,15 +86,125 @@ pub fn treasures_first(d: &AgentDecision) -> bool {
         && d.options.iter().any(|o| o.action == "play")
 }
 
+/// dominion.games' short description of each of its questions (client 2.3.7), by its
+/// question id: `REMODEL_GAIN`, `PAWN`, ...
+const QUESTIONS: &str = include_str!("question_prompts.tsv");
+
+/// The question id words a decision's purpose ends in.
+fn purpose_suffixes(purpose: &str) -> &'static [&'static str] {
+    match purpose {
+        "trash" => &["TRASH"],
+        "discard" => &["DISCARD"],
+        "gain" => &["GAIN"],
+        "top-deck" => &["TOPDECK"],
+        "mode" | "either" => &["MODE", "CHOICE", "CHOOSE"],
+        "play" => &["PLAY"],
+        "reveal" => &["REVEAL"],
+        "set-aside" => &["SET_ASIDE"],
+        "exile" => &["EXILE"],
+        "return" => &["RETURN"],
+        "pass" => &["PASS"],
+        "overpay" => &["OVERPAY"],
+        "number" => &["INSERT"],
+        _ => &[],
+    }
+}
+
+/// dominion.games' own prompt for the question its source card asks, in parts (an
+/// amount is a part of its own, as it draws it): the question named after the card
+/// alone, or after the card and the decision's purpose.
+pub fn question_prompt(d: &AgentDecision) -> Option<Vec<String>> {
+    if d.kind == "turn" || matches!(d.purpose.as_str(), "way" | "trigger" | "reaction") {
+        return None;
+    }
+    let source = d.source.as_deref()?;
+    let key: String = source
+        .chars()
+        .filter_map(|c| match c {
+            ' ' | '-' => Some('_'),
+            c if c.is_ascii_alphanumeric() => Some(c.to_ascii_uppercase()),
+            _ => None,
+        })
+        .collect();
+    let find = |id: &str| {
+        QUESTIONS
+            .lines()
+            .find_map(|l| l.split_once('\t').filter(|(k, _)| *k == id).map(|(_, t)| t))
+    };
+    let text = find(&key).or_else(|| {
+        purpose_suffixes(&d.purpose)
+            .iter()
+            .find_map(|s| find(&format!("{key}_{s}")))
+    })?;
+    let (min, max) = bounds(d);
+    let amount = d
+        .options
+        .iter()
+        .filter_map(|o| o.cost.as_ref())
+        .filter(|c| c.potions == 0 && c.debt == 0)
+        .map(|c| c.coins)
+        .max();
+    let mut parts = vec![String::new()];
+    let mut rest = text;
+    loop {
+        let next = ["AMOUNT0", "NUMBER0", "PLAYER0"]
+            .into_iter()
+            .filter_map(|p| rest.find(p).map(|i| (i, p)))
+            .min();
+        let last = parts.last_mut().expect("a part");
+        let Some((i, p)) = next else {
+            last.push_str(rest);
+            break;
+        };
+        last.push_str(&rest[..i]);
+        parts.push(match p {
+            "AMOUNT0" => format!("{} Coins", amount?),
+            "NUMBER0" if min == max => min.to_string(),
+            // The player the question names, as its own words name them.
+            "PLAYER0" => own_prompt(d).rsplit_once(" to ")?.1.to_string(),
+            _ => return None,
+        });
+        parts.push(String::new());
+        rest = &rest[i + p.len()..];
+    }
+    let parts: Vec<String> = parts
+        .iter()
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .collect();
+    let unfilled = ["Argument", "CARDS", "PLAYER", "NUMBER", "AMOUNT", "["];
+    if parts.iter().any(|p| unfilled.iter().any(|x| p.contains(x))) {
+        return None;
+    }
+    Some(parts)
+}
+
 /// The prompt dominion.games shows for a decision.
 pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
+    prompt_parts(d, cards).join(" ")
+}
+
+/// [`prompt`] in the parts dominion.games draws apart (an amount of coins).
+pub fn prompt_parts(d: &AgentDecision, cards: &CardDb) -> Vec<String> {
+    if is_way(d, cards) {
+        let card = d.source.as_deref().unwrap_or("it");
+        let article = if card.starts_with(['A', 'E', 'I', 'O', 'U']) {
+            "an"
+        } else {
+            "a"
+        };
+        return vec![
+            "Consider the Way you play".into(),
+            format!("{article} {card}"),
+        ];
+    }
+    question_prompt(d).unwrap_or_else(|| vec![generic_prompt(d, cards)])
+}
+
+fn generic_prompt(d: &AgentDecision, cards: &CardDb) -> String {
     let (min, max) = bounds(d);
     let text = source_text(d, cards);
     let may = min == 0;
-    if is_way(d, cards) {
-        let card = d.source.as_deref().unwrap_or("it");
-        return format!("Consider the Way you play {card}");
-    }
     match (d.kind.as_str(), d.purpose.as_str()) {
         ("turn", _) => match d.phase.as_deref() {
             Some("action") => "You may play Actions".into(),
@@ -146,7 +256,7 @@ pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
                 format!("Topdeck {}", cards_word(min))
             }
         }
-        (_, "reaction") => "You may react".into(),
+        (_, "reaction") => "Do you want to react?".into(),
         (_, "trigger") => {
             let triggers: Vec<&str> = d
                 .options
@@ -162,7 +272,7 @@ pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
                         .is_some_and(|c| c.types.iter().any(|t| t == "Reaction"))
                 });
             if reacting && optional {
-                "You may react".into()
+                "Do you want to react?".into()
             } else if optional {
                 "You may resolve an effect".into()
             } else {
@@ -250,6 +360,20 @@ pub fn done(d: &AgentDecision) -> &'static str {
         "mode" | "either" => "Done Choosing",
         _ => "Done Selecting",
     }
+}
+
+/// The Done button of a decision that may pick nothing, while nothing is picked.
+pub fn done_with_none(d: &AgentDecision) -> Option<&'static str> {
+    if d.ordered || bounds(d).0 != 0 {
+        return None;
+    }
+    Some(match d.purpose.as_str() {
+        "trash" => "Don't Trash",
+        "discard" => "Don't Discard",
+        "top-deck" => "Don't Topdeck",
+        "exile" => "Don't Exile",
+        _ => return None,
+    })
 }
 
 /// The count on the Done button: how many picks are still needed, with a "+" when more
@@ -420,6 +544,54 @@ mod tests {
     }
 
     #[test]
+    fn card_questions_read_as_dominion_games_words_them() {
+        let cards = db();
+        let p = |d: AgentDecision| prompt_parts(&d, &cards);
+        assert_eq!(
+            p(decision("choose", "mode", 2, 2, Some("Pawn"))),
+            ["Choose how to play Pawn"]
+        );
+        assert_eq!(
+            p(decision("cards", "discard", 0, 5, Some("Night Watchman"))),
+            ["Discard any number"]
+        );
+        assert_eq!(
+            p(decision("choose", "mode", 2, 2, Some("Courtier"))),
+            ["Choose", "2", "options"]
+        );
+        let mut pass = decision("cards", "pass", 1, 1, Some("Masquerade"));
+        pass.prompt = "Masquerade: choose a card to pass to Bob".into();
+        assert_eq!(p(pass), ["Pass a card to", "Bob"]);
+        let mut gain = decision("pile", "gain", 1, 1, Some("Remodel"));
+        for (index, coins) in [(0, 2), (1, 4), (2, 3)] {
+            gain.options.push(dominion_protocol::AgentOption {
+                index,
+                group: 0,
+                action: "pile".into(),
+                label: String::new(),
+                card: None,
+                zone: None,
+                cost: Some(dominion_protocol::Cost {
+                    coins,
+                    ..Default::default()
+                }),
+                value: None,
+                player: None,
+            });
+        }
+        assert_eq!(p(gain), ["Gain a card up to", "4 Coins"]);
+        // Its own words where the question names no amount it can fill in.
+        assert_eq!(
+            p(decision("cards", "trash", 0, 4, Some("Chapel"))),
+            ["Trash up to 4 cards"]
+        );
+        assert_eq!(
+            p(decision("choose", "reaction", 0, 1, None)),
+            ["Do you want to react?"]
+        );
+    }
+
+    #[test]
     fn buttons_are_named_by_what_they_do() {
         assert_eq!(
             done(&decision("cards", "discard", 2, 2, None)),
@@ -443,5 +615,13 @@ mod tests {
             None
         );
         assert_eq!(end_phase(Some("buy")), ("End Buys", "gold"));
+        assert_eq!(
+            done_with_none(&decision("cards", "trash", 0, 4, Some("Chapel"))),
+            Some("Don't Trash")
+        );
+        assert_eq!(
+            done_with_none(&decision("cards", "trash", 1, 4, None)),
+            None
+        );
     }
 }
