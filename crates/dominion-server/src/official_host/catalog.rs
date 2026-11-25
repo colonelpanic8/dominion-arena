@@ -27,8 +27,10 @@ impl WireCatalog {
                 result.symbol(table, symbol)?;
             }
         }
+        let zones = result.catalog.enums.get("ZoneNames");
         for (name, expected) in ZONE_SYMBOLS {
-            if result.symbol("ZoneNames", name)? != *expected {
+            let at = usize::try_from(*expected).ok();
+            if at.and_then(|i| zones?.get(i)).map(String::as_str) != Some(*name) {
                 return Err(ProjectionError::MissingSymbol(format!(
                     "2.3.7 ZoneNames.{name}"
                 )));
@@ -54,6 +56,13 @@ impl WireCatalog {
             .get(&card)
             .copied()
             .ok_or_else(|| ProjectionError::MissingSymbol(format!("CardNames.{}", card.name())))
+    }
+
+    /// A catalog card Arena has no card for (the Boon Drawpile, Druid Boons, ...).
+    pub(crate) fn named(&self, name: &str) -> Result<i32, ProjectionError> {
+        self.catalog
+            .ordinal(name)
+            .ok_or_else(|| ProjectionError::MissingSymbol(format!("CardNames.{name}")))
     }
 
     pub(crate) fn symbol(&self, table: &str, symbol: &str) -> Result<i32, ProjectionError> {
@@ -206,8 +215,38 @@ pub(super) const REQUIRED_SYMBOLS: &[(&str, &[&str])] = &[
             "DONT_GAIN",
         ],
     ),
-    ("CounterNames", &["ACTIONS", "COINS", "POTIONS", "BUYS"]),
-    ("ExtraTurnTypes", &["REGULAR"]),
+    (
+        "CounterNames",
+        &[
+            "ACTIONS",
+            "COINS",
+            "POTIONS",
+            "BUYS",
+            "VP_TOKENS",
+            "EMBARGO_TOKENS",
+            "TRADE_ROUTE_COINS",
+            "TRADE_ROUTE_MAT",
+            "SINISTER_PLOT",
+            "BLOCKADE_TOKENS",
+            "FAVORS",
+            "REMAINING_HAND_PLAYS",
+            "SUN_TOKENS",
+        ],
+    ),
+    (
+        "TokenNames",
+        &[
+            "PLUS_ACTION",
+            "PLUS_BUY",
+            "PLUS_COIN",
+            "PLUS_CARD",
+            "MINUS_COST",
+            "TRASH",
+            "MINUS_CARD",
+            "MINUS_COIN",
+        ],
+    ),
+    ("ExtraTurnTypes", &["REGULAR", "FLEET"]),
     (
         "TimerPresetOptions",
         &["RECKLESS", "HASTY", "FRIENDLY", "PATIENT", "CUSTOM"],
@@ -234,7 +273,22 @@ pub(super) mod zone {
     pub const SUPPLY: i32 = 4;
     pub const TREASURE: i32 = 5;
     pub const VICTORY: i32 = 6;
+    pub const LANDSCAPE: i32 = 7;
     pub const PLAY: i32 = 8;
+    pub const TAVERN: i32 = 10;
+    pub const NATIVE_VILLAGE: i32 = 11;
+    pub const ISLAND: i32 = 12;
+    pub const NON_SUPPLY: i32 = 13;
+    /// Hidden windows: the Boons' and the Hexes' discard piles.
+    pub const BOON_DISCARD: i32 = 15;
+    pub const HEX_DISCARD: i32 = 16;
+    pub const DRUID_BOONS: i32 = 20;
+    pub const EXILE: i32 = 21;
+    pub const MOUSE: i32 = 22;
+    pub const REVEAL: i32 = 23;
+    pub const SET_ASIDE: i32 = 24;
+    pub const THE_BOX: i32 = 30;
+    pub const REDUCED_LANDSCAPE: i32 = 34;
 }
 
 // PileMarkerTypes {BANE, OBELISK, SPLIT, MIXED, FERRYMAN} in the same pinned body.
@@ -266,7 +320,21 @@ pub(super) const ZONE_SYMBOLS: &[(&str, i32)] = &[
     ("SupplyCardZone", zone::SUPPLY),
     ("BasicTreasureZone", zone::TREASURE),
     ("BasicVictoryZone", zone::VICTORY),
+    ("SingleLandscapeZone", zone::LANDSCAPE),
     ("InPlayZone", zone::PLAY),
+    ("TavernZone", zone::TAVERN),
+    ("NVZone", zone::NATIVE_VILLAGE),
+    ("IslandZone", zone::ISLAND),
+    ("NonSupplyZone", zone::NON_SUPPLY),
+    ("HiddenWindowZone", zone::BOON_DISCARD),
+    ("HiddenWindowZone", zone::HEX_DISCARD),
+    ("DruidBoonZone", zone::DRUID_BOONS),
+    ("ExileZone", zone::EXILE),
+    ("MouseZone", zone::MOUSE),
+    ("RevealZone", zone::REVEAL),
+    ("SetAsideZone", zone::SET_ASIDE),
+    ("TheBox", zone::THE_BOX),
+    ("ReducedLandscapeZone", zone::REDUCED_LANDSCAPE),
 ];
 
 #[cfg(test)]
