@@ -230,7 +230,10 @@ fn Pile(
     } else {
         at
     };
-    let plus = mark.target.is_some() && size != CardSize::Full;
+    let waiting = ui
+        .as_ref()
+        .is_some_and(|u| crate::game::wording::treasures_first(&u.decision));
+    let plus = mark.target.is_some() && size != CardSize::Full && !waiting;
     rsx! {
         TableCard {
             name: pile.card.clone(),

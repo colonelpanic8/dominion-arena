@@ -78,6 +78,14 @@ fn is_way(d: &AgentDecision, cards: &CardDb) -> bool {
         })
 }
 
+/// A Buy phase in which Treasures can still be played: dominion.games asks that first,
+/// and the Supply piles wait for it (no plus signs) though clicking one starts buying.
+pub fn treasures_first(d: &AgentDecision) -> bool {
+    d.kind == "turn"
+        && d.phase.as_deref() == Some("buy")
+        && d.options.iter().any(|o| o.action == "play")
+}
+
 /// The prompt dominion.games shows for a decision.
 pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
     let (min, max) = bounds(d);
@@ -90,6 +98,7 @@ pub fn prompt(d: &AgentDecision, cards: &CardDb) -> String {
     match (d.kind.as_str(), d.purpose.as_str()) {
         ("turn", _) => match d.phase.as_deref() {
             Some("action") => "You may play Actions".into(),
+            Some("buy") if treasures_first(d) => "You may play Treasures".into(),
             Some("buy") => "You may buy cards".into(),
             Some("night") => "You may play Night cards".into(),
             _ => own_prompt(d).into(),
@@ -393,7 +402,19 @@ mod tests {
         );
         let mut turn = decision("turn", "turn", 1, 1, None);
         turn.phase = Some("buy".into());
-        assert_eq!(p(turn), "You may buy cards");
+        assert_eq!(p(turn.clone()), "You may buy cards");
+        turn.options.push(dominion_protocol::AgentOption {
+            index: 0,
+            group: 0,
+            action: "play".into(),
+            label: "Copper".into(),
+            card: Some("Copper".into()),
+            zone: None,
+            cost: None,
+            value: None,
+            player: None,
+        });
+        assert_eq!(p(turn), "You may play Treasures");
     }
 
     #[test]
