@@ -1,8 +1,6 @@
 //! Question bindings for this set's cards (see `semantics::SETS`).
-use super::{AbilityArguments, Binding, ProjectionError, WireCatalog, card_names, gap};
-use dominion_engine::{
-    Card, CardId, Decision, DecisionKind, Occasion, Opt, Purpose, Trigger, View,
-};
+use super::{AbilityArguments, Binding, ChoiceShape, ProjectionError, WireCatalog, gap, names_of};
+use dominion_engine::{Card, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
 
 pub(super) fn binding(
@@ -40,7 +38,7 @@ fn scrying_pool(
     let whose = view
         .pending_subject()
         .ok_or_else(|| gap(d, "missing revealing player"))?;
-    let cards = card_names(c, [card])?;
+    let cards = names_of(c, [card])?;
     Ok(if whose == d.player {
         ("CHOOSE_MODE", "SCRYING_POOL_YOU", vec![cards])
     } else {
@@ -63,26 +61,25 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     }
 }
 
-pub(super) fn option_mode(card: Card, opt: Opt) -> Option<&'static str> {
-    match (card, opt) {
-        (Card::ScryingPool, Opt::Yes) => Some("SCRYING_POOL_DISCARD"),
-        (Card::ScryingPool, Opt::No) => Some("SCRYING_POOL_TOPDECK"),
+pub(super) fn choice_shape(
+    _view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    match (d.source?, &d.kind) {
+        (Card::ScryingPool, DecisionKind::Choose { .. }) => Some(Ok(ChoiceShape::Modes {
+            options: vec![
+                (Opt::Yes, "SCRYING_POOL_DISCARD"),
+                (Opt::No, "SCRYING_POOL_TOPDECK"),
+            ],
+            decline: None,
+        })),
         _ => None,
     }
-}
-
-pub(super) fn option_button(_card: Card, _opt: Opt) -> Option<(&'static str, &'static str)> {
-    None
-}
-
-pub(super) fn option_card(_view: &View<'_>, _d: &Decision, _opt: Opt) -> Option<CardId> {
-    None
 }
 
 pub(super) fn ability_arguments(
     _view: &View<'_>,
     _t: &Trigger,
-    _occ: Option<&Occasion>,
     _c: &WireCatalog,
 ) -> AbilityArguments {
     None

@@ -1,10 +1,9 @@
 //! Question bindings for this set's cards (see `semantics::SETS`).
 use super::{
-    AbilityArguments, Binding, ProjectionError, WireCatalog, amount, card_names, cost_limit, gap,
+    AbilityArguments, Binding, ChoiceShape, ProjectionError, WireCatalog, ability_card, amount,
+    cost_limit, gap, names_of, occasion_card,
 };
-use dominion_engine::{
-    Card, CardId, Decision, DecisionKind, Occasion, Opt, Purpose, Trigger, View,
-};
+use dominion_engine::{Card, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
 
 pub(super) fn binding(
@@ -98,7 +97,7 @@ fn oracle(view: &View<'_>, d: &Decision, c: &WireCatalog) -> Result<Binding, Pro
     Ok((
         "CHOOSE_MODE",
         "ORACLE_DISCARD",
-        vec![card_names(c, cards)?, LogArgument::Player(whose.0.into())],
+        vec![names_of(c, cards)?, LogArgument::Player(whose.0.into())],
     ))
 }
 
@@ -109,7 +108,7 @@ fn about(view: &View<'_>, d: &Decision, c: &WireCatalog) -> Result<LogArgument, 
         .first()
         .and_then(|&id| view.card(id))
         .ok_or_else(|| gap(d, "missing card the question is about"))?;
-    card_names(c, [card])
+    names_of(c, [card])
 }
 
 pub(super) fn mode(card: Card, mode: u8) -> Option<&'static str> {
@@ -150,44 +149,45 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-pub(super) fn option_mode(card: Card, opt: Opt) -> Option<&'static str> {
-    Some(match (card, opt) {
-        (Card::Duchess, Opt::Yes) => "DUCHESS_DISCARD",
-        (Card::Duchess, Opt::No) => "DUCHESS_KEEP",
-        (Card::JackOfAllTrades, Opt::Yes) => "JACK_DISCARD",
-        (Card::JackOfAllTrades, Opt::No) => "JACK_KEEP",
-        (Card::Oracle, Opt::Yes) => "ORACLE_DISCARD",
-        (Card::Oracle, Opt::No) => "ORACLE_TOPDECK",
-        _ => return None,
-    })
-}
-
-pub(super) fn option_button(_card: Card, _opt: Opt) -> Option<(&'static str, &'static str)> {
-    None
-}
-
-pub(super) fn option_card(view: &View<'_>, d: &Decision, opt: Opt) -> Option<CardId> {
-    match (d.source?, opt) {
-        (Card::IllGottenGains, Opt::Yes) => view.pile(view.supply_pile(Card::Copper)?).top(),
-        _ => None,
-    }
-}
-
-pub(super) fn ability_arguments(
+pub(super) fn choice_shape(
     view: &View<'_>,
-    t: &Trigger,
-    occ: Option<&Occasion>,
-    c: &WireCatalog,
-) -> AbilityArguments {
-    match (t.card, t.ability, occ) {
-        (Card::Trader, 0, Some(Occasion::Gain { card, .. })) => {
-            Some(super::ability_card(view, t, Some(*card), c))
-        }
-        (Card::NomadCamp, 0, _) => Some(super::ability_card(view, t, t.source, c)),
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    if !matches!(d.kind, DecisionKind::Choose { .. }) {
+        return None;
+    }
+    let keep_or_discard = |discard, keep| ChoiceShape::Modes {
+        options: vec![(Opt::Yes, discard), (Opt::No, keep)],
+        decline: None,
+    };
+    Some(Ok(match d.source? {
+        Card::Duchess => keep_or_discard("DUCHESS_DISCARD", "DUCHESS_KEEP"),
+        Card::JackOfAllTrades => keep_or_discard("JACK_DISCARD", "JACK_KEEP"),
+        Card::Oracle => keep_or_discard("ORACLE_DISCARD", "ORACLE_TOPDECK"),
+        Card::IllGottenGains => match view
+            .supply_pile(Card::Copper)
+            .and_then(|p| view.pile(p).top())
+        {
+            Some(card) => ChoiceShape::Target {
+                card,
+                yes: Opt::Yes,
+                no: Opt::No,
+                decline: "IGG_NO_COPPER",
+            },
+            None => return Some(Err(gap(d, "Ill-Gotten Gains without a Copper"))),
+        },
+        _ => return None,
+    }))
+}
+
+pub(super) fn ability_arguments(view: &View<'_>, t: &Trigger, c: &WireCatalog) -> AbilityArguments {
+    match (t.card, t.ability) {
+        (Card::Trader, 0) => Some(ability_card(t, occasion_card(view, t), c)),
+        (Card::NomadCamp, 0) => Some(ability_card(t, t.source.and_then(|id| view.card(id)), c)),
         // "gain 2 Coppers (Cache)"
-        (Card::Cache, 0, _) => Some(
-            card_names(c, [Card::Copper, Card::Copper])
-                .and_then(|coppers| Ok(vec![coppers, card_names(c, [Card::Cache])?])),
+        (Card::Cache, 0) => Some(
+            names_of(c, [Card::Copper, Card::Copper])
+                .and_then(|coppers| Ok(vec![coppers, names_of(c, [Card::Cache])?])),
         ),
         _ => None,
     }
@@ -247,6 +247,7 @@ pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
         ],
         IllGottenGains => &[
             ("AbilityNames", "CAULDRON_CURSING"),
+            ("DeclineButtonIds", "IGG_NO_COPPER"),
             ("QuestionIds", "ILL_GOTTEN_GAINS"),
             ("QuestionTypes", "GAIN"),
         ],
@@ -347,7 +348,7 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
         Cauldron => &["off-turn-attack", "passive-lasting"],
         Develop => &["card-selection", "pile-selection", "explicit-cost-bound"],
         Duchess => &["looking", "semantic-modes", "optional-ability"],
-        Embassy | Oasis | Stables | WitchsHut => &["card-selection"],
+        Oasis | Stables | WitchsHut => &["card-selection"],
         Farmland | Wheelwright => &["card-selection", "pile-selection", "explicit-cost-bound"],
         FoolsGold | GuardDog | Trader => &["reaction-ability", "card-selection"],
         Highway => &["dynamic-cost"],

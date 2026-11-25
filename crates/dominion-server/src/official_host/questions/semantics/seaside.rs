@@ -1,8 +1,9 @@
 //! Question bindings for this set's cards (see `semantics::SETS`).
-use super::{AbilityArguments, Binding, ProjectionError, WireCatalog, card_names, gap};
-use dominion_engine::{
-    Card, CardId, Decision, DecisionKind, Occasion, Opt, Purpose, Trigger, View,
+use super::{
+    AbilityArguments, Binding, ChoiceShape, ProjectionError, WireCatalog, ability_card, gap,
+    names_of, occasion_card,
 };
+use dominion_engine::{Card, CardId, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
 
 pub(super) fn binding(
@@ -56,7 +57,9 @@ pub(super) fn binding(
             let DecisionKind::Choose { options, .. } = &d.kind else {
                 return None;
             };
-            let all = options.iter().all(|&o| option_card(view, d, o).is_some());
+            let all = options
+                .iter()
+                .all(|&o| matches!(o, Opt::Card(card) if smuggled_copy(view, card).is_some()));
             (
                 "GAIN",
                 if all {
@@ -91,7 +94,7 @@ fn ambassador(view: &View<'_>, d: &Decision, c: &WireCatalog) -> Result<Binding,
         "AMBASSADOR_RETURN_ONE"
     };
     let copies = std::iter::repeat_n(card, (*max).max(1));
-    Ok(("RETURN_TO_SUPPLY", story, vec![card_names(c, copies)?]))
+    Ok(("RETURN_TO_SUPPLY", story, vec![names_of(c, copies)?]))
 }
 
 fn cards_argument(
@@ -105,7 +108,7 @@ fn cards_argument(
         .map(|&id| view.card(id))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| gap(d, "card argument not visible"))?;
-    card_names(c, names)
+    names_of(c, names)
 }
 
 pub(super) fn mode(card: Card, mode: u8) -> Option<&'static str> {
@@ -141,42 +144,57 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-pub(super) fn option_mode(_card: Card, _opt: Opt) -> Option<&'static str> {
-    None
+/// Smugglers' copy of a card the player to the right gained, on top of its Supply pile.
+fn smuggled_copy(view: &View<'_>, card: Card) -> Option<CardId> {
+    view.pile(view.supply_pile(card)?).top()
 }
 
-pub(super) fn option_button(card: Card, opt: Opt) -> Option<(&'static str, &'static str)> {
-    match (card, opt) {
-        (Card::Navigator, Opt::Mode(0)) => Some(("NAVIGATOR", "DISCARD_ALL")),
-        (Card::Navigator, Opt::Mode(1)) => Some(("NAVIGATOR", "CONTINUE")),
-        _ => None,
-    }
-}
-
-pub(super) fn option_card(view: &View<'_>, d: &Decision, opt: Opt) -> Option<CardId> {
-    match (d.source?, opt) {
-        (Card::Smugglers, Opt::Card(card)) => view.pile(view.supply_pile(card)?).top(),
-        _ => None,
-    }
-}
-
-pub(super) fn ability_arguments(
+pub(super) fn choice_shape(
     view: &View<'_>,
-    t: &Trigger,
-    occ: Option<&Occasion>,
-    c: &WireCatalog,
-) -> AbilityArguments {
-    let card = match (t.card, t.ability, occ) {
-        (Card::Blockade, 0, _) => view
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    let DecisionKind::Choose { options, .. } = &d.kind else {
+        return None;
+    };
+    Some(Ok(match d.source? {
+        Card::Navigator => ChoiceShape::Buttons(vec![
+            (Opt::Mode(0), "DISCARD_ALL"),
+            (Opt::Mode(1), "CONTINUE"),
+        ]),
+        Card::Smugglers => {
+            let named = options
+                .iter()
+                .map(|&o| match o {
+                    Opt::Card(card) => Some((o, card)),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            // A copy that can't be gained has no card to show: name them all instead.
+            match named
+                .iter()
+                .map(|&(o, card)| Some((o, smuggled_copy(view, card)?)))
+                .collect::<Option<Vec<_>>>()
+            {
+                Some(cards) => ChoiceShape::Cards(cards),
+                None => ChoiceShape::Names(named),
+            }
+        }
+        _ => return None,
+    }))
+}
+
+pub(super) fn ability_arguments(view: &View<'_>, t: &Trigger, c: &WireCatalog) -> AbilityArguments {
+    let card = match (t.card, t.ability) {
+        (Card::Blockade, 0) => view
             .lasting()
             .into_iter()
             .find(|l| Some(l.id) == t.lasting)
-            .and_then(|l| l.data.pick),
-        (Card::Corsair, 1, Some(Occasion::Play { card, .. })) => Some(*card),
-        (Card::Sailor, 1, Some(Occasion::Gain { card, .. })) => Some(*card),
+            .and_then(|l| l.data.pick)
+            .and_then(|id| view.card(id)),
+        (Card::Corsair | Card::Sailor, 1) => occasion_card(view, t),
         _ => return None,
     };
-    Some(super::ability_card(view, t, card, c))
+    Some(ability_card(t, card, c))
 }
 
 pub(super) fn symbols(card: Card) -> &'static [(&'static str, &'static str)] {
@@ -289,7 +307,6 @@ pub(super) fn requirements(card: Card) -> Option<&'static [&'static str]> {
             "optional-ability",
         ],
         Cutpurse => &["off-turn-attack", "card-selection"],
-        Embargo => &["pile-selection", "pile-tokens"],
         Explorer => &["card-selection"],
         Lookout => &["looking", "card-selection"],
         Monkey => &["duration-reminder", "duration-ability"],

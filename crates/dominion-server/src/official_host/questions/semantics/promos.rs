@@ -1,6 +1,8 @@
 //! Question bindings for this set's cards (see `semantics::SETS`).
-use super::{AbilityArguments, Binding, ProjectionError, WireCatalog, card_names, cost_limit};
-use dominion_engine::{Card, CardId, Decision, Occasion, Opt, Purpose, Trigger, View};
+use super::{
+    AbilityArguments, Binding, ProjectionError, WireCatalog, ability_card, cost_limit, names_of,
+};
+use dominion_engine::{Card, Decision, Purpose, Trigger, View};
 
 pub(super) fn binding(
     view: &View<'_>,
@@ -56,24 +58,7 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-pub(super) fn option_mode(_card: Card, _opt: Opt) -> Option<&'static str> {
-    None
-}
-
-pub(super) fn option_button(_card: Card, _opt: Opt) -> Option<(&'static str, &'static str)> {
-    None
-}
-
-pub(super) fn option_card(_view: &View<'_>, _d: &Decision, _opt: Opt) -> Option<CardId> {
-    None
-}
-
-pub(super) fn ability_arguments(
-    view: &View<'_>,
-    t: &Trigger,
-    _occ: Option<&Occasion>,
-    c: &WireCatalog,
-) -> AbilityArguments {
+pub(super) fn ability_arguments(view: &View<'_>, t: &Trigger, c: &WireCatalog) -> AbilityArguments {
     if !matches!(
         (t.card, t.ability),
         (Card::Church | Card::Prince | Card::Summon, 0)
@@ -92,8 +77,8 @@ pub(super) fn ability_arguments(
             .map(|&id| view.card(id))
             .collect::<Option<Vec<_>>>()
             .ok_or(ProjectionError::Inconsistent("Church card not visible"))
-            .and_then(|cards| Ok(vec![card_names(c, cards)?])),
-        (_, data) => super::ability_card(view, t, data.and_then(|d| d.pick), c),
+            .and_then(|cards| Ok(vec![names_of(c, cards)?])),
+        (_, data) => ability_card(t, data.and_then(|d| d.pick).and_then(|id| view.card(id)), c),
     })
 }
 

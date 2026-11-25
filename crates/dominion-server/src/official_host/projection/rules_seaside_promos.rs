@@ -27,7 +27,13 @@ fn admitted() -> Vec<Card> {
 }
 
 fn story(u: &ProjectedUpdate) -> i32 {
-    u.question.as_ref().unwrap().wire.description.story.question_id
+    u.question
+        .as_ref()
+        .unwrap()
+        .wire
+        .description
+        .story
+        .question_id
 }
 fn symbol(table: &str, name: &str) -> i32 {
     catalog().symbol(table, name).unwrap()
@@ -70,13 +76,15 @@ fn seaside_to_promos_admits_what_it_binds() {
         assert!(admitted.contains(&card), "{card:?} not admitted");
     }
     // No story for what the engine asks (Watchtower's trash-or-topdeck, Stash's place in
-    // the deck), or an ordering their client can't show (from the hand or play).
+    // the deck), an ordering their client can't show (from the hand or play), an ability
+    // with no name (Embassy's on-gain) or an empty pile to pick (Embargo).
     for card in [
         Card::Watchtower,
         Card::Stash,
         Card::GhostShip,
         Card::Mandarin,
         Card::Embassy,
+        Card::Embargo,
         Card::BlackMarket,
     ] {
         assert!(!admitted.contains(&card), "{card:?} admitted");
@@ -201,7 +209,7 @@ fn seaside_to_promos_random_games_answer_through_the_wire() {
                             .iter()
                             .filter(|m| matches!(m, Move::Play(id) if game.card(*id) == card))
                             .collect();
-                        if !plays.is_empty() && pick % 4 != 0 {
+                        if !plays.is_empty() && !pick.is_multiple_of(4) {
                             Response::Move(*plays[pick % plays.len()])
                         } else {
                             options[pick % options.len()].1.clone()
@@ -237,7 +245,13 @@ fn duchess_yes_and_no_are_its_card_modes() {
     let u = update(&game, 0, 2);
     assert_eq!(story(&u), symbol("QuestionIds", "DUCHESS"));
     assert_eq!(
-        u.question.as_ref().unwrap().wire.description.story.arguments,
+        u.question
+            .as_ref()
+            .unwrap()
+            .wire
+            .description
+            .story
+            .arguments,
         vec![names(&[(top, 1)])]
     );
     assert_eq!(
@@ -248,7 +262,10 @@ fn duchess_yes_and_no_are_its_card_modes() {
         ]
     );
     let q = u.question.as_ref().unwrap();
-    assert_eq!(q.resolve(q.wire.index, &[0]), Ok(Response::option(Opt::Yes)));
+    assert_eq!(
+        q.resolve(q.wire.index, &[0]),
+        Ok(Response::option(Opt::Yes))
+    );
     assert_eq!(q.resolve(q.wire.index, &[1]), Ok(Response::option(Opt::No)));
 }
 
@@ -320,7 +337,13 @@ fn develop_gains_name_their_costs() {
     let u = update(&game, 0, 2);
     assert_eq!(story(&u), symbol("QuestionIds", "DEVELOP_GAIN1"));
     assert_eq!(
-        u.question.as_ref().unwrap().wire.description.story.arguments,
+        u.question
+            .as_ref()
+            .unwrap()
+            .wire
+            .description
+            .story
+            .arguments,
         vec![amount(4), amount(2)]
     );
     let DecisionKind::Pile { piles, .. } = &game.pending().unwrap().kind else {
@@ -334,7 +357,13 @@ fn develop_gains_name_their_costs() {
     let u = update(&game, 0, 3);
     assert_eq!(story(&u), symbol("QuestionIds", "DEVELOP_GAIN2"));
     assert_eq!(
-        u.question.as_ref().unwrap().wire.description.story.arguments,
+        u.question
+            .as_ref()
+            .unwrap()
+            .wire
+            .description
+            .story
+            .arguments,
         vec![amount(2)]
     );
 }
@@ -365,7 +394,10 @@ fn mountebank_offers_the_curse_with_a_decline() {
     };
     assert_eq!(cards.len(), 1);
     assert_eq!(*decline, symbol("DeclineButtonIds", "DONT_DISCARD"));
-    assert_eq!(q.resolve(q.wire.index, &[0]), Ok(Response::option(Opt::Yes)));
+    assert_eq!(
+        q.resolve(q.wire.index, &[0]),
+        Ok(Response::option(Opt::Yes))
+    );
     assert_eq!(q.resolve(q.wire.index, &[]), Ok(Response::option(Opt::No)));
 }
 
@@ -374,19 +406,26 @@ fn mountebank_offers_the_curse_with_a_decline() {
 fn royal_seal_ability_names_the_gained_card() {
     let mut game = fixture(Card::RoyalSeal, 2);
     play(&mut game, Card::RoyalSeal);
-    let silver = loop {
+    let mut silver = None;
+    for _ in 0..12 {
         let d = game.pending().unwrap();
         let DecisionKind::Turn { moves, .. } = &d.kind else {
             panic!("{d:?}")
         };
-        if let Some(&m) = moves
+        let buy = moves
             .iter()
-            .find(|m| matches!(m, Move::Buy(p) if game.pile(*p).card == Card::Silver))
-        {
-            break m;
+            .find(|m| matches!(m, Move::Buy(p) if game.pile(*p).card == Card::Silver));
+        if let Some(&m) = buy {
+            silver = Some(m);
+            break;
         }
-        game.respond(Response::Move(Move::EndPhase)).unwrap();
-    };
+        let treasure = moves
+            .iter()
+            .find(|m| matches!(m, Move::Play(id) if game.card(*id).is(Types::TREASURE)));
+        game.respond(Response::Move(*treasure.unwrap_or(&Move::EndPhase)))
+            .unwrap();
+    }
+    let silver = silver.expect("Silver affordable");
     game.respond(Response::Move(silver)).unwrap();
     let d = game.pending().unwrap();
     assert_eq!(d.purpose, Purpose::Trigger);
@@ -398,7 +437,10 @@ fn royal_seal_ability_names_the_gained_card() {
     else {
         panic!()
     };
-    assert_eq!(abilities[0].name, symbol("AbilityNames", "TOPDECK_REACTION"));
+    assert_eq!(
+        abilities[0].name,
+        symbol("AbilityNames", "TOPDECK_REACTION")
+    );
     assert_eq!(abilities[0].arguments, vec![names(&[(Card::Silver, 1)])]);
     assert_options(&game, &u);
 }

@@ -493,7 +493,6 @@ impl Window {
         self.asked.iter().map(|(_, t)| t)
     }
 
-    /// The occasion each of `asked` answers, in the same order.
     pub(crate) fn asked_occasions(&self) -> impl Iterator<Item = &Occasion> {
         self.asked.iter().map(|(i, _)| &self.occs[*i])
     }

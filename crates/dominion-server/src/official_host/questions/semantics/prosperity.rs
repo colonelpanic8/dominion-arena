@@ -1,8 +1,9 @@
 //! Question bindings for this set's cards (see `semantics::SETS`).
-use super::{AbilityArguments, Binding, ProjectionError, WireCatalog, card_names, cost_limit, gap};
-use dominion_engine::{
-    Card, CardId, Decision, DecisionKind, Occasion, Opt, Purpose, Trigger, View,
+use super::{
+    AbilityArguments, Binding, ChoiceShape, ProjectionError, WireCatalog, ability_card, cost_limit,
+    gap, names_of, occasion_card,
 };
+use dominion_engine::{Card, Decision, DecisionKind, Opt, Purpose, Trigger, View};
 use dominion_online::questions::LogArgument;
 
 pub(super) fn binding(
@@ -47,7 +48,7 @@ pub(super) fn binding(
                 .and_then(|id| view.card(id))
                 .ok_or_else(|| gap(d, "missing revealed Treasure"));
             return Some(
-                card.and_then(|card| card_names(c, [card]))
+                card.and_then(|card| names_of(c, [card]))
                     .map(|arg| ("CHOOSE_MODE", "LOAN", vec![arg])),
             );
         }
@@ -76,7 +77,7 @@ fn about(view: &View<'_>, d: &Decision, c: &WireCatalog) -> Result<LogArgument, 
         .first()
         .and_then(|&id| view.card(id))
         .ok_or_else(|| gap(d, "missing card the question is about"))?;
-    card_names(c, [card])
+    names_of(c, [card])
 }
 
 pub(super) fn mode(card: Card, mode: u8) -> Option<&'static str> {
@@ -105,47 +106,48 @@ pub(super) fn ability(card: Card, ability: u8) -> Option<&'static str> {
     })
 }
 
-pub(super) fn option_mode(_card: Card, _opt: Opt) -> Option<&'static str> {
-    None
-}
-
-pub(super) fn option_button(card: Card, opt: Opt) -> Option<(&'static str, &'static str)> {
-    match (card, opt) {
-        (Card::Vault, Opt::Yes) => Some(("VAULT_OTHER", "CONTINUE")),
-        (Card::Vault, Opt::No) => Some(("VAULT_OTHER", "VAULT_NO_DISCARD")),
-        _ => None,
-    }
-}
-
-pub(super) fn option_card(view: &View<'_>, d: &Decision, opt: Opt) -> Option<CardId> {
-    match (d.source?, opt) {
-        (Card::Mountebank, Opt::Yes) => view
-            .hand()
-            .iter()
-            .copied()
-            .filter(|&id| view.card(id) == Some(Card::Curse))
-            .min(),
-        _ => None,
-    }
-}
-
-pub(super) fn ability_arguments(
+pub(super) fn choice_shape(
     view: &View<'_>,
-    t: &Trigger,
-    occ: Option<&Occasion>,
-    c: &WireCatalog,
-) -> AbilityArguments {
-    match (t.card, t.ability, occ) {
-        (Card::RoyalSeal | Card::Tiara, 0, Some(Occasion::Gain { card, .. })) => {
-            Some(super::ability_card(view, t, Some(*card), c))
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    if !matches!(d.kind, DecisionKind::Choose { .. }) {
+        return None;
+    }
+    Some(Ok(match d.source? {
+        Card::Vault => {
+            ChoiceShape::Buttons(vec![(Opt::Yes, "CONTINUE"), (Opt::No, "VAULT_NO_DISCARD")])
         }
+        Card::Mountebank => {
+            let curse = view
+                .hand()
+                .iter()
+                .copied()
+                .filter(|&id| view.card(id) == Some(Card::Curse))
+                .min();
+            match curse {
+                Some(card) => ChoiceShape::Target {
+                    card,
+                    yes: Opt::Yes,
+                    no: Opt::No,
+                    decline: "DONT_DISCARD",
+                },
+                None => return Some(Err(gap(d, "Mountebank without a Curse in hand"))),
+            }
+        }
+        _ => return None,
+    }))
+}
+
+pub(super) fn ability_arguments(view: &View<'_>, t: &Trigger, c: &WireCatalog) -> AbilityArguments {
+    match (t.card, t.ability) {
+        (Card::RoyalSeal | Card::Tiara, 0) => Some(ability_card(t, occasion_card(view, t), c)),
         // "gain Smithy (Talisman)"
-        (Card::Talisman, 0, Some(Occasion::Buy { card, .. })) => Some(
-            super::ability_card(view, t, Some(*card), c).and_then(|mut args| {
-                args.push(card_names(c, [Card::Talisman])?);
+        (Card::Talisman, 0) => Some(ability_card(t, occasion_card(view, t), c).and_then(
+            |mut args| {
+                args.push(names_of(c, [Card::Talisman])?);
                 Ok(args)
-            }),
-        ),
+            },
+        )),
         _ => None,
     }
 }
