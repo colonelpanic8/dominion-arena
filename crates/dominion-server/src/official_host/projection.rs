@@ -915,3 +915,7 @@ mod tests;
 #[cfg(test)]
 #[path = "projection/rules.rs"]
 mod rules;
+
+#[cfg(test)]
+#[path = "projection/survey.rs"]
+mod survey;
