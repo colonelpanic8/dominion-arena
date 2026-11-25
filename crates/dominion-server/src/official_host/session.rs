@@ -133,7 +133,10 @@ impl Session {
         let Some(projected) = projected else {
             return Ok(version);
         };
-        let (stamp, update) = projected.map_err(|_| Failure(1008, "unsupported game state"))?;
+        let (stamp, update) = projected.map_err(|error| {
+            eprintln!("dominion: the official transport cannot project a game: {error}");
+            Failure(1008, "unsupported game state")
+        })?;
         debug_assert_eq!(update.version, version);
         debug_assert_eq!(update.undos, stamp.undos);
         self.index = index;

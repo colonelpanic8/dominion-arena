@@ -356,7 +356,7 @@ async fn official_socket(
     let seat = api.seat(&id, &headers, None, query.seat)?;
     api.hub
         .admission(&id, |config, meta| {
-            profile::check_supported(config, meta, &host.catalog)
+            profile::check_supported(config, meta, &host.catalog, host.unreviewed_cards)
         })?
         .map_err(|error| Error::new(StatusCode::UNPROCESSABLE_ENTITY, error.to_string()))?;
     let context = context(&api.arena, &seat, &host)

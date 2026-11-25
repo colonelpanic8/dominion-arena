@@ -37,6 +37,9 @@ export class Arena {
       `official_preferences_dir = ${JSON.stringify(path.join(dir, 'prefs'))}`,
     ];
     if (seed !== undefined) lines.push(`table_seed = ${seed}`);
+    // Cards the transport has no reviewed rules for still draw; scenarios stop before
+    // any of their questions.
+    lines.push(`official_server_unreviewed_cards = true`);
     // Accounts u1, u2, ... (registered in that order) see dominion.games' client as ours
     // is set up by default: the Inheritance painting (1; 0 is none), no animations
     // (Instant, 3), and the kingdom moving down on others' turns.

@@ -36,6 +36,9 @@ pub struct Config {
     pub official_server_catalog_file: Option<PathBuf>,
     /// Enable the original client's host/port-only root WebSocket alias.
     pub official_server_root_socket: Option<bool>,
+    /// Also admit cards whose rules aren't reviewed for the transport, for drawing them
+    /// in tests (default false; their questions may end the connection).
+    pub official_server_unreviewed_cards: Option<bool>,
     /// Per-account flat preference files, separate from game state and asset cache.
     pub official_preferences_dir: Option<PathBuf>,
     /// Separately populated original application cache; never downloaded by the host.

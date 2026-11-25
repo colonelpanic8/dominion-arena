@@ -212,7 +212,7 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     let catalog = catalog();
     let cfg = config();
     let meta = hub::Meta::default();
-    profile::check_supported(&cfg, &meta, &catalog).unwrap();
+    profile::check_supported(&cfg, &meta, &catalog, false).unwrap();
     let mut cases = vec![];
     let mut c = cfg.clone();
     c.players = 1;
@@ -235,8 +235,16 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
     let mut c = cfg.clone();
     c.kingdom[0] = c.kingdom[1];
     cases.push(c);
-    for c in cases {
-        assert!(profile::check_supported(&c, &meta, &catalog).is_err());
+    for c in &cases {
+        assert!(profile::check_supported(c, &meta, &catalog, false).is_err());
+    }
+    // Admitting unreviewed cards admits the Fountain, never anything else refused.
+    for (i, c) in cases.iter().enumerate() {
+        assert_eq!(
+            profile::check_supported(c, &meta, &catalog, true).is_ok(),
+            i == 2,
+            "{i}"
+        );
     }
     assert!(
         profile::check_supported(
@@ -245,7 +253,8 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
                 rated: true,
                 ..Default::default()
             },
-            &catalog
+            &catalog,
+            false
         )
         .is_err()
     );
@@ -256,7 +265,8 @@ fn admission_checks_configuration_and_metadata_not_only_pending_question() {
                 timed: true,
                 ..Default::default()
             },
-            &catalog
+            &catalog,
+            false
         )
         .is_err()
     );

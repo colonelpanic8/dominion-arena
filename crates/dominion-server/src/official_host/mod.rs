@@ -26,6 +26,7 @@ pub struct Host {
     pub(crate) upgrades: Limiter<IpAddr>,
     pub(crate) connections: Arc<Semaphore>,
     pub(crate) root_socket: bool,
+    pub(crate) unreviewed_cards: bool,
     pub(crate) preferences: preferences::Store,
     codes: Mutex<HashMap<String, (Instant, String)>>,
     launches: Limiter<String>,
@@ -45,6 +46,7 @@ impl Host {
             upgrades: Limiter::new(30, Duration::from_secs(60)),
             connections: Arc::new(Semaphore::new(256)),
             root_socket: true,
+            unreviewed_cards: false,
             preferences: preferences::Store::new(None),
             codes: Mutex::default(),
             launches: Limiter::new(10, Duration::from_secs(60)),
@@ -114,6 +116,7 @@ impl Host {
         let mut host = Self::new(Arc::new(catalog))?;
         let host_mut = Arc::get_mut(&mut host).expect("new host is unshared");
         host_mut.root_socket = config.official_server_root_socket.unwrap_or(false);
+        host_mut.unreviewed_cards = config.official_server_unreviewed_cards.unwrap_or(false);
         let dir = config.official_preferences_dir.clone().or_else(|| {
             let root = std::env::var_os("XDG_CONFIG_HOME")
                 .map(std::path::PathBuf::from)
