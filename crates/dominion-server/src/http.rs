@@ -740,6 +740,9 @@ impl Api {
             }
         };
         self.hub.touch(&seat);
+        if ident.agent {
+            self.hub.mark_remote_agent(&seat);
+        }
         Ok(seat)
     }
 }

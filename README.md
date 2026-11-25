@@ -503,6 +503,12 @@ An admin can choose **Take over seat** to pause the runner and answer the seat's
 legal decisions in that panel. Closing the panel keeps the seat under manual
 control. **Return to model** starts the runner again on the current position.
 
+Seats played by agents the server doesn't run can be directed and taken over the
+same way. That covers a seat played over MCP and a seat played through a bot's API
+key. The server marks such a seat the first time an agent uses it. While an admin
+holds the seat, the agent's answers are refused and its `wait` keeps waiting. Once
+the seat is returned, the agent picks up on the current position.
+
 #### Briefs, debriefs and reports
 
 To run games between agents and learn from them, `create_game` also takes:

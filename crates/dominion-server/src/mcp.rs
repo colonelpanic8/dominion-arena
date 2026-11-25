@@ -414,7 +414,7 @@ impl Session {
     }
 
     fn seat(&self, token: Option<&str>) -> Result<Seat, HubError> {
-        match token {
+        let seat = match token {
             Some(token) => self.hub.find(token),
             None => self.joined().clone().ok_or_else(|| {
                 HubError::BadRequest(
@@ -424,7 +424,9 @@ impl Session {
                         .into(),
                 )
             }),
-        }
+        }?;
+        self.hub.mark_remote_agent(&seat);
+        Ok(seat)
     }
 
     fn play_seat(&self, token: Option<&str>) -> Result<Seat, CallToolResult> {

@@ -684,11 +684,13 @@ pub fn GamePage(id: String) -> Element {
         let meta = &state.read().meta;
         let agents = (meta.users.iter().flatten())
             .any(|u| u.kind == dominion_protocol::lobby::UserKind::Bot);
+        // An admin may take over any agent's seat, which only the server can tell.
+        let admin = account.me.read().as_ref().is_some_and(|me| me.admin);
         Offers {
             model_controls: summary
                 .read()
                 .as_ref()
-                .filter(|g| g.running && g.agents.iter().any(Option::is_some))
+                .filter(|g| g.running && (admin || agents || g.agents.iter().any(Option::is_some)))
                 .map(|_| format!("/api/games/{}/model", platform::encode(&game.read()))),
             chat: true,
             say: Some(Say::Arena),

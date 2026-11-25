@@ -114,6 +114,9 @@ pub struct Meta {
     pub undo: UndoRule,
     /// Per seat: played by one of the server's agents, which allow every undo.
     pub agents: Vec<bool>,
+    /// Per seat: played by an agent the server doesn't run: over MCP, or with a bot's key.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remote_agents: Vec<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub launch_options: Vec<dominion_protocol::lobby::LaunchOptions>,
     /// The lobby table that started it.
@@ -2984,8 +2987,9 @@ impl Hub {
         let ready = || {
             let table = lock(&game.table);
             table.is_over()
-                || table.deciding() == Some(seat.seat)
-                || lock(&game.undo).waits_for(seat.seat)
+                || (game.model_turn(seat.seat).is_ok()
+                    && (table.deciding() == Some(seat.seat)
+                        || lock(&game.undo).waits_for(seat.seat)))
         };
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
