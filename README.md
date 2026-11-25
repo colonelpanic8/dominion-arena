@@ -196,7 +196,11 @@ keeps its seat authentication and lobby separate.
 
 `state`, `new_game`, and common `join_game` return full text; `step` and `wait` return
 compact changes (full text on the session's first observation). They always carry the
-full structured `{view, glossary?, clock?}` envelope. In a game with a chess clock (or,
+full structured `{view, glossary?, clock?, clockInfo?, decisionConsequence?}` envelope.
+When buying or ending a phase gives up offered plays, `decisionConsequence` identifies
+the open `decisionId`, the `closingOptions` that end the window, and the `forgoneOptions`
+it would close, by option index. Its `text` is the cue shown in the decision. A refused
+call includes the same field while that decision remains open. In a game with a chess clock (or,
 on dominion.games, a timer), `clock` is `{left, free?, running?, increment?}` (milliseconds:
 each seat's time as the call returns, free decision time first, the seat whose time runs,
 what each turn adds) and every text has a `CLOCK` line with each player's time. Card text arrives once per session/game

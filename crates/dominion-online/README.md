@@ -45,7 +45,7 @@ claude mcp add dominion -- dominion online mcp
 The MCP entry point uses stdio. Register either this backend or Arena's hosted
 backend as `dominion`. Authentication belongs to operator setup; gameplay uses
 the same `state`, `new_game`, `step`, `wait`, `cards`, and `log` contract
-(`dominion/play@1`, structured `{view, glossary?, clock?, clockInfo?}` / `dominion/agent-view@2`;
+(`dominion/play@1`, structured `{view, glossary?, clock?, clockInfo?, decisionConsequence?}` / `dominion/agent-view@2`;
 `clock.left` and `clock.free` give each seat’s bank and free time in milliseconds.
 `clock.running` identifies the charged seat, including reactions. `clockInfo.status`
 is `available`, `off`, or `unavailable`. `asOfMs` is the projection time and

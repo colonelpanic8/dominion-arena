@@ -102,10 +102,22 @@ fn printed_coins<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecisionConsequence {
+    decision_id: String,
+    closing_options: Vec<u32>,
+    forgone_options: Vec<u32>,
+    text: String,
+}
+
 /// What the options that close a window give up, said where the seat decides: a buy
 /// ends Treasure plays for the turn, and ending a phase gives up the plays it still
 /// offers. Both backends close these windows by the rules.
-fn forecloses(d: &AgentDecision, is_treasure: impl Fn(&str) -> bool) -> Option<String> {
+fn forecloses(
+    d: &AgentDecision,
+    is_treasure: impl Fn(&str) -> bool,
+) -> Option<DecisionConsequence> {
     let end = d.options.iter().find(|o| o.action == "end-phase");
     let treasures = treasure_plays(d, is_treasure);
     if !treasures.is_empty() {
@@ -113,23 +125,37 @@ fn forecloses(d: &AgentDecision, is_treasure: impl Fn(&str) -> bool) -> Option<S
         let ending = end
             .map(|o| format!(" {} gives them up too.", o.label))
             .unwrap_or_default();
-        return Some(format!(
-            "Buying anything ends your Treasure plays for this turn: play the Treasures you want first (play_treasures plays them all). Unplayed Treasures: {} ({}).{ending}",
-            tally(names()),
-            printed_coins(names()),
-        ));
+        return Some(DecisionConsequence {
+            decision_id: d.id.clone(),
+            closing_options: d
+                .options
+                .iter()
+                .filter(|o| matches!(o.action.as_str(), "buy" | "end-phase"))
+                .map(|o| o.index)
+                .collect(),
+            forgone_options: treasures.iter().map(|(i, _)| *i).collect(),
+            text: format!(
+                "Buying anything ends your Treasure plays for this turn: play the Treasures you want first (play_treasures plays them all). Unplayed Treasures: {} ({}).{ending}",
+                tally(names()),
+                printed_coins(names()),
+            ),
+        });
     }
     let end = end?;
-    let plays: Vec<&str> = (d.options.iter())
-        .filter(|o| o.action == "play")
-        .filter_map(|o| o.card.as_deref())
+    let plays: Vec<_> = d
+        .options
+        .iter()
+        .filter(|o| o.action == "play" && o.card.is_some())
         .collect();
-    (!plays.is_empty()).then(|| {
-        format!(
+    (!plays.is_empty()).then(|| DecisionConsequence {
+        decision_id: d.id.clone(),
+        closing_options: vec![end.index],
+        forgone_options: plays.iter().map(|o| o.index).collect(),
+        text: format!(
             "{} ends this phase, giving up the plays still offered: {}.",
             end.label,
-            tally(plays)
-        )
+            tally(plays.iter().filter_map(|o| o.card.as_deref()))
+        ),
     })
 }
 
@@ -219,7 +245,7 @@ pub(crate) struct Play<'a, S> {
 
 impl<S: PlaySeat> Play<'_, S> {
     /// Adds to `d`'s prompt, for its text only, what each window-closing option gives up.
-    fn annotate(&self, d: &mut AgentDecision) {
+    fn annotate(&self, d: &mut AgentDecision) -> Option<DecisionConsequence> {
         let names: BTreeSet<String> = (d.options.iter())
             .filter(|o| o.action == "play")
             .filter_map(|o| o.card.clone())
@@ -234,9 +260,9 @@ impl<S: PlaySeat> Play<'_, S> {
         let is_treasure = |name: &str| {
             (cards.iter()).any(|e| e.name == name && e.types.iter().any(|t| t == "Treasure"))
         };
-        if let Some(note) = forecloses(d, is_treasure) {
-            d.prompt = format!("{} {note}", d.prompt);
-        }
+        let consequence = forecloses(d, is_treasure)?;
+        d.prompt = format!("{} {}", d.prompt, consequence.text);
+        Some(consequence)
     }
 
     /// The seat's view as a result: in full, or what changed since the session's last.
@@ -246,21 +272,20 @@ impl<S: PlaySeat> Play<'_, S> {
             Ok(None) => return no_game(&self.seat.no_game()),
             Err(e) => return self.failure(e),
         };
-        // The structured view stays the backend's; the note is for the text.
-        let prompt = observation.view.decision.as_mut().map(|d| {
-            let prompt = d.prompt.clone();
-            self.annotate(d);
-            prompt
-        });
+        let mut value = serde_json::json!({"view": observation.view});
+        if let Some(note) = observation
+            .view
+            .decision
+            .as_mut()
+            .and_then(|d| self.annotate(d))
+        {
+            value["decisionConsequence"] = serde_json::json!(note);
+        }
         let (text, glossary) = self
             .shown
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .render(&seat, &observation, full, self.clock_cues);
-        if let (Some(d), Some(prompt)) = (&mut observation.view.decision, prompt) {
-            d.prompt = prompt;
-        }
-        let mut value = serde_json::json!({"view": observation.view});
         if let Some(clock) = &observation.clock {
             value["clock"] = serde_json::json!(clock);
         }
@@ -284,15 +309,11 @@ impl<S: PlaySeat> Play<'_, S> {
     /// without another call.
     pub fn failure(&self, message: impl Into<String>) -> CallToolResult {
         let mut text = message.into();
-        let observation = match self.seat.observe() {
-            Ok(Some((_, mut observation))) => {
-                if let Some(d) = &mut observation.view.decision {
-                    self.annotate(d);
-                }
-                Some(observation)
-            }
-            _ => None,
-        };
+        let mut observation = self.seat.observe().ok().flatten().map(|(_, obs)| obs);
+        let consequence = observation
+            .as_mut()
+            .and_then(|obs| obs.view.decision.as_mut())
+            .and_then(|d| self.annotate(d));
         let open = observation.as_ref().and_then(|obs| {
             let rendered = dominion_agent::text::render(&obs.view);
             let decision = rendered.find("DECISION ").map(|i| &rendered[i..])?;
@@ -312,7 +333,11 @@ impl<S: PlaySeat> Play<'_, S> {
             }
             None => {}
         }
-        failure(text)
+        let mut result = failure(text);
+        if let Some(note) = consequence {
+            result.structured_content = Some(serde_json::json!({"decisionConsequence": note}));
+        }
+        result
     }
 
     fn rejected(&self, message: impl std::fmt::Display) -> CallToolResult {
@@ -496,7 +521,9 @@ mod tests {
         end.card = None;
         options.push(end);
         assert_eq!(
-            super::forecloses(&decision(options), treasure).unwrap(),
+            super::forecloses(&decision(options), treasure)
+                .unwrap()
+                .text,
             "Buying anything ends your Treasure plays for this turn: play the Treasures you want first (play_treasures plays them all). Unplayed Treasures: 5 Copper ($5). End Buys gives them up too."
         );
     }
@@ -507,11 +534,11 @@ mod tests {
         end.label = "End Actions".into();
         let d = decision(vec![option(0, "play", "Vassal"), end.clone()]);
         assert_eq!(
-            super::forecloses(&d, |_| false).unwrap(),
+            super::forecloses(&d, |_| false).unwrap().text,
             "End Actions ends this phase, giving up the plays still offered: 1 Vassal."
         );
         // Nothing is given up where nothing else is offered.
-        assert_eq!(super::forecloses(&decision(vec![end]), |_| false), None);
+        assert!(super::forecloses(&decision(vec![end]), |_| false).is_none());
     }
 
     #[test]

@@ -1,0 +1,13 @@
+{
+  "cards": [
+    {"id":267,"card_name":30,"pile_name":30},
+    {"id":270,"card_name":562,"pile_name":562}
+  ],
+  "zones": [],
+  "question": {"index":22,"description":{"question_type":18,"association":-1,"story":{"question_id":13,"arguments":[],"context":null},"short_story":{"question_id":361,"arguments":[],"context":null}},"kind":{"Complex":[
+    {"index":22,"description":{"question_type":19,"association":-1,"story":{"question_id":10,"arguments":[],"context":null},"short_story":{"question_id":10,"arguments":[],"context":null}},"kind":{"Complex":[
+      {"index":22,"description":{"question_type":0,"association":-1,"story":{"question_id":10,"arguments":[{"CardNames":[{"name":30,"frequency":1}]}],"context":null},"short_story":{"question_id":10,"arguments":[{"CardNames":[{"name":30,"frequency":1}]}],"context":null}},"kind":{"Choice":{"min":0,"max":1,"elements":{"Cards":[267]},"decline":0,"defaults":[],"affected":[]}}},
+      {"index":22,"description":{"question_type":43,"association":-1,"story":{"question_id":10,"arguments":[{"Number":1}],"context":null},"short_story":{"question_id":10,"arguments":[{"Number":1}],"context":null}},"kind":{"Choice":{"min":0,"max":1,"elements":{"Cards":[270]},"decline":-1,"defaults":[],"affected":[267]}}}
+    ]}}
+  ]}}
+}

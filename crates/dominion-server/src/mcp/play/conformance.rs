@@ -258,10 +258,44 @@ async fn an_arena_buy_says_it_ends_treasure_plays() {
             && said.contains(" Copper ($"),
         "{said}"
     );
-    // The structured view stays the backend's.
-    let prompt = &state.structured_content.as_ref().unwrap()["view"]["decision"]["prompt"];
-    assert!(
-        !prompt.as_str().unwrap().contains("Buying anything"),
-        "{prompt}"
+    let expected = serde_json::json!(arena.observe().unwrap().unwrap().1.view);
+    let body = state.structured_content.as_ref().unwrap();
+    assert_eq!(body["view"], expected);
+    let note = &body["decisionConsequence"];
+    assert_eq!(note["decisionId"], expected["decision"]["id"]);
+    assert!(said.contains(note["text"].as_str().unwrap()));
+    let id = note["decisionId"].as_str().unwrap();
+    let step = |decision: &str, index: i64| StepParams {
+        token: None,
+        decision: decision.into(),
+        indices: Some(vec![index]),
+        name: None,
+        expect: None,
+        timeout_s: Some(0),
+    };
+    let waited = play.wait(Some(0)).await;
+    assert_eq!(
+        &waited.structured_content.unwrap()["decisionConsequence"],
+        note
+    );
+    let refused = play.step(step("stale", 0)).await;
+    assert!(failed(&refused));
+    assert!(text(&refused).contains(note["text"].as_str().unwrap()));
+    assert_eq!(
+        &refused.structured_content.unwrap()["decisionConsequence"],
+        note
+    );
+    let played = play
+        .step(step(id, note["forgoneOptions"][0].as_i64().unwrap()))
+        .await;
+    assert!(!failed(&played), "{}", text(&played));
+    let next = played.structured_content.unwrap();
+    assert_eq!(
+        next["decisionConsequence"]["decisionId"],
+        next["view"]["decision"]["id"]
+    );
+    assert_ne!(
+        next["decisionConsequence"]["decisionId"],
+        note["decisionId"]
     );
 }
