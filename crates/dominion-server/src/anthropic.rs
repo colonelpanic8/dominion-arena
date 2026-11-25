@@ -7,17 +7,14 @@
 //! where the OpenAI agent replaces them in its input.
 
 use crate::archive::{Archive, call};
-use crate::client::Client;
-use crate::harness::Sandbox;
-use crate::house::Job;
 use crate::openai::{
-    BRIEF, DEFAULT_KEEP_RESULTS, MAX_NUDGES, PLAYBOOK, card_ratings, list_files, playbook_call,
+    DEFAULT_KEEP_RESULTS, MAX_NUDGES, card_ratings, direct_instructions, list_files, playbook_call,
     read_file, token, user_message,
 };
 use crate::runner::AgentSpec;
+use crate::runner::provider::{PlayerOpening, Seat};
 use serde_json::{Value, json};
 use std::time::Duration;
-use tokio_util::sync::CancellationToken;
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const VERSION: &str = "2026-10-21";
@@ -273,96 +270,57 @@ fn context_management(keep: usize) -> Value {
     }]})
 }
 
-pub async fn play(
+pub(crate) async fn analyze(
     spec: &AgentSpec,
-    sandbox: &Sandbox,
-    job: &Job,
-    server: &str,
+    brief: &str,
+    position: &str,
     archive: &mut Archive,
-    stop: CancellationToken,
-) -> Result<(), String> {
-    spec.validate()?;
-    archive.publish(server, job)?;
-    archive.record("seat", json!({"agent":spec,"job":job,"server":server}))?;
-    let endpoint = crate::harness::endpoint(server, job)?;
-    let client =
-        match Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
-            .await
-        {
-            Ok(client) => client,
-            Err(error) => {
-                archive.record("seat_finished", json!({"result":{"Err":error}}))?;
-                archive.finish_publish().await;
-                return Err(error);
-            }
-        };
-    let result = tokio::select! {
-        biased;
-        _ = stop.cancelled() => Err("seat runner cancelled".into()),
-        result = play_inner(&client, spec, sandbox, job, archive) => result,
-    };
-    crate::harness::record_final_result(&client, archive, job).await?;
-    let result = match result {
-        Ok(answer) => {
-            crate::harness::debrief(&client, archive, job, answer).await;
-            Ok(())
-        }
-        Err(e) => Err(e),
-    };
-    archive.record("seat_finished", json!({"result": result}))?;
-    client.close().await;
-    archive.finish_publish().await;
-    result
+) -> Result<String, String> {
+    let session = Session::new(spec)?;
+    let mut body = json!({
+        "model":spec.model, "system":brief, "messages":[{"role":"user","content":position}],
+        "thinking":{"type":"adaptive","display":"summarized"}, "stream":true, "max_tokens":MAX_TOKENS,
+    });
+    if let Some(effort) = &spec.effort {
+        body["output_config"] = json!({"effort":effort});
+    }
+    let reply = session.respond(&body).await?;
+    archive.record("direct_usage", reply.usage)?;
+    let text = reply
+        .content
+        .iter()
+        .filter(|b| b["type"] == "text")
+        .filter_map(|b| b["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        return Err("analysis returned no text".into());
+    }
+    Ok(text)
 }
 
-async fn play_inner(
-    client: &Client,
-    spec: &AgentSpec,
-    sandbox: &Sandbox,
-    job: &Job,
+pub use crate::runner::provider::play;
+
+pub(crate) async fn play_player(
+    seat: &Seat<'_>,
     archive: &mut Archive,
+    opening: PlayerOpening,
 ) -> Result<Result<String, String>, String> {
-    let (tool, args) = if job.official {
-        ("state", json!({}))
-    } else {
-        (
-            "join_game",
-            json!({"game_id": job.game_id, "token": job.token}),
-        )
-    };
-    let joined = call(client, archive, "dominion", tool, args).await?;
-    if !joined.ok {
-        return Err(joined.text);
-    }
-    if (joined.json.as_ref())
-        .is_some_and(|v| crate::harness::game_state(v)["game"]["running"] == false)
-    {
-        return Ok(Err(crate::harness::JOINED_OVER.into()));
-    }
+    let (client, spec, sandbox, job) = (seat.client.as_ref(), seat.spec, seat.sandbox, seat.job);
+    let PlayerOpening {
+        message: first,
+        guidance,
+        clocked,
+        advice,
+    } = opening;
+    let playbook = sandbox.playbook.as_deref();
+    let mut instructions = direct_instructions(playbook, clocked)?;
+    instructions.push_str(&guidance);
     let session = Session::new(spec)?;
     let model = spec
         .model
         .as_deref()
         .ok_or("an anthropic agent needs a model")?;
-    let playbook = sandbox.playbook.as_deref();
-    let mut instructions = BRIEF.to_string();
-    if let Some(dir) = playbook {
-        let agents = std::fs::read_to_string(dir.join("AGENTS.md"))
-            .map_err(|e| format!("{}: {e}", dir.display()))?;
-        instructions.push_str(&format!("\n\n{PLAYBOOK}\n\n# AGENTS.md\n{agents}"));
-    }
-    let mut first = crate::harness::opening(job, false);
-    if let Some(text) = spec
-        .instructions
-        .as_deref()
-        .filter(|t| !t.trim().is_empty())
-    {
-        first.push_str(&format!("Player instructions:\n{}\n\n", text.trim()));
-    }
-    first.push_str(&format!(
-        "Initial view and card reference:\n{}",
-        joined.text
-    ));
     archive.record("direct_instructions", json!({"instructions": instructions}))?;
     let mut messages = vec![];
     say(archive, &mut messages, &first)?;
@@ -453,8 +411,7 @@ async fn play_inner(
                 || archive.has_result()
                 || call(client, archive, "dominion", "state", token(job, json!({})))
                     .await?
-                    .text
-                    .contains("GAME OVER");
+                    .game_over();
             if ended {
                 archive.record("native_response", json!({"response": said}))?;
                 if let Some(request) = debrief.take() {
@@ -502,13 +459,14 @@ async fn play_inner(
                         if args["timeout_s"].as_u64().is_some_and(|t| t > 60) {
                             args["timeout_s"] = json!(60);
                         }
-                        let reply = match call(client, archive, "dominion", tool, args).await {
+                        let mut reply = match call(client, archive, "dominion", tool, args).await {
                             Ok(reply) => reply,
                             // An official seat's access ends with its game.
                             Err(_) if archive.has_result() => return Ok(Ok(String::new())),
                             Err(error) => return Err(error),
                         };
-                        if reply.text.contains("GAME OVER") {
+                        advice.deliver(&mut reply);
+                        if reply.game_over() {
                             over = true;
                         }
                         if reply.ok {

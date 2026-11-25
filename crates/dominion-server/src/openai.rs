@@ -4,15 +4,14 @@
 //! chooses. It signs in with Codex's ChatGPT login (`auth.json`) or an API key.
 
 use crate::archive::{Archive, call};
-use crate::client::Client;
 use crate::codex_usage::UsageLog;
 use crate::harness::Sandbox;
 use crate::house::Job;
 use crate::runner::AgentSpec;
+use crate::runner::provider::{PlayerOpening, Seat};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio_util::sync::CancellationToken;
 
 const CHATGPT_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 const API_URL: &str = "https://api.openai.com/v1/responses";
@@ -27,7 +26,30 @@ const PRUNE_BATCH: usize = 20;
 pub(crate) const MAX_NUDGES: u32 = 3;
 
 pub(crate) const BRIEF: &str = "You play one assigned seat of Dominion. Play to win with the game tools. step answers your decision: its decision id, indices (ordered: top first) or name only when nameAny is true, and expect with each chosen option's label or card, in index order. When there is no decision for you (WAITING), call wait. Results are text: what changed since your last decision, the text of cards new to you, then your next decision. state shows the whole game; cards looks up card text and current costs; log rereads log entries; play_treasures plays every Treasure offered in one call. Keep playing until GAME OVER, then write a short review of your plan, the turns that decided the game and what you would do differently. Never resign or ask a person for help.";
-pub(crate) const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Before your first decision, do what skills/play-game/SKILL.md says under \"Make the plan\": look up the ratings of every card on the board, read the context it names, run its kingdom analysis, and write the plan out in your reply; then play by its skills. If your first message has a BRIEF from the game's creator, it takes the place of that planning: skip the ratings and kingdom analysis, play the brief's plan, and use the skills only for the turns themselves.";
+pub(crate) const CLOCKED_BRIEF_NOTE: &str = "This game has an active clock. Make timely legal moves and answer immediately when a CLOCK PRESSURE or LOW TIME cue appears.";
+pub(crate) const PLAYBOOK: &str = "The Dominion playbook is open to you, read-only: its AGENTS.md follows. read_file reads its other files and card_ratings is its `python3 data/card-ratings.py` lookup. Use the full opening analysis in skills/play-game/SKILL.md, including on a timed table. A BRIEF from the game's creator supplies the plan.";
+
+pub(crate) fn direct_instructions(
+    playbook: Option<&Path>,
+    clocked: bool,
+) -> Result<String, String> {
+    let mut instructions = BRIEF.to_string();
+    if let Some(dir) = playbook {
+        let agents = std::fs::read_to_string(dir.join("AGENTS.md"))
+            .map_err(|e| format!("{}: {e}", dir.display()))?;
+        if clocked {
+            instructions.push_str("\n\nUse read_file for the Dominion playbook and card_ratings for its ratings lookup. ");
+            instructions.push_str(crate::harness::CLOCKED_OPENING);
+            crate::harness::append_live_guidance(&mut instructions, Some(dir))?;
+        } else {
+            instructions.push_str(&format!("\n\n{PLAYBOOK}"));
+        }
+        instructions.push_str(&format!("\n\n# AGENTS.md\n{agents}"));
+    } else if clocked {
+        instructions.push_str(&format!(" {CLOCKED_BRIEF_NOTE}"));
+    }
+    Ok(instructions)
+}
 
 enum Auth {
     ChatGpt { file: PathBuf },
@@ -325,7 +347,15 @@ fn parse_stream(text: &str) -> Result<(Vec<Value>, Value), String> {
         };
         match event["type"].as_str() {
             Some("response.output_item.done") => items.push(event["item"].clone()),
-            Some("response.completed") => usage = event["response"]["usage"].clone(),
+            Some("response.completed") => {
+                let response = &event["response"];
+                usage = response["usage"].clone();
+                if let (Some(counts), Some(tier)) =
+                    (usage.as_object_mut(), response["service_tier"].as_str())
+                {
+                    counts.insert("service_tier".into(), json!(tier));
+                }
+            }
             Some("response.failed" | "error") => {
                 return Err(format!("OpenAI: {}", snippet(&event.to_string())));
             }
@@ -489,92 +519,56 @@ pub(crate) async fn card_ratings(
     Ok(text)
 }
 
-pub async fn play(
+pub(crate) async fn analyze(
     spec: &AgentSpec,
-    sandbox: &Sandbox,
-    job: &Job,
-    server: &str,
+    brief: &str,
+    position: &str,
     archive: &mut Archive,
-    stop: CancellationToken,
-) -> Result<(), String> {
-    spec.validate()?;
-    archive.publish(server, job)?;
-    archive.record("seat", json!({"agent":spec,"job":job,"server":server}))?;
-    let endpoint = crate::harness::endpoint(server, job)?;
-    let client =
-        match Client::connect_authenticated(&endpoint, job.official.then(|| job.token.clone()))
-            .await
-        {
-            Ok(client) => client,
-            Err(error) => {
-                archive.record("seat_finished", json!({"result":{"Err":error}}))?;
-                archive.finish_publish().await;
-                return Err(error);
-            }
-        };
-    let result = tokio::select! {
-        biased;
-        _ = stop.cancelled() => Err("seat runner cancelled".into()),
-        result = play_inner(&client, spec, sandbox, job, archive) => result,
-    };
-    crate::harness::record_final_result(&client, archive, job).await?;
-    let result = match result {
-        Ok(answer) => {
-            crate::harness::debrief(&client, archive, job, answer).await;
-            Ok(())
-        }
-        Err(e) => Err(e),
-    };
-    archive.record("seat_finished", json!({"result": result}))?;
-    client.close().await;
-    archive.finish_publish().await;
-    result
+) -> Result<String, String> {
+    let mut session = Session::new(spec)?;
+    let mut body = json!({
+        "model": spec.model, "instructions":brief, "input":[user_message(position)],
+        "tools":[], "store":false, "stream":true, "prompt_cache_key":session.id,
+    });
+    if let Some(effort) = &spec.effort {
+        body["reasoning"] = json!({"effort":effort});
+    }
+    if spec.fast_mode {
+        body["service_tier"] = json!("priority");
+    }
+    let (items, usage) = session.respond(&body).await?;
+    archive.record("direct_usage", usage)?;
+    let text = items
+        .iter()
+        .filter(|i| i["type"] == "message")
+        .flat_map(|i| i["content"].as_array().into_iter().flatten())
+        .filter_map(|b| b["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        return Err("analysis returned no text".into());
+    }
+    Ok(text)
 }
 
-async fn play_inner(
-    client: &Client,
-    spec: &AgentSpec,
-    sandbox: &Sandbox,
-    job: &Job,
+pub use crate::runner::provider::play;
+
+pub(crate) async fn play_player(
+    seat: &Seat<'_>,
     archive: &mut Archive,
+    opening: PlayerOpening,
 ) -> Result<Result<String, String>, String> {
-    let (tool, args) = if job.official {
-        ("state", json!({}))
-    } else {
-        (
-            "join_game",
-            json!({"game_id": job.game_id, "token": job.token}),
-        )
-    };
-    let joined = call(client, archive, "dominion", tool, args).await?;
-    if !joined.ok {
-        return Err(joined.text);
-    }
-    if (joined.json.as_ref())
-        .is_some_and(|v| crate::harness::game_state(v)["game"]["running"] == false)
-    {
-        return Ok(Err(crate::harness::JOINED_OVER.into()));
-    }
-    let mut session = Session::new(spec)?;
+    let (client, spec, sandbox, job) = (seat.client.as_ref(), seat.spec, seat.sandbox, seat.job);
+    let PlayerOpening {
+        message: first,
+        guidance,
+        clocked,
+        advice,
+    } = opening;
     let playbook = sandbox.playbook.as_deref();
-    let mut instructions = BRIEF.to_string();
-    if let Some(dir) = playbook {
-        let agents = std::fs::read_to_string(dir.join("AGENTS.md"))
-            .map_err(|e| format!("{}: {e}", dir.display()))?;
-        instructions.push_str(&format!("\n\n{PLAYBOOK}\n\n# AGENTS.md\n{agents}"));
-    }
-    let mut first = crate::harness::opening(job, false);
-    if let Some(text) = spec
-        .instructions
-        .as_deref()
-        .filter(|t| !t.trim().is_empty())
-    {
-        first.push_str(&format!("Player instructions:\n{}\n\n", text.trim()));
-    }
-    first.push_str(&format!(
-        "Initial view and card reference:\n{}",
-        joined.text
-    ));
+    let mut instructions = direct_instructions(playbook, clocked)?;
+    instructions.push_str(&guidance);
+    let mut session = Session::new(spec)?;
     archive.record("direct_instructions", json!({"instructions": instructions}))?;
     let mut input = vec![];
     give(archive, &mut input, user_message(&first))?;
@@ -590,7 +584,7 @@ async fn play_inner(
         if let Some(effort) = &spec.effort {
             reasoning["effort"] = json!(effort);
         }
-        let body = json!({
+        let mut body = json!({
             "model": spec.model.as_deref().ok_or("an openai agent needs a model")?,
             "instructions": instructions,
             "input": input,
@@ -603,9 +597,12 @@ async fn play_inner(
             "include": ["reasoning.encrypted_content"],
             "prompt_cache_key": session.id,
         });
+        if spec.fast_mode {
+            body["service_tier"] = json!("priority");
+        }
         archive.record(
             "direct_request",
-            json!({"model": spec.model, "items": input.len()}),
+            json!({"model": spec.model, "items": input.len(), "service_tier": body.get("service_tier")}),
         )?;
         let (items, usage) = session.respond(&body).await?;
         archive.record("direct_usage", usage)?;
@@ -651,8 +648,7 @@ async fn play_inner(
                 || archive.has_result()
                 || call(client, archive, "dominion", "state", token(job, json!({})))
                     .await?
-                    .text
-                    .contains("GAME OVER");
+                    .game_over();
             if ended {
                 archive.record("native_response", json!({"response": said}))?;
                 if let Some(request) = debrief.take() {
@@ -703,13 +699,14 @@ async fn play_inner(
                         if args["timeout_s"].as_u64().is_some_and(|t| t > 60) {
                             args["timeout_s"] = json!(60);
                         }
-                        let reply = match call(client, archive, "dominion", tool, args).await {
+                        let mut reply = match call(client, archive, "dominion", tool, args).await {
                             Ok(reply) => reply,
                             // An official seat's access ends with its game.
                             Err(_) if archive.has_result() => return Ok(Ok(String::new())),
                             Err(error) => return Err(error),
                         };
-                        if reply.text.contains("GAME OVER") {
+                        advice.deliver(&mut reply);
+                        if reply.game_over() {
                             over = true;
                         }
                         game_results.push(input.len());
@@ -788,6 +785,28 @@ pub(crate) fn playbook_call(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn timed_instructions_load_the_configured_playbook_reference_when_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let playbook = Some(dir.path());
+        std::fs::write(dir.path().join("AGENTS.md"), "General instructions").unwrap();
+        let older = super::direct_instructions(playbook, true).unwrap();
+        let references = dir.path().join("skills/play-game/references");
+        std::fs::create_dir_all(&references).unwrap();
+        std::fs::write(
+            references.join("live-decisions.md"),
+            "Custom table guidance",
+        )
+        .unwrap();
+        let timed = super::direct_instructions(playbook, true).unwrap();
+        assert!(timed.contains("Custom table guidance"));
+        assert!(!older.contains("Custom table guidance"));
+        assert!(
+            !super::direct_instructions(playbook, false)
+                .unwrap()
+                .contains("Custom table guidance")
+        );
+    }
 
     #[test]
     fn an_overloaded_reply_is_waited_out_for_as_long_as_it_asks() {
@@ -812,10 +831,11 @@ data: {"error":{"code":"server_is_overloaded","headers":{"retry-after":"323","re
 
     #[test]
     fn streamed_responses_give_their_items_and_usage() {
-        let text = "event: x\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3}}}\n";
+        let text = "event: x\ndata: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\"}}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"service_tier\":\"default\",\"usage\":{\"input_tokens\":3}}}\n";
         let (items, usage) = parse_stream(text).unwrap();
         assert_eq!(items, [json!({"type":"message"})]);
         assert_eq!(usage["input_tokens"], 3);
+        assert_eq!(usage["service_tier"], "default");
         assert!(parse_stream("data: {\"type\":\"response.failed\"}\n").is_err());
         assert!(parse_stream("data: {\"type\":\"response.created\"}\n").is_err());
     }

@@ -483,6 +483,168 @@ impl Question {
         matches!(self.description.question_type, 8 | 33)
             || matches!(&self.kind, QuestionKind::Choice {elements: QuestionElements::Cleanup(items), ..} if items.iter().any(|item| item.allows_reordering))
     }
+    /// A leaf of a compound question the official client never asks about, so it is
+    /// answered with its default: REJECT_ABILITY (`NO_BUTTON`: the client shows nothing
+    /// for it and always sends the server's default), or a choice of nothing.
+    fn hidden(&self) -> bool {
+        match &self.kind {
+            QuestionKind::Number { .. } => self.number_label(0).is_none(),
+            QuestionKind::Choice { decline, .. } => bounds(self).1 == 0 && *decline < 0,
+            _ => false,
+        }
+    }
+    /// What the official client says a number of this question is (its `getLabel`); None
+    /// for REJECT_ABILITY, which it never shows, and for types it has no words for.
+    fn number_label(&self, value: i32) -> Option<String> {
+        let QuestionKind::Number { min, max, .. } = &self.kind else {
+            return None;
+        };
+        let plural =
+            |one: &str, many: &str| format!("{value} {}", if value == 1 { one } else { many });
+        Some(match self.description.question_type {
+            11 => format!("Pay off {value} Debt"),
+            12 => format!("Spend {}", plural("token", "tokens")),
+            44 => format!("Spend {}", plural("Favor", "Favors")),
+            41 => format!("Use {}", plural("Villager", "Villagers")),
+            25 => format!("Overpay {value}"),
+            47 => format!("Overpay ${value}"),
+            48 => format!("Overpay {}", plural("Potion", "Potions")),
+            24 => format!("Bid {value}"),
+            30 => format!("Take {value}"),
+            28 if value == *max => format!("Top ({value})"),
+            28 if value == *min => format!("Bottom ({value})"),
+            28 => format!("Position {value}"),
+            _ => return None,
+        })
+    }
+    /// Only beside other parts of an AND answer: under an OR, even a choice of nothing
+    /// is a branch to take (Torturer's discard of no cards rather than a Curse).
+    fn has_shown_leaf(&self, under_and: bool) -> bool {
+        match &self.kind {
+            QuestionKind::Complex(children) => {
+                let and = self.description.question_type == 19;
+                children.iter().any(|c| c.has_shown_leaf(and))
+            }
+            _ => !(under_and && self.hidden()),
+        }
+    }
+    /// Hidden leaves are left out only where something else is still asked.
+    fn shows_without_hidden(&self) -> bool {
+        matches!(self.kind, QuestionKind::Complex(_)) && self.has_shown_leaf(false)
+    }
+    /// The official client never sends this without another part of the answer: a Way
+    /// (`NEVER_SEND`, and no Done button) goes out only with the card it plays.
+    fn needs_partner(&self) -> bool {
+        self.description.question_type == WAY
+    }
+    /// What a group is for, where its prompt doesn't tell it from another's.
+    fn role(&self) -> String {
+        match (&self.kind, self.description.question_type) {
+            (QuestionKind::Number { .. }, _) => "a number".into(),
+            (_, 0 | 39) => "cards to play".into(),
+            (_, 9) => "cards to buy".into(),
+            (_, 7) => "effects to resolve".into(),
+            (_, 10) => "modes".into(),
+            (_, WAY) => "a Way".into(),
+            (
+                QuestionKind::Choice {
+                    elements: QuestionElements::Buttons(_),
+                    ..
+                },
+                _,
+            ) => "buttons".into(),
+            _ => humanize(self.type_name()),
+        }
+    }
+}
+
+const WAY: i32 = 43;
+const OR_BRANCHES: &str = "choose exactly one branch of an OR question";
+
+/// The options of `group`, as an agent reads them: "options 3-4", "option 5".
+fn span(d: &AgentDecision, group: usize) -> String {
+    let mut indices = d
+        .options
+        .iter()
+        .filter(|o| o.group as usize == group)
+        .map(|o| o.index);
+    let first = indices.next();
+    match (first, indices.next_back()) {
+        (Some(a), Some(b)) => format!("options {a}-{b}"),
+        (Some(a), None) => format!("option {a}"),
+        _ => format!("group {group}"),
+    }
+}
+
+/// Makes every group of a compound decision say what it is for: a Way says it plays
+/// the card chosen beside it, and groups whose prompts match say their role.
+fn name_roles(out: &mut Indexed<'_>) {
+    let partners: Vec<usize> = (0..out.leaves.len())
+        .filter(|&g| !out.leaves[g].0.needs_partner())
+        .collect();
+    let spans: Vec<_> = partners.iter().map(|&g| span(&out.decision, g)).collect();
+    let mut prompts: Vec<String> = out
+        .decision
+        .groups
+        .iter()
+        .map(|g| g.prompt.clone())
+        .collect();
+    for (g, (q, _)) in out.leaves.iter().enumerate() {
+        if q.description.question_type == WAY && !spans.is_empty() {
+            prompts[g] = format!(
+                "{}: a Way to play the card you choose with; give it only together with a card to play from {}",
+                prompts[g],
+                spans.join(" or ")
+            );
+        }
+    }
+    let duplicated =
+        |prompts: &[String], g: usize| prompts.iter().filter(|p| **p == prompts[g]).count() > 1;
+    let named: Vec<String> = (0..prompts.len())
+        .map(|g| {
+            if duplicated(&prompts, g) {
+                format!("{}: {}", prompts[g], out.leaves[g].0.role())
+            } else {
+                prompts[g].clone()
+            }
+        })
+        .collect();
+    let all: Vec<_> = (0..named.len()).map(|g| span(&out.decision, g)).collect();
+    for (g, group) in out.decision.groups.iter_mut().enumerate() {
+        group.prompt = if duplicated(&named, g) {
+            format!("{} ({})", named[g], all[g])
+        } else {
+            named[g].clone()
+        };
+    }
+}
+
+/// How groups combine, in the options' own numbers.
+fn alternatives_text(d: &AgentDecision, alternatives: &[Vec<usize>]) -> Option<String> {
+    let alternatives: Vec<_> = alternatives.iter().filter(|a| !a.is_empty()).collect();
+    let words = |groups: &Vec<usize>| {
+        groups
+            .iter()
+            .map(|&g| span(d, g))
+            .collect::<Vec<_>>()
+            .join(" together with ")
+    };
+    match alternatives.as_slice() {
+        [] => None,
+        [one] if one.len() < 2 => None,
+        [one] => Some(format!(
+            "One answer may combine {}; leave out any group you don't use.",
+            words(one)
+        )),
+        many => Some(format!(
+            "Answer from one alternative only: {}.",
+            many.iter()
+                .enumerate()
+                .map(|(i, a)| format!("({}) {}", (b'a' + (i % 26) as u8) as char, words(a)))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )),
+    }
 }
 
 /// Lookups must use the observing player's legal state, never allocated card
@@ -816,26 +978,15 @@ impl Question {
             leaves: vec![],
             targets: vec![],
         };
-        self.index_leaves(c, &mut out, &mut vec![])?;
+        let hide = self.shows_without_hidden();
+        self.index_leaves(c, &mut out, &mut vec![], hide, false)?;
         if matches!(self.kind, QuestionKind::Complex(_)) {
-            let combinations = self.group_combinations(&out.leaves, &mut vec![])?;
-            let combinations = combinations
-                .iter()
-                .map(|groups| {
-                    format!(
-                        "[{}]",
-                        groups
-                            .iter()
-                            .map(usize::to_string)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" or ");
-            out.decision.prompt.push_str(&format!(
-                " Combine groups within one alternative: {combinations}."
-            ));
+            name_roles(&mut out);
+            let alternatives = self.group_combinations(&out.leaves, &mut vec![])?;
+            if let Some(text) = alternatives_text(&out.decision, &alternatives) {
+                out.decision.prompt.push(' ');
+                out.decision.prompt.push_str(&text);
+            }
         }
         if out.decision.groups.len() == 1 {
             let g = &out.decision.groups[0];
@@ -856,12 +1007,14 @@ impl Question {
         path: &mut Vec<usize>,
     ) -> Result<Vec<Vec<usize>>> {
         let QuestionKind::Complex(children) = &self.kind else {
-            return Ok(vec![vec![
+            // A hidden leaf is answered with its default and takes no part.
+            return Ok(vec![
                 leaves
                     .iter()
                     .position(|(_, p)| p == path)
-                    .ok_or_else(|| protocol("missing leaf group"))?,
-            ]]);
+                    .into_iter()
+                    .collect(),
+            ]);
         };
         let mut combinations = if self.description.question_type == 19 {
             vec![vec![]]
@@ -901,13 +1054,19 @@ impl Question {
         c: &impl QuestionContext,
         out: &mut Indexed<'a>,
         path: &mut Vec<usize>,
+        hide: bool,
+        under_and: bool,
     ) -> Result<()> {
         if let QuestionKind::Complex(children) = &self.kind {
+            let and = self.description.question_type == 19;
             for (i, child) in children.iter().enumerate() {
                 path.push(i);
-                child.index_leaves(c, out, path)?;
+                child.index_leaves(c, out, path, hide, and)?;
                 path.pop();
             }
+            return Ok(());
+        }
+        if hide && under_and && self.hidden() {
             return Ok(());
         }
         if let QuestionKind::Choice { min, elements, .. } = &self.kind
@@ -933,14 +1092,10 @@ impl Question {
             QuestionKind::Name => "name",
             _ => "choose",
         };
-        let mut group_prompt = prompt(self, c);
-        if !path.is_empty() {
-            group_prompt.push_str(" (Combine groups under AND; choose one branch under OR.)");
-        }
         out.decision.groups.push(DecisionGroup {
             group,
             kind: kind.into(),
-            prompt: group_prompt,
+            prompt: prompt(self, c),
             min,
             max,
         });
@@ -968,7 +1123,8 @@ impl Question {
                         Target::KeepOrder,
                     );
                 }
-                if !path.is_empty() && self.validate_selection(c, &[]).is_ok() {
+                // A decline button sends the same empty selection, under its own name.
+                if !path.is_empty() && *decline < 0 && self.validate_selection(c, &[]).is_ok() {
                     add(
                         option("decline", "Select none".into(), None, None),
                         Target::Empty,
@@ -985,8 +1141,11 @@ impl Question {
                     ));
                 }
                 for value in *min..=*max {
+                    let label = self
+                        .number_label(value)
+                        .unwrap_or_else(|| value.to_string());
                     add(
-                        option("number", value.to_string(), None, Some(value)),
+                        option("number", label, None, Some(value)),
                         Target::Number(value),
                     );
                 }
@@ -1114,6 +1273,41 @@ impl Question {
             }
             selected.insert(0, vec![]);
         }
+        for (&leaf, targets) in &selected {
+            let (q, path) = &indexed.leaves[leaf];
+            let chosen =
+                |targets: &Vec<&Target>| targets.iter().any(|t| matches!(t, Target::Select(_)));
+            if path.is_empty() || !q.needs_partner() || !chosen(targets) {
+                continue;
+            }
+            let partnered = selected.iter().any(|(&other, ts)| {
+                other != leaf && !indexed.leaves[other].0.needs_partner() && chosen(ts)
+            });
+            if !partnered {
+                let group = indexed
+                    .decision
+                    .options
+                    .iter()
+                    .filter(|o| o.group as usize == leaf);
+                let label = targets
+                    .iter()
+                    .filter_map(|t| match t {
+                        Target::Select(v) => group.clone().nth(*v as usize),
+                        _ => None,
+                    })
+                    .map(|o| o.label.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let partners: Vec<_> = (0..indexed.leaves.len())
+                    .filter(|&g| g != leaf && !indexed.leaves[g].0.needs_partner())
+                    .map(|g| span(&indexed.decision, g))
+                    .collect();
+                return Err(rejected(format!(
+                    "{label} is only the Way to play a card with: alone it does nothing. Add the card to play from {} in the same answer, or leave the Way out",
+                    partners.join(" or ")
+                )));
+            }
+        }
         let mut answers = BTreeMap::new();
         for (leaf, targets) in selected {
             let (q, path) = &indexed.leaves[leaf];
@@ -1166,7 +1360,16 @@ impl Question {
             };
             answers.insert(path.clone(), values);
         }
-        let (values, active) = self.compose(c, &answers, &mut vec![])?;
+        let (values, active) = match self.compose(c, &answers, &mut vec![]) {
+            Err(Error::Rejected(m)) if m == OR_BRANCHES => {
+                let alternatives = self.group_combinations(&indexed.leaves, &mut vec![])?;
+                let how = alternatives_text(&indexed.decision, &alternatives).unwrap_or_default();
+                return Err(rejected(format!(
+                    "those options belong to different alternatives, and only one can be answered. {how}"
+                )));
+            }
+            result => result?,
+        };
         if !active {
             return Err(rejected("answer does not select a question"));
         }
@@ -1191,7 +1394,7 @@ impl Question {
                     })
                     .collect();
                 if active.len() != 1 {
-                    return Err(rejected("choose exactly one branch of an OR question"));
+                    return Err(rejected(OR_BRANCHES));
                 }
                 let i = active[0];
                 path.push(i);
@@ -1309,6 +1512,8 @@ fn matches_expect(option: &AgentOption, expect: &str) -> bool {
     };
     normalized(&option.label) == expected
         || normalized(without_parenthesis) == expected
+        || (option.action == "number"
+            && option.value.is_some_and(|v| v.to_string() == expect.trim()))
         || option
             .card
             .as_deref()
@@ -1721,6 +1926,199 @@ mod tests {
             [1, 31]
         );
     }
+    fn leaf(question_type: i32, kind: QuestionKind) -> Question {
+        let story = Story {
+            question_id: 0,
+            arguments: vec![],
+            context: None,
+        };
+        Question {
+            index: 42,
+            description: QuestionDescription {
+                question_type,
+                association: -1,
+                story: story.clone(),
+                short_story: story,
+            },
+            kind,
+        }
+    }
+    fn cards(question_type: i32, cards: Vec<i32>, decline: i32) -> Question {
+        leaf(
+            question_type,
+            QuestionKind::Choice {
+                min: 0,
+                max: if cards.is_empty() { 0 } else { 1 },
+                elements: QuestionElements::Cards(cards),
+                decline,
+                defaults: vec![],
+                affected: vec![],
+            },
+        )
+    }
+    fn complex(question_type: i32, children: Vec<Question>) -> Question {
+        leaf(question_type, QuestionKind::Complex(children))
+    }
+    fn answer(q: &Question, indices: Vec<u32>) -> Result<Vec<i32>> {
+        q.encode_answer(&Context, "d", &Answer::indices("d", indices), None)
+    }
+
+    /// "You may resolve an effect" as dominion.games asks it (Peasant's exchange,
+    /// Falconer, Way of the Seal, ...): the abilities, a REJECT_ABILITY number its
+    /// client never shows, and a choice of no cards.
+    #[test]
+    fn a_resolve_effect_question_offers_only_its_abilities() {
+        let ability = Ability {
+            description_type: 2,
+            name: 2,
+            association: 7,
+            arguments: vec![LogArgument::Number(2)],
+            optional: true,
+            copy_index: 0,
+            copy_total: 1,
+        };
+        let q = complex(
+            19,
+            vec![
+                leaf(
+                    7,
+                    QuestionKind::Choice {
+                        min: 0,
+                        max: 1,
+                        elements: QuestionElements::Abilities(vec![ability]),
+                        decline: 3,
+                        defaults: vec![],
+                        affected: vec![],
+                    },
+                ),
+                leaf(
+                    49,
+                    QuestionKind::Number {
+                        min: 0,
+                        max: 1,
+                        default: 0,
+                        decline: -1,
+                    },
+                ),
+                cards(2, vec![], -1),
+            ],
+        );
+        let d = q.project(&Context, "d", None).unwrap();
+        assert_eq!(d.groups.len(), 1);
+        let labels: Vec<_> = d.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, ["Copper: Draw 2 cards", "DeclineButtonIds 3"]);
+        assert!(!d.prompt.contains("alternative") && !d.prompt.contains("combine"));
+        // The number goes out as the server's default, as the official client sends it.
+        assert_eq!(answer(&q, vec![0]).unwrap(), [1, 0, 1, 0, 0]);
+        assert_eq!(answer(&q, vec![1]).unwrap(), [0, 1, 0, 0]);
+    }
+
+    #[test]
+    fn a_number_says_what_it_counts() {
+        let q = leaf(
+            11,
+            QuestionKind::Number {
+                min: 0,
+                max: 2,
+                default: 0,
+                decline: -1,
+            },
+        );
+        let d = q.project(&Context, "d", None).unwrap();
+        assert_eq!(d.options[2].label, "Pay off 2 Debt");
+        assert_eq!(
+            q.encode_answer(
+                &Context,
+                "d",
+                &Answer::indices("d", vec![2]),
+                Some(&["2".into()])
+            )
+            .unwrap(),
+            [2]
+        );
+    }
+
+    /// The Action phase with a Way: a card to play, and the Way to play it with, both
+    /// asked with the same words.
+    #[test]
+    fn a_way_says_it_plays_the_chosen_card_and_is_refused_alone() {
+        let q = complex(19, vec![cards(0, vec![9], 0), cards(WAY, vec![11], -1)]);
+        let d = q.project(&Context, "d", None).unwrap();
+        let labels: Vec<_> = d.options.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Play Village",
+                "DeclineButtonIds 0",
+                "Copper",
+                "Select none"
+            ]
+        );
+        assert_ne!(d.groups[0].prompt, d.groups[1].prompt);
+        assert!(
+            d.groups[1]
+                .prompt
+                .contains("a Way to play the card you choose with")
+        );
+        assert!(d.groups[1].prompt.contains("options 0-1"));
+        assert!(
+            d.prompt
+                .ends_with("One answer may combine options 0-1 together with options 2-3; leave out any group you don't use."),
+            "{}",
+            d.prompt
+        );
+        for alone in [vec![2], vec![1, 2]] {
+            let e = answer(&q, alone).unwrap_err().to_string();
+            assert!(
+                e.contains("Copper is only the Way to play a card with"),
+                "{e}"
+            );
+            assert!(e.contains("options 0-1"), "{e}");
+        }
+        assert_eq!(answer(&q, vec![0, 2]).unwrap(), [1, 0, 1, 0]);
+        assert_eq!(answer(&q, vec![0]).unwrap(), [1, 0, 0]);
+        assert_eq!(answer(&q, vec![0, 3]).unwrap(), [1, 0, 0]);
+    }
+
+    /// The Buy phase: buy, or play Treasures (beside a choice of none), or autoplay them.
+    #[test]
+    fn alternatives_are_given_in_option_numbers() {
+        let autoplay = leaf(
+            10,
+            QuestionKind::Choice {
+                min: 0,
+                max: 1,
+                elements: QuestionElements::Buttons(vec![6]),
+                decline: -1,
+                defaults: vec![],
+                affected: vec![],
+            },
+        );
+        let q = complex(
+            18,
+            vec![
+                cards(9, vec![9], 2),
+                complex(19, vec![cards(0, vec![7, 11], -1), cards(0, vec![], -1)]),
+                autoplay,
+            ],
+        );
+        let d = q.project(&Context, "d", None).unwrap();
+        assert_eq!(d.groups.len(), 3, "{:?}", d.groups);
+        assert!(
+            d.prompt.ends_with(
+                "Answer from one alternative only: (a) options 0-1; (b) options 2-4; (c) options 5-6."
+            ),
+            "{}",
+            d.prompt
+        );
+        let e = answer(&q, vec![0, 2]).unwrap_err().to_string();
+        assert!(
+            e.contains("different alternatives") && e.contains("(b) options 2-4"),
+            "{e}"
+        );
+        assert_eq!(answer(&q, vec![2]).unwrap(), [1, 1, 0, 0]);
+    }
+
     #[test]
     fn cleanup_order_follows_the_upstream_cleanup_window() {
         let mut q = parse(&root(0, |w| choice(w, 0, 0, 2, &[])));

@@ -121,6 +121,18 @@ enum GamesCommand {
         #[arg(long)]
         record_only: bool,
     },
+    /// Drain official accounts before a restart: they start no new games, and their
+    /// running games play to the end (a restart mid-game costs the seat its clock).
+    /// Lists the games still running; with --wait, returns once there are none. The
+    /// restarted server starts undrained.
+    Drain {
+        /// Wait until no official game is running.
+        #[arg(long)]
+        wait: bool,
+        /// Stop draining.
+        #[arg(long, conflicts_with = "wait")]
+        cancel: bool,
+    },
     /// Write dominion/events@1 streams for games saved before the server recorded them,
     /// here and in `expired/`, checking each against its snapshot first. Run it with the
     /// server stopped: it takes the state directory's lock (a dry run doesn't).
@@ -151,6 +163,30 @@ enum OnlineCommand {
         /// The account's id (default: the `online_*` one, else the only one).
         #[arg(long)]
         account: Option<String>,
+    },
+    /// Start a private unrated game between two configured accounts, report the table,
+    /// timer and both clocks while nobody moves, then end it and disconnect both. Both
+    /// accounts must be idle and not kept by a running server.
+    PairCheck {
+        /// The account that opens the table (its id).
+        #[arg(long)]
+        host: String,
+        /// The account that joins it (its id).
+        #[arg(long)]
+        guest: String,
+        /// Timer preset: 0 Reckless, 1 Hasty, 2 Friendly, 3 Patient, 4 Off.
+        #[arg(long, default_value_t = 0)]
+        timer: u8,
+        /// Required Kingdom piles, comma-separated.
+        #[arg(long, value_delimiter = ',')]
+        kingdom: Vec<String>,
+        /// How long to watch before the host resigns, in seconds.
+        #[arg(long, default_value_t = 20)]
+        watch: u64,
+        /// Leave the game running instead of resigning: watch it until dominion.games
+        /// ends it (a clock running out) or `--watch` runs out.
+        #[arg(long)]
+        idle: bool,
     },
     /// Serve dominion/play@1 over stdio for the configured exclusive account.
     Mcp {
@@ -339,6 +375,27 @@ async fn games(
             dry_run,
             record_only,
         },
+        GamesCommand::Drain { wait, cancel } => loop {
+            let reply = request(&socket, &Request::Drain { cancel }).await?;
+            let Reply::Draining { draining, running } = reply else {
+                return Err(format!("unexpected reply {reply:?}"));
+            };
+            if !draining {
+                println!("not draining");
+                return Ok(());
+            }
+            for (account, game) in &running {
+                println!("{account}: game {game} running");
+            }
+            if running.is_empty() {
+                println!("drained: no official game running");
+                return Ok(());
+            }
+            if !wait {
+                return Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        },
         GamesCommand::Backfill { .. } => unreachable!("run without the server"),
     };
     match request(&socket, &asked).await? {
@@ -392,6 +449,7 @@ async fn games(
             }
             Ok(())
         }
+        Reply::Draining { .. } => unreachable!("drained above"),
         Reply::Error { message } => Err(message),
     }
 }
@@ -607,6 +665,28 @@ async fn main() -> ExitCode {
             OnlineCommand::Accounts => dominion_server::online::list(&config),
             OnlineCommand::Login { account } => {
                 dominion_server::online::login_check(&config, account.as_deref()).await
+            }
+            OnlineCommand::PairCheck {
+                host,
+                guest,
+                timer,
+                kingdom,
+                watch,
+                idle,
+            } => {
+                let options = dominion_server::online::PairTable {
+                    kingdom,
+                    timer,
+                    ..Default::default()
+                };
+                let end = if idle {
+                    dominion_server::online::PairCheckEnd::Idle
+                } else {
+                    dominion_server::online::PairCheckEnd::Resign
+                };
+                let watch = std::time::Duration::from_secs(watch);
+                dominion_server::online::pair_check(&config, &host, &guest, options, watch, end)
+                    .await
             }
             OnlineCommand::Mcp { account } => {
                 dominion_server::online::serve(&config, account.as_deref()).await

@@ -17,6 +17,7 @@ pub mod http;
 pub mod hub;
 pub mod limits;
 pub mod mcp;
+mod model_control;
 pub mod official_host;
 pub mod online;
 pub mod openai;

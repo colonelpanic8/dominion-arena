@@ -48,6 +48,11 @@ fn recalled(mut knowledge: Observations, stocked: &[Stock]) -> Option<Observatio
     Some(knowledge)
 }
 
+/// Zones the view lists as Supply or non-Supply piles.
+fn is_pile(kind: i32) -> bool {
+    matches!(kind, 4..=6 | 13 | 32)
+}
+
 fn invalid(message: impl Into<String>) -> Error {
     Error::Protocol(message.into())
 }
@@ -75,6 +80,9 @@ pub struct Reducer {
     question: Option<Question>,
     serial: u64,
     open_id: Option<String>,
+    /// Each pile's named cards in the order the official client stacks them: the
+    /// snapshot lists a pile bottom first, and its last named card is the top.
+    pile_cards: BTreeMap<i32, Vec<i32>>,
     pub logs: Vec<view::LogEntry>,
 }
 impl Reducer {
@@ -98,6 +106,7 @@ impl Reducer {
             question: None,
             serial: 0,
             open_id: None,
+            pile_cards: BTreeMap::new(),
             logs: Vec::new(),
         }
     }
@@ -264,6 +273,7 @@ impl Reducer {
         self.known = Default::default();
         self.types.clear();
         self.visible_ids.clear();
+        self.pile_cards.clear();
         self.state = Some(snapshot.state);
         let state = self.state()?.clone();
         if !(2..=6).contains(&state.players.len()) {
@@ -298,6 +308,10 @@ impl Reducer {
                     self.visible_ids.insert(id);
                 }
                 cards.push((id, name));
+            }
+            if is_pile(zone.kind) {
+                let named = cards.iter().filter(|(_, n)| n.is_some()).map(|(id, _)| *id);
+                self.pile_cards.insert(zone.index, named.collect());
             }
             stocked.push(Stock {
                 zone: zone.index,
@@ -376,6 +390,21 @@ impl Reducer {
                 raw.cards.retain(|id| *id != p.top_card_id);
                 if p.top_card_id >= 0 {
                     raw.cards.insert(0, p.top_card_id);
+                }
+                let kind = raw.kind;
+                if is_pile(kind) {
+                    let count = self.knowledge.count(p.index);
+                    let cards = self.pile_cards.entry(p.index).or_default();
+                    // As the client: the new top replaces an unnamed card if there is
+                    // one, else every named card it doesn't already hold.
+                    if p.top_card_id < 0 {
+                        cards.clear();
+                    } else if cards.contains(&p.top_card_id) || cards.len() < count {
+                        cards.retain(|id| *id != p.top_card_id);
+                        cards.push(p.top_card_id);
+                    } else {
+                        *cards = vec![p.top_card_id];
+                    }
                 }
             }
             TurnDescription(t) => {
@@ -478,6 +507,9 @@ impl Reducer {
                     });
                 self.knowledge.create_zone(z.index);
                 self.zones.insert(z.index, KnowledgeZone::default());
+                if is_pile(z.kind) {
+                    self.pile_cards.insert(z.index, vec![]);
+                }
             }
             ZoneDestroyed(z) => {
                 let old = self
@@ -488,6 +520,7 @@ impl Reducer {
                     return Err(invalid("destroying a nonempty zone"));
                 }
                 self.knowledge.destroy_zone(z.index);
+                self.pile_cards.remove(&z.index);
                 self.state
                     .as_mut()
                     .unwrap()
@@ -514,24 +547,7 @@ impl Reducer {
                 changes.retain(|c| c.id != change.id);
                 changes.push(change);
             }
-            PilesStatus(p) => {
-                if p.draw_size > 65536 || p.discard_size > 65536 {
-                    return Err(invalid("zone count exceeds protocol limit"));
-                }
-                self.zone(p.draw_index)?;
-                self.zone(p.discard_index)?;
-                self.knowledge
-                    .reconcile(p.draw_index, nonnegative(p.draw_size)?);
-                self.knowledge
-                    .reconcile(p.discard_index, nonnegative(p.discard_size)?);
-                if p.top_card_id >= 0
-                    && self.knowledge.count(p.discard_index) > 0
-                    && let Some(name) = self.disclosed(p.top_card_id)?
-                {
-                    self.knowledge
-                        .reveal(p.discard_index, &[(p.top_card_id, name)])?;
-                }
-            }
+            PilesStatus(p) => self.piles_status(p)?,
             RemindersChange(r) => {
                 self.state
                     .as_mut()
@@ -606,6 +622,13 @@ impl Reducer {
                 self.knowledge.reconcile(p.pile, p.cards.len() as u32);
                 self.knowledge.shuffle(p.pile, None);
                 self.knowledge.reveal(p.pile, &revealed)?;
+                if is_pile(zone.kind) {
+                    let named = p
+                        .cards
+                        .iter()
+                        .filter(|id| revealed.iter().any(|(r, _)| r == *id));
+                    self.pile_cards.insert(p.pile, named.copied().collect());
+                }
                 self.state
                     .as_mut()
                     .unwrap()
@@ -619,6 +642,46 @@ impl Reducer {
         self.refresh_knowledge();
         Ok(())
     }
+
+    fn piles_status(&mut self, p: model::PilesStatus) -> Result<()> {
+        if p.draw_size > 65536 || p.discard_size > 65536 {
+            return Err(invalid("zone count exceeds protocol limit"));
+        }
+        let draw = nonnegative(p.draw_size)?;
+        let discard = nonnegative(p.discard_size)?;
+        let draw_zone = self.zone(p.draw_index)?;
+        let discard_zone = self.zone(p.discard_index)?;
+        if draw_zone.kind == 13 && matches!(discard_zone.kind, 15 | 16) {
+            let (draw, discard) = (draw as usize, discard as usize);
+            let before_draw = self.knowledge.count(p.draw_index);
+            let before_discard = self.knowledge.count(p.discard_index);
+            // Boons and Hexes announce the post-move counts before CardMove transfers the card.
+            let drawing = draw + 1 == before_draw && discard == before_discard;
+            let returning = draw == before_draw && discard == before_discard + 1;
+            if drawing || returning {
+                if p.top_card_id >= 0 {
+                    self.raw_name(p.top_card_id)?;
+                }
+                return Ok(());
+            }
+            // Refilling the shared deck is announced by status alone.
+            if before_draw == 0 && discard == 0 && draw > 0 && draw == before_discard {
+                self.knowledge.shuffle(p.draw_index, Some(p.discard_index));
+                return Ok(());
+            }
+        }
+        self.knowledge.reconcile(p.draw_index, draw);
+        self.knowledge.reconcile(p.discard_index, discard);
+        if discard > 0
+            && p.top_card_id >= 0
+            && let Some(name) = self.disclosed(p.top_card_id)?
+        {
+            self.knowledge
+                .reveal(p.discard_index, &[(p.top_card_id, name)])?;
+        }
+        Ok(())
+    }
+
     fn move_cards(&mut self, m: model::CardMove) -> Result<()> {
         if m.before.len() != m.after.len() {
             return Err(invalid("movement parallel arrays"));
@@ -637,6 +700,18 @@ impl Reducer {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
+        if let Some(from) = self.pile_cards.get_mut(&m.from_zone) {
+            from.retain(|id| !cards.iter().any(|(before, ..)| before == id));
+        }
+        if let Some(to) = self.pile_cards.get_mut(&m.to_zone) {
+            // A card arriving unseen covers the top: what is on top is no longer known.
+            for (_, after, name) in &cards {
+                match name {
+                    Some(_) if *after >= 0 => to.push(*after),
+                    _ => to.clear(),
+                }
+            }
+        }
         self.knowledge.move_cards(m.from_zone, m.to_zone, &cards)
     }
     fn rename(&mut self, id: i32, name: i32) -> Result<()> {
@@ -842,14 +917,19 @@ impl Reducer {
                             .collect(),
                     });
                 } else {
-                    // Bottom first: the top is the last card known.
-                    let top = zone.cards.iter().rev().find_map(|id| {
-                        self.zones
-                            .get(&zone.index)?
-                            .exact
-                            .get(id)
-                            .map(|n| (*id, *n))
-                    });
+                    // Only a top known to be there: a mixed pile's other cards say nothing
+                    // of which is on top.
+                    let top = self
+                        .pile_cards
+                        .get(&zone.index)
+                        .and_then(|cards| cards.last())
+                        .and_then(|id| {
+                            self.zones
+                                .get(&zone.index)?
+                                .exact
+                                .get(id)
+                                .map(|n| (*id, *n))
+                        });
                     let top_info = top
                         .map(|(_, n)| self.catalog.card(n))
                         .transpose()?

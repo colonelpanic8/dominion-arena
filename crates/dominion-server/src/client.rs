@@ -16,9 +16,19 @@ use tokio::time::Instant;
 /// A tool call's outcome: its text content, structured content, and whether it failed.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Reply {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub model_prompts: Vec<String>,
     pub ok: bool,
     pub text: String,
     pub json: Option<Value>,
+}
+
+impl Reply {
+    pub(crate) fn game_over(&self) -> bool {
+        self.json
+            .as_ref()
+            .is_some_and(|v| crate::harness::game_state(v)["game"]["running"] == false)
+    }
 }
 
 /// Why a tool call got no [`Reply`].
@@ -34,6 +44,7 @@ pub enum CallError {
 
 pub struct Client {
     service: RunningService<RoleClient, ()>,
+    clock_cues: bool,
 }
 
 impl Client {
@@ -51,7 +62,15 @@ impl Client {
         config.retry_config = Arc::new(retry);
         let transport = StreamableHttpClientTransport::from_config(config);
         let service = ().serve(transport).await.map_err(|e| format!("connecting to {url}: {e}"))?;
-        Ok(Client { service })
+        Ok(Client {
+            service,
+            clock_cues: false,
+        })
+    }
+
+    pub(crate) fn with_clock_cues(mut self, enabled: bool) -> Self {
+        self.clock_cues = enabled;
+        self
     }
 
     pub async fn call(&self, tool: &'static str, args: Value) -> Result<Reply, CallError> {
@@ -60,14 +79,17 @@ impl Client {
                 "tool arguments must be an object".into(),
             ));
         };
-        let result = self
-            .service
-            .call_tool(CallToolRequestParams::new(tool).with_arguments(args))
-            .await
-            .map_err(|e| match e {
-                ServiceError::McpError(e) => CallError::Refused(format!("{tool}: {}", e.message)),
-                e => CallError::Lost(format!("{tool}: {e}")),
-            })?;
+        let mut request = CallToolRequestParams::new(tool).with_arguments(args);
+        if self.clock_cues {
+            request
+                .meta
+                .get_or_insert_with(Default::default)
+                .insert(crate::mcp::play::CLOCK_CUES_META.into(), Value::Bool(true));
+        }
+        let result = self.service.call_tool(request).await.map_err(|e| match e {
+            ServiceError::McpError(e) => CallError::Refused(format!("{tool}: {}", e.message)),
+            e => CallError::Lost(format!("{tool}: {e}")),
+        })?;
         let text = result
             .content
             .iter()
@@ -75,6 +97,12 @@ impl Client {
             .collect::<Vec<_>>()
             .join("\n");
         Ok(Reply {
+            model_prompts: result
+                .meta
+                .as_ref()
+                .and_then(|m| m.get("dominion/modelPrompts"))
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default(),
             ok: result.is_error != Some(true),
             text,
             json: result.structured_content,

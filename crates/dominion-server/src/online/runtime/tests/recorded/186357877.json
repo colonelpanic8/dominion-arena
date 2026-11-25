@@ -1,0 +1,35 @@
+{
+  "cards": [
+    {"id":8,"card_name":1,"pile_name":1},
+    {"id":79,"card_name":2,"pile_name":2},
+    {"id":133,"card_name":3,"pile_name":3},
+    {"id":17,"card_name":5,"pile_name":5},
+    {"id":25,"card_name":6,"pile_name":6},
+    {"id":251,"card_name":83,"pile_name":83},
+    {"id":211,"card_name":170,"pile_name":170},
+    {"id":193,"card_name":223,"pile_name":223},
+    {"id":183,"card_name":347,"pile_name":347},
+    {"id":173,"card_name":437,"pile_name":437},
+    {"id":231,"card_name":521,"pile_name":521},
+    {"id":238,"card_name":536,"pile_name":536},
+    {"id":221,"card_name":540,"pile_name":540},
+    {"id":203,"card_name":628,"pile_name":628},
+    {"id":261,"card_name":855,"pile_name":855},
+    {"id":262,"card_name":256,"pile_name":256},
+    {"id":263,"card_name":285,"pile_name":285},
+    {"id":82,"card_name":2,"pile_name":2},
+    {"id":86,"card_name":2,"pile_name":2},
+    {"id":81,"card_name":2,"pile_name":2},
+    {"id":83,"card_name":2,"pile_name":2},
+    {"id":80,"card_name":2,"pile_name":2}
+  ],
+  "zones": [],
+  "question": {"index":22,"description":{"question_type":18,"association":-1,"story":{"question_id":14,"arguments":[],"context":null},"short_story":{"question_id":14,"arguments":[],"context":null}},"kind":{"Complex":[
+    {"index":22,"description":{"question_type":9,"association":-1,"story":{"question_id":5,"arguments":[],"context":null},"short_story":{"question_id":5,"arguments":[],"context":null}},"kind":{"Choice":{"min":0,"max":1,"elements":{"BuyableCards":[[8,true],[79,true],[133,false],[17,false],[25,false],[251,false],[211,false],[193,false],[183,false],[173,false],[231,false],[238,false],[221,false],[203,false],[261,true],[262,false],[263,false]]},"decline":1,"defaults":[],"affected":[]}}},
+    {"index":22,"description":{"question_type":19,"association":-1,"story":{"question_id":11,"arguments":[],"context":null},"short_story":{"question_id":11,"arguments":[],"context":null}},"kind":{"Complex":[
+      {"index":22,"description":{"question_type":0,"association":-1,"story":{"question_id":11,"arguments":[{"CardNames":[{"name":2,"frequency":5}]}],"context":null},"short_story":{"question_id":11,"arguments":[{"CardNames":[{"name":2,"frequency":5}]}],"context":null}},"kind":{"Choice":{"min":0,"max":1,"elements":{"Cards":[82,86,81,83,80]},"decline":-1,"defaults":[],"affected":[]}}},
+      {"index":22,"description":{"question_type":43,"association":-1,"story":{"question_id":11,"arguments":[],"context":null},"short_story":{"question_id":11,"arguments":[],"context":null}},"kind":{"Choice":{"min":0,"max":0,"elements":{"Cards":[]},"decline":-1,"defaults":[],"affected":[]}}}
+    ]}},
+    {"index":22,"description":{"question_type":34,"association":-1,"story":{"question_id":12,"arguments":[],"context":null},"short_story":{"question_id":12,"arguments":[],"context":null}},"kind":{"Choice":{"min":0,"max":1,"elements":{"Buttons":[0]},"decline":-1,"defaults":[],"affected":[]}}}
+  ]}}
+}

@@ -1,5 +1,7 @@
 //! The games a server hosts, and the seat tokens that let a client act for a seat.
 
+mod model;
+
 use crate::steps::Runner;
 use crate::store::Store;
 use dominion_agent::recording::{self, Encoding};
@@ -13,8 +15,8 @@ pub use dominion_protocol::api::{
 use dominion_protocol::api::{Progress, Replay, ReplayTurn, SeatProgress, UndoRequest, UndoState};
 use dominion_protocol::events::History;
 use dominion_protocol::lobby::{
-    AgentAttempt, AgentRun, AgentSetup, Clock, ClockView, GameMeta, MyGame, RatingInfo, SeatAgent,
-    Source, UndoRule, UserRef,
+    AgentAttempt, AgentRun, AgentSetup, Clock, ClockInfo, ClockStatus, ClockView, GameMeta, MyGame,
+    RatingInfo, SeatAgent, Source, UndoRule, UserRef,
 };
 use dominion_protocol::view::GameInfo;
 use rand::Rng;
@@ -94,6 +96,8 @@ pub fn now_ms() -> u64 {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Meta {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub model_controls: Vec<crate::model_control::ModelControl>,
     pub source: Source,
     /// Per seat: the id of the account playing it.
     pub owners: Vec<Option<String>>,
@@ -110,6 +114,11 @@ pub struct Meta {
     pub undo: UndoRule,
     /// Per seat: played by one of the server's agents, which allow every undo.
     pub agents: Vec<bool>,
+    /// Per seat: played by an agent the server doesn't run: over MCP, or with a bot's key.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remote_agents: Vec<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub launch_options: Vec<dominion_protocol::lobby::LaunchOptions>,
     /// The lobby table that started it.
     pub table: Option<String>,
     /// Milliseconds since the Unix epoch.
@@ -308,6 +317,7 @@ pub(crate) struct SeatObservation<'a> {
 }
 
 pub(crate) struct PlayObservation {
+    pub prompts: Vec<String>,
     pub view: AgentView,
     pub log: Vec<dominion_agent::LogEntry>,
     pub glossary: Vec<dominion_agent::GlossaryEntry>,
@@ -316,6 +326,8 @@ pub(crate) struct PlayObservation {
     pub note: Option<String>,
     /// The game's chess clock as it stands.
     pub clock: Option<ClockView>,
+    /// Freshness and availability metadata for `clock`.
+    pub clock_info: Option<ClockInfo>,
     /// What people at the table have said, its last lines in order.
     pub chat: Vec<dominion_protocol::lobby::ChatMessage>,
 }
@@ -477,6 +489,13 @@ impl std::fmt::Display for Unfit {
 }
 
 impl Hosted {
+    fn model_turn(&self, seat: PlayerId) -> Result<(), HubError> {
+        if let Some(control) = lock(&self.meta).model_controls.get(seat.index()) {
+            control.model_turn()?;
+        }
+        Ok(())
+    }
+
     /// When the game last changed or a seat last used its token. A seat's `seen` counts
     /// once it has joined: it starts at the server's start, for the away forfeit.
     fn last_active(&self) -> u64 {
@@ -1190,6 +1209,13 @@ fn result_summary(table: &Table, meta: &Meta, joined: Vec<bool>) -> GameSummary 
             .map(|i| match meta.runs.get(i) {
                 Some(Some(run)) => Some(SeatAgent::from(&run.setup)),
                 _ if meta.agents.get(i).copied().unwrap_or(false) => Some(SeatAgent {
+                    runner_strategy: meta
+                        .launch_options
+                        .get(i)
+                        .copied()
+                        .unwrap_or_default()
+                        .strategy,
+                    speed: meta.launch_options.get(i).and_then(|o| o.speed),
                     agent: table.names()[i].clone(),
                     ..SeatAgent::default()
                 }),
@@ -2017,18 +2043,34 @@ impl Hub {
                 .map(|entry| current_entry(table.game(), entry))
                 .collect();
             PlayObservation {
+                prompts: lock(&game.meta)
+                    .model_controls
+                    .get(seat.seat.index())
+                    .map(|c| c.prompts.clone())
+                    .unwrap_or_default(),
                 view,
                 log: table.view_from(seat.seat, 0).since_last_decision,
                 glossary,
                 undos: table.undos(),
                 note: None,
                 clock: None,
+                clock_info: None,
                 chat: Vec::new(),
             }
         })
         .map(|mut observation| {
+            let now = now_ms();
             observation.note = self.undo_note(&game, &table, seat.seat);
-            observation.clock = game.clock(&lock(&game.meta), now_ms()).map(|(_, c)| c);
+            observation.clock = game.clock(&lock(&game.meta), now).map(|(_, c)| c);
+            observation.clock_info = Some(ClockInfo {
+                status: if observation.clock.is_some() {
+                    ClockStatus::Available
+                } else {
+                    ClockStatus::Off
+                },
+                as_of_ms: now,
+                sampled_at_ms: Vec::new(),
+            });
             observation
         })
     }
@@ -2428,6 +2470,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let (answered, ended) = {
             let mut table = lock(&game.table);
+            game.model_turn(seat.seat)?;
             let (next, answered) = self.attempt(&table, &apply)?;
             let ended = self.changed(&game, &mut table, next, |_| {})?;
             self.answered(&game, &table, seat.seat);
@@ -2474,6 +2517,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
+            game.model_turn(seat.seat)?;
             if !self.may_undo(&game, &table) {
                 return Err(HubError::Forbidden(
                     "answers can't be taken back in this game".into(),
@@ -2549,6 +2593,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
+            game.model_turn(seat.seat)?;
             let allowed = self.may_undo(&game, &table);
             let mut undo = lock(&game.undo);
             if !undo.waits_for(seat.seat) {
@@ -2590,6 +2635,7 @@ impl Hub {
     pub fn cancel_undo(&self, seat: &Seat) -> Result<(), HubError> {
         let game = self.game(&seat.game)?;
         let _table = lock(&game.table);
+        game.model_turn(seat.seat)?;
         let mut undo = lock(&game.undo);
         if !undo.request.as_ref().is_some_and(|r| r.by == seat.seat) {
             return Err(HubError::Conflict(
@@ -2609,6 +2655,7 @@ impl Hub {
         self.in_time(&game, &seat.game)?;
         let (played, ended) = {
             let mut table = lock(&game.table);
+            game.model_turn(seat.seat)?;
             let (next, played) =
                 self.attempt(&table, |next| next.play_treasures(seat.seat, decision))?;
             let ended = self.changed(&game, &mut table, next, |_| {})?;
@@ -2626,6 +2673,9 @@ impl Hub {
         let game = self.game(&seat.game)?;
         let ended = {
             let mut table = lock(&game.table);
+            if cause == "resigned" {
+                game.model_turn(seat.seat)?;
+            }
             let (next, ()) = self.attempt(&table, |next| next.resign(seat.seat))?;
             let ended = self.changed(&game, &mut table, next, |meta| {
                 meta.ended = Some(cause.into());
@@ -2890,6 +2940,7 @@ impl Hub {
         let game = self.game(&seat.game)?;
         self.in_time(&game, &seat.game)?;
         let mut table = lock(&game.table);
+        game.model_turn(seat.seat)?;
         let seen = table
             .view(seat.seat)
             .since_last_decision
@@ -2936,8 +2987,9 @@ impl Hub {
         let ready = || {
             let table = lock(&game.table);
             table.is_over()
-                || table.deciding() == Some(seat.seat)
-                || lock(&game.undo).waits_for(seat.seat)
+                || (game.model_turn(seat.seat).is_ok()
+                    && (table.deciding() == Some(seat.seat)
+                        || lock(&game.undo).waits_for(seat.seat)))
         };
         let deadline = tokio::time::Instant::now() + timeout;
         loop {

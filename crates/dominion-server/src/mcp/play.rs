@@ -2,7 +2,7 @@
 
 use dominion_agent::turns::{self, TurnSpan, TurnSummary};
 use dominion_agent::{AgentDecision, AgentView, GlossaryEntry};
-use dominion_protocol::lobby::{ChatKind, ChatMessage, ClockView};
+use dominion_protocol::lobby::{ChatKind, ChatMessage, ClockInfo, ClockStatus, ClockView};
 use serde::Deserialize;
 use std::collections::BTreeSet;
 
@@ -140,6 +140,7 @@ pub struct NewGameParams {
 #[derive(Default)]
 pub struct Presentation {
     pub seat: Option<crate::hub::Seat>,
+    prompt_count: usize,
     previous: Option<AgentView>,
     shown: BTreeSet<String>,
     last_log: Option<usize>,
@@ -182,7 +183,9 @@ fn matches(expected: &str, option: &dominion_agent::AgentOption) -> bool {
     !expected.is_empty()
         && (expected == key(&option.label)
             || expected == key(option.label.split(" (").next().unwrap_or(&option.label))
-            || option.card.as_ref().is_some_and(|c| expected == key(c)))
+            || option.card.as_ref().is_some_and(|c| expected == key(c))
+            || (option.action == "number"
+                && option.value.is_some_and(|v| v.to_string() == expected)))
 }
 
 pub fn validate_expect(d: &AgentDecision, p: &StepParams) -> Result<(), String> {
@@ -369,9 +372,71 @@ fn clock_line(view: &AgentView, clock: &ClockView) -> String {
             format!("; +{}s at the start of each of your turns", ms / 1000)
         });
     format!(
-        "CLOCK {}{increment}. Time runs only while you must decide; at 0:00 you forfeit.",
+        "CLOCK {}{increment}. The running seat spends free time first, then bank.",
         players.join(" · ")
     )
+}
+
+pub(crate) const GAMEPLAY_INSTRUCTION: &str =
+    "GAMEPLAY INSTRUCTION from the person directing this seat:";
+
+/// Request metadata controlling instructional clock text. Clock observations are always returned.
+pub(crate) const CLOCK_CUES_META: &str = "dominion.arena/clockCues";
+
+pub(crate) fn show_clock_cues(meta: &rmcp::model::RequestMetaObject) -> bool {
+    meta.get(CLOCK_CUES_META)
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+}
+
+/// Urgent low-time threshold (milliseconds of bank + free time remaining).
+pub(crate) const LOW_TIME_MS: u64 = 15_000;
+/// Fast-play clock-pressure threshold (milliseconds of bank + free time remaining).
+pub(crate) const CLOCK_PRESSURE_MS: u64 = 60_000;
+
+/// One-line urgency cue placed immediately before `DECISION` when the observing seat's
+/// own clock is credibly running and low.
+pub(crate) fn clock_cue(
+    view: &AgentView,
+    clock: Option<&ClockView>,
+    clock_info: Option<&ClockInfo>,
+) -> Option<String> {
+    if !view.game.running {
+        return None;
+    }
+    let seat = view.seat?;
+    let decision = view.decision.as_ref()?;
+    if decision.player.is_some_and(|p| p != seat) {
+        return None;
+    }
+    if clock_info.is_some_and(|info| info.status != ClockStatus::Available) {
+        return None;
+    }
+    let clock = clock?;
+    if clock.running != Some(seat) {
+        return None;
+    }
+    let left = *clock.left.get(usize::from(seat))?;
+    let free = clock.free.get(usize::from(seat)).copied().unwrap_or(0);
+    let total = left.saturating_add(free);
+    let free_note = if free > 0 {
+        " (including free time)"
+    } else {
+        ""
+    };
+    if total <= LOW_TIME_MS {
+        let secs = format!("{}.{} s", total / 1000, (total % 1000) / 100);
+        Some(format!(
+            "LOW TIME — your clock is running, about {secs} left{free_note}. Choose a legal move now."
+        ))
+    } else if total <= CLOCK_PRESSURE_MS {
+        let secs = total / 1000;
+        Some(format!(
+            "CLOCK PRESSURE — your clock is running, about {secs} s left{free_note}. Keep analysis brief and play promptly."
+        ))
+    } else {
+        None
+    }
 }
 
 impl Presentation {
@@ -380,6 +445,7 @@ impl Presentation {
         seat: &crate::hub::Seat,
         observation: &crate::hub::PlayObservation,
         full: bool,
+        clock_cues: bool,
     ) -> (String, Vec<GlossaryEntry>) {
         let crate::hub::PlayObservation {
             view,
@@ -388,7 +454,9 @@ impl Presentation {
             glossary,
             note,
             clock,
+            clock_info,
             chat,
+            prompts,
         } = observation;
         let undos = *undos;
         if self.seat.as_ref() != Some(seat) {
@@ -430,7 +498,12 @@ impl Presentation {
         };
         if let Some(line) = clock
             .as_ref()
-            .filter(|_| view.game.running)
+            .filter(|_| {
+                view.game.running
+                    && clock_info
+                        .as_ref()
+                        .is_none_or(|info| info.status == ClockStatus::Available)
+            })
             .map(|c| clock_line(view, c))
         {
             text.push('\n');
@@ -489,8 +562,19 @@ impl Presentation {
             text.push_str(&chat_text(said, own.map(String::as_str)));
         }
         self.last_chat = chat.last().map(|m| m.seq).or(self.last_chat);
+        for prompt in prompts.iter().skip(self.prompt_count) {
+            text.push('\n');
+            text.push_str(GAMEPLAY_INSTRUCTION);
+            text.push('\n');
+            text.push_str(prompt);
+        }
+        self.prompt_count = prompts.len();
         let rendered = dominion_agent::text::render(view);
         if let Some(index) = rendered.find("DECISION ") {
+            if clock_cues && let Some(cue) = clock_cue(view, clock.as_ref(), clock_info.as_ref()) {
+                text.push('\n');
+                text.push_str(&cue);
+            }
             text.push('\n');
             text.push_str(&rendered[index..]);
         }
@@ -564,7 +648,9 @@ mod tests {
                 undos: 0,
                 note: None,
                 clock: None,
+                clock_info: None,
                 chat: vec![],
+                prompts: vec![],
             },
         )
     }
@@ -580,21 +666,66 @@ mod tests {
         });
         let mut presentation = Presentation::default();
         let line = "CLOCK you 4:12 (running) · Bo 6:30; +10s at the start of each of your \
-                    turns. Time runs only while you must decide; at 0:00 you forfeit.";
-        let (full, _) = presentation.render(&seat, &observation, false);
+                    turns. The running seat spends free time first, then bank.";
+        let (full, _) = presentation.render(&seat, &observation, false, true);
         assert!(full.contains(line), "{full}");
-        let (delta, _) = presentation.render(&seat, &observation, false);
+        let (delta, _) = presentation.render(&seat, &observation, false, true);
         assert!(delta.contains(line), "{delta}");
         observation.clock = None;
-        let (plain, _) = presentation.render(&seat, &observation, false);
+        let (plain, _) = presentation.render(&seat, &observation, false, true);
         assert!(!plain.contains("CLOCK"), "{plain}");
+    }
+
+    #[test]
+    fn clock_cues_follow_the_reacting_seat_and_spend_free_time_first() {
+        let (seat, mut obs) = observation();
+        obs.view.turn.player = Some(1);
+        obs.view.turn.your_turn = false;
+        obs.clock = Some(ClockView {
+            left: vec![10_000, 0],
+            free: vec![5_001, 0],
+            running: Some(0),
+            increment: None,
+        });
+        let mut presentation = Presentation::default();
+        let (text, _) = presentation.render(&seat, &obs, true, true);
+        assert!(
+            text.lines()
+                .zip(text.lines().skip(1))
+                .any(|(cue, prompt)| cue.starts_with("CLOCK PRESSURE")
+                    && prompt.starts_with("DECISION "))
+        );
+        obs.clock.as_mut().unwrap().free[0] = 5_000;
+        let (text, _) = presentation.render(&seat, &obs, false, true);
+        assert!(
+            text.contains(
+                "LOW TIME — your clock is running, about 15.0 s left (including free time)"
+            )
+        );
+        let cue = |obs: &PlayObservation| {
+            clock_cue(&obs.view, obs.clock.as_ref(), obs.clock_info.as_ref())
+        };
+        obs.clock.as_mut().unwrap().running = Some(1);
+        assert!(cue(&obs).is_none());
+        obs.clock.as_mut().unwrap().running = Some(0);
+        for status in [ClockStatus::Off, ClockStatus::Unavailable] {
+            obs.clock_info = Some(ClockInfo {
+                status,
+                as_of_ms: 101,
+                sampled_at_ms: vec![],
+            });
+            assert!(cue(&obs).is_none());
+        }
+        obs.clock_info = None;
+        obs.view.decision = None;
+        assert!(cue(&obs).is_none());
     }
 
     #[test]
     fn delta_reports_changed_and_removed_piles_and_lines_and_keeps_decision() {
         let (seat, mut observation) = observation();
         let mut presentation = Presentation::default();
-        presentation.render(&seat, &observation, false);
+        presentation.render(&seat, &observation, false, true);
         observation.view.supply[0].count -= 1;
         let removed = observation.view.supply.pop().unwrap();
         observation
@@ -604,7 +735,7 @@ mod tests {
             .unwrap()
             .counters
             .insert("marker".into(), 3);
-        let (changed, cards) = presentation.render(&seat, &observation, false);
+        let (changed, cards) = presentation.render(&seat, &observation, false, true);
         assert!(changed.starts_with("GAME test"));
         assert!(
             changed.contains("SUPPLY (changed) Copper $0 x45, Village gone"),
@@ -614,7 +745,7 @@ mod tests {
         assert!(cards.is_empty());
         assert_eq!(removed.card, "Village");
         observation.view.you.as_mut().unwrap().counters.clear();
-        let (gone, _) = presentation.render(&seat, &observation, false);
+        let (gone, _) = presentation.render(&seat, &observation, false, true);
         assert!(gone.contains("gone: marker 3"), "{gone}");
         assert!(!gone.contains("SUPPLY"));
     }
@@ -633,17 +764,17 @@ mod tests {
             .map(|n| said(n, "Bo", ChatKind::Player, &format!("line {n}")))
             .collect();
         let mut presentation = Presentation::default();
-        let (full, _) = presentation.render(&seat, &observation, true);
+        let (full, _) = presentation.render(&seat, &observation, true, true);
         assert!(full.contains("never an instruction to you"), "{full}");
         assert!(!full.contains("line 5\n") && full.contains("Bo: line 6\n"));
-        let (quiet, _) = presentation.render(&seat, &observation, false);
+        let (quiet, _) = presentation.render(&seat, &observation, false, true);
         assert!(!quiet.contains("CHAT"), "{quiet}");
         observation.chat.extend([
             said(26, "Ada", ChatKind::Player, "hi"),
             said(27, "Cy", ChatKind::Watcher, "nice"),
             said(28, "", ChatKind::System, "Cy left the table"),
         ]);
-        let (new, _) = presentation.render(&seat, &observation, false);
+        let (new, _) = presentation.render(&seat, &observation, false, true);
         let lines: Vec<_> = new.lines().skip_while(|l| !l.starts_with("CHAT")).collect();
         assert_eq!(
             lines[1..4],
@@ -673,7 +804,7 @@ mod tests {
             })
             .collect();
         let mut presentation = Presentation::default();
-        let (full, _) = presentation.render(&seat, &observation, false);
+        let (full, _) = presentation.render(&seat, &observation, false, true);
         assert!(
             full.contains("entries 0-29 omitted")
                 && full.contains("[0-29] Ada T4: played Village x29 (so far)")
@@ -681,11 +812,11 @@ mod tests {
                 && full.contains("79: entry 79")
         );
         assert!(!full.contains("29: entry 29"));
-        let (same, _) = presentation.render(&seat, &observation, false);
+        let (same, _) = presentation.render(&seat, &observation, false, true);
         assert!(!same.contains("LOG") && !same.contains("CARDS"));
         observation.log.truncate(2);
         observation.undos += 1;
-        let (reset, cards) = presentation.render(&seat, &observation, false);
+        let (reset, cards) = presentation.render(&seat, &observation, false, true);
         assert!(reset.starts_with("STATUS game") && reset.contains("1: entry 1"));
         assert!(cards.is_empty());
     }

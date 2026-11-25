@@ -407,9 +407,12 @@ fn exact_action_and_buy_questions_round_trip_every_legal_move() {
         if game.turn().phase == Phase::Action {
             assert_eq!(decision.prompt, "You may play Actions");
         } else {
-            assert_eq!(
-                decision.prompt,
-                "You may buy cards Combine groups within one alternative: [0] or [1]."
+            assert!(
+                decision.prompt.starts_with(
+                    "You may buy cards Answer from one alternative only: (a) options 0-"
+                ) && decision.prompt.contains("; (b) options "),
+                "{}",
+                decision.prompt
             );
         }
     }

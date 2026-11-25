@@ -14,7 +14,7 @@ use dominion_online::{
 use rmcp::ServiceExt;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
-pub use runtime::{Client, NewGame};
+pub use runtime::{Client, NewGame, PairTable};
 #[cfg(test)]
 pub(crate) use {mcp::Session, runtime::tests::fixture_client};
 
@@ -124,31 +124,33 @@ fn catalog(config: &Config) -> Result<Arc<Catalog>, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn endpoint(setting: Option<&str>) -> Result<Endpoint, String> {
+fn configured_endpoint(setting: Option<&str>) -> Result<Option<Endpoint>, String> {
     match setting.unwrap_or("auto") {
-        "alpha" => Ok(Endpoint::Alpha),
-        "beta" => Ok(Endpoint::Beta),
-        "auto" => {
-            let mut errors = Vec::new();
-            for endpoint in [Endpoint::Alpha, Endpoint::Beta] {
-                match probe_one(endpoint).await {
-                    Ok(ServerState::Normal) => return Ok(endpoint),
-                    Ok(state) => errors.push(format!("{endpoint:?}: {state:?}")),
-                    Err(e) => errors.push(e),
-                }
-            }
-            Err(format!(
-                "no official server accepting new clients: {}",
-                errors.join("; ")
-            ))
-        }
+        "alpha" => Ok(Some(Endpoint::Alpha)),
+        "beta" => Ok(Some(Endpoint::Beta)),
+        "auto" => Ok(None),
         other => Err(format!(
             "unknown online_endpoint {other:?}; use auto, alpha or beta"
         )),
     }
 }
+
+async fn auto_endpoint() -> Result<Endpoint, String> {
+    let mut errors = Vec::new();
+    for endpoint in [Endpoint::Alpha, Endpoint::Beta] {
+        match probe_one(endpoint).await {
+            Ok(ServerState::Normal) => return Ok(endpoint),
+            Ok(state) => errors.push(format!("{endpoint:?}: {state:?}")),
+            Err(e) => errors.push(e),
+        }
+    }
+    Err(format!(
+        "no official server accepting new clients: {}",
+        errors.join("; ")
+    ))
+}
 async fn probe_one(endpoint: Endpoint) -> Result<ServerState, String> {
-    tokio::time::timeout(Duration::from_secs(15), async {
+    tokio::time::timeout(Duration::from_secs(5), async {
         let mut socket = Transport::connect_probe(endpoint)
             .await
             .map_err(|e| e.to_string())?;
@@ -186,7 +188,7 @@ async fn start(config: &Config, account: &Account) -> Result<Client, String> {
     let catalog = catalog(config)?;
     let state =
         Store::open(&account.state_dir).map_err(|e| format!("official client state lock: {e}"))?;
-    let endpoint = endpoint(account.endpoint.as_deref()).await?;
+    let endpoint = configured_endpoint(account.endpoint.as_deref())?;
     let secret = match (&account.password_entry, &account.password_file) {
         (Some(entry), None) if !entry.is_empty() && !entry.starts_with('-') => {
             let output = tokio::process::Command::new("pass")
@@ -221,6 +223,195 @@ async fn start(config: &Config, account: &Account) -> Result<Client, String> {
     .await;
     drop(secret);
     result
+}
+
+/// How long the account joining a paired table may take to see its game start.
+const PAIR_START: Duration = Duration::from_secs(30);
+
+/// Starts a private unrated game between two accounts: `host` opens the table, `guest`
+/// joins it, and once both see the game running it is theirs to play. A table that
+/// didn't get that far is left by both.
+pub(crate) async fn pair(host: &Client, guest: &Client, options: PairTable) -> Result<(), String> {
+    let (host_id, guest_id) = (
+        host.current().reducer.player_id,
+        guest.current().reducer.player_id,
+    );
+    let timer = options.timer;
+    let table = host.pair_open(guest_id, options).await?;
+    let started: Result<(), String> = async {
+        guest
+            .pair_join(table, host_id, timer)
+            .await
+            .map_err(|e| format!("the other account could not join: {e}"))?;
+        host.pair_start(guest_id).await?;
+        running(guest, PAIR_START)
+            .await
+            .map_err(|e| format!("the other account: {e}"))?;
+        let (host, guest) = (host.current(), guest.current());
+        if host.paired
+            && guest.paired
+            && host.reducer.running
+            && host.reducer.game_id.is_some()
+            && host.reducer.game_id == guest.reducer.game_id
+        {
+            Ok(())
+        } else {
+            Err("the two accounts did not confirm the same running paired game".into())
+        }
+    }
+    .await;
+    if let Err(mut error) = started {
+        let _ = tokio::join!(host.pair_abandon(), guest.pair_abandon());
+        for (side, client) in [("host", host), ("guest", guest)] {
+            let update = client.current();
+            if update.paired
+                && update.reducer.running
+                && let Some(id) = update.reducer.game_id
+            {
+                error.push_str(&format!(". The {side} still reports paired game {id} running; check its management page before starting another game"));
+            }
+        }
+        return Err(error);
+    }
+    Ok(())
+}
+/// Waits up to `limit` for `client` to see its game running.
+async fn running(client: &Client, limit: Duration) -> Result<(), String> {
+    let mut updates = client.updates.clone();
+    let deadline = tokio::time::Instant::now() + limit;
+    loop {
+        let update = updates.borrow_and_update().clone();
+        update.view()?;
+        if update.reducer.running {
+            return Ok(());
+        }
+        match tokio::time::timeout_at(deadline, updates.changed()).await {
+            Err(_) => return Err("its game did not start".into()),
+            Ok(Err(_)) => return Err("official client stopped".into()),
+            Ok(Ok(())) => {}
+        }
+    }
+}
+
+/// What `pair_check` does once the game has started.
+#[derive(Clone, Copy, Debug)]
+pub enum PairCheckEnd {
+    /// The host resigns after watching.
+    Resign,
+    /// Nobody moves: the game runs until dominion.games ends it, or the limit.
+    Idle,
+}
+
+/// Logs in accounts `host` and `guest`, starts a private unrated game between them with
+/// `options`, reports what each sees of it (the table, the timer, both clocks) every few
+/// seconds for `watch`, then ends it as `end` says, and disconnects both. Nobody plays a
+/// move: it checks the setup and dominion.games' clocks, not an agent.
+pub async fn pair_check(
+    config: &Config,
+    host: &str,
+    guest: &str,
+    options: PairTable,
+    watch: Duration,
+    end: PairCheckEnd,
+) -> Result<(), String> {
+    let (host_account, guest_account) = (
+        config.online_account(Some(host))?,
+        config.online_account(Some(guest))?,
+    );
+    if host_account
+        .account
+        .eq_ignore_ascii_case(&guest_account.account)
+    {
+        return Err("choose two different official accounts".into());
+    }
+    let (host, guest) =
+        tokio::try_join!(start(config, &host_account), start(config, &guest_account))?;
+    let clients = [
+        (&host_account.account, &host),
+        (&guest_account.account, &guest),
+    ];
+    let result = pair_watched(&clients, options, watch, end).await;
+    for (name, client) in clients {
+        if let Err(e) = client.disconnect().await {
+            eprintln!("{name}: disconnecting: {e}");
+        }
+    }
+    result
+}
+async fn pair_watched(
+    clients: &[(&String, &Client); 2],
+    options: PairTable,
+    watch: Duration,
+    end: PairCheckEnd,
+) -> Result<(), String> {
+    for (name, client) in clients {
+        let update = client.current();
+        if update.view()?.is_some_and(|v| v.game.running) || update.searching {
+            return Err(format!("{name} is already playing or searching"));
+        }
+    }
+    let [(_, host), (_, guest)] = *clients;
+    let began = std::time::Instant::now();
+    pair(host, guest, options).await?;
+    eprintln!("game started after {:.1}s", began.elapsed().as_secs_f64());
+    let report = || {
+        for (name, client) in clients {
+            let update = client.current();
+            let (clock, info) = update.clock_now();
+            eprintln!(
+                "  {name}: game {:?} seat {:?} running {} paired {} timer {:?}\n    clock {} info {}",
+                update.reducer.game_id,
+                update.reducer.seat(),
+                update.reducer.running,
+                update.paired,
+                update.timer_settings,
+                serde_json::to_string(&clock).unwrap_or_default(),
+                serde_json::to_string(&info).unwrap_or_default(),
+            );
+        }
+    };
+    report();
+    let watched = tokio::time::Instant::now() + watch;
+    let over = |client: &Client| !client.current().reducer.running;
+    while tokio::time::Instant::now() < watched && !clients.iter().any(|(_, c)| over(c)) {
+        tokio::time::sleep_until(watched.min(tokio::time::Instant::now() + Duration::from_secs(5)))
+            .await;
+        eprintln!("after {:.0}s:", began.elapsed().as_secs_f64());
+        report();
+    }
+    if matches!(end, PairCheckEnd::Idle) && clients.iter().all(|(_, c)| !over(c)) {
+        for (_, client) in clients {
+            client.current().view()?;
+        }
+        eprintln!("observation period ended while the game was still running");
+        return Ok(());
+    }
+    if matches!(end, PairCheckEnd::Resign) && !over(host) {
+        host.resign().await?;
+    }
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    for (name, client) in clients {
+        let mut updates = client.updates.clone();
+        loop {
+            let update = updates.borrow_and_update().clone();
+            let view = update
+                .view()?
+                .ok_or_else(|| format!("{name}: game disappeared"))?;
+            if let Some(result) = view.game.result {
+                eprintln!(
+                    "{name}: finished after {:.0}s, result {}",
+                    began.elapsed().as_secs_f64(),
+                    serde_json::to_string(&result).map_err(|e| e.to_string())?
+                );
+                break;
+            }
+            tokio::time::timeout_at(deadline, updates.changed())
+                .await
+                .map_err(|_| format!("{name}: no official result within 30 seconds"))?
+                .map_err(|_| format!("{name}: client stopped before reporting the result"))?;
+        }
+    }
+    Ok(())
 }
 
 /// Prints each configured account: id, official name, owner, served, state directory and

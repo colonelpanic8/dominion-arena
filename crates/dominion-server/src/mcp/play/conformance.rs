@@ -32,6 +32,7 @@ async fn keeps_the_contract(seat: &impl PlaySeat) {
     let play = Play {
         seat,
         shown: &shown,
+        clock_cues: true,
     };
     let state = play.observation(true);
     assert!(!failed(&state), "{}", text(&state));
@@ -168,6 +169,7 @@ async fn an_official_seat_keeps_the_contract() {
     let sent = Play {
         seat: &seat,
         shown: &shown,
+        clock_cues: true,
     }
     .step(StepParams {
         token: None,
@@ -235,4 +237,65 @@ async fn treasures_played_one_by_one_end_where_the_tables_own_run_does() {
         let refused = relayed.play_treasures(&seat.unwrap()).await.unwrap_err();
         assert!(refused.starts_with("REJECTED: no Treasures"), "{refused}");
     }
+}
+
+#[tokio::test]
+async fn an_arena_buy_says_it_ends_treasure_plays() {
+    let hub = Hub::default();
+    let seat = arena_game(&hub);
+    let arena = arena_seat(&hub, &seat);
+    let shown = Mutex::new(Presentation::default());
+    let play = Play {
+        seat: &arena,
+        shown: &shown,
+        clock_cues: false,
+    };
+    let state = play.observation(true);
+    let said = text(&state);
+    assert!(
+        said.contains("Buying anything ends your Treasure plays")
+            && said.contains("Unplayed Treasures: ")
+            && said.contains(" Copper ($"),
+        "{said}"
+    );
+    let expected = serde_json::json!(arena.observe().unwrap().unwrap().1.view);
+    let body = state.structured_content.as_ref().unwrap();
+    assert_eq!(body["view"], expected);
+    let note = &body["decisionConsequence"];
+    assert_eq!(note["decisionId"], expected["decision"]["id"]);
+    assert!(said.contains(note["text"].as_str().unwrap()));
+    let id = note["decisionId"].as_str().unwrap();
+    let step = |decision: &str, index: i64| StepParams {
+        token: None,
+        decision: decision.into(),
+        indices: Some(vec![index]),
+        name: None,
+        expect: None,
+        timeout_s: Some(0),
+    };
+    let waited = play.wait(Some(0)).await;
+    assert_eq!(
+        &waited.structured_content.unwrap()["decisionConsequence"],
+        note
+    );
+    let refused = play.step(step("stale", 0)).await;
+    assert!(failed(&refused));
+    assert!(text(&refused).contains(note["text"].as_str().unwrap()));
+    assert_eq!(
+        &refused.structured_content.unwrap()["decisionConsequence"],
+        note
+    );
+    let played = play
+        .step(step(id, note["forgoneOptions"][0].as_i64().unwrap()))
+        .await;
+    assert!(!failed(&played), "{}", text(&played));
+    let next = played.structured_content.unwrap();
+    assert_eq!(
+        next["decisionConsequence"]["decisionId"],
+        next["view"]["decision"]["id"]
+    );
+    assert_ne!(
+        next["decisionConsequence"]["decisionId"],
+        note["decisionId"]
+    );
 }

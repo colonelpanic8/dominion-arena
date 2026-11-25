@@ -679,8 +679,19 @@ pub async fn watch_transcript(game: &str, token: Option<&str>, on_change: impl F
     follow(&url, on_change).await
 }
 
+pub(crate) async fn model_seats(url: &str) -> Result<Vec<dominion_protocol::api::ModelSeat>> {
+    imp::get(url, None).await
+}
+
+pub(crate) async fn model_action(
+    url: &str,
+    req: &dominion_protocol::api::ModelRequest,
+) -> Result<Vec<dominion_protocol::api::ModelSeat>> {
+    imp::post(url, None, req).await
+}
+
 /// An official account's API path: the primary one's unprefixed when `account` is none.
-fn online_path(account: Option<&str>, rest: &str) -> String {
+pub(crate) fn online_path(account: Option<&str>, rest: &str) -> String {
     match account {
         Some(id) => format!("/api/online/{}/{rest}", encode(id)),
         None => format!("/api/online/{rest}"),
@@ -728,11 +739,16 @@ pub async fn online_start(
 pub async fn online_attach(
     account: Option<&str>,
     agent: String,
+    options: Option<dominion_protocol::lobby::LaunchOptions>,
 ) -> Result<dominion_protocol::api::OnlineManagement> {
     imp::post(
         &online_path(account, "agent"),
         None,
-        &dominion_protocol::api::OnlineAttach { agent },
+        &dominion_protocol::api::OnlineAttach {
+            agent,
+            strategy: options.map(|o| o.strategy),
+            speed: options.and_then(|o| o.speed),
+        },
     )
     .await
 }
@@ -740,6 +756,18 @@ pub async fn online_attach(
 pub async fn online_say(account: Option<&str>, text: &str) -> Result<()> {
     let say = Say { text: text.into() };
     imp::send_empty("POST", &online_path(account, "chat"), None, Some(&say)).await
+}
+/// Resigns official account `account`'s running game `game`, saying why.
+pub async fn online_resign(
+    account: Option<&str>,
+    game: String,
+    reason: &str,
+) -> Result<dominion_protocol::api::OnlineManagement> {
+    let resign = dominion_protocol::api::OnlineResign {
+        game,
+        reason: reason.into(),
+    };
+    imp::post(&online_path(account, "resign"), None, &resign).await
 }
 pub async fn online_manage_action(
     account: Option<&str>,
@@ -749,7 +777,6 @@ pub async fn online_manage_action(
     match action {
         "cancel" => imp::send("DELETE", &path("matchmaking"), None, None::<&()>).await,
         "pause" => imp::send("DELETE", &path("agent"), None, None::<&()>).await,
-        "resign" => imp::post(&path("resign"), None, &()).await,
         "reconnect" => imp::post(&path("reconnect"), None, &()).await,
         _ => Err(ApiError {
             status: 400,

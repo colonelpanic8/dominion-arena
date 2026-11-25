@@ -69,12 +69,13 @@ pub fn Chat() -> Element {
     let mut error = use_signal(|| None::<String>);
     let mut sending = use_signal(|| false);
     let st = ctx.state.read();
+    let last_seq = st.chat_from();
     let messages = st.chat.clone();
     let names = (st.view.as_ref()).map(logfmt::names).unwrap_or_default();
     drop(st);
     let len = messages.len();
-    use_effect(use_reactive!(|len| {
-        let _ = len;
+    use_effect(use_reactive!(|last_seq| {
+        let _ = last_seq;
         document::eval(
             "requestAnimationFrame(() => { const e = document.getElementById('game-chat'); if (e) e.scrollTop = e.scrollHeight; });",
         );

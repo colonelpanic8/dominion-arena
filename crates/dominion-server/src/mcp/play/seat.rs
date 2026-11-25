@@ -7,6 +7,7 @@ use super::{LogParams, Presentation, StepParams, TurnsParams};
 use crate::hub::{PlayObservation, Seat};
 use dominion_agent::{AgentDecision, Answer, GlossaryEntry};
 use rmcp::model::{CallToolResult, ContentBlock};
+use std::collections::BTreeSet;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -64,6 +65,98 @@ fn offered(
             .iter()
             .any(|e| e.name == name && e.types.iter().any(|t| t == "Treasure"))
     }))
+}
+
+/// Cards as an agent reads a list of them: "5 Copper, 1 Silver", in the order offered.
+fn tally<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
+    let mut counts: Vec<(&str, u32)> = vec![];
+    for name in names {
+        match counts.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((name, 1)),
+        }
+    }
+    counts
+        .iter()
+        .map(|(name, count)| format!("{count} {name}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// What printed $ the Treasures named give, and whether any gives an amount its text
+/// decides instead.
+fn printed_coins<'a>(names: impl IntoIterator<Item = &'a str>) -> String {
+    let (mut coins, mut more) = (0u32, false);
+    for name in names {
+        match dominion_engine::Card::from_name(name).map(|c| c.def()) {
+            Some(def) if def.coins > 0 || def.plus.coins > 0 => {
+                coins += u32::from(def.coins) + u32::from(def.plus.coins);
+            }
+            _ => more = true,
+        }
+    }
+    if more {
+        format!("${coins} or more")
+    } else {
+        format!("${coins}")
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DecisionConsequence {
+    decision_id: String,
+    closing_options: Vec<u32>,
+    forgone_options: Vec<u32>,
+    text: String,
+}
+
+/// What the options that close a window give up, said where the seat decides: a buy
+/// ends Treasure plays for the turn, and ending a phase gives up the plays it still
+/// offers. Both backends close these windows by the rules.
+fn forecloses(
+    d: &AgentDecision,
+    is_treasure: impl Fn(&str) -> bool,
+) -> Option<DecisionConsequence> {
+    let end = d.options.iter().find(|o| o.action == "end-phase");
+    let treasures = treasure_plays(d, is_treasure);
+    if !treasures.is_empty() {
+        let names = || treasures.iter().map(|(_, c)| c.as_str());
+        let ending = end
+            .map(|o| format!(" {} gives them up too.", o.label))
+            .unwrap_or_default();
+        return Some(DecisionConsequence {
+            decision_id: d.id.clone(),
+            closing_options: d
+                .options
+                .iter()
+                .filter(|o| matches!(o.action.as_str(), "buy" | "end-phase"))
+                .map(|o| o.index)
+                .collect(),
+            forgone_options: treasures.iter().map(|(i, _)| *i).collect(),
+            text: format!(
+                "Buying anything ends your Treasure plays for this turn: play the Treasures you want first (play_treasures plays them all). Unplayed Treasures: {} ({}).{ending}",
+                tally(names()),
+                printed_coins(names()),
+            ),
+        });
+    }
+    let end = end?;
+    let plays: Vec<_> = d
+        .options
+        .iter()
+        .filter(|o| o.action == "play" && o.card.is_some())
+        .collect();
+    (!plays.is_empty()).then(|| DecisionConsequence {
+        decision_id: d.id.clone(),
+        closing_options: vec![end.index],
+        forgone_options: plays.iter().map(|o| o.index).collect(),
+        text: format!(
+            "{} ends this phase, giving up the plays still offered: {}.",
+            end.label,
+            tally(plays.iter().filter_map(|o| o.card.as_deref()))
+        ),
+    })
 }
 
 /// Autoplay Treasures for a backend that only takes answers: one answer per Treasure
@@ -147,53 +240,104 @@ pub(crate) fn glossary_result(entries: Result<Vec<GlossaryEntry>, String>) -> Ca
 pub(crate) struct Play<'a, S> {
     pub seat: &'a S,
     pub shown: &'a Mutex<Presentation>,
+    pub clock_cues: bool,
 }
 
 impl<S: PlaySeat> Play<'_, S> {
+    /// Adds to `d`'s prompt, for its text only, what each window-closing option gives up.
+    fn annotate(&self, d: &mut AgentDecision) -> Option<DecisionConsequence> {
+        let names: BTreeSet<String> = (d.options.iter())
+            .filter(|o| o.action == "play")
+            .filter_map(|o| o.card.clone())
+            .collect();
+        let names: Vec<String> = names.into_iter().collect();
+        // Only a note: a lookup that fails leaves the decision as it was.
+        let cards = if names.is_empty() {
+            vec![]
+        } else {
+            self.seat.cards(&names).unwrap_or_default()
+        };
+        let is_treasure = |name: &str| {
+            (cards.iter()).any(|e| e.name == name && e.types.iter().any(|t| t == "Treasure"))
+        };
+        let consequence = forecloses(d, is_treasure)?;
+        d.prompt = format!("{} {}", d.prompt, consequence.text);
+        Some(consequence)
+    }
+
     /// The seat's view as a result: in full, or what changed since the session's last.
     pub fn observation(&self, full: bool) -> CallToolResult {
-        let (seat, observation) = match self.seat.observe() {
+        let (seat, mut observation) = match self.seat.observe() {
             Ok(Some(observed)) => observed,
             Ok(None) => return no_game(&self.seat.no_game()),
             Err(e) => return self.failure(e),
         };
+        let mut value = serde_json::json!({"view": observation.view});
+        if let Some(note) = observation
+            .view
+            .decision
+            .as_mut()
+            .and_then(|d| self.annotate(d))
+        {
+            value["decisionConsequence"] = serde_json::json!(note);
+        }
         let (text, glossary) = self
             .shown
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .render(&seat, &observation, full);
-        let mut value = serde_json::json!({"view": observation.view});
+            .render(&seat, &observation, full, self.clock_cues);
         if let Some(clock) = &observation.clock {
             value["clock"] = serde_json::json!(clock);
+        }
+        if let Some(clock_info) = &observation.clock_info {
+            value["clockInfo"] = serde_json::json!(clock_info);
         }
         if !glossary.is_empty() {
             value["glossary"] = serde_json::json!(glossary);
         }
-        structured(value, text)
+        let mut result = structured(value, text);
+        if !observation.prompts.is_empty() {
+            result.meta.get_or_insert_with(Default::default).insert(
+                "dominion/modelPrompts".into(),
+                serde_json::json!(observation.prompts),
+            );
+        }
+        result
     }
 
     /// A failed call: why, then the decision still open, so it can be answered again
     /// without another call.
     pub fn failure(&self, message: impl Into<String>) -> CallToolResult {
         let mut text = message.into();
-        let decision = match self.seat.observe() {
-            Ok(Some((_, observation))) => Some(observation.view),
-            _ => None,
-        };
-        let open = decision.as_ref().and_then(|view| {
-            let rendered = dominion_agent::text::render(view);
-            rendered
-                .find("DECISION ")
-                .map(|i| rendered[i..].to_string())
+        let mut observation = self.seat.observe().ok().flatten().map(|(_, obs)| obs);
+        let consequence = observation
+            .as_mut()
+            .and_then(|obs| obs.view.decision.as_mut())
+            .and_then(|d| self.annotate(d));
+        let open = observation.as_ref().and_then(|obs| {
+            let rendered = dominion_agent::text::render(&obs.view);
+            let decision = rendered.find("DECISION ").map(|i| &rendered[i..])?;
+            if !self.clock_cues {
+                return Some(decision.to_owned());
+            }
+            let cue = super::clock_cue(&obs.view, obs.clock.as_ref(), obs.clock_info.as_ref());
+            Some(match cue {
+                Some(cue) => format!("{cue}\n{decision}"),
+                None => decision.to_string(),
+            })
         });
         match open {
             Some(open) => text = format!("{text}\n{open}"),
-            None if decision.is_some() && text.starts_with("REJECTED") => {
+            None if observation.is_some() && text.starts_with("REJECTED") => {
                 text.push_str("\nNo decision is open for you; call wait.");
             }
             None => {}
         }
-        failure(text)
+        let mut result = failure(text);
+        if let Some(note) = consequence {
+            result.structured_content = Some(serde_json::json!({"decisionConsequence": note}));
+        }
+        result
     }
 
     fn rejected(&self, message: impl std::fmt::Display) -> CallToolResult {
@@ -361,6 +505,40 @@ mod tests {
             groups: vec![],
             options,
         }
+    }
+
+    /// The Buy phase decision of the Scouting Party misplay: five Coppers unplayed.
+    #[test]
+    fn a_buy_says_it_ends_treasure_plays_and_what_is_unplayed() {
+        let treasure = |c: &str| c == "Copper";
+        let mut options = vec![
+            option(0, "buy", "Coven"),
+            option(1, "buy", "Scouting Party"),
+        ];
+        options.extend((2..7).map(|i| option(i, "play", "Copper")));
+        let mut end = option(7, "end-phase", "");
+        end.label = "End Buys".into();
+        end.card = None;
+        options.push(end);
+        assert_eq!(
+            super::forecloses(&decision(options), treasure)
+                .unwrap()
+                .text,
+            "Buying anything ends your Treasure plays for this turn: play the Treasures you want first (play_treasures plays them all). Unplayed Treasures: 5 Copper ($5). End Buys gives them up too."
+        );
+    }
+
+    #[test]
+    fn ending_a_phase_says_which_plays_it_gives_up() {
+        let mut end = option(1, "end-phase", "");
+        end.label = "End Actions".into();
+        let d = decision(vec![option(0, "play", "Vassal"), end.clone()]);
+        assert_eq!(
+            super::forecloses(&d, |_| false).unwrap().text,
+            "End Actions ends this phase, giving up the plays still offered: 1 Vassal."
+        );
+        // Nothing is given up where nothing else is offered.
+        assert!(super::forecloses(&decision(vec![end]), |_| false).is_none());
     }
 
     #[test]

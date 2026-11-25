@@ -45,12 +45,39 @@ claude mcp add dominion -- dominion online mcp
 The MCP entry point uses stdio. Register either this backend or Arena's hosted
 backend as `dominion`. Authentication belongs to operator setup; gameplay uses
 the same `state`, `new_game`, `step`, `wait`, `cards`, and `log` contract
-(`dominion/play@1`, structured `{view, glossary?, clock?}` / `dominion/agent-view@2`;
-`clock` carries the server's timers in a timed game), plus `turns` and
+(`dominion/play@1`, structured `{view, glossary?, clock?, clockInfo?, decisionConsequence?}` / `dominion/agent-view@2`;
+`clock.left` and `clock.free` give each seat’s bank and free time in milliseconds.
+`clock.running` identifies the charged seat, including reactions. `clockInfo.status`
+is `available`, `off`, or `unavailable`. `asOfMs` is the projection time and
+`sampledAtMs`, when present, gives each seat’s local timer receipt time), plus `turns` and
 `play_treasures`. These tools are the ones Arena's own games are played through
 (`dominion-server`'s `mcp/play/seat.rs`): this backend supplies only how its seat is
 observed, answered and waited for, so their checks, results and errors are the same.
 Optional `token` parameters are ignored because one process controls one account.
+
+On dominion.games, selecting a `Buy` option with unplayed Treasures can
+automatically play just enough to pay for that purchase. For example, buying
+Scouting Party at $0 with five Coppers in hand can play two Coppers and leave
+the other three in hand. To use all $5 across both Buys, play the five Coppers
+before buying Scouting Party. The play tools say so on every decision that offers
+both, for this backend and Arena's alike: buying ends Treasure plays, with the
+Treasures still unplayed and their printed $, and ending a phase names the plays it
+gives up.
+
+Compound questions reach the agent as option groups, each group's prompt saying
+what it is for, and the decision's prompt saying, in option numbers, which groups
+one answer may combine. What the official client never asks about is answered with
+the server's default and not offered: the `REJECT_ABILITY` number beside "resolve
+an effect" (sending 1 there cancels the ability chosen), any number of a type the
+client has no words for, and a part of an AND that chooses from nothing. Numbers the
+client does show are labelled as it labels them ("Pay off 2 Debt", "Top (5)"). A
+Way goes out only with the card it plays, as the client sends it: an answer giving
+the Way alone is refused, saying which options hold the card to add.
+
+A mixed or split pile's top card is the one the client shows: the last named card
+of the pile as a snapshot lists it (bottom first), then whatever arrives on it or a
+`PileUpdate` names. When that card isn't known to still be there, the pile names no
+top rather than a card below it.
 
 `new_game` accepts `players`, `bots`, `kingdom`, and `landscapes`. Every opponent
 must be a server bot: defaults are two players and one bot. It requests unrated
@@ -62,10 +89,14 @@ client. Bot-game actions still require a table containing only this account and
 server bots. Public human matchmaking is available through the server management page below;
 joining arbitrary tables is not exposed.
 
-`online_reconnect` explicitly resumes only the in-memory session owned by this
-process. It invalidates previous decisions and waits for a replacement snapshot.
-If dominion.games has dropped that session (`LOGIN_REQUIRED`), it logs in again once
-with the password the process read at startup, kept in memory only.
+`online_reconnect` invalidates previous decisions. A server-directed reconnect
+uses the owned session on the requested server. An explicit Alpha or Beta pin
+refuses a handoff to the other server. When idle without a handoff, the client
+uses a fresh password login and, in auto mode, probes for a server accepting
+new games. A refused session (`LOGIN_REQUIRED` or `INVALID_SESSION_ID`) permits
+one password attempt. Recovery waits up to 20 seconds for authentication and,
+for an owned live game, a replacement snapshot or its result. After a
+disconnect, matchmaking needs a new search request.
 Answers are consumed before transmission and are never automatically retried,
 even when a send fails. To resume after restarting the process, opt into
 `online_resume = true`: only a table recorded in this state directory is
@@ -102,6 +133,17 @@ same account. The state-directory lock prevents two processes sharing it.
   floor less that level (2p or 3p, read when the search starts), rounded up, and
   its maximum to at least that; a search the account's level can't be read for is
   refused.
+- With two or more accounts owned by the same Arena account, one can play another
+  ("Your other account · unrated"): the first opens a private unrated table closed to
+  spectators, with the chosen timer (Off included) and any required cards, the other
+  joins it, and each says it is ready only once the table holds just the two of them;
+  anyone else sitting down stops the game before it starts. Each account is played by
+  its own agent. Use it to try agents and timers against dominion.games' own clocks
+  without a rated game or a stranger.
+- For a quick clock check with two exclusive accounts outside a running Arena server,
+  run `dominion --config trial.toml online pair-check --host astra --guest sol --timer 0 --watch 5`.
+  It starts a private unrated game, prints both clocks, and resigns the host after the
+  observation period. Use the hosted start endpoint below to exercise agent decisions.
 - Bot games accept required kingdom piles and landscapes. Public matches use the
   server's matchmaking kingdom and preferences, with previews and extra new
   expansion games disabled.
@@ -121,7 +163,10 @@ same account. The state-directory lock prevents two processes sharing it.
   same management operations. `start` accepts `agent`, `mode` (`bots`, `unrated`,
   `rated`), and `matching` (`players`, `minRating`, `maxRating`, `timer` ordinal
   0 Reckless / 1 Hasty / 2 Friendly / 3 Patient). Bot settings are `bots`,
-  `kingdom` and `landscapes`.
+  `kingdom` and `landscapes`. `against` (`account`: another hosted account's id the
+  caller also owns, `agent`: the agent playing it) plays that account instead, with
+  `mode` `unrated`, two players, `kingdom`, `landscapes` and `matching.timer` (4 is
+  Off).
 - Agents play through **`/mcp/online`** using `state`, `step`, `wait`, `cards`,
   `log`, `turns` and `play_treasures`. An Arena owner session or its bot API key also works. Hosted MCP
   refuses `new_game`, `resign` and `online_reconnect`; use management for those.

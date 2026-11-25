@@ -144,6 +144,12 @@ impl Arena {
         })
     }
 
+    pub(crate) fn model_director(&self, ident: &Ident) -> Result<(String, bool)> {
+        let user = self.user(&ident.user)?;
+        let admin = !ident.agent && self.is_admin(&user);
+        Ok((user.name, admin))
+    }
+
     pub fn me(&self, ident: &Ident) -> Result<Me> {
         self.me_of(&self.user(&ident.user)?)
     }

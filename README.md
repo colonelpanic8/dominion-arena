@@ -52,7 +52,13 @@ With `online_enabled` and `online_owner` configured, `dominion serve` shares the
 connection through `/mcp/online` and the lobby. The owner manages it from the lobby's
 Automatch tab (select an agent, start/cancel searches, pause/resume play, resign) and
 sees its dominion.games rating on the Account tab. A game keeps the agent it started
-with: pausing stops it, and only that agent resumes it. Anyone can watch the running game
+with: pausing stops it, and only that agent resumes it. Its seat keeps its job through
+a dropped connection, a reconnect and a restart of the server (the job is kept in the
+account's state directory as `agent-job.json`), so the same seat plays on from a fresh
+snapshot. Resigning (`POST /api/online/{id}/resign` with `{"game": <the running game's
+id, as /manage gives it>, "reason": "..."}`) takes the owner signed in as themself: a
+bot's API key, the credential to give automation that watches or recovers the account,
+is refused. The server logs who resigned which game, from what client, and why. Anyone can watch the running game
 from the Tables tab (`/online/<id>`), on the same page as Arena's own games, and read its
 agent's transcript, rated or not; each finished game is recorded in Arena's
 history for the agent that played it (else the owner), without changing anyone's
@@ -199,7 +205,11 @@ keeps its seat authentication and lobby separate.
 
 `state`, `new_game`, and common `join_game` return full text; `step` and `wait` return
 compact changes (full text on the session's first observation). They always carry the
-full structured `{view, glossary?, clock?}` envelope. In a game with a chess clock (or,
+full structured `{view, glossary?, clock?, clockInfo?, decisionConsequence?}` envelope.
+When buying or ending a phase gives up offered plays, `decisionConsequence` identifies
+the open `decisionId`, the `closingOptions` that end the window, and the `forgoneOptions`
+it would close, by option index. Its `text` is the cue shown in the decision. A refused
+call includes the same field while that decision remains open. In a game with a chess clock (or,
 on dominion.games, a timer), `clock` is `{left, free?, running?, increment?}` (milliseconds:
 each seat's time as the call returns, free decision time first, the seat whose time runs,
 what each turn adds) and every text has a `CLOCK` line with each player's time. Card text arrives once per session/game
@@ -484,6 +494,24 @@ bearer token. Guests never can.
 `rated: true` makes a game with a different one of the server's agents in every seat
 count for their ratings; it allows no undo.
 
+#### Directing a model during play
+
+Open **Model controls** in a live game's Table or Plain view. The Arena game host
+or linked dominion.games account owner can send a prompt to a specific model seat.
+Admins can do this on either backend. The model receives the prompt with its next
+game observation. A move it is already preparing can still finish first. Prompts
+can appear in the agent transcript.
+
+An admin can choose **Take over seat** to pause the runner and answer the seat's
+legal decisions in that panel. Closing the panel keeps the seat under manual
+control. **Return to model** starts the runner again on the current position.
+
+Seats played by agents the server doesn't run can be directed and taken over the
+same way. That covers a seat played over MCP and a seat played through a bot's API
+key. The server marks such a seat the first time an agent uses it. While an admin
+holds the seat, the agent's answers are refused and its `wait` keeps waiting. Once
+the seat is returned, the agent picks up on the current position.
+
 #### Briefs, debriefs and reports
 
 To run games between agents and learn from them, `create_game` also takes:
@@ -569,6 +597,15 @@ played two minutes): a provider error, the server restarting, a model that ended
 conversation early. A seat that never recovers forfeits by the server's timing. Only a
 forbidden tool, one its CLI offers that the seat may not use, stops the seat at once; a
 call to a tool the CLI doesn't offer (a misspelled name) runs nothing and play goes on.
+Select **Inference speed** when starting a direct OpenAI or native Codex seat.
+For example, `{"agent":"Astra High","speed":"fast"}` requests OpenAI priority
+inference for that seat at High effort. `"speed":"standard"` explicitly selects
+ordinary inference. Omitting speed inherits the profile's default. Existing
+`Astra High Fast` launches and profiles with `fast_mode = true` still work.
+Fast may use more quota. In direct OpenAI archives,
+`direct_request.service_tier` records the tier requested and
+`direct_usage.service_tier` records the tier OpenAI reported, when supplied.
+
 The direct OpenAI agent waits out OpenAI's overload and rate limits for as long as it
 asks, up to 20 minutes a request, within the same attempt. Each attempt has a separate archive; completed moves remain
 in the game. A new attempt is a new conversation, which sees the game as it stands and
@@ -600,6 +637,80 @@ subscriptions use Antigravity, not Gemini CLI. `auth_dir` selects a provider's n
 login directory; it defaults to `~/.claude`, `~/.codex`, or `~/.gemini` (and respects
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or `GEMINI_HOME`). Codex needs its native
 `models_cache.json`, populated by starting Codex once after sign-in.
+
+Choose the **runner strategy** when seating an agent. The picker offers Classic
+and Clock-aware for native Claude, Codex and Antigravity players and the direct
+OpenAI and Anthropic players. T3 Code offers Classic. Model, effort and OpenAI
+Fast mode are independent of strategy. Both strategies use the same agent
+account and seat allowance. The game record includes the strategy used.
+
+For example, these Arena game-creation fields seat the same profile twice:
+
+```json
+{"players": 2, "agents": ["Astra High", {"agent": "Astra High", "strategy": "clock_aware", "speed": "fast"}]}
+```
+
+A profile name alone selects Classic. For hosted dominion.games, send
+`strategy` alongside `agent` to `POST /api/online/{id}/start`. On a private
+unrated table, `against.strategy` and `against.speed` configure the peer independently.
+Reattaching an agent to the same running game retains its strategy and speed. The public analyst uses its own model profile.
+
+Classic starts with the ordinary opening and preserves grouped card references
+on Arena join. Clock-aware starts the player at once on a timed game, before its first
+decision if it has none yet, so what it plans while other players take their turns
+costs it no time. Its first message carries the kingdom's prefetched ratings and an
+opening budget, and a short cue sits beside a pending decision when the deciding seat's
+clock is low. Both strategies can read the clock. Untimed games use the ordinary
+opening. Standalone MCP clients can request the cue per tool call
+with `"_meta": {"dominion.arena/clockCues": true}`.
+
+To add parallel kingdom analysis to Clock-aware seats, name an existing
+`[[agents]]` profile in the runner configuration:
+
+```toml
+[clock_aware]
+analyst = "Neon High"
+target_seconds = 45
+background = false
+```
+
+The player model plays from the start while the analyst studies the public
+kingdom in a separate session; nothing waits for the analysis. Its opening plan
+reaches the player beside the first decision after it is ready. Only the player can
+submit moves. Both receive the configured playbook's
+`skills/play-game/references/live-decisions.md` when available. A creator's brief or an
+untimed game uses the player alone.
+
+`target_seconds` (default 45) is the budget the player's first message gives it, from
+its first decision to its first move.
+
+Set `background = true` to request another assessment starting on turn five,
+then every four turns or as piles approach exhaustion. One analysis runs at a
+time. Notes are delivered on relevant decisions and expire when the position
+changes. Each background request has a two-minute deadline and uses provider
+capacity. Existing per-profile `opening_analyst` settings are a fallback for
+explicit Clock-aware launches when the runner has no global analyst configured.
+
+Every seat the runner plays on a timed game, whatever its program or strategy, has a
+**clock guard**: a session of its own beside the player, across its attempts and the
+gaps between them, that answers one of the seat's decisions only when it is still open
+with the seat's bank (after the decision's free time) down to the margin. It answers
+with the least the decision allows, the rule an idle solo seat follows: end the phase,
+else decline, else choose nothing, else the first options. That keeps the seat in the
+game without playing for it. Decision ids settle a race with the player: the later
+answer is refused as stale. The player is told on its next reply (`HARNESS CLOCK
+GUARD: ...`), the runner's log says so, and each answer is appended to
+`<agents_dir>/clock-guard.jsonl` with the game, seat, agent, decision, labels and bank
+left. If a step's reply is lost, the log records `accepted: null`. The guard reads the
+seat again before retrying and makes at most three attempts per decision. Connection
+and request timeouts shrink with the observed bank. Turn it off or move the margin
+in the runner's settings:
+
+```toml
+[clock_guard]
+enabled = true
+margin_seconds = 6
+```
 
 An Antigravity seat keeps its conversation in a folder of its own under
 `conversations_dir` (default `<auth_dir>/antigravity-cli/conversations/dominion-arena`),
@@ -935,7 +1046,10 @@ game's files and record stay. Games voided before records kept that say only `ra
 false` and still count among their players' Arena games; `dominion games void
 --record-only ID...` marks them voided (when it is run) and takes them off those
 tallies, changing no rating, and refuses a game that is rated, voided already, or had a
-seat of no account. All three talk to
+seat of no account. Before a planned restart, `dominion games drain --wait` stops official
+accounts starting games and returns once none is running: the official server's clock
+runs while ours is down, and a restart mid-game can cost a seat the game. A restarted
+server starts undrained (`--cancel` stops draining without one). All four talk to
 `control_socket`, which only the server's user can reach; the NixOS module sets it and
 installs `dominion-games` for root: `sudo dominion-games list`.
 

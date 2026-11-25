@@ -1,11 +1,11 @@
 //! What every producer of a view holds to beyond its JSON Schema: the names zones and
-//! landscape kinds go by, counts that add up, and table extras that say no more than
-//! the view. The table and the agents read a view by these, whoever made it: the
+//! landscape kinds go by, counts that add up, decisions whose groups can be told
+//! apart, and table extras that say no more than the view. The table and the agents read a view by these, whoever made it: the
 //! engine's projection and the dominion.games reducer both test theirs against
 //! [`violations`].
 
 use crate::api::TableExtras;
-use crate::{AgentView, CardCount, PlayerView};
+use crate::{AgentDecision, AgentView, CardCount, PlayerView};
 use std::collections::BTreeSet;
 
 /// The zones a player's `otherZones` holds: set-aside cards, cards taken off a deck
@@ -35,6 +35,24 @@ fn is_zone(name: &str) -> bool {
 fn kebab(s: &str) -> bool {
     let ok = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
     !s.is_empty() && s.chars().all(ok) && !s.starts_with('-') && !s.ends_with('-')
+}
+
+/// What a decision gets wrong, in words. An agent tells a decision's groups apart only
+/// by their prompts, so no two are the same, and every option is in one of its groups.
+pub fn decision_violations(d: &AgentDecision) -> Vec<String> {
+    let mut out = vec![];
+    let mut prompts = BTreeSet::new();
+    for g in &d.groups {
+        if !prompts.insert(g.prompt.as_str()) {
+            out.push(format!("two groups are asked {:?}", g.prompt));
+        }
+    }
+    for o in &d.options {
+        if !d.groups.is_empty() && d.groups.iter().all(|g| g.group != o.group) {
+            out.push(format!("option {} is in no group", o.index));
+        }
+    }
+    out
 }
 
 /// Everything `view`, and the `table` extras sent with it, get wrong, in words.
@@ -136,6 +154,9 @@ pub fn violations(view: &AgentView, table: Option<&TableExtras>) -> Vec<String> 
         if let Some(z) = o.zone.as_deref().filter(|z| !is_zone(z)) {
             out.push(format!("option {} is in {z:?}", o.index));
         }
+    }
+    if let Some(d) = &view.decision {
+        out.extend(decision_violations(d));
     }
     let Some(table) = table else { return out };
     if table.players.len() != players.len() {

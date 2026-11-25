@@ -186,7 +186,7 @@ fn end_phase(d: &AgentDecision) -> Option<u32> {
 
 /// The least an idle seat can do: end its phases, decline what it may, and otherwise take
 /// the first options offered.
-fn idle_answer(d: &AgentDecision) -> Answer {
+pub(crate) fn idle_answer(d: &AgentDecision) -> Answer {
     if let Some(i) = end_phase(d) {
         return Answer::indices(&d.id, vec![i]);
     }

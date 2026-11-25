@@ -6,6 +6,7 @@
 
 use crate::arena::Arena;
 use dominion_protocol::lobby::AgentSetup;
+use dominion_protocol::lobby::LaunchOptions;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -30,6 +31,11 @@ pub struct Offer {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OfferedModel {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supports_clock_aware: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supports_speed: bool,
+
     /// What runs it ("Claude Code").
     pub program: String,
     /// The provider's id for the model.
@@ -38,6 +44,8 @@ pub struct OfferedModel {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast_mode: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,7 +60,7 @@ pub enum FromRunner {
         game_id: String,
         seat: u8,
         archive: String,
-        setup: AgentSetup,
+        setup: Box<AgentSetup>,
     },
     /// The attempt kept in `archive` stopped before its job was done.
     Failed {
@@ -75,6 +83,8 @@ pub enum ToRunner {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
+    #[serde(flatten)]
+    pub options: LaunchOptions,
     #[serde(default)]
     pub official: bool,
     /// The official account an official job plays as; its MCP endpoint is
@@ -173,7 +183,7 @@ async fn serve_runner(arena: Arc<Arena>, stream: UnixStream, stop: CancellationT
                     let _ = tokio::task::spawn_blocking(move || match message {
                         FromRunner::Offers { agents } => arena.offers_changed(id, agents),
                         FromRunner::Attempt { game_id, seat, archive, setup } => {
-                            if let Err(e) = arena.hub.agent_attempt(&game_id, seat, archive, setup) {
+                            if let Err(e) = arena.hub.agent_attempt(&game_id, seat, archive, *setup) {
                                 eprintln!("dominion: an agent attempt at {game_id}: {e}");
                             }
                         }
