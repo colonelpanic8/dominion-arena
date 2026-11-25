@@ -332,6 +332,7 @@ fn build(
         .collect::<Result<Vec<_>, ProjectionError>>()?;
     piles.sort_by_key(|x| x.0);
     let mut overrides = Vec::new();
+    let mut markers = Vec::new();
     for (name, pile) in &piles {
         let kind = if !pile.in_supply() {
             13
@@ -347,6 +348,20 @@ fn build(
             *slots
                 .first_mut()
                 .ok_or(ProjectionError::Inconsistent("pile top without cards"))? = Some(top);
+        }
+        let marker = pile.structure().and_then(|s| {
+            let kind = match s.kind {
+                dominion_engine::PileKind::Stacked => dominion_protocol::PileKind::Stacked,
+                dominion_engine::PileKind::Rotating => dominion_protocol::PileKind::Rotating,
+                dominion_engine::PileKind::Shuffled => dominion_protocol::PileKind::Shuffled,
+            };
+            dominion_protocol::pile_marker(kind, s.cards.len())
+        });
+        if let Some(marker) = marker {
+            markers.push(model::PileMarker {
+                kind: super::catalog::pile_marker(marker),
+                zone_index: integer(zones.len(), "zone index")?,
+            });
         }
         zones.push(VisibleZone::new(kind, -1, *name, slots));
         let cost = view.cost(pile.card());
@@ -588,7 +603,7 @@ fn build(
             card_counts,
             cards,
             zones,
-            pile_markers: vec![],
+            pile_markers: markers,
             tokens: vec![],
             counters,
             turn: model::TurnDescription {

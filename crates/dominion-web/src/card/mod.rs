@@ -69,6 +69,10 @@ pub fn CardView(
     /// A pile's name, moved right to clear its count badge in the top left corner.
     #[props(default)]
     shifted: bool,
+    /// A Supply pile's markers (Bane, Split, ...): its mini card prints them, then the
+    /// types its cards show on a pile (Attack, ...), as dominion.games does.
+    #[props(default)]
+    pile: Option<Vec<String>>,
     #[props(default = VNode::empty())] children: Element,
 ) -> Element {
     let cards = use_cards();
@@ -89,7 +93,15 @@ pub fn CardView(
     };
     let m = measure::measurer(assets.fonts);
     let body = match &info {
-        Some(info) => draw(info, size, price, shifted, &assets, m.as_ref()),
+        Some(info) => draw(
+            info,
+            size,
+            price,
+            shifted,
+            pile.as_deref(),
+            &assets,
+            m.as_ref(),
+        ),
         None => draw_unknown(&name, size, &assets, m.as_ref()),
     };
     let ratio = info
@@ -246,6 +258,7 @@ fn draw(
     size: CardSize,
     price: Option<Price>,
     shifted: bool,
+    pile: Option<&[String]>,
     assets: &AssetDb,
     m: &dyn Measure,
 ) -> Element {
@@ -315,6 +328,25 @@ fn draw(
             m,
         );
         (rect, line, s)
+    });
+    let pile_types = pile.filter(|_| size == CardSize::Mini).and_then(|markers| {
+        let rect = shape.pile_types()?;
+        let shown = (info.types.iter().map(String::as_str))
+            .filter(|t| dominion_protocol::TYPES_SHOWN_ON_PILE.contains(t));
+        let parts: Vec<&str> = markers.iter().map(String::as_str).chain(shown).collect();
+        if parts.is_empty() {
+            return None;
+        }
+        let line = title_text(&parts.join("/"), assets);
+        let s = fit_line(
+            &line,
+            Font::Title,
+            rect.width_cqw(),
+            rect.height_cqw(ratio),
+            0.6,
+            m,
+        );
+        Some((rect, line, s))
     });
     let lines = text::parse(&info.text);
     let (heirloom, body): (Vec<Line>, Vec<Line>) = lines
@@ -402,6 +434,14 @@ fn draw(
             div {
                 class: if corner_types { "dc-types dc-corner" } else { "dc-types" },
                 class: if light_title && !corner_types { "dc-light" },
+                style: rect.css(),
+                span { style: "font-size:{s:.3}cqw;", "{line}" }
+            }
+        }
+        if let Some((rect, line, s)) = pile_types {
+            div {
+                class: "dc-types dc-pile-types",
+                class: if light_title { "dc-light" },
                 style: rect.css(),
                 span { style: "font-size:{s:.3}cqw;", "{line}" }
             }

@@ -54,7 +54,7 @@ const PASSWORD = 'parity-password';
 
 // The log and chat: their client is told no history when it joins a game in progress,
 // so only the table is compared.
-const IGNORE = { theirs: ['.game-tabs'], ours: ['.dt-log-wrap', '.dt-below-log'] };
+const IGNORE = { theirs: ['.game-tabs', 'metagame-buttons'], ours: ['.dt-log-wrap', '.dt-below-log'] };
 
 async function capture(page, dir, side) {
   // Over the log, where hovering opens nothing on the table.

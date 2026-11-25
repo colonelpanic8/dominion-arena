@@ -8,7 +8,8 @@ use crate::rating::SeatRating;
 use dominion_protocol::api::{InPlay, TableExtras};
 use dominion_protocol::lobby::GameMeta;
 use dominion_protocol::{
-    AgentView, CardCount, Cost, DeckView, PileView, PlayerView, ResultPlayer, SetupRole, ZoneView,
+    AgentView, CardCount, Cost, DeckView, PileMarker, PileView, PlayerView, ResultPlayer,
+    SetupRole, ZoneView,
 };
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
@@ -182,6 +183,8 @@ pub struct PileEntry {
     pub hidden: bool,
     pub types: Vec<String>,
     pub badges: Vec<Badge>,
+    /// What dominion.games prints on the pile's card (Bane, Split, ...), in its order.
+    pub markers: Vec<PileMarker>,
 }
 
 /// A token, Trait or counter shown on a pile, player or landscape.
@@ -673,6 +676,12 @@ fn pile_entry(at: PileAt, p: &PileView, names: &Names<'_>, cards: &CardDb) -> Pi
         hidden: p.hidden,
         types: p.types.clone(),
         badges,
+        markers: p
+            .structure
+            .as_ref()
+            .and_then(|s| s.marker())
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -858,6 +867,15 @@ fn note_badge(
         .chain(non_supply.iter_mut())
         .find(|p| p.name == on)
     {
+        let marker = match (n.setup, n.source.as_str()) {
+            (Some(SetupRole::Bane), _) => Some(PileMarker::Bane),
+            (_, "Obelisk") if n.pile.is_some() => Some(PileMarker::Obelisk),
+            _ => None,
+        };
+        if let Some(m) = marker.filter(|m| !p.markers.contains(m)) {
+            p.markers.push(m);
+            p.markers.sort();
+        }
         p.badges.push(b);
     } else if let Some(l) = landscapes.iter_mut().find(|l| l.card == on) {
         l.badges.push(b);

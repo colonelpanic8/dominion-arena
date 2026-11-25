@@ -1002,3 +1002,19 @@ fn a_clock_reaches_the_client_as_its_timer_preset_and_each_players_time() {
     );
     assert!(plain.timers.is_empty());
 }
+
+#[test]
+fn split_piles_carry_their_marker_to_their_supply_zone() {
+    let catalog = catalog();
+    let mut kingdom = KINGDOM.to_vec();
+    kingdom[0] = Card::Settlers;
+    let game = Game::new(GameConfig::new(2, kingdom, 42)).unwrap();
+    let state = update(&game, 0, &catalog, 1).snapshot.state;
+    let marked: Vec<(i32, i32)> = state
+        .pile_markers
+        .iter()
+        .map(|m| (m.kind, state.zones[m.zone_index as usize].pile_name))
+        .collect();
+    let split = super::super::catalog::pile_marker(dominion_protocol::PileMarker::Split);
+    assert_eq!(marked, vec![(split, catalog.card(Card::Settlers).unwrap())]);
+}

@@ -261,6 +261,9 @@ pub fn TableCard(
     /// A pile holding different cards: a back peeking out from under it.
     #[props(default)]
     split: bool,
+    /// A Supply pile's markers, printed on its mini card (`CardView::pile`).
+    #[props(default)]
+    pile: Option<Vec<String>>,
     #[props(default)] inspect_pile: bool,
     /// Upside down, as an opponent's cards across the table.
     #[props(default)]
@@ -336,7 +339,13 @@ pub fn TableCard(
             if back {
                 CardBack { size }
             } else {
-                CardView { name: name.clone(), size, cost: cost.clone(), shifted: count.is_some() && size == CardSize::Mini }
+                CardView {
+                    name: name.clone(),
+                    size,
+                    cost: cost.clone(),
+                    shifted: count.is_some() && size == CardSize::Mini,
+                    pile: pile.clone(),
+                }
             }
             if empty {
                 div { class: "dt-empty-x",

@@ -215,6 +215,7 @@ fn Pile(
             at,
             plus,
             split,
+            pile: pile.markers.iter().map(|m| m.name().to_string()).collect::<Vec<_>>(),
             inspect_pile,
             class: format!(
                 "dt-pile{}{}{}",

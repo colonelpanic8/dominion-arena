@@ -299,6 +299,59 @@ pub struct PileStructure {
     pub sample_size: Option<u32>,
 }
 
+impl PileStructure {
+    /// dominion.games' marker for a pile of different cards: Mixed for a shuffled one,
+    /// Split for a stack of two. Others (Castles, Allies' rotating piles) are told
+    /// apart by a type their cards show on the pile instead.
+    pub fn marker(&self) -> Option<PileMarker> {
+        pile_marker(self.kind, self.cards.len())
+    }
+}
+
+/// What dominion.games prints on a Supply pile besides the types its cards show there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PileMarker {
+    Bane,
+    Obelisk,
+    Split,
+    Mixed,
+}
+
+impl PileMarker {
+    pub fn name(self) -> &'static str {
+        match self {
+            PileMarker::Bane => "Bane",
+            PileMarker::Obelisk => "Obelisk",
+            PileMarker::Split => "Split",
+            PileMarker::Mixed => "Mixed",
+        }
+    }
+}
+
+/// [`PileStructure::marker`] for a pile of `kind` made of `groups` groups of cards.
+pub fn pile_marker(kind: PileKind, groups: usize) -> Option<PileMarker> {
+    match kind {
+        PileKind::Shuffled => Some(PileMarker::Mixed),
+        PileKind::Stacked if groups == 2 => Some(PileMarker::Split),
+        _ => None,
+    }
+}
+
+/// Types dominion.games prints on a Supply pile's card, after its markers: those its
+/// colours don't already tell.
+pub const TYPES_SHOWN_ON_PILE: [&str; 10] = [
+    "Attack",
+    "Castle",
+    "Command",
+    "Liaison",
+    "Augur",
+    "Clash",
+    "Fort",
+    "Odyssey",
+    "Townsfolk",
+    "Wizard",
+];
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PileView {

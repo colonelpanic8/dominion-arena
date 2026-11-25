@@ -139,6 +139,12 @@ impl Shape {
         }
     }
 
+    /// A Supply pile's markers and types on its mini card: upstream's types layer, under
+    /// the art between the cost and the right edge.
+    pub fn pile_types(&self) -> Option<Rect> {
+        (!self.landscape).then(|| r(0.169, 0.844, 0.716, 0.143))
+    }
+
     /// Centred on the parchment between the art and the type banner (upstream's box is
     /// a little lower, reaching into the banner).
     pub fn text(&self) -> Option<Rect> {
