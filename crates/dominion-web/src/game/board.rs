@@ -743,25 +743,20 @@ fn counters(c: &std::collections::BTreeMap<String, i64>) -> Vec<(String, i64)> {
     c.iter().map(|(k, &v)| (k.clone(), v)).collect()
 }
 
-/// Cards in play stacked as dominion.games stacks them: a card joins the stack before it
-/// when it has that card's name and, like it, stays in play or doesn't; one with cards
-/// set aside or tokens of its own is always drawn alone.
+/// Cards in play stacked as dominion.games stacks them when it draws a game it joins (a
+/// snapshot sets each card's zone before its status): a card joins the stack before it
+/// when it has that card's name, whether or not either stays in play or holds cards set
+/// aside. A Garrison, whose tokens it carries, is always drawn alone.
 pub fn runs(cards: &[InPlay]) -> Vec<Stack> {
     let mut out: Vec<Stack> = vec![];
-    let mut last: Option<&InPlay> = None;
     for c in cards {
-        match (out.last_mut(), last) {
-            (Some(s), Some(l))
-                if l.card == c.card && l.stays == c.stays && !l.holds && !c.holds =>
-            {
-                s.count += 1
-            }
+        match out.last_mut() {
+            Some(s) if s.card == c.card && c.card != "Garrison" => s.count += 1,
             _ => out.push(Stack {
                 card: c.card.clone(),
                 count: 1,
             }),
         }
-        last = Some(c);
     }
     out
 }
@@ -1276,10 +1271,11 @@ mod tests {
             in_play("Throne Room", false, false),
             in_play("Throne Room", false, false),
             in_play("Wharf", true, false),
-            in_play("Wharf", true, false),
             in_play("Wharf", false, false),
             in_play("Haven", true, true),
             in_play("Haven", true, true),
+            in_play("Garrison", true, true),
+            in_play("Garrison", true, true),
             in_play("Copper", false, false),
             in_play("Wharf", false, false),
         ];
@@ -1290,9 +1286,9 @@ mod tests {
         let expected = [
             ("Throne Room", 2),
             ("Wharf", 2),
-            ("Wharf", 1),
-            ("Haven", 1),
-            ("Haven", 1),
+            ("Haven", 2),
+            ("Garrison", 1),
+            ("Garrison", 1),
             ("Copper", 1),
             ("Wharf", 1),
         ];
