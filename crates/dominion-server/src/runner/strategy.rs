@@ -2,16 +2,18 @@
 use super::RunnerStrategy;
 use crate::archive::{Archive, call};
 use crate::client::{Client, Reply};
-use crate::harness::{Sandbox, game_state, has_decision, is_clock_active, is_running};
+use crate::harness::{Sandbox, game_state, is_clock_active, is_running};
 use crate::house::Job;
 use serde_json::json;
 
 pub(crate) struct Opening {
     pub view: Reply,
-    pub observed_at: tokio::time::Instant,
     pub clock_aware: bool,
     pub ratings: Option<String>,
 }
+
+/// The first-move target a clock-aware player is given without an analyst's.
+const OPENING_TARGET_S: u32 = 45;
 
 pub(crate) trait ModelRunnerStrategy: Copy {
     fn initial_tool(self, job: &Job) -> (&'static str, serde_json::Value);
@@ -50,22 +52,20 @@ impl ModelRunnerStrategy for RunnerStrategy {
         }
     }
 
+    /// A clock-aware player starts at once, before its first decision if it has none
+    /// yet: what it plans while others play costs it no time.
     async fn prepare_opening(
         self,
         initial: Reply,
-        client: &Client,
-        archive: &mut Archive,
+        _client: &Client,
+        _archive: &mut Archive,
         job: &Job,
         sandbox: &Sandbox,
     ) -> Result<Opening, String> {
-        let view = match self {
-            RunnerStrategy::Classic => initial,
-            RunnerStrategy::ClockAware => {
-                wait_until_decision(client, archive, job, initial).await?
-            }
-        };
-        let observed_at = tokio::time::Instant::now();
-        let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
+        let state = initial
+            .json
+            .as_ref()
+            .ok_or("Dominion returned no game view")?;
         let clock_aware = self.timed_opening(state);
         let ratings = if clock_aware {
             prefetch_card_ratings(sandbox, job, state).await
@@ -73,8 +73,7 @@ impl ModelRunnerStrategy for RunnerStrategy {
             None
         };
         Ok(Opening {
-            view,
-            observed_at,
+            view: initial,
             clock_aware,
             ratings,
         })
@@ -90,18 +89,18 @@ pub(super) async fn run(
     use super::{analyst, provider::AnalysisModel};
     use crate::harness::JOINED_OVER;
     let (spec, sandbox, job, client) = (seat.spec, seat.sandbox, seat.job, seat.client.as_ref());
-    let advice = analyst::Advice::default();
+    let advice = analyst::Advice::with_notices(seat.notices.clone());
     let model = AnalysisModel::new(spec, sandbox);
     let (tool, args) = job.options.strategy.initial_tool(job);
     let joined = call(client, archive, "dominion", tool, args).await?;
     if !joined.ok {
         return Err(joined.text);
     }
+    // The analyst works beside the player for as long as it plays.
     let mut analysis = tokio::task::JoinSet::new();
-    let mut analyzing = analyst::start(&mut analysis, &advice, plan, &model, job, &joined, archive);
+    let analyzing = analyst::start(&mut analysis, &advice, plan, &model, job, &joined, archive);
     let Opening {
         mut view,
-        observed_at,
         clock_aware: clocked,
         ratings,
     } = job
@@ -109,75 +108,19 @@ pub(super) async fn run(
         .strategy
         .prepare_opening(joined, client, archive, job, sandbox)
         .await?;
-    if !analyzing {
-        analyzing = analyst::start(&mut analysis, &advice, plan, &model, job, &view, archive);
-    }
     let state = view.json.as_ref().ok_or("Dominion returned no game view")?;
     if !is_running(state) {
         return Ok(Err(JOINED_OVER.into()));
     }
-    let deadline = plan
-        .filter(|_| analyzing)
-        .and_then(|config| {
-            analyst::planning_window(state, config.target_seconds, crate::hub::now_ms())
-        })
-        .map(|window| observed_at + window);
-    let facts = if analyzing {
-        serde_json::from_value(game_state(state).clone())
-            .ok()
-            .and_then(|view| analyst::opening_facts(&view))
-    } else {
-        None
-    };
-    let mut preliminary = None;
-    if let Some(deadline) = deadline {
-        let decision = game_state(state)["decision"]["id"].clone();
-        let mut board = view.text.clone();
-        if let Some(facts) = &facts {
-            board.push_str(&format!("\n\n{facts}"));
-        }
-        if let Some(ratings) = &ratings {
-            board.push_str(&format!("\n\nPre-fetched card ratings:\n{ratings}"));
-        }
-        if deadline > tokio::time::Instant::now() {
-            preliminary =
-                analyst::preliminary_plan(&model, &board, archive, &advice, &job.game_id, deadline)
-                    .await?;
-        }
-        let _ = tokio::time::timeout_at(deadline, analysis.join_next()).await;
-        let args = if job.official {
-            json!({})
-        } else {
-            json!({"token": job.token})
-        };
-        let mut fresh = call(client, archive, "dominion", "state", args).await?;
-        if !fresh.ok {
-            return Err(fresh.text);
-        }
-        let state = fresh
-            .json
-            .as_ref()
-            .ok_or("Dominion returned no game view")?;
-        if !is_running(state) {
-            return Ok(Err(JOINED_OVER.into()));
-        }
-        if game_state(state)["game"]["id"].as_str() != Some(job.game_id.as_str()) {
-            return Err("the seat changed games during opening analysis".into());
-        }
-        if game_state(state)["decision"]["id"] != decision {
-            preliminary = None;
-        }
-        complete_opening(&view, &view.model_prompts, &mut fresh);
-        view = fresh;
-    }
     let mut guidance = String::new();
+    if clocked {
+        let target = plan.map_or(OPENING_TARGET_S, |p| p.target_seconds);
+        guidance.push_str(&opening_budget(target));
+    }
     if analyzing {
-        guidance.push_str(" A separate analyst is studying the kingdom. Use any opening plans that fit the current hand and budget. Choose your move from the current legal options.");
+        guidance.push_str(" A separate analyst is studying the kingdom; its opening plan reaches you beside a later decision. Do not wait for it. Use any opening plans that fit the current hand and budget. Choose your move from the current legal options.");
         if plan.is_some_and(|a| a.background) {
             guidance.push_str(" Later strategy notes can arrive between decisions. Keep playing while the analyst works.");
-        }
-        if deadline.is_some() {
-            guidance.push_str(" The opening planning window has elapsed or the analyses finished early. Submit your first move promptly.");
         }
     }
     advice.deliver(&mut view);
@@ -197,10 +140,7 @@ pub(super) async fn run(
     {
         message.push_str(&format!("\n\n{facts}"));
     }
-    if let Some(plan) = preliminary {
-        message.push_str(&format!("\n\nYour preliminary opening plan: {plan}"));
-    }
-    provider
+    let played = provider
         .play_player(
             seat,
             archive,
@@ -211,113 +151,16 @@ pub(super) async fn run(
                 advice,
             },
         )
-        .await
+        .await;
+    analysis.abort_all();
+    played
 }
 
-fn extract_cards_lines(text: &str) -> Option<String> {
-    let rest = text
-        .strip_prefix("CARDS\n")
-        .or_else(|| text.split_once("\nCARDS\n").map(|(_, r)| r))?;
-    let mut lines = Vec::new();
-    for line in rest.lines() {
-        if line.starts_with("GAME OVER")
-            || line.starts_with("RESULT")
-            || line.starts_with("SPECTATING:")
-            || line.starts_with("WAITING:")
-            || line.starts_with("DECISION ")
-        {
-            break;
-        }
-        lines.push(line);
-    }
-    (!lines.is_empty()).then(|| lines.join("\n"))
-}
-
-fn merge_initial_cards(initial_text: &str, fresh_text: &mut String) {
-    let Some(initial_cards) = extract_cards_lines(initial_text) else {
-        return;
-    };
-    if let Some(pos) = fresh_text.find("\nCARDS\n") {
-        let insert_at = pos + "\nCARDS\n".len();
-        fresh_text.insert_str(insert_at, &format!("{initial_cards}\n"));
-    } else if fresh_text.starts_with("CARDS\n") {
-        fresh_text.insert_str("CARDS\n".len(), &format!("{initial_cards}\n"));
-    } else {
-        fresh_text.push_str(&format!("\nCARDS\n{initial_cards}"));
-    }
-}
-
-/// The session has already rendered these instructions in observations the player hasn't seen.
-pub(crate) fn complete_opening(first: &Reply, already_shown: &[String], fresh: &mut Reply) {
-    merge_initial_cards(&first.text, &mut fresh.text);
-    let mut instructions = String::new();
-    for (old, current) in already_shown.iter().zip(&fresh.model_prompts) {
-        if old != current {
-            break;
-        }
-        instructions.push_str(crate::mcp::play::GAMEPLAY_INSTRUCTION);
-        instructions.push('\n');
-        instructions.push_str(old);
-        instructions.push('\n');
-    }
-    fresh.text.insert_str(0, &instructions);
-}
-
-/// On a clocked game whose initial observation has no decision yet (`WAITING`), waits
-/// until this seat has its first actionable decision (or the game ends), then fetches a
-/// fresh full `state` with the initial card reference preserved so the agent starts with
-/// its actual hand, live clock, and first decision.
-async fn wait_until_decision(
-    client: &Client,
-    archive: &mut Archive,
-    job: &Job,
-    initial: crate::client::Reply,
-) -> Result<crate::client::Reply, String> {
-    let Some(json) = initial.json.as_ref() else {
-        return Ok(initial);
-    };
-    if !is_running(json) || !is_clock_active(json) || has_decision(json) {
-        return Ok(initial);
-    }
-    let args = || {
-        if job.official {
-            json!({})
-        } else {
-            json!({"token": job.token})
-        }
-    };
-    let already_shown = loop {
-        let waited = call(client, archive, "dominion", "wait", args()).await?;
-        if !waited.ok {
-            return Err(waited.text);
-        }
-        let Some(json) = waited.json.as_ref() else {
-            return Err("Dominion returned no game view".into());
-        };
-        if game_state(json)["game"]["id"].as_str() != Some(job.game_id.as_str()) {
-            return Err("the seat changed games while waiting for the opening".into());
-        }
-        if !is_running(json) {
-            return Ok(waited);
-        }
-        if has_decision(json) {
-            break waited.model_prompts;
-        }
-    };
-    let mut fresh = call(client, archive, "dominion", "state", args()).await?;
-    if !fresh.ok {
-        return Err(fresh.text);
-    }
-    if fresh
-        .json
-        .as_ref()
-        .and_then(|v| game_state(v)["game"]["id"].as_str())
-        != Some(job.game_id.as_str())
-    {
-        return Err("the seat changed games while refreshing the opening".into());
-    }
-    complete_opening(&initial, &already_shown, &mut fresh);
-    Ok(fresh)
+/// What a clock-aware player is told of its opening clock.
+fn opening_budget(target: u32) -> String {
+    format!(
+        " OPENING BUDGET: aim to submit your first move within {target} seconds of your first decision. Plan before that decision and during other players' turns, while your clock is not running; call wait when no decision is open. If your bank runs out with a decision open, the harness answers it with the least it allows, so never spend your last seconds thinking."
+    )
 }
 
 /// Non-basic Kingdom Supply cards and landscapes present in an observation's view.
@@ -344,16 +187,16 @@ fn board_card_names(reply: &serde_json::Value) -> Vec<String> {
 
 /// Pre-runs the playbook's `data/card-ratings.py` for the board on clocked games so the
 /// model starts with ratings in hand instead of spending Turn 1 clock on lookup churn.
+/// Skipped only when the seat's own clock is already running low.
 async fn prefetch_card_ratings(
     sandbox: &Sandbox,
     job: &Job,
     reply: &serde_json::Value,
 ) -> Option<String> {
     if job.brief.is_some()
-        || !super::analyst::available_time(reply, crate::hub::now_ms()).is_some_and(
-            |(bank, available)| bank.min(available) > crate::mcp::play::CLOCK_PRESSURE_MS,
+        || super::analyst::available_time(reply, crate::hub::now_ms()).is_some_and(
+            |(bank, available)| bank.min(available) <= crate::mcp::play::CLOCK_PRESSURE_MS,
         )
-        || game_state(reply)["turn"]["yourTurn"] != true
     {
         return None;
     }
@@ -394,6 +237,7 @@ async fn prefetch_card_ratings(
 mod tests {
     use super::*;
     use crate::arena::Arena;
+    use crate::harness::has_decision;
     use crate::hub::{Hub, NewGame};
     use dominion_protocol::lobby::Clock;
     use rmcp::transport::streamable_http_server::{
@@ -507,7 +351,15 @@ mod tests {
                 && !has_decision(off.view.json.as_ref().unwrap())
         );
 
-        prompt("Consider Moat.");
+        // A clock-aware player starts before its first decision, ratings in hand: it
+        // plans on the other seat's time.
+        let opening = RunnerStrategy::ClockAware
+            .prepare_opening(initial.clone(), &aware, &mut archive, &job, &sandbox)
+            .await
+            .unwrap();
+        assert!(opening.clock_aware && opening.ratings.unwrap().contains("Smithy"));
+        assert!(!has_decision(opening.view.json.as_ref().unwrap()));
+        assert_eq!(opening.view.text, initial.text);
         let first = hub
             .claim(&created.game_id, &created.seats[0].token)
             .unwrap();
@@ -521,22 +373,15 @@ mod tests {
             .index;
         hub.answer(&first, &dominion_agent::Answer::indices(d.id, vec![end]))
             .unwrap();
-        let opening = RunnerStrategy::ClockAware
-            .prepare_opening(initial, &aware, &mut archive, &job, &sandbox)
-            .await
-            .unwrap();
-        assert!(opening.clock_aware && opening.ratings.is_none());
-        let mut healthy = opening.view.json.clone().unwrap();
-        healthy["clock"]["left"][1] = json!(300_000);
-        let ratings = prefetch_card_ratings(&sandbox, &job, &healthy)
-            .await
-            .unwrap();
-        assert!(ratings.contains("Smithy"));
+        // Low on time, it is not held up for ratings.
+        let low = aware.call("state", json!({})).await.unwrap();
+        assert!(
+            prefetch_card_ratings(&sandbox, &job, low.json.as_ref().unwrap())
+                .await
+                .is_none()
+        );
         let old = classic.call("state", json!({})).await.unwrap();
-        let new = opening.view;
-        for note in ["Watch Militia.", "Consider Moat."] {
-            assert_eq!(new.text.matches(note).count(), 1, "{}", new.text);
-        }
+        let new = low;
         for (reply, cues) in [(&old, false), (&new, true)] {
             assert!(reply.ok && reply.text.contains("CLOCK ") && reply.text.contains("DECISION "));
             assert_eq!(reply.text.contains("LOW TIME"), cues, "{}", reply.text);

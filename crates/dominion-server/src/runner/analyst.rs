@@ -25,9 +25,18 @@ struct Note {
 pub(crate) struct Advice {
     pending: Arc<Mutex<Option<Note>>>,
     updates: Arc<OnceLock<(String, watch::Sender<Option<Position>>)>>,
+    notices: crate::runner::clock_guard::Notices,
 }
 
 impl Advice {
+    /// Advice that also carries what the harness has to tell the player.
+    pub(crate) fn with_notices(notices: crate::runner::clock_guard::Notices) -> Self {
+        Self {
+            notices,
+            ..Self::default()
+        }
+    }
+
     fn publish(&self, note: Note) {
         *self
             .pending
@@ -45,6 +54,11 @@ impl Advice {
     }
 
     pub(crate) fn deliver(&self, reply: &mut Reply) {
+        if reply.json.is_some() {
+            for notice in self.notices.take() {
+                reply.text = format!("{notice}\n\n{}", reply.text);
+            }
+        }
         let Some(json) = &reply.json else {
             return;
         };
@@ -180,24 +194,6 @@ pub(super) fn start(
     true
 }
 
-/// Time available for preliminary work before handing the opening to the playing CLI.
-pub(super) fn planning_window(reply: &Value, target_seconds: u32, now_ms: u64) -> Option<Duration> {
-    let view = game_state(reply);
-    if !has_decision(reply) || view["turn"]["number"] != 1 || view["turn"]["yourTurn"] != true {
-        return None;
-    }
-    let (bank, available) = available_time(reply, now_ms)?;
-    if bank.min(available) <= crate::mcp::play::CLOCK_PRESSURE_MS {
-        return None;
-    }
-    // Reserve the final model/tool round trip from the target and most of the clock for play.
-    let target_ms = (u64::from(target_seconds) * 1000).min(available / 4);
-    target_ms
-        .checked_sub(12_000)
-        .filter(|ms| *ms > 0)
-        .map(Duration::from_millis)
-}
-
 pub(super) fn available_time(reply: &Value, now_ms: u64) -> Option<(u64, u64)> {
     let view = game_state(reply);
     let seat = view["seat"].as_u64()?;
@@ -216,59 +212,6 @@ pub(super) fn available_time(reply: &Value, now_ms: u64) -> Option<(u64, u64)> {
     let age = now_ms.saturating_sub(as_of);
     let available = bank.saturating_add(free).saturating_sub(age);
     Some((bank, available))
-}
-
-pub(super) async fn preliminary_plan(
-    player: &AnalysisModel,
-    observation: &str,
-    archive: &mut Archive,
-    advice: &Advice,
-    game: &str,
-    deadline: tokio::time::Instant,
-) -> Result<Option<String>, String> {
-    let brief = "Make a preliminary plan for your own first Dominion buy. Use the supplied position, opening facts and playbook guidance when present. Return your recommended buy and rationale in at most 80 words.";
-    let plan = tokio::time::timeout_at(
-        deadline,
-        player.analyze(
-            &analysis_dir(archive, "preliminary"),
-            brief,
-            observation,
-            deadline,
-        ),
-    )
-    .await;
-    let mut note = match plan {
-        Ok(Ok(text)) => Some(text.trim().chars().take(1000).collect::<String>()),
-        Ok(Err(error)) => {
-            eprintln!("dominion agents: preliminary opening analysis: {error}");
-            None
-        }
-        Err(_) => None,
-    };
-    if let Some(candidate) = &note
-        && deadline.saturating_duration_since(tokio::time::Instant::now()) >= Duration::from_secs(5)
-    {
-        let mut review = format!("{observation}\n\nYour provisional recommendation: {candidate}");
-        if let Some(deep) = advice.note_for(game) {
-            review.push_str(&format!("\n\nKingdom analyst: {deep}"));
-        }
-        let brief = "Recheck your provisional opening against the legal choices and any analyst note. Return a final buy and follow-up in at most 50 words.";
-        if let Ok(Ok(refined)) = tokio::time::timeout_at(
-            deadline,
-            player.analyze(
-                &analysis_dir(archive, "opening-review"),
-                brief,
-                &review,
-                deadline,
-            ),
-        )
-        .await
-            && !refined.trim().is_empty()
-        {
-            note = Some(refined.trim().chars().take(1000).collect());
-        }
-    }
-    Ok(note)
 }
 
 async fn analyze(
@@ -315,37 +258,6 @@ fn strategy_note(answer: &str) -> Result<String, String> {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn opening_target_reserves_submission_time_and_adapts_to_the_live_clock() {
-        let config: crate::runner::OpeningAnalyst =
-            toml::from_str("model='neon'\neffort='high'").unwrap();
-        assert_eq!(config.target_seconds, 45);
-        let mut state = json!({"view":{"seat":1,"turn":{"number":1,"yourTurn":true},"decision":{"id":"d"}},
-            "clockInfo":{"status":"available","asOfMs":1000},"clock":{"running":1,"left":[200_000,180_000],"free":[0,4000]}});
-        let window = |s: &Value, target, now| planning_window(s, target, now).map(|d| d.as_secs());
-        assert_eq!(window(&state, 45, 1000), Some(33));
-        assert_eq!(window(&state, 30, 1000), Some(18));
-        assert_eq!(window(&state, 0, 1000), None);
-        assert_eq!(window(&state, 120, 1000), Some(34));
-        assert_eq!(window(&state, 45, 151_000), None);
-        state["clock"]["left"][1] = json!(60_000);
-        assert_eq!(window(&state, 45, 1000), None);
-        state["clock"]["left"][1] = json!(180_000);
-        for (path, value) in [
-            ("/view/turn/number", json!(2)),
-            ("/view/turn/yourTurn", json!(false)),
-            ("/view/decision", Value::Null),
-            ("/clock/running", json!(0)),
-            ("/clockInfo/status", json!("unavailable")),
-            ("/clockInfo/status", json!("off")),
-            ("/clockInfo/asOfMs", Value::Null),
-        ] {
-            let mut changed = state.clone();
-            *changed.pointer_mut(path).unwrap() = value;
-            assert_eq!(window(&changed, 45, 1000), None);
-        }
-    }
 
     #[test]
     fn a_long_analysis_delivers_its_conclusion() {

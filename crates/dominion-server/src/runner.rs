@@ -2,9 +2,11 @@
 //! returns structured actions; only Dominion's bridge holds the seat credentials.
 
 use crate::house::{FromRunner, Job, Offer, ToRunner};
+pub use clock_guard::ClockGuardSettings;
 use dominion_protocol::lobby::AgentSetup;
 pub use dominion_protocol::lobby::RunnerStrategy;
 pub(crate) mod analyst;
+pub(crate) mod clock_guard;
 pub(crate) mod provider;
 pub(crate) mod strategy;
 use serde::{Deserialize, Serialize};
@@ -21,6 +23,8 @@ const RECONNECT: Duration = Duration::from_secs(5);
 const GRACE: Duration = Duration::from_secs(30);
 /// The longest a seat waits between attempts.
 const MAX_RETRY: Duration = Duration::from_secs(60);
+/// The longest an official seat waits between attempts: its clock runs meanwhile.
+const OFFICIAL_MAX_RETRY: Duration = Duration::from_secs(10);
 /// An attempt that played this long before failing starts the backoff again.
 const SETTLED: Duration = Duration::from_secs(120);
 /// How often the providers' catalogs are read again.
@@ -253,6 +257,8 @@ pub struct Settings {
     pub server: String,
     pub agents: Vec<AgentSpec>,
     pub analysis: Option<provider::AnalysisPlan>,
+    /// Answers for a seat about to run out of time.
+    pub clock_guard: ClockGuardSettings,
     /// Providers whose models are each offered, at each effort.
     pub catalogs: Vec<crate::catalog::CatalogSpec>,
     /// Agent seats played at once.
@@ -527,8 +533,25 @@ async fn keep_playing(
         t3code,
         analysis,
         sandbox,
+        clock_guard,
+        dir,
         ..
     } = settings;
+    let notices = clock_guard::Notices::default();
+    let guarding = stop.child_token();
+    let _guarding = guarding.clone().drop_guard();
+    tokio::spawn(clock_guard::run(
+        clock_guard,
+        server.clone(),
+        job.clone(),
+        notices.clone(),
+        dir.join("clock-guard.jsonl"),
+        guarding,
+    ));
+    let max_retry = match job.official {
+        true => OFFICIAL_MAX_RETRY,
+        false => MAX_RETRY,
+    };
     let mut retry = RECONNECT;
     while !stop.is_cancelled() {
         let mut archived = String::new();
@@ -571,6 +594,7 @@ async fn keep_playing(
                             &server,
                             &mut archive,
                             cancelled.clone(),
+                            notices.clone(),
                         )
                         .await
                     }
@@ -623,7 +647,7 @@ async fn keep_playing(
         }
         retry = match started.elapsed() > SETTLED {
             true => RECONNECT,
-            false => (retry * 2).min(MAX_RETRY),
+            false => (retry * 2).min(max_retry),
         };
     }
 }
