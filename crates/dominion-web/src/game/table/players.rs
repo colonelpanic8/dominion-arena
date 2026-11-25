@@ -221,7 +221,7 @@ fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Optio
             known: p.play_order.clone(),
             unknown: p.in_play.count.saturating_sub(shown),
         };
-        out.push(("inPlay".into(), "In play".into(), played, None));
+        out.push(("inPlay".into(), "Play Area".into(), played, None));
     }
     for z in &p.zones {
         if z.zone.count > 0 {

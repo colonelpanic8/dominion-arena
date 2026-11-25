@@ -514,7 +514,11 @@ fn draw(
         }
         {name_node(&title, name_box, name_size, light_title)}
         if let Some(t) = attached {
-            div { class: "dc-attached", style: layout::ATTACHED.css(),
+            // A frame made for a Trait has its banner: the Trait's name alone goes on it.
+            div {
+                class: "dc-attached",
+                class: if trait_template.is_some() { "dc-on-banner" },
+                style: layout::ATTACHED.css(),
                 CardView { name: t.to_string(), size: CardSize::Micro, inset: true }
             }
         }

@@ -304,7 +304,8 @@ fn Pile(
             anchor: pile_anchor(pile.at),
             mark,
             empty: pile.empty,
-            back: pile.hidden,
+            // A shuffled pile (Loot) on its strip shows its name, as dominion.games does.
+            back: pile.hidden && size != CardSize::Micro,
             badges: pile.badges.clone(),
             at,
             plus,
