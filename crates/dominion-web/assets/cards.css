@@ -95,6 +95,53 @@
 }
 .dc-heirloom { z-index: 4; }
 
+/* dominion.games' own lines, as its TextLayer sets them. */
+.dc-ol {
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.dc-ol-lines {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  min-width: 100%;
+  min-height: 100%;
+}
+.dc-ol-line { display: flex; justify-content: center; white-space: nowrap; }
+.dc-ol-sep { width: 80%; background: currentColor; }
+.dc-ol-bold { font-weight: bold; font-size: 1.3em; }
+.dc-ol-huge { font-size: 2em; }
+.dc-ol-italic { font-style: italic; }
+.dc-ol-heirloom { position: absolute; bottom: -18%; width: 80%; font-style: italic; font-size: .8em; color: #000; }
+.dc-ol-block { display: flex; align-items: center; justify-content: center; margin: 0 .1em; }
+.dc-ol-block.dc-nl { margin-left: 0; }
+.dc-ol-block.dc-nr { margin-right: 0; }
+.dc-ol-cost { display: flex; }
+.dc-ol .dc-i { margin: 0; vertical-align: 0; line-height: 1; }
+.dc-ol .dc-coin, .dc-ol .dc-debt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: 1.1em;
+  aspect-ratio: 1;
+  margin-top: -.1em;
+  padding-bottom: .1em;
+  font-size: 1em;
+  letter-spacing: -.1em;
+  text-indent: -.1em;
+}
+.dc-ol .dc-potion { width: auto; height: 1em; aspect-ratio: 3 / 4; }
+.dc-ol .dc-sun, .dc-ol .dc-shield { width: auto; height: 1em; aspect-ratio: 1; }
+.dc-ol-vp { display: flex; }
+.dc-ol-vp-n { display: flex; justify-content: center; height: 1em; font-family: var(--dc-num); }
+
 .dc-set { z-index: 5; object-fit: contain; }
 
 /* Icons in text and costs. */

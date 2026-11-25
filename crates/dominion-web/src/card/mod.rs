@@ -377,7 +377,27 @@ fn draw(
         );
         Some((rect, line, s))
     });
-    let lines = text::parse(&info.text);
+    // dominion.games' own lines where the server has them, else the official text wrapped.
+    let online = info
+        .online_text
+        .as_deref()
+        .filter(|t| size == CardSize::Full && !shape.basic && !t.is_empty())
+        .map(|t| {
+            let lines = text::parse_online(t);
+            let rect = shape.online_text();
+            let s = fit::online_size(
+                &lines,
+                rect.width_cqw(),
+                rect.height_cqw(ratio),
+                shape.landscape,
+                m,
+            );
+            (rect, s, lines)
+        });
+    let lines = match online {
+        Some(_) => vec![],
+        None => text::parse(&info.text),
+    };
     let (heirloom, body): (Vec<Line>, Vec<Line>) = lines
         .into_iter()
         .partition(|l| l.kind() == Some(LineKind::Heirloom));
@@ -479,6 +499,9 @@ fn draw(
                 style: rect.css(),
                 span { style: "font-size:{s:.3}cqw;", "{line}" }
             }
+        }
+        if let Some((rect, s, lines)) = online {
+            {online_text_node(rect, s, &lines, shape.landscape, shape.dark_text)}
         }
         if let Some((rect, l)) = text_layout {
             {text_node(rect, &l, shape.dark_text, "dc-text")}
@@ -593,6 +616,108 @@ fn text_node(rect: Rect, l: &fit::TextLayout, dark: bool, class: &str) -> Elemen
     }
 }
 
+/// dominion.games' own lines, drawn as its TextLayer draws them: centred, one block per
+/// piece, each line unbroken.
+fn online_text_node(
+    rect: Rect,
+    size: f32,
+    lines: &[Line],
+    landscape: bool,
+    light: bool,
+) -> Element {
+    let (separator, gap) = fit::online_spacing(landscape);
+    rsx! {
+        div { class: "dc-ol", class: if light { "dc-light" }, style: rect.css(),
+            div { class: "dc-ol-lines", style: "font-size:{size:.3}cqw;",
+                for (i, line) in lines.iter().enumerate() {
+                    match line {
+                        Line::Separator => rsx! {
+                            div {
+                                key: "{i}",
+                                class: "dc-ol-line dc-ol-sep",
+                                style: "height:{0.2 * separator:.3}em;margin:{0.5 * separator:.3}em 0 {0.3 * separator:.3}em;",
+                            }
+                        },
+                        Line::Gap => rsx! {
+                            div { key: "{i}", class: "dc-ol-line", style: "height:{gap}em;" }
+                        },
+                        Line::Text { kind, pieces } => rsx! {
+                            div { key: "{i}", class: "dc-ol-line {online_line_class(*kind)}",
+                                for p in pieces.iter() {
+                                    {online_block(p)}
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn online_line_class(kind: LineKind) -> &'static str {
+    match kind {
+        LineKind::Normal => "",
+        LineKind::Bonus => "dc-ol-bold",
+        LineKind::Huge => "dc-ol-huge",
+        LineKind::Italic => "dc-ol-italic",
+        LineKind::Heirloom => "dc-ol-heirloom",
+    }
+}
+
+fn online_block(p: &Piece) -> Element {
+    let (left, right) = text::block_margins(p);
+    let margins = match (left, right) {
+        (true, true) => "",
+        (false, true) => "dc-nl",
+        (true, false) => "dc-nr",
+        (false, false) => "dc-nl dc-nr",
+    };
+    let n = |v: &Option<u32>| v.map(|v| v.to_string()).unwrap_or_default();
+    match p {
+        Piece::Text(t, style) => {
+            let style = match style {
+                Style::Normal => "",
+                Style::Bold => "dc-b",
+                Style::Italic => "dc-it",
+            };
+            rsx! { span { class: "dc-ol-block {margins} {style}", "{t}" } }
+        }
+        Piece::Coin(v) => rsx! {
+            span { class: "dc-ol-block {margins}",
+                span { class: "dc-ol-cost",
+                    span { class: "dc-i dc-coin", "{n(v)}" }
+                }
+            }
+        },
+        Piece::Debt(v) => rsx! {
+            span { class: "dc-ol-block {margins}",
+                span { class: "dc-ol-cost",
+                    span { class: "dc-i dc-debt", "{n(v)}" }
+                }
+            }
+        },
+        Piece::Potion => rsx! {
+            span { class: "dc-ol-block {margins}",
+                span { class: "dc-ol-cost",
+                    span { class: "dc-i dc-potion" }
+                }
+            }
+        },
+        Piece::Vp(v) => rsx! {
+            span { class: "dc-ol-vp",
+                span { class: "dc-ol-vp-n",
+                    if let Some(v) = v {
+                        "{v}"
+                    }
+                }
+                span { class: "dc-i dc-shield" }
+            }
+        },
+        Piece::Sun => rsx! { span { class: "dc-i dc-sun" } },
+    }
+}
+
 fn row_class(kind: Option<LineKind>) -> &'static str {
     match kind {
         Some(LineKind::Bonus) => "dc-bonus",
@@ -619,8 +744,8 @@ fn piece_node(p: &Piece) -> Element {
         Piece::Sun => rsx! { span { class: "dc-i dc-sun" } },
         Piece::Vp(v) => rsx! {
             span { class: "dc-vp",
-                if v.is_some() {
-                    span { class: "dc-vp-n", "{n(v)}" }
+                if let Some(v) = v {
+                    span { class: "dc-vp-n", "{v}" }
                 }
                 span { class: "dc-i dc-shield" }
             }

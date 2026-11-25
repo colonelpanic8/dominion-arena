@@ -518,6 +518,8 @@ async fn serve(config: Config) -> Result<(), String> {
         let _ = tokio::signal::ctrl_c().await;
         signal.cancel();
     });
+    let official_server = dominion_server::official_host::Host::from_config(&config)?;
+    let card_texts = dominion_server::online::card_texts(&config, official_server.as_deref());
     let options = Options {
         allowed_hosts: hosts,
         session_idle: config.session_idle(),
@@ -529,7 +531,8 @@ async fn serve(config: Config) -> Result<(), String> {
         trust_proxy: config.trust_proxy.unwrap_or(false),
         agent_socket: config.agent_socket.clone(),
         control_socket: config.control_socket.clone(),
-        official_server: dominion_server::official_host::Host::from_config(&config)?,
+        official_server,
+        card_texts: Arc::new(card_texts),
         online: dominion_server::online::Hosted::start_all(&config).await?,
     };
     dominion_server::serve(listener, Arc::new(hub), options, stop)
