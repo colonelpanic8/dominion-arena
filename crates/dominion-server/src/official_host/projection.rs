@@ -278,6 +278,46 @@ fn build(
         0,
         view.trash().iter().copied().map(Some).collect(),
     ));
+    // Shadow cards the decider may play from their deck: their client shows a deck's
+    // named cards in it (the Shadow cards tab), at the bottom where a shuffle puts them.
+    if let Some(d) = view.pending() {
+        let offered = d.about.iter().copied().chain(match &d.kind {
+            dominion_engine::DecisionKind::Cards { candidates, .. } => candidates.clone(),
+            dominion_engine::DecisionKind::Turn { moves, .. } => moves
+                .iter()
+                .filter_map(|m| match m {
+                    dominion_engine::Move::Play(id) => Some(*id),
+                    _ => None,
+                })
+                .collect(),
+            _ => vec![],
+        });
+        for id in offered {
+            let (Some(dominion_engine::Zone::Deck(p)), Some(types)) =
+                (view.zone(id), view.types(id))
+            else {
+                continue;
+            };
+            if !types.contains(Types::SHADOW) {
+                continue;
+            }
+            let z = zones
+                .iter_mut()
+                .find(|z| z.wire.kind == zone::DRAW && z.wire.owner == i32::from(p.0))
+                .ok_or(ProjectionError::Inconsistent("deck zone absent"))?;
+            if z.slots.contains(&Some(id)) {
+                continue;
+            }
+            let slot =
+                z.slots
+                    .iter()
+                    .position(Option::is_none)
+                    .ok_or(ProjectionError::Inconsistent(
+                        "shadow card exceeds deck size",
+                    ))?;
+            z.slots[slot] = Some(id);
+        }
+    }
     // Searched discard/deck candidates are visible without disclosing the other slots.
     if let Some(d) = view.pending() {
         let offered = d.about.iter().copied().chain(match &d.kind {
@@ -292,6 +332,20 @@ fn build(
             let location = view
                 .zone(id)
                 .ok_or(ProjectionError::Inconsistent("undisclosed candidate"))?;
+            // Cards revealed from another player's hand (Archer) are disclosed where they are.
+            if let dominion_engine::Zone::Hand(p) = location {
+                let z = zones
+                    .iter_mut()
+                    .find(|z| z.wire.kind == zone::HAND && z.wire.owner == i32::from(p.0))
+                    .ok_or(ProjectionError::Inconsistent("candidate hand absent"))?;
+                let slot = z
+                    .slots
+                    .iter()
+                    .position(Option::is_none)
+                    .ok_or(ProjectionError::Inconsistent("candidate exceeds hand size"))?;
+                z.slots[slot] = Some(id);
+                continue;
+            }
             let (owner, kind) = match location {
                 dominion_engine::Zone::Discard(p) => (i32::from(p.0), zone::DISCARD),
                 dominion_engine::Zone::Deck(p) => (i32::from(p.0), zone::DRAW),
@@ -708,6 +762,8 @@ fn build(
                         None => "REGULAR",
                         Some(Card::Outpost) => "OUTPOST",
                         Some(Card::Voyage) => "VOYAGE",
+                        Some(Card::IslandFolk) => "ISLAND_FOLK",
+                        Some(Card::Journey) => "JOURNEY",
                         Some(_) => {
                             return Err(ProjectionError::UnsupportedState(
                                 "extra-turn type binding".into(),
