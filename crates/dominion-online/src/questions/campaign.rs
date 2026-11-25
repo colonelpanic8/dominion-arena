@@ -56,6 +56,8 @@ fn upstream_adversarial_question_campaign() {
             .map(|e| e.to_string())
             .collect();
         assert!(errors.is_empty(), "{}: {errors:?}", case.label);
+        let wrong = dominion_protocol::contract::decision_violations(&indexed.decision);
+        assert!(wrong.is_empty(), "{}: {wrong:?}", case.label);
         let mut indices = vec![];
         for selection in &case.selections {
             let leaf = indexed

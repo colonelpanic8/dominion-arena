@@ -52,7 +52,8 @@ crates/dominion-engine/
 crates/dominion-protocol/ serde types of agent-view@2, the HTTP API (`api`; accounts and the
                           lobby in `lobby`) and the asset manifest; engine-free, builds for wasm
   src/contract.rs         what every producer of a view keeps beyond the schema: zone names,
-                          landscape kinds, counts that add up, table extras saying no more
+                          landscape kinds, counts that add up, a decision's groups told apart
+                          by their prompts, table extras saying no more
                           than the view. The engine's projection and the dominion.games
                           reducer (`dominion-online`) are both tested against it; a view
                           convention goes here before either producer or the client relies
