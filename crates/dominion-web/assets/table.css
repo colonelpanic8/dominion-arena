@@ -372,6 +372,8 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-debt { background-image: var(--dt-debt, none); color: #fff; }
 .dt-coffers { background-image: var(--dt-coffers, none); color: #fff; }
 .dt-villagers { background-image: var(--dt-villagers, none); color: #fff; }
+/* A counter that spends one when clicked (dominion.games has no button for it). */
+.dt-spend { filter: drop-shadow(0 0 calc(0.2 * var(--vh)) #ffe746); }
 .dt-favors { background-image: var(--dt-favors, none); color: #fff; }
 .dt-icon { text-shadow: 0 0 2px #000; }
 .dt-ticker {
