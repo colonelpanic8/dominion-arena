@@ -30,13 +30,12 @@ fn zone_popup(title: String, z: &Zone, note: Option<String>) -> Popup {
 
 /// A player's name bar: name, VP, and under them their tokens and held landscapes.
 #[component]
-fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element {
+fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usize) -> Element {
     let ctx = use_table();
     let assets = use_assets();
     let p = &player;
     let seat = p.seat;
     let reminders: Vec<String> = p.states.iter().chain(&p.artifacts).cloned().collect();
-    let cubes = p.projects.clone();
     let cube = assets.file_url(&cube_icon(seat));
     let account = p.account.clone();
     let away = account.as_ref().is_some_and(|a| !a.connected);
@@ -90,12 +89,12 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 }
             }
             div { class: "dt-bar-bottom",
-                Badges { badges: p.badges.clone() }
-                for c in cubes.iter() {
-                    span { key: "{c}", class: "dt-bar-cube", title: "{c}",
+                for i in 0..cubes {
+                    span { key: "cube{i}", class: "dt-bar-cube", title: "{p.name}'s Project cube",
                         if let Some(src) = cube.clone() { img { src, alt: "", draggable: "false" } }
                     }
                 }
+                Badges { badges: p.badges.clone() }
                 for c in reminders.iter() {
                     Reminder { key: "r{c}", name: c.clone() }
                 }
@@ -267,7 +266,7 @@ pub fn Opponents(board: Rc<Board>, g: Rc<Geometry>, active: Option<u8>) -> Eleme
     let them = active.and_then(|s| b.others().iter().find(|o| o.seat == s).cloned());
     rsx! {
         for (o, r) in b.others().iter().zip(g.opponent_bars.iter()) {
-            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active }
+            PlayerBar { key: "{o.seat}", player: o.clone(), at: *r, you: false, active: Some(o.seat) == active, cubes: b.project_cubes() }
         }
         if let Some(o) = them {
             {
@@ -800,7 +799,7 @@ pub fn YourArea(board: Rc<Board>, g: Rc<Geometry>, ui: Option<Rc<Ui>>, sel: Sele
     let click_answers = ui.as_ref().is_some_and(|u| u.click_answers);
     let ctx = use_table();
     rsx! {
-        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false }
+        PlayerBar { player: you.clone(), at: g.your_bar, you: true, active: false, cubes: board.project_cubes() }
         if you.discard.count > 0 {
             TableCard {
                 name: you.discard_top.clone().unwrap_or_default(),

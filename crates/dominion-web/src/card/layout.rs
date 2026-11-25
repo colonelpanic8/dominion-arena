@@ -191,9 +191,9 @@ impl Shape {
         if self.landscape {
             r(0.925, 0.72, 0.03, 0.03 / LANDSCAPE_RATIO)
         } else {
-            // On the flat end of the type banner, clear of its curl.
-            let s = 0.039;
-            r(0.865, 0.89, s * FULL_RATIO, s)
+            // Upstream's icon layer: 8px square at (125, 196) on a 140 x 220.5 card.
+            let s = 0.0363;
+            r(0.894, 0.889, s * FULL_RATIO, s)
         }
     }
 }

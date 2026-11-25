@@ -60,6 +60,15 @@ impl Board {
             .or_else(|| self.opponents.first().filter(|_| self.watching))
     }
 
+    /// The Project cubes a player bar shows: dominion.games draws one per Project in the
+    /// game, at most two, whoever has bought them.
+    pub fn project_cubes(&self) -> usize {
+        (self.landscapes.iter())
+            .filter(|l| l.kind == "project")
+            .count()
+            .min(2)
+    }
+
     /// The players drawn as opponents: everyone but [`Board::front`].
     pub fn others(&self) -> &[PlayerEntry] {
         match (&self.you, self.watching) {
