@@ -22,9 +22,9 @@ const FILLER: &[Card] = &[
     Card::Chapel,
 ];
 
-struct Rng(u64);
+pub(super) struct Rng(pub(super) u64);
 impl Rng {
-    fn below(&mut self, n: usize) -> usize {
+    pub(super) fn below(&mut self, n: usize) -> usize {
         self.0 = self
             .0
             .wrapping_mul(6364136223846793005)
@@ -135,7 +135,7 @@ fn wire_answer(q: &Question, rng: &mut Rng) -> Option<Vec<i32>> {
 }
 
 /// A random legal engine answer, leaning towards playing `card` and buying.
-fn engine_answer(game: &Game, card: Card, rng: &mut Rng) -> Response {
+pub(super) fn engine_answer(game: &Game, card: Card, rng: &mut Rng) -> Response {
     let d = game.pending().unwrap();
     match &d.kind {
         DecisionKind::Turn { moves, .. } => {
@@ -196,7 +196,7 @@ fn engine_answer(game: &Game, card: Card, rng: &mut Rng) -> Response {
 }
 
 /// Deals copies of `card` in place of some of each player's starting Coppers.
-fn deal(game: Game, card: Card) -> Game {
+pub(super) fn deal(game: Game, card: Card) -> Game {
     let mut state = serde_json::to_value(&game).unwrap();
     let copper = serde_json::to_value(Card::Copper).unwrap();
     let with = serde_json::to_value(card).unwrap();
