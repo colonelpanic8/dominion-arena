@@ -194,7 +194,7 @@ fn Pile(
     let cards = use_cards();
     let printed = cards.get(&pile.card).and_then(|c| c.cost);
     let cost = pile.cost.clone().filter(|c| {
-        printed.is_none_or(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
+        printed.is_some_and(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
     });
     let mark = mark_at(&ui, &sel, Spot::Pile(pile.at));
     let changed = cost.is_some();
@@ -231,7 +231,7 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
     let cards = use_cards();
     let printed = cards.get(&entry.card).and_then(|c| c.cost);
     let cost = entry.cost.clone().filter(|c| {
-        printed.is_none_or(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
+        printed.is_some_and(|p| (p.coins, p.potions, p.debt) != (c.coins, c.potions, c.debt))
     });
     let mark = mark_at(&ui, &sel, Spot::Landscape(entry.card.clone()));
     let plus = mark.target.is_some();

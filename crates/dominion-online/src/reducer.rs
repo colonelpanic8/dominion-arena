@@ -806,27 +806,29 @@ impl Reducer {
                         let n: i32 = state.counters.iter().filter(on_it).map(|c| c.value).sum();
                         (n != 0).then_some(n)
                     };
+                    let kind = info
+                        .types
+                        .iter()
+                        .find(|t| {
+                            matches!(
+                                t.as_str(),
+                                "Event"
+                                    | "Landmark"
+                                    | "Project"
+                                    | "Way"
+                                    | "Ally"
+                                    | "Trait"
+                                    | "Prophecy"
+                            )
+                        })
+                        .cloned()
+                        .unwrap_or_else(|| "other".into())
+                        .to_lowercase();
+                    let bought = matches!(kind.as_str(), "event" | "project");
                     landscapes.push(view::LandscapeView {
                         card: info.name.clone(),
-                        kind: info
-                            .types
-                            .iter()
-                            .find(|t| {
-                                matches!(
-                                    t.as_str(),
-                                    "Event"
-                                        | "Landmark"
-                                        | "Project"
-                                        | "Way"
-                                        | "Ally"
-                                        | "Trait"
-                                        | "Prophecy"
-                                )
-                            })
-                            .cloned()
-                            .unwrap_or_else(|| "other".into())
-                            .to_lowercase(),
-                        cost: Some(info.cost.clone()),
+                        cost: bought.then(|| info.cost.clone()),
+                        kind,
                         types: info.types.clone(),
                         vp: tokens(7),
                         suns: tokens(18).and_then(|n| u32::try_from(n).ok()),
