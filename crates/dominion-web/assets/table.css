@@ -194,11 +194,13 @@ body:has(.dt-root) .topbar { display: none; }
   position: absolute;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.4em;
+  box-sizing: border-box;
+  padding: 0 calc(0.6 * var(--vh));
   border-radius: calc(1 * var(--vh)) calc(1 * var(--vh)) 0 0;
   overflow: hidden;
-  background: #3a2c22;
+  /* dominion.games' slate tab, a little lighter along its top. */
+  background: linear-gradient(#646e77, #55606a 15%, #55606a);
   cursor: pointer;
   font-family: var(--title);
   font-size: calc(2.4 * var(--vh));
@@ -208,6 +210,7 @@ body:has(.dt-root) .topbar { display: none; }
 }
 .dt-tab-art { position: absolute; inset: 0; background-size: cover; background-position: center; filter: contrast(0.8) brightness(0.8); }
 .dt-tab-label, .dt-tab-n { position: relative; z-index: 1; }
+.dt-tab-label { flex: 1; min-width: 0; text-align: center; white-space: nowrap; }
 .dt-tab-n {
   min-width: calc(2.8 * var(--vh));
   height: calc(2.8 * var(--vh));
@@ -219,8 +222,9 @@ body:has(.dt-root) .topbar { display: none; }
   font-size: calc(2 * var(--vh));
   background: var(--dt-counter, #c4161c) center / 100% 100%;
   border-radius: 3px;
-  order: -1;
+  order: 1;
 }
+.dt-tab-n-first { order: -1; }
 .dt-tab-open::after { content: ""; position: absolute; inset: 0; background: rgba(250, 130, 40, 0.4); }
 
 /* Player bars. */
@@ -253,6 +257,8 @@ body:has(.dt-root) .topbar { display: none; }
 }
 .dt-bar-bottom { display: flex; align-items: center; gap: calc(0.4 * var(--vh)); height: 50%; overflow: hidden; padding-left: calc(0.2 * var(--vh)); }
 .dt-bar-cube img { height: calc(2.6 * var(--vh)); }
+/* dominion.games' player counters: the number 90% of the 2.6vh icon, outlined in black. */
+.dt-bar .dt-badge-n { font-size: calc(2.34 * var(--vh)); -webkit-text-stroke: calc(0.234 * var(--vh)) #000; paint-order: stroke fill; text-shadow: none; }
 .dt-bar-held { font-size: calc(1.4 * var(--vh)); white-space: nowrap; }
 /* A State or Artifact held: dominion.games' reminder icon, 2.6vh square. */
 .dt-reminder {
@@ -361,8 +367,8 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
   height: calc(2.5 * var(--vh));
   line-height: calc(2.5 * var(--vh));
   margin-top: calc(0.9 * var(--vh));
+  /* Trajan's lower case is already small capitals; synthesizing them shrinks it. */
   font-family: var(--title);
-  font-variant: small-caps;
   font-size: calc(2 * var(--vh));
   color: #91acff;
   white-space: nowrap;

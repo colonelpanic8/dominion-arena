@@ -114,7 +114,15 @@ pub fn Tab(
     #[props(default)] art: Option<String>,
     #[props(default)] anchor: Option<String>,
     #[props(default)] z: i32,
+    /// The count before the title, as on dominion.games' trash; a mat's follows it.
+    #[props(default)]
+    count_first: bool,
 ) -> Element {
+    // One line, shrunk to fit beside the count as dominion.games fits it.
+    let vh = at.h / 4.0;
+    let room = (at.w - 4.4 * vh).max(vh);
+    let chars = label.chars().count().max(1) as f64;
+    let label_px = (2.4 * vh).min(room / (0.62 * chars));
     let ctx = use_table();
     let p_hover = popup.clone();
     let p_click = popup.clone();
@@ -139,8 +147,8 @@ pub fn Tab(
             if let Some(a) = art {
                 div { class: "dt-tab-art", style: "background-image:var(--dt-{a});" }
             }
-            span { class: "dt-tab-label", "{label}" }
-            span { class: "dt-tab-n", "{count}" }
+            span { class: "dt-tab-label", style: "font-size:{label_px:.1}px;", "{label}" }
+            span { class: "dt-tab-n", class: if count_first { "dt-tab-n-first" }, "{count}" }
         }
     }
 }
@@ -171,6 +179,7 @@ fn TrashTab(board: Rc<Board>, g: Rc<Geometry>) -> Element {
             popup,
             art: "trash-mat".to_string(),
             anchor: "trash".to_string(),
+            count_first: true,
         }
     }
 }

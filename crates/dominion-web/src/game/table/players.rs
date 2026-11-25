@@ -207,7 +207,8 @@ pub fn RatingsWindow(board: Rc<Board>) -> Element {
     }
 }
 
-/// A player's mats, set-aside cards and (off their turn) cards in play, as tabs.
+/// A player's mats, set-aside cards and (off their turn) cards in play, as tabs, titled
+/// as dominion.games titles them: Native Village's and Island's mats are "Set Aside".
 fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Option<String>)> {
     let mut out = vec![];
     if show_in_play && p.in_play.count > 0 {
@@ -221,12 +222,15 @@ fn tabs(p: &PlayerEntry, show_in_play: bool) -> Vec<(String, String, Zone, Optio
     }
     for z in &p.zones {
         if z.zone.count > 0 {
-            let art = match z.key.as_str() {
-                "tavern" => Some("tavern-mat".to_string()),
-                "exile" => Some("exile-mat".to_string()),
-                _ => None,
+            let (label, art) = match z.key.as_str() {
+                "tavern" => (z.label.clone(), Some("tavern-mat".to_string())),
+                "exile" => (z.label.clone(), Some("exile-mat".to_string())),
+                "nativeVillage" => ("Set Aside (Native Village)".to_string(), None),
+                "island" => ("Set Aside (Island)".to_string(), None),
+                "setAside" => ("Set Aside".to_string(), None),
+                _ => (z.label.clone(), None),
             };
-            out.push((z.key.clone(), z.label.clone(), z.zone.clone(), art));
+            out.push((z.key.clone(), label, z.zone.clone(), art));
         }
     }
     out
