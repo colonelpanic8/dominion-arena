@@ -1,6 +1,6 @@
 //! What dominion.games shows of the table besides the players' cards and the Supply: the
 //! Boons' and Hexes' decks, cards setup sets aside, the reminders of what a player has
-//! (lasting effects, States, kept Boons, Artifacts), tokens, and the counts notes keep.
+//! (States, kept Boons, Artifacts), tokens, and the counts notes keep.
 use super::*;
 use dominion_engine::{Kind, Note, PileId, PileView, Set, SetupRole, Token};
 
@@ -160,8 +160,9 @@ pub(super) fn offstage(view: &View<'_>) -> BTreeSet<Card> {
     out
 }
 
-/// What a player is reminded they have: lasting effects, States, kept Boons and the
-/// Artifacts they hold.
+/// What a player is reminded they have: States, kept Boons, the Artifacts they hold, and
+/// lasting effects of those kinds. dominion.games has reminder art for no other card (a
+/// Duration's effect has none), so it reminds of nothing else.
 pub(super) fn reminders(
     view: &View<'_>,
     catalog: &WireCatalog,
@@ -179,6 +180,7 @@ pub(super) fn reminders(
         .iter()
         .filter(|l| l.owner == p.id())
         .map(|l| l.card)
+        .filter(|c| c.is(Types::STATE | Types::BOON | Types::ARTIFACT))
         .chain(p.states().iter().copied())
         .chain(p.boons_kept().iter().copied())
         .chain(held)
