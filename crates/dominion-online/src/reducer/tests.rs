@@ -1214,3 +1214,57 @@ fn recorded_inputs_fold_to_the_views_they_were_recorded_at() {
     assert_eq!(seen, views);
     assert!(views[2]["decision"].is_object() && views[3]["decision"].is_null());
 }
+
+/// A mixed pile (Knights, Castles, Ruins, split piles) whose snapshot names several of
+/// its cards: the client stacks them bottom first, so the last named one is on top.
+#[test]
+fn a_mixed_piles_top_is_the_card_on_top_or_nothing() {
+    let mut snap = snapshot();
+    for name in [3, 1, 2] {
+        let id = snap.state.cards.len() as i32;
+        snap.state.cards.push(model::Card {
+            id,
+            card_name: name,
+            pile_name: 2,
+        });
+    }
+    snap.state.zones.push(model::Zone {
+        index: 21,
+        kind: 4,
+        pile_name: 2,
+        owner: -1,
+        cards: vec![8, 9, 10],
+        created_by: -1,
+        attached_trait: 0,
+        is_visible: true,
+    });
+    let mut r = Reducer::new(catalog(), 42);
+    r.replace(snap).unwrap();
+    let top = |r: &Reducer| {
+        let v = r.view().unwrap();
+        // Zone 21 is the second Village pile, after zone 20.
+        let p = v
+            .supply
+            .iter()
+            .filter(|p| p.card == "Village")
+            .nth(1)
+            .unwrap();
+        (p.count, p.top.clone(), p.types.clone())
+    };
+    // The top is the Village itself: nothing to add, and not the Gold at the bottom.
+    assert_eq!(top(&r), (3, None, vec!["Action".into()]));
+    r.apply(movement(21, 2, vec![10], vec![10])).unwrap();
+    assert_eq!(top(&r), (2, Some("Copper".into()), vec!["Treasure".into()]));
+    sound(&r);
+    // A card returned unseen covers the top.
+    r.apply(movement(2, 21, vec![-1], vec![-1])).unwrap();
+    assert_eq!(top(&r).1, None);
+    // The server says what is on top.
+    r.apply(model::Event::PileUpdate(model::PileUpdate {
+        index: 21,
+        top_card_id: 8,
+    }))
+    .unwrap();
+    assert_eq!(top(&r).1, Some("Gold".into()));
+    sound(&r);
+}
