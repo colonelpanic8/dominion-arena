@@ -489,6 +489,151 @@ fn decline_for(c: &WireCatalog, d: &Decision, min: usize) -> Result<i32, Project
     }
 }
 
+/// A choice laid out as its set's `ChoiceShape` says.
+fn shaped(
+    c: &WireCatalog,
+    d: &Decision,
+    desc: QuestionDescription,
+    shape: semantics::ChoiceShape,
+    id: &dyn Fn(&CardId) -> Result<i32, ProjectionError>,
+) -> Result<(Question, AnswerPlan), ProjectionError> {
+    let DecisionKind::Choose {
+        options, min, max, ..
+    } = &d.kind
+    else {
+        return Err(semantics::gap(d, "choice shape for a non-choice"));
+    };
+    let offered = |o: &Opt| {
+        if options.contains(o) {
+            Ok(*o)
+        } else {
+            Err(semantics::gap(
+                d,
+                "choice shape names an option not offered",
+            ))
+        }
+    };
+    Ok(match shape {
+        semantics::ChoiceShape::Target {
+            card,
+            yes,
+            no,
+            decline,
+        } => (
+            choice(
+                desc,
+                QuestionElements::Cards(vec![id(&card)?]),
+                0,
+                1,
+                c.symbol("DeclineButtonIds", decline)?,
+            )?,
+            AnswerPlan::Options {
+                targets: vec![offered(&yes)?],
+                min: 1,
+                max: 1,
+                decline: Some(offered(&no)?),
+            },
+        ),
+        semantics::ChoiceShape::Modes {
+            options: modes,
+            decline,
+        } => {
+            let symbols = modes
+                .iter()
+                .map(|(_, m)| c.symbol("CardModes", m))
+                .collect::<Result<Vec<_>, _>>()?;
+            let targets = modes
+                .iter()
+                .map(|(o, _)| offered(o))
+                .collect::<Result<Vec<_>, _>>()?;
+            let (low, high) = ((*min).min(targets.len()), (*max).min(targets.len()));
+            let (button, decline) = match decline {
+                Some((o, button)) => (c.symbol("DeclineButtonIds", button)?, Some(offered(&o)?)),
+                None => (-1, None),
+            };
+            (
+                choice(
+                    desc,
+                    QuestionElements::Modes(symbols),
+                    if decline.is_some() { 0 } else { low },
+                    high,
+                    button,
+                )?,
+                AnswerPlan::Options {
+                    targets,
+                    min: if decline.is_some() { low.max(1) } else { low },
+                    max: high,
+                    decline,
+                },
+            )
+        }
+        semantics::ChoiceShape::Buttons(buttons) => {
+            let mut children = vec![];
+            let mut plans = vec![];
+            for (o, button) in buttons {
+                let mut child = desc.clone();
+                child.question_type = c.symbol("QuestionTypes", "BUTTON")?;
+                children.push(choice(
+                    child,
+                    QuestionElements::Cards(vec![]),
+                    0,
+                    0,
+                    c.symbol("DeclineButtonIds", button)?,
+                )?);
+                plans.push(AnswerPlan::Constant(Response::option(offered(&o)?)));
+            }
+            let mut desc = desc;
+            desc.question_type = c.symbol("QuestionTypes", "COMPLEX_OR")?;
+            (
+                Question {
+                    index: 0,
+                    description: desc,
+                    kind: QuestionKind::Complex(children),
+                },
+                AnswerPlan::Or(plans),
+            )
+        }
+        semantics::ChoiceShape::Cards(cards) => {
+            let elements = cards
+                .iter()
+                .map(|(_, card)| id(card))
+                .collect::<Result<Vec<_>, _>>()?;
+            let targets = cards
+                .iter()
+                .map(|(o, _)| offered(o))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                choice(desc, QuestionElements::Cards(elements), *min, *max, -1)?,
+                AnswerPlan::Options {
+                    targets,
+                    min: *min,
+                    max: *max,
+                    decline: None,
+                },
+            )
+        }
+        semantics::ChoiceShape::Names(names) => {
+            let elements = names
+                .iter()
+                .map(|(_, card)| c.card(*card))
+                .collect::<Result<Vec<_>, _>>()?;
+            let targets = names
+                .iter()
+                .map(|(o, _)| offered(o))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                choice(desc, QuestionElements::Names(elements), *min, *max, -1)?,
+                AnswerPlan::Options {
+                    targets,
+                    min: *min,
+                    max: *max,
+                    decline: None,
+                },
+            )
+        }
+    })
+}
+
 pub(super) fn prepare(
     view: &View<'_>,
     d: &Decision,
@@ -686,12 +831,15 @@ pub(super) fn prepare(
                                 .and_then(|s| ids.get(&s).copied())
                                 .or_else(|| landscapes.get(&t.card).copied())
                                 .or_else(|| {
-                                    // A lasting effect's ability is on the card that made it.
-                                    view.lasting()
+                                    // A lasting effect's: its card, else the cards it holds.
+                                    let l = view
+                                        .lasting()
                                         .into_iter()
-                                        .find(|l| Some(l.id) == t.lasting)
-                                        .and_then(|l| l.source)
-                                        .and_then(|s| ids.get(&s).copied())
+                                        .find(|l| Some(l.id) == t.lasting)?;
+                                    l.source
+                                        .into_iter()
+                                        .chain(l.data.cards.iter().copied())
+                                        .find_map(|id| ids.get(&id).copied())
                                 })
                                 .ok_or_else(|| {
                                     semantics::gap(d, "ability association unavailable")
@@ -840,7 +988,9 @@ pub(super) fn prepare(
                 DecisionKind::Choose {
                     options, min, max, ..
                 } => {
-                    if options.iter().all(|o| matches!(o, Opt::Mode(_)))
+                    if let Some(shape) = semantics::choice_shape(view, d).transpose()? {
+                        shaped(c, d, desc, shape, &id)?
+                    } else if options.iter().all(|o| matches!(o, Opt::Mode(_)))
                         && d.source != Some(Card::Torturer)
                     {
                         let source = d

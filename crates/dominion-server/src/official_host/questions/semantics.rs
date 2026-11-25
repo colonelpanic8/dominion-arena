@@ -73,6 +73,38 @@ sets!(
     rising_sun
 );
 
+/// How a set presents a choice of options (yes/no, alternatives) `prepare` has no
+/// generic shape for.
+pub(super) enum ChoiceShape {
+    /// Selecting the card answers `yes`; the decline button answers `no`.
+    Target {
+        card: dominion_engine::CardId,
+        yes: dominion_engine::Opt,
+        no: dominion_engine::Opt,
+        decline: &'static str,
+    },
+    /// A CardModes symbol per option; an empty selection, if declinable, is `decline`.
+    Modes {
+        options: Vec<(dominion_engine::Opt, &'static str)>,
+        decline: Option<(dominion_engine::Opt, &'static str)>,
+    },
+    /// A DeclineButtonIds button per option.
+    Buttons(Vec<(dominion_engine::Opt, &'static str)>),
+    /// A disclosed card per option (one of each name offered).
+    Cards(Vec<(dominion_engine::Opt, dominion_engine::CardId)>),
+    /// A card name per option.
+    Names(Vec<(dominion_engine::Opt, Card)>),
+}
+
+pub(super) fn choice_shape(
+    view: &View<'_>,
+    d: &Decision,
+) -> Option<Result<ChoiceShape, ProjectionError>> {
+    allies::choice_shape(view, d)
+        .or_else(|| plunder::choice_shape(view, d))
+        .or_else(|| rising_sun::choice_shape(view, d))
+}
+
 /// A card's requirements as a set's module declares them.
 pub(crate) fn set_requirements(card: Card) -> Option<&'static [&'static str]> {
     SETS.iter().find_map(|s| (s.requirements)(card))
@@ -277,6 +309,8 @@ pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
         .or_else(|| menagerie::decline_button(d))
 }
 
+type ArgumentsHook<'a> = dyn Fn() -> Option<Result<Vec<LogArgument>, ProjectionError>> + 'a;
+
 /// The log arguments an ability's description names (its Argument0, ...), by symbol.
 pub(super) fn ability_arguments(
     view: &View<'_>,
@@ -285,9 +319,30 @@ pub(super) fn ability_arguments(
     symbol: &str,
     c: &WireCatalog,
 ) -> Result<Vec<LogArgument>, ProjectionError> {
-    empires::ability_arguments(view, d, t, symbol, c)
-        .or_else(|| renaissance::ability_arguments(view, d, t, symbol, c))
-        .or_else(|| menagerie::ability_arguments(view, d, t, symbol, c))
+    use dominion_engine::Set;
+    // Sets share ability names (TOPDECK_REACTION): the trigger's own set reads it first.
+    let hooks: [(Set, &ArgumentsHook); 6] = [
+        (Set::Empires, &|| {
+            empires::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Renaissance, &|| {
+            renaissance::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Menagerie, &|| {
+            menagerie::ability_arguments(view, d, t, symbol, c)
+        }),
+        (Set::Allies, &|| allies::ability_arguments(view, t, c)),
+        (Set::Plunder, &|| plunder::ability_arguments(view, t, c)),
+        (Set::RisingSun, &|| {
+            rising_sun::ability_arguments(view, t, c)
+        }),
+    ];
+    let set = t.card.set();
+    hooks
+        .iter()
+        .filter(|(s, _)| *s == set)
+        .chain(hooks.iter().filter(|(s, _)| *s != set))
+        .find_map(|(_, hook)| hook())
         .unwrap_or(Ok(vec![]))
 }
 

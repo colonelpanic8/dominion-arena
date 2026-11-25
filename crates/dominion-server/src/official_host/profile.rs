@@ -223,6 +223,11 @@ fn feature_symbols(feature: &str) -> &'static [(&'static str, &'static str)] {
             ("QuestionTypes", "WAY"),
             ("QuestionIds", "CONSIDER_WAY"),
         ],
+        "favors" => &[("CounterNames", "FAVORS")],
+        "rotate" => &[
+            ("QuestionTypes", "ROTATE"),
+            ("DeclineButtonIds", "DONT_ROTATE"),
+        ],
         _ => &[],
     }
 }
