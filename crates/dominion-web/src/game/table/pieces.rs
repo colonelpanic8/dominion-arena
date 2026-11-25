@@ -353,6 +353,7 @@ pub fn TableCard(
                     shifted: count.is_some() && size != CardSize::Full,
                     pile: pile.clone(),
                     attached: attached.clone(),
+                    inverted,
                     if let Some((held, cost)) = holds.clone() {
                         div {
                             class: "dt-held-pile",

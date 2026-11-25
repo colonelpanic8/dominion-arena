@@ -97,6 +97,10 @@ pub fn CardView(
     /// A Trait drawn across its pile (`attached`): its name fills the strip.
     #[props(default)]
     inset: bool,
+    /// Upside down across the table, as dominion.games draws an opponent's cards: the
+    /// frame turned, the art and name upright, the name in the type line's place.
+    #[props(default)]
+    inverted: bool,
     #[props(default = VNode::empty())] children: Element,
 ) -> Element {
     let cards = use_cards();
@@ -114,6 +118,7 @@ pub fn CardView(
                 pile: pile.as_deref(),
                 attached: attached.as_deref().filter(|_| size == CardSize::Mini),
                 inset,
+                inverted,
             },
             &assets,
             m.as_ref(),
@@ -275,6 +280,7 @@ struct Placing<'a> {
     pile: Option<&'a [String]>,
     attached: Option<&'a str>,
     inset: bool,
+    inverted: bool,
 }
 
 fn draw(
@@ -290,8 +296,10 @@ fn draw(
         pile,
         attached,
         inset,
+        inverted,
     } = placing;
     let shape = Shape::of(info);
+    let inverted = inverted && size == CardSize::Full && !shape.landscape;
     let ratio = shape.ratio(size);
     let files = assets.card(&info.name);
     let (art, template) = match size {
@@ -328,6 +336,10 @@ fn draw(
     if inset && size == CardSize::Micro {
         name_box = layout::ATTACHED_NAME;
     }
+    let types_box = shape.types(size);
+    if inverted && let Some(t) = types_box {
+        name_box = t;
+    }
     // Upstream prints no cost on a micro card.
     let price = price.filter(|_| size != CardSize::Micro);
     let fill = match size {
@@ -348,7 +360,8 @@ fn draw(
         _ => shape.dark_title,
     };
     let corner_types = shape.landscape && size == CardSize::Full;
-    let types = shape.types(size).map(|rect| {
+    let types = types_box.map(|rect| {
+        let rect = if inverted { shape.name(size) } else { rect };
         let line = title_text(&layout::type_line(info), assets);
         let s = fit_line(
             &line,
@@ -381,7 +394,7 @@ fn draw(
     let online = info
         .online_text
         .as_deref()
-        .filter(|t| size == CardSize::Full && !shape.basic && !t.is_empty())
+        .filter(|t| size == CardSize::Full && !shape.basic && !inverted && !t.is_empty())
         .map(|t| {
             let lines = text::parse_online(t);
             let rect = shape.online_text();
@@ -396,6 +409,7 @@ fn draw(
         });
     let lines = match online {
         Some(_) => vec![],
+        None if inverted => vec![],
         None => text::parse(&info.text),
     };
     let (heirloom, body): (Vec<Line>, Vec<Line>) = lines
@@ -456,13 +470,14 @@ fn draw(
         if fallback {
             div {
                 class: "dc-frame {dark}",
+                class: if inverted { "dc-inverted" },
                 style: "{template_box.css()}background:{frame_bg};",
             }
             if let (CardSize::Full, Some(rect)) = (size, shape.text()) {
                 div { class: "dc-fb-panel {dark}", style: rect.css() }
             }
         }
-        if let Some(rect) = shape.art(size) {
+        if let Some(rect) = shape.art(size).map(|r| if inverted { layout::Rect { y: 1.0 - r.y - r.h, ..r } } else { r }) {
             if let Some(src) = art {
                 img {
                     class: "dc-art",
@@ -482,6 +497,7 @@ fn draw(
         if let Some(src) = template {
             img {
                 class: "dc-template",
+                class: if inverted { "dc-inverted" },
                 src: url(src),
                 loading: "lazy",
                 alt: "",
