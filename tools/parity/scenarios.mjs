@@ -1,7 +1,7 @@
 // The positions both clients are compared at. Each is a lobby table (`spec`, dealt with
 // the run's fixed seed) and the steps that lead from the start to the position (see
-// drive.mjs). Only cards the dominion.games transport supports can be used: see
-// `GET /api/official/coverage`.
+// drive.mjs). Steps can only play cards whose questions the dominion.games transport
+// maps (`GET /api/official/coverage`); other cards are shown in an opening position.
 export const SCENARIOS = [
   {
     name: 'opening',
@@ -113,6 +113,38 @@ export const SCENARIOS = [
     spec: {
       kingdom: ['Cache', 'Tunnel', 'Trader', 'Nomads', 'Souk', 'Wheelwright', 'Sleigh', 'Supplies', 'Black Cat', 'Livery'],
       landscapes: ['Way of the Horse', 'Way of the Seal'],
+    },
+    steps: [],
+  },
+  {
+    name: 'guilds',
+    about: 'overpay and Coffers (Guilds)',
+    spec: {
+      kingdom: ['Advisor', 'Butcher', 'Candlestick Maker', 'Doctor', 'Masterpiece', 'Merchant Guild', 'Soothsayer', 'Stonemason', 'Taxman', 'Plaza'],
+    },
+    steps: [],
+  },
+  {
+    name: 'hinterlands',
+    about: 'Hinterlands: a cost reducer (Highway) and Reactions',
+    spec: {
+      kingdom: ['Border Village', 'Cartographer', 'Crossroads', 'Develop', 'Farmland', 'Haggler', 'Inn', 'Jack of All Trades', 'Margrave', 'Highway'],
+    },
+    steps: [],
+  },
+  {
+    name: 'nocturne',
+    about: 'Heirlooms in the starting deck, Night cards and their non-Supply piles (Wish, Bat, Ghost, Imp)',
+    spec: {
+      kingdom: ['Secret Cave', 'Cemetery', 'Shepherd', "Devil's Workshop", 'Pooka', 'Night Watchman', 'Ghost Town', 'Changeling', 'Monastery', 'Conclave'],
+    },
+    steps: [],
+  },
+  {
+    name: 'seaside2',
+    about: "Seaside's second edition: Durations and Treasures",
+    spec: {
+      kingdom: ['Astrolabe', 'Blockade', 'Corsair', 'Monkey', 'Pirate', 'Sailor', 'Sea Chart', 'Sea Witch', 'Tide Pools', 'Treasure Map'],
     },
     steps: [],
   },

@@ -80,6 +80,9 @@ official_server_catalog_file = "/path/to/body-2.3.7.js"
 official_server_root_socket = true
 # Optional; defaults to $XDG_CONFIG_HOME/dominion/official-preferences.
 official_preferences_dir = "/path/to/account-preferences"
+# Tests only: also admit cards whose rules aren't reviewed for the transport, so the
+# client can draw them; one of their questions ends the connection (default false).
+# official_server_unreviewed_cards = true
 ```
 
 The body must match the pinned SHA-256. The service never downloads a client or logs

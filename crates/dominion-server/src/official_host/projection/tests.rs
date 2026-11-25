@@ -1077,4 +1077,20 @@ fn the_bane_is_marked_and_traits_attach_to_their_pile() {
         .map(|z| (z.pile_name, z.attached_trait))
         .collect();
     assert_eq!(traits, vec![(cheap, catalog.card(Card::Cheap).unwrap())]);
+    // Their client draws the Trait's landscape with a card of its pile linked to it.
+    let named = |id: i32| state.cards[id as usize].card_name;
+    let links: Vec<(i32, Vec<i32>)> = state
+        .associations
+        .iter()
+        .map(|a| {
+            (
+                named(a.card),
+                a.linked_cards.iter().map(|&l| named(l)).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        links,
+        vec![(cheap, vec![catalog.card(Card::Cheap).unwrap()])]
+    );
 }

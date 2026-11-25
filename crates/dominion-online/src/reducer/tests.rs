@@ -1215,3 +1215,25 @@ fn recorded_inputs_fold_to_the_views_they_were_recorded_at() {
     assert_eq!(seen, views);
     assert!(views[2]["decision"].is_object() && views[3]["decision"].is_null());
 }
+
+#[test]
+fn a_piles_top_is_its_last_card() {
+    let top = |cards: Vec<i32>| {
+        let mut snap = snapshot();
+        snap.state.cards.push(model::Card {
+            id: 8,
+            card_name: 3,
+            pile_name: 2,
+        });
+        snap.state.card_counts[2] += 1;
+        let supply = snap.state.zones.iter_mut().find(|z| z.index == 20).unwrap();
+        supply.cards = cards;
+        let mut r = Reducer::new(catalog(), 42);
+        r.replace(snap).unwrap();
+        let pile = r.view().unwrap().supply.into_iter().next().unwrap();
+        (pile.card, pile.top)
+    };
+    // Bottom first, as dominion.games' client stacks them.
+    assert_eq!(top(vec![8, 7]), ("Village".into(), None));
+    assert_eq!(top(vec![7, 8]), ("Village".into(), Some("Gold".into())));
+}
