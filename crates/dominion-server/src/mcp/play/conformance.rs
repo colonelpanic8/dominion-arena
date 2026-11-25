@@ -238,3 +238,30 @@ async fn treasures_played_one_by_one_end_where_the_tables_own_run_does() {
         assert!(refused.starts_with("REJECTED: no Treasures"), "{refused}");
     }
 }
+
+#[tokio::test]
+async fn an_arena_buy_says_it_ends_treasure_plays() {
+    let hub = Hub::default();
+    let seat = arena_game(&hub);
+    let arena = arena_seat(&hub, &seat);
+    let shown = Mutex::new(Presentation::default());
+    let play = Play {
+        seat: &arena,
+        shown: &shown,
+        clock_cues: false,
+    };
+    let state = play.observation(true);
+    let said = text(&state);
+    assert!(
+        said.contains("Buying anything ends your Treasure plays")
+            && said.contains("Unplayed Treasures: ")
+            && said.contains(" Copper ($"),
+        "{said}"
+    );
+    // The structured view stays the backend's.
+    let prompt = &state.structured_content.as_ref().unwrap()["view"]["decision"]["prompt"];
+    assert!(
+        !prompt.as_str().unwrap().contains("Buying anything"),
+        "{prompt}"
+    );
+}
