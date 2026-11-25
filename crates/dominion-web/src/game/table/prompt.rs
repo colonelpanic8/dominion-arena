@@ -68,8 +68,16 @@ pub fn StatusBar(
     let potions = s.potions.unwrap_or(0);
     let debt = s.debt.unwrap_or_else(|| token("debt"));
     let (coffers, villagers, favors) = (token("coffers"), token("villagers"), token("favors"));
-    // What else the turn player has, as dominion.games shows it after the counters.
-    let shown = ["coffers", "villagers", "favors", "debt"];
+    // What else the turn player has, as dominion.games shows it after the counters: not
+    // the Journey token, which it shows only beside the player's name.
+    let shown = [
+        "coffers",
+        "villagers",
+        "favors",
+        "debt",
+        "journey",
+        "journey-down",
+    ];
     let badges: Vec<_> = turn_player
         .map(|p| {
             p.badges
