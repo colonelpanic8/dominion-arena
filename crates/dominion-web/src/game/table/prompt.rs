@@ -4,7 +4,7 @@
 //! revealed or looked-at cards, cards in decks and discard piles, named cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, Reminder, TableCard, seat_class};
+use super::pieces::{CardName, LastingReminder, Reminder, TableCard, seat_class};
 use super::supply::Badges;
 use super::{Spot, Ui, use_table};
 use crate::app::use_cards;
@@ -69,7 +69,8 @@ pub fn StatusBar(
     let debt = s.debt.unwrap_or_else(|| token("debt"));
     let (coffers, villagers, favors) = (token("coffers"), token("villagers"), token("favors"));
     // What else the turn player has, as dominion.games shows it after the counters: not
-    // the Journey token, which it shows only beside the player's name.
+    // the Journey token, VP tokens or Pirate Ship tokens, which it shows only beside the
+    // player's name.
     let shown = [
         "coffers",
         "villagers",
@@ -77,6 +78,8 @@ pub fn StatusBar(
         "debt",
         "journey",
         "journey-down",
+        "vp",
+        "pirate-ship",
     ];
     let badges: Vec<_> = turn_player
         .map(|p| {
@@ -91,7 +94,9 @@ pub fn StatusBar(
         .map(|p| p.states.iter().chain(&p.artifacts).cloned().collect())
         .unwrap_or_default();
     let boons: Vec<String> = turn_player.map(|p| p.boons.clone()).unwrap_or_default();
-    let held = !badges.is_empty() || !reminders.is_empty() || !boons.is_empty();
+    let lasting: Vec<(String, u32)> = turn_player.map(|p| p.lasting.clone()).unwrap_or_default();
+    let held =
+        !badges.is_empty() || !reminders.is_empty() || !boons.is_empty() || !lasting.is_empty();
     let ticker: Element = if starting {
         rsx! { span { "data-prompt": "starting", "Your starting cards:" } }
     } else if !s.running {
@@ -173,6 +178,9 @@ pub fn StatusBar(
                 if held {
                     span { class: "dt-status-held", "data-held": "1",
                         Badges { badges }
+                        for (c, n) in lasting.iter() {
+                            LastingReminder { key: "l{c}", name: c.clone(), count: *n }
+                        }
                         for c in reminders.iter() {
                             Reminder { key: "r{c}", name: c.clone() }
                         }

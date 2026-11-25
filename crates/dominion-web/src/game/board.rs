@@ -273,6 +273,8 @@ pub struct PlayerEntry {
     pub states: Vec<String>,
     pub boons: Vec<String>,
     pub artifacts: Vec<String>,
+    /// The player's lasting effects by card, with how many each card has.
+    pub lasting: Vec<(String, u32)>,
     /// Every card the player owns, as far as known.
     pub owned: Zone,
     pub unlocated: Vec<Stack>,
@@ -763,6 +765,19 @@ pub fn runs(cards: &[InPlay]) -> Vec<Stack> {
     out
 }
 
+/// A player's lasting effects by card, with how many each has, in dominion.games' order.
+fn lasting_reminders(view: &AgentView, seat: u8, cards: &CardDb) -> Vec<(String, u32)> {
+    let mut out: Vec<(String, u32)> = vec![];
+    for l in view.lasting.iter().filter(|l| l.owner == seat) {
+        match out.iter_mut().find(|(c, _)| *c == l.card) {
+            Some((_, n)) => *n += 1,
+            None => out.push((l.card.clone(), 1)),
+        }
+    }
+    out.sort_by_key(|(c, _)| cards.order(c));
+    out
+}
+
 fn player_entry(
     p: &PlayerView,
     view: &AgentView,
@@ -810,6 +825,7 @@ fn player_entry(
         states: p.states.clone(),
         boons: p.boons.clone(),
         artifacts: p.artifacts.clone(),
+        lasting: lasting_reminders(view, p.index, cards),
         owned: Zone {
             count: p.owned.known.values().sum::<u32>() + p.owned.unknown,
             known: stacks(&p.owned.known, cards),

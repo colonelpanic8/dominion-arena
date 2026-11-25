@@ -228,20 +228,41 @@ pub fn reminder_icon(name: &str) -> (String, Option<u8>) {
 /// reminder icon, or its name where the cache has none. Clicking studies the card.
 #[component]
 pub fn Reminder(name: String) -> Element {
-    let ctx = use_table();
     let assets = use_assets();
     let (path, n) = reminder_icon(&name);
     let Some(src) = assets.file_url(&path) else {
         return rsx! { span { class: "dt-bar-held", CardName { name } } };
     };
+    rsx! { ReminderIcon { name, src, n: n.map(u32::from) } }
+}
+
+/// A lasting effect's reminder beside its player's name: its icon (dominion.games has
+/// few: most draw only how many there are, from 2) and the number of them.
+#[component]
+pub fn LastingReminder(name: String, count: u32) -> Element {
+    let assets = use_assets();
+    let (path, _) = reminder_icon(&name);
+    let src = assets.file_url(&path).unwrap_or_default();
+    let n = (count > 1).then_some(count);
+    rsx! { ReminderIcon { name, src, n } }
+}
+
+#[component]
+fn ReminderIcon(name: String, src: String, n: Option<u32>) -> Element {
+    let ctx = use_table();
     let n1 = name.clone();
     let n2 = name.clone();
+    let style = if src.is_empty() {
+        String::new()
+    } else {
+        format!("background-image:url('{src}');")
+    };
     rsx! {
         span {
             class: "dt-reminder",
             title: "{name}",
             "data-reminder": "{name}",
-            style: "background-image:url('{src}');",
+            style,
             onclick: move |e| {
                 e.stop_propagation();
                 ctx.study(&n1);

@@ -4,7 +4,7 @@
 //! tabs for mats and set-aside cards.
 
 use super::layout::{Geometry, Rect};
-use super::pieces::{CardName, Reminder, TableCard, cube_icon, seat_class};
+use super::pieces::{CardName, LastingReminder, Reminder, TableCard, cube_icon, seat_class};
 use super::supply::{Badges, Tab};
 use super::{Composition, DecksView, Popup, Spot, Ui, mark_at, use_table};
 use crate::app::use_cards;
@@ -95,6 +95,9 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool, cubes: usiz
                     }
                 }
                 Badges { badges: p.badges.clone() }
+                for (c, n) in p.lasting.iter() {
+                    LastingReminder { key: "l{c}", name: c.clone(), count: *n }
+                }
                 for c in reminders.iter() {
                     Reminder { key: "r{c}", name: c.clone() }
                 }
