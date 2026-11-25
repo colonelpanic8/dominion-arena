@@ -113,6 +113,10 @@ async function runScenario(scenario) {
     const start = await ours.page.$('.dt-start-game');
     if (start) await start.click();
 
+    // Steps played with both clients watching: the game's end, which their client
+    // only shows to a seat that saw it happen.
+    if (scenario.after) await driver.run(scenario.after);
+
     const a = await capture(theirs.page, dir, 'theirs');
     const b = await capture(ours.page, dir, 'ours');
     const anchors = compareCaptures(a.shown, b.shown);

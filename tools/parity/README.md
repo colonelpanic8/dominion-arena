@@ -33,7 +33,9 @@ For each scenario (`scenarios.mjs`), `run.mjs`:
    bundle is never fetched: it is `--catalog`, checked against the pinned SHA-256. The
    one change to their client is `connection-selection.js`, which points it at the local
    Arena. Every other WebSocket is refused, so it never reaches dominion.games' servers.
-4. Opens our client as Alice at `/game/<id>`.
+4. Opens our client as Alice at `/game/<id>`, then plays the scenario's `after` steps
+   with both clients watching (their client shows a game's end only to a seat that saw
+   it happen).
 5. Once both pages stop changing, it screenshots each and reads off them every visible
    picture (by file name: both clients use dominion.games' images) and every visible run
    of text, with their boxes (`extract.mjs`).

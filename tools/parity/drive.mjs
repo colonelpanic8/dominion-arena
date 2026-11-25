@@ -8,6 +8,9 @@
 //   "turn A, B"   a whole turn: Actions, Treasures, then the first of A, B, ... it can
 //                 buy, answering anything asked on the way with "default"
 //   "turns N A, B"  N turns of "turn A, B"
+//   "until P X+Y & Q Z: A, B"  turns of "turn A, B" until P (Alice or Bob) starts a
+//                 turn holding X and Y, while Q holds Z
+//   "turns" stops early when the game ends
 export class Driver {
   constructor(arena, game, seats) {
     this.arena = arena;
@@ -58,6 +61,7 @@ export class Driver {
     const arg = rest.join(' ');
     const list = arg ? arg.split(',').map((s) => s.trim()).filter(Boolean) : [];
     const d = await this.deciding();
+    if (!d && verb === 'turns') return;
     if (!d) throw new Error(`"${step}": nobody is deciding`);
     const opts = d.decision.options ?? [];
     const find = (pred, what) => {
@@ -89,9 +93,11 @@ export class Driver {
       case 'turns': {
         const [n, ...first] = arg.split(' ');
         const buys = first.join(' ').split(',').map((s) => s.trim()).filter(Boolean);
-        for (let i = 0; i < Number(n); i++) await this.turn(buys);
+        for (let i = 0; i < Number(n) && (await this.deciding()); i++) await this.turn(buys);
         return;
       }
+      case 'until':
+        return this.until(arg);
       default:
         throw new Error(`unknown step "${step}"`);
     }
@@ -105,6 +111,32 @@ export class Driver {
       if (!o) return;
       await this.answer(d, [o.index]);
     }
+  }
+
+  async holds(who, cards) {
+    const { view } = await this.arena.view(this.game, this.seats[who]);
+    const hand = { ...(view.you?.hand?.known ?? {}) };
+    return cards.every((c) => (hand[c] = (hand[c] ?? 0) - 1) >= 0);
+  }
+
+  async until(arg) {
+    const [cond, buyList = ''] = arg.split(':');
+    const groups = cond.split('&').map((g) => {
+      const [who, cards] = g.trim().split(/ (.*)/);
+      return { who, cards: cards.split('+').map((s) => s.trim()) };
+    });
+    const buys = buyList.split(',').map((s) => s.trim()).filter(Boolean);
+    for (let i = 0; i < 80; i++) {
+      const d = await this.deciding();
+      if (!d) throw new Error(`until ${arg}: nobody is deciding`);
+      if (d.name === groups[0].who && d.decision.kind === 'turn') {
+        let all = true;
+        for (const g of groups) all &&= await this.holds(g.who, g.cards);
+        if (all) return;
+      }
+      await this.turn(buys);
+    }
+    throw new Error(`until ${arg}: never happened`);
   }
 
   /// One turn of whoever is deciding now.
