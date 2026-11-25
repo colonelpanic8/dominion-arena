@@ -118,7 +118,8 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-count span { position: relative; }
 .dt-micro .dt-count { width: auto; height: 100%; aspect-ratio: 1; font-size: 16cqw; }
 .dt-inverted .dt-count { top: auto; left: auto; bottom: 0; right: 0; }
-.dt-plus { position: absolute; right: 2%; bottom: 2%; width: 20cqw; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; pointer-events: none; }
+/* dominion.games' sign: a fifth of the card's shorter side, in its corner. */
+.dt-plus { position: absolute; right: 0; bottom: 0; height: min(20%, 20cqw); aspect-ratio: 1; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; pointer-events: none; }
 .dt-plus img { width: 100%; height: 100%; }
 .dt-micro .dt-plus { width: auto; height: 50%; }
 /* Upstream's sign is a fifth of the card's shorter side, in its corner. */
