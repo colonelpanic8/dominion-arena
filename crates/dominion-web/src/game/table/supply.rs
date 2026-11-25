@@ -276,7 +276,7 @@ fn Landscape(entry: LandscapeEntry, at: Rect, ui: Option<Rc<Ui>>, sel: Selection
             plus,
             badges: entry.badges.clone(),
             cubes: entry.owners.iter().map(|w| (w.seat, w.name.clone())).collect::<Vec<_>>(),
-            holds: entry.pile.clone(),
+            holds: entry.pile.as_ref().map(|p| (p.name.clone(), p.cost.clone())),
             class: "dt-landscape dt-kind-{entry.kind}",
             at,
         }

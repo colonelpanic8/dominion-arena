@@ -267,9 +267,10 @@ pub fn TableCard(
     /// The Trait on the pile (`CardView::attached`).
     #[props(default)]
     attached: Option<String>,
-    /// The card of the pile a landscape names (a Trait's, Obelisk's), drawn on it.
+    /// The card of the pile a landscape names (a Trait's, Obelisk's), drawn on it, and
+    /// what it costs now.
     #[props(default)]
-    holds: Option<String>,
+    holds: Option<(String, Option<dominion_protocol::Cost>)>,
     #[props(default)] inspect_pile: bool,
     /// Upside down, as an opponent's cards across the table.
     #[props(default)]
@@ -352,11 +353,11 @@ pub fn TableCard(
                     shifted: count.is_some() && size != CardSize::Full,
                     pile: pile.clone(),
                     attached: attached.clone(),
-                    if let Some(held) = holds.clone() {
+                    if let Some((held, cost)) = holds.clone() {
                         div {
                             class: "dt-held-pile",
                             style: crate::card::layout::LANDSCAPE_PILE.css(),
-                            CardView { name: held, size: CardSize::Mini }
+                            CardView { name: held, size: CardSize::Mini, cost }
                         }
                     }
                 }

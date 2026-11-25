@@ -1118,7 +1118,10 @@ fn every_setup_set_aside_is_shown_to_seats_and_spectators() {
             .iter()
             .find(|l| l.card == "Obelisk")
             .unwrap();
-        assert_eq!(obelisk.pile.as_deref(), Some("Riverboat"));
+        assert_eq!(
+            obelisk.pile.as_ref().map(|p| p.name.as_str()),
+            Some("Riverboat")
+        );
         let smithy = pile("Smithy");
         assert_eq!(smithy.badges.len(), 1, "{smithy:?}");
         assert_eq!(smithy.badges[0].kind, "note");

@@ -222,8 +222,8 @@ pub struct LandscapeEntry {
     pub types: Vec<String>,
     pub badges: Vec<Badge>,
     pub owners: Vec<Who>,
-    /// The card of the pile it names (a Trait's, Obelisk's), drawn on it.
-    pub pile: Option<String>,
+    /// The pile it names (a Trait's, Obelisk's), whose card is drawn on it.
+    pub pile: Option<Box<PileEntry>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -890,7 +890,7 @@ fn note_badge(
                 if m == PileMarker::Obelisk
                     && let Some(l) = landscapes.iter_mut().find(|l| l.card == n.source)
                 {
-                    l.pile = Some(p.name.clone());
+                    l.pile = Some(Box::new(p.clone()));
                 }
             }
             None => p.badges.push(b),
@@ -1083,7 +1083,7 @@ pub fn board(
         if let Some(l) =
             (p.attached.as_ref()).and_then(|t| landscapes.iter_mut().find(|l| &l.card == t))
         {
-            l.pile = Some(p.name.clone());
+            l.pile = Some(Box::new(p.clone()));
         }
     }
     for n in &view.notes {
