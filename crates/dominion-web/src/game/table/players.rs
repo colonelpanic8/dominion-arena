@@ -65,13 +65,13 @@ fn PlayerBar(player: PlayerEntry, at: Rect, you: bool, active: bool) -> Element 
                 }
             },
             div { class: "dt-bar-top",
+                span { class: "dt-pname", style: "font-size:{name_px:.1}px;", "{p.name}" }
                 if let Some(a) = &account {
                     span {
                         class: if a.connected { "dt-conn dt-conn-on" } else { "dt-conn" },
                         title: "{a.title()}",
                     }
                 }
-                span { class: "dt-pname", style: "font-size:{name_px:.1}px;", "{p.name}" }
                 if let Some(c) = &clock {
                     span {
                         class: "dt-clock",

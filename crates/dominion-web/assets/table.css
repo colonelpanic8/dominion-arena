@@ -227,10 +227,11 @@ body:has(.dt-root) .topbar { display: none; }
 .dt-bar {
   position: absolute;
   box-sizing: border-box;
-  padding: 0 calc(0.6 * var(--vh));
+  /* dominion.games: a 0.4vh stripe, the name 0.9vh in and the counters 1.1vh. */
+  padding: 0 calc(0.6 * var(--vh)) 0 calc(0.5 * var(--vh));
   background: var(--dt-tab, linear-gradient(90deg, rgba(10, 30, 50, 0.9), rgba(10, 30, 50, 0.6)));
   background-size: 100% 100%;
-  border-left: calc(0.6 * var(--vh)) solid var(--pc);
+  border-left: calc(0.4 * var(--vh)) solid var(--pc);
   cursor: pointer;
   z-index: 50;
   overflow: hidden;
@@ -250,7 +251,7 @@ body:has(.dt-root) .topbar { display: none; }
   background: var(--dt-vp, none) center / contain no-repeat;
   text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
 }
-.dt-bar-bottom { display: flex; align-items: center; gap: calc(0.4 * var(--vh)); height: 50%; overflow: hidden; }
+.dt-bar-bottom { display: flex; align-items: center; gap: calc(0.4 * var(--vh)); height: 50%; overflow: hidden; padding-left: calc(0.2 * var(--vh)); }
 .dt-bar-cube img { height: calc(2.6 * var(--vh)); }
 .dt-bar-held { font-size: calc(1.4 * var(--vh)); white-space: nowrap; }
 /* A State or Artifact held: dominion.games' reminder icon, 2.6vh square. */
@@ -305,18 +306,27 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-play > .dt-c { pointer-events: auto; }
 .dt-hand { position: absolute; z-index: 2000; }
 
-/* The status bar. */
+/* The status bar, in dominion.games' measures: its minimizer strip, the counters 3vh
+   tall from 0.8vh, the ticker 2.5vh tall 0.8vh from the bottom, both 3vh in. */
 .dt-status {
   position: absolute;
   box-sizing: border-box;
-  padding: calc(0.5 * var(--vh)) calc(2 * var(--vh));
+  padding: calc(0.8 * var(--vh)) calc(2 * var(--vh)) 0 calc(3 * var(--vh));
   background: rgba(0, 0, 0, 0.8);
   border-radius: calc(0.8 * var(--vh));
-  border-left: calc(0.5 * var(--vh)) solid #555;
   z-index: 1000;
 }
-.dt-counters { display: flex; align-items: center; gap: calc(0.6 * var(--vh)); height: calc(4 * var(--vh)); }
-.dt-counter { font-family: var(--num); font-weight: 700; font-size: calc(3.3 * var(--vh)); line-height: 1; white-space: nowrap; }
+.dt-status::before {
+  content: "";
+  position: absolute;
+  left: calc(1.3 * var(--vh));
+  top: calc(0.8 * var(--vh));
+  width: calc(0.5 * var(--vh));
+  height: calc(6 * var(--vh));
+  background: #333;
+}
+.dt-counters { display: flex; align-items: center; height: calc(3 * var(--vh)); }
+.dt-counter { font-family: var(--num); font-weight: 700; font-size: calc(3 * var(--vh)); line-height: 1; white-space: nowrap; }
 .dt-actions { color: #bfb; }
 .dt-buys { color: #fdb; }
 .dt-zero { color: #666; }
@@ -325,7 +335,10 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-status-held .dt-badge { height: calc(3.3 * var(--vh)); }
 .dt-status-held .dt-badge-n { font-size: calc(1.9 * var(--vh)); }
 .dt-status-held .dt-bar-held { font-size: calc(2 * var(--vh)); }
-.dt-sep { width: 2px; height: calc(3.3 * var(--vh)); background: #999; }
+/* Each counter 0.5vh after the last; a block's line 1vh after it, the next 1.5vh. */
+.dt-counters > :not(.dt-sep) { margin-left: calc(0.5 * var(--vh)); }
+.dt-sep { flex: none; width: max(1px, calc(0.2 * var(--vh))); height: calc(3 * var(--vh)); margin: 0 calc(0.3 * var(--vh)) 0 calc(1 * var(--vh)); background: #999; }
+.dt-counters .dt-coin { font-family: DomNum, var(--num); font-size: calc(3 * var(--vh)); }
 .dt-coin, .dt-icon {
   display: inline-flex;
   align-items: center;
@@ -345,10 +358,12 @@ button.dt-bar-rating:hover { border-color: #f0cf7a; background: rgba(240, 207, 1
 .dt-favors { background-image: var(--dt-favors, none); color: #fff; }
 .dt-icon { text-shadow: 0 0 2px #000; }
 .dt-ticker {
-  height: calc(2.8 * var(--vh));
+  height: calc(2.5 * var(--vh));
+  line-height: calc(2.5 * var(--vh));
+  margin-top: calc(0.9 * var(--vh));
   font-family: var(--title);
   font-variant: small-caps;
-  font-size: calc(2.4 * var(--vh));
+  font-size: calc(2 * var(--vh));
   color: #91acff;
   white-space: nowrap;
   overflow: hidden;

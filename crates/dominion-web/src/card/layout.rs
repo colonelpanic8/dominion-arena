@@ -131,7 +131,7 @@ impl Shape {
     pub fn types(&self, size: CardSize) -> Option<Rect> {
         match size {
             CardSize::Full if self.landscape => Some(r(0.848, 0.103, 0.124, 0.056)),
-            CardSize::Mini if self.landscape => Some(r(0.32, 0.036, 0.36, 0.072)),
+            CardSize::Mini if self.landscape => Some(r(0.306, 0.021, 0.396, 0.122)),
             CardSize::Full if self.basic && self.treasure_only => Some(r(0.21, 0.85, 0.64, 0.097)),
             CardSize::Full if self.basic => Some(r(0.21, 0.86, 0.64, 0.097)),
             CardSize::Full => Some(r(0.21, 0.88, 0.64, 0.068)),
