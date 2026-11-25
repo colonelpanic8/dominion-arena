@@ -479,6 +479,58 @@ fn deck_reorder_accepts_anonymous_members_without_revealing_allocations() {
 }
 
 #[test]
+fn shared_boon_and_hex_pile_status_does_not_move_a_card_twice() {
+    for discard_kind in [15, 16] {
+        let mut snap = snapshot();
+        for (id, name) in [(8, 2), (9, 3)] {
+            snap.state.cards.push(model::Card {
+                id,
+                card_name: name,
+                pile_name: name,
+            });
+        }
+        for (index, kind, cards) in [(40, 13, vec![-1, -1]), (41, discard_kind, vec![])] {
+            snap.state.zones.push(model::Zone {
+                index,
+                kind,
+                owner: -1,
+                pile_name: 0,
+                cards,
+                created_by: -1,
+                attached_trait: 0,
+                is_visible: true,
+            });
+        }
+        let mut r = Reducer::new(catalog(), 42);
+        r.replace(snap).unwrap();
+        let status = |draw_size, discard_size, top_card_id| {
+            model::Event::PilesStatus(model::PilesStatus {
+                draw_index: 40,
+                draw_size,
+                discard_index: 41,
+                discard_size,
+                top_card_id,
+            })
+        };
+        for (id, draw, discarded, previous_top) in [(8, 1, 0, -2), (9, 0, 1, 8)] {
+            r.apply(status(draw, discarded, previous_top)).unwrap();
+            r.apply(movement(40, 30, vec![id], vec![id])).unwrap();
+            assert_eq!(r.zones[&40].count, draw as u32);
+            r.apply(status(draw, discarded + 1, id)).unwrap();
+            r.apply(movement(30, 41, vec![id], vec![id])).unwrap();
+            assert_eq!(r.zones[&41].count, (discarded + 1) as u32);
+        }
+        r.apply(status(2, 0, -2)).unwrap();
+        assert_eq!(r.zones[&41].count, 0);
+        assert_eq!(r.zones[&40].known, BTreeMap::from([(2, 1), (3, 1)]));
+        assert!(r.zones[&40].exact.is_empty());
+        r.apply(status(1, 0, -2)).unwrap();
+        r.apply(movement(40, 30, vec![9], vec![9])).unwrap();
+        assert_eq!(r.zones[&40].count, 1);
+    }
+}
+
+#[test]
 fn absent_pile_top_sentinels_are_not_card_identities() {
     let mut reducer = Reducer::new(catalog(), 42);
     reducer.replace(snapshot()).unwrap();

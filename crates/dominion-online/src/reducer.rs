@@ -514,24 +514,7 @@ impl Reducer {
                 changes.retain(|c| c.id != change.id);
                 changes.push(change);
             }
-            PilesStatus(p) => {
-                if p.draw_size > 65536 || p.discard_size > 65536 {
-                    return Err(invalid("zone count exceeds protocol limit"));
-                }
-                self.zone(p.draw_index)?;
-                self.zone(p.discard_index)?;
-                self.knowledge
-                    .reconcile(p.draw_index, nonnegative(p.draw_size)?);
-                self.knowledge
-                    .reconcile(p.discard_index, nonnegative(p.discard_size)?);
-                if p.top_card_id >= 0
-                    && self.knowledge.count(p.discard_index) > 0
-                    && let Some(name) = self.disclosed(p.top_card_id)?
-                {
-                    self.knowledge
-                        .reveal(p.discard_index, &[(p.top_card_id, name)])?;
-                }
-            }
+            PilesStatus(p) => self.piles_status(p)?,
             RemindersChange(r) => {
                 self.state
                     .as_mut()
@@ -619,6 +602,46 @@ impl Reducer {
         self.refresh_knowledge();
         Ok(())
     }
+
+    fn piles_status(&mut self, p: model::PilesStatus) -> Result<()> {
+        if p.draw_size > 65536 || p.discard_size > 65536 {
+            return Err(invalid("zone count exceeds protocol limit"));
+        }
+        let draw = nonnegative(p.draw_size)?;
+        let discard = nonnegative(p.discard_size)?;
+        let draw_zone = self.zone(p.draw_index)?;
+        let discard_zone = self.zone(p.discard_index)?;
+        if draw_zone.kind == 13 && matches!(discard_zone.kind, 15 | 16) {
+            let (draw, discard) = (draw as usize, discard as usize);
+            let before_draw = self.knowledge.count(p.draw_index);
+            let before_discard = self.knowledge.count(p.discard_index);
+            // Boons and Hexes announce the post-move counts before CardMove transfers the card.
+            let drawing = draw + 1 == before_draw && discard == before_discard;
+            let returning = draw == before_draw && discard == before_discard + 1;
+            if drawing || returning {
+                if p.top_card_id >= 0 {
+                    self.raw_name(p.top_card_id)?;
+                }
+                return Ok(());
+            }
+            // Refilling the shared deck is announced by status alone.
+            if before_draw == 0 && discard == 0 && draw > 0 && draw == before_discard {
+                self.knowledge.shuffle(p.draw_index, Some(p.discard_index));
+                return Ok(());
+            }
+        }
+        self.knowledge.reconcile(p.draw_index, draw);
+        self.knowledge.reconcile(p.discard_index, discard);
+        if discard > 0
+            && p.top_card_id >= 0
+            && let Some(name) = self.disclosed(p.top_card_id)?
+        {
+            self.knowledge
+                .reveal(p.discard_index, &[(p.top_card_id, name)])?;
+        }
+        Ok(())
+    }
+
     fn move_cards(&mut self, m: model::CardMove) -> Result<()> {
         if m.before.len() != m.after.len() {
             return Err(invalid("movement parallel arrays"));
