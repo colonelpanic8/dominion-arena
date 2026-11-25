@@ -234,6 +234,13 @@ fn choice(
         },
     })
 }
+/// A set's own decline button for `d`, else the one its purpose names.
+fn decline_for(c: &WireCatalog, d: &Decision, min: usize) -> Result<i32, ProjectionError> {
+    match semantics::decline_button(d) {
+        Some(button) if min == 0 => c.symbol("DeclineButtonIds", button),
+        _ => decline(c, d.purpose, min),
+    }
+}
 fn decline(c: &WireCatalog, purpose: Purpose, min: usize) -> Result<i32, ProjectionError> {
     if min != 0 {
         return Ok(-1);
@@ -411,6 +418,7 @@ pub(super) fn prepare(
             options, min, max, ..
         } if d.purpose == Purpose::Trigger => {
             let triggers = view.pending_triggers();
+            let occasions = view.pending_occasions();
             let mut abilities = vec![];
             let mut targets = vec![];
             let mut optional = false;
@@ -440,7 +448,14 @@ pub(super) fn prepare(
                                 },
                             ])]
                         } else {
-                            vec![]
+                            semantics::ability_arguments(
+                                view,
+                                t,
+                                occasions.get(usize::from(i)).copied(),
+                                c,
+                            )
+                            .transpose()?
+                            .unwrap_or_default()
                         };
                         abilities.push(Ability {
                             description_type: if arguments.is_empty() { 1 } else { 2 },
@@ -513,7 +528,7 @@ pub(super) fn prepare(
                             QuestionElements::Cards(pairs.iter().map(|x| x.0).collect()),
                             *min,
                             *max,
-                            decline(c, d.purpose, *min)?,
+                            decline_for(c, d, *min)?,
                         )?,
                         AnswerPlan::Cards {
                             targets: pairs.iter().map(|x| x.1).collect(),
@@ -542,7 +557,7 @@ pub(super) fn prepare(
                             QuestionElements::Cards(pairs.iter().map(|x| x.0).collect()),
                             usize::from(!optional),
                             1,
-                            decline(c, d.purpose, usize::from(!optional))?,
+                            decline_for(c, d, usize::from(!optional))?,
                         )?,
                         AnswerPlan::Piles {
                             targets: pairs.iter().map(|x| x.1).collect(),
@@ -566,9 +581,12 @@ pub(super) fn prepare(
                     )
                 }
                 DecisionKind::Number { min, max } => {
-                    if kind != "LOCATION" {
-                        return Err(semantics::gap(d, "number meaning"));
-                    }
+                    // A location counts from the bottom; an amount is itself, none by default.
+                    let reverse = match kind {
+                        "LOCATION" => true,
+                        "OVERPAY" | "OVERPAY_COINS" | "OVERPAY_POTIONS" => false,
+                        _ => return Err(semantics::gap(d, "number meaning")),
+                    };
                     (
                         Question {
                             index: 0,
@@ -576,21 +594,23 @@ pub(super) fn prepare(
                             kind: QuestionKind::Number {
                                 min: *min,
                                 max: *max,
-                                default: *max,
+                                default: if reverse { *max } else { *min },
                                 decline: -1,
                             },
                         },
                         AnswerPlan::Number {
                             min: *min,
                             max: *max,
-                            reverse: true,
+                            reverse,
                         },
                     )
                 }
                 DecisionKind::Choose {
                     options, min, max, ..
                 } => {
-                    if options.iter().all(|o| matches!(o, Opt::Mode(_)))
+                    if let Some(shown) = semantics::choice(view, d) {
+                        set_choice(c, d, desc, association, shown, options, *min, *max, &id)?
+                    } else if options.iter().all(|o| matches!(o, Opt::Mode(_)))
                         && d.source != Some(Card::Torturer)
                     {
                         let source = d
@@ -716,5 +736,91 @@ pub(super) fn prepare(
         decision_id: decision_id.into(),
         epoch: 0,
         plan,
+    })
+}
+
+/// A `Choose` a set's module says how to show (`semantics::Choice`).
+#[allow(clippy::too_many_arguments)]
+fn set_choice(
+    c: &WireCatalog,
+    d: &Decision,
+    desc: QuestionDescription,
+    association: i32,
+    shown: semantics::Choice,
+    options: &[Opt],
+    min: usize,
+    max: usize,
+    id: &dyn Fn(&CardId) -> Result<i32, ProjectionError>,
+) -> Result<(Question, AnswerPlan), ProjectionError> {
+    use semantics::Choice;
+    Ok(match shown {
+        Choice::Modes(modes) => {
+            if modes.len() != options.len() {
+                return Err(ProjectionError::Inconsistent("one mode per option"));
+            }
+            let modes = modes
+                .iter()
+                .map(|m| c.symbol("CardModes", m))
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                choice(desc, QuestionElements::Modes(modes), min, max, -1)?,
+                AnswerPlan::Options {
+                    targets: options.to_vec(),
+                    min,
+                    max,
+                    decline: None,
+                },
+            )
+        }
+        Choice::Card(card) => {
+            if options != [Opt::Yes, Opt::No] {
+                return Err(semantics::gap(d, "card choice without yes and no"));
+            }
+            (
+                choice(
+                    desc,
+                    QuestionElements::Cards(vec![id(&card)?]),
+                    0,
+                    1,
+                    decline_for(c, d, 0)?,
+                )?,
+                AnswerPlan::Options {
+                    targets: vec![Opt::Yes],
+                    min: 1,
+                    max: 1,
+                    decline: Some(Opt::No),
+                },
+            )
+        }
+        Choice::Buttons(buttons) => {
+            if buttons.len() != options.len() {
+                return Err(ProjectionError::Inconsistent("one button per option"));
+            }
+            let mut children = vec![];
+            let mut plans = vec![];
+            for (&o, button) in options.iter().zip(buttons) {
+                let mut child = desc.clone();
+                child.question_type = c.symbol("QuestionTypes", "BUTTON")?;
+                child.association = association;
+                children.push(choice(
+                    child,
+                    QuestionElements::Cards(vec![]),
+                    0,
+                    0,
+                    c.symbol("DeclineButtonIds", button)?,
+                )?);
+                plans.push(AnswerPlan::Constant(Response::option(o)));
+            }
+            let mut desc = desc;
+            desc.question_type = c.symbol("QuestionTypes", "COMPLEX_OR")?;
+            (
+                Question {
+                    index: 0,
+                    description: desc,
+                    kind: QuestionKind::Complex(children),
+                },
+                AnswerPlan::Or(plans),
+            )
+        }
     })
 }

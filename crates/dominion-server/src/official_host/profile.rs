@@ -191,6 +191,7 @@ fn feature_symbols(feature: &str) -> &'static [(&'static str, &'static str)] {
             ("DeclineButtonIds", "DONT_DISCARD"),
         ],
         "location-number" => &[("QuestionTypes", "LOCATION")],
+        "overpay" => &[("QuestionTypes", "OVERPAY")],
         "ordered-cards" => &[("QuestionTypes", "ORDER_CARDS")],
         "set-aside" => &[("ZoneNames", "SetAsideZone")],
         "hidden-mat" => &[("ZoneNames", "NVZone")],

@@ -1,6 +1,30 @@
 //! Question bindings for this set's cards (see `semantics::SETS`).
-use super::{Binding, ProjectionError, WireCatalog};
-use dominion_engine::{Card, Decision, View};
+use super::{Binding, Choice, ProjectionError, SetExtras, WireCatalog};
+use dominion_engine::{Card, Decision, Occasion, Trigger, View};
+use dominion_online::questions::LogArgument;
+
+pub(super) const EXTRAS: SetExtras = SetExtras {
+    choice,
+    ability_arguments,
+    decline,
+};
+
+fn choice(_view: &View<'_>, _d: &Decision) -> Option<Choice> {
+    None
+}
+
+fn decline(_d: &Decision) -> Option<&'static str> {
+    None
+}
+
+fn ability_arguments(
+    _view: &View<'_>,
+    _t: &Trigger,
+    _occasion: Option<&Occasion>,
+    _c: &WireCatalog,
+) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
+    None
+}
 
 pub(super) fn binding(
     _view: &View<'_>,

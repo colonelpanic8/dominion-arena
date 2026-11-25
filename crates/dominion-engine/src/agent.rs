@@ -121,6 +121,16 @@ impl<'a> View<'a> {
         }
     }
 
+    /// The occasion each of [`View::pending_triggers`] answers (`[i]`).
+    pub fn pending_occasions(&self) -> Vec<&'a crate::Occasion> {
+        match (self.pending(), self.game.stack.last()) {
+            (Some(d), Some(Frame::Window(w))) if d.purpose == Purpose::Trigger => {
+                w.asked_occasions().collect()
+            }
+            _ => vec![],
+        }
+    }
+
     fn pending_card_frame(&self) -> Option<&'a crate::cards::CardFrame> {
         let source = self.pending()?.source?;
         self.game.stack.iter().rev().find_map(|frame| match frame {
@@ -134,6 +144,17 @@ impl<'a> View<'a> {
         self.pending_card_frame()?
             .this
             .filter(|&id| self.visible(id))
+    }
+
+    /// The step the asking card ability resumes at: which of its questions this is.
+    pub fn pending_step(&self) -> Option<u8> {
+        Some(self.pending_card_frame()?.pc)
+    }
+
+    /// The asking ability's own counter (`Scratch::n`): which round of a repeated
+    /// question this is, for the scripts that count rounds there (Remake, Stonemason).
+    pub fn pending_counter(&self) -> Option<i32> {
+        Some(self.pending_card_frame()?.s.n)
     }
 
     /// A visible card this effect retained across its preceding steps.

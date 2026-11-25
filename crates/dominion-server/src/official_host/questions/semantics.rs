@@ -1,5 +1,5 @@
 use super::{ProjectionError, WireCatalog};
-use dominion_engine::{Card, Decision, DecisionKind, Purpose, View};
+use dominion_engine::{Card, Decision, DecisionKind, Occasion, Purpose, Trigger, View};
 use dominion_online::questions::{CardFrequency, LogArgument};
 
 #[path = "semantics/adventures.rs"]
@@ -73,6 +73,56 @@ sets!(
     rising_sun
 );
 
+/// How a `Choose` whose options aren't all a card's modes is shown.
+pub(super) enum Choice {
+    /// A CardModes symbol per option, in order.
+    Modes(Vec<&'static str>),
+    /// Yes is picking this visible card; No is the decline button.
+    Card(dominion_engine::CardId),
+    /// A BUTTON per option under COMPLEX_OR, named by its DeclineButtonIds symbol.
+    Buttons(Vec<&'static str>),
+}
+
+type AbilityArguments = fn(
+    &View<'_>,
+    &Trigger,
+    Option<&Occasion>,
+    &WireCatalog,
+) -> Option<Result<Vec<LogArgument>, ProjectionError>>;
+
+/// Hooks a set's module adds beyond `SetBindings`, for sets that need them.
+pub(super) struct SetExtras {
+    pub choice: fn(&View<'_>, &Decision) -> Option<Choice>,
+    pub ability_arguments: AbilityArguments,
+    pub decline: fn(&Decision) -> Option<&'static str>,
+}
+const EXTRAS: &[SetExtras] = &[
+    dark_ages::EXTRAS,
+    cornucopia_guilds::EXTRAS,
+    adventures::EXTRAS,
+    nocturne::EXTRAS,
+];
+
+pub(super) fn choice(view: &View<'_>, d: &Decision) -> Option<Choice> {
+    EXTRAS.iter().find_map(|s| (s.choice)(view, d))
+}
+
+/// The log arguments an ability in a trigger window is described with, if any.
+pub(super) fn ability_arguments(
+    view: &View<'_>,
+    t: &Trigger,
+    occasion: Option<&Occasion>,
+    c: &WireCatalog,
+) -> Option<Result<Vec<LogArgument>, ProjectionError>> {
+    EXTRAS
+        .iter()
+        .find_map(|s| (s.ability_arguments)(view, t, occasion, c))
+}
+
+pub(super) fn decline_button(d: &Decision) -> Option<&'static str> {
+    EXTRAS.iter().find_map(|s| (s.decline)(d))
+}
+
 /// A card's requirements as a set's module declares them.
 pub(crate) fn set_requirements(card: Card) -> Option<&'static [&'static str]> {
     SETS.iter().find_map(|s| (s.requirements)(card))
@@ -84,6 +134,48 @@ pub(super) fn gap(d: &Decision, feature: &str) -> ProjectionError {
         card: d.source.map(|c| c.name().into()),
         detail: format!("{feature} ({:?})", d.purpose),
     })
+}
+
+/// AMOUNT: the cost bound the asking effect states.
+pub(super) fn cost_bound(view: &View<'_>, d: &Decision) -> Result<LogArgument, ProjectionError> {
+    let limit = view
+        .pending_cost_limit()
+        .ok_or_else(|| gap(d, "missing explicit cost bound (old save)"))?;
+    Ok(LogArgument::Amount {
+        coins: limit.coins.into(),
+        potions: limit.potions.into(),
+        debt: limit.debt.into(),
+    })
+}
+
+/// CARDS: these visible cards, by name.
+pub(super) fn card_names(
+    view: &View<'_>,
+    d: &Decision,
+    c: &WireCatalog,
+    cards: impl IntoIterator<Item = dominion_engine::CardId>,
+) -> Result<LogArgument, ProjectionError> {
+    let mut frequencies = std::collections::BTreeMap::new();
+    for id in cards {
+        let card = view
+            .card(id)
+            .ok_or_else(|| gap(d, "missing visible referenced card"))?;
+        *frequencies.entry(c.card(card)?).or_insert(0) += 1;
+    }
+    Ok(LogArgument::CardNames(
+        frequencies
+            .into_iter()
+            .map(|(name, frequency)| CardFrequency { name, frequency })
+            .collect(),
+    ))
+}
+
+/// PLAYER: the player the asking effect is about.
+pub(super) fn subject(view: &View<'_>, d: &Decision) -> Result<LogArgument, ProjectionError> {
+    let subject = view
+        .pending_subject()
+        .ok_or_else(|| gap(d, "missing affected player"))?;
+    Ok(LogArgument::Player(subject.0.into()))
 }
 
 /// Stories are selected by effect purpose and response shape, never display labels.

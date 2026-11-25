@@ -919,3 +919,7 @@ mod rules;
 #[cfg(test)]
 #[path = "projection/survey.rs"]
 mod survey;
+
+#[cfg(test)]
+#[path = "projection/rules_q_darkages.rs"]
+mod rules_q_darkages;

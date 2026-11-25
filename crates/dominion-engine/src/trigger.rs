@@ -493,6 +493,10 @@ impl Window {
         self.asked.iter().map(|(_, t)| t)
     }
 
+    pub(crate) fn asked_occasions(&self) -> impl Iterator<Item = &Occasion> {
+        self.asked.iter().map(|(i, _)| &self.occs[*i])
+    }
+
     /// The trigger that just resolved made the target of an Attack unaffected.
     fn log_unaffected(&self, g: &mut Game) {
         let Some((i, t)) = self.done.last() else {

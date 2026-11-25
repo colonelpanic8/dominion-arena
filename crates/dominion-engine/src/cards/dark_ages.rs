@@ -382,6 +382,7 @@ fn trashing_attack(g: &mut Game, f: &mut CardFrame, input: Input, base: u8, next
                 return Flow::Continue;
             }
             f.pc = base + 2;
+            f.choice_subject = Some(target);
             f.ask_cards_for(target, candidates, 1, 1, Purpose::Trash)
         }
         2 => {
@@ -438,6 +439,7 @@ fn trashed(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         ),
         Card::Catacombs => {
             let cost = g.cost_of(this);
+            f.choice_cost = Some(cost);
             gain_pile(
                 g,
                 f,
@@ -761,6 +763,7 @@ fn play_twice_and_trash(g: &mut Game, f: &mut CardFrame, input: Input, types: Ty
         4..=6 if f.card == Card::Procession => {
             let c = f.s.pick.expect("set in step 1");
             let target = g.cost_of(c).plus_coins(1);
+            f.choice_cost = Some(target);
             gain_pile(
                 g,
                 f,
@@ -933,6 +936,7 @@ fn graverobber(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
         }
         _ => {
             let limit = g.cost_of(f.s.pick.expect("set in step 3")).plus_coins(3);
+            f.choice_cost = Some(limit);
             gain_pile(
                 g,
                 f,
@@ -1149,6 +1153,7 @@ fn pillage(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
                         cards,
                     });
                     f.pc = 3;
+                    f.choice_subject = Some(target);
                     return f.ask_cards(hand, 1, 1, Purpose::Discard);
                 }
                 f.s.i += 1;
@@ -1280,6 +1285,7 @@ fn rebuild(g: &mut Game, f: &mut CardFrame, input: Input) -> Flow {
             let limit = g
                 .cost_of(f.s.pick.expect("set when revealed"))
                 .plus_coins(3);
+            f.choice_cost = Some(limit);
             gain_pile(
                 g,
                 f,
