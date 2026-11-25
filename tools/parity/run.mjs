@@ -54,11 +54,11 @@ const PASSWORD = 'parity-password';
 
 // The log and chat beside the table: their client is told no history when it joins a
 // game in progress. Also their Force end turn button, offered because Bob's seat has no
-// client connected. Their game buttons (End Buys, Autoplay Treasures, ...) are painted on a
-// canvas, so ours are left to the pixels too.
+// client connected. Their game buttons (End Buys, Autoplay Treasures, ...) and the tabs of
+// mats and the trash are painted on a canvas, so ours are left to the pixels too.
 const IGNORE = {
   theirs: { ignore: ['.game-tabs', '.chat-container', 'metagame-buttons', '.end-turn-button'], pixelsOnly: [] },
-  ours: { ignore: ['.dt-log-wrap', '.dt-below-log'], pixelsOnly: ['.dt-end', '.dt-btn'] },
+  ours: { ignore: ['.dt-log-wrap', '.dt-below-log'], pixelsOnly: ['.dt-end', '.dt-btn', '.dt-tab'] },
 };
 
 async function capture(page, dir, side) {

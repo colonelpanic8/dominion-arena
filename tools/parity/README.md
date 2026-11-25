@@ -48,7 +48,9 @@ Each scenario scores 0 to 100 (`score.mjs`):
 - **pixels** (0.25): mean SSIM of the two screenshots in grey, shrunk four times.
 
 The log and chat are left out on both sides: their client is told no history when it
-joins a game in progress, so it shows an empty log.
+joins a game in progress, so it shows an empty log. Their client paints its game buttons
+and the tabs of mats and the trash on a canvas, so our buttons and tabs count only in the
+pixels (`IGNORE` in `run.mjs`).
 
 The overall score is the mean over scenarios. Fixed seeds make a run repeatable: the same
 code gives the same score.
