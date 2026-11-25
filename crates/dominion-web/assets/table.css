@@ -176,6 +176,13 @@ body:has(.dt-root) .topbar { display: none; }
 /* Landscape names run along the bottom of the card. */
 .dt-setup-set-aside.dt-wide .dt-tokens:has(.dt-b-trait) { top: 14%; bottom: auto; }
 
+/* What a pile or landscape counts, top left (dominion.games' token-layer-counters). */
+.dt-pile-counters { position: absolute; left: 11%; top: 20%; width: 78%; display: flex; align-items: center; }
+.dt-micro .dt-pile-counters { left: 18%; top: 10%; height: 80%; width: 80%; justify-content: flex-end; }
+.dt-pile-counter { position: relative; display: flex; align-items: center; justify-content: center; font-family: var(--num); font-weight: 700; line-height: 1; paint-order: stroke fill; }
+.dt-pile-counter-coin { font-family: DomNum, var(--num); }
+.dt-pile-counter img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dt-pile-counter span { position: relative; }
 .dt-cube img { height: calc(2.6 * var(--vh)); }
 .dt-tokens .dt-cube img { height: 18cqw; }
 
